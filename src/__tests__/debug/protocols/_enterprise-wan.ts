@@ -249,6 +249,39 @@ export async function initializeWAN(wan: EnterpriseWAN): Promise<void> {
   }
 }
 
+export interface StpFabric {
+  dsw1: CiscoSwitch; dsw2: CiscoSwitch; dswbr: HuaweiSwitch;
+}
+
+/**
+ * Add a redundant distribution layer that introduces L2 loops, so STP/RSTP
+ * has something to converge: a 3-switch Cisco triangle at HQ and a parallel
+ * dual-link Huawei pair at BR. STP blocks the redundant ports on connect, so
+ * no broadcast storm results. Only loop-aware suites (e.g. STP) call this.
+ */
+export function addStpFabric(wan: EnterpriseWAN): StpFabric {
+  const dsw1 = new CiscoSwitch('switch-cisco', 'DSW-HQ-1', 26, 220, 200);
+  const dsw2 = new CiscoSwitch('switch-cisco', 'DSW-HQ-2', 26, 420, 200);
+  const dswbr = new HuaweiSwitch('switch-huawei', 'DSW-BR', 24, 800, 200);
+
+  const wire = (id: string, a: Equipment, ap: string, b: Equipment, bp: string) => {
+    new Cable(id).connect(a.getPort(ap)!, b.getPort(bp)!);
+  };
+
+  wire('hq-tri-1', wan.swhq, 'FastEthernet0/4', dsw1, 'FastEthernet0/1');
+  wire('hq-tri-2', wan.swhq, 'FastEthernet0/5', dsw2, 'FastEthernet0/1');
+  wire('hq-tri-3', dsw1, 'FastEthernet0/2', dsw2, 'FastEthernet0/2');
+
+  wire('br-par-1', wan.swbr, 'GigabitEthernet0/0/4', dswbr, 'GigabitEthernet0/0/1');
+  wire('br-par-2', wan.swbr, 'GigabitEthernet0/0/5', dswbr, 'GigabitEthernet0/0/2');
+
+  wan.topology.devices['dsw1'] = dsw1;
+  wan.topology.devices['dsw2'] = dsw2;
+  wan.topology.devices['dswbr'] = dswbr;
+
+  return { dsw1, dsw2, dswbr };
+}
+
 export async function dumpProtocol(
   label: string,
   topology: EnterpriseTopology,
