@@ -36,3 +36,4 @@ debug-output/*
 !debug-output/rman/
 !debug-output/oracle/
 !debug-output/linux/
+!debug-output/protocols/
