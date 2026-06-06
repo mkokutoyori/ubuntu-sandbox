@@ -1503,6 +1503,33 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         recordIf(`${sub} ${args.join(' ')}`.trim()));
     }
 
+    const removeIf = (prefix: string) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const l = this.ifExtra.get(i);
+        if (l) this.ifExtra.set(i, l.filter(x => !x.startsWith(prefix)));
+      }
+      return '';
+    };
+    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () =>
+      removeIf('switchport voice'));
+
+    this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const sub = args[0].toLowerCase();
+      if (sub === 'none') return recordIf('switchport trunk pruning vlan none');
+      if (sub === 'add' || sub === 'remove' || sub === 'except') {
+        if (args.length < 2) return '% Incomplete command.';
+        if (!this.parseVlanList(args[1])) return '% Invalid VLAN list';
+        return recordIf(`switchport trunk pruning vlan ${sub} ${args[1]}`);
+      }
+      if (!this.parseVlanList(args[0])) return '% Invalid VLAN list';
+      return recordIf(`switchport trunk pruning vlan ${args[0]}`);
+    });
+    this.configIfTrie.register('no switchport trunk pruning vlan', 'Reset pruning-eligible VLANs', () =>
+      removeIf('switchport trunk pruning'));
+
     this.configIfTrie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
       if (args.length < 3) return '% Incomplete command.';
       const id = parseInt(args[0], 10);
