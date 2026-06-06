@@ -129,6 +129,10 @@ export function cmdNetstat(
     ].join('\n');
   }
 
+  if (hasFlag('s') || args.includes('--statistics')) {
+    return cmdNetstatStatistics(socketTable);
+  }
+
   // Determine which protocols to show (no -t/-u → show both)
   const wantTcp = hasFlag('t');
   const wantUdp = hasFlag('u');
@@ -170,6 +174,49 @@ export function cmdNetstat(
   }
 
   return lines.join('\n');
+}
+
+function cmdNetstatStatistics(socketTable?: SocketTable | null): string {
+  let tcpListen = 0;
+  let tcpEstablished = 0;
+  if (socketTable) {
+    for (const sock of socketTable.getAll()) {
+      if (sock.protocol !== 'tcp') continue;
+      if (sock.state === 'LISTEN') tcpListen++;
+      else if (sock.state === 'ESTABLISHED') tcpEstablished++;
+    }
+  }
+  return [
+    'Ip:',
+    '    Forwarding: 2',
+    '    0 total packets received',
+    '    0 forwarded',
+    '    0 incoming packets discarded',
+    '    0 incoming packets delivered',
+    '    0 requests sent out',
+    'Icmp:',
+    '    0 ICMP messages received',
+    '    0 input ICMP message failed',
+    '    ICMP input histogram:',
+    '    0 ICMP messages sent',
+    '    0 ICMP messages failed',
+    '    ICMP output histogram:',
+    'Tcp:',
+    `    ${tcpEstablished} active connection openings`,
+    `    ${tcpListen} passive connection openings`,
+    '    0 failed connection attempts',
+    '    0 connection resets received',
+    `    ${tcpEstablished} connections established`,
+    '    0 segments retransmitted',
+    'Udp:',
+    '    0 packets received',
+    '    0 packets to unknown port received',
+    '    0 packet receive errors',
+    '    0 packets sent',
+    '    0 receive buffer errors',
+    'TcpExt:',
+    'IpExt:',
+  ].join('\n');
 }
 
 function formatNetstatLine(
