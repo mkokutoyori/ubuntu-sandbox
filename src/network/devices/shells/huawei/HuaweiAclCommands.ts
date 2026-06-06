@@ -17,6 +17,8 @@ import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 
+const normalizeWildcard = (w: string): string => (w === '0' ? '0.0.0.0' : w);
+
 export type HuaweiACLMode = 'acl-basic' | 'acl-advanced';
 
 export interface HuaweiACLContext {
@@ -144,7 +146,7 @@ export function buildHuaweiBasicACLCommands(
           i++;
         } else if (args[i + 1] && args[i + 2]) {
           srcIP = args[i + 1];
-          srcWild = args[i + 2];
+          srcWild = normalizeWildcard(args[i + 2]);
           i += 2;
         }
       }
@@ -198,14 +200,14 @@ export function buildHuaweiAdvancedACLCommands(
         if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
         if (args[i + 1] && args[i + 2]) {
           srcIP = args[i + 1];
-          srcWild = args[i + 2];
+          srcWild = normalizeWildcard(args[i + 2]);
           i += 3;
         } else { i++; }
       } else if (kw === 'destination') {
         if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
         if (args[i + 1] && args[i + 2]) {
           dstIP = args[i + 1];
-          dstWild = args[i + 2];
+          dstWild = normalizeWildcard(args[i + 2]);
           i += 3;
         } else { i++; }
       } else {
