@@ -706,6 +706,7 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.register('display ospf abr-asbr', 'Display OSPF border routers', () => displayOspfAbrAsbr(getRouter()));
   trie.register('display ospf statistics', 'Display OSPF statistics', () => displayOspfStatistics(getRouter()));
   trie.register('display ip routing-table protocol ospf', 'Display OSPF routes', () => displayRoutingTableOspf(getRouter()));
+  trie.register('display ospf routing', 'Display OSPF routing table', () => displayOspfRouting(getRouter()));
 
   // OSPFv3 display commands
   trie.register('display ospfv3 peer', 'Display OSPFv3 neighbor information', () => displayOspfv3Peer(getRouter()));
@@ -1106,6 +1107,34 @@ function displayRoutingTableOspf(router: Router): string {
     }
   }
   if (lines.length === 1) lines.push('  (No OSPF routes)');
+  return lines.join('\n');
+}
+
+export function displayOspfRouting(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return 'Info: OSPF is not running.';
+  router._ospfAutoConverge();
+  const rt = router.getRoutingTable();
+  const rows: string[] = [];
+  let count = 0;
+  for (const r of rt) {
+    if (r.type !== 'ospf') continue;
+    count++;
+    const dest = `${r.network.toString()}/${maskToCIDR(r.mask.toString())}`;
+    const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
+    rows.push(`${dest.padEnd(19)}${String(r.metric).padEnd(6)}${'Transit'.padEnd(11)}${nh.padEnd(16)}${ospf.getRouterId().padEnd(16)}0.0.0.0`);
+  }
+  const lines = [
+    `OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`,
+    '         Routing Tables',
+    '',
+    ' Routing for Network',
+    ' Destination        Cost  Type       NextHop         AdvRouter       Area',
+    ...rows,
+    '',
+    ` Total Nets: ${count}`,
+    ` Intra Area: 0  Inter Area: ${count}  ASE: 0  NSSA: 0`,
+  ];
   return lines.join('\n');
 }
 

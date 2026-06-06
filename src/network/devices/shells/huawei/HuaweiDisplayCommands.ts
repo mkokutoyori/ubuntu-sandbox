@@ -1478,12 +1478,6 @@ export function registerDisplayCommands(
     return 'Route information for ISIS\n  No routes installed';
   });
 
-  trie.register('display ospf routing', 'Display OSPF routing', () => {
-    const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return 'Info: OSPF is not running.';
-    return 'OSPF Process 1 with Router ID 0.0.0.0\n  Routing Tables\n\n  Routing for Network';
-  });
-
   trie.registerGreedy('display rip', 'Display RIP info', (args) => {
     if (args[1] === 'route') {
       if (!getRouter().isRIPEnabled()) return 'Info: RIP is not enabled.';
