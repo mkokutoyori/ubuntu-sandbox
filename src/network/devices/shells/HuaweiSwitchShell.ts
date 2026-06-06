@@ -16,7 +16,6 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
-import { IPAddress, SubnetMask } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -454,12 +453,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'port-group';
         return '';
       }
-      const vlanif = joined.match(/^vlanif\s*(\d+)$/i);
-      if (vlanif) {
-        this.selectedInterface = `Vlanif${vlanif[1]}`;
-        this.mode = 'interface';
-        return '';
-      }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -486,24 +479,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display commands
     this.registerDisplayCommands(this.interfaceTrie);
     this.registerStpInterfaceCommands(this.interfaceTrie);
-
-    this.interfaceTrie.registerGreedy('ip address', 'Set VLANIF IP address', (args) => {
-      const m = this.selectedInterface?.match(/^Vlanif(\d+)$/i);
-      if (!m) return 'Error: IP address can be configured only on a VLANIF interface.';
-      if (args.length < 2) return 'Error: Incomplete command.';
-      try {
-        const mask = /^\d+$/.test(args[1]) ? SubnetMask.fromCIDR(parseInt(args[1], 10)) : new SubnetMask(args[1]);
-        this.swRef?.configureVlanInterface(parseInt(m[1], 10), new IPAddress(args[0]), mask);
-        return '';
-      } catch (e) {
-        return `Error: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    });
-    this.interfaceTrie.register('undo ip address', 'Remove VLANIF IP address', () => {
-      const m = this.selectedInterface?.match(/^Vlanif(\d+)$/i);
-      if (m) this.swRef?.removeVlanInterface(parseInt(m[1], 10));
-      return '';
-    });
 
     this.interfaceTrie.register('lldp enable', 'Enable LLDP on this interface', () => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
@@ -1051,23 +1026,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return full;
     });
 
+    // L2 switch: only the management interface has an IP. Recognised so
+    // the command doesn't error (no Vlanif/L3 routing on an L2 switch).
     trie.register('display ip interface brief', 'Display IP interface brief', () => {
-      const lines = [
+      const host = this.swRef?.getHostname() ?? 'SW';
+      return [
         `*down: administratively down`,
         `Interface                   IP Address/Mask      Physical   Protocol`,
-      ];
-      const svis = this.swRef?.getVlanInterfaces();
-      if (svis) {
-        for (const [vid, svi] of svis) {
-          lines.push(
-            `Vlanif${String(vid).padEnd(21)}${`${svi.ip}/${svi.mask.toCIDR()}`.padEnd(21)}${(svi.up ? 'up' : 'down').padEnd(11)}${svi.up ? 'up' : 'down'}`,
-          );
-        }
-      }
-      if (!svis || svis.size === 0) {
-        lines.push(`MEth0/0/1                   unassigned           down       down`);
-      }
-      return lines.join('\n');
+        `MEth0/0/1                   unassigned           down       down`,
+        `(${host}: L2 switch — no Vlanif/L3 interfaces)`,
+      ].join('\n');
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──

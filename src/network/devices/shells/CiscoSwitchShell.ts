@@ -21,7 +21,7 @@ import type { Switch } from '../Switch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
-import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
+import { MACAddress } from '../../core/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -279,23 +279,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     // ── Interface ── trust + limit rate
-    this.configIfTrie.registerGreedy('ip address', 'Set SVI IP address', (args) => {
-      const m = this.selectedInterface?.match(/^Vlan(\d+)$/i);
-      if (!m) return '% IP addresses may only be configured on VLAN (SVI) interfaces.';
-      if (args.length < 2) return '% Incomplete command.';
-      try {
-        this.d().configureVlanInterface(parseInt(m[1], 10), new IPAddress(args[0]), new SubnetMask(args[1]));
-        return '';
-      } catch (e) {
-        return `% Invalid input: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    });
-    this.configIfTrie.register('no ip address', 'Remove SVI IP address', () => {
-      const m = this.selectedInterface?.match(/^Vlan(\d+)$/i);
-      if (m) this.d().removeVlanInterface(parseInt(m[1], 10));
-      return '';
-    });
-
     this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
@@ -2129,12 +2112,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
    * L2-only switch (returns null → "% Invalid interface name").
    */
   private virtualInterfaceName(input: string): string | null {
-    const clean = input.replace(/\s+/g, '');
-    const pc = clean.match(/^(?:po|port-?channel)(\d+)$/i);
-    if (pc) return `Port-channel${pc[1]}`;
-    const vl = clean.match(/^(?:vl|vlan)(\d+)$/i);
-    if (vl) return `Vlan${vl[1]}`;
-    return null;
+    const m = input.replace(/\s+/g, '').match(/^(?:po|port-?channel)(\d+)$/i);
+    return m ? `Port-channel${m[1]}` : null;
   }
 
   private resolveInterfaceName(input: string): string | null {
