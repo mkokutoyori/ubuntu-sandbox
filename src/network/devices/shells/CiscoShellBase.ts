@@ -657,6 +657,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._scheduleReload?.('immediate');
       return 'Proceed with reload? [confirm]\nReload requested.';
     });
+    this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
+      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
+      return svc ? svc.enable('ip.arp') : 'ARP packet debugging is on';
+    });
+    this.privilegedTrie.register('no debug arp', 'Disable ARP debug', () => {
+      const svc = (this.d() as unknown as { getDebugService?: () => { disable: (c: string) => string } }).getDebugService?.();
+      return svc ? svc.disable('ip.arp') : 'ARP packet debugging is off';
+    });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp') => string } };

@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — vlan
-Generated: 2026-06-06T05:30:18.861Z
+Generated: 2026-06-06T10:41:56.758Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=VLAN / IEEE 802.1Q — base VLAN, trunks dot1q (allowed/native/pruning), ports d'accès, voice VLAN, VTP/DTP, VLANIF/SVI, MAC & STP par VLAN, et inter-VLAN routé fonctionnel (router-on-a-stick R-HQ) — Cisco (SW-HQ/DSW) + Huawei (SW-BR/DSW-BR) + generic
 Total steps: 401
@@ -369,14 +369,14 @@ Total steps: 401
   99   NATIVE                           active    
 
 [103/401] swhq SW-HQ# show vlan id 10
-  % Invalid input detected at '^' marker.
-  show vlan id 10
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    
 
 [104/401] swhq SW-HQ# show vlan name DATA
-  % Invalid input detected at '^' marker.
-  show vlan name DATA
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    
 
 [105/401] swhq SW-HQ# show vtp status
   VTP Version capable             : 1 to 1
@@ -812,12 +812,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.403 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.263 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.436 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.741 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.263/0.333/0.403/0.070 ms
+  rtt min/avg/max/mdev = 0.436/0.589/0.741/0.152 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -977,31 +977,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.476 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.267 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.826 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.303 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.267/0.372/0.476/0.105 ms
+  rtt min/avg/max/mdev = 0.303/0.565/0.826/0.261 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.283 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.265 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.257 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.433 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.265/0.274/0.283/0.009 ms
+  rtt min/avg/max/mdev = 0.257/0.345/0.433/0.088 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.923 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.417 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.551 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.208 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.713 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.694 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.417/0.630/0.923/0.214 ms
+  rtt min/avg/max/mdev = 0.694/0.872/1.208/0.238 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1013,7 +1013,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1028,12 +1028,12 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.536 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.503 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.685 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.623 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.503/0.520/0.536/0.016 ms
+  rtt min/avg/max/mdev = 0.623/0.654/0.685/0.031 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1493,24 +1493,152 @@ Total steps: 401
 
 --- [305] § VLAN — spanning-tree par VLAN ---
 [305/401] swhq SW-HQ# show spanning-tree vlan 10
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 10
-                     ^
+  VLAN0010
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [306/401] swhq SW-HQ# show spanning-tree vlan 20
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 20
-                     ^
+  VLAN0020
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [307/401] swhq SW-HQ# show spanning-tree vlan 10 brief
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 10 brief
-                     ^
+  VLAN0010
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [308/401] dsw1 DSW-HQ-1# show spanning-tree vlan 10
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 10
-                     ^
+  VLAN0010
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        200
+               Port        Fa0/1
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Root  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [309/401] swbr <SW-BR> display stp vlan 10
   Error: Unrecognized command "display stp vlan 10"
@@ -1690,14 +1818,14 @@ Total steps: 401
   99   NATIVE                           active    
 
 [321/401] swhq SW-HQ# show vlan id 10
-  % Invalid input detected at '^' marker.
-  show vlan id 10
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    Fa0/2
 
 [322/401] swhq SW-HQ# show vlan id 20
-  % Invalid input detected at '^' marker.
-  show vlan id 20
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  20   VOICE                            active    Fa0/3
 
 [323/401] swhq SW-HQ# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
@@ -1761,14 +1889,14 @@ Total steps: 401
   99   NATIVE                           active    
 
 [327/401] dsw1 DSW-HQ-1# show vlan id 10
-  % Invalid input detected at '^' marker.
-  show vlan id 10
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    
 
 [328/401] dsw1 DSW-HQ-1# show vlan id 20
-  % Invalid input detected at '^' marker.
-  show vlan id 20
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  20   VOICE                            active    
 
 [329/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
@@ -1828,14 +1956,14 @@ Total steps: 401
   99   NATIVE                           active    
 
 [333/401] dsw2 DSW-HQ-2# show vlan id 10
-  % Invalid input detected at '^' marker.
-  show vlan id 10
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    
 
 [334/401] dsw2 DSW-HQ-2# show vlan id 20
-  % Invalid input detected at '^' marker.
-  show vlan id 20
-            ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  20   VOICE                            active    
 
 [335/401] dsw2 DSW-HQ-2# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
@@ -2022,19 +2150,19 @@ Total steps: 401
 
 [350/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.185 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.249 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.185/0.185/0.185/0.000 ms
+  rtt min/avg/max/mdev = 0.249/0.249/0.249/0.000 ms
 
 [351/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.367 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.483 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.367/0.367/0.367/0.000 ms
+  rtt min/avg/max/mdev = 0.483/0.483/0.483/0.000 ms
 
 [352/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2044,7 +2172,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [353/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -2378,19 +2506,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.514 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.563 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.514/0.514/0.514/0.000 ms
+  rtt min/avg/max/mdev = 0.563/0.563/0.563/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.499 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.669 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.499/0.499/0.499/0.000 ms
+  rtt min/avg/max/mdev = 0.669/0.669/0.669/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2532,11 +2660,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.345 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.546 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.345/0.345/0.345/0.000 ms
+  rtt min/avg/max/mdev = 0.546/0.546/0.546/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
@@ -2582,6 +2710,38 @@ Total steps: 401
   GigabitEthernet0/0/23   access       1     -
 
 [401/401] swhq SW-HQ# show spanning-tree vlan 10 brief
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 10 brief
-                     ^
+  VLAN0010
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p

@@ -1011,6 +1011,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       t.register('show debugging', 'Display active debugging', () => 'No debugging is enabled');
       t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) =>
         `Spanning Tree ${a.join(' ') || 'all'} debugging is on`);
+      t.registerGreedy('debug', 'Enable debugging', (a) =>
+        `${a.join(' ') || 'all'} debugging is on`);
       t.registerGreedy('undebug', 'Disable debugging', () => 'All possible debugging has been turned off');
       t.register('no debug all', 'Disable debugging', () => 'All possible debugging has been turned off');
     }
@@ -1156,6 +1158,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.register('show vlan', 'Display VLAN information', () => {
       return this.showVlanBrief(this.d());
+    });
+
+    this.privilegedTrie.registerGreedy('show vlan id', 'Display a VLAN by id', (args) => {
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return '% Invalid VLAN id';
+      return this.showVlanBrief(this.d(), { id });
+    });
+
+    this.privilegedTrie.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      return this.showVlanBrief(this.d(), { name: args[0] });
     });
 
     this.privilegedTrie.register('show interfaces status', 'Display interface status', () => {
@@ -1712,7 +1725,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showVlanBrief(sw: Switch): string {
+  private showVlanBrief(sw: Switch, filter?: { id?: number; name?: string }): string {
     const vlans = sw.getVLANs();
     const configs = sw._getSwitchportConfigs();
 
@@ -1721,7 +1734,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       '---- -------------------------------- --------- -------------------------------',
     ];
 
+    let shown = 0;
     for (const [id, vlan] of vlans) {
+      if (filter?.id !== undefined && id !== filter.id) continue;
+      if (filter?.name !== undefined && vlan.name.toLowerCase() !== filter.name.toLowerCase()) continue;
+      shown++;
       const name = vlan.name.padEnd(33);
       const status = 'active';
 
@@ -1736,6 +1753,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`${String(id).padEnd(5)}${name}${status.padEnd(10)}${portsStr}`);
     }
 
+    if (filter && shown === 0) {
+      return filter.id !== undefined
+        ? `VLAN id ${filter.id} not found in current VLAN database`
+        : `ERROR: VLAN ${filter.name} not found in current VLAN database`;
+    }
     return lines.join('\n');
   }
 
