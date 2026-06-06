@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — stp
-Generated: 2026-06-05T15:04:56.008Z
+Generated: 2026-06-06T06:24:54.900Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
 Total steps: 300
@@ -29,40 +29,28 @@ Total steps: 300
 <empty>
 
 [7/300] swhq SW-HQ# debug spanning-tree events
-  % Invalid input detected at '^' marker.
-  debug spanning-tree events
-        ^
+  Spanning Tree events debugging is on
 
 [8/300] swhq SW-HQ# show debugging
-  % Invalid input detected at '^' marker.
-  show debugging
-       ^
+  No debugging is enabled
 
 [9/300] dsw1 DSW-HQ-1# terminal monitor
 <empty>
 
 [10/300] dsw1 DSW-HQ-1# debug spanning-tree events
-  % Invalid input detected at '^' marker.
-  debug spanning-tree events
-        ^
+  Spanning Tree events debugging is on
 
 [11/300] dsw1 DSW-HQ-1# show debugging
-  % Invalid input detected at '^' marker.
-  show debugging
-       ^
+  No debugging is enabled
 
 [12/300] dsw2 DSW-HQ-2# terminal monitor
 <empty>
 
 [13/300] dsw2 DSW-HQ-2# debug spanning-tree events
-  % Invalid input detected at '^' marker.
-  debug spanning-tree events
-        ^
+  Spanning Tree events debugging is on
 
 [14/300] dsw2 DSW-HQ-2# show debugging
-  % Invalid input detected at '^' marker.
-  show debugging
-       ^
+  No debugging is enabled
 
 
 --- [15] § STP — activation logs & debug (Huawei) ---
@@ -172,19 +160,53 @@ Total steps: 300
   ---------------------- -------- --------- -------- ---------- ----------
 
 [25/300] swhq SW-HQ# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         32769 0200.0000.000d  0               2     20  15
 
 [26/300] swhq SW-HQ# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         32769 (32768, 1)  0200.0000.000d  2     20   15   ieee
 
 [27/300] swhq SW-HQ# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [28/300] dsw1 DSW-HQ-1# show spanning-tree
   VLAN0001
@@ -232,19 +254,53 @@ Total steps: 300
   ---------------------- -------- --------- -------- ---------- ----------
 
 [30/300] dsw1 DSW-HQ-1# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         32769 0200.0000.000d  200     Fa0/1   2     20  15
 
 [31/300] dsw1 DSW-HQ-1# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         32769 (32768, 1)  0200.0000.005f  2     20   15   ieee
 
 [32/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        200
+               Port        Fa0/1
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Root  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [33/300] dsw2 DSW-HQ-2# show spanning-tree
   VLAN0001
@@ -292,19 +348,53 @@ Total steps: 300
   ---------------------- -------- --------- -------- ---------- ----------
 
 [35/300] dsw2 DSW-HQ-2# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         32769 0200.0000.000d  200     Fa0/1   2     20  15
 
 [36/300] dsw2 DSW-HQ-2# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         32769 (32768, 1)  0200.0000.0079  2     20   15   ieee
 
 [37/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        200
+               Port        Fa0/1
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Root  FWD  19        128.01    P2p
+  Fa0/2            Altn  BLK  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 
 --- [38] § STP — état initial (Huawei) ---
@@ -434,9 +524,11 @@ Total steps: 300
     (default STP settings)
 
 [48/300] swhq SW-HQ# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             
+  
+  Number of blocked ports (segments) in the system : 0
 
 [49/300] dsw1 DSW-HQ-1# show spanning-tree interface FastEthernet0/1
   FastEthernet0/1
@@ -455,14 +547,71 @@ Total steps: 300
     (default STP settings)
 
 [53/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             Fa0/2
+  
+  Number of blocked ports (segments) in the system : 1
 
 [54/300] dsw1 DSW-HQ-1# show spanning-tree detail
-  % Invalid input detected at '^' marker.
-  show spanning-tree detail
-                     ^
+   VLAN0001 is executing the pvst compatible Spanning Tree protocol
+    Bridge Identifier has priority 32768, sysid 1, address 0200.0000.005f
+    Current root has priority 32768, address 0200.0000.000d
+    Root port is Fa0/1, cost of root path is 200
+    Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
+  
+   Port FastEthernet0/0 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/1 of VLAN0001 is root forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/2 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/3 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/4 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/5 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/6 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/7 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/8 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/9 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/10 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/11 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/12 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/13 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/14 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/15 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/16 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/17 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/18 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/19 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/20 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/21 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/22 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/23 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/0 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/1 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
 
 
 --- [55] § STP — rôles & états des ports (Huawei) ---
@@ -515,19 +664,22 @@ Total steps: 300
 <empty>
 
 [69/300] swhq SW-HQ# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  200     Fa0/4   2     20  15
 
 [70/300] dsw1 DSW-HQ-1# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  0               2     20  15
 
 [71/300] dsw2 DSW-HQ-2# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  200     Fa0/2   2     20  15
 
 [72/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
@@ -575,9 +727,11 @@ Total steps: 300
   Gi0/1            Disa  FWD  19        128.01    P2p
 
 [74/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             Fa0/1
+  
+  Number of blocked ports (segments) in the system : 1
 
 
 --- [75] § STP — root primary/secondary (macro) ---
@@ -600,14 +754,16 @@ Total steps: 300
 <empty>
 
 [81/300] dsw1 DSW-HQ-1# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  0               2     20  15
 
 [82/300] swhq SW-HQ# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  200     Fa0/4   2     20  15
 
 
 --- [83] § STP — élection de la racine BR (Huawei priority) ---
@@ -1102,9 +1258,41 @@ Total steps: 300
 <empty>
 
 [183/300] dsw1 DSW-HQ-1(config)# do show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [184/300] dsw1 DSW-HQ-1(config)# no spanning-tree vlan 1 hello-time
 <empty>
@@ -1146,16 +1334,18 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.343 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.415 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.343/0.343/0.343/0.000 ms
+  rtt min/avg/max/mdev = 0.415/0.415/0.415/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             
+  
+  Number of blocked ports (segments) in the system : 0
 
 [195/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1207,32 +1397,35 @@ Total steps: 300
   Gi0/1            Disa  FWD  19        128.01    P2p
 
 [200/300] dsw1 DSW-HQ-1# show spanning-tree root
-  % Invalid input detected at '^' marker.
-  show spanning-tree root
-                     ^
+                                          Root    Hello Max Fwd
+  Vlan             Root ID              Cost    Port    Time  Age Dly
+  ---------------- -------------------- ------- ------- ----- --- ---
+  VLAN0001         4097 0200.0000.005f  0               2     20  15
 
 [201/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             Fa0/1
+  
+  Number of blocked ports (segments) in the system : 1
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.440 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.312 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.437 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.369 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.312/0.376/0.440/0.064 ms
+  rtt min/avg/max/mdev = 0.369/0.403/0.437/0.034 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.655 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.536 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.783 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.532 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.536/0.596/0.655/0.060 ms
+  rtt min/avg/max/mdev = 0.532/0.658/0.783/0.125 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1285,12 +1478,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.240 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.265 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.257 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.275 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.240/0.252/0.265/0.013 ms
+  rtt min/avg/max/mdev = 0.257/0.266/0.275/0.009 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1516,9 +1709,64 @@ Total steps: 300
 
 --- [243] § STP — compteurs & changements de topologie ---
 [243/300] swhq SW-HQ# show spanning-tree detail
-  % Invalid input detected at '^' marker.
-  show spanning-tree detail
-                     ^
+   VLAN0001 is executing the pvst compatible Spanning Tree protocol
+    Bridge Identifier has priority 8192, sysid 1, address 0200.0000.000d
+    We are the root of the spanning tree
+    Root port is N/A, cost of root path is 0
+    Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
+  
+   Port FastEthernet0/0 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/1 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/2 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/3 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/4 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/5 of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/6 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/7 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/8 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/9 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/10 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/11 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/12 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/13 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/14 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/15 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/16 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/17 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/18 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/19 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/20 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/21 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/22 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port FastEthernet0/23 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/0 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/1 of VLAN0001 is disabled forwarding
+     Port path cost 19, Port priority 128
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
   % Invalid input detected at '^' marker.
@@ -1561,27 +1809,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.296 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.241 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.296/0.296/0.296/0.000 ms
+  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.158 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.175 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.158/0.158/0.158/0.000 ms
+  rtt min/avg/max/mdev = 0.175/0.175/0.175/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.140 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.165 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.140/0.140/0.140/0.000 ms
+  rtt min/avg/max/mdev = 0.165/0.165/0.165/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -1618,34 +1866,133 @@ Total steps: 300
     (default STP settings)
 
 [261/300] swhq SW-HQ# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    8193
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [262/300] swhq SW-HQ# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         8193 (8192, 1)  0200.0000.000d  2     20   15   ieee
 
 [263/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [264/300] dsw1 DSW-HQ-1# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         4097 (4096, 1)  0200.0000.005f  2     20   15   ieee
 
 [265/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 1
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        200
+               Port        Fa0/2
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Root  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [266/300] dsw2 DSW-HQ-2# show spanning-tree bridge
-  % Invalid input detected at '^' marker.
-  show spanning-tree bridge
-                     ^
+                                                     Hello  Max  Fwd
+  Vlan             Bridge ID                          Time  Age  Dly  Protocol
+  ---------------- ---------------------------------- -----  ---  ---  --------
+  VLAN0001         32769 (32768, 1)  0200.0000.0079  2     20   15   ieee
 
 
 --- [267] § STP — détail des liens de la fabric (Huawei) ---
@@ -1758,9 +2105,41 @@ Total steps: 300
 <empty>
 
 [279/300] swhq SW-HQ# show spanning-tree vlan 4094
-  % Invalid input detected at '^' marker.
-  show spanning-tree vlan 4094
-                     ^
+  VLAN4094
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
 
 [280/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1780,24 +2159,16 @@ Total steps: 300
 
 --- [285] § STP — désactivation debug & état final ---
 [285/300] swhq SW-HQ# undebug all
-  % Invalid input detected at '^' marker.
-  undebug all
-  ^
+  All possible debugging has been turned off
 
 [286/300] swhq SW-HQ# undebug all
-  % Invalid input detected at '^' marker.
-  undebug all
-  ^
+  All possible debugging has been turned off
 
 [287/300] dsw1 DSW-HQ-1# undebug all
-  % Invalid input detected at '^' marker.
-  undebug all
-  ^
+  All possible debugging has been turned off
 
 [288/300] dsw2 DSW-HQ-2# undebug all
-  % Invalid input detected at '^' marker.
-  undebug all
-  ^
+  All possible debugging has been turned off
 
 [289/300] swbr <SW-BR> undo debugging all
   Error: Unrecognized command "undo debugging all"
@@ -1884,14 +2255,18 @@ Total steps: 300
        0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
 
 [296/300] swhq SW-HQ# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             
+  
+  Number of blocked ports (segments) in the system : 0
 
 [297/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
-  % Invalid input detected at '^' marker.
-  show spanning-tree blockedports
-                     ^
+  Name                 Blocked Interfaces List
+  -------------------- ------------------------------------
+  VLAN0001             
+  
+  Number of blocked ports (segments) in the system : 0
 
 [298/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
@@ -1949,8 +2324,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.508 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.581 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.508/0.508/0.508/0.000 ms
+  rtt min/avg/max/mdev = 0.581/0.581/0.581/0.000 ms

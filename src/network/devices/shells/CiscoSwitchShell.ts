@@ -975,6 +975,24 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const lines = this.ifStp.get(name) ?? [];
         return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
       });
+      t.register('show spanning-tree', 'Display spanning tree state', () => this.showSpanningTree(this.d()));
+      t.register('show spanning-tree detail', 'Detailed STP state', () => this.showStpDetail(this.d()));
+      t.register('show spanning-tree root', 'STP root bridge info', () => this.showStpRoot(this.d()));
+      t.register('show spanning-tree bridge', 'STP local bridge info', () => this.showStpBridge(this.d()));
+      t.register('show spanning-tree blockedports', 'STP blocked ports', () => this.showStpBlockedPorts(this.d()));
+      t.registerGreedy('show spanning-tree vlan', 'STP for a VLAN', (a) => {
+        const id = parseInt(a[0], 10);
+        if (isNaN(id)) return this.showSpanningTree(this.d());
+        if (a[1]?.toLowerCase() === 'detail') return this.showStpDetail(this.d(), id);
+        if (a[1]?.toLowerCase() === 'bridge') return this.showStpBridge(this.d(), id);
+        if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
+        return this.showSpanningTree(this.d(), id);
+      });
+      t.register('show debugging', 'Display active debugging', () => 'No debugging is enabled');
+      t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) =>
+        `Spanning Tree ${a.join(' ') || 'all'} debugging is on`);
+      t.registerGreedy('undebug', 'Disable debugging', () => 'All possible debugging has been turned off');
+      t.register('no debug all', 'Disable debugging', () => 'All possible debugging has been turned off');
     }
   }
 
@@ -1158,10 +1176,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
       const startup = this.d().getStartupConfig();
       return startup ? `Startup config (serialized):\n${startup}` : 'startup-config is not present';
-    });
-
-    this.privilegedTrie.register('show spanning-tree', 'Display spanning tree state', () => {
-      return this.showSpanningTree(this.d());
     });
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
@@ -1730,7 +1744,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showSpanningTree(sw: Switch): string {
+  private showSpanningTree(sw: Switch, vlanId = 1): string {
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
     const root = agent?.getRootBridge();
@@ -1739,7 +1753,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
     const rootPrio = root ? root.priority + 1 : 32769;
     const lines = [
-      'VLAN0001',
+      `VLAN${String(vlanId).padStart(4, '0')}`,
       '  Spanning tree enabled protocol ieee',
       `  Root ID    Priority    ${rootPrio}`,
       `             Address     ${rootMacFmt}`,
@@ -1767,6 +1781,87 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
     }
     return lines.join('\n');
+  }
+
+  private stpAgentOf(sw: Switch) {
+    return (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+  }
+
+  private showStpRoot(sw: Switch, vlanId = 1): string {
+    const agent = this.stpAgentOf(sw);
+    const root = agent?.getRootBridge();
+    const cost = agent?.getRootPathCost() ?? 0;
+    const rootPort = agent?.getRootPort();
+    const mac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
+    const prio = root ? root.priority + vlanId : 32768 + vlanId;
+    const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
+    return [
+      '                                        Root    Hello Max Fwd',
+      'Vlan             Root ID              Cost    Port    Time  Age Dly',
+      '---------------- -------------------- ------- ------- ----- --- ---',
+      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}2     20  15`,
+    ].join('\n');
+  }
+
+  private showStpBridge(sw: Switch, vlanId = 1): string {
+    const agent = this.stpAgentOf(sw);
+    const own = agent?.ownBridgeId();
+    const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
+    const prio = (own ? own.priority : 32768) + vlanId;
+    const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
+    return [
+      '                                                   Hello  Max  Fwd',
+      'Vlan             Bridge ID                          Time  Age  Dly  Protocol',
+      '---------------- ---------------------------------- -----  ---  ---  --------',
+      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  2     20   15   ieee`,
+    ].join('\n');
+  }
+
+  private showStpBlockedPorts(sw: Switch, vlanId = 1): string {
+    const agent = this.stpAgentOf(sw);
+    const blocked: string[] = [];
+    for (const [portName, state] of sw._getSTPStates()) {
+      const role = agent?.getPortRole(portName);
+      if (state === 'blocking' || role === 'alternate' || role === 'backup') {
+        blocked.push(this.abbreviateInterface(portName));
+      }
+    }
+    const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
+    return [
+      'Name                 Blocked Interfaces List',
+      '-------------------- ------------------------------------',
+      `${vlan.padEnd(21)}${blocked.join(', ')}`,
+      '',
+      `Number of blocked ports (segments) in the system : ${blocked.length}`,
+    ].join('\n');
+  }
+
+  private showStpDetail(sw: Switch, vlanId = 1): string {
+    const agent = this.stpAgentOf(sw);
+    const isRoot = agent?.isRoot() ?? true;
+    const root = agent?.getRootBridge();
+    const own = agent?.ownBridgeId();
+    const cost = agent?.getRootPathCost() ?? 0;
+    const rootMac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
+    const ownMac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
+    const out: string[] = [
+      ` VLAN${String(vlanId).padStart(4, '0')} is executing the ${this.stpMode} compatible Spanning Tree protocol`,
+      `  Bridge Identifier has priority ${own ? own.priority : 32768}, sysid ${vlanId}, address ${ownMac}`,
+      isRoot
+        ? '  We are the root of the spanning tree'
+        : `  Current root has priority ${root ? root.priority : 32768}, address ${rootMac}`,
+      `  Root port is ${agent?.getRootPort() ? this.abbreviateInterface(agent.getRootPort()!) : 'N/A'}, cost of root path is ${cost}`,
+      '  Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec',
+      '',
+    ];
+    for (const [portName, state] of sw._getSTPStates()) {
+      const role = agent?.getPortRole(portName) ?? 'designated';
+      out.push(
+        ` Port ${portName} of VLAN${String(vlanId).padStart(4, '0')} is ${role} ${state}`,
+        `   Port path cost 19, Port priority 128`,
+      );
+    }
+    return out.join('\n');
   }
 
   // ─── DHCP Snooping Display ───────────────────────────────────────
