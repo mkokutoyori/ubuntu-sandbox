@@ -462,6 +462,7 @@ export abstract class EndHost extends Equipment {
         this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask));
         if (gateway) this.setDefaultGateway(new IPAddress(gateway));
         this.dhcpInterfaces.add(iface);
+        this.onDhcpLeaseConfigured(iface);
       },
       (iface: string) => {
         const port = this.ports.get(iface);
@@ -473,9 +474,14 @@ export abstract class EndHost extends Equipment {
         this.defaultGateway = null;
         this.routingTable = this.routingTable.filter(r => r.type !== 'default');
         this.dhcpInterfaces.delete(iface);
+        this.onDhcpLeaseReleased(iface);
       },
     );
   }
+
+  protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  protected onDhcpLeaseReleased(_iface: string): void {}
 
   // ─── Hardware inventory ─────────────────────────────────────────
 
