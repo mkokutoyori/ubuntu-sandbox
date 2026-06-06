@@ -988,6 +988,26 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
         return this.showSpanningTree(this.d(), id);
       });
+      t.register('show spanning-tree summary totals', 'STP summary totals', () =>
+        `Switch is in ${this.stpMode} mode\n` +
+        `Root bridge for: ${this.stpAgentOf(this.d())?.isRoot() ? 'VLAN0001' : 'none'}\n` +
+        `                     Blocking Listening Learning Forwarding STP Active\n` +
+        `-------------------- -------- --------- -------- ---------- ----------\n` +
+        `1 vlan               ${this.stpSummaryCounts(this.d())}`);
+      t.register('show spanning-tree inconsistentports', 'STP inconsistent ports', () => {
+        const agent = this.stpAgentOf(this.d());
+        const bad: string[] = [];
+        for (const [portName] of this.d()._getSTPStates()) {
+          if (agent?.isRootInconsistent(portName)) bad.push(this.abbreviateInterface(portName));
+        }
+        return [
+          'Name                 Interface                Inconsistency',
+          '-------------------- ------------------------ ------------------',
+          ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
+          '',
+          `Number of inconsistent ports (segments) in the system : ${bad.length}`,
+        ].join('\n');
+      });
       t.register('show debugging', 'Display active debugging', () => 'No debugging is enabled');
       t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) =>
         `Spanning Tree ${a.join(' ') || 'all'} debugging is on`);
@@ -1785,6 +1805,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private stpAgentOf(sw: Switch) {
     return (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+  }
+
+  private stpSummaryCounts(sw: Switch): string {
+    let blk = 0, lis = 0, lrn = 0, fwd = 0;
+    for (const [, state] of sw._getSTPStates()) {
+      if (state === 'blocking') blk++;
+      else if (state === 'listening') lis++;
+      else if (state === 'learning') lrn++;
+      else if (state === 'forwarding') fwd++;
+    }
+    const active = blk + lis + lrn + fwd;
+    return `${String(blk).padEnd(9)}${String(lis).padEnd(10)}${String(lrn).padEnd(9)}${String(fwd).padEnd(11)}${active}`;
   }
 
   private showStpRoot(sw: Switch, vlanId = 1): string {

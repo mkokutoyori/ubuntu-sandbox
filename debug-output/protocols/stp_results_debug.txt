@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — stp
-Generated: 2026-06-06T06:24:54.900Z
+Generated: 2026-06-06T06:27:55.377Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
 Total steps: 300
@@ -465,7 +465,16 @@ Total steps: 300
        0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
 
 [41/300] swbr <SW-BR> display stp global
-  Error: Unrecognized command "display stp global"
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.SW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
 
 [42/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
@@ -507,7 +516,16 @@ Total steps: 300
        0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
 
 [44/300] dswbr <DSW-BR> display stp global
-  Error: Unrecognized command "display stp global"
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.DSW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
 
 
 --- [45] § STP — rôles & états des ports (Cisco) ---
@@ -632,7 +650,10 @@ Total steps: 300
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
 
 [59/300] dswbr <DSW-BR> display stp topology-change
-  Error: Unrecognized command "display stp topology-change"
+  CIST topology change information
+    Number of topology changes        : 0
+    Time since last topology change   : 0 days 0h:0m:0s
+    Last topology change port         : -
 
 
 --- [60] § STP — élection de la racine HQ (priority) ---
@@ -985,9 +1006,11 @@ Total steps: 300
 
 --- [113] § STP — modes PVST/RSTP/MSTP (Cisco) ---
 [113/300] swhq SW-HQ# show spanning-tree summary totals
-  % Invalid input detected at '^' marker.
-  show spanning-tree summary totals
-                             ^
+  Switch is in pvst mode
+  Root bridge for: none
+                       Blocking Listening Learning Forwarding STP Active
+  -------------------- -------- --------- -------- ---------- ----------
+  1 vlan               0        0         0        26         26
 
 [114/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1037,13 +1060,19 @@ Total steps: 300
 <empty>
 
 [124/300] swbr [SW-BR] display stp mode
-  Error: Unrecognized command "display stp mode"
+  STP mode: RSTP
 
 [125/300] swbr [SW-BR] stp mode mstp
 <empty>
 
 [126/300] swbr [SW-BR] display stp region-configuration
-  Error: Unrecognized command "display stp region-configuration"
+  Oper configuration
+    Format selector      :0
+    Region name          :SW-BR
+    Revision level       :0
+  
+    Instance   VLANs Mapped
+    0          1 to 4094
 
 [127/300] swbr [SW-BR] stp mode stp
 <empty>
@@ -1188,9 +1217,10 @@ Total steps: 300
   ---------------------- -------- --------- -------- ---------- ----------
 
 [162/300] swhq SW-HQ# show spanning-tree inconsistentports
-  % Invalid input detected at '^' marker.
-  show spanning-tree inconsistentports
-                     ^
+  Name                 Interface                Inconsistency
+  -------------------- ------------------------ ------------------
+  
+  Number of inconsistent ports (segments) in the system : 0
 
 
 --- [163] § sécurité STP — protections (Huawei) ---
@@ -1334,11 +1364,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.415 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.593 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.415/0.415/0.415/0.000 ms
+  rtt min/avg/max/mdev = 0.593/0.593/0.593/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1411,21 +1441,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.437 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.369 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.222 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.321 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.369/0.403/0.437/0.034 ms
+  rtt min/avg/max/mdev = 0.321/0.771/1.222/0.450 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.783 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.532 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.867 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.694 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.532/0.658/0.783/0.125 ms
+  rtt min/avg/max/mdev = 0.694/0.780/0.867/0.087 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1478,12 +1508,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.257 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.275 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.306 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.351 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.257/0.266/0.275/0.009 ms
+  rtt min/avg/max/mdev = 0.306/0.329/0.351/0.023 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1769,15 +1799,23 @@ Total steps: 300
      Port path cost 19, Port priority 128
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
-  % Invalid input detected at '^' marker.
-  show spanning-tree summary totals
-                             ^
+  Switch is in pvst mode
+  Root bridge for: VLAN0001
+                       Blocking Listening Learning Forwarding STP Active
+  -------------------- -------- --------- -------- ---------- ----------
+  1 vlan               0        0         0        26         26
 
 [245/300] swbr <SW-BR> display stp topology-change
-  Error: Unrecognized command "display stp topology-change"
+  CIST topology change information
+    Number of topology changes        : 0
+    Time since last topology change   : 0 days 0h:0m:0s
+    Last topology change port         : -
 
 [246/300] dswbr <DSW-BR> display stp topology-change
-  Error: Unrecognized command "display stp topology-change"
+  CIST topology change information
+    Number of topology changes        : 0
+    Time since last topology change   : 0 days 0h:0m:0s
+    Last topology change port         : -
 
 [247/300] swbr <SW-BR> reset stp
   Error: Unrecognized command "reset stp"
@@ -1809,27 +1847,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.241 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.237 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
+  rtt min/avg/max/mdev = 0.237/0.237/0.237/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.175 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.182 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.175/0.175/0.175/0.000 ms
+  rtt min/avg/max/mdev = 0.182/0.182/0.182/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.165 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.190 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.165/0.165/0.165/0.000 ms
+  rtt min/avg/max/mdev = 0.190/0.190/0.190/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2324,8 +2362,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.581 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.601 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.581/0.581/0.581/0.000 ms
+  rtt min/avg/max/mdev = 0.601/0.601/0.601/0.000 ms

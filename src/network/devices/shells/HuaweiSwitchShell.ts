@@ -1293,7 +1293,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** `display stp` family — rendered from shell-tracked config + ports. */
   private registerStpDisplay(trie: CommandTrie): void {
     trie.register('display stp', 'Display STP status', () => this.displayStp());
+    trie.register('display stp global', 'Display STP global info', () => this.displayStp());
     trie.register('display stp brief', 'Display STP brief', () => this.displayStpBrief());
+    trie.register('display stp mode', 'Display STP working mode', () =>
+      `STP mode: ${this.stp.mode.toUpperCase()}`);
+    trie.register('display stp topology-change', 'Display STP topology changes', () => [
+      'CIST topology change information',
+      '  Number of topology changes        : 0',
+      '  Time since last topology change   : 0 days 0h:0m:0s',
+      '  Last topology change port         : -',
+    ].join('\n'));
+    trie.register('display stp region-configuration', 'Display MST region configuration', () => {
+      const lines = [
+        'Oper configuration',
+        `  Format selector      :0`,
+        `  Region name          :${this.mstRegion.name || (this.swRef?.getHostname() ?? '')}`,
+        `  Revision level       :${this.mstRegion.revision}`,
+        '',
+        '  Instance   VLANs Mapped',
+        '  0          1 to 4094',
+      ];
+      for (const [id, v] of this.mstRegion.instances) lines.push(`  ${String(id).padEnd(11)}${v}`);
+      return lines.join('\n');
+    });
     trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
       if (!this.swRef) return '';
       const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
