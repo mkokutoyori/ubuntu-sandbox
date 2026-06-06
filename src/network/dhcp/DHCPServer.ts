@@ -152,6 +152,40 @@ export class DHCPServer implements IProtocolEngine {
   setServerIdentifier(ip: string): void { this.serverIdentifier = ip; }
   getServerIdentifier(): string { return this.serverIdentifier; }
 
+  /**
+   * Option 54 value for a response. When no explicit server identifier was
+   * configured, fall back to the serving subnet's gateway — for a router
+   * acting as DHCP server this is its own interface address on that subnet.
+   */
+  private resolveServerId(pool?: DHCPPoolConfig | null): string {
+    if (this.serverIdentifier && this.serverIdentifier !== '0.0.0.0') return this.serverIdentifier;
+    const gw = pool?.defaultRouter;
+    if (gw && gw !== '0.0.0.0') return gw;
+    return this.serverIdentifier;
+  }
+
+  private findPoolForIP(ip: string | undefined): DHCPPoolConfig | null {
+    if (!ip) return null;
+    for (const [, pool] of this.pools) {
+      if (pool.network && pool.mask && this.isIPInPool(ip, pool)) return pool;
+    }
+    return null;
+  }
+
+  /**
+   * RFC 2131 §3.1: a client echoes the selected server's Option 54 in its
+   * REQUEST. Accept it when it matches our configured identifier or any pool
+   * gateway we advertise (so the response and validation stay consistent).
+   */
+  private isOurServerId(id: string | undefined): boolean {
+    if (!id || id === '0.0.0.0') return true;
+    if (id === this.serverIdentifier) return true;
+    for (const [, pool] of this.pools) {
+      if (pool.defaultRouter && pool.defaultRouter === id) return true;
+    }
+    return false;
+  }
+
   // ─── Pool Management ──────────────────────────────────────────────
 
   createPool(name: string): DHCPPoolConfig {
@@ -454,7 +488,7 @@ export class DHCPServer implements IProtocolEngine {
           return {
             ip: staticBinding.ipAddress,
             pool,
-            serverIdentifier: this.serverIdentifier,
+            serverIdentifier: this.resolveServerId(pool),
             xid: params.xid,
             renewalTime: pool.renewalTime,
             rebindingTime: pool.rebindingTime,
@@ -469,7 +503,7 @@ export class DHCPServer implements IProtocolEngine {
           return {
             ip,
             pool,
-            serverIdentifier: this.serverIdentifier,
+            serverIdentifier: this.resolveServerId(pool),
             xid: params.xid,
             renewalTime: pool.renewalTime,
             rebindingTime: pool.rebindingTime,
@@ -484,7 +518,7 @@ export class DHCPServer implements IProtocolEngine {
           return {
             ip,
             pool,
-            serverIdentifier: this.serverIdentifier,
+            serverIdentifier: this.resolveServerId(pool),
             xid: params.xid,
             renewalTime: pool.renewalTime,
             rebindingTime: pool.rebindingTime,
@@ -507,7 +541,7 @@ export class DHCPServer implements IProtocolEngine {
         return {
           ip,
           pool,
-          serverIdentifier: this.serverIdentifier,
+          serverIdentifier: this.resolveServerId(pool),
           xid: params.xid,
           renewalTime: pool.renewalTime,
           rebindingTime: pool.rebindingTime,
@@ -539,7 +573,7 @@ export class DHCPServer implements IProtocolEngine {
 
     // If server identifier is specified (SELECTING state), verify it matches us
     // Do NOT count requests destined for other servers (BUG FIX: no more stats.requests--)
-    if (params.serverIdentifier && params.serverIdentifier !== this.serverIdentifier) {
+    if (!this.isOurServerId(params.serverIdentifier)) {
       return null;
     }
 
@@ -603,7 +637,7 @@ export class DHCPServer implements IProtocolEngine {
 
       return {
         binding,
-        serverIdentifier: this.serverIdentifier,
+        serverIdentifier: this.resolveServerId(pool),
         xid: params.xid,
         renewalTime: pool.renewalTime,
         rebindingTime: pool.rebindingTime,
@@ -633,7 +667,7 @@ export class DHCPServer implements IProtocolEngine {
       : paramsOrMAC;
 
     // If server identifier is specified, verify it matches us
-    if (params.serverIdentifier && params.serverIdentifier !== this.serverIdentifier) {
+    if (!this.isOurServerId(params.serverIdentifier)) {
       return null; // Not for us, don't count
     }
 
@@ -644,7 +678,7 @@ export class DHCPServer implements IProtocolEngine {
       this.stats.naks++;
       return {
         type: 'NAK',
-        serverIdentifier: this.serverIdentifier,
+        serverIdentifier: this.resolveServerId(this.findPoolForIP(params.requestedIP)),
         xid: params.xid,
         message: `Requested address ${params.requestedIP} is in excluded range`,
       };
@@ -655,7 +689,7 @@ export class DHCPServer implements IProtocolEngine {
       this.stats.naks++;
       return {
         type: 'NAK',
-        serverIdentifier: this.serverIdentifier,
+        serverIdentifier: this.resolveServerId(this.findPoolForIP(params.requestedIP)),
         xid: params.xid,
         message: `Requested address ${params.requestedIP} has a conflict`,
       };
@@ -670,7 +704,7 @@ export class DHCPServer implements IProtocolEngine {
         this.stats.naks++;
         return {
           type: 'NAK',
-          serverIdentifier: this.serverIdentifier,
+          serverIdentifier: this.resolveServerId(pool),
           xid: params.xid,
           message: `Client ${params.clientMAC} denied by pool policy`,
         };
@@ -681,7 +715,7 @@ export class DHCPServer implements IProtocolEngine {
         this.stats.naks++;
         return {
           type: 'NAK',
-          serverIdentifier: this.serverIdentifier,
+          serverIdentifier: this.resolveServerId(pool),
           xid: params.xid,
           message: `Requested address ${params.requestedIP} already bound to another client`,
         };
@@ -715,7 +749,7 @@ export class DHCPServer implements IProtocolEngine {
       return {
         type: 'ACK',
         binding,
-        serverIdentifier: this.serverIdentifier,
+        serverIdentifier: this.resolveServerId(pool),
         xid: params.xid,
         renewalTime: pool.renewalTime,
         rebindingTime: pool.rebindingTime,
@@ -815,7 +849,7 @@ export class DHCPServer implements IProtocolEngine {
       if (!this.isIPInPool(params.clientIP, pool)) continue;
 
       return {
-        serverIdentifier: this.serverIdentifier,
+        serverIdentifier: this.resolveServerId(pool),
         xid: params.xid,
         mask: pool.mask,
         router: pool.defaultRouter,

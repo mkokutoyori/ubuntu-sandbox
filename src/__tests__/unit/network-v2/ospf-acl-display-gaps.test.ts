@@ -51,7 +51,7 @@ describe('OSPF/ACL display gaps', () => {
   });
 
   it('Cisco switch "show errdisable recovery" is accepted', async () => {
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     await sw.executeCommand('enable');
     const out = await sw.executeCommand('show errdisable recovery');
     expect(out).not.toMatch(/Invalid input/);

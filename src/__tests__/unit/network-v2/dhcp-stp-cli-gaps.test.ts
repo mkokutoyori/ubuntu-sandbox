@@ -47,14 +47,14 @@ describe('DHCP/STP CLI gaps', () => {
   });
 
   it('Huawei switch "stp edged-port default" is accepted', async () => {
-    const sw = new HuaweiSwitch('SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
     await sw.executeCommand('system-view');
     const out = await sw.executeCommand('stp edged-port default');
     expect(out).not.toMatch(/Invalid input|Unrecognized/);
   });
 
   it('Cisco switch "clear spanning-tree" subcommands are accepted', async () => {
-    const sw = new CiscoSwitch('SW2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW2');
     await sw.executeCommand('enable');
     const a = await sw.executeCommand('clear spanning-tree detected-protocols');
     const b = await sw.executeCommand('clear spanning-tree counters');
