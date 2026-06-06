@@ -62,7 +62,8 @@ export function registerHuaweiACLSystemCommands(
       return '';
     }
 
-    const num = parseInt(args[0], 10);
+    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
+    const num = parseInt(numTok, 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     if (num >= 2000 && num <= 2999) {
       ctx.setSelectedACLNumber(num);
@@ -87,7 +88,8 @@ export function registerHuaweiACLSystemCommands(
       getRouter().removeNamedAccessList(args[1]);
       return '';
     }
-    const num = parseInt(args[0], 10);
+    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
+    const num = parseInt(numTok, 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     getRouter().removeAccessList(num);
     return '';
@@ -121,7 +123,8 @@ export function buildHuaweiBasicACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
-  trie.registerGreedy('rule', 'Add ACL rule', (args) => {
+  trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
+    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
@@ -167,7 +170,8 @@ export function buildHuaweiAdvancedACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
-  trie.registerGreedy('rule', 'Add ACL rule', (args) => {
+  trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
+    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
