@@ -523,6 +523,25 @@ export abstract class Router extends Equipment {
     return true;
   }
 
+  unconfigureInterface(ifName: string): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    port.clearIP();
+
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName)
+    );
+
+    Logger.info(this.id, 'router:interface-config',
+      `${this.name}: ${ifName} IP address removed`);
+
+    if (this.ospfIntegration.isOSPFEnabled()) {
+      this._ospfAutoConverge();
+    }
+    return true;
+  }
+
   // ─── IPv6 Interface Configuration — delegated to IPv6DataPlane ──
 
   enableIPv6Routing(): void {

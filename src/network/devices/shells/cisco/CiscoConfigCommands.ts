@@ -307,6 +307,13 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     }
   });
 
+  trie.register('no ip address', 'Remove interface IP address', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r().unconfigureInterface(ifName);
+    return '';
+  });
+
   trie.registerGreedy('mtu', 'Set MTU', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
