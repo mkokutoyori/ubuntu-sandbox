@@ -635,6 +635,21 @@ export function displayCounters(router: Router): string {
   ].join('\n');
 }
 
+export function displayTrafficFilterApplied(router: Router): string {
+  const bindings = router._getInterfaceACLBindingsInternal();
+  const rows: string[] = [];
+  for (const [ifName, b] of bindings) {
+    if (b.inbound !== null) rows.push(` ${ifName.padEnd(33)} inbound    --     ${b.inbound}`);
+    if (b.outbound !== null) rows.push(` ${ifName.padEnd(33)} outbound   --     ${b.outbound}`);
+  }
+  if (rows.length === 0) return 'No traffic-filter applications.';
+  return [
+    ' Interface                         Direction  AppID  ACL/Policy',
+    '--------------------------------------------------------------------------------',
+    ...rows,
+  ].join('\n');
+}
+
 export function displayIpStatistics(router: Router): string {
   const c = router.getCounters();
   return [
@@ -1022,6 +1037,9 @@ export function registerDisplayCommands(
     }
     return kept.length ? kept.join('\n') : '';
   });
+
+  trie.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
+    displayTrafficFilterApplied(getRouter()));
 
   trie.register('display saved-configuration', 'Display saved configuration', () => {
     const s = getState();

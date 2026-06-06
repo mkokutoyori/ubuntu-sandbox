@@ -337,6 +337,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
         this.showArpInspectionIfs(this.d()));
       t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
+      t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
     }
 
     // ── clear / recovery ──
@@ -2132,6 +2133,31 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`ARP access list ${name}`);
       for (const e of acl.entries) lines.push(`    ${e.raw}`);
     }
+    return lines.join('\n');
+  }
+
+  private showErrdisableRecovery(): string {
+    const dai = this.d()._getArpInspectionConfig();
+    const arpRec = dai.errDisableRecoverySec > 0;
+    const psecRec = this.d()._getPsecRecoverySec() > 0;
+    const interval = arpRec ? dai.errDisableRecoverySec
+      : psecRec ? this.d()._getPsecRecoverySec() : 300;
+    const causes: [string, boolean][] = [
+      ['arp-inspection', arpRec],
+      ['psecure-violation', psecRec],
+      ['bpduguard', false],
+      ['loopback', false],
+      ['link-flap', false],
+    ];
+    const lines = [
+      'ErrDisable Reason            Timer Status',
+      '-----------------            --------------',
+    ];
+    for (const [cause, on] of causes) {
+      lines.push(`${cause.padEnd(29)}${on ? 'Enabled' : 'Disabled'}`);
+    }
+    lines.push('');
+    lines.push(`Timer interval: ${interval} seconds`);
     return lines.join('\n');
   }
 

@@ -719,6 +719,16 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
 
   trie.register('display ospf cumulative', 'Display OSPF cumulative statistics', () => displayOspfStatistics(getRouter()));
   trie.register('display ospf peer brief', 'Display brief OSPF peer information', () => displayOspfPeer(getRouter()));
+  trie.register('display ospf peer last-nbr-down', 'Display last neighbor-down record', () => {
+    const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return 'Error: OSPF is not configured.';
+    return [
+      `OSPF Process with Router ID ${ospf.getRouterId()}`,
+      '          Last Down OSPF Neighbors',
+      '',
+      ' There is no recorded neighbor down event.',
+    ].join('\n');
+  });
   trie.registerGreedy('display ospf lsdb nssa', 'Display NSSA LSAs', (_args) => displayOspfLsdbTyped(getRouter(), 7));
   trie.register('display ospf nexthop', 'Display OSPF nexthops', () => {
     const ospf = getRouter()._getOSPFEngineInternal();

@@ -1482,8 +1482,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (!trs || trs.size === 0) return 'No time-range configured.';
       return [...trs.values()].map(t => ` Name: ${t.name}, spec: ${t.spec}`).join('\n');
     });
-    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
-      'No traffic-filter applications.');
     t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
       const r = this.r() as any;
       const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
