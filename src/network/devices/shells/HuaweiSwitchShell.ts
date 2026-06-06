@@ -1367,6 +1367,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.displayStpBrief(this.resolveInterfaceName(args.join(' ')) || args.join(' '));
     });
+    trie.registerGreedy('display stp instance', 'Display STP for an MST instance', (args) => {
+      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id) || id < 0 || id > 4094) return 'Error: Wrong parameter found.';
+      if (id !== 0 && !this.mstRegion.instances.has(id)) {
+        return `Error: The instance ${id} does not exist.`;
+      }
+      return this.displayStpBrief(undefined, id);
+    });
   }
 
   private displayStp(): string {
@@ -1385,10 +1394,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     ].join('\n');
   }
 
-  private displayStpBrief(only?: string): string {
+  private displayStpBrief(only?: string, mstid = 0): string {
     if (!this.swRef) return '';
     const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent }).getStpAgent?.();
     const header = ' MSTID  Port                        Role  STP State     Protection';
+    const mst = String(mstid).padStart(6);
     const rows: string[] = [];
     for (const p of this.swRef.getPortNames()) {
       if (only && p !== only) continue;
@@ -1398,7 +1408,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
       const r = ag?.getPortRole(p) ?? 'designated';
       const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE' : r === 'disabled' ? 'DISA' : 'DESI';
-      rows.push(`     0  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
+      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
     }
     if (only && rows.length === 0) {
       return `Error: The port ${only} does not exist.`;

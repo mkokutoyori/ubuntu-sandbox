@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — vlan
-Generated: 2026-06-06T15:39:42.961Z
+Generated: 2026-06-06T15:46:03.035Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=VLAN / IEEE 802.1Q — base VLAN, trunks dot1q (allowed/native/pruning), ports d'accès, voice VLAN, VTP/DTP, VLANIF/SVI, MAC & STP par VLAN, et inter-VLAN routé fonctionnel (router-on-a-stick R-HQ) — Cisco (SW-HQ/DSW) + Huawei (SW-BR/DSW-BR) + generic
 Total steps: 401
@@ -812,12 +812,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.326 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.206 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.334 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.235 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.206/0.266/0.326/0.060 ms
+  rtt min/avg/max/mdev = 0.235/0.284/0.334/0.049 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -977,31 +977,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.381 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.280 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.346 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.193 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.280/0.330/0.381/0.050 ms
+  rtt min/avg/max/mdev = 0.193/0.269/0.346/0.077 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.254 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.208 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.261 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.183 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.208/0.231/0.254/0.023 ms
+  rtt min/avg/max/mdev = 0.183/0.222/0.261/0.039 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.745 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.310 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.483 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.613 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.416 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.417 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.513/0.745/0.179 ms
+  rtt min/avg/max/mdev = 0.416/0.482/0.613/0.093 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1028,12 +1028,12 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.433 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.432 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.363 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.366 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.432/0.432/0.433/0.001 ms
+  rtt min/avg/max/mdev = 0.363/0.364/0.366/0.002 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1601,8 +1601,32 @@ Total steps: 401
   Gi0/0            Disa  FWD  19        128.00    P2p
   Gi0/1            Disa  FWD  19        128.01    P2p
 
-[299/401] swbr <SW-BR> display stp vlan 10
-  Error: Unrecognized command "display stp vlan 10"
+[299/401] swbr <SW-BR> display stp instance 0
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
 
 [300/401] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
@@ -2112,19 +2136,19 @@ Total steps: 401
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.214 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.149 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.214/0.214/0.214/0.000 ms
+  rtt min/avg/max/mdev = 0.149/0.149/0.149/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.321 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.286 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.321/0.321/0.321/0.000 ms
+  rtt min/avg/max/mdev = 0.286/0.286/0.286/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2567,19 +2591,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.461 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.359 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.461/0.461/0.461/0.000 ms
+  rtt min/avg/max/mdev = 0.359/0.359/0.359/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.514 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.396 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.514/0.514/0.514/0.000 ms
+  rtt min/avg/max/mdev = 0.396/0.396/0.396/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2721,11 +2745,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.340 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.280 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.340/0.340/0.340/0.000 ms
+  rtt min/avg/max/mdev = 0.280/0.280/0.280/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   

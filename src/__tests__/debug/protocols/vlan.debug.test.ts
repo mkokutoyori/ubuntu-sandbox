@@ -249,7 +249,7 @@ function buildSteps(): ProtoStepInput[] {
     { on: 'swhq', cmd: 'show spanning-tree vlan 20' },
     { on: 'swhq', cmd: 'show spanning-tree vlan 10 brief' },
     { on: 'dsw1', cmd: 'show spanning-tree vlan 10' },
-    { on: 'swbr', cmd: 'display stp vlan 10' },
+    { on: 'swbr', cmd: 'display stp instance 0' },
     { on: 'swbr', cmd: 'display stp brief' },
 
     { section: 'VLAN — running-config & vérifications consolidées', on: 'swhq', cmd: 'show running-config | section vlan' },
