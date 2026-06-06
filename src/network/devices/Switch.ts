@@ -29,7 +29,8 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ETHERTYPE_IPV4, ARPPacket, IPAddress, SubnetMask, IP_PROTO_ICMP, computeIPv4Checksum } from '../core/types';
+import type { IPv4Packet, ICMPPacket } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -149,6 +150,41 @@ export abstract class Switch extends Equipment {
 
   // ─── Management ARP Table ──────────────────────────────────────
   private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
+
+  // ─── L3 SVI / VLANIF (Layer-3 switching) ───────────────────────
+  protected svis: Map<number, { ip: IPAddress; mask: SubnetMask; up: boolean }> = new Map();
+  private _l3Mac: MACAddress | null = null;
+  private l3Queue: Array<{ vlan: number; nextHop: string; pkt: IPv4Packet }> = [];
+
+  private l3Mac(): MACAddress {
+    if (!this._l3Mac) this._l3Mac = MACAddress.generate();
+    return this._l3Mac;
+  }
+
+  /** Configure (or update) a Layer-3 SVI / VLANIF on a VLAN. */
+  configureVlanInterface(vlanId: number, ip: IPAddress, mask: SubnetMask): void {
+    this.svis.set(vlanId, { ip, mask, up: true });
+  }
+
+  removeVlanInterface(vlanId: number): boolean {
+    return this.svis.delete(vlanId);
+  }
+
+  getVlanInterface(vlanId: number): { ip: IPAddress; mask: SubnetMask; up: boolean } | undefined {
+    return this.svis.get(vlanId);
+  }
+
+  getVlanInterfaces(): Map<number, { ip: IPAddress; mask: SubnetMask; up: boolean }> {
+    return this.svis;
+  }
+
+  private sviForSubnet(ip: IPAddress): { vlan: number; svi: { ip: IPAddress; mask: SubnetMask; up: boolean } } | null {
+    for (const [vlan, svi] of this.svis) {
+      if (!svi.up) continue;
+      if (ip.isInSameSubnet(svi.ip, svi.mask)) return { vlan, svi };
+    }
+    return null;
+  }
 
   // ─── Dynamic ARP Inspection ────────────────────────────────────
   private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
@@ -849,6 +885,9 @@ export abstract class Switch extends Equipment {
       Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
     }
 
+    // ─── Step 2.5: L3 SVI (inter-VLAN routing) ──────────────────
+    if (this.svis.size > 0 && this.handleL3(ingressVlan, frame)) return;
+
     // ─── Step 3: Forwarding Decision ────────────────────────────
     // In learning state: learn MACs but do NOT forward frames
     if (stpState === 'learning') {
@@ -939,6 +978,113 @@ export abstract class Switch extends Equipment {
       } else {
         this.sendFrame(portName, this.addTag(frame, vlan));
       }
+    }
+  }
+
+  // ─── L3 SVI handling (inter-VLAN routing) ─────────────────────────
+
+  private handleL3(ingressVlan: number, frame: EthernetFrame): boolean {
+    const l3macStr = this.l3Mac().toString().toLowerCase();
+
+    if (frame.etherType === ETHERTYPE_ARP) {
+      const arp = frame.payload as ARPPacket;
+      if (!arp || arp.type !== 'arp') return false;
+      if (arp.operation === 'reply') {
+        this.flushL3Queue(arp.senderIP.toString(), arp.senderMAC);
+        return false; // let L2 forward the unicast reply too
+      }
+      const svi = this.svis.get(ingressVlan);
+      if (arp.operation === 'request' && svi && svi.up && arp.targetIP.equals(svi.ip)) {
+        const reply: ARPPacket = {
+          type: 'arp', operation: 'reply',
+          senderMAC: this.l3Mac(), senderIP: svi.ip,
+          targetMAC: arp.senderMAC, targetIP: arp.senderIP,
+        };
+        this.deliverIntoVlan(ingressVlan, {
+          srcMAC: this.l3Mac(), dstMAC: arp.senderMAC,
+          etherType: ETHERTYPE_ARP, payload: reply,
+        });
+        return true;
+      }
+      return false;
+    }
+
+    if (frame.etherType === ETHERTYPE_IPV4 && frame.dstMAC.toString().toLowerCase() === l3macStr) {
+      const pkt = frame.payload as IPv4Packet;
+      if (!pkt || pkt.type !== 'ipv4') return true;
+
+      for (const [, svi] of this.svis) {
+        if (svi.up && svi.ip.equals(pkt.destinationIP)) {
+          this.l3LocalDeliver(svi, pkt);
+          return true;
+        }
+      }
+
+      const dest = this.sviForSubnet(pkt.destinationIP);
+      if (!dest) return true;
+      const ttl = pkt.ttl - 1;
+      if (ttl <= 0) return true;
+      const fwd: IPv4Packet = { ...pkt, ttl, headerChecksum: 0 };
+      fwd.headerChecksum = computeIPv4Checksum(fwd);
+      this.l3RouteToVlan(dest.vlan, pkt.destinationIP.toString(), fwd);
+      return true;
+    }
+
+    return false;
+  }
+
+  private l3LocalDeliver(svi: { ip: IPAddress; mask: SubnetMask; up: boolean }, pkt: IPv4Packet): void {
+    if (pkt.protocol !== IP_PROTO_ICMP) return;
+    const icmp = pkt.payload as ICMPPacket;
+    if (!icmp || icmp.type !== 'icmp' || icmp.icmpType !== 'echo-request') return;
+    const reply: ICMPPacket = { ...icmp, icmpType: 'echo-reply' };
+    const ipReply: IPv4Packet = {
+      ...pkt, sourceIP: svi.ip, destinationIP: pkt.sourceIP,
+      ttl: 255, headerChecksum: 0, payload: reply,
+    };
+    ipReply.headerChecksum = computeIPv4Checksum(ipReply);
+    const dest = this.sviForSubnet(pkt.sourceIP);
+    if (dest) this.l3RouteToVlan(dest.vlan, pkt.sourceIP.toString(), ipReply);
+  }
+
+  private l3RouteToVlan(vlan: number, nextHopIp: string, pkt: IPv4Packet): void {
+    const arpEntry = this.arpTable.get(nextHopIp);
+    if (arpEntry) {
+      this.deliverIntoVlan(vlan, {
+        srcMAC: this.l3Mac(), dstMAC: arpEntry.mac,
+        etherType: ETHERTYPE_IPV4, payload: pkt,
+      });
+      return;
+    }
+    this.l3Queue.push({ vlan, nextHop: nextHopIp, pkt });
+    const svi = this.svis.get(vlan);
+    if (!svi) return;
+    const req: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: this.l3Mac(), senderIP: svi.ip,
+      targetMAC: MACAddress.broadcast(), targetIP: new IPAddress(nextHopIp),
+    };
+    this.floodFrame('', { srcMAC: this.l3Mac(), dstMAC: MACAddress.broadcast(), etherType: ETHERTYPE_ARP, payload: req }, vlan);
+  }
+
+  private flushL3Queue(ip: string, mac: MACAddress): void {
+    const pending = this.l3Queue.filter(q => q.nextHop === ip);
+    if (pending.length === 0) return;
+    this.l3Queue = this.l3Queue.filter(q => q.nextHop !== ip);
+    for (const q of pending) {
+      this.deliverIntoVlan(q.vlan, {
+        srcMAC: this.l3Mac(), dstMAC: mac, etherType: ETHERTYPE_IPV4, payload: q.pkt,
+      });
+    }
+  }
+
+  private deliverIntoVlan(vlan: number, frame: EthernetFrame): void {
+    const dstMac = frame.dstMAC.toString().toLowerCase();
+    const entry = this.macTable.get(`${vlan}:${dstMac}`);
+    if (entry && !frame.dstMAC.isBroadcast()) {
+      this.forwardToPort(entry.port, frame, vlan);
+    } else {
+      this.floodFrame('', frame, vlan);
     }
   }
 
