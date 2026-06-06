@@ -172,7 +172,8 @@ function buildSteps(): ProtoStepInput[] {
 
     { section: 'inter-VLAN routé — bascule des hôtes & vérification', on: 'whq', cmd: 'netsh interface ip set address eth0 static 10.1.20.11 255.255.255.0 10.1.20.1' },
     { on: 'whq', cmd: 'ipconfig' },
-    { on: 'lhq', cmd: 'arp -d' },
+    { on: 'lhq', cmd: 'ip neigh flush all' },
+    { on: 'whq', cmd: 'arp -d *' },
     { on: 'lhq', cmd: `ping -c 2 ${SITE.hq.gw}` },
     { on: 'lhq', cmd: 'ping -c 2 10.1.20.1' },
     { on: 'lhq', cmd: 'ping -c 3 10.1.20.11' },
