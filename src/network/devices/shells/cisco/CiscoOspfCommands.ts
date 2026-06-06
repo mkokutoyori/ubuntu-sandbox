@@ -307,6 +307,46 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
+  trie.registerGreedy('no default-information originate', 'Stop distributing default route', () => {
+    ctx.r()._getOSPFEngineInternal()?.setDefaultInformationOriginate(false);
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.defaultInfoMetricType = undefined;
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no redistribute', 'Stop redistributing routes', (args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const protocol = (args[0] ?? '').toLowerCase();
+    if (protocol === 'static') extra.redistributeStatic = undefined;
+    else if (protocol === 'connected') extra.redistributeConnected = undefined;
+    else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no distribute-list', 'Remove distribute-list filter', () => {
+    ctx.r()._getOSPFExtraConfig().distributeList = undefined;
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no area', 'Remove OSPF area parameter', (args) => {
+    const areaId = args[0];
+    const subCmd = (args[1] ?? '').toLowerCase();
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (!ospf || areaId === undefined) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (subCmd === 'range') {
+      const ranges = extra.areaRanges.get(areaId);
+      if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[2] && r.mask === args[3])));
+    } else if (subCmd === 'stub' || subCmd === 'nssa') {
+      ospf.setAreaType?.(areaId, 'normal');
+    }
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
   trie.registerGreedy('timers throttle spf', 'Set OSPF SPF throttle timers', (args) => {
     if (args.length < 3) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
@@ -1015,6 +1055,16 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('show ip ospf neighbor', 'Display OSPF neighbor table', () => showIpOspfNeighbor(getRouter()));
+  trie.registerGreedy('show ip ospf neighbor', 'Display OSPF neighbor table (filtered)', (args) => {
+    if (!args.length || args[0].toLowerCase() === 'detail') return showIpOspfNeighbor(getRouter());
+    const full = showIpOspfNeighbor(getRouter());
+    const lines = full.split('\n');
+    const header = lines.filter(l => /Neighbor ID|^$/.test(l));
+    const key = args[0];
+    const matched = lines.filter(l => l.includes(key));
+    if (matched.length === 0) return header.join('\n');
+    return [lines[0], ...matched].join('\n');
+  });
   trie.register('show ip ospf summary-address', 'Display OSPF summary addresses', () => showIpOspfSummaryAddress(getRouter()));
   trie.register('show ip ospf rib', 'Display OSPF local RIB', () => showIpOspfRib(getRouter()));
   trie.register('show ip ospf events', 'Display OSPF event log', () => showIpOspfEvents(getRouter()));
