@@ -1575,7 +1575,9 @@ function showIpOspfNeighborDetail(router: Router): string {
     lines.push(` Neighbor ${n.routerId}, interface address ${n.ipAddress}`);
     lines.push(`    In the area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
     lines.push(`    Neighbor priority is ${n.priority}, State is ${n.state.toUpperCase()}, ${ospf.getNeighborChangeCount()} state changes`);
-    lines.push(`    DR is ${n.neighborDR} BDR is ${n.neighborBDR}`);
+    const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
+    const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
+    lines.push(`    DR is ${drId} BDR is ${bdrId}`);
     lines.push(`    Options is 0x${(n.options ?? 0x02).toString(16).padStart(2, '0')}`);
     lines.push(`    Dead timer due in 00:00:${String(deadInterval).padStart(2, '0')}`);
     lines.push(`    Neighbor is up for 00:00:00`);

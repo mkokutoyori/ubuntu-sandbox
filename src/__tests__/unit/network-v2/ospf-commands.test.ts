@@ -128,6 +128,9 @@ describe('show ip ospf neighbor detail', () => {
     expect(output).toMatch(/[Dd]ead/);
     // Priority
     expect(output).toMatch(/[Pp]riority/);
+    // DR/BDR must reflect the elected designated routers, not 0.0.0.0
+    expect(output).toContain('10.0.12.');
+    expect(output).not.toContain('DR is 0.0.0.0 BDR is 0.0.0.0');
   });
 
   it('should show "no neighbor" message when no neighbors', async () => {
