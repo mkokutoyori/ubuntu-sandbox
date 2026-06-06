@@ -717,6 +717,13 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (port && !isNaN(n)) port.setArpTimeoutSec(n);
     return '';
   });
+  trie.registerGreedy('undo arp expire-time', 'Reset ARP expire time', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) port.setArpTimeoutSec(4 * 60 * 60);
+    return '';
+  });
   trie.register('arp-proxy enable', 'Enable proxy-ARP', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';

@@ -683,6 +683,11 @@ function parseAbsolute(args: string[]): import('../../router/security/CiscoSecur
 export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
   const sec = () => getSecurityConfig(ctx.r());
 
+  trie.register('ip unreachables', 'Enable ICMP unreachables', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    sec().ifaceFlags(i).noUnreachables = false;
+    return '';
+  });
   trie.register('no ip unreachables', 'Disable ICMP unreachables', () => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
     sec().ifaceFlags(i).noUnreachables = true;

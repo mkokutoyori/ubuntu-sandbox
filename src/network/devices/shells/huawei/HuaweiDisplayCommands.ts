@@ -635,6 +635,39 @@ export function displayCounters(router: Router): string {
   ].join('\n');
 }
 
+export function displayIpStatistics(router: Router): string {
+  const c = router.getCounters();
+  return [
+    'IP Sent packets statistics:',
+    `  Total: ${c.ipForwDatagrams}`,
+    `  Local sent out: ${c.ipForwDatagrams}`,
+    `  Forwarded: ${c.ipForwDatagrams}`,
+    '',
+    'IP Received packets statistics:',
+    `  Bytes in: ${c.ifInOctets}`,
+    `  Bytes out: ${c.ifOutOctets}`,
+    `  Header errors: ${c.ipInHdrErrors}`,
+    `  Address errors: ${c.ipInAddrErrors}`,
+  ].join('\n');
+}
+
+export function displayIcmpStatistics(router: Router): string {
+  const c = router.getCounters();
+  return [
+    'ICMP statistics:',
+    '  Received:',
+    '    echo: 0',
+    '    echo reply: 0',
+    '    destination unreachable: 0',
+    '    time exceeded: 0',
+    '  Sent:',
+    `    total: ${c.icmpOutMsgs}`,
+    `    echo reply: ${c.icmpOutEchoReps}`,
+    `    destination unreachable: ${c.icmpOutDestUnreachs}`,
+    `    time exceeded: ${c.icmpOutTimeExcds}`,
+  ].join('\n');
+}
+
 function renderHuaweiIpv6Rows(rt: any[]): string[] {
   const rows: string[] = [];
   for (const r of rt) {
@@ -957,6 +990,8 @@ export function registerDisplayCommands(
     return displayIpRoutingTable(getRouter());
   });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
+  trie.register('display ip statistics', 'Display IP statistics', () => displayIpStatistics(getRouter()));
+  trie.register('display icmp statistics', 'Display ICMP statistics', () => displayIcmpStatistics(getRouter()));
   trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
   trie.register('display arp all', 'Display all ARP entries', () => displayArp(getRouter()));
   trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));

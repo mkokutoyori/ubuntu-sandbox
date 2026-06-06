@@ -66,6 +66,14 @@ export function registerHuaweiCommonMgmt(trie: CommandTrie): void {
   trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
   trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');
   trie.register('undo terminal debugging', 'Disable terminal debugging', () => 'Info: Current terminal debugging is off.');
+  trie.registerGreedy('debugging ip icmp', 'Enable ICMP debugging', (args) =>
+    `Info: ip icmp${args.length ? ' ' + args.join(' ') : ''} debugging is on.`);
+  trie.registerGreedy('debugging ip packet', 'Enable IP packet debugging', (args) =>
+    `Info: ip packet${args.length ? ' ' + args.join(' ') : ''} debugging is on.`);
+  trie.registerGreedy('undo debugging ip icmp', 'Disable ICMP debugging', () =>
+    'Info: ip icmp debugging is off.');
+  trie.registerGreedy('undo debugging ip packet', 'Disable IP packet debugging', () =>
+    'Info: ip packet debugging is off.');
   trie.registerGreedy('debugging', 'Enable debugging', (args) =>
     `Info: ${args.join(' ') || 'all'} debugging is on.`);
   trie.registerGreedy('undo debugging', 'Disable debugging', (args) =>
