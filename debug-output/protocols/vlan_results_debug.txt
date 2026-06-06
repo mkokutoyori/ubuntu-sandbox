@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — vlan
-Generated: 2026-06-06T13:09:12.300Z
+Generated: 2026-06-06T15:35:50.704Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=VLAN / IEEE 802.1Q — base VLAN, trunks dot1q (allowed/native/pruning), ports d'accès, voice VLAN, VTP/DTP, VLANIF/SVI, MAC & STP par VLAN, et inter-VLAN routé fonctionnel (router-on-a-stick R-HQ) — Cisco (SW-HQ/DSW) + Huawei (SW-BR/DSW-BR) + generic
 Total steps: 401
@@ -812,12 +812,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.255 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.202 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.271 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.208 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.202/0.228/0.255/0.027 ms
+  rtt min/avg/max/mdev = 0.208/0.240/0.271/0.032 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -977,31 +977,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.285 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.204 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.300 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.190 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.204/0.245/0.285/0.041 ms
+  rtt min/avg/max/mdev = 0.190/0.245/0.300/0.055 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.194 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.201 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.235 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.140 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.194/0.197/0.201/0.004 ms
+  rtt min/avg/max/mdev = 0.140/0.187/0.235/0.047 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.693 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.441 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.573 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.617 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.284 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.369 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.441/0.569/0.693/0.103 ms
+  rtt min/avg/max/mdev = 0.284/0.423/0.617/0.141 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1013,7 +1013,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1028,12 +1028,12 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=3.453 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.402 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.359 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.375 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.402/1.927/3.453/1.526 ms
+  rtt min/avg/max/mdev = 0.359/0.367/0.375/0.008 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1384,43 +1384,8 @@ Total steps: 401
 <empty>
 
 
---- [288] § VLAN — VLANIF / SVI L3 (Huawei, best-effort) ---
-[288/401] swbr <SW-BR> system-view
-  Enter system view, return user view with return command.
-
-[289/401] swbr [SW-BR] interface Vlanif10
-  Error: Wrong parameter found at '^' position.
-
-[290/401] swbr [SW-BR] ip address 10.2.2.252 255.255.255.0
-  Error: Unrecognized command "ip address 10.2.2.252 255.255.255.0"
-
-[291/401] swbr [SW-BR] quit
-<empty>
-
-[292/401] swbr <SW-BR> interface Vlanif30
-  Error: Unrecognized command "interface Vlanif30"
-
-[293/401] swbr <SW-BR> ip address 10.2.30.1 255.255.255.0
-  Error: Unrecognized command "ip address 10.2.30.1 255.255.255.0"
-
-[294/401] swbr <SW-BR> quit
-<empty>
-
-[295/401] swbr <SW-BR> quit
-<empty>
-
-[296/401] swbr <SW-BR> display ip interface brief
-  *down: administratively down
-  Interface                   IP Address/Mask      Physical   Protocol
-  MEth0/0/1                   unassigned           down       down
-  (SW-BR: L2 switch — no Vlanif/L3 interfaces)
-
-[297/401] swbr <SW-BR> display interface Vlanif10
-  Error: Wrong parameter found at '^' position.
-
-
---- [298] § VLAN — table MAC par VLAN ---
-[298/401] swhq SW-HQ# show mac address-table
+--- [288] § VLAN — table MAC par VLAN ---
+[288/401] swhq SW-HQ# show mac address-table
   Mac Address Table
   -------------------------------------------
   
@@ -1436,17 +1401,17 @@ Total steps: 401
   
   Total Mac Addresses for this criterion: 7
 
-[299/401] swhq SW-HQ# show mac address-table vlan 10
+[289/401] swhq SW-HQ# show mac address-table vlan 10
   Mac Address Table
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
 
-[300/401] swhq SW-HQ# show mac address-table vlan 20
+[290/401] swhq SW-HQ# show mac address-table vlan 20
   Mac Address Table
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
 
-[301/401] swhq SW-HQ# show mac address-table dynamic
+[291/401] swhq SW-HQ# show mac address-table dynamic
   Mac Address Table
   -------------------------------------------
   
@@ -1462,7 +1427,7 @@ Total steps: 401
   
   Total Mac Addresses for this criterion: 7
 
-[302/401] swbr <SW-BR> display mac-address
+[292/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From   Type
@@ -1475,11 +1440,11 @@ Total steps: 401
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
-[303/401] swbr <SW-BR> display mac-address vlan 10
+[293/401] swbr <SW-BR> display mac-address vlan 10
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
 
-[304/401] dswbr <DSW-BR> display mac-address
+[294/401] dswbr <DSW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From   Type
@@ -1491,8 +1456,8 @@ Total steps: 401
   Total items displayed = 3
 
 
---- [305] § VLAN — spanning-tree par VLAN ---
-[305/401] swhq SW-HQ# show spanning-tree vlan 10
+--- [295] § VLAN — spanning-tree par VLAN ---
+[295/401] swhq SW-HQ# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
@@ -1529,7 +1494,7 @@ Total steps: 401
   Gi0/0            Disa  FWD  19        128.00    P2p
   Gi0/1            Disa  FWD  19        128.01    P2p
 
-[306/401] swhq SW-HQ# show spanning-tree vlan 20
+[296/401] swhq SW-HQ# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
@@ -1566,7 +1531,7 @@ Total steps: 401
   Gi0/0            Disa  FWD  19        128.00    P2p
   Gi0/1            Disa  FWD  19        128.01    P2p
 
-[307/401] swhq SW-HQ# show spanning-tree vlan 10 brief
+[297/401] swhq SW-HQ# show spanning-tree vlan 10 brief
   VLAN0010
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
@@ -1603,7 +1568,7 @@ Total steps: 401
   Gi0/0            Disa  FWD  19        128.00    P2p
   Gi0/1            Disa  FWD  19        128.01    P2p
 
-[308/401] dsw1 DSW-HQ-1# show spanning-tree vlan 10
+[298/401] dsw1 DSW-HQ-1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
@@ -1640,10 +1605,10 @@ Total steps: 401
   Gi0/0            Disa  FWD  19        128.00    P2p
   Gi0/1            Disa  FWD  19        128.01    P2p
 
-[309/401] swbr <SW-BR> display stp vlan 10
+[299/401] swbr <SW-BR> display stp vlan 10
   Error: Unrecognized command "display stp vlan 10"
 
-[310/401] swbr <SW-BR> display stp brief
+[300/401] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
        0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
@@ -1671,8 +1636,8 @@ Total steps: 401
        0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
 
 
---- [311] § VLAN — running-config & vérifications consolidées ---
-[311/401] swhq SW-HQ# show running-config | section vlan
+--- [301] § VLAN — running-config & vérifications consolidées ---
+[301/401] swhq SW-HQ# show running-config | section vlan
   vlan 10
    name DATA
   vlan 20
@@ -1682,13 +1647,13 @@ Total steps: 401
   vlan 99
    name NATIVE
 
-[312/401] swhq SW-HQ# show running-config interface FastEthernet0/4
+[302/401] swhq SW-HQ# show running-config interface FastEthernet0/4
   interface FastEthernet0/4
    switchport mode trunk
    switchport trunk encapsulation dot1q
   end
 
-[313/401] swhq SW-HQ# show interfaces status
+[303/401] swhq SW-HQ# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -1718,17 +1683,17 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[314/401] dsw1 DSW-HQ-1# show interfaces trunk
+[304/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
   FastEthernet0/1on    802.1q         trunking 99
   FastEthernet0/2on    802.1q         trunking 1
 
-[315/401] dsw2 DSW-HQ-2# show interfaces trunk
+[305/401] dsw2 DSW-HQ-2# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
   FastEthernet0/1on    802.1q         trunking 99
   FastEthernet0/2on    802.1q         trunking 1
 
-[316/401] swbr <SW-BR> display current-configuration | include vlan
+[306/401] swbr <SW-BR> display current-configuration | include vlan
   vlan 10
    name VLAN0010
   vlan 20
@@ -1743,7 +1708,7 @@ Total steps: 401
    port trunk allow-pass vlan all
    port trunk allow-pass vlan all
 
-[317/401] swbr <SW-BR> display port vlan
+[307/401] swbr <SW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
   GigabitEthernet0/0/0    access       1     -
   GigabitEthernet0/0/1    access       1     -
@@ -1770,7 +1735,7 @@ Total steps: 401
   GigabitEthernet0/0/22   access       1     -
   GigabitEthernet0/0/23   access       1     -
 
-[318/401] dswbr <DSW-BR> display port vlan
+[308/401] dswbr <DSW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
   GigabitEthernet0/0/0    access       1     -
   GigabitEthernet0/0/1    trunk        1     -
@@ -1798,8 +1763,8 @@ Total steps: 401
   GigabitEthernet0/0/23   access       1     -
 
 
---- [319] § VLAN — détail par switch (Cisco) ---
-[319/401] swhq SW-HQ# show vlan brief
+--- [309] § VLAN — détail par switch (Cisco) ---
+[309/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
@@ -1808,7 +1773,7 @@ Total steps: 401
   30   MGMT                             active    
   99   NATIVE                           active    
 
-[320/401] swhq SW-HQ# show vlan brief
+[310/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
@@ -1817,23 +1782,23 @@ Total steps: 401
   30   MGMT                             active    
   99   NATIVE                           active    
 
-[321/401] swhq SW-HQ# show vlan id 10
+[311/401] swhq SW-HQ# show vlan id 10
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   10   DATA                             active    Fa0/2
 
-[322/401] swhq SW-HQ# show vlan id 20
+[312/401] swhq SW-HQ# show vlan id 20
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   20   VOICE                            active    Fa0/3
 
-[323/401] swhq SW-HQ# show interfaces trunk
+[313/401] swhq SW-HQ# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
   FastEthernet0/1on    802.1q         trunking 1
   FastEthernet0/4on    802.1q         trunking 99
   FastEthernet0/5on    802.1q         trunking 99
 
-[324/401] swhq SW-HQ# show interfaces status
+[314/401] swhq SW-HQ# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -1863,7 +1828,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[325/401] swhq SW-HQ# show mac address-table
+[315/401] swhq SW-HQ# show mac address-table
   Mac Address Table
   -------------------------------------------
   
@@ -1879,7 +1844,7 @@ Total steps: 401
   
   Total Mac Addresses for this criterion: 7
 
-[326/401] dsw1 DSW-HQ-1# show vlan brief
+[316/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
@@ -1888,22 +1853,22 @@ Total steps: 401
   30   MGMT                             active    
   99   NATIVE                           active    
 
-[327/401] dsw1 DSW-HQ-1# show vlan id 10
+[317/401] dsw1 DSW-HQ-1# show vlan id 10
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   10   DATA                             active    
 
-[328/401] dsw1 DSW-HQ-1# show vlan id 20
+[318/401] dsw1 DSW-HQ-1# show vlan id 20
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   20   VOICE                            active    
 
-[329/401] dsw1 DSW-HQ-1# show interfaces trunk
+[319/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
   FastEthernet0/1on    802.1q         trunking 99
   FastEthernet0/2on    802.1q         trunking 1
 
-[330/401] dsw1 DSW-HQ-1# show interfaces status
+[320/401] dsw1 DSW-HQ-1# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -1933,7 +1898,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[331/401] dsw1 DSW-HQ-1# show mac address-table
+[321/401] dsw1 DSW-HQ-1# show mac address-table
   Mac Address Table
   -------------------------------------------
   
@@ -1946,7 +1911,7 @@ Total steps: 401
   
   Total Mac Addresses for this criterion: 4
 
-[332/401] dsw2 DSW-HQ-2# show vlan brief
+[322/401] dsw2 DSW-HQ-2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
@@ -1955,22 +1920,22 @@ Total steps: 401
   30   MGMT                             active    
   99   NATIVE                           active    
 
-[333/401] dsw2 DSW-HQ-2# show vlan id 10
+[323/401] dsw2 DSW-HQ-2# show vlan id 10
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   10   DATA                             active    
 
-[334/401] dsw2 DSW-HQ-2# show vlan id 20
+[324/401] dsw2 DSW-HQ-2# show vlan id 20
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   20   VOICE                            active    
 
-[335/401] dsw2 DSW-HQ-2# show interfaces trunk
+[325/401] dsw2 DSW-HQ-2# show interfaces trunk
   Port      Mode  Encapsulation  Status   Native vlan
   FastEthernet0/1on    802.1q         trunking 99
   FastEthernet0/2on    802.1q         trunking 1
 
-[336/401] dsw2 DSW-HQ-2# show interfaces status
+[326/401] dsw2 DSW-HQ-2# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2000,7 +1965,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[337/401] dsw2 DSW-HQ-2# show mac address-table
+[327/401] dsw2 DSW-HQ-2# show mac address-table
   Mac Address Table
   -------------------------------------------
   
@@ -2014,8 +1979,8 @@ Total steps: 401
   Total Mac Addresses for this criterion: 4
 
 
---- [338] § VLAN — détail par switch (Huawei) ---
-[338/401] swbr <SW-BR> display vlan
+--- [328] § VLAN — détail par switch (Huawei) ---
+[328/401] swbr <SW-BR> display vlan
   VLAN ID  Name                          Status   Ports
   -------  ----------------------------  -------  ----------------------------
   1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
@@ -2024,7 +1989,7 @@ Total steps: 401
   30       VLAN0030                      active   
   99       VLAN0099                      active   
 
-[339/401] swbr <SW-BR> display vlan
+[329/401] swbr <SW-BR> display vlan
   VLAN ID  Name                          Status   Ports
   -------  ----------------------------  -------  ----------------------------
   1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
@@ -2033,15 +1998,15 @@ Total steps: 401
   30       VLAN0030                      active   
   99       VLAN0099                      active   
 
-[340/401] swbr <SW-BR> display vlan 10
+[330/401] swbr <SW-BR> display vlan 10
   VLAN ID  Name                          Status   Ports
   10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3
 
-[341/401] swbr <SW-BR> display vlan 20
+[331/401] swbr <SW-BR> display vlan 20
   VLAN ID  Name                          Status   Ports
   20       VLAN0020                      active   
 
-[342/401] swbr <SW-BR> display port vlan
+[332/401] swbr <SW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
   GigabitEthernet0/0/0    access       1     -
   GigabitEthernet0/0/1    access       1     -
@@ -2068,7 +2033,7 @@ Total steps: 401
   GigabitEthernet0/0/22   access       1     -
   GigabitEthernet0/0/23   access       1     -
 
-[343/401] swbr <SW-BR> display mac-address
+[333/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From   Type
@@ -2081,7 +2046,7 @@ Total steps: 401
   -------------------------------------------------------------------------------
   Total items displayed = 5
 
-[344/401] dswbr <DSW-BR> display vlan
+[334/401] dswbr <DSW-BR> display vlan
   VLAN ID  Name                          Status   Ports
   -------  ----------------------------  -------  ----------------------------
   1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
@@ -2090,15 +2055,15 @@ Total steps: 401
   30       VLAN0030                      active   
   99       VLAN0099                      active   
 
-[345/401] dswbr <DSW-BR> display vlan 10
+[335/401] dswbr <DSW-BR> display vlan 10
   VLAN ID  Name                          Status   Ports
   10       VLAN0010                      active   
 
-[346/401] dswbr <DSW-BR> display vlan 20
+[336/401] dswbr <DSW-BR> display vlan 20
   VLAN ID  Name                          Status   Ports
   20       VLAN0020                      active   
 
-[347/401] dswbr <DSW-BR> display port vlan
+[337/401] dswbr <DSW-BR> display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
   GigabitEthernet0/0/0    access       1     -
   GigabitEthernet0/0/1    trunk        1     -
@@ -2125,7 +2090,7 @@ Total steps: 401
   GigabitEthernet0/0/22   access       1     -
   GigabitEthernet0/0/23   access       1     -
 
-[348/401] dswbr <DSW-BR> display mac-address
+[338/401] dswbr <DSW-BR> display mac-address
   MAC address table of slot 0:
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From   Type
@@ -2137,8 +2102,8 @@ Total steps: 401
   Total items displayed = 3
 
 
---- [349] § VLAN — connectivité L2 intra-VLAN (matrice) ---
-[349/401] wbr wbr$ ping -n 1 10.2.2.11
+--- [339] § VLAN — connectivité L2 intra-VLAN (matrice) ---
+[339/401] wbr wbr$ ping -n 1 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
   Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
@@ -2148,23 +2113,23 @@ Total steps: 401
   Approximate round trip times in milli-seconds:
       Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
-[350/401] lbr lbr$ ping -c 1 10.2.2.10
+[340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.145 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.201 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.145/0.145/0.145/0.000 ms
+  rtt min/avg/max/mdev = 0.201/0.201/0.201/0.000 ms
 
-[351/401] lhq lhq$ ping -c 1 10.1.20.11
+[341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.252 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.307 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
+  rtt min/avg/max/mdev = 0.307/0.307/0.307/0.000 ms
 
-[352/401] whq whq$ ping -n 1 10.1.1.10
+[342/401] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
@@ -2174,17 +2139,17 @@ Total steps: 401
   Approximate round trip times in milli-seconds:
       Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
-[353/401] lhq lhq$ arp -n
+[343/401] lhq lhq$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   10.1.1.1                 ether   02:00:00:00:00:ab   C     *               eth0
 
-[354/401] whq whq$ arp -a
+[344/401] whq whq$ arp -a
   
   Interface: 10.1.20.11 --- 0x1
     Internet Address      Physical Address      Type
     10.1.20.1             02-00-00-00-00-ac     dynamic
 
-[355/401] rhq R-HQ# show ip arp
+[345/401] rhq R-HQ# show ip arp
   Protocol  Address          Age (min)   Hardware Addr   Type   Interface
   Internet  10.1.1.10        0           02:00:00:00:00:47ARPA   GigabitEthernet0/0.10
   Internet  10.1.1.11        0           02:00:00:00:00:4bARPA   GigabitEthernet0/0
@@ -2192,12 +2157,12 @@ Total steps: 401
   Internet  172.16.13.2      0           02:00:00:00:00:0aARPA   GigabitEthernet0/2
   Internet  10.1.20.11       0           02:00:00:00:00:4bARPA   GigabitEthernet0/0.20
 
-[356/401] rhq R-HQ# show vlans
+[346/401] rhq R-HQ# show vlans
   No Virtual LAN sub-interfaces are configured
 
 
---- [357] § VLAN — récapitulatif config trunk/access ---
-[357/401] swhq SW-HQ# show interfaces FastEthernet0/2 switchport
+--- [347] § VLAN — récapitulatif config trunk/access ---
+[347/401] swhq SW-HQ# show interfaces FastEthernet0/2 switchport
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2227,7 +2192,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[358/401] swhq SW-HQ# show interfaces FastEthernet0/3 switchport
+[348/401] swhq SW-HQ# show interfaces FastEthernet0/3 switchport
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2257,7 +2222,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[359/401] swhq SW-HQ# show interfaces FastEthernet0/1 switchport
+[349/401] swhq SW-HQ# show interfaces FastEthernet0/1 switchport
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2287,7 +2252,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[360/401] swhq SW-HQ# show interfaces FastEthernet0/4 switchport
+[350/401] swhq SW-HQ# show interfaces FastEthernet0/4 switchport
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2317,7 +2282,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[361/401] dsw1 DSW-HQ-1# show interfaces FastEthernet0/1 switchport
+[351/401] dsw1 DSW-HQ-1# show interfaces FastEthernet0/1 switchport
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
@@ -2347,7 +2312,7 @@ Total steps: 401
   Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
   Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
 
-[362/401] swbr <SW-BR> display interface GigabitEthernet0/0/2
+[352/401] swbr <SW-BR> display interface GigabitEthernet0/0/2
   GigabitEthernet0/0/2 current state : UP
   Line protocol current state : UP
   Description: 
@@ -2356,7 +2321,7 @@ Total steps: 401
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[363/401] swbr <SW-BR> display interface GigabitEthernet0/0/4
+[353/401] swbr <SW-BR> display interface GigabitEthernet0/0/4
   GigabitEthernet0/0/4 current state : UP
   Line protocol current state : UP
   Description: 
@@ -2365,7 +2330,7 @@ Total steps: 401
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[364/401] dswbr <DSW-BR> display interface GigabitEthernet0/0/1
+[354/401] dswbr <DSW-BR> display interface GigabitEthernet0/0/1
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Description: 
@@ -2373,6 +2338,105 @@ Total steps: 401
   Internet protocol processing : disabled
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+
+
+--- [355] § VLAN — vérifications consolidées par switch ---
+[355/401] swhq SW-HQ# show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  10   DATA                             active    Fa0/2
+  20   VOICE                            active    Fa0/3
+  30   MGMT                             active    
+  99   NATIVE                           active    
+
+[356/401] swhq SW-HQ# show vlan id 10
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    Fa0/2
+
+[357/401] swhq SW-HQ# show vlan name DATA
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  10   DATA                             active    Fa0/2
+
+[358/401] swhq SW-HQ# show interfaces trunk
+  Port      Mode  Encapsulation  Status   Native vlan
+  FastEthernet0/1on    802.1q         trunking 1
+  FastEthernet0/4on    802.1q         trunking 99
+  FastEthernet0/5on    802.1q         trunking 99
+
+[359/401] dsw1 DSW-HQ-1# show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  10   DATA                             active    
+  20   VOICE                            active    
+  30   MGMT                             active    
+  99   NATIVE                           active    
+
+[360/401] dsw2 DSW-HQ-2# show interfaces trunk
+  Port      Mode  Encapsulation  Status   Native vlan
+  FastEthernet0/1on    802.1q         trunking 99
+  FastEthernet0/2on    802.1q         trunking 1
+
+[361/401] swbr <SW-BR> display vlan
+  VLAN ID  Name                          Status   Ports
+  -------  ----------------------------  -------  ----------------------------
+  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/1, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
+  10       VLAN0010                      active   GigabitEthernet0/0/2, GigabitEthernet0/0/3
+  20       VLAN0020                      active   
+  30       VLAN0030                      active   
+  99       VLAN0099                      active   
+
+[362/401] swbr <SW-BR> display port vlan
+  Port                    Link Type    PVID  Trunk VLAN List
+  GigabitEthernet0/0/0    access       1     -
+  GigabitEthernet0/0/1    access       1     -
+  GigabitEthernet0/0/2    access       10    -
+  GigabitEthernet0/0/3    access       10    -
+  GigabitEthernet0/0/4    trunk        99    -
+  GigabitEthernet0/0/5    trunk        1     -
+  GigabitEthernet0/0/6    access       1     -
+  GigabitEthernet0/0/7    access       1     -
+  GigabitEthernet0/0/8    access       1     -
+  GigabitEthernet0/0/9    access       1     -
+  GigabitEthernet0/0/10   access       1     -
+  GigabitEthernet0/0/11   access       1     -
+  GigabitEthernet0/0/12   access       1     -
+  GigabitEthernet0/0/13   access       1     -
+  GigabitEthernet0/0/14   access       1     -
+  GigabitEthernet0/0/15   access       1     -
+  GigabitEthernet0/0/16   access       1     -
+  GigabitEthernet0/0/17   access       1     -
+  GigabitEthernet0/0/18   access       1     -
+  GigabitEthernet0/0/19   access       1     -
+  GigabitEthernet0/0/20   access       1     -
+  GigabitEthernet0/0/21   access       1     -
+  GigabitEthernet0/0/22   access       1     -
+  GigabitEthernet0/0/23   access       1     -
+
+[363/401] dswbr <DSW-BR> display vlan
+  VLAN ID  Name                          Status   Ports
+  -------  ----------------------------  -------  ----------------------------
+  1        default                       active   GigabitEthernet0/0/0, GigabitEthernet0/0/3, GigabitEthernet0/0/4, GigabitEthernet0/0/5, GigabitEthernet0/0/6, GigabitEthernet0/0/7, GigabitEthernet0/0/8, GigabitEthernet0/0/9, GigabitEthernet0/0/10, GigabitEthernet0/0/11, GigabitEthernet0/0/12, GigabitEthernet0/0/13, GigabitEthernet0/0/14, GigabitEthernet0/0/15, GigabitEthernet0/0/16, GigabitEthernet0/0/17, GigabitEthernet0/0/18, GigabitEthernet0/0/19, GigabitEthernet0/0/20, GigabitEthernet0/0/21, GigabitEthernet0/0/22, GigabitEthernet0/0/23
+  10       VLAN0010                      active   
+  20       VLAN0020                      active   
+  30       VLAN0030                      active   
+  99       VLAN0099                      active   
+
+[364/401] swbr <SW-BR> display mac-address
+  MAC address table of slot 0:
+  -------------------------------------------------------------------------------
+  MAC Address    VLAN/VSI   Learned-From   Type
+  -------------------------------------------------------------------------------
+  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
+  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
+  02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
+  02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
+  -------------------------------------------------------------------------------
+  Total items displayed = 5
 
 
 --- [365] § VLAN — cas négatifs / mal formés ---
@@ -2506,19 +2570,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.455 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.463 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.455/0.455/0.455/0.000 ms
+  rtt min/avg/max/mdev = 0.463/0.463/0.463/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.422 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.406 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.422/0.422/0.422/0.000 ms
+  rtt min/avg/max/mdev = 0.406/0.406/0.406/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2660,11 +2724,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.345 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.343 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.345/0.345/0.345/0.000 ms
+  rtt min/avg/max/mdev = 0.343/0.343/0.343/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
