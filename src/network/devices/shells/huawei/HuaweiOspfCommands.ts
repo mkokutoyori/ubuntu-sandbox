@@ -902,7 +902,9 @@ function displayOspfPeerVerbose(router: Router): string {
     lines.push(` Neighbor ${n.routerId}, address ${n.ipAddress}`);
     lines.push(`   Area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
     lines.push(`   State: ${n.state.toUpperCase()}, Priority: ${n.priority}`);
-    lines.push(`   DR: ${n.neighborDR}  BDR: ${n.neighborBDR}`);
+    const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
+    const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
+    lines.push(`   DR: ${drId}  BDR: ${bdrId}`);
     lines.push(`   Dead timer remaining: ${deadInterval}s`);
     lines.push(`   Neighbor up for 00:00:00`);
     lines.push('');
