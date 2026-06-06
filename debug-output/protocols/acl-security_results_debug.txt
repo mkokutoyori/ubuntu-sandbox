@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — acl-security
-Generated: 2026-06-06T16:07:09.269Z
+Generated: 2026-06-06T08:00:00.000Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 security=ACL/pare-feu/port-security — ACL Cisco (standard/étendue/nommée, edge firewall, access-class VTY), ACL Huawei (basic 2000/advanced 3000 + traffic-filter), pare-feu Linux (iptables/ufw/nft/conntrack), port-security L2 Cisco/Huawei — bordure Internet simulée
 Total steps: 400
@@ -36,6 +36,14 @@ Total steps: 400
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (32768 bytes):
+  
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  %LINK-3-ERRORS: Interface GigabitEthernet0/3, changed state to up
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/3, IPv4 address 203.0.113.1/255.255.255.0 assigned
 
 [8/400] rdc R-DC# terminal monitor
 <empty>
@@ -62,6 +70,12 @@ Total steps: 400
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (32768 bytes):
+  
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.3.3.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.13.2/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.23.1/255.255.255.252 assigned
 
 [14/400] rbr <R-BR> system-view
   Enter system view, return user view with return command.
@@ -76,48 +90,48 @@ Total steps: 400
 --- [17] § SEC — joignabilité de référence (avant filtrage) ---
 [17/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.548 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.463 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.680 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.351 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.463/0.506/0.548/0.042 ms
+  rtt min/avg/max/mdev = 0.351/0.516/0.680/0.164 ms
 
 [18/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.449 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.500 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.393 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.215 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.449/0.474/0.500/0.026 ms
+  rtt min/avg/max/mdev = 0.215/0.304/0.393/0.089 ms
 
 [19/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.272 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.297 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.310 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.313 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.272/0.284/0.297/0.013 ms
+  rtt min/avg/max/mdev = 0.310/0.311/0.313/0.001 ms
 
 [20/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.474 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.447 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.466 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.814 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.447/0.460/0.474/0.014 ms
+  rtt min/avg/max/mdev = 0.466/0.640/0.814/0.174 ms
 
 [21/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.369 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.290 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.465 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.309 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.290/0.330/0.369/0.039 ms
+  rtt min/avg/max/mdev = 0.309/0.387/0.465/0.078 ms
 
 
 --- [22] § ACL Cisco — standard (bloque un hôte source) ---
@@ -158,12 +172,12 @@ Total steps: 400
 
 [31/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.534 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.264 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.722 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.406 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.264/0.399/0.534/0.135 ms
+  rtt min/avg/max/mdev = 0.406/0.564/0.722/0.158 ms
 
 [32/400] rhq R-HQ# show access-lists 10
   Standard IP access list 10
@@ -254,12 +268,12 @@ Total steps: 400
 
 [54/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.668 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.705 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.482 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.429 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.668/0.686/0.705/0.019 ms
+  rtt min/avg/max/mdev = 0.429/0.455/0.482/0.027 ms
 
 [55/400] rhq R-HQ# show ip access-lists INTERNET-IN
   Extended IP access list INTERNET-IN
@@ -293,12 +307,12 @@ Total steps: 400
 
 [61/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.502 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.349 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.378 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.248 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.349/0.426/0.502/0.076 ms
+  rtt min/avg/max/mdev = 0.248/0.313/0.378/0.065 ms
 
 
 --- [62] § ACL Cisco — nommée par port/service (DMZ-style) ---
@@ -352,12 +366,12 @@ Total steps: 400
 
 [76/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.629 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.526 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.495 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.318 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.526/0.577/0.629/0.052 ms
+  rtt min/avg/max/mdev = 0.318/0.406/0.495/0.088 ms
 
 [77/400] rdc R-DC# show ip access-lists DC-FILTER
   Extended IP access list DC-FILTER
@@ -382,12 +396,12 @@ Total steps: 400
 
 [82/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.656 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.453 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.431 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.417 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.453/0.555/0.656/0.102 ms
+  rtt min/avg/max/mdev = 0.417/0.424/0.431/0.007 ms
 
 
 --- [83] § ACL Cisco — séquençage / édition / resequence ---
@@ -488,12 +502,12 @@ Total steps: 400
 
 [109/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.653 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.467 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.560 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.303 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.467/0.560/0.653/0.093 ms
+  rtt min/avg/max/mdev = 0.303/0.432/0.560/0.129 ms
 
 
 --- [110] § ACL Huawei — advanced 3000 (proto/port) ---
@@ -611,12 +625,12 @@ Total steps: 400
 
 [137/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.262 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.134 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.428 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.242 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.134/0.198/0.262/0.064 ms
+  rtt min/avg/max/mdev = 0.242/0.335/0.428/0.093 ms
 
 [138/400] srvdc srvdc$ iptables -L INPUT -n -v
   Chain INPUT (policy ACCEPT)
@@ -648,12 +662,12 @@ Total steps: 400
 
 [142/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.512 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.414 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.978 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.298 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.414/0.463/0.512/0.049 ms
+  rtt min/avg/max/mdev = 0.298/1.138/1.978/0.840 ms
 
 
 --- [143] § pare-feu Linux — politique restrictive complète ---
@@ -688,12 +702,12 @@ Total steps: 400
 
 [149/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=1.408 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.146 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.228 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.199 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.146/0.777/1.408/0.631 ms
+  rtt min/avg/max/mdev = 0.199/0.213/0.228/0.014 ms
 
 [150/400] srvdc srvdc$ iptables-save
   # Generated by iptables-save
@@ -849,11 +863,11 @@ Total steps: 400
 
 [180/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.531 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.528 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.531/0.531/0.531/0.000 ms
+  rtt min/avg/max/mdev = 0.528/0.528/0.528/0.000 ms
 
 [181/400] swhq SW-HQ# show port-security interface FastEthernet0/2
   Port Security              : Enabled
@@ -1405,99 +1419,99 @@ Total steps: 400
 --- [292] § SEC — matrice de joignabilité (sans filtre actif) ---
 [292/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.270 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.300 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.270/0.270/0.270/0.000 ms
+  rtt min/avg/max/mdev = 0.300/0.300/0.300/0.000 ms
 
 [293/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.337 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.378 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.337/0.337/0.337/0.000 ms
+  rtt min/avg/max/mdev = 0.378/0.378/0.378/0.000 ms
 
 [294/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.140 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.246 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.140/0.140/0.140/0.000 ms
+  rtt min/avg/max/mdev = 0.246/0.246/0.246/0.000 ms
 
 [295/400] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.239 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.243 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
+  rtt min/avg/max/mdev = 0.243/0.243/0.243/0.000 ms
 
 [296/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.478 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.571 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.478/0.478/0.478/0.000 ms
+  rtt min/avg/max/mdev = 0.571/0.571/0.571/0.000 ms
 
 [297/400] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.814 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.207 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.814/0.814/0.814/0.000 ms
+  rtt min/avg/max/mdev = 0.207/0.207/0.207/0.000 ms
 
 [298/400] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.146 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.115 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.146/0.146/0.146/0.000 ms
+  rtt min/avg/max/mdev = 0.115/0.115/0.115/0.000 ms
 
 [299/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.101 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.168 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.101/0.101/0.101/0.000 ms
+  rtt min/avg/max/mdev = 0.168/0.168/0.168/0.000 ms
 
 [300/400] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.263 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.491 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.263/0.263/0.263/0.000 ms
+  rtt min/avg/max/mdev = 0.491/0.491/0.491/0.000 ms
 
 [301/400] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.208 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.234 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.208/0.208/0.208/0.000 ms
+  rtt min/avg/max/mdev = 0.234/0.234/0.234/0.000 ms
 
 [302/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.240 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=1.274 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.240/0.240/0.240/0.000 ms
+  rtt min/avg/max/mdev = 1.274/1.274/1.274/0.000 ms
 
 [303/400] ispbr ispbr$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.170 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.276 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.170/0.170/0.170/0.000 ms
+  rtt min/avg/max/mdev = 0.276/0.276/0.276/0.000 ms
 
 
 --- [304] § SEC — inspection des tables iptables par hôte ---
@@ -1992,11 +2006,11 @@ Total steps: 400
 
 [378/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.251 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.315 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.251/0.251/0.251/0.000 ms
+  rtt min/avg/max/mdev = 0.315/0.315/0.315/0.000 ms
 
 [379/400] whq whq$ ping -n 1 203.0.113.10
   
@@ -2010,57 +2024,57 @@ Total steps: 400
 
 [380/400] lbr lbr$ ping -c 1 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.180 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.246 ms
   
   --- 198.51.100.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.180/0.180/0.180/0.000 ms
+  rtt min/avg/max/mdev = 0.246/0.246/0.246/0.000 ms
 
 [381/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.310 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.465 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
+  rtt min/avg/max/mdev = 0.465/0.465/0.465/0.000 ms
 
 [382/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.112 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.186 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.112/0.112/0.112/0.000 ms
+  rtt min/avg/max/mdev = 0.186/0.186/0.186/0.000 ms
 
 [383/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.183 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.225 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.183/0.183/0.183/0.000 ms
+  rtt min/avg/max/mdev = 0.225/0.225/0.225/0.000 ms
 
 [384/400] rdc R-DC# ping 10.1.1.10
   Type escape sequence to abort.
   Sending 5, 100-byte ICMP Echos to 10.1.1.10, timeout is 2 seconds:
   !!!!!
-  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
 
 [385/400] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.307 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.419 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.307/0.307/0.307/0.000 ms
+  rtt min/avg/max/mdev = 0.419/0.419/0.419/0.000 ms
 
 [386/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.339 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.190 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.339/0.339/0.339/0.000 ms
+  rtt min/avg/max/mdev = 1.190/1.190/1.190/0.000 ms
 
 [387/400] whq whq$ ping -n 1 10.3.3.10
   
@@ -2165,6 +2179,18 @@ Total steps: 400
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (32768 bytes):
+  
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.1.1.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.12.1/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.13.1/255.255.255.252 assigned
+  %LINK-3-ERRORS: Interface GigabitEthernet0/3, changed state to up
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/3, IPv4 address 203.0.113.1/255.255.255.0 assigned
+  %SEC-4-WARNINGS: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
+  %SEC-4-WARNINGS: R-HQ: ACL denied outbound on GigabitEthernet0/3: 10.1.1.11 → 203.0.113.10
+  %SEC-4-WARNINGS: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
+  %SEC-4-WARNINGS: R-HQ: ACL denied inbound on GigabitEthernet0/3: 203.0.113.10 → 10.1.1.10
 
 [398/400] rdc R-DC# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2176,6 +2202,12 @@ Total steps: 400
       Timestamp logging: disabled
       Sequence numbers: disabled
       No active syslog hosts
+  
+  Log Buffer (32768 bytes):
+  
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/0, IPv4 address 10.3.3.1/255.255.255.0 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/1, IPv4 address 172.16.13.2/255.255.255.252 assigned
+  %IFMGR-6-INFORMATIONAL: Interface GigabitEthernet0/2, IPv4 address 172.16.23.1/255.255.255.252 assigned
 
 [399/400] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -2184,7 +2216,16 @@ Total steps: 400
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 9
+  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/0, IPv4 address 10.2.2.1/255.255.255.0 assigned
+  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/1, IPv4 address 172.16.12.2/255.255.255.252 assigned
+  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/2, IPv4 address 172.16.23.2/255.255.255.252 assigned
+  2026-06-06 08:00:00 %01LINK/3/ERRORS: Interface GE0/0/3, changed state to up
+  2026-06-06 08:00:00 %01IFMGR/6/INFORMATIONAL: Interface GE0/0/3, IPv4 address 198.51.100.1/255.255.255.0 assigned
+  2026-06-06 08:00:00 %01SEC/4/WARNINGS: R-BR: ACL denied outbound on GE0/0/3: 10.2.2.11 → 198.51.100.10
+  2026-06-06 08:00:00 %01SEC/4/WARNINGS: R-BR: ACL denied outbound on GE0/0/3: 10.2.2.11 → 198.51.100.10
+  2026-06-06 08:00:00 %01SEC/4/WARNINGS: R-BR: ACL denied inbound on GE0/0/3: 198.51.100.10 → 10.2.2.11
+  2026-06-06 08:00:00 %01SEC/4/WARNINGS: R-BR: ACL denied inbound on GE0/0/3: 198.51.100.10 → 10.2.2.11
 
 [400/400] srvdc srvdc$ iptables -S
   -P INPUT ACCEPT

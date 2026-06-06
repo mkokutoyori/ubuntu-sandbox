@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Equipment } from '@/network';
@@ -13,10 +14,14 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { getDefaultEventBus } from '@/events/EventBus';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/protocols');
 
 export function resetSim(): void {
+  vi.useRealTimers();
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-06-06T08:00:00Z'));
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
@@ -129,6 +134,11 @@ export function buildEnterpriseWAN(): EnterpriseWAN {
       'DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. ' +
       'WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.',
   };
+
+  const bus = getDefaultEventBus();
+  for (const dev of Object.values(topology.devices)) {
+    (dev as Equipment).setEventBus?.(bus);
+  }
 
   return { rhq, rbr, rdc, swhq, swbr, swdc, lhq, whq, wbr, lbr, srvdc, ldc, topology };
 }
@@ -279,6 +289,9 @@ export function addStpFabric(wan: EnterpriseWAN): StpFabric {
   wan.topology.devices['dsw2'] = dsw2;
   wan.topology.devices['dswbr'] = dswbr;
 
+  const bus = getDefaultEventBus();
+  for (const dev of [dsw1, dsw2, dswbr]) dev.setEventBus?.(bus);
+
   return { dsw1, dsw2, dswbr };
 }
 
@@ -307,6 +320,9 @@ export async function addInternetEdge(wan: EnterpriseWAN): Promise<InternetEdge>
 
   wan.topology.devices['isphq'] = ispHq;
   wan.topology.devices['ispbr'] = ispBr;
+
+  const bus = getDefaultEventBus();
+  for (const dev of [ispHq, ispBr]) dev.setEventBus?.(bus);
 
   await run(wan.rhq, [
     'enable', 'configure terminal',
