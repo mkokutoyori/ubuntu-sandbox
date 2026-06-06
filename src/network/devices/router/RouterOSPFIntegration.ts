@@ -127,6 +127,7 @@ export class RouterOSPFIntegration {
   enableOSPF(processId: number = 1): void {
     if (this.ospfEngine) return;
     this.ospfEngine = new OSPFEngine(processId);
+    this.ospfEngine.setDeviceId(this.ctx.id);
 
     // Auto-detect Router ID: highest interface IP
     let highestIP = '0.0.0.0';
