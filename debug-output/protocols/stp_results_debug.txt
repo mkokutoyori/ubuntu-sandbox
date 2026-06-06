@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — stp
-Generated: 2026-06-06T06:27:55.377Z
+Generated: 2026-06-06T13:09:13.642Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
 Total steps: 300
@@ -55,25 +55,25 @@ Total steps: 300
 
 --- [15] § STP — activation logs & debug (Huawei) ---
 [15/300] swbr <SW-BR> terminal monitor
-  Error: Unrecognized command "terminal monitor"
+  Info: Current terminal monitor is on.
 
 [16/300] swbr <SW-BR> terminal monitor
-  Error: Unrecognized command "terminal monitor"
+  Info: Current terminal monitor is on.
 
 [17/300] swbr <SW-BR> terminal debugging
-  Error: Unrecognized command "terminal debugging"
+  Info: Current terminal debugging is on.
 
 [18/300] swbr <SW-BR> debugging stp packet
-  Error: Unrecognized command "debugging stp packet"
+  Info: stp packet debugging is on.
 
 [19/300] dswbr <DSW-BR> terminal monitor
-  Error: Unrecognized command "terminal monitor"
+  Info: Current terminal monitor is on.
 
 [20/300] dswbr <DSW-BR> terminal debugging
-  Error: Unrecognized command "terminal debugging"
+  Info: Current terminal debugging is on.
 
 [21/300] dswbr <DSW-BR> debugging stp packet
-  Error: Unrecognized command "debugging stp packet"
+  Info: stp packet debugging is on.
 
 
 --- [22] § STP — état initial (Cisco) ---
@@ -1364,11 +1364,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.593 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.268 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.593/0.593/0.593/0.000 ms
+  rtt min/avg/max/mdev = 0.268/0.268/0.268/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1441,21 +1441,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.222 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.321 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.441 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.279 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.321/0.771/1.222/0.450 ms
+  rtt min/avg/max/mdev = 0.279/0.360/0.441/0.081 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.867 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.694 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.577 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.398 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.694/0.780/0.867/0.087 ms
+  rtt min/avg/max/mdev = 0.398/0.488/0.577/0.090 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1508,12 +1508,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.306 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.351 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.208 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.166 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.306/0.329/0.351/0.023 ms
+  rtt min/avg/max/mdev = 0.166/0.187/0.208/0.021 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1847,27 +1847,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.237 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.241 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.237/0.237/0.237/0.000 ms
+  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.182 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.110 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.182/0.182/0.182/0.000 ms
+  rtt min/avg/max/mdev = 0.110/0.110/0.110/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.190 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.118 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.190/0.190/0.190/0.000 ms
+  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2209,10 +2209,10 @@ Total steps: 300
   All possible debugging has been turned off
 
 [289/300] swbr <SW-BR> undo debugging all
-  Error: Unrecognized command "undo debugging all"
+  Info: All possible debugging functions are off.
 
 [290/300] dswbr <DSW-BR> undo debugging all
-  Error: Unrecognized command "undo debugging all"
+  Info: All possible debugging functions are off.
 
 [291/300] swhq SW-HQ# show spanning-tree summary
   Switch is in bidon mode
@@ -2362,8 +2362,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.601 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.528 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.601/0.601/0.601/0.000 ms
+  rtt min/avg/max/mdev = 0.528/0.528/0.528/0.000 ms

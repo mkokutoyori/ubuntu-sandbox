@@ -62,4 +62,14 @@ export function registerHuaweiCommonMgmt(trie: CommandTrie): void {
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
   trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());
+  trie.register('terminal monitor', 'Enable terminal monitoring', () => 'Info: Current terminal monitor is on.');
+  trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
+  trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');
+  trie.register('undo terminal debugging', 'Disable terminal debugging', () => 'Info: Current terminal debugging is off.');
+  trie.registerGreedy('debugging', 'Enable debugging', (args) =>
+    `Info: ${args.join(' ') || 'all'} debugging is on.`);
+  trie.registerGreedy('undo debugging', 'Disable debugging', (args) =>
+    args.join(' ').toLowerCase().startsWith('all')
+      ? 'Info: All possible debugging functions are off.'
+      : `Info: ${args.join(' ')} debugging is off.`);
 }
