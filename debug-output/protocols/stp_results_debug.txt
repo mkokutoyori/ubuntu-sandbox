@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — stp
-Generated: 2026-06-06T15:56:46.680Z
+Generated: 2026-06-06T18:10:59.675Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
 Total steps: 300
@@ -427,11 +427,11 @@ Total steps: 300
 
 [39/300] swbr <SW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.SW-BR
+  CIST Bridge         :32768.0200-0000-0027
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -466,11 +466,11 @@ Total steps: 300
 
 [41/300] swbr <SW-BR> display stp global
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.SW-BR
+  CIST Bridge         :32768.0200-0000-0027
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -478,12 +478,12 @@ Total steps: 300
 
 [42/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.DSW-BR
+  CIST Bridge         :32768.0200-0000-0093
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
-  CIST RootPortId     :0.0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 200
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 200
+  CIST RootPortId     :128.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
   STP Status          :Enabled
@@ -517,12 +517,12 @@ Total steps: 300
 
 [44/300] dswbr <DSW-BR> display stp global
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.DSW-BR
+  CIST Bridge         :32768.0200-0000-0093
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
-  CIST RootPortId     :0.0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 200
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 200
+  CIST RootPortId     :128.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
   STP Status          :Enabled
@@ -862,12 +862,12 @@ Total steps: 300
 
 [91/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.DSW-BR
+  CIST Bridge         :32768.0200-0000-0093
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
-  CIST RootPortId     :0.0
+  CIST Root/ERPC      :4096.0200-0000-0027 / 200
+  CIST RegRoot/IRPC   :4096.0200-0000-0027 / 200
+  CIST RootPortId     :128.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
   STP Status          :Enabled
@@ -1344,11 +1344,11 @@ Total steps: 300
 
 [190/300] swbr [SW-BR] display stp
   -------[CIST Global Info][Mode STP]-------
-  CIST Bridge         :0.SW-BR
+  CIST Bridge         :0.0200-0000-0027
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -1364,11 +1364,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.309 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.405 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.309/0.309/0.309/0.000 ms
+  rtt min/avg/max/mdev = 0.405/0.405/0.405/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1441,21 +1441,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.409 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.233 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.387 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.245 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.233/0.321/0.409/0.088 ms
+  rtt min/avg/max/mdev = 0.245/0.316/0.387/0.071 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.671 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.376 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.560 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.378 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.376/0.523/0.671/0.148 ms
+  rtt min/avg/max/mdev = 0.378/0.469/0.560/0.091 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1508,12 +1508,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.185 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.161 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.188 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.183 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.161/0.173/0.185/0.012 ms
+  rtt min/avg/max/mdev = 0.183/0.186/0.188/0.002 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1819,11 +1819,11 @@ Total steps: 300
 
 [247/300] swbr <SW-BR> display stp global
   -------[CIST Global Info][Mode STP]-------
-  CIST Bridge         :0.SW-BR
+  CIST Bridge         :0.0200-0000-0027
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -1852,11 +1852,11 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.192 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.189 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.192/0.192/0.192/0.000 ms
+  rtt min/avg/max/mdev = 0.189/0.189/0.189/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
@@ -2057,11 +2057,11 @@ Total steps: 300
 
 [271/300] swbr <SW-BR> display stp
   -------[CIST Global Info][Mode STP]-------
-  CIST Bridge         :0.SW-BR
+  CIST Bridge         :0.0200-0000-0027
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -2096,12 +2096,12 @@ Total steps: 300
 
 [273/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
-  CIST Bridge         :32768.DSW-BR
+  CIST Bridge         :32768.0200-0000-0093
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0000-0000-0000 / 0
-  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
-  CIST RootPortId     :0.0
+  CIST Root/ERPC      :0.0200-0000-0027 / 200
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 200
+  CIST RootPortId     :128.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
   STP Status          :Enabled
@@ -2367,8 +2367,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.607 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.432 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.607/0.607/0.607/0.000 ms
+  rtt min/avg/max/mdev = 0.432/0.432/0.432/0.000 ms

@@ -1385,18 +1385,39 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayStp(): string {
     const modeName = this.stp.mode.toUpperCase();
+    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent }).getStpAgent?.();
+    const own = ag?.ownBridgeId();
+    const root = ag?.getRootBridge();
+    const cost = ag?.getRootPathCost() ?? 0;
+    const rootPort = ag?.getRootPort();
+    const bridgeMac = this.toHuaweiMac(own?.mac);
+    const rootMac = this.toHuaweiMac(root?.mac);
+    const bridgePrio = own?.priority ?? this.stp.priority;
+    const rootPrio = root?.priority ?? this.stp.priority;
     return [
       `-------[CIST Global Info][Mode ${modeName}]-------`,
-      `CIST Bridge         :${this.stp.priority}.${this.swRef?.getHostname() ?? ''}`,
+      `CIST Bridge         :${bridgePrio}.${bridgeMac}`,
       `Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
       `Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
-      `CIST Root/ERPC      :${this.stp.priority}.0000-0000-0000 / 0`,
-      `CIST RegRoot/IRPC   :${this.stp.priority}.0000-0000-0000 / 0`,
-      `CIST RootPortId     :0.0`,
+      `CIST Root/ERPC      :${rootPrio}.${rootMac} / ${cost}`,
+      `CIST RegRoot/IRPC   :${rootPrio}.${rootMac} / ${cost}`,
+      `CIST RootPortId     :${rootPort ? this.huaweiPortId(rootPort) : '0.0'}`,
       `BPDU-Protection     :${this.stp.bpduProtection ? 'Enabled' : 'Disabled'}`,
       `TC or TCN received  :0`,
       `STP Status          :${this.stp.enabled ? 'Enabled' : 'Disabled'}`,
     ].join('\n');
+  }
+
+  private toHuaweiMac(mac?: string): string {
+    if (!mac) return '0000-0000-0000';
+    const hex = mac.replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
+    return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+  }
+
+  private huaweiPortId(portName: string): string {
+    const names = this.swRef?.getPortNames() ?? [];
+    const idx = names.indexOf(portName);
+    return `128.${idx >= 0 ? idx + 1 : 0}`;
   }
 
   private displayStpBrief(only?: string, mstid = 0): string {
