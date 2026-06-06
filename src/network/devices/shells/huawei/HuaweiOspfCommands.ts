@@ -203,6 +203,15 @@ export function buildOSPFViewCommands(
     return '';
   });
 
+  trie.registerGreedy('undo import-route', 'Stop redistributing routes', (args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const protocol = (args[0] ?? '').toLowerCase();
+    if (protocol === 'static') extra.redistributeStatic = undefined;
+    else if (protocol === 'direct' || protocol === 'connected') extra.redistributeConnected = undefined;
+    else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
+    return '';
+  });
+
   trie.registerGreedy('filter-policy', 'Filter routes in routing updates', (args) => {
     if (args.length < 2) return 'Error: Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
@@ -387,6 +396,15 @@ export function buildOSPFAreaViewCommands(
     return '';
   });
 
+  trie.registerGreedy('undo abr-summary', 'Remove area route summary', (args) => {
+    const areaId = getOSPFArea();
+    if (!areaId) return 'Error: Not in area view.';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const ranges = extra.areaRanges.get(areaId);
+    if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[0] && r.mask === args[1])));
+    return '';
+  });
+
   trie.registerGreedy('vlink-peer', 'Configure virtual link to ABR', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const areaId = getOSPFArea();
@@ -560,6 +578,23 @@ export function registerOSPFInterfaceCommands(
     setPendingOspfIf(ifName, { transmitDelay: val });
     return '';
   });
+
+  const undoOspfIf: Record<string, Record<string, unknown>> = {
+    'undo ospf cost': { cost: 1 },
+    'undo ospf dr-priority': { priority: 1 },
+    'undo ospf network-type': { networkType: 'broadcast' },
+    'undo ospf authentication-mode': { authType: 0, authKey: '' },
+    'undo ospf timer hello': { helloInterval: 10 },
+    'undo ospf timer dead': { deadInterval: 40 },
+  };
+  for (const [cmd, defaults] of Object.entries(undoOspfIf)) {
+    trie.registerGreedy(cmd, 'Reset OSPF interface setting', () => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return 'Error: No interface selected.';
+      setPendingOspfIf(ifName, defaults);
+      return '';
+    });
+  }
 
   trie.registerGreedy('ospf demand-circuit', 'Configure demand circuit', (_args) => {
     return '';
