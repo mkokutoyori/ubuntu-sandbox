@@ -1005,6 +1005,24 @@ export function registerDisplayCommands(
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
   });
 
+  trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
+    const s = getState();
+    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    const module = (args[0] ?? '').toLowerCase();
+    if (!module) return full;
+    const keywords = module === 'dhcp' ? ['dhcp', 'ip pool'] : [module];
+    const match = (s: string) => keywords.some(k => s.toLowerCase().includes(k));
+    const lines = full.split('\n');
+    const kept: string[] = [];
+    let inBlock = false;
+    for (const line of lines) {
+      const top = line.length > 0 && line[0] !== ' ' && line[0] !== '#';
+      if (top) inBlock = match(line);
+      if (inBlock || (!top && match(line))) kept.push(line);
+    }
+    return kept.length ? kept.join('\n') : '';
+  });
+
   trie.register('display saved-configuration', 'Display saved configuration', () => {
     const s = getState();
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());

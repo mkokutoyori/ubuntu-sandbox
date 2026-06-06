@@ -81,7 +81,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     priority: number;
     root: '' | 'primary' | 'secondary';
     bpduProtection: boolean;
-  } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false };
+    edgedPortDefault: boolean;
+  } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false, edgedPortDefault: false };
 
   private mstRegion: {
     name: string; revision: number; instances: Map<number, string>;
@@ -1174,6 +1175,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
           return 'Error: Wrong parameter found at \'^\' position.';
         case 'bpdu-protection':
           this.stp.bpduProtection = true;
+          return '';
+        case 'edged-port':
+          if (a[1] !== 'default') return 'Error: Wrong parameter found at \'^\' position.';
+          this.stp.edgedPortDefault = true;
           return '';
         case 'pathcost-standard':
         case 'tc-protection':

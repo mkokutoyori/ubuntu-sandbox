@@ -333,6 +333,20 @@ export class DHCPServer implements IProtocolEngine {
     return this.staticBindings.get(poolName) || [];
   }
 
+  /** Remove a static binding by IP (or all in the pool when no IP given) */
+  removeStaticBinding(poolName: string, ipAddress?: string): boolean {
+    const existing = this.staticBindings.get(poolName);
+    if (!existing) return false;
+    if (!ipAddress) {
+      this.staticBindings.delete(poolName);
+      return true;
+    }
+    const kept = existing.filter(b => b.ipAddress !== ipAddress);
+    if (kept.length === existing.length) return false;
+    this.staticBindings.set(poolName, kept);
+    return true;
+  }
+
   /** Find static binding for a client MAC in a specific pool */
   private findStaticBinding(clientMAC: string, poolName: string): DHCPStaticBinding | null {
     const bindings = this.staticBindings.get(poolName) || [];

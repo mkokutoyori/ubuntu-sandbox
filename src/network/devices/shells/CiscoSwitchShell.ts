@@ -348,6 +348,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         this.d()._clearArpInspectionErrDisable(portName);
         return '';
       });
+    this.privilegedTrie.registerGreedy('clear spanning-tree detected-protocols',
+      'Restart protocol migration', () => '');
+    this.privilegedTrie.registerGreedy('clear spanning-tree counters',
+      'Clear spanning-tree counters', () => '');
   }
 
   private handleArpAclLine(kw: string, args: string[]): string {

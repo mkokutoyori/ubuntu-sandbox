@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — stp
-Generated: 2026-06-06T13:09:13.642Z
+Generated: 2026-06-06T15:56:46.680Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
 Total steps: 300
@@ -1159,7 +1159,7 @@ Total steps: 300
 <empty>
 
 [145/300] swbr [SW-BR] stp edged-port default
-  Error: Unrecognized command "stp edged-port default"
+<empty>
 
 [146/300] swbr [SW-BR] quit
 <empty>
@@ -1233,16 +1233,16 @@ Total steps: 300
 [165/300] dswbr [DSW-BR-GigabitEthernet0/0/1] stp root-protection
 <empty>
 
-[166/300] dswbr [DSW-BR-GigabitEthernet0/0/1] exit
-  Error: Unrecognized command "exit"
-
-[167/300] dswbr [DSW-BR-GigabitEthernet0/0/1] interface GigabitEthernet0/0/2
-  Error: Unrecognized command "interface GigabitEthernet0/0/2"
-
-[168/300] dswbr [DSW-BR-GigabitEthernet0/0/1] stp loop-protection
+[166/300] dswbr [DSW-BR-GigabitEthernet0/0/1] quit
 <empty>
 
-[169/300] dswbr [DSW-BR-GigabitEthernet0/0/1] quit
+[167/300] dswbr [DSW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[168/300] dswbr [DSW-BR-GigabitEthernet0/0/2] stp loop-protection
+<empty>
+
+[169/300] dswbr [DSW-BR-GigabitEthernet0/0/2] quit
 <empty>
 
 [170/300] swbr <SW-BR> system-view
@@ -1364,11 +1364,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.268 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.309 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.268/0.268/0.268/0.000 ms
+  rtt min/avg/max/mdev = 0.309/0.309/0.309/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1441,21 +1441,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.441 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.279 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.409 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.233 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.279/0.360/0.441/0.081 ms
+  rtt min/avg/max/mdev = 0.233/0.321/0.409/0.088 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.577 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.398 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.671 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.376 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.398/0.488/0.577/0.090 ms
+  rtt min/avg/max/mdev = 0.376/0.523/0.671/0.148 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1508,12 +1508,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.208 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.166 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.185 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.161 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.166/0.187/0.208/0.021 ms
+  rtt min/avg/max/mdev = 0.161/0.173/0.185/0.012 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1817,18 +1817,23 @@ Total steps: 300
     Time since last topology change   : 0 days 0h:0m:0s
     Last topology change port         : -
 
-[247/300] swbr <SW-BR> reset stp
-  Error: Unrecognized command "reset stp"
+[247/300] swbr <SW-BR> display stp global
+  -------[CIST Global Info][Mode STP]-------
+  CIST Bridge         :0.SW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :0.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Enabled
+  TC or TCN received  :0
+  STP Status          :Enabled
 
 [248/300] swhq SW-HQ# clear spanning-tree detected-protocols
-  % Invalid input detected at '^' marker.
-  clear spanning-tree detected-protocols
-        ^
+<empty>
 
 [249/300] swhq SW-HQ# clear spanning-tree counters
-  % Invalid input detected at '^' marker.
-  clear spanning-tree counters
-        ^
+<empty>
 
 
 --- [250] § STP — vérification L2 hôtes ---
@@ -1847,27 +1852,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.241 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.192 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
+  rtt min/avg/max/mdev = 0.192/0.192/0.192/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.110 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.112 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.110/0.110/0.110/0.000 ms
+  rtt min/avg/max/mdev = 0.112/0.112/0.112/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.118 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.115 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+  rtt min/avg/max/mdev = 0.115/0.115/0.115/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2362,8 +2367,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.528 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.607 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.528/0.528/0.528/0.000 ms
+  rtt min/avg/max/mdev = 0.607/0.607/0.607/0.000 ms

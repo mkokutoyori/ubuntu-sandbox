@@ -173,7 +173,7 @@ function buildSteps(): ProtoStepInput[] {
     { section: 'sécurité STP — protections (Huawei)', on: 'dswbr', cmd: 'system-view' },
     { on: 'dswbr', cmd: 'interface GigabitEthernet0/0/1' },
     { on: 'dswbr', cmd: 'stp root-protection' },
-    { on: 'dswbr', cmd: 'exit' },
+    { on: 'dswbr', cmd: 'quit' },
     { on: 'dswbr', cmd: 'interface GigabitEthernet0/0/2' },
     { on: 'dswbr', cmd: 'stp loop-protection' },
     { on: 'dswbr', cmd: 'quit' },
@@ -259,7 +259,7 @@ function buildSteps(): ProtoStepInput[] {
     { on: 'dsw1', cmd: 'show spanning-tree summary totals' },
     { on: 'swbr', cmd: 'display stp topology-change' },
     { on: 'dswbr', cmd: 'display stp topology-change' },
-    { on: 'swbr', cmd: 'reset stp' },
+    { on: 'swbr', cmd: 'display stp global' },
     { on: 'swhq', cmd: 'clear spanning-tree detected-protocols' },
     { on: 'swhq', cmd: 'clear spanning-tree counters' },
 
