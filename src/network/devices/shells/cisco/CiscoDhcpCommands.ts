@@ -205,8 +205,13 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show ip dhcp pool', 'Display DHCP pool information', (args) =>
     getRouter()._getDHCPServerInternal().formatPoolShow(args.length > 0 ? args[0] : undefined));
-  trie.register('show ip dhcp binding', 'Display DHCP address bindings', () =>
-    getRouter()._getDHCPServerInternal().formatBindingsShow());
+  trie.registerGreedy('show ip dhcp binding', 'Display DHCP address bindings', (args) => {
+    const full = getRouter()._getDHCPServerInternal().formatBindingsShow();
+    if (!args.length) return full;
+    const lines = full.split('\n');
+    const matched = lines.filter(l => l.includes(args[0]));
+    return matched.length ? [lines[0], ...matched].join('\n') : lines[0];
+  });
   trie.register('show ip dhcp server statistics', 'Display DHCP server statistics', () =>
     getRouter()._getDHCPServerInternal().formatStatsShow());
   trie.register('show ip dhcp conflict', 'Display DHCP address conflicts', () =>
@@ -287,6 +292,10 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
   });
   trie.register('clear ip dhcp server statistics', 'Clear DHCP server statistics', () => {
     getRouter()._getDHCPServerInternal().clearStats();
+    return '';
+  });
+  trie.registerGreedy('clear ip dhcp conflict', 'Clear DHCP address conflicts', () => {
+    getRouter()._getDHCPServerInternal().clearConflicts();
     return '';
   });
 }

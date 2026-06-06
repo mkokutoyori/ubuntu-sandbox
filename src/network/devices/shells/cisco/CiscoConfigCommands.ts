@@ -140,6 +140,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
+  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
+    return '';
+  });
+
   trie.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const start = args[0];

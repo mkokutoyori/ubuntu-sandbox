@@ -164,6 +164,10 @@ export class DHCPServer implements IProtocolEngine {
     return this.pools.get(name);
   }
 
+  deletePool(name: string): boolean {
+    return this.pools.delete(name);
+  }
+
   getAllPools(): Map<string, DHCPPoolConfig> {
     return this.pools;
   }
