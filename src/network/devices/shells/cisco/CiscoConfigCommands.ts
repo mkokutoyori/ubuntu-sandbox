@@ -609,13 +609,20 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
 
 // ─── IP Route Command (config mode) ─────────────────────────────────
 
+const isDottedIp = (s: string) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
+
 export function cmdIpRoute(router: Router, args: string[]): string {
   if (args.length < 3) return '% Incomplete command.';
   try {
     const network = new IPAddress(args[0]);
     const mask = new SubnetMask(args[1]);
-    const nextHop = new IPAddress(args[2]);
 
+    if (!isDottedIp(args[2])) {
+      const nextHop = isDottedIp(args[3] ?? '') ? new IPAddress(args[3]) : new IPAddress('0.0.0.0');
+      return router.addStaticRoute(network, mask, nextHop, 0, { iface: args[2] }) ? '' : '% Invalid route';
+    }
+
+    const nextHop = new IPAddress(args[2]);
     if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
       return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
     }
@@ -630,7 +637,7 @@ export function cmdNoIpRoute(router: Router, args: string[]): string {
   try {
     const network = new IPAddress(args[0]);
     const mask = new SubnetMask(args[1]);
-    const nextHop = args[2] ? new IPAddress(args[2]) : undefined;
+    const nextHop = args[2] && isDottedIp(args[2]) ? new IPAddress(args[2]) : undefined;
     if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
       return router.removeDefaultRoute() ? '' : '% Route not found';
     }
