@@ -734,6 +734,26 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
+  const noOspfIfDefaults: Record<string, Record<string, unknown>> = {
+    'no ip ospf cost': { cost: 1 },
+    'no ip ospf priority': { priority: 1 },
+    'no ip ospf hello-interval': { helloInterval: 10 },
+    'no ip ospf dead-interval': { deadInterval: 40 },
+    'no ip ospf network': { networkType: 'broadcast' },
+    'no ip ospf authentication': { authType: 0 },
+    'no ip ospf authentication-key': { authKey: '' },
+    'no ip ospf message-digest-key': { authType: 0, authKey: '' },
+  };
+  for (const [cmd, defaults] of Object.entries(noOspfIfDefaults)) {
+    configIfTrie.registerGreedy(cmd, 'Reset OSPF interface setting', () => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return '% No interface selected';
+      setPendingOspfIf(ifName, defaults);
+      ctx.r()._ospfAutoConverge?.();
+      return '';
+    });
+  }
+
   configIfTrie.registerGreedy('ip ospf demand-circuit', 'Configure demand circuit', (_args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
@@ -1074,6 +1094,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (_args) => showIpOspfNeighborDetail(getRouter()));
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
+  trie.register('show ip ospf database database-summary', 'Display LSDB counts', () => showIpOspfDatabaseSummaryCounts(getRouter()));
   trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail'));
   trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail'));
   trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
@@ -1224,6 +1245,48 @@ function showIpOspfNeighbor(router: Router): string {
     );
   }
 
+  return lines.join('\n');
+}
+
+function showIpOspfDatabaseSummaryCounts(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+  ];
+  const totals: Record<number, number> = {};
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const byType: Record<number, number> = {};
+    for (const lsa of areaDB.values()) {
+      byType[lsa.lsType] = (byType[lsa.lsType] ?? 0) + 1;
+      totals[lsa.lsType] = (totals[lsa.lsType] ?? 0) + 1;
+    }
+    const sub = Object.values(byType).reduce((a, b) => a + b, 0);
+    lines.push(`Area ${areaId} database summary`);
+    lines.push('  LSA Type      Count    Delete   Maxage');
+    lines.push(`  Router        ${String(byType[1] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Network       ${String(byType[2] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Summary Net   ${String(byType[3] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Summary ASBR  ${String(byType[4] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Type-7 Ext    ${String(byType[7] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Subtotal      ${String(sub).padEnd(9)}0        0`);
+    lines.push('');
+  }
+  const extCount = [...lsdb.external.values()].length;
+  totals[5] = extCount;
+  const grand = Object.values(totals).reduce((a, b) => a + b, 0);
+  lines.push(`Process ${ospf.getProcessId()} database summary`);
+  lines.push('  LSA Type      Count    Delete   Maxage');
+  lines.push(`  Router        ${String(totals[1] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Network       ${String(totals[2] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Summary Net   ${String(totals[3] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Summary ASBR  ${String(totals[4] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Type-5 Ext    ${String(totals[5] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Type-7 Ext    ${String(totals[7] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Total         ${String(grand).padEnd(9)}0        0`);
   return lines.join('\n');
 }
 
