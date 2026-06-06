@@ -347,6 +347,34 @@ export function displayArpFiltered(router: Router, filterType: 'static' | 'dynam
   return lines.join('\n');
 }
 
+export function displayArpInterface(router: Router, ifName: string): string {
+  const arpTable = router._getArpTableInternal();
+  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
+  let found = false;
+  for (const [ip, entry] of arpTable) {
+    const et = (entry as { type?: string }).type;
+    if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
+    found = true;
+    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
+    const type = et === 'static' ? 'static' : 'D';
+    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+  }
+  if (!found) lines.push('No ARP entries found.');
+  return lines.join('\n');
+}
+
+export function displayArpStatistics(router: Router): string {
+  const arpTable = router._getArpTableInternal();
+  let stat = 0, dyn = 0;
+  for (const [, entry] of arpTable) {
+    if ((entry as { type?: string }).type === 'static') stat++; else dyn++;
+  }
+  return [
+    `Total:${arpTable.size}        Dynamic:${dyn}        Static:${stat}`,
+    `Interface:0        OpenFlow:0`,
+  ].join('\n');
+}
+
 export function displayIpRoutingTableStatistics(router: Router): string {
   const table = router.getRoutingTable();
   const counts: Record<string, number> = {};
@@ -933,6 +961,10 @@ export function registerDisplayCommands(
   trie.register('display arp all', 'Display all ARP entries', () => displayArp(getRouter()));
   trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));
   trie.register('display arp dynamic', 'Display dynamic ARP entries', () => displayArpFiltered(getRouter(), 'dynamic'));
+  trie.register('display arp statistics', 'Display ARP statistics', () => displayArpStatistics(getRouter()));
+  trie.register('display arp statistics all', 'Display all ARP statistics', () => displayArpStatistics(getRouter()));
+  trie.registerGreedy('display arp interface', 'Display ARP entries on an interface', (args) =>
+    displayArpInterface(getRouter(), args.join(' ')));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
