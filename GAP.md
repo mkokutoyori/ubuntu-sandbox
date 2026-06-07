@@ -218,4 +218,112 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 ---
 
+## 3. Routage L3 (OSPF/OSPFv3, BGP, EIGRP, RIP, moteur de routage, IPv6 data plane)
+
+L'OSPF (v2) est de loin le sous-système le plus mature de cette famille — FSM complet, élection DR/BDR conforme RFC 2328 §9.4, LSA de types 1-5/7, SPF de Dijkstra avec cache partiel, NSSA et virtual links — et dispose d'une couverture de tests considérable (13+ fichiers dédiés). À l'opposé, BGP et EIGRP sont des « moteurs légers » assumés (commentaires explicites « real, lightweight ») qui ne modélisent ni FSM réel, ni échange de paquets, ni algorithmes RFC propres (DUAL, sélection de meilleur chemin BGP) — ils dérivent simplement des routes/voisins de la configuration et de la topologie câblée. OSPFv3 souffre d'un écart de profondeur sévère par rapport à OSPFv2 : son moteur ne calcule jamais de routes (`getRoutes()` retourne toujours `[]`), et la couche d'intégration contourne entièrement son FSM pour fabriquer des voisins « Full » à la main. Le plan de données IPv6 ne consomme aucune route protocolaire dynamique.
+
+### 3.1 OSPF / OSPFv2 — implémentation mature, RFC 2328 globalement respecté
+- **Constat** : FSM voisin complet (Down→Init→TwoWay→ExStart→Exchange→Loading→Full), élection DR/BDR conforme à l'algorithme en deux passes RFC 2328 §9.4 (réélection du BDR si celui-ci est promu DR), génération de Router-LSA, Network-LSA, Summary-LSA, ASBR-Summary-LSA, AS-External-LSA et NSSA-External-LSA, support des aires stub/totally-stubby/NSSA, calcul SPF par Dijkstra avec cache d'arbre par aire (« partial SPF »), virtual links.
+- **Preuve** : `src/network/ospf/OSPFEngine.ts:1588-1625` (élection DR/BDR en 3 étapes), `src/network/ospf/OSPFEngine.ts:2184-2443` (origination des LSA de types 1–4), `src/network/ospf/OSPFEngine.ts:2723-3024` (Dijkstra + cache `spfTreeCache`), `src/network/ospf/OSPFEngine.ts:649-661` et `2840-2921` (gestion stub/totally-stubby/NSSA).
+- **Sévérité** : Information (point fort).
+- **Recommandation** : aucune action requise ; ce module peut servir de référence de qualité pour les autres protocoles.
+
+### 3.2 OSPF — quasiment exempt de TODO/stub
+- **Constat** : recherche systématique de TODO/FIXME/« not implemented »/canned : un seul commentaire technique sans portée fonctionnelle (suppression de flood redondant), aucune trace de stub ou de valeur figée.
+- **Preuve** : `src/network/ospf/OSPFEngine.ts:2587` (« MinLSInterval not yet elapsed — suppress redundant flood », commentaire normal de throttling RFC, pas un gap).
+- **Sévérité** : Mineure (juste pour mémoire — confirme l'absence de gap).
+- **Recommandation** : RAS.
+
+### 3.3 OSPFv3 — l'algorithme SPF n'est jamais exécuté, `getRoutes()` retourne toujours un tableau vide
+- **Constat** : `OSPFv3Engine` maintient un champ `ospfRoutes: OSPFRouteEntry[]` initialisé à `[]`, jamais alimenté par un calcul SPF/Dijkstra, et remis à `[]` lors du reset. `getRoutes()` se contente donc de renvoyer une copie d'un tableau vide en permanence — l'engine ne contribue jamais de routes IPv6 au RIB.
+- **Preuve** : `src/network/ospf/OSPFv3Engine.ts:74` (déclaration `private ospfRoutes: OSPFRouteEntry[] = []`), `src/network/ospf/OSPFv3Engine.ts:828` (`getRoutes(): OSPFRouteEntry[] { return [...this.ospfRoutes]; }`), `src/network/ospf/OSPFv3Engine.ts:870` (réinitialisation à `[]` au reset) ; aucune occurrence d'un calcul SPF/Dijkstra dans tout le fichier.
+- **Sévérité** : Critique.
+- **Recommandation** : porter (ou réutiliser via composition) l'algorithme SPF de `OSPFEngine` pour OSPFv3, en l'adaptant aux LSA spécifiques (Link-LSA, Intra-Area-Prefix-LSA) ; sans cela, le moteur OSPFv3 est un parseur/FSM « de façade » qui ne produit jamais de table de routage exploitable.
+
+### 3.4 OSPFv3 — flooding des Link-LSA explicitement repoussé à « une future itération »
+- **Constat** : `originateLinkLSA()` construit la LSA et la stocke localement, mais le commentaire indique explicitement que la diffusion (flooding) sur le lien vers `AllSPFRouters` n'est pas implémentée.
+- **Preuve** : `src/network/ospf/OSPFv3Engine.ts:775-776` (« Flooding Link-LSAs on the link is left to a future iteration (production would send via the interface to AllSPFRouters). »).
+- **Sévérité** : Majeure.
+- **Recommandation** : implémenter la diffusion réelle des Link-LSA (RFC 5340 §4.4.1), faute de quoi les voisins OSPFv3 ne peuvent jamais apprendre les adresses link-local et les préfixes annoncés via ce type de LSA.
+
+### 3.5 OSPFv3 — checksums LSA toujours à zéro, module `checksum.ts` non réutilisé
+- **Constat** : les Link-LSA et Intra-Area-Prefix-LSA construites par `OSPFv3Engine` portent systématiquement `checksum: 0` ; le module `ospf/checksum.ts` (Fletcher checksum RFC 2328 Annexe C) n'est ni importé ni étendu pour le format OSPFv3.
+- **Preuve** : `src/network/ospf/OSPFv3Engine.ts:765` et `:805` (`checksum: 0` codé en dur) ; absence totale de `computeOSPFLSAChecksum`/`verifyOSPFLSAChecksum` dans `OSPFv3Engine.ts`.
+- **Sévérité** : Mineure.
+- **Recommandation** : calculer un vrai checksum LSA (ou documenter explicitement que la vérification d'intégrité OSPFv3 est hors-scope du simulateur) pour la cohérence avec OSPFv2.
+
+### 3.6 OSPFv3 — l'adjacence et les routes IPv6 sont fabriquées dans la couche d'intégration, contournant entièrement le FSM et le moteur réels
+- **Constat** : `RouterOSPFIntegration.v3FormAdjacency()` construit un objet voisin codé en dur avec `state: 'Full'` directement injecté dans `localIface.neighbors`, sans jamais passer par l'échange Hello/Database-Description du `OSPFv3Engine` (dont les seuls appels sont des accesseurs passifs : `getInterface`, `getConfig`, `getRouterId`, `getInterfaces`). De même, `v3ComputeRoutes()` réimplémente sa propre traversée de proche en proche (BFS façon « reachability via adjacency chain ») et sa propre élection DR/BDR au lieu d'utiliser `ospfv3Engine.getRoutes()` — qui de toute façon est toujours vide (cf. 3.3).
+- **Preuve** : `src/network/devices/router/RouterOSPFIntegration.ts:893-945` (objet voisin fabriqué avec `state: 'Full'`, `lastHelloReceived: Date.now()`, et ré-élection DR/BDR maison `localIface.dr = candidates[0]?.rid`), `src/network/devices/router/RouterOSPFIntegration.ts:947-1000` (`v3ComputeRoutes` : suppression des anciennes routes `r.type !== 'ospf'` puis BFS sur `allPeers` au lieu d'appeler `getRoutes()`).
+- **Sévérité** : Critique.
+- **Recommandation** : remplacer ce contournement par un véritable pipeline Hello→DD→LSR/LSU→SPF dans `OSPFv3Engine`, exposé et consommé via `getNeighbors()`/`getRoutes()`, à l'image de ce qui existe pour OSPFv2. En l'état, « OSPFv3 fonctionne dans le simulateur » au prix d'une duplication de logique ad-hoc qui n'est ni testée au niveau protocole ni cohérente avec l'engine déclaré.
+
+### 3.7 BGP — moteur « léger » sans FSM RFC 4271, sans attributs de chemin ni algorithme de meilleur chemin
+- **Constat** : `BGPEngine` (141 lignes) ne modélise ni l'échange de messages OPEN/UPDATE/NOTIFICATION/KEEPALIVE, ni les états `Connect`/`OpenConfirm` du FSM (bien que le type `NeighborFsmState` les définisse), ni les attributs de chemin (AS_PATH, LOCAL_PREF, MED, NEXT_HOP, ORIGIN), ni l'algorithme de sélection du meilleur chemin, ni route-reflection/confédérations. L'état de session est dérivé de manière déterministe de la configuration (réciprocité de `neighbor`/AS) : `Idle` (pas de pair câblé), `Active` (pair non réciproque), `OpenSent` (utilisé en impasse permanente pour signaler une incompatibilité d'AS — jamais une vraie phase protocolaire), ou `Established`.
+- **Preuve** : `src/network/bgp/BGPEngine.ts:74-88` (`sessionState()` — les seuls états atteignables sont `Idle`/`Active`/`OpenSent`/`Established`, jamais `Connect`/`OpenConfirm`), `src/network/bgp/BGPEngine.ts:120-140` (`computeRoutes` n'attribue qu'une `metric: 0` fixe et une AD eBGP/iBGP figée — aucune sélection multi-chemins ni comparaison d'attributs), `src/network/routing/types.ts:27-29` (le type `NeighborFsmState` définit bien les 8 états RFC 4271 mais 4 d'entre eux ne sont jamais produits par BGPEngine).
+- **Sévérité** : Majeure.
+- **Recommandation** : si l'objectif est de rester « léger », documenter explicitement (au niveau du module, pas seulement en commentaire de fichier) que BGP est un substitut simplifié sans FSM/attributs réels ; sinon, implémenter au minimum AS_PATH + sélection de meilleur chemin pour rendre `show ip bgp` crédible au-delà d'un simple « path i ».
+
+### 3.8 EIGRP — DUAL totalement absent malgré une conception détaillée documentée (`docs/DESIGN-EIGRP.md`)
+- **Constat** : le document de conception décrit une architecture complète à plusieurs couches (DUAL avec successeurs/successeurs de secours, Topology Table, RTP fiable, dispatcher de 5 types de paquets Hello/Update/Query/Reply/Ack, métrique composite pondérée par K1..K5). L'implémentation réelle (`EIGRPEngine.ts`, 161 lignes) ne contient rien de tout cela : pas de Topology Table, pas de condition de faisabilité, pas de paquets, pas de coefficients K — uniquement une adjacence basée sur la correspondance d'AS et des routes fabriquées avec une métrique fixe `metric: 1` et une AD figée à 90.
+- **Preuve** : `docs/DESIGN-EIGRP.md:52,108,111,147-148` (architecture DUAL/RTP/5 types de paquets/métrique composite K1-K5 documentée), vs `src/network/eigrp/EIGRPEngine.ts:136-160` (`computeRoutes` : `metric: 1`, `adminDistance: EIGRP_INTERNAL_AD` = 90, codé en dur), `src/network/eigrp/EIGRPEngine.ts:6` (le seul vestige est le commentaire « DUAL-style successor », sans aucune trace de code DUAL — confirmé par une recherche globale qui ne renvoie que ce commentaire).
+- **Sévérité** : Critique.
+- **Recommandation** : soit aligner le code sur la conception documentée (implémenter au moins une version simplifiée de DUAL avec successeur/successeur de secours et la métrique composite), soit retirer/réviser `docs/DESIGN-EIGRP.md` pour refléter l'état réel — l'écart actuel entre conception et code est trompeur pour quiconque s'y réfère.
+
+### 3.9 BGP/EIGRP — non-conformité à la convention de structure de protocole décrite dans CLAUDE.md
+- **Constat** : la convention du dépôt (« Reactive protocol engines... follow a consistent shape: `<Protocol>Engine.ts` + `types.ts` + `events.ts` + `observables.ts` + `actors/` ») n'est pas respectée : les répertoires `bgp/` et `eigrp/` ne contiennent QUE le fichier `*Engine.ts`, sans `types.ts`, `events.ts`, `observables.ts` ni `actors/` propres (ils réutilisent les génériques de `routing/`).
+- **Preuve** : listing `src/network/bgp/` et `src/network/eigrp/` → un seul fichier chacun (`BGPEngine.ts`, `EIGRPEngine.ts`), à comparer avec `src/network/ospf/` (8 fichiers + 11 acteurs) et `src/network/rip/` (`RIPEngine.ts` + `events.ts` + `observables.ts` + `actors/`).
+- **Sévérité** : Mineure.
+- **Recommandation** : soit documenter explicitement que les protocoles « légers » construits sur `AbstractRoutingProtocolEngine` sont dispensés de cette structure (et l'indiquer dans CLAUDE.md), soit créer les fichiers `types.ts`/`events.ts` dédiés pour la cohérence inter-modules.
+
+### 3.10 RIP — implémentation conforme RFC 2453, mais hors de l'abstraction commune
+- **Constat** : `RIPEngine` implémente correctement les mises à jour périodiques/déclenchées, le split-horizon avec poison-reverse, le timeout/garbage-collection et la limite à 16 (infini). En revanche, il n'étend pas `AbstractRoutingProtocolEngine` — c'est un `IProtocolEngine` autonome piloté par callbacks, exposé au reste du système via un adaptateur séparé (`RipEngineAdapter`).
+- **Preuve** : `src/network/rip/RIPEngine.ts:128` (`export class RIPEngine implements IProtocolEngine`, pas `extends AbstractRoutingProtocolEngine`), `src/network/rip/RIPEngine.ts:354-401` (split-horizon/poison-reverse + `sendTriggeredUpdate`), `src/network/routing/adapters/RipEngineAdapter.ts` (couche d'adaptation nécessaire pour le faire correspondre au contrat commun).
+- **Sévérité** : Mineure.
+- **Recommandation** : aucune action urgente — le pattern Adapter (`RipEngineAdapter`/`OspfEngineAdapter`) gère bien cette hétérogénéité historique ; à terme, envisager une migration de RIP vers `AbstractRoutingProtocolEngine` pour réduire la duplication de la projection réactive.
+
+### 3.11 Couche d'abstraction `AbstractRoutingProtocolEngine` — adoptée seulement par BGP/EIGRP, contournée par OSPF/RIP via Adapter
+- **Constat** : seuls `BGPEngine` et `EIGRPEngine` étendent réellement `AbstractRoutingProtocolEngine` ; OSPF et RIP — les deux protocoles « pilotés par trame » les plus complexes — sont intégrés via des adaptateurs (`OspfEngineAdapter`, `RipEngineAdapter`) qui implémentent directement `IRoutingProtocolEngine` sans hériter de la classe abstraite, avec des seams `setPeerLocator`/`setDeviceContext` explicitement no-op (« frame-driven »).
+- **Preuve** : `src/network/routing/adapters/OspfEngineAdapter.ts:31,59-60` (`class OspfEngineAdapter implements IRoutingProtocolEngine<OSPFConfig>` + `setPeerLocator(_l) {} /* frame-driven */`), `src/network/devices/router/RouterDynamicRouting.ts:46-56` (commentaire « RIP/OSPF exposed through the SAME contract (Adapter) »).
+- **Sévérité** : Mineure.
+- **Recommandation** : c'est un compromis assumé et documenté (Adapter Pattern), pas une incohérence cachée — mais le terme « shared abstraction » dans les commentaires de `AbstractRoutingProtocolEngine.ts` (« the foundation… ») peut induire en erreur sur le degré réel d'unification ; clarifier la documentation pour indiquer que deux familles de stratégies d'intégration coexistent (héritage direct vs adaptation).
+
+### 3.12 `RoutingTable` (LPM générique) — abstraction documentée mais totalement inutilisée
+- **Constat** : `core/RoutingTable.ts` fournit une table de routage générique avec Longest-Prefix-Match, partagée IPv4/IPv6 (`createIPv4RoutingTable`/`createIPv6RoutingTable`), exportée depuis `core/index.ts` — mais n'est instanciée nulle part dans le code de production ni dans les tests. `Router.ts` réimplémente sa propre LPM par balayage linéaire sur `RouteEntry[]`, et `IPv6DataPlane.ts` fait de même sur `IPv6RouteEntry[]`.
+- **Preuve** : `src/network/core/RoutingTable.ts:38,172,226` (classe et factories génériques jamais instanciées en dehors du fichier), `src/network/devices/Router.ts:602-636` (`lookupRoute()` réimplémente LPM par boucle `for (const route of this.routingTable)`), `src/network/devices/router/IPv6DataPlane.ts:88,184` (même duplication pour IPv6).
+- **Sévérité** : Mineure.
+- **Recommandation** : soit migrer `Router`/`IPv6DataPlane` vers `RoutingTable`/`createIPv4RoutingTable`/`createIPv6RoutingTable` (élimine la duplication et améliore la complexité de recherche), soit supprimer ce module mort pour ne pas induire en erreur les futurs contributeurs cherchant « la » table de routage du projet.
+
+### 3.13 Convergence dynamique pilotée par la trajectoire de transfert (« recompute-on-lookup »), pas par événements protocolaires
+- **Constat** : malgré le commentaire de `AbstractRoutingProtocolEngine.ts` affirmant « Reactive… No polling anywhere », la convergence BGP/EIGRP n'est en réalité déclenchée ni par des timers protocolaires, ni par des événements de topologie : elle est recalculée de façon synchrone à chaque décision de transfert de paquet (`Router.lookupRoute`) et à chaque commande `show`.
+- **Preuve** : `src/network/devices/Router.ts:607` (`if (this.dynamicRouting?.hasActive()) this.dynamicRouting.converge();` dans `lookupRoute`, exécuté pour CHAQUE paquet IP routé), `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts:274` (`const live = () => ctx.r().convergeDynamicRouting();` rappelé avant chaque `show ip bgp*`/`show ip eigrp*`) ; absence de minuteur dédié pour BGP/EIGRP dans `RouterDynamicRouting.ts`/`BGPEngine.ts`/`EIGRPEngine.ts`.
+- **Sévérité** : Mineure (fonctionnellement correct car déterministe et idempotent, mais coût de performance et contradiction avec le commentaire affiché).
+- **Recommandation** : soit recalculer uniquement sur changement de topologie réel (abonnement aux événements de port/câble), soit reformuler le commentaire « no polling » qui est trompeur — il s'agit en pratique d'un recalcul synchrone à la demande (« pull », pas « push »), potentiellement coûteux sur de grandes topologies à fort trafic.
+
+### 3.14 Cohérence show↔état — globalement bonne pour OSPF/BGP/EIGRP/RIP, dérivée du moteur réel
+- **Constat** : les commandes `show ip bgp summary/neighbors/table`, `show ip eigrp neighbors/topology/interfaces`, `show ip ospf neighbor[ detail]`, `show ip route ospf` dérivent toutes de l'état live des moteurs (`getNeighbors()`, `getContributedRoutes()`, `getRoutes()`) après un appel de convergence explicite (`live()`/`_ospfAutoConverge()`), pas de texte statique. Seul `show ip bgp` mélange les déclarations `network` configurées (toujours affichées comme localement originées avec `0.0.0.0`/`32768`/`i`) et les routes réellement apprises — ce qui est conforme au comportement Cisco réel (table BGP locale).
+- **Preuve** : `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts:276-295` (`show ip bgp summary` itère `e.getNeighbors()` après `live()`), `:341-352` (`show ip eigrp neighbors` retourne un message honnête « no real EIGRP peer cabled » si la table est vide plutôt qu'un texte figé), `src/network/devices/shells/cisco/CiscoOspfCommands.ts:1203-1228` (`showIpOspfNeighbor` itère `ospf.getNeighbors()` après `_ospfAutoConverge()`).
+- **Sévérité** : Information (point positif notable — contraste avec d'autres sous-systèmes potentiellement plus statiques).
+- **Recommandation** : maintenir cette discipline « live state only » lors de l'ajout de nouvelles commandes `show`.
+
+### 3.15 Artefact de fichier de test orphelin (`ospf-full.test` sans extension `.ts`)
+- **Constat** : le répertoire de tests OSPF contient un fichier `ospf-full.test` (≈96 Ko, sans extension `.ts`) quasi-identique à `ospf-full.test.ts` mais avec des imports différents (`Router` au lieu de `CiscoRouter`/`CiscoSwitch`) — manifestement un reliquat d'une refactorisation, non exécuté par Vitest (extension non reconnue) et non référencé ailleurs.
+- **Preuve** : `src/__tests__/unit/network-v2/ospf-full.test` (≈96 Ko) coexistant avec `ospf-full.test.ts`, imports divergents dès la ligne 18 (`Router` vs `CiscoRouter`/`CiscoSwitch`).
+- **Sévérité** : Mineure.
+- **Recommandation** : supprimer le fichier orphelin `ospf-full.test` (poids mort, source de confusion lors de recherches/diffs).
+
+### 3.16 Parité IPv4/IPv6 — le plan de données IPv6 ne consomme aucune route de protocole dynamique
+- **Constat** : `IPv6DataPlane` gère exclusivement des routes statiques/connectées/par défaut (`type: 'static' | 'connected' | 'default'`) ; aucune référence à OSPF, OSPFv3, BGP ou tout autre protocole dynamique n'existe dans ce fichier (679 lignes). Les seules routes OSPFv3 injectées dans sa table le sont via le contournement décrit en 3.6 (`v3ComputeRoutes`), pas via une intégration générique pérenne.
+- **Preuve** : `src/network/devices/router/IPv6DataPlane.ts:88,118-184` (table de routage purement statique avec types `'static'|'connected'|'default'`, aucune occurrence de `OSPFv3`/`ospf`/`getRoutes` dans tout le fichier).
+- **Sévérité** : Majeure.
+- **Recommandation** : exposer un point d'intégration générique dans `IPv6DataPlane` (à l'image de `RouterDynamicRouting` pour IPv4) permettant d'injecter des routes `type: 'ospf'`/`'bgp'` provenant d'un futur moteur OSPFv3/MP-BGP fonctionnel, plutôt que de continuer à le faire via des contournements ad-hoc dans `RouterOSPFIntegration`.
+
+### 3.17 BGP — pas de support multiprotocole (MP-BGP / AFI-SAFI IPv6)
+- **Constat** : `BGPConfig` ne possède aucune notion d'AFI/SAFI ; toutes les adresses manipulées (`BgpNetworkStmt`, `BgpNeighborCfg`, `originatedPrefixes`) sont typées `IPAddress`/`SubnetMask` IPv4 uniquement — aucune mention d'IPv6, `address-family ipv6`, ou MP_REACH_NLRI/MP_UNREACH_NLRI.
+- **Preuve** : `src/network/bgp/BGPEngine.ts:19-31` (interfaces `BgpNetworkStmt`/`BgpNeighborCfg`/`BGPConfig` 100% IPv4), `src/network/bgp/BGPEngine.ts:60-71` (`originatedPrefixes(): Array<{ network: IPAddress; mask: SubnetMask }>`).
+- **Sévérité** : Majeure.
+- **Recommandation** : si le simulateur ambitionne de couvrir le routage IPv6 dynamique (cohérent avec l'existence d'OSPFv3), prévoir une extension AFI/SAFI de `BGPEngine`/`BGPConfig` pour IPv6 ; sinon documenter clairement que seul l'IPv4 est couvert par BGP.
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
