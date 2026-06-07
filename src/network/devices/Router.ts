@@ -69,6 +69,7 @@ import {
 import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
+import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
@@ -1053,6 +1054,41 @@ export abstract class Router extends Equipment {
 
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
 
+  protected recordNetflowSample(_input: NetFlowRecordInput): void {}
+
+  getNetFlowAgent(): NetFlowAgent | null { return null; }
+
+  private sampleNetflowForward(pkt: IPv4Packet, nextHopIP: IPAddress): void {
+    let sourcePort: number | undefined;
+    let destinationPort: number | undefined;
+    let tcpFlags: number | undefined;
+    if (pkt.protocol === IP_PROTO_TCP) {
+      const tcp = pkt.payload as TCPPacket;
+      sourcePort = tcp.sourcePort;
+      destinationPort = tcp.destinationPort;
+      tcpFlags = (tcp.flags.fin ? 0x01 : 0)
+        | (tcp.flags.syn ? 0x02 : 0)
+        | (tcp.flags.rst ? 0x04 : 0)
+        | (tcp.flags.psh ? 0x08 : 0)
+        | (tcp.flags.ack ? 0x10 : 0)
+        | (tcp.flags.urg ? 0x20 : 0);
+    } else if (pkt.protocol === IP_PROTO_UDP) {
+      const udp = pkt.payload as UDPPacket;
+      sourcePort = udp.sourcePort;
+      destinationPort = udp.destinationPort;
+    }
+    this.recordNetflowSample({
+      sourceIp: pkt.sourceIP.toString(),
+      destinationIp: pkt.destinationIP.toString(),
+      sourcePort, destinationPort, tcpFlags,
+      protocol: pkt.protocol,
+      bytes: pkt.totalLength,
+      packets: 1,
+      tos: pkt.tos,
+      nextHopIp: nextHopIP.toString(),
+    });
+  }
+
   /**
    * Forward an IPv4 packet to the next hop.
    * Implements the full RFC 1812 forwarding pipeline.
@@ -1134,6 +1170,8 @@ export abstract class Router extends Equipment {
     // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
     const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
     if (natOutbound) fwdPkt = natOutbound;
+
+    this.sampleNetflowForward(fwdPkt, nextHopIP);
 
     // Phase E.2c: SPD outbound check (RFC 4301 §4.4.1) + IPSec encryption
     if (this.ipsecEngine) {

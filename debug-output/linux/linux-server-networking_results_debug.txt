@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-06-05T09:41:06.439Z
+Generated: 2026-06-07T20:22:37.978Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -782,7 +782,7 @@ $ [139/302]> getent hosts localhost
   ::1             localhost ip6-localhost ip6-loopback
 
 $ [140/302]> cat /etc/resolv.conf
-  cat: /etc/resolv.conf: No such file or directory
+<empty>
 
 $ [141/302]> cat /etc/hosts
   127.0.0.1	localhost
@@ -954,22 +954,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-06-05 09:41:06--  http://192.168.10.1
+  --2026-06-07 20:22:37--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-06-05 09:41:06--  http://192.168.10.1
+  --2026-06-07 20:22:37--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-06-05 09:41:06--  http://192.168.10.1
+  --2026-06-07 20:22:37--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-06-05 09:41:06--  http://192.168.10.99
+  --2026-06-07 20:22:37--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1192,11 +1192,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Jun  5 09:41 /tmp/id_rsa
-  -rw-r--r-- 1 root root 41 Jun  5 09:41 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jun  7 20:22 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Jun  7 20:22 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAn4n6oa0163 root@linux-server
+  ssh-rsa AAAAphjf272ucnd root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1205,7 +1205,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAq2dz7h3xaf root@localhost
+  ssh-ed25519 AAAAifhn41dm78 root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
