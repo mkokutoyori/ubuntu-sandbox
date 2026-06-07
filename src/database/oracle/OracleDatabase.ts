@@ -1728,12 +1728,20 @@ export class OracleDatabase implements SqlCommandHost {
   /** Execute EXEC[UTE] procedure_name(args) */
   private executeProcedureCall(executor: OracleExecutor, sql: string): ResultSet {
     const cleaned = sql.replace(/^EXEC(?:UTE)?\s+/i, '').trim();
-    return this.callStoredUnit(executor, cleaned);
+
+    const nameMatch = cleaned.match(/^(\w+(?:\.\w+){0,2})\s*(?:\(|;|$)/);
+    if (nameMatch) {
+      const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      if (this.resolveStoredUnit(schema, nameMatch[1])) {
+        return this.callStoredUnit(executor, cleaned);
+      }
+    }
+
+    const block = /;\s*$/.test(cleaned) ? `BEGIN ${cleaned} END;` : `BEGIN ${cleaned}; END;`;
+    return this.executePLSQL(executor, block);
   }
 
-  /** Try to execute a standalone procedure call (including pkg.proc) */
   private tryExecuteProcedureCall(executor: OracleExecutor, sql: string): ResultSet | null {
-    // Match schema.pkg.proc(args), pkg.proc(args) or proc(args)
     const match = sql.match(/^(\w+(?:\.\w+){0,2})\s*\(([\s\S]*)\)\s*$/);
     if (!match) return null;
     const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
@@ -1741,19 +1749,6 @@ export class OracleDatabase implements SqlCommandHost {
     return this.callStoredUnit(executor, sql);
   }
 
-  /**
-   * Resolve a (possibly schema/package-qualified) stored-unit name to its
-   * definition, mirroring Oracle's name-resolution order:
-   *   NAME            → <currentSchema>.NAME, then SYS.NAME (public synonyms)
-   *   A.B             → <currentSchema>.A.B (package member) takes precedence
-   *                     over A.B (schema-qualified standalone unit) only when
-   *                     A is not a known schema/user; SYS.A.B is also tried
-   *   A.B.C           → A.B.C (schema.package.member)
-   * This centralises what used to be duplicated, subtly-incorrect lookup
-   * logic in tryExecuteProcedureCall/callStoredUnit (qualified calls such as
-   * `EXEC hr.bump_salary(...)` previously always missed because the whole
-   * "HR.BUMP_SALARY" string was treated as a single unit name).
-   */
   private resolveStoredUnit(currentSchema: string, qualifiedName: string): StoredPLSQLUnit | undefined {
     const parts = qualifiedName.toUpperCase().split('.');
 
@@ -1764,26 +1759,17 @@ export class OracleDatabase implements SqlCommandHost {
 
     if (parts.length === 2) {
       const [a, b] = parts;
-      // `A.B` is ambiguous: it could be SCHEMA.PROC (standalone unit owned
-      // by schema A) or PKG.MEMBER (package member resolved in the current
-      // schema, or in SYS). Real Oracle prefers a schema-qualified object
-      // when A names a known user/schema; otherwise it resolves A as a
-      // package visible to the current session.
       const schemaQualified = this.catalog.userExists(a) ? this.storedUnits.get(`${a}.${b}`) : undefined;
       const packageMember = this.storedUnits.get(`${currentSchema}.${a}.${b}`)
         ?? this.storedUnits.get(`SYS.${a}.${b}`);
       return schemaQualified ?? packageMember ?? this.storedUnits.get(`${a}.${b}`);
     }
 
-    // 3+ parts: SCHEMA.PACKAGE.MEMBER (or deeper-qualified forms — store keys
-    // never exceed three segments, so re-join everything past the schema).
     const [schema, ...rest] = parts;
     return this.storedUnits.get(`${schema}.${rest.join('.')}`) ?? this.storedUnits.get(qualifiedName.toUpperCase());
   }
 
-  /** Call a stored procedure or function by name with arguments (supports pkg.proc) */
   private callStoredUnit(executor: OracleExecutor, callExpr: string): ResultSet {
-    // Match schema.pkg.proc(args), pkg.proc(args) or proc(args)
     const match = callExpr.match(/^(\w+(?:\.\w+){0,2})(?:\s*\(([\s\S]*)\))?\s*$/);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
@@ -1794,11 +1780,6 @@ export class OracleDatabase implements SqlCommandHost {
     const unit = this.resolveStoredUnit(schema, name);
     if (!unit) return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
 
-    // Cross-schema invocation requires the EXECUTE object privilege (or
-    // EXECUTE ANY PROCEDURE / DBA). Real Oracle hides the unit's existence
-    // from callers who lack it, surfacing the same PLS-00201 "must be
-    // declared" error as a missing identifier — so we reuse that message
-    // rather than leaking ORA-01031 (information hiding).
     const ctx = (executor as { context?: { currentUser?: string } }).context;
     const currentUser = (ctx?.currentUser || schema).toUpperCase();
     if (currentUser !== 'SYS' && currentUser !== unit.schema) {
@@ -1843,14 +1824,6 @@ export class OracleDatabase implements SqlCommandHost {
       block += 'BEGIN\n' + body + '\nEND;';
     }
 
-    // Stored units run with definer's rights by default (AUTHID DEFINER —
-    // the simulator does not track AUTHID CURRENT_USER on the unit, which
-    // would be the only case requiring invoker's rights): the body executes
-    // as though the owning schema were connected, so unqualified references
-    // resolve in the owner's schema and the owner's object privileges (not
-    // the caller's) govern access — exactly what makes `GRANT EXECUTE`
-    // sufficient without also granting privileges on every object touched
-    // by the procedure body.
     if (ctx && unit.schema !== currentUser) {
       const savedUser = ctx.currentUser;
       const savedSchema = (ctx as { currentSchema?: string }).currentSchema;
