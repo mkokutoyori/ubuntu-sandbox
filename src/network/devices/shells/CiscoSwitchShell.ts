@@ -51,6 +51,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private selectedAcl: string | null = null;
   private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
+  private debugFlags = new Set<string>();
 
   constructor() {
     super();
@@ -1013,13 +1014,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           `Number of inconsistent ports (segments) in the system : ${bad.length}`,
         ].join('\n');
       });
-      t.register('show debugging', 'Display active debugging', () => 'No debugging is enabled');
-      t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) =>
-        `Spanning Tree ${a.join(' ') || 'all'} debugging is on`);
-      t.registerGreedy('debug', 'Enable debugging', (a) =>
-        `${a.join(' ') || 'all'} debugging is on`);
-      t.registerGreedy('undebug', 'Disable debugging', () => 'All possible debugging has been turned off');
-      t.register('no debug all', 'Disable debugging', () => 'All possible debugging has been turned off');
+      t.register('show debugging', 'Display active debugging', () => {
+        if (this.debugFlags.size === 0) return 'No debugging is enabled';
+        return [...this.debugFlags].sort().join('\n');
+      });
+      t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
+        const what = a.join(' ') || 'all';
+        this.debugFlags.add(`Spanning Tree ${what} debugging is on`);
+        return `Spanning Tree ${what} debugging is on`;
+      });
+      t.registerGreedy('debug', 'Enable debugging', (a) => {
+        const what = a.join(' ') || 'all';
+        this.debugFlags.add(`${what} debugging is on`);
+        return `${what} debugging is on`;
+      });
+      t.registerGreedy('undebug', 'Disable debugging', () => {
+        this.debugFlags.clear();
+        return 'All possible debugging has been turned off';
+      });
+      t.register('no debug all', 'Disable debugging', () => {
+        this.debugFlags.clear();
+        return 'All possible debugging has been turned off';
+      });
     }
   }
 

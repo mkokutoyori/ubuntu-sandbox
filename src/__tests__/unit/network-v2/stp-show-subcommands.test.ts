@@ -42,7 +42,12 @@ describe('show spanning-tree subcommands', () => {
     expect(detail).toContain('executing the');
     expect(detail).not.toContain('% Invalid');
 
-    expect(await s2.executeCommand('show debugging')).toContain('debugging');
+    expect(await s2.executeCommand('show debugging')).toBe('No debugging is enabled');
     expect(await s2.executeCommand('debug spanning-tree events')).toContain('debugging is on');
+    const dbg = await s2.executeCommand('show debugging');
+    expect(dbg).toContain('Spanning Tree');
+    expect(dbg).toContain('is on');
+    await s2.executeCommand('no debug all');
+    expect(await s2.executeCommand('show debugging')).toBe('No debugging is enabled');
   });
 });
