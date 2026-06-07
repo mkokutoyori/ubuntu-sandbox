@@ -448,6 +448,7 @@ export class IPSecEngine implements IProtocolEngine {
   readonly stats: Signal<IPSecStatsVM> = this.signalStore.stats;
   /** Bundled signal-refresh actor (Phase 4b2-IPSec.deeper). */
   private signalRefreshActor: IPSecSignalRefreshActor | null = null;
+  private maintenanceTimer: symbol | null = null;
 
   /** Pluggable inbound packet pipeline (Phase 4b2-IPSec FilterChain). */
   readonly inboundChain: FilterChain<IPSecInboundContext>;
@@ -621,6 +622,7 @@ export class IPSecEngine implements IProtocolEngine {
   start(): void {
     this.running = true;
     this.signalRefreshActor?.start();
+    this.startMaintenanceTimer();
     this.refreshStats();
     this.getBus().publish({
       topic: 'ipsec.engine.started',
@@ -633,6 +635,7 @@ export class IPSecEngine implements IProtocolEngine {
     this.running = false;
     // Clear all scheduler-owned timers (fragment reassembly etc.).
     this.timers.clearAll();
+    this.maintenanceTimer = null;
     this.fragBuffer.clear();
     this.signalRefreshActor?.stop();
     this.refreshStats();
@@ -640,6 +643,15 @@ export class IPSecEngine implements IProtocolEngine {
       topic: 'ipsec.engine.stopped',
       payload: this.deviceRef(),
     });
+  }
+
+  private startMaintenanceTimer(): void {
+    if (this.maintenanceTimer !== null) return;
+    this.maintenanceTimer = this.timers.setInterval(() => {
+      if (!this.running) return;
+      this.recheckIKESALifetimes();
+      this.runDPDCheck();
+    }, 1000);
   }
 
   // ─── Read-model refresh ────────────────────────────────────────────
