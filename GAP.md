@@ -866,4 +866,107 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 
 ---
 
+## 9. Interpréteur PowerShell & sous-systèmes hôte Windows
+
+L'ensemble PowerShell/Windows est dans un état de **migration architecturale active** : un ancien moteur monolithique texte (`PowerShellExecutor`, 6114 lignes) cohabite avec un nouvel interpréteur AST « propre » (`PSInterpreter`/`PSRuntime`/registre de cmdlets `ICmdlet`) qui passe de vrais objets dans le pipeline. Le nouvel interpréteur est étonnamment mature (try/catch/trap, scriptblocks, `$_`/`$PSItem`, splatting, `-ErrorAction`, fournisseurs de registre hiérarchiques), mais la coexistence des deux moteurs génère une duplication massive de logique cmdlet, des incohérences d'état (`$Error`), et une dette de migration explicitement documentée dans le code (« Phase 4 », « fallbackHits », commentaires « once every test path runs cleanly… this branch can be removed »). Le sous-système Windows est globalement moins profond et moins « cross-OS-aligné » que son pendant Linux.
+
+### 9.1 Lexer / Parser
+- **Constat** : Le lexer et le parser couvrent correctement la syntaxe PowerShell réelle : here-strings (`@'...'@`/`@"..."@`), splatting (`@var`), attributs `[CmdletBinding()]`, scriptblocks à blocs nommés `begin/process/end`. Cependant `[CmdletBinding()]` et les autres attributs de fonction sont uniquement *sautés* (non interprétés) — aucune sémantique `SupportsShouldProcess`, `ParameterSetName`, etc. n'est exploitée.
+- **Preuve** : `src/powershell/parser/PSParser.ts:1160-1166` (`// Skip function-level attribute declarations like [CmdletBinding()] before param()` — `this.skipBracketAttribute()`).
+- **Sévérité** : Mineure
+- **Recommandation** : Documenter explicitement que les attributs avancés sont ignorés ; envisager de capter au moins `SupportsShouldProcess` pour activer `-WhatIf`/`-Confirm`.
+
+### 9.2 Interpréteur / Runtime / Pipeline
+- **Constat** : Le runtime gère correctement try/catch/trap, `$_`/`PSItem`, `$args`/`$input`, scriptblocks et closures (`GetNewClosure`). C'est un socle solide et largement supérieur au texte-brut attendu pour ce genre de simulateur.
+- **Preuve** : `src/powershell/runtime/PSRuntime.ts:714` (`case 'TryStatement'`), `:923-949` (binding `$_`/`PSItem`), `:1015` (`invokeScriptBlock`).
+- **Sévérité** : (positif — pas un défaut)
+
+- **Constat** : Bug latent — `$Error` n'est alimenté que par les exceptions terminantes capturées dans `execTry` (`this.global.set('Error', ...)`), tandis que les erreurs *non terminantes* émises via `ctx.emitError()` sont accumulées dans un tableau séparé `self.errorObjects` jamais fusionné dans la variable globale `$Error`. Résultat : `Get-Item C:\NoExist -ErrorAction SilentlyContinue; $Error[0].Exception.Message` ne renvoie rien.
+- **Preuve** : `src/powershell/runtime/PSRuntime.ts:1656` (`this.global.set('Error', [errRecord, ...errList])`) vs `:2376-2380` (`self.errorObjects.push({...})`, jamais reporté vers `global.Error`); test correspondant désactivé : `src/__tests__/unit/powershell/ps_machine_level.test.ts:748` (`it.skip('$Error contains last error after non‑terminating error'`).
+- **Sévérité** : Majeure
+- **Recommandation** : Fusionner `errorObjects` dans `global.Error` à chaque `emitError`, ou unifier les deux mécanismes derrière un seul accumulateur.
+
+- **Constat** : `-ErrorAction Stop` n'est pas traité spécialement — il est simplement extrait des paramètres communs (`delete cmdletNamed['erroraction']`) sans jamais transformer une erreur non terminante en exception levée. Donc `try { Get-Content C:\ghost.txt -ErrorAction Stop } catch { ... }` ne peut pas fonctionner puisque le cmdlet appelle `ctx.emitError` (non bloquant) et retourne normalement.
+- **Preuve** : `src/powershell/runtime/PSRuntime.ts:2259-2304` (aucune branche `errorAction === 'stop'`); test désactivé : `src/__tests__/unit/powershell/ps_machine_level.test.ts:756` (`it.skip('try/catch catches file not found and writes custom error'`).
+- **Sévérité** : Majeure
+- **Recommandation** : Quand `-ErrorAction Stop` est positionné, convertir le premier appel à `ctx.emitError` en exception `PSRuntimeError` propagée (sémantique « erreur terminante »).
+
+- **Constat** : Le moteur de pipeline « legacy » est entièrement dupliqué : `src/network/devices/windows/PSPipeline.ts` réimplémente `Where-Object`/`Select-Object`/`Sort-Object`/`Measure-Object`/`Format-Table`/`Format-List` à coups de regex sur arguments-chaîne et de parsing de tables texte (`parseTable`), alors que la même fonctionnalité existe en version AST/objet propre dans `src/powershell/cmdlets/core/CollectionCmdlets.ts` (15 classes `ICmdlet`).
+- **Preuve** : `src/network/devices/windows/PSPipeline.ts:254` (`whereObject`), `:580` (`formatTable`), `:40` (`parseTable` — reconstruit des objets à partir d'une table texte pré-formatée, signe d'un pipeline texte déguisé en « objet »); doublon AST : `src/powershell/cmdlets/core/CollectionCmdlets.ts:102,232,312,409,485,660,689` (`WhereObjectCmdlet`, `ForEachObjectCmdlet`, `SelectObjectCmdlet`, `SortObjectCmdlet`, `MeasureObjectCmdlet`, `FormatTableCmdlet`, `FormatListCmdlet`).
+- **Sévérité** : Majeure
+- **Recommandation** : Achever la migration vers `PSInterpreter`/`ICmdlet` et supprimer `PSPipeline.ts` ; le commentaire d'en-tête de `PowerShellSubShell.ts:27-33` indique d'ailleurs que c'est déjà l'intention déclarée (« once every test path runs cleanly through the interpreter this branch can be removed »).
+
+### 9.3 Cmdlets
+- **Constat** : Doublon direct entre l'ancien moteur et le nouveau pour `Get/Start/Stop/Restart/Suspend/Resume/New/Remove-Service` et `Get/Stop/Start-Process` : fonctions texte `psGetService`/`psStartService`/… dans `PSServiceCmdlets.ts` (appelées par `PowerShellExecutor`) vs classes `ICmdlet` (`GetServiceCmdlet`, etc.) dans `src/powershell/cmdlets/core/ServiceCmdlets.ts:118` et `ProcessCmdlets.ts`.
+- **Preuve** : `src/network/devices/windows/PSServiceCmdlets.ts:29` (`export function psGetService`) vs `src/powershell/cmdlets/core/ServiceCmdlets.ts:118` (`export class GetServiceCmdlet implements ICmdlet`).
+- **Sévérité** : Majeure
+- **Recommandation** : Choisir un seul propriétaire de la logique (le registre `ICmdlet`) et faire de l'autre une simple délégation, ou supprimer complètement le doublon legacy.
+
+- **Constat** : `Get-Process`/`Get-Service` dérivent bien leur sortie de l'état réel simulé (via `ctx.providers.processes`/`services`, eux-mêmes branchés sur `WindowsProcessManager`/`WindowsServiceManager`) — bon point MVC. Mais plusieurs fonctionnalités de cmdlets restent skippées/non implémentées : `Remove-LocalUser`, `Rename-LocalUser`, `Set-LocalUser -AccountDisabled`, politique de mot de passe faible, `Remove-LocalGroup`, environnement `Env:` (`Get-ChildItem Env:`, `[Environment]::SetEnvironmentVariable`), `Get-Content -Tail/-TotalCount`, `Copy-Item` cross-drive, toute la famille `Get/Set/Disable/Enable-NetAdapter`, `Get-NetIPAddress`, `Set-DnsClientServerAddress`, `Resolve-DnsName`.
+- **Preuve** : `src/__tests__/unit/powershell/ps_machine_level.test.ts:261,295,307,318,342,472,487,503,604,652` et `src/__tests__/unit/powershell/ps-network-command.test.ts:49,63,77,102,119,127,146,161,169,181` (toutes en `it.skip`).
+- **Sévérité** : Majeure
+- **Recommandation** : Soit implémenter ces cmdlets côté `WindowsUserManager`/`WindowsPSProviders` (le provider réseau retourne déjà `notImpl()` pour beaucoup d'opérations, voir 9.4), soit retirer ces specs si la fonctionnalité n'est pas dans le périmètre du produit.
+
+- **Constat** : `Get-Process : Remoting...` et `Get-Service : Remoting...` retournent des messages d'erreur PS authentiques formatés statiquement — c'est correct pour des opérations délibérément non supportées (CIM/remoting), mais à différencier des vraies lacunes.
+- **Preuve** : `src/network/devices/windows/PSProcessCmdlets.ts:30`, `src/network/devices/windows/PSServiceCmdlets.ts:43`.
+- **Sévérité** : (info, pas un défaut)
+
+- **Constat** : `ipconfig /displaydns` retourne systématiquement un texte canné `"(no entries)"`, alors qu'aucun cache DNS réel n'est maintenu côté `WindowsPC` — `flushdns` ne fait donc rien de tangible non plus (pas de structure de données à vider).
+- **Preuve** : `src/network/devices/windows/WinIpconfig.ts:88-90` (`if (lower.includes('/displaydns')) { return 'Windows IP Configuration\n\n  Record Name . . . . . : (no entries)'; }`); commentaire d'auto-aveu en en-tête `WinIpconfig.ts:10` (`ipconfig /displaydns — display DNS cache (stub)`).
+- **Sévérité** : Mineure
+- **Recommandation** : Soit implémenter un vrai cache DNS résolveur (alimenté par `Resolve-DnsName`/`nslookup`), soit documenter clairement que `/displaydns`/`/flushdns` sont des no-ops cosmétiques.
+
+### 9.4 Fournisseurs (filesystem, registre, réseau)
+- **Constat** : Le registre Windows (`PSRegistryProvider`) est une vraie arborescence hiérarchique (`Map<string, RegistryKey>` avec sous-clés et valeurs typées), pré-amorcée avec des chemins `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion` réalistes — bonne profondeur de simulation, pas de structure plate cosmétique.
+- **Preuve** : `src/network/devices/windows/PSRegistryProvider.ts:18-22` (`interface RegistryKey { subkeys: Map<...>; values: Map<...> }`), `:36-63` (amorçage `buildHKLM`).
+- **Sévérité** : (positif)
+
+- **Constat** : `WindowsPSProviders` (le fournisseur réseau de la nouvelle interpréteur) n'implémente qu'un sous-ensemble des opérations réseau ; les opérations manquantes lèvent `notImpl()`, message reconnu par `PowerShellSubShell.isFallbackError` pour retomber sur le moteur legacy — la migration est donc partielle et explicitement documentée comme telle.
+- **Preuve** : `src/powershell/providers/WindowsPSProviders.ts:11-13` (« Network / event-log surfaces are partial… The rest throw `NotImplemented` »), `:790-791` (`setWinhttpProxy()`, `executeCmdCommand()` → `throw notImpl(...)`), `:805-808` (`function notImpl`).
+- **Sévérité** : Majeure
+- **Recommandation** : Achever la couverture du provider réseau pour pouvoir retirer le fallback vers `PowerShellExecutor` (cf. compteur `fallbackHits` ci-dessous).
+
+- **Constat** : Le sous-shell expose un compteur public `fallbackHits` explicitement destiné à mesurer combien de commandes retombent encore sur l'ancien moteur — preuve que la migration est suivie/instrumentée mais pas terminée.
+- **Preuve** : `src/terminal/subshells/PowerShellSubShell.ts:206,213,222` (`static fallbackHits = 0;` + commentaire « Debug counter — useful when assessing how much production code still reaches PowerShellExecutor »).
+- **Sévérité** : Mineure (dette technique assumée)
+- **Recommandation** : Faire de ce compteur un indicateur de CI (seuil maximal admissible) pour piloter l'achèvement de la migration.
+
+### 9.5 Services Windows : EventLog / Services / PortProxy
+- **Constat** : `Get-EventLog` (sans `-List`) délègue volontairement au moteur legacy pour conserver le formatage tabulaire existant — duplication consciente, documentée, mais qui maintient deux chemins de code pour la même fonctionnalité.
+- **Preuve** : `src/powershell/cmdlets/core/EventLogCmdlets.ts:55-62` (`// Entry queries — defer to the legacy executor… We still own -List…`).
+- **Sévérité** : Mineure
+- **Recommandation** : Migrer le formatage de table vers le nouveau moteur (`Format-Table`/`OutputCmdlets`) pour éliminer la dépendance croisée.
+
+- **Constat** : `WindowsSecurityAudit` est une bonne façade d'intention (« accountCreated » → ID d'événement Windows réel) qui alimente le journal Security partagé — bien conçu, cohérent avec `Get-EventLog`/`wevtutil`/Event Viewer.
+- **Preuve** : `src/network/devices/windows/WindowsSecurityAudit.ts:8-13,27-44` (table `SECURITY_EVENT` avec IDs réels 4624/4720/4726…).
+- **Sévérité** : (positif)
+
+- **Constat** : `PortProxyTable`/`WindowsServicePortProjection` suivent le même patron réactif événementiel que les protocoles réseau documentés (publication sur l'`EventBus`, projections qui maintiennent la `SocketTable` cohérente) — bonne adhérence à l'architecture cible.
+- **Preuve** : `src/network/devices/windows/PortProxyTable.ts:8-12`, `src/network/devices/windows/WindowsServicePortProjection.ts:9-12`.
+- **Sévérité** : (positif)
+
+### 9.6 Parité Linux / Windows
+- **Constat** : `OSProcess`/`OSService`/`OSServiceOrchestrator`/`OSFeatureGate` (l'abstraction « cross-OS » censée être partagée) sont réellement utilisés côté Linux — `LinuxProcessManager`/`LinuxServiceManager` instancient `new LinuxProcess(...)`/`new LinuxService(...)` qui héritent de `OSProcess`/`OSService` — alors que côté Windows, `WindowsProcess`/`WindowsService` (sous-classes équivalentes de `OSProcess`/`OSService`) existent mais ne sont **jamais instanciées en production** : `WindowsProcessManager`/`WindowsServiceManager` produisent de simples objets-littéraux conformes à des interfaces plates. `OSServiceOrchestrator` n'est référencé que par son propre test.
+- **Preuve** : Linux instancie : `src/network/devices/linux/LinuxProcessManager.ts:181,371` (`new LinuxProcess({...})`), `src/network/devices/linux/LinuxServiceManager.ts:599` (`new LinuxService({...})`). Windows n'instancie jamais : `grep "new WindowsProcess(" / "new WindowsService("` → 0 résultat en dehors des tests; production crée des littéraux : `src/network/devices/windows/WindowsProcessManager.ts:229-244` (`const proc: WindowsProcess = { pid, name, ... }`). `OSServiceOrchestrator` n'est utilisé que dans `src/__tests__/unit/network-v2/os-core.test.ts`.
+- **Sévérité** : Majeure
+- **Recommandation** : Soit câbler réellement `WindowsProcessManager`/`WindowsServiceManager` sur les classes `WindowsProcess`/`WindowsService` (et tirer parti de l'héritage `OSProcess`/`OSService` comme prévu dans leurs commentaires « Phase E surplus »), soit supprimer ces classes mortes pour éviter la confusion architecturale.
+
+- **Constat** : `WinFeatureGate` est une réimplémentation Windows complètement indépendante de `OSFeatureGate` (pas d'héritage, pas de délégation), alors que ce dernier a explicitement été conçu comme abstraction cross-OS (« Rather than scattering ad-hoc checks… »). `OSFeatureGate` n'est utilisé que par `LinuxSshClient` — pas même par le reste de Linux.
+- **Preuve** : `src/network/devices/windows/WinFeatureGate.ts:1-12` (aucune importation de `OSFeatureGate`, table `ERRORS` indépendante); `src/network/devices/os/OSFeatureGate.ts:1-22` (doc « Usage » qui cite explicitement `ipconfig`/`ssh`/`wevtutil`); seul utilisateur réel hors test : `src/network/devices/linux/network/LinuxSshClient.ts`.
+- **Sévérité** : Mineure
+- **Recommandation** : Soit refactoriser `WinFeatureGate` pour s'appuyer sur `OSFeatureGate.require(...)` (cohérence cross-OS et réduction de duplication), soit retirer `OSFeatureGate` de la couche `os/` s'il ne sert qu'à SSH Linux.
+
+- **Constat** : La gestion des comptes utilisateurs est structurellement plus riche côté Linux (sous-répertoire `iam/` avec `LinuxUserAccount`, `useraddOptions`, `UseraddDefaults`, `adduserOptions`, `LinuxUserManagerAuthority`) que côté Windows (`WindowsUserManager.ts` plat, 495 lignes, sans hiérarchie de types ni politique modulaire) — les tests de gestion avancée des comptes Windows (`Set-LocalUser -AccountDisabled`, `Remove-LocalUser`, `Rename-LocalUser`, politique de mot de passe) sont d'ailleurs désactivés (cf. 9.3).
+- **Preuve** : Linux : `src/network/devices/linux/iam/LinuxUserAccount.ts`, `useraddOptions.ts`, `fs/UseraddDefaults.ts`; Windows : `src/network/devices/windows/WindowsUserManager.ts:93` (`export class WindowsUserManager` — un seul fichier monolithique sans sous-modules).
+- **Sévérité** : Mineure
+- **Recommandation** : Étendre `WindowsUserManager` ou en extraire des sous-modules équivalents (`accounts/`, `policies/`) à mesure que les cmdlets `Local*User`/`Local*Group` skippées sont implémentées.
+
+### 9.7 Architecture / dette technique générale
+- **Constat** : `PowerShellExecutor.ts` (6114 lignes, ~177 méthodes) est un candidat évident à la classe-Dieu : il combine résolution de variables, mapping cmdlet→commande, formatage de pipeline, formatage d'erreurs PS, et est encore le point de chute de tout fallback de l'interpréteur. `WinNetsh.ts` (2912 lignes) suit le même schéma, bien que sa taille soit en partie justifiée par la richesse réelle de la commande `netsh` (de nombreux sous-contextes).
+- **Preuve** : `src/network/devices/windows/PowerShellExecutor.ts:1-12` (description multi-responsabilités en en-tête); taille mesurée : 6114 lignes (`wc -l`).
+- **Sévérité** : Majeure
+- **Recommandation** : Poursuivre la migration vers `PSInterpreter`/`ICmdlet` pour réduire `PowerShellExecutor` à une simple coquille de compatibilité, puis le supprimer une fois `fallbackHits` proche de zéro.
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
