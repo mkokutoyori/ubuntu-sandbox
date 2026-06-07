@@ -766,4 +766,104 @@ Globalement, cette zone du code est d'une maturité élevée et bien plus abouti
 
 ---
 
+## 8. Interpréteur Bash & sous-systèmes hôte Linux
+
+L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse et largement fidèle à POSIX/bash : lexer/parser/AST/interpréteur séparés, pipelines, fonctions, sous-shells, `case`/`for`/`while`/`until`, `[[ ]]`, `(( ))`, expansions de paramètres avancées (`${var#pattern}`, indirection, tableaux), here-docs/here-strings, alias, traps `EXIT`. Les sous-systèmes Linux (`src/network/devices/linux/`, ~33 600 lignes) sont également très étoffés — VFS hiérarchique avec inodes/permissions/ACL, iptables qui filtre réellement les paquets via `FilterChain`, IAM/NSS, journald/dmesg, ps/top adossés à une vraie table de processus. Les lacunes identifiées concernent surtout des aspects « asynchrones » du shell (jobs, traps non-EXIT, cron/at), quelques commandes à sortie canned déconnectée de l'état réel, et du code mort issu d'itérations successives.
+
+### 8.1 Lexer / parser — couverture globalement bonne, lacunes ciblées
+- **Constat** : aucune substitution de processus `<(...)`/`>(...)` (absente du lexer, du parser et de `ASTNode.ts`) ; le `&` de fond de tâche est traité par le parser exactement comme `;` (séparateur synchrone), sans nœud AST distinct pour une commande arrière-plan.
+- **Preuve** : `src/bash/parser/BashParser.ts:817` (`matchSeparator` traite `AMP` comme `SEMI`/`NEWLINE`) ; absence de `ProcessSubstitution` dans `src/bash/parser/ASTNode.ts`.
+- **Sévérité** : Mineure
+- **Recommandation** : documenter explicitement ces non-objectifs (le simulateur étant synchrone, le job control « réel » au niveau interpréteur n'a pas grand sens) ou ajouter un nœud `Background` minimal pour différencier sémantiquement `cmd &` de `cmd;`.
+
+### 8.2 Interpréteur — pipelines « simplifiés », traps partiels
+- **Constat** : le pipeline multi-étapes ne relaie pas un flux ; il exécute chaque étage de façon synchrone, capture la totalité de la sortie en mémoire puis la repasse en argument à l'étage suivant — commentaire du code lui-même : « simplified: pass output as arg ». Cela casse les sémantiques de flux (`tail -f | grep`, processus longue durée dans un pipe, SIGPIPE, etc.) mais reste correct pour l'essentiel des scripts batch testés.
+- **Preuve** : `src/bash/interpreter/BashInterpreter.ts:255` (commentaire « Multi-stage pipeline: chain stdout → stdin (simplified: pass output as arg) »).
+- **Sévérité** : Mineure
+- **Recommandation** : RAS pour un simulateur synchrone ; documenter la limite dans le README du module.
+
+- **Constat** : seul le trap `EXIT` est réellement déclenché par l'interpréteur (`fireExitTrap`). Les traps `INT`, `TERM`, `ERR`, `DEBUG`, `USR1`, etc. sont stockés/listés/effacés via `Environment.setTrap/getTrap/clearTrap/listTraps` mais **jamais invoqués** — aucun appel à `getTrap` autre que pour `'EXIT'`.
+- **Preuve** : `src/bash/interpreter/BashInterpreter.ts:188-193` (`fireExitTrap`) ; absence totale d'appel `getTrap('ERR'|'INT'|'DEBUG'|...)` dans tout `BashInterpreter.ts` — seul `'EXIT'` apparaît (lignes 189, 191) ; tests ne couvrent que « trap EXIT » (`src/__tests__/unit/bash/bash-third-pass.test.ts:159-191`, section « §S — trap EXIT cleanup »).
+- **Sévérité** : Majeure
+- **Recommandation** : soit implémenter au minimum `ERR` (déclenché quand `errexit` aurait abouti à un échec) et `DEBUG`, soit documenter clairement que `trap` ne supporte que `EXIT` (le builtin `trap -l` affiche pourtant la liste complète des 16 signaux POSIX, ce qui laisse croire à un support complet — `src/bash/runtime/Builtins.ts:1105-1109`).
+
+### 8.3 Runtime / Builtins — bon niveau, duplication d'expansion ailleurs
+- **Constat** : `Expansion.ts` (1148 lignes) implémente correctement la substitution de commandes en délégant à l'interpréteur via `CommandSubstitutionFn` (`src/bash/runtime/Expansion.ts:20,691`). Mais un second moteur d'expansion, ad-hoc et nettement plus faible, existe en parallèle dans `LinuxScriptExecutor.ts` (voir §8.7) — duplication d'architecture qui contredit le principe DRY énoncé dans `CLAUDE.md`.
+- **Preuve** : `src/bash/runtime/Expansion.ts:20,691` vs `src/network/devices/linux/LinuxScriptExecutor.ts:392-411`.
+- **Sévérité** : Mineure (le second moteur étant mort, voir 8.7)
+- **Recommandation** : supprimer le moteur dupliqué.
+
+### 8.4 Builtins / utilitaires « canned » déconnectés de l'état machine
+- **Constat** : `md5sum`/`sha256sum`/`sha1sum` génèrent une empreinte **purement aléatoire** (`Math.random()`) sans lire le contenu réel du fichier via le VFS — deux exécutions consécutives sur le même fichier renvoient des hachages différents, et `file` renvoie systématiquement `"<target>: ASCII text"` sans inspecter le contenu.
+- **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2341-2347` (hash `Array.from({length:...}, () => Math.floor(Math.random()*16)...)`) et `LinuxCommandExecutor.ts:2336-2339`.
+- **Sévérité** : Majeure
+- **Recommandation** : calculer un hachage déterministe (ex. simple FNV/CRC32 du contenu lu via `vfs.readFile`) pour que `md5sum file1 file2` et les vérifications de cohérence (`md5sum -c`) donnent des résultats stables et exploitables dans les scripts pédagogiques.
+
+- **Constat** : `tar`, `gzip`, `gunzip`, `zip`, `unzip` sont de purs no-ops renvoyant une sortie vide, sans aucun effet de bord sur le VFS (pas de création d'archive, pas de décompression, pas de modification de la taille/contenu des fichiers).
+- **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2349-2354`.
+- **Sévérité** : Majeure
+- **Recommandation** : à défaut d'implémenter un vrai format d'archive, simuler au minimum la création d'un fichier « archive » dans le VFS (avec une taille dérivée du contenu source) pour que les scripts de sauvegarde/déploiement testés dans les labs restent cohérents (`ls -la backup.tar.gz` doit montrer un fichier non vide après `tar czf`).
+
+- **Constat** : `apt`/`apt-get`/`dpkg` renvoient des transcriptions figées et identiques quel que soit le paquet demandé (toujours « is already the newest version », toujours la même liste `dpkg -l`), sans mise à jour d'un état « paquets installés » persistant ni d'effets sur le VFS/`LinuxServiceManager`.
+- **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2319-2331`.
+- **Sévérité** : Mineure
+- **Recommandation** : acceptable pour un labo réseau (peu de scénarios pédagogiques dépendent de la gestion de paquets) ; documenter comme limite connue.
+
+- **Constat** : les « stubs » de `ping`/`traceroute`/`nslookup`/`dig`/`host` produisent une sortie figée (latences fixes `0.5 ms`/`0.4 ms`, IP de résolution toujours `93.184.216.34`) ; le code indique lui-même que ce chemin ne sera « jamais » emprunté en usage interactif (intercepté en amont par `LinuxMachine`/`linux/commands/net/Ping.ts`), ce qui en fait du code mort conditionnel à conserver « en secours » pour les scripts bash exécutés hors-terminal.
+- **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2294-2316` (commentaire « @deprecated ... These stubs will never fire for interactive terminal commands »).
+- **Sévérité** : Mineure
+- **Recommandation** : router ces commandes vers le même chemin réel que `Ping.ts` même depuis l'intérieur de l'interpréteur bash (scripts/`bash -c`) afin que `ping` dans un script shell produise des résultats cohérents avec la topologie simulée (latence selon la distance réseau, échec si hôte injoignable).
+
+### 8.5 Réseau (`netstat`/`ss`/`ip`) — violations MVC partielles
+- **Constat** : `netstat -r` (table de routage) et `netstat -i` (statistiques d'interfaces) renvoient un texte **entièrement statique** (« `0.0.0.0  10.0.0.1  ...  eth0` », compteurs RX/TX figés) — le paramètre `ctx: IpNetworkContext` reçu par `cmdNetstat` n'est jamais déréférencé dans ces deux branches, donc la sortie ne reflète ni les IP/masques réellement configurés sur la machine, ni les vraies statistiques de trafic.
+- **Preuve** : `src/network/devices/linux/LinuxNetCommands.ts:115-130` (les littéraux `'0.0.0.0 10.0.0.1 ... eth0'`/`'eth0 1500 1024 ...'`) ; absence de toute référence `ctx.` dans le corps de `cmdNetstat` (`LinuxNetCommands.ts:99-191`).
+- **Sévérité** : Majeure
+- **Recommandation** : dériver ces tableaux de `ctx.getRoutingTable()` / `ctx.getInterfaceInfo()` (déjà exposés par `IpNetworkContext`, voir `LinuxIpCommand.ts:45-65`) — l'infrastructure existe, il suffit de la brancher.
+
+- **Constat** : `ss -s` (résumé) renvoie des compteurs globaux figés (« Total: 120 », « TCP: 8 ... ») sans rapport avec le `SocketTable` réel de la machine ; le chemin de repli (`else` quand `socketTable` est absent) imprime des PID fixes (`pid=985`, `pid=2001`, `pid=1200`) déconnectés de la table de processus réelle.
+- **Preuve** : `src/network/devices/linux/LinuxNetCommands.ts:212-221` (bloc `summary`) et `LinuxNetCommands.ts:258-268` (fallback avec PID en dur).
+- **Sévérité** : Mineure
+- **Recommandation** : calculer le résumé à partir de `socketTable.getAll()` (compter par protocole/état) plutôt que de coder les nombres en dur ; le chemin de repli ne devrait être atteint qu'en l'absence de table — documenter ce cas comme dégradé volontaire.
+
+### 8.6 Cron / at — état stocké mais jamais « tiqué » (pas d'ordonnancement réel)
+- **Constat** : `LinuxCronManager` (164 lignes) implémente un parseur d'expression cron correct (`CronSchedule.isDue`, `dueJobs`), mais **rien ne consomme `dueJobs()` au fil du temps simulé** : la seule invocation se produit au moment de l'installation d'une nouvelle crontab (`crontab -`), et même là, elle se contente de **journaliser** « (user) CMD (...) » sans exécuter réellement la commande planifiée. Aucun lien avec `src/events/Scheduler`.
+- **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2622-2629` (seul site d'appel de `cron.dueJobs()`, qui se contente de `logMgr.logDaemon('CRON', ...)`) ; `LinuxCronManager.ts:151-154` (`dueJobs`) jamais référencé ailleurs.
+- **Sévérité** : Majeure
+- **Recommandation** : brancher `LinuxCronManager` sur le `Scheduler`/l'horloge simulée du device pour déclencher réellement `dueJobs()` à chaque « minute » simulée et exécuter la commande via `LinuxCommandExecutor.execute()` (avec effets de bord visibles dans `journalctl`/VFS), à l'image de ce qui est fait pour `cmd &` (`handleBackgroundIfTrailing`, `LinuxCommandExecutor.ts:1159-1169`).
+
+- **Constat** : la file `at` est documentée comme volontairement inerte — « the simulator does not fire jobs on a timer » — confirmant l'absence générale d'ordonnancement temporisé pour les tâches utilisateur (cron + at).
+- **Preuve** : `src/network/devices/linux/jobs/LinuxAtQueue.ts:7`.
+- **Sévérité** : Mineure (limite assumée et documentée)
+- **Recommandation** : si une intégration `Scheduler` est ajoutée pour `cron`, étendre la même mécanique à `LinuxAtQueue` pour cohérence.
+
+### 8.7 Code mort / duplication — plusieurs implémentations concurrentes
+- **Constat** : `LinuxScriptExecutor.ts` (412 lignes) est un **second interpréteur de scripts shell entièrement mort** — `executeScript`/`executeScriptContent` ne sont importés/référencés nulle part dans `src/`. Il réimplémente, en moins bien, ce que fait `BashInterpreter` : sa fonction `resolveVars` traite la substitution de commande `$(cmd)` en renvoyant **le texte littéral de la commande** (pas son résultat), utilise `Function(...)` (équivalent `eval`) pour l'arithmétique, et procède par chaînes de `replace` regex plutôt que par AST.
+- **Preuve** : `src/network/devices/linux/LinuxScriptExecutor.ts:392,401-404` (`// Command substitution - simplified` ; `return cmd;`) ; absence de toute référence externe (`grep -rln "LinuxScriptExecutor|executeScriptContent"` ne retourne que le fichier lui-même).
+- **Sévérité** : Majeure
+- **Recommandation** : supprimer purement et simplement ce fichier — il s'agit d'une ancienne génération remplacée par `BashInterpreter`/`ScriptRunner`, et sa présence risque d'induire en erreur un futur contributeur qui le réutiliserait par accident (sa sémantique de substitution de commande est fausse).
+
+- **Constat** : `LinuxSystemCommands.ts` contient trois fonctions exportées **mortes et redondantes** — `cmdSystemctl(args, isServer: boolean)`, `cmdService(args, isServer: boolean)` et `cmdTop(...)` — qui dupliquent (avec une signature plus pauvre, basée sur un simple booléen `isServer` plutôt que sur le `LinuxServiceManager`/`LinuxProcessManager` réels) les fonctions homonymes effectivement utilisées dans `LinuxProcessCommands.ts`. La version morte produit des valeurs aléatoires (`Math.random()` pour mémoire/CPU/tâches) et un PID calculé par formule (`1000 + index`) plutôt que dérivé de la table de processus.
+- **Preuve** : définitions mortes en `src/network/devices/linux/LinuxSystemCommands.ts:56` (`cmdSystemctl`), `:198` (`cmdService`), `:377` (`cmdTop`) avec, par ex., `Math.floor(Math.random() * 5) + 1` à la ligne 87 et `Main PID: ${1000 + services.indexOf(svc)}` à la ligne 86 ; import effectif des homonymes vivants depuis `LinuxProcessCommands` en `LinuxCommandExecutor.ts:51` (`cmdSystemctl`, `cmdService`, `cmdTop` — utilisés lignes 2276-2277, 2285-2286) ; seules `cmdDf/cmdDu/cmdFree/cmdMount/cmdLsblk` de `LinuxSystemCommands.ts` sont importées (`LinuxCommandExecutor.ts:36`).
+- **Sévérité** : Majeure
+- **Recommandation** : supprimer les trois fonctions mortes de `LinuxSystemCommands.ts` (et renommer le fichier en quelque chose comme `LinuxDiskCommands.ts` puisqu'il ne contient plus que `df`/`du`/`free`/`mount`/`lsblk`), pour éviter toute confusion entre deux implémentations de `systemctl status` aux comportements radicalement différents (l'une dérivée de l'état réel des services, l'autre aléatoire).
+
+### 8.8 God-class et organisation
+- **Constat** : `LinuxCommandExecutor.ts` totalise 3 842 lignes, ~127 méthodes privées et 227 branches `case` dans son dispatcher de commandes — un fichier « orchestrateur » qui mélange dispatch de commandes, gestion SSH/SFTP/SCP, gestion utilisateurs (`adduser`/`passwd`/`gpasswd`), IPsec (`ipsec`/`strongswan`), jobs en arrière-plan, ACL, etc.
+- **Preuve** : `wc -l src/network/devices/linux/LinuxCommandExecutor.ts` → 3842 lignes ; `grep -c "case '"` → 227 ; cas IPsec en `LinuxCommandExecutor.ts:3560-3571`.
+- **Sévérité** : Mineure
+- **Recommandation** : poursuivre l'extraction déjà amorcée (le fichier référence de nombreux modules `coreutils/`, `ps/`, `sed/`, `nss/`, `jobs/`, `iam/` extraits récemment selon les commentaires « Extracted ... PR 10 ») en déplaçant les blocs `ipsec`/`adduser`/`gpasswd`/ACL vers des modules dédiés à l'image de ce qui a déjà été fait pour `JobCommands`/`PsCommand`/`IamFilesystem`.
+
+### 8.9 Filesystem, IAM, sed/awk — points positifs (pas de déficience majeure)
+- **Constat** : le VFS (`VirtualFileSystem.ts`, 1113 lignes) est un véritable arbre d'inodes avec permissions POSIX 12 bits, propriétaires, ACL (`aclUsers`/`aclGroups`), fichiers générés dynamiquement (procfs-like via `generator`), et notifie les écritures via `VfsWriteListener` — pas une simple table à plat. `sed`/`awk` disposent chacun de leur propre lexer/parser/moteur dédié (`sed/SedEngine.ts` + 4 modules ; `awk/AwkInterpreter.ts` + `AwkParser.ts`/`AwkValue.ts`, ~1740 lignes cumulées), et `iptables` filtre réellement les paquets via `LinuxIptablesManager.filterPacket()` branché sur `firewallFilter`/`evaluateNat`/`evaluatePreRouting` du `LinuxMachine`.
+- **Preuve** : `src/network/devices/linux/VirtualFileSystem.ts:11-37` (interface `INode`) ; `src/network/devices/LinuxMachine.ts:1177-1268` (`firewallFilter`/`evaluateNat`/`evaluatePreRouting` → `this.executor.iptables.*`).
+- **Sévérité** : (positif — pas de finding correctif)
+- **Recommandation** : aucune ; ce sont des sous-systèmes à citer en exemple pour le reste du projet.
+
+- **Constat** : un seul point mineur de simplification documentée dans `iptables` — le critère `conntrack --ctstate RELATED` est traité comme strictement équivalent à `ESTABLISHED` (pas de véritable suivi de connexions liées, ex. FTP passif).
+- **Preuve** : `src/network/devices/linux/LinuxIptablesManager.ts:382` (commentaire « RELATED: simplified — treat same as ESTABLISHED »).
+- **Sévérité** : Mineure
+- **Recommandation** : RAS à court terme ; à enrichir si des scénarios FTP/SIP avec connexions liées sont ajoutés au programme pédagogique.
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
