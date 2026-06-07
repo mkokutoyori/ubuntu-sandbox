@@ -552,4 +552,129 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 
 ---
 
+## 6. Management, AAA & supervision (SNMP, NetFlow, NTP, Syslog, RADIUS, TACACS+, AAA, EEM, DNS)
+
+Cette famille de protocoles présente une **maturité très inégale** : les couches « câble » (SNMP, NetFlow, NTP, Syslog, RADIUS, TACACS+) sont remarquablement bien construites au niveau protocolaire — vrais paquets UDP/TCP, FSM de requête/réponse, scheduler/EventBus réactifs — mais elles tournent en parallèle de la configuration CLI sans y être reliées : les commandes `snmp-server`, `aaa`, `flow …`, etc. alimentent des silos de configuration séparés qui ne sont jamais synchronisés avec les agents qui parlent réellement sur le câble. Résultat : la plupart des protocoles « marchent » isolément (et sont bien testés en isolation), mais ne participent pas au comportement observable du routeur via la CLI (`show snmp`, `show aaa`, `show ip cache flow`), où l'on retrouve des sorties figées ou des compteurs qui ne s'incrémentent jamais. EEM et DNS, eux, sont de purs silos de configuration sans moteur d'exécution.
+
+### 6.1 SNMP — agent fonctionnel mais déconnecté de la CLI/config
+- **Constat** : `SnmpAgent` (couche fil) et `SnmpService` (couche config/`show`) sont deux structures totalement indépendantes. La commande `snmp-server community/host/...` configure exclusivement `SnmpService` ; `SnmpAgent` démarre toujours avec sa config par défaut (`{community: 'public', access: 'ro'}`, aucun trap-host) car aucun appel CLI n'invoque `addCommunity`/`addTrapHost`/`setContact` sur lui.
+- **Preuve** : `src/network/snmp/types.ts:101-108` (config par défaut figée) ; `src/network/devices/shells/CiscoShellBase.ts:1237-1243` (`snmp-server` ne configure que `getSnmpService()`) ; absence totale d'appel `snmpAgent.addCommunity/addTrapHost/setContact` dans tout le repo (recherche vide).
+- **Sévérité** : Critique
+- **Recommandation** : faire de `SnmpService` un simple front de configuration qui pousse ses changements vers `SnmpAgent` (à l'image de `syncSyslogAgent()` pour Syslog), ou fusionner les deux.
+
+- **Constat** : `SnmpStats` (`pktsIn`, `getRequests`, `trapsSent`, …) n'est jamais incrémenté — `getStats()` retourne systématiquement l'objet à zéro initial. `show snmp` affiche donc en permanence des compteurs nuls même quand `SnmpAgent` répond effectivement à des requêtes GET en direct.
+- **Preuve** : `src/network/devices/router/management/SnmpService.ts:233` (`getStats()` ne fait que cloner `this.stats`) — aucune occurrence de `this.stats.x++` ailleurs dans le fichier ; consommé tel quel par `showSnmp` dans `src/network/devices/shells/cisco/CiscoCommonShow.ts:389-409`.
+- **Sévérité** : Majeure
+- **Recommandation** : faire incrémenter ces compteurs depuis les événements `snmp.packet.received/sent/request.served/trap.sent` publiés par `SnmpAgent`.
+
+- **Constat** : SET, GETBULK et INFORM sont déclarés dans `SnmpPduType`/`SNMP_PDU_TYPE` mais jamais traités — `handleUdp()` ne reconnaît que `get-response`, `get-request`, `get-next-request`. SNMPv1/v2c uniquement (`SnmpVersion = 'v1' | 'v2c'`), aucune trace d'USM (auth/priv) malgré le fait que `SnmpService` modélise pleinement les utilisateurs/groupes v3 (auth md5/sha, priv des/3des/aes).
+- **Preuve** : `src/network/snmp/SnmpAgent.ts:113-121` (dispatch incomplet) ; `src/network/snmp/types.ts:6-13,4` (`SnmpPduType` inclut `set-request`/`get-bulk-request`/`inform-request`, `SnmpVersion` ne contient pas `'v3'`) ; `src/network/devices/router/management/SnmpService.ts:32-42` (modèle v3 complet mais purement déclaratif).
+- **Sévérité** : Majeure
+- **Recommandation** : implémenter au minimum `set-request`/`get-bulk-request`, et soit retirer le modèle v3 de `SnmpService` soit l'implémenter réellement dans `SnmpAgent`.
+
+- **Constat** : `show aaa` est intégralement une chaîne en dur, sans rapport avec l'état réel (groupes/serveurs RADIUS-TACACS+ configurés via `aaa group server …`).
+- **Preuve** : `src/network/devices/shells/cisco/CiscoCommonShow.ts:676-681` (`'Total sessions since last reload: 0'` / `'No AAA servers configured'` quel que soit l'état de `CiscoSecurityConfig.aaaGroups`).
+- **Sévérité** : Mineure
+- **Recommandation** : projeter `aaaGroups`/`radiusServers`/`tacacsServers` dans la sortie de `show aaa`.
+
+### 6.2 NetFlow — export v5 fonctionnel mais flux 100% fabriqués (jamais issus du trafic)
+- **Constat** : `NetFlowAgent.recordFlow()` n'est appelée nulle part dans le code de production (forwarding/handleFrame des routeurs) — uniquement depuis les tests unitaires. Le cache de flux, le vieillissement (`ageOut`) et l'export v5 sont solides, mais aucun paquet IP réellement acheminé par le routeur ne déclenche un enregistrement de flux.
+- **Preuve** : `grep -rln "\.recordFlow(" src/network --include="*.ts"` ne retourne aucun résultat hors `NetFlowAgent.ts`/tests ; `getNetFlowAgent()` exposé en lecture seule dans `src/network/devices/CiscoRouter.ts:262` sans jamais être invoqué côté forwarding.
+- **Sévérité** : Critique
+- **Recommandation** : brancher `recordFlow()` sur le chemin de transmission IP du routeur (post-routage / post-NAT), avec échantillonnage selon `samplingInterval`.
+
+- **Constat** : `show ip cache flow` (Flexible NetFlow legacy) renvoie un texte canné indépendant de l'état réel du cache.
+- **Preuve** : `src/network/devices/shells/cisco/CiscoEemNetflowArchiveCommands.ts:367-368` — `() => 'IP packet size distribution (1 total packets):\n  (sim: cache empty)'`.
+- **Sévérité** : Majeure
+- **Recommandation** : projeter `NetFlowAgent.listActiveFlows()`/les compteurs de `NetflowService` dans cette commande.
+
+- **Constat** : Deux modèles NetFlow parallèles et non synchronisés coexistent : `NetflowService` (Flexible NetFlow / config CLI moderne, `flow exporter/record/monitor`) et `NetFlowAgent` (export v5 réel sur le câble). Aucun pont entre les deux : configurer un `flow exporter` + `flow monitor` n'active jamais l'agent d'export réel.
+- **Preuve** : `src/network/devices/router/netflow/NetflowService.ts` (entièrement déclaratif, aucune référence à `NetFlowAgent`) ; `src/network/netflow/NetFlowAgent.ts` (jamais consulté par `NetflowService`).
+- **Sévérité** : Majeure
+- **Recommandation** : faire que l'attache d'un moniteur Flexible NetFlow active réellement `NetFlowAgent` avec les paramètres (exportateur/cibles/timeouts) qui correspondent.
+
+### 6.3 NTP — client/serveur basiques, mais pas d'algorithme de Marzullo ni de mode pair authentique
+- **Constat** : `selectAndSync()` se contente d'un choix « meilleur candidat » (préférence > stratum le plus bas > dispersion la plus faible), sans intersection d'intervalles de Marzullo, sans cluster/combine algorithm conformes à RFC 5905 §11.
+- **Preuve** : `src/network/ntp/NtpAgent.ts:204-231`.
+- **Sévérité** : Mineure
+- **Recommandation** : documenter explicitement l'approximation, ou implémenter une version simplifiée de l'algorithme d'intersection.
+
+- **Constat** : `NtpMode` déclare `'symmetric-active'`/`'symmetric-passive'`, mais `ntp peer <ip>` est traduit en simple `addServer()` (mode client) — aucune association pair bidirectionnelle (peering symétrique) n'est réellement modélisée ; seul `'symmetric-passive'` est reconnu côté réception.
+- **Preuve** : `src/network/devices/shells/CiscoShellBase.ts:1207-1213` (peer → addServer) ; `src/network/ntp/NtpAgent.ts:155` (seul `server`/`symmetric-passive` traités côté `acceptServerReply`) ; `src/network/ntp/types.ts:3`.
+- **Sévérité** : Mineure
+- **Recommandation** : soit retirer `'symmetric-active'` du type, soit implémenter un véritable mode pair.
+
+- **Constat** : bug d'affichage dans `show ntp`/`show ntp associations` — la condition `(a.stratum < 16 ? 'INIT' : '.INIT.')` est inversée par rapport au comportement Cisco réel (un pair à `stratum 16` — non synchronisé — doit afficher `.INIT.`, et non l'inverse).
+- **Preuve** : `src/network/devices/shells/cisco/CiscoCommonShow.ts:538`.
+- **Sévérité** : Mineure
+- **Recommandation** : inverser la condition (`a.stratum < 16 ? <ip ou ref réelle> : '.INIT.'`).
+
+- **Constat** : `ntp authenticate`/`authentication-key`/`trusted-key` sont stockés dans `NtpConfig` (`authKeys`, `trustedKeys`, `authenticate`) mais jamais utilisés pour signer/valider les paquets NTP échangés (aucune vérification MAC MD5/SHA en réception).
+- **Preuve** : `src/network/ntp/types.ts:53-56` (champs présents) ; `src/network/ntp/NtpAgent.ts` — `handleUdp`/`acceptServerReply`/`respondAsServer` ne consultent jamais `config.authenticate`/`authKeys`.
+- **Sévérité** : Mineure
+- **Recommandation** : simuler au moins le rejet des associations non authentifiées quand `ntp authenticate` est actif.
+
+### 6.4 Syslog — implémentation la plus aboutie de la famille (référence MVC)
+- **Constat** : pipeline événement → message bien conçu : `SyslogAgent` s'abonne au bus (`log`, `device.syslog.entry`), construit un vrai paquet UDP/514 BSD (`<PRI>timestamp host tag: msg`), gère seuils de sévérité, facultés et agrégation par hôte. `LoggingConfig`/`syncSyslogAgent()` synchronise correctement la config CLI (`logging host`, `logging trap`, …) vers l'agent réel — c'est le seul sous-système de cette famille où la boucle config→agent→show est complète.
+- **Preuve** : `src/network/syslog/SyslogAgent.ts:111-176` (abonnements bus + dispatch) ; `src/network/devices/shells/CiscoShellBase.ts:138-166` (`syncSyslogAgent`).
+- **Sévérité** : (positif — pas un défaut)
+- **Recommandation** : prendre ce sous-système comme modèle pour corriger SNMP/NetFlow.
+
+- **Constat** : `show logging` affiche en dur `(0 messages dropped, 0 flushes, 0 overruns)` malgré le fait que `SyslogAgent` publie déjà des événements `syslog.packet.dropped` (avec raison `no-route`/`link-down`/`threshold`/…) qui pourraient alimenter ce compteur.
+- **Preuve** : `src/network/devices/inspection/config/LoggingConfig.ts:748-749` (texte figé) vs `src/network/syslog/SyslogAgent.ts:229-237` (`dropped()` publie un événement riche jamais consommé pour ce compteur).
+- **Sévérité** : Mineure
+- **Recommandation** : faire compter `LoggingConfig` les événements `syslog.packet.dropped` reçus.
+
+### 6.5 RADIUS — échange de paquets réel mais aucune obfuscation conforme RFC 2865
+- **Constat** : `RadiusClientAgent`/`RadiusServerAgent` réalisent un véritable échange Access-Request / Access-Accept / Access-Reject sur UDP/1812 avec retransmission/timeout, et sont bien testés (`radius-protocol.test.ts`). Cependant, le mot de passe `user-password` est transmis en clair dans l'attribut RADIUS au lieu d'être chiffré par XOR avec le flux MD5(secret‖authenticator) imposé par RFC 2865 §5.2 ; `sharedSecret` n'est stocké que pour affichage et n'intervient ni dans le calcul de l'`Authenticator` (qui est un simple PRNG basé sur l'heure, `makeAuthenticator`) ni dans le déchiffrement.
+- **Preuve** : `src/network/radius/RadiusClientAgent.ts:173-176` (`attr('user-password', password)` en clair) ; `src/network/radius/types.ts:133-141` (`makeAuthenticator` = PRNG sans MD5/secret) ; aucune occurrence de `md5`/`xor`/`cipher` dans `src/network/radius/`.
+- **Sévérité** : Majeure
+- **Recommandation** : implémenter l'obfuscation PAP RFC 2865 §5.2 (au moins symboliquement, pour fidélité pédagogique du simulateur), et faire varier le résultat d'authentification si le `sharedSecret` ne correspond pas (la valeur `'bad-secret'` existe dans le type `reason` mais n'est jamais produite — voir `src/network/radius/events.ts:32` et `RadiusServerAgent.ts:96`, le secret n'étant jamais comparé).
+
+- **Constat** : RADIUS Accounting (`accounting-request`/`accounting-response`, ports 1813) est défini dans le type (`RadiusCode`, `UDP_PORT_RADIUS_ACCT`) mais aucun agent ne l'émet/le traite.
+- **Preuve** : `src/network/radius/types.ts:9-10,17-18,2` ; aucune occurrence d'`accounting-request` traitée dans `RadiusClientAgent.ts`/`RadiusServerAgent.ts`.
+- **Sévérité** : Mineure
+- **Recommandation** : implémenter au moins l'émission d'Accounting-Request Start/Stop, en miroir de `accountCommand` côté TACACS+.
+
+### 6.6 TACACS+ — flux applicatif réel mais transport en clair (non conforme RFC 8907 §4.5)
+- **Constat** : `TacacsClientAgent`/`TacacsServerAgent` modélisent le « single-connection model » via le `TcpStack` réel (connexion TCP/49, échange authen/author/acct sur la même session), avec FSM correcte et événements bus (`tacacs.authen.completed`, etc.). Mais le corps du paquet (`TacacsBody`) est envoyé tel quel comme objet typé via `socket.send(packet)` — aucun chiffrement par flux pseudo-aléatoire MD5(session_id‖key‖version‖seq_no) n'est appliqué, contrairement à RFC 8907 §4.5 ; `sharedSecret` n'est jamais consulté pour chiffrer/déchiffrer ni pour valider la session.
+- **Preuve** : `src/network/tacacs/TacacsClientAgent.ts:180` (`s.send(packet)` — objet en clair) ; `src/network/tacacs/TacacsServerAgent.ts:96` (`socket.send(reply)`) ; aucune occurrence de `md5`/`pseudo-pad`/`xor` dans `src/network/tacacs/`.
+- **Sévérité** : Majeure
+- **Recommandation** : simuler le chiffrement par pseudo-pad (au moins symboliquement) et faire échouer l'échange en cas de `sharedSecret` divergent entre client et serveur.
+
+### 6.7 AAA (subsystem) — pas de chaînage de listes de méthodes, RADIUS/TACACS+ totalement déconnectés de l'authentification réelle
+- **Constat** : malgré la présence d'agents RADIUS/TACACS+ pleinement fonctionnels au niveau protocolaire, **aucune voie d'authentification du routeur (console/VTY/SSH/Telnet) ne les invoque**. `Router.authenticate()` ne consulte que `NetworkOsCredentialStore` (compte local). `aaaAuthenticationList`/`aaaAuthorizationList`/`aaaAccountingList` sont stockés dans `VtyLineConfig` (issus de `login authentication <list>`) mais ne sont **jamais lus** ailleurs que dans le rendu `running-config`.
+- **Preuve** : `src/network/devices/Router.ts:1848-1857` (`authenticate()` → `authority.authenticate(username, password)`, uniquement le store local) ; `grep -rn "aaaAuthenticationList" src/network --include="*.ts"` ne retourne que des occurrences dans `VtyLineConfig.ts` (définition + rendu de config) ; `grep -rn "radiusClient.authenticate|tacacsClient.authenticate" src/network --include="*.ts"` ne retourne **que des fichiers de tests** (`radius-protocol.test.ts`, `tacacs-protocol.test.ts`), jamais le code de production.
+- **Sévérité** : Critique
+- **Recommandation** : implémenter le chaînage de listes de méthodes AAA (`aaa authentication login <list> group radius local`, etc.) dans le flux de login du routeur, en appelant `getRadiusClient().authenticate()`/`getTacacsClient().authenticate()` avant le repli sur le compte local.
+
+- **Constat** : la commande `aaa …` (configuration complète de l'AAA — `aaa new-model`, `aaa authentication login`, `aaa authorization exec`, `aaa accounting commands`, etc.) est entièrement aspirée dans `recordRaw('aaa', …)`, un simple journal texte pour `show running-config`, sans aucun parsing en structures exploitables (listes de méthodes, ordre des sources).
+- **Preuve** : `src/network/devices/shells/CiscoShellBase.ts:1284-1289` (`mgmt.recordRaw('aaa', raw ?? …)`), avec le commentaire explicite « Recognised; the sim has no AAA/crypto datapath » à la ligne 1283.
+- **Sévérité** : Critique
+- **Recommandation** : remplacer ce stockage brut par un vrai modèle de listes de méthodes consultable à l'authentification/autorisation/comptabilité.
+
+- **Constat** : `aaaGroups` (`aaa group server radius/tacacs+ <name>`) sont stockés dans `CiscoSecurityConfig` mais jamais résolus vers les serveurs RADIUS/TACACS+ réellement configurés (`radiusServers`/`tacacsServers`), ni utilisés pour sélectionner un groupe lors d'une tentative d'authentification.
+- **Preuve** : `src/network/devices/router/security/CiscoSecurityConfig.ts:242,366` (stockage et rendu uniquement).
+- **Sévérité** : Majeure
+- **Recommandation** : relier les groupes serveur aux agents `RadiusClientAgent`/`TacacsClientAgent` lors de la résolution des listes de méthodes.
+
+### 6.8 EEM — pur silo de configuration, aucun moteur de corrélation d'événements
+- **Constat** : `EemService` ne fait que stocker des `EemApplet` (déclencheurs/actions) déclarés en CLI et les restituer dans `show running-config`/`show event manager policy registered`. Il n'existe **aucun mécanisme de corrélation d'événements** : pas de souscription au bus pour les triggers `syslog`/`timer.cron`/`timer.watchdog`/`snmp-notification`/`snmp-object`/`cli`, et **aucune exécution** des actions déclarées (`cli`, `syslog`, `mail`, `snmp-trap`, `puts`, `wait`).
+- **Preuve** : `grep -rln "EemTrigger|evaluateTrigger|matchTrigger|fireApplet|runApplet|executeApplet" src/network --include="*.ts"` ne renvoie que `EemService.ts` lui-même (les types, pas un moteur) ; `src/network/devices/router/eem/EemService.ts:1-108` (classe entièrement déclarative).
+- **Sévérité** : Critique
+- **Recommandation** : implémenter un véritable moteur EEM basé sur `src/events/` (à l'image de OSPF/DHCP) qui s'abonne aux événements pertinents (logs syslog, timers programmés via `Scheduler`, notifications SNMP) et exécute les actions associées.
+
+- **Constat** : `EemService.triggerByName()` — censée déclencher manuellement un applet (`event manager run <applet>`) — est du code totalement mort : elle n'est invoquée nulle part (ni CLI, ni tests, ni ailleurs) ; elle ne fait qu'incrémenter un compteur sans exécuter la moindre action.
+- **Preuve** : `src/network/devices/router/eem/EemService.ts:59-65` ; `grep -rn "triggerByName" src/ --include="*.ts"` → seule occurrence est sa définition.
+- **Sévérité** : Mineure
+- **Recommandation** : soit câbler `event manager run` à `triggerByName` puis à un moteur d'exécution, soit retirer ce code mort.
+
+### 6.9 DNS (côté routeur) — table statique uniquement, pas de résolveur
+- **Constat** : le « DNS » du routeur se limite à `RouterHostsTable` (mappings statiques `ip host <nom> <ip>`) et au stockage de `nameServers`/`domainName`/`ipDomainLookupEnabled` dans `RouterManagementService`. Il n'existe ni résolveur récursif, ni cache avec TTL, ni support de types d'enregistrements (A/AAAA/CNAME/MX/PTR/…), ni transfert de zone : le routeur ne génère jamais de requête DNS sur le câble vers les `nameServers` configurés.
+- **Preuve** : `src/network/devices/router/dns/RouterHostsTable.ts:1-52` (table nom→IP uniquement) ; `src/network/devices/shells/CiscoShellBase.ts:1018-1031` (`ip name-server` stocke la liste sans jamais l'exploiter pour émettre une requête) ; aucune classe `DnsServer`/`DnsResolver`/`DnsCache`/`DnsZone` sous `src/network/devices/router`.
+- **Sévérité** : Mineure
+- **Recommandation** : si le périmètre du simulateur prévoit la résolution DNS dynamique côté routeur (au-delà de `ip host`), introduire un client DNS minimal qui interroge réellement `nameServers` ; sinon documenter explicitement cette limitation dans le code (comme cela est fait pour `show environment`).
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
