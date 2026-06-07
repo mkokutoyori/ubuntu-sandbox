@@ -428,4 +428,128 @@ L'ensemble forme une base solide et étonnamment riche (≈12 000 lignes) : DHCP
 
 ---
 
+## 5. Redondance & multicast (HSRP/VRRP/GLBP, IGMP/IGMP-snooping, PIM, VXLAN)
+
+L'ensemble de cette famille de protocoles est implémenté sous une forme cohérente et relativement mature côté FHRP (HSRP/VRRP/GLBP) et IGMP/IGMP-snooping — moteurs `*Agent.ts` réels pilotés par `Scheduler`/`EventBus`, FSM fonctionnelle, `show`/`display` branchés sur l'état live. En revanche, PIM et VXLAN sont des moteurs « orphelins » : entièrement développés et testés unitairement, mais totalement absents de la surface CLI (aucune commande `show`/`display`/de configuration), ce qui les rend inutilisables par un utilisateur du simulateur. On note aussi une divergence architecturale par rapport au pattern documenté dans CLAUDE.md (`Engine + types + events + observables + actors/`) : ces sept familles n'ont que `*Agent.ts + types.ts + events.ts`, sans `observables.ts` ni `actors/`, contrairement à OSPF/DHCP/IPSec/BGP/routing/RIP. Plusieurs bugs concrets (précédence d'opérateur, FSM tronquée, incohérence Cisco/Huawei) ont par ailleurs été identifiés.
+
+### 5.1 HSRP
+- **Constat** : la FSM implémentée ne couvre que 4 états effectifs (`init/listen/standby/active`) ; les états `speak` et `learn` du type `HsrpState` (RFC 2281 prévoit Initial/Learn/Listen/Speak/Standby/Active) ne sont **jamais atteints** — la transition se fait directement de `listen`/`init` vers `active`/`standby`.
+- **Preuve** : `src/network/hsrp/types.ts:6-7` déclare `'init' | 'listen' | 'learn' | 'speak' | 'standby' | 'active'`, mais `src/network/hsrp/HsrpAgent.ts:236-263` n'assigne jamais `'speak'` ni `'learn'`.
+- **Sévérité** : Mineure
+- **Recommandation** : soit retirer `learn`/`speak` du type pour refléter le modèle simplifié réellement implémenté, soit ajouter les transitions intermédiaires (utiles pour simuler les délais de convergence et les tempos `hello`/`hold`).
+
+- **Constat** : aucune prise en charge des « tracking objects » (`standby track interface … decrement N`) au niveau du moteur — la commande CLI stocke l'info dans `FhrpRepository` (purement cosmétique pour `show standby`) mais `HsrpAgent` ne diminue jamais la priorité ni ne déclenche de bascule en cas de perte d'un objet suivi.
+- **Preuve** : `src/network/devices/shells/cisco/CiscoHsrpCommands.ts:57-59` (`for (const t of g.trackDecr) lines.push(...)`) n'affiche qu'une ligne de texte ; `HsrpAgent.ts` ne contient aucune référence à `track`/`trackDecr`/`decrement`.
+- **Sévérité** : Majeure
+- **Recommandation** : implémenter le suivi réel (abonnement aux événements `port.link.*`/routing) et appliquer la décrémentation dans `recompute()`.
+
+- **Constat** : la classe `HsrpAgent` ne contient ni MD5, ni mode d'authentification chiffrée — uniquement une comparaison de texte clair `authText`.
+- **Preuve** : `src/network/hsrp/types.ts:18,33` (`authText: string`), `HsrpAgent.ts:129` (`if (g.authText !== payload.authText) return;`).
+- **Sévérité** : Mineure
+- **Recommandation** : acceptable pour HSRPv1 historique (texte clair par défaut « cisco ») ; documenter que le MD5 (HSRPv2) n'est pas simulé.
+
+### 5.2 VRRP
+- **Constat** : bug de précédence d'opérateur — `totalLength` du paquet IPv4 transportant l'annonce VRRP est calculé avec une expression fautive qui ignore complètement la condition ternaire et produit toujours `24` (jamais `28`), quel que soit l'état du VIP.
+- **Preuve** : `src/network/vrrp/VrrpAgent.ts:171` — `totalLength: 20 + 8 + g.vip ? 4 : 0` est interprété par JS comme `(20 + 8 + g.vip) ? 4 : 0` (concaténation de chaîne toujours truthy → `4`), au lieu de `20 + 8 + (g.vip ? 4 : 0)`.
+- **Sévérité** : Mineure
+- **Recommandation** : corriger en `20 + 8 + (g.vip ? 4 : 0)`.
+
+- **Constat** : le type `VrrpPacket.version` autorise `2 | 3` (laissant entendre une prise en charge VRRPv3/IPv6), mais l'agent ne construit et n'envoie jamais que des paquets `version: 2`.
+- **Preuve** : `src/network/vrrp/types.ts:9` (`version: 2 | 3`) vs `VrrpAgent.ts:165` (`type: 'vrrp', version: 2, …`).
+- **Sévérité** : Mineure
+- **Recommandation** : retirer `3` du type tant que VRRPv3/IPv6 n'est pas implémenté, pour éviter toute confusion.
+
+- **Constat** : **double source de vérité** côté Huawei — `HuaweiVrrpService` (config-only, jamais relié au moteur réel) maintient un champ `state: 'Initialize' | 'Backup' | 'Master'` qui n'est **jamais mis à jour** (initialisé à `'Initialize'` et figé), tandis que le vrai FSM tourne dans `VrrpAgent` (états `init/backup/master`). Les commandes `display vrrp*` lisent exclusivement le service factice.
+- **Preuve** : `src/network/devices/router/redundancy/HuaweiVrrpService.ts:50` (`state: 'Initialize'`, jamais réassigné — confirmé par recherche ne trouvant aucune assignation `.state =` ailleurs) ; lecture dans `src/network/devices/shells/huawei/HuaweiDisplayCommands.ts:1110,1124,1175-1176,1182` (`State : ${g.state}`, `master = groups.filter(g => g.state === 'Master')`, etc.).
+- **Sévérité** : Critique
+- **Recommandation** : faire pointer `display vrrp`/`display vrrp brief`/`display vrrp interface` vers `router.getVrrpAgent().getGroup(...)` (comme le fait `CiscoVrrpGlbpCommands.ts:115-123` pour `show vrrp`), et supprimer ou fusionner `HuaweiVrrpService` avec le moteur réel — c'est exactement le type de violation MVC/réactivité signalé dans le brief (lecture d'un état figé/canné au lieu de l'état live du moteur).
+
+### 5.3 GLBP
+- **Constat** : implémentation relativement complète (AVG/AVF, TLV hello/request/assign, 3 modes de répartition de charge `round-robin`/`weighted`/`host-dependent`, élections AVG avec préemption). Cependant, l'état `GlbpAvgState` déclare `'speak'`/`'listen'` qui ne sont jamais assignés par le moteur — seuls `init/active/standby` (et transitoirement `disabled`) sont effectivement atteints, comme pour HSRP.
+- **Preuve** : `src/network/glbp/types.ts:5` (`'disabled' | 'init' | 'listen' | 'speak' | 'standby' | 'active'`) vs assignations réelles dans `GlbpAgent.ts:387,389,394,396,399` (`newState = 'init'|'active'|'standby'` uniquement).
+- **Sévérité** : Mineure
+- **Recommandation** : aligner le type sur les états réellement modélisés ou compléter la FSM pour traverser `listen`/`speak` durant la phase d'élection (utile pour la temporisation `helloSec`/`holdSec`).
+
+- **Constat** : pas de tracking objects pour GLBP non plus (même lacune que HSRP/VRRP) — `weighting`/`preempt` sont configurables manuellement mais aucun objet suivi ne module dynamiquement la pondération.
+- **Preuve** : aucune occurrence de `track`/`decrement` dans `src/network/glbp/GlbpAgent.ts` ni `types.ts`.
+- **Sévérité** : Mineure
+- **Recommandation** : cohérent avec HSRP/VRRP — à traiter de façon transverse si le suivi est ajouté.
+
+### 5.4 IGMP / IGMP snooping
+- **Constat** : le moteur `IgmpAgent` ne supporte qu'IGMPv1/v2 — `IgmpMessageType` ne déclare que `membership-query`, `v1/v2-membership-report`, `leave-group` ; aucun message `v3-membership-report`, aucune structure de filtrage de sources (`INCLUDE`/`EXCLUDE`), `enableInterface(iface, version: 1 | 2)` exclut explicitement la v3.
+- **Preuve** : `src/network/igmp/types.ts:5-9,15,36`; `src/network/igmp/IgmpAgent.ts:58` (`enableInterface(iface: string, version: 1 | 2 = 2)`).
+- **Sévérité** : Majeure
+- **Recommandation** : documenter clairement la limitation v1/v2-only (raisonnable pour un premier jet), ou implémenter IGMPv3 (group-and-source reports, INCLUDE/EXCLUDE) pour la conformité RFC 3376 complète.
+
+- **Constat** : aucune commande CLI de configuration IGMP (`ip igmp version`, `ip igmp join-group`, etc.) ni de visualisation (`show ip igmp groups`, `show ip igmp interface`) n'existe pour les routeurs Cisco/Huawei — le moteur `IgmpAgent` est entièrement headless, exposé uniquement via `getIgmpAgent()` consommé par les tests.
+- **Preuve** : recherche de `'show ip igmp` / `'display igmp` dans `src/network/devices/shells/**` ne renvoie que `show ip igmp snooping` (`CiscoSwitchShell.ts:815`) ; `getIgmpAgent` n'apparaît que dans `HuaweiRouter.ts`, `CiscoRouter.ts` et 4 fichiers de tests.
+- **Sévérité** : Critique
+- **Recommandation** : ajouter la famille `show ip igmp groups/interface/snooping` et les commandes de configuration interface — sinon le moteur, bien que fonctionnel et testé, est invisible et inutilisable depuis le terminal simulé.
+
+- **Constat** : `IgmpSnoopingAgent.computeEgressPorts()` — censé construire la table de transfert multicast réelle pour les switches — n'est **jamais appelé** dans le chemin de transfert de trames (`CiscoSwitch.handleFrame`) ; le snooping ne fait qu'observer/journaliser les rapports IGMP, et le commutateur continue d'utiliser le forwarding L2 normal (`super.handleFrame`).
+- **Preuve** : `src/network/devices/CiscoSwitch.ts:196-197` (`this.igmpSnoopingAgent.handleFrame(portName, frame); super.handleFrame(portName, frame);` — pas d'usage du résultat de `computeEgressPorts`) ; seul appelant de `computeEgressPorts` = `src/__tests__/unit/network-v2/igmp-snooping.test.ts:182,192`.
+- **Sévérité** : Critique
+- **Recommandation** : intégrer `computeEgressPorts()` dans le chemin de diffusion multicast réel (remplacer l'inondation par défaut sur le VLAN par la liste `member ports ∪ router ports` pour le trafic à destination de groupes connus), faute de quoi la fonctionnalité reste un « flag » sans effet observable sur le trafic.
+
+- **Constat** : parité Cisco/Huawei rompue — `IgmpSnoopingAgent` n'est câblé que dans `CiscoSwitch`/`CiscoSwitchShell`; `HuaweiSwitch` n'a ni l'agent ni les commandes `display igmp-snooping` / `igmp-snooping enable` (pourtant supportées par VRP réel).
+- **Preuve** : recherche de `IgmpSnoopingAgent` dans `src/network/devices` ne renvoie que `CiscoSwitch.ts`/`CiscoSwitchShell.ts`; absence de toute occurrence « igmp » dans `HuaweiSwitch.ts`/les commandes `display` Huawei côté switch.
+- **Sévérité** : Majeure
+- **Recommandation** : porter `IgmpSnoopingAgent` sur `HuaweiSwitch` avec les commandes `display igmp-snooping` équivalentes.
+
+- **Constat** : petit défaut de robustesse — `compareQuerier` (sélection du « lowest IP wins ») et `ipv4MulticastToMac` masquent le 1er octet d'adresse de groupe avec `& 0x7f` correctement, mais aucun test ne vérifie le cas limite des adresses `239.x.x.x` overlapant le même bloc MAC OUI `01:00:5e` (ambiguïté IANA bien connue) — mineur, signalé pour mémoire.
+- **Preuve** : `src/network/igmp/types.ts:84-91`.
+- **Sévérité** : Mineure
+- **Recommandation** : ajouter un test de collision documentant ce comportement attendu (pas un bug, mais un piège classique).
+
+### 5.5 PIM
+- **Constat** : seuls les types de message `hello` et `join-prune` sont effectivement traités ; `register`, `register-stop`, `bootstrap`, `assert`, `graft`, `graft-ack`, `candidate-rp-advertisement` sont **déclarés dans le type mais jamais gérés** — le `switch` de réception les ignore silencieusement.
+- **Preuve** : `src/network/pim/types.ts:5-14` déclare ces 9 types ; `src/network/pim/PimAgent.ts:205-210` ne traite que `'join-prune'` et `'hello'` (`if (payload.messageType !== 'hello') return;`).
+- **Sévérité** : Critique
+- **Recommandation** : soit retirer les types non gérés du `PimMessageType` pour refléter honnêtement le périmètre (« PIM-SM shared-tree minimal »), soit implémenter au moins `register`/`register-stop` (indispensables pour le passage à l'arbre de plus court chemin SPT) et `assert` (résolution de boucles sur LAN partagé).
+
+- **Constat** : il s'agit en réalité d'un PIM-SM *shared-tree only* (`*,G`) — aucune entrée `(S,G)` n'est jamais créée malgré le type `PimMroutEntryType = 'star-g' | 's-g'` qui le prévoit ; pas de bascule SPT, pas d'enregistrement (`register`) du trafic source vers le RP. Le mode `dense`/`sparse-dense` est déclaré (`PimMode`) mais aucune logique de flood-and-prune (PIM-DM) n'existe.
+- **Preuve** : `src/network/pim/types.ts:48,16` ; recherche de `'s-g'` dans `PimAgent.ts` → aucune occurrence d'assignation, seul `'star-g'` est instancié (`ensureStarG`, `onJoinPrune` lignes 252-266, 387-398).
+- **Sévérité** : Critique
+- **Recommandation** : documenter clairement « PIM-SM shared-tree statique uniquement » dans les commentaires/doc utilisateur, ou compléter avec `(S,G)` joins, register encapsulation et flood-and-prune pour PIM-DM.
+
+- **Constat** : pas de BSR ni d'Auto-RP — seule la configuration statique du RP (`addStaticRp`/`removeStaticRp`) est supportée ; aucun traitement du message `bootstrap` ni `candidate-rp-advertisement` (cf. ci-dessus), donc aucune découverte dynamique de RP.
+- **Preuve** : `src/network/pim/PimAgent.ts:106-148` (uniquement `addStaticRp`/`removeStaticRp`/`resolveRpForGroup`), absence totale de logique BSR/Auto-RP.
+- **Sévérité** : Majeure
+- **Recommandation** : acceptable pour une première itération « lab simple », mais à signaler comme limite documentée — beaucoup de topologies pédagogiques Cisco utilisent Auto-RP.
+
+- **Constat** : **aucune commande CLI** n'expose le moteur PIM — pas de `show ip pim neighbor`, `show ip pim rp mapping`, `show ip mroute`, `display pim neighbor`, `display multicast routing-table`, ni de commandes de configuration (`ip pim sparse-mode`, `ip pim rp-address`). Le moteur, bien que substantiel (616 lignes, hello/DR election/join-prune/mroute), est totalement headless.
+- **Preuve** : recherche de `'show ip pim`/`'display pim`/`'show ip mroute`/`'display multicast` sur `src/network/devices/shells/**` → 0 résultat ; `getPimAgent` n'apparaît que dans `HuaweiRouter.ts`, `CiscoRouter.ts` et les fichiers de tests `pim-protocol.test.ts`/`pim-join-prune.test.ts`.
+- **Sévérité** : Critique
+- **Recommandation** : exposer au minimum `show ip pim neighbor`, `show ip pim rp mapping`, `show ip mroute` (lecture de `listNeighbors()`/`config.rps`/`listMroutes()`), et les commandes de configuration `ip pim sparse-mode`/`ip pim rp-address`/`ip multicast-routing` côté Cisco, équivalents Huawei (`display pim neighbor`, `display multicast routing-table`, `pim sm`).
+
+### 5.6 VXLAN
+- **Constat** : moteur d'encapsulation/décapsulation fonctionnel (VTEP, gestion VNI, table MAC apprise par flood-and-learn, événements `vxlan.mac.learned`/`vxlan.packet.{encapsulated,decapsulated,dropped}`), mais **strictement sans surface CLI** — pas de `interface nve1`, `vni`, `vxlan vni … head-end …`, `show nve peers`, `show vxlan vni`, `display vxlan vni/vni-peer`, etc. Le moteur est câblé dans `HuaweiRouter`/`CiscoRouter` (start/stop/handleUdp) mais `bindVni`/`addRemoteVtep`/`encapsulateAndSend` ne sont invoqués que par les tests directs sur `getVxlanAgent()`.
+- **Preuve** : `src/network/devices/CiscoRouter.ts:106,124,144,195,265` et `HuaweiRouter.ts:95,110,127,171,222` montrent le câblage start/stop/handleUdp/getter ; recherche de « vxlan » (insensible à la casse) dans `src/network/devices/shells` → 0 résultat ; tous les appels à `bindVni`/`addRemoteVtep`/`encapsulateAndSend` proviennent uniquement de `src/__tests__/unit/network-v2/vxlan-protocol.test.ts`.
+- **Sévérité** : Critique
+- **Recommandation** : ajouter la pile de commandes VXLAN (`interface nve`, `member vni`, `vxlan vni … ingress-replication …`, `show nve peers/vni`, équivalents Huawei `vxlan vni`, `vni`, `display vxlan vni`/`display vxlan tunnel`) — aujourd'hui, malgré ~290 lignes de moteur testé, l'utilisateur ne peut tout simplement pas activer ni observer VXLAN.
+
+- **Constat** : pas d'EVPN — uniquement « flood-and-learn » classique (apprentissage MAC via le plan de données, inondation BUM vers tous les VTEP distants connus). C'est une simplification raisonnable et explicitement assumée (pas de prétention EVPN), mais le trafic BUM est systématiquement encapsulé avec une adresse MAC externe `broadcast` plutôt qu'un groupe multicast IP, ce qui correspond au mode « ingress replication » (head-end replication) plutôt qu'au sous-jacent multicast classique — cohérent et correctement géré par le code, mais non signalé dans aucun commentaire/doc.
+- **Preuve** : `src/network/vxlan/VxlanAgent.ts:186-195` (`resolveTargets` retourne tous les VTEP connus pour le VNI en cas de MAC inconnue), `:228` (`dstMAC: MACAddress.broadcast()`).
+- **Sévérité** : Mineure
+- **Recommandation** : documenter explicitement « ingress-replication only, pas de sous-jacent multicast IP, pas d'EVPN » dans les commentaires du module.
+
+### 5.7 Cohérence show ↔ état (synthèse transverse)
+- **Constat** : côté Cisco, les commandes `show standby`/`show vrrp`/`show glbp` projettent correctement l'état live des agents (`agent.getGroup(...)`), conformément aux bonnes pratiques MVC documentées.
+- **Preuve** : `src/network/devices/shells/cisco/CiscoHsrpCommands.ts:18-27` (commentaire explicite « projecting the REAL FhrpRepository state », lecture via `getHsrpAgent()?.getGroup(...)`), `CiscoVrrpGlbpCommands.ts:115-123,143-159`.
+- **Sévérité** : Information (positif — aucune action requise)
+- **Recommandation** : maintenir cette discipline.
+
+- **Constat** : côté Huawei, `display vrrp*` lit un état figé et jamais synchronisé (`HuaweiVrrpService.state`), contrairement au pendant Cisco — violation directe du principe « lire l'état live du moteur, pas un état caché/canné » (cf. 5.2 ci-dessus, sévérité Critique).
+- **Preuve** : `src/network/devices/shells/huawei/HuaweiDisplayCommands.ts:1104-1184`.
+- **Sévérité** : Critique (déjà comptée en 5.2, rappelée ici pour la synthèse transverse)
+- **Recommandation** : voir 5.2.
+
+### 5.8 Parité Cisco / Huawei (synthèse)
+- **Constat** : HSRP et GLBP sont correctement absents de `HuaweiRouter`/`HuaweiVRPShell` (conforme à la réalité — protocoles propriétaires Cisco). VRRP est présent des deux côtés via `VrrpAgent` partagé — bonne conception (`src/network/devices/HuaweiRouter.ts:78,97,116,187,209` vs `CiscoRouter.ts:88,109,132,239,251`). IGMP et PIM sont câblés symétriquement dans les deux routeurs (`getIgmpAgent`/`getPimAgent` dans les deux classes), mais **aucun des deux** n'expose de commandes CLI — la parité est donc « parfaite dans l'absence » (les deux sont aussi inutilisables l'un que l'autre). IGMP snooping est Cisco-only (switch) sans équivalent Huawei — gap de parité réel (5.4). VXLAN est câblé symétriquement (Cisco/Huawei) mais headless des deux côtés — parité « dans l'absence » comme IGMP/PIM.
+- **Preuve** : voir 5.4, 5.5, 5.6 ci-dessus pour les références précises.
+- **Sévérité** : Majeure (synthèse transverse — la sévérité réelle est portée par les constats individuels 5.4-5.6).
+- **Recommandation** : prioriser l'ajout de surface CLI pour IGMP/PIM/VXLAN (gain immédiat sur les deux vendors simultanément vu le câblage déjà symétrique), puis combler le manque IGMP-snooping côté Huawei.
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
