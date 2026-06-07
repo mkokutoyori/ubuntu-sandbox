@@ -36,6 +36,9 @@ import {
   buildBfdInterfaceCommands, registerBfdShowCommands,
 } from './cisco/CiscoBfdCommands';
 import {
+  buildIgmpInterfaceCommands, registerIgmpShowCommands,
+} from './cisco/CiscoIgmpCommands';
+import {
   buildTrackSlaConfig, registerTrackSlaShow,
 } from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
@@ -518,6 +521,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
     });
+    buildIgmpInterfaceCommands(this.configIfTrie, {
+      selectedPorts: () => this.selectedPortsForConfigIf(),
+      r: () => this.d(),
+    });
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
     buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
       this.configIpSlaTrie, this, this.track, this.ipsla);
@@ -592,6 +599,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
+    registerIgmpShowCommands(trie, { r: () => this.d() });
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
     registerPolicyShow(trie, this.policy);
 

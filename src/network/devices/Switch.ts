@@ -29,7 +29,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -862,6 +862,16 @@ export abstract class Switch extends Equipment {
                         (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
+      const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;
+      if (snoopedPorts) {
+        Logger.debug(
+          this.id, 'switch:igmp-snoop-forward',
+          `${this.name}: snooped multicast ${dstMAC} VLAN ${ingressVlan} → [${snoopedPorts.join(', ')}] (ingress ${portName})`,
+          { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: snoopedPorts },
+        );
+        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan);
+        return;
+      }
       Logger.debug(
         this.id, 'switch:flood',
         `${this.name}: flood ${dstMAC} VLAN ${ingressVlan} (ingress ${portName})`,
@@ -879,6 +889,15 @@ export abstract class Switch extends Equipment {
         this.forwardToPort(dstEntry.port, frame, ingressVlan);
       }
     }
+  }
+
+  protected resolveSnoopedMulticastEgressPorts(_ingressPort: string, frame: EthernetFrame, _vlan: number): string[] | null {
+    if (frame.etherType !== ETHERTYPE_IPV4) return null;
+    const ipPkt = frame.payload as IPv4Packet | undefined;
+    if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
+    const firstOctet = ipPkt.destinationIP.getOctets()[0];
+    if (firstOctet < 224 || firstOctet > 239) return null;
+    return null;
   }
 
   // ─── Flood within VLAN ────────────────────────────────────────────
