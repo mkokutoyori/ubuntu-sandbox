@@ -774,6 +774,8 @@ export function displayIpv6InterfaceBrief(router: Router): string {
 
 export function displayDebugging(router: Router): string {
   const lines: string[] = [];
+  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
+  if (flags) for (const f of [...flags].sort()) lines.push(f);
   const dhcp = router._getDHCPServerInternal();
   const dhcpDebug = dhcp.formatDebugShow();
   if (!dhcpDebug.includes('No')) {

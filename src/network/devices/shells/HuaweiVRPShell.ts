@@ -204,6 +204,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // RIP view trie
   private ripTrie = new CommandTrie();
 
+  private huaweiDebugFlags = new Set<string>();
+
   constructor() {
     this.buildUserCommands();
     this.buildSystemViewCommands();
@@ -418,6 +420,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Bind router reference
     this.routerRef = router;
+    (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags = this.huaweiDebugFlags;
 
     // Expand `command-alias` shortcuts before any trie match — same
     // behaviour as the SSH dispatcher so the local shell honours
@@ -901,7 +904,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
@@ -1102,7 +1105,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
