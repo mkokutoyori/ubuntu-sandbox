@@ -677,4 +677,93 @@ Cette famille de protocoles présente une **maturité très inégale** : les cou
 
 ---
 
+## 7. SSH/SCP/SFTP, abstraction shell, shells CLI Cisco/Huawei, couche terminal
+
+Globalement, cette zone du code est d'une maturité élevée et bien plus aboutie que ce qu'on pourrait craindre d'un simulateur : l'architecture SSH (auth Strategy, channels, forwarders, SFTP/SCP, host-keys) est cohérente, documentée par référence à des BRD/DESIGN docs, et la couche shell (`AbstractShell`/`IShell`/`ShellFactory`/`CrossVendorRemoteShell`) est uniformément respectée par tous les adaptateurs vendor. Les simplifications volontaires (crypto déterministe non cryptographique, `nc` minimal, SOCKS5 partiel) sont explicitement documentées comme « pédagogiques » et ne trompent pas le lecteur. Les principaux points faibles relevés sont : un paquet de fichiers `STUB FILE` totalement morts dans `src/terminal/`, des suites de tests SFTP `.bak` obsolètes référençant un arbre de modules supprimé, et quelques classes CLI démesurées (1500-2100 lignes).
+
+### 7.1 SSH/SCP/SFTP — fichiers morts et tests legacy obsolètes
+- **Constat** : trois fichiers de tests SFTP « legacy » (`.bak`, ~85 Ko cumulés) importent des modules d'un arbre `@/network/protocols/sftp/` qui n'existe plus (le code vit désormais sous `@/network/protocols/ssh/sftp/`). Ils ne sont plus exécutés par Vitest (extension `.bak`) mais traînent dans le dépôt et créent de la confusion sur la couverture réelle.
+- **Preuve** : `src/__tests__/unit/network-v2/sftp.legacy.test.ts.bak:22-29` (`import { SftpSession } from '@/network/protocols/sftp/SftpSession'` — chemin inexistant, vérifié : `src/network/protocols/sftp/` n'existe pas) ; idem `sftp-edge-cases.legacy.test.ts.bak`, `sftp-wan.legacy.test.ts.bak`.
+- **Sévérité** : Mineure
+- **Recommandation** : supprimer ces trois fichiers `.bak` (la couverture est reprise par `ssh-sftp.test.ts`, `scp-sftp-domain.test.ts`, `sftp-shell-suite.test.ts` qui totalisent ~126 cas) ou, si une régression de couverture est suspectée, migrer les scénarios utiles vers la suite active.
+
+### 7.2 SSH — crypto et key-exchange volontairement simulés (documenté, non trompeur)
+- **Constat** : `SshKeyPair.generate`/`SshFingerprint.fromPublicKey` utilisent un hash non cryptographique déterministe (FNV/Murmur-like) au lieu d'Ed25519/RSA réels ; aucune négociation Diffie-Hellman n'existe (pas de `kex`/`dh` dans le code). C'est assumé et commenté comme « simulator only / no external dependency », donc ce n'est pas une « fausse » implémentation cachée.
+- **Preuve** : `src/network/protocols/ssh/SshKeyPair.ts:27-39` (`simpleMaterial` / seed déterministe), `src/network/protocols/ssh/SshFingerprint.ts:42-49` (`simpleHash` documenté « Sufficient for the simulator »).
+- **Sévérité** : Mineure
+- **Recommandation** : aucune action corrective nécessaire — à signaler simplement dans la documentation utilisateur/pédagogique pour que personne ne croie à une vraie poignée de main SSH chiffrée.
+
+### 7.3 SSH — forwarders « pedagogical stub » bridgés via `nc`
+- **Constat** : les trois forwarders (`-L`, `-R`, `-D`) ne bridgent pas réellement le trafic applicatif : ils ouvrent un canal d'exécution lançant `nc <host> <port>` côté distant, ce qui est qualifié explicitement de « pedagogical stub » / « thin stub ». Le SOCKS5 du forwarder dynamique ne supporte que `CONNECT` (pas `BIND`/`UDP ASSOCIATE`).
+- **Preuve** : `src/network/protocols/ssh/SshRemoteForwarder.ts:72-74`, `src/network/protocols/ssh/SshLocalForwarder.ts:79-81`, `src/network/protocols/ssh/SshDynamicForwarder.ts:14` (« UDP ASSOCIATE / BIND are not implemented »).
+- **Sévérité** : Mineure
+- **Recommandation** : RAS fonctionnellement (suffisant pour les scénarios pédagogiques visés et bien documenté) ; juste s'assurer que les tests de tunnels n'attendent pas un bridge bas-niveau réel (TCP byte-for-byte) au-delà de ce que `nc` simulé permet.
+
+### 7.4 SSH — point d'authentification non câblé par défaut
+- **Constat** : `ISshServerContext.checkPassword` est documenté comme retournant « rejected » par défaut quand non implémenté — un contrat un peu fragile si un nouveau type de device oublie de le brancher (échec silencieux côté auth plutôt qu'une erreur explicite à l'enregistrement).
+- **Preuve** : `src/network/protocols/ssh/server/ISshServerContext.ts:70` (« Defaults to "rejected" when not implemented »), `src/network/protocols/ssh/server/RouterSshServerContext.ts:162` (« wired into NetworkOsCredentialStore — placeholder so the handler... »).
+- **Sévérité** : Mineure
+- **Recommandation** : envisager un assert/log de configuration au démarrage du serveur SSH si `checkPassword`/`checkPublicKey` ne sont pas explicitement fournis, pour distinguer « refus volontaire » de « non câblé ».
+
+### 7.5 Shell abstraction — couche `IShell`/`AbstractShell` réellement uniforme
+- **Constat** : tous les adaptateurs (`LinuxBashShell`, `WindowsCmdShell`, `WindowsPowerShellShell`, `SqlPlusShell`, `RmanShell`, `CiscoIOSShellAdapter`, `HuaweiVRPShellAdapter`, `SftpShell`) étendent bien `AbstractShell` et passent par le pipeline Template-Method `processLine` (history → exit → clear → dispatch). `CrossVendorRemoteShell` est un Composite propre qui pousse/dépile des `IShell` réels — pas de logique ad-hoc bypassant le contrat.
+- **Preuve** : `src/shell/AbstractShell.ts:154-191`, `src/shell/CrossVendorRemoteShell.ts:106-167`, `src/shell/registerDefaults.ts:33-92`.
+- **Sévérité** : (positif, pas un défaut) — mentionné pour mémoire d'audit.
+- **Recommandation** : aucune.
+
+### 7.6 Shell abstraction — adaptateurs « pont vers legacy » en transition explicite
+- **Constat** : `WindowsPowerShellShell`, `SqlPlusShell` et `RmanShell` ne réimplémentent pas leur moteur ; ils enveloppent des sous-shells « legacy » (`PowerShellSubShell`, `SqlPlusSubShell`, `ReactiveRmanSubShell`). C'est documenté comme une étape de migration (« Phase 1B migrates all sessions… the legacy sub-shell will be deleted »), donc ce n'est pas un vrai stub mais une dette de migration assumée et traçable.
+- **Preuve** : `src/shell/adapters/WindowsPowerShellShell.ts:5-14` (commentaire « no banner-and-close placeholder » — note le commentaire admet l'existence passée d'un vrai placeholder, désormais remplacé), `src/shell/adapters/SqlPlusShell.ts:4-9`, `src/shell/adapters/RmanShell.ts:1-21`.
+- **Sévérité** : Mineure
+- **Recommandation** : prioriser la « Phase 1B » mentionnée dans les commentaires pour réduire la double couche IShell→ISubShell (cf. 7.9) et supprimer `ShellSubShellAdapter` une fois la migration achevée.
+
+### 7.7 CLI shells — `CLIStateMachine`/`PromptBuilder`/`CommandTrie` : factorisation réussie Cisco/Huawei
+- **Constat** : la hiérarchie de modes et les prompts sont entièrement data-driven (`CISCO_IOS_MODES`/`CISCO_SWITCH_MODES`/`HUAWEI_VRP_MODES`, `CISCO_IOS_PROMPTS`/`HUAWEI_VRP_PROMPTS`), ce qui élimine la duplication de logique de transition entre `CiscoIOSShell`, `CiscoSwitchShell`, `HuaweiVRPShell`. Couverture de modes très large côté Cisco IOS (47 sous-modes) vs. Huawei VRP (12) — écart qui reflète fidèlement la réalité des deux OS (VRP a une arborescence de configuration moins fragmentée), donc pas une lacune mais une différence de spec légitime.
+- **Preuve** : `src/network/devices/shells/CLIStateMachine.ts:104-178`, `src/network/devices/shells/PromptBuilder.ts:52-126`.
+- **Sévérité** : (positif)
+- **Recommandation** : aucune ; bon modèle à suivre si d'autres vendors (Junos, Mikrotik…) sont ajoutés.
+
+### 7.8 CLI shells — classes « god object » volumineuses
+- **Constat** : `HuaweiVRPShell.ts` (2116 lignes), `CiscoSwitchShell.ts` (2113), `HuaweiSwitchShell.ts` (1661) et `CiscoShellBase.ts` (1528) dépassent largement la taille raisonnable d'une classe shell, même en tenant compte de l'enregistrement de nombreux tries de commandes par mode.
+- **Preuve** : tailles mesurées : `wc -l src/network/devices/shells/{CiscoShellBase,CiscoSwitchShell,HuaweiSwitchShell,HuaweiVRPShell}.ts` → 1528/2113/1661/2116 lignes.
+- **Sévérité** : Mineure
+- **Recommandation** : poursuivre l'extraction déjà amorcée vers `cisco/*Commands.ts` et `huawei/*Commands.ts` (le pattern existe déjà pour OSPF, ACL, NAT, IPSec…) pour les segments restants encore inline dans les shells principaux, et envisager de scinder `HuaweiVRPShell`/`CiscoSwitchShell` en mixins ou composeurs par domaine fonctionnel.
+
+### 7.9 Shell abstraction — double couche `IShell`/`ISubShell` en cours de fusion
+- **Constat** : `ShellSubShellAdapter` est un adaptateur de transition explicitement temporaire (« Phase 1B will remove this adapter ») entre le nouveau contrat `IShell` et l'ancien `ISubShell` que `TerminalSession` comprend encore. Tant que la migration n'est pas terminée, deux hiérarchies de sous-shells coexistent (`RemoteDeviceSubShell`/`RemoteShellSubShell` côté `ISubShell` legacy, `CrossVendorRemoteShell` côté `IShell`), avec un risque de divergence de comportement entre les deux chemins.
+- **Preuve** : `src/shell/ShellSubShellAdapter.ts:1-13`, usage croisé dans `src/terminal/sessions/LinuxTerminalSession.ts` et `src/shell/CrossVendorRemoteShell.ts`.
+- **Sévérité** : Mineure
+- **Recommandation** : terminer la « Phase 1B » pour supprimer l'adaptateur et unifier sur `IShell`/`AbstractShell` partout — réduit la surface de duplication et les risques de bugs « ça marche en SSH mais pas en local » (déjà mentionnés en commentaire comme bug historique, cf. `CrossVendorRemoteShell.ts:12-14`).
+
+### 7.10 Terminal — fichiers `STUB FILE` complètement morts dans `src/terminal/`
+- **Constat** : quatre fichiers explicitement marqués « STUB FILE - will be rebuilt with TDD » sont restés dans l'arborescence : `commands.ts`, `packages.ts`, `shellUtils.ts`, `types.ts`. Le premier (`commands.ts`) importe même un module `./filesystem` **qui n'existe pas** dans `src/terminal/` — il ne compile probablement que parce qu'il n'est jamais référencé. Aucun de ces fichiers n'est importé ailleurs (sauf `packages.ts`, voir 7.11).
+- **Preuve** :
+  - `src/terminal/commands.ts:1-51` (import `./filesystem` inexistant ; `ls`/`cat` renvoient `'STUB: directory listing'` / `'STUB: file contents'`)
+  - `src/terminal/packages.ts:1-36`
+  - `src/terminal/shellUtils.ts:1-87` (contient même un système d'« Achievements »/tutoriels sans rapport apparent avec le shell — `ACHIEVEMENTS`, `TUTORIAL_STEPS` lignes 35-69 — mort lui aussi)
+  - `src/terminal/types.ts:1-29`
+  - vérifié : aucun import de `terminal/commands'`, `terminal/shellUtils'`, `terminal/types'` dans toute la codebase ; `src/terminal/filesystem.ts` n'existe pas.
+- **Sévérité** : Mineure
+- **Recommandation** : supprimer ces quatre fichiers morts (et leur contenu hors-sujet comme le système d'achievements) — ils n'apportent rien et induisent en erreur quiconque cherche l'implémentation réelle des commandes du terminal (qui se trouve en réalité dans `LinuxTerminalSession.ts`/`bash/` interpreter).
+
+### 7.11 Terminal — `preInstallForDevice` : pont vers un stub no-op encore appelé en production
+- **Constat** : contrairement aux trois autres fichiers stub, `packages.ts` est bel et bien importé et appelé par `TerminalManager.openTerminal()` pour tout device dont le type commence par `db-`. Or l'implémentation se contente d'un `console.log('STUB: Pre-installing packages for ...')` sans aucun effet.
+- **Preuve** : `src/terminal/packages.ts:32-35` (corps de fonction = `console.log` uniquement) ; appel production `src/terminal/sessions/TerminalManager.ts:24,166-168`.
+- **Sévérité** : Mineure
+- **Recommandation** : soit retirer cet appel mort (`preInstallForDevice`) du chemin chaud `openTerminal`, soit le brancher sur le vrai mécanisme d'amorçage du filesystem Oracle (`initOracleFilesystem` / `OracleFilesystemSync`) si l'intention de « pré-installation » est toujours pertinente — actuellement il s'agit d'un appel sans effet observable qui pollue la console à chaque ouverture de terminal sur un device `db-*`.
+
+### 7.12 Sub-shells — `RmanSubShell.ts` legacy entièrement mort, supplanté par `ReactiveRmanSubShell`
+- **Constat** : `src/terminal/subshells/RmanSubShell.ts` est une implémentation RMAN « stubbed » à sortie canée (« Provides a realistic stubbed RMAN> prompt … returning plausible output »), entièrement remplacée par la suite réactive complète (`ReactiveRmanSubShell` + moteur `rman/job/RmanJobEngine`, catalogue, channels, policies — ~30 fichiers). Vérification faite : aucun import de `RmanSubShell` (hors lui-même) nulle part dans le repo ; `RmanShell` (l'adaptateur `IShell` enregistré dans `registerDefaults.ts`) instancie exclusivement `ReactiveRmanSubShell`.
+- **Preuve** : `src/terminal/subshells/RmanSubShell.ts:1-6` (« Provides a realistic stubbed RMAN> prompt with common backup/recovery commands returning plausible output »), absence totale de référence ailleurs (`grep -rn "import.*RmanSubShell\b"` ne renvoie que des correspondances `ReactiveRmanSubShell`), `src/shell/adapters/RmanShell.ts:15` instancie `ReactiveRmanSubShell.create`.
+- **Sévérité** : Mineure
+- **Recommandation** : supprimer purement et simplement `RmanSubShell.ts` — c'est un vestige d'une itération antérieure remplacée par une implémentation nettement plus aboutie (architecture Engine+events+actors+reactive conforme à la convention documentée du projet).
+
+### 7.13 Cross-cutting — duplication potentielle `RemoteDeviceSubShell` vs `RemoteShellSubShell`
+- **Constat** : deux classes `ISubShell` couvrent un terrain voisin — un sous-shell distant générique pilotant `executeCommand` directement (`RemoteDeviceSubShell`, multi-vendor via `RemotePromptStrategy`) et un sous-shell distant via canal SSH exec avec gestion explicite du `cwd` (`RemoteShellSubShell`, Linux uniquement). La docstring de `RemoteDeviceSubShell` indique explicitement « Use this whenever RemoteShellSubShell … is too narrow », ce qui suggère une coexistence voulue plutôt qu'une duplication accidentelle, mais le chevauchement de responsabilités (gestion de prompt, mots de sortie, `clear`) entre les deux mérite vigilance pour éviter une dérive de comportement entre les deux chemins SSH.
+- **Preuve** : `src/terminal/subshells/RemoteDeviceSubShell.ts:11-18` (justification explicite de coexistence), `src/terminal/subshells/RemoteShellSubShell.ts:1-13` (gestion `cd`/`pwd` spécifique POSIX).
+- **Sévérité** : Mineure
+- **Recommandation** : documenter clairement (ou factoriser via une stratégie commune) la règle de choix entre les deux classes pour éviter qu'un futur ajout vendor ne duplique encore une troisième variante ; envisager de fusionner `RemoteShellSubShell` comme une `RemotePromptStrategy` spécialisée de `RemoteDeviceSubShell` à terme.
+
+---
+
 *(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
