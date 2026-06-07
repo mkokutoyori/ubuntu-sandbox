@@ -969,4 +969,225 @@ L'ensemble PowerShell/Windows est dans un état de **migration architecturale ac
 
 ---
 
-*(Document en cours de rédaction — chaque section est ajoutée puis poussée séparément.)*
+## 10. Moteur de base de données Oracle
+
+Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExecutor`/`OracleDatabase`/`OracleParser`/`OracleCatalog`/`OracleStorage`) est nettement plus mature que ne le suggère le statut "🟡 PARTIELLE" affiché par endroits dans `docs/BRD-Oracle-DBMS.md` : curseurs PL/SQL, triggers, verrouillage réel, AWR, RMAN et Data Guard sont aujourd'hui des moteurs réels adossés à un état vivant — alors que le BRD (v1.1, 2026-03-23) les décrit encore comme manquants ou "données statiques". À l'inverse, plusieurs zones documentées comme "✅ (stub)" le restent effectivement (PACKAGE, DB Links cross-query, Flashback temporel, partitionnement, CBO), et un bug d'aiguillage fait que le moteur réel d'exécution de procédures stockées (`EXEC`) est totalement injoignable depuis le terminal SQL*Plus simulé. Le tout repose sur un store en mémoire à scan linéaire (les index ne sont que des métadonnées de catalogue) et sur un `OracleExecutor`/`OracleDatabase` devenus des classes-dieu (5173 et 2285 lignes).
+
+### 10.1 SQL engine core — moteur générique vs réutilisabilité promise
+- **Constat** : Le BRD §2.1 documente une couche `engine/` avec `optimizer/` (`BaseOptimizer`, `Statistics`) et `transaction/` (`TransactionManager`, `IsolationLevel`, `LockManager`), réutilisable pour de futurs dialectes Postgres/MySQL/SQL Server. Aucun de ces répertoires n'existe : `src/database/engine/` ne contient que `catalog/`, `lexer/`, `parser/`, `executor/`, `storage/`, `types/`, et `src/database/` ne contient que `engine/` et `oracle/` (pas de `postgres/`, `mysql/`, `sqlserver/`).
+- **Preuve** : absence de `src/database/engine/optimizer/`, `src/database/engine/transaction/`, `src/database/{postgres,mysql,sqlserver}/`; le gestionnaire de verrous a été implémenté directement sous `src/database/oracle/lock/LockManager.ts` (203 lignes) au lieu de la couche partagée prévue.
+- **Sévérité** : Mineure
+- **Recommandation** : Mettre à jour le BRD pour refléter l'architecture réelle (verrouillage/transactions Oracle-only), ou extraire une interface générique si une réutilisation multi-SGBD reste un objectif.
+
+### 10.2 EXPLAIN PLAN — sortie templée, pas de CBO
+- **Constat** : Il n'existe aucun `OracleOptimizer.ts` (pourtant prévu au BRD comme "CBO — Cost-Based Optimizer"). `EXPLAIN PLAN` produit systématiquement `TABLE ACCESS FULL` quel que soit le nombre d'index réels sur la table, et le coût est une simple fonction du `rowCount` stocké.
+- **Preuve** : `src/database/oracle/OracleExecutor.ts:2801-2862` (`executeExplainPlan` — `addStep('TABLE ACCESS FULL', tableName…)` est appelé inconditionnellement aux lignes 2831 et 2833, sans jamais consulter `storage.getIndexes`); absence de `src/database/oracle/OracleOptimizer.ts`.
+- **Sévérité** : Majeure
+- **Recommandation** : Faire dépendre le plan de la présence d'index (`TABLE ACCESS BY INDEX ROWID` / `INDEX RANGE SCAN`) pour que `EXPLAIN PLAN` reflète l'état réel du catalogue, conformément à la promesse "Real engine/storage state, not canned text".
+
+### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire
+- **Constat** : `BaseStorage`/`OracleStorage` gèrent bien des `IndexMeta` (création/suppression/listing), mais aucune structure de données indexée n'accélère les lectures : toutes les requêtes passent par `storage.getRows(schema, table)` puis un filtrage JS linéaire. `getIndexes` n'est utilisé que pour vérifier l'unicité de noms ou alimenter les vues de catalogue.
+- **Preuve** : `src/database/oracle/OracleExecutor.ts:2504,2962,4492` (seuls usages de `getIndexes`, tous orientés catalogue) vs. `:1173,2535,4769,4791,4876` (`getRows` + filtrage manuel pour SELECT/UPDATE/DELETE/contraintes FK).
+- **Sévérité** : Mineure
+- **Recommandation** : Documenter explicitement (commentaire en tête de `BaseStorage`) que les index sont purement déclaratifs ; envisager une Map clé→lignes pour les index UNIQUE/PK afin d'accélérer au moins les lookups par clé primaire.
+
+### 10.4 EXEC / EXECUTE — moteur réel présent mais inaccessible (bug d'aiguillage)
+- **Constat** : `OracleDatabase` possède un moteur complet de résolution et d'appel de procédures stockées (`executeProcedureCall` → `callStoredUnit`, qui résout `SCHEMA.PROC`, lève `PLS-00201: identifier '…' must be declared` si la procédure n'existe pas, et exécute le corps PL/SQL réel). Mais `SQLPlusSession.processLine` — le seul point d'entrée réellement utilisé par le terminal — intercepte toute ligne `EXEC …`/`EXECUTE …` *avant* qu'elle n'atteigne `executeSql`, et renvoie systématiquement le message canné `"PL/SQL procedure successfully completed."`, sans jamais invoquer la procédure (donc sans effets de bord, sans `DBMS_OUTPUT.PUT_LINE`, sans erreur si la procédure n'existe pas).
+- **Preuve** : `src/database/oracle/commands/SQLPlusSession.ts:386-388` (interception canned) vs. le moteur réel à `src/database/oracle/OracleDatabase.ts:544-545,1729-1763` (`executeProcedureCall`/`callStoredUnit`, avec `PLS-00201` à la ligne 1763) ; test qui fige ce comportement cassé : `src/__tests__/unit/database/oracle-access-management-comprehensive.test.ts:1429` (`{ sql: 'EXEC hr.bump_salary(100, 5);', want: /PL\/SQL procedure successfully completed\./i }`).
+- **Sévérité** : Critique
+- **Recommandation** : Supprimer l'interception canned dans `SQLPlusSession` et router `EXEC`/`EXECUTE` vers `executeSql`/`executeProcedureCall` (déjà prêt côté `OracleDatabase`), puis corriger le test qui valide le mauvais comportement.
+
+### 10.5 Double moteur PL/SQL (duplication / dette technique)
+- **Constat** : Il existe deux interpréteurs PL/SQL coexistants : le nouveau `PlsqlInterpreter`/`PlsqlParser` (moderne, basé AST, gère curseurs/exceptions/boucles, ~2 100 lignes au total) et un interpréteur "legacy" basé sur des regex et de l'évaluation de chaînes directement dans `OracleDatabase` (`executePLSQLLegacy`/`executePLSQLStatements`/`evaluatePLSQLExpressionWithVars`, ~700 lignes). Le legacy n'est censé servir que de fallback en cas d'erreur de parsing du nouveau moteur, mais il représente une masse de code dupliqué et difficile à maintenir, silencieusement activé dès que `PlsqlParser` échoue.
+- **Preuve** : `src/database/oracle/OracleDatabase.ts:739-751` (`runAnonymousBlock` puis `if (!outcome.parseError) {…} return this.executePLSQLLegacy(executor, sql);`), bloc legacy `:794-1456` (`executePLSQLLegacy`, `executePLSQLStatements` ligne 1016, `evaluatePLSQLExpressionWithVars` ligne 1456).
+- **Sévérité** : Majeure
+- **Recommandation** : Faire converger `PlsqlParser` vers une couverture suffisante pour supprimer le chemin legacy (ou, à défaut, l'isoler dans son propre fichier avec des tests de non-régression dédiés et un log explicite signalant son activation).
+
+### 10.6 PL/SQL — packages utilisateur non implémentés (conforme au BRD, mais sans message d'erreur clair)
+- **Constat** : `CREATE PACKAGE` / `CREATE PACKAGE BODY` ne sont parsés/exécutés nulle part dans `OracleParser`/`OracleExecutor` (le mot-clé `PACKAGE` n'apparaît que dans `ALTER COMPILE` et `DROP …`). Côté `OracleDatabase`, des méthodes `createPackageSpec`/`createPackageBody` existent (lignes 535-539), mais elles relèvent du chemin `executeSql` legacy non branché à `OracleExecutor.execute` (qui ne possède pas de case `CreatePackageStatement`).
+- **Preuve** : `src/database/oracle/OracleParser.ts:236,523` (seules occurrences de `'PACKAGE'`); absence de `case 'CreatePackage…'` dans `src/database/oracle/OracleExecutor.ts:470-650`.
+- **Sévérité** : Majeure
+- **Recommandation** : Soit câbler réellement `CREATE PACKAGE [BODY]` dans `OracleExecutor`/`OracleParser` en s'appuyant sur le nouveau `PlsqlInterpreter`, soit faire échouer proprement avec `ORA-00900`/message explicite plutôt que de laisser la grammaire silencieusement non reconnue.
+
+### 10.7 Statements DDL "stub" — message de succès sans persistance d'état
+- **Constat** : `CREATE/DROP DATABASE LINK` et `CREATE/DROP MATERIALIZED VIEW` retournent un message de succès figé sans créer le moindre objet de catalogue ni autoriser la requête correspondante par la suite (`SELECT … FROM table@link` reste impossible, `SELECT * FROM mv_name` échouerait).
+- **Preuve** : `src/database/oracle/OracleExecutor.ts:578-581` (`case 'CreateDbLinkStatement': return emptyResult('Database link created.');` … `case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');`); commentaires de stub côté parseur : `src/database/oracle/OracleParser.ts:1271` (`// ── CREATE DATABASE LINK (stub) ──`) et `:1291` (`// ── CREATE MATERIALIZED VIEW (stub) ──`).
+- **Sévérité** : Mineure (conforme au statut "stub" annoncé par le BRD §15.4-15.6, mais l'absence de toute trace en catalogue peut surprendre des scripts DBA qui font ensuite `SELECT … FROM DBA_DB_LINKS`).
+- **Recommandation** : Au minimum, persister le nom dans le catalogue pour que `DBA_DB_LINKS`/`DBA_MVIEWS` reflètent les objets créés (cohérence avec le reste du dictionnaire de données qui, lui, est branché sur l'état réel).
+
+### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive
+- **Constat** : `FlashbackArchiveManager` gère un état réel (archives, rétention, tables activées), mais les requêtes `SELECT … AS OF TIMESTAMP` et `FLASHBACK TABLE … TO TIMESTAMP/SCN` sont des no-op loggés dans l'alert log ; seul `FLASHBACK TABLE … TO BEFORE DROP` (recyclebin) fonctionne réellement.
+- **Preuve** : `src/database/oracle/OracleExecutor.ts:525-549` (commentaire explicite : `// DATABASE / TO TIMESTAMP / SCN are accepted but logical no-ops — the simulator has no undo/redo time machine.`) ; `BRD-Oracle-DBMS.md:1364-1369` confirme le statut ❌.
+- **Sévérité** : Mineure (déviation documentée et assumée)
+- **Recommandation** : Si le temps le permet, exploiter le mécanisme de snapshot transactionnel déjà existant (`captureSnapshot`/`restoreSnapshot`, §10.10) pour simuler un flashback "à la dernière transaction connue", même approximatif.
+
+### 10.9 Partitionnement — tolérance syntaxique sans modèle de données
+- **Constat** : `CREATE TABLE … PARTITION BY RANGE/LIST/HASH …` est accepté par le parseur (et renvoie "Table created") mais aucune structure de partitions n'est créée ; la table est stockée comme une table ordinaire. Documenté et testé comme "tolérance", pas comme fonctionnalité.
+- **Preuve** : `src/__tests__/unit/database/oracle-partition-lob-tolerance.test.ts:1-9` (commentaire : "The simulator does not implement partitioning or LOB segments, but the parser shouldn't reject the DDL").
+- **Sévérité** : Mineure (assumé)
+- **Recommandation** : RAS si l'objectif reste la "tolérance de script" ; documenter dans le BRD que `DBA_TAB_PARTITIONS` ne sera jamais peuplée pour ces tables.
+
+### 10.10 Transactions / MVCC — snapshot complet plutôt que journal redo/undo réel
+- **Constat** : `COMMIT`/`ROLLBACK`/`SAVEPOINT` sont en réalité bien implémentés via une copie complète de l'état du storage (`captureSnapshot`/`restoreSnapshot`, Map<schema, Map<table, rows[]>>), ce qui dément le statut BRD "🟡 stubs, pas de vrai rollback" (ligne 1433) — le rollback fonctionne réellement. Il s'agit cependant d'un instantané "tout ou rien" en mémoire (pas de undo log par ligne, pas d'isolation entre sessions concurrentes, `SET TRANSACTION ISOLATION LEVEL …` est un simple acquiescement).
+- **Preuve** : `src/database/oracle/OracleExecutor.ts:143-175` (`captureSnapshot`/`restoreSnapshot`/`_txnSnapshot`), `:684-727` (`executeCommit`/`executeRollback`/`executeSavepoint` avec restauration réelle), `:495-498` (`case 'SetTransactionStatement': … // The simulator does not differentiate transaction isolation levels`).
+- **Sévérité** : Mineure (le BRD est *plus pessimiste* que le code réel sur ce point — dette de documentation)
+- **Recommandation** : Mettre à jour le BRD §16 (Phase 6.3-6.4) pour refléter que COMMIT/ROLLBACK/SAVEPOINT fonctionnent réellement par snapshot ; documenter explicitement la limite (pas de MVCC multi-session, pas d'isolation SERIALIZABLE réelle) pour fixer les attentes.
+
+### 10.11 V$ / data-dictionary — globalement bien câblées sur l'état vivant
+- **Constat** : Contrairement à la crainte initiale de "vues canned", l'essentiel des vues `V/`DBA_*` interrogées (`V$SESSION`, `V$LOCK`, `V$TRANSACTION`, `DBA_AUDIT_TRAIL`, `DBA_PROFILES`, `DBA_TABLES`…) lisent l'état réel via `runtime`/`catalog`/`SecurityEngine`/`LockManager`. Le BRD est ici *en retard* sur le code : il qualifie encore `DBA_AUDIT_TRAIL` (ligne 445/1426) et `DBA_PROFILES` (ligne 1421) de "données statiques", alors que les deux lisent désormais respectivement `catalog.getAuditTrail()` et `SecurityEngine.profiles.getAllProfileRows()`.
+- **Preuve** : `src/database/oracle/views/v_session.ts` (lecture du `SecurityEngine session tracker`), `v_lock.ts:18-31` (`instance.lockManager.getHeldLocks()`), `v_transaction.ts:13-30` (`runtime.transactions`), `dba_audit_trail.ts:11-35` (`catalog.getAuditTrail()`), `dba_profiles.ts:39-46` (`catalog.getSecurityEngine()` puis `engine.profiles.getAllProfileRows()`).
+- **Sévérité** : Mineure (constat positif, mais documentation à corriger)
+- **Recommandation** : Mettre à jour le tableau récapitulatif du BRD (lignes 445, 1421, 1426) — ces deux vues sont passées de "stub statique" à "branchées sur l'état réel" ; ne pas laisser le document désynchronisé du code, au risque de fausser les futures évaluations de gap.
+
+### 10.12 Vues canned résiduelles (placeholders assumés)
+- **Constat** : Quelques vues restent volontairement synthétiques/placeholder, par construction du simulateur (équivalent réel Oracle = vues fixes opaques) :
+  - `V$SQL_PLAN_MONITOR` génère une seule ligne `SELECT STATEMENT` factice par curseur surveillé, faute de vrais plans d'exécution.
+  - `V$FIXED_VIEW_DEFINITION` synthétise `select * from x$<nom>` pour chaque vue enregistrée (l'équivalent réel n'expose pas non plus de vrai SQL).
+- **Preuve** : `src/database/oracle/views/v_sql_plan_monitor.ts:1-5,28-30` ; `src/database/oracle/views/v_fixed_view_definition.ts:1-7,17-22`.
+- **Sévérité** : Mineure
+- **Recommandation** : Aucune action urgente — `V$FIXED_VIEW_DEFINITION` est un cas légitime (Oracle réel ne révèle pas non plus le SQL des fixed views) ; pour `V$SQL_PLAN_MONITOR`, lier la sortie à `EXPLAIN PLAN` une fois 10.2 traité, pour cohérence inter-vues.
+
+### 10.13 RMAN — moteur réactif réel, au-delà du statut "stub" du BRD
+- **Constat** : Contrairement au BRD (§3 ligne 99 : `RmanSession.ts # Session RMAN (stub)`, §16 ligne 1427 : "❌ Backup/Recovery concepts (RMAN stub) — non implémenté"), le sous-shell RMAN (`src/terminal/subshells/rman/`) est un sous-système conséquent : moteur de jobs (`RmanJobEngine`, 483 lignes) avec allocation de canaux, opérations BACKUP/RESTORE/RECOVER/DUPLICATE/CROSSCHECK/DELETE EXPIRED-OBSOLETE branchées sur un contexte réel (`IRmanOracleContext.getDatafiles()`), catalogue en mémoire (`InMemoryRmanCatalog`), bus d'événements réactif et suites de transcript dédiées (`debug/rman/*.debug.test.ts` : `rman-pitr-duplicate`, `rman-wan-disaster-recovery`, `rman-multi-server-lan`…). Seuls les messages d'étape de progression ("canned step messages") sont des chaînes pré-écrites — l'issue de l'opération (succès/échec, fichiers concernés) dépend de l'état réel.
+- **Preuve** : `src/terminal/subshells/rman/job/RmanJobEngine.ts:61` (commentaire `// 2. Stream the canned step messages`), `:98-111` (dispatch d'opérations réelles), `:113-129` (paramétrage réel `validate`/`compressed`/`encrypted`/`tag`/`incrementalLevel`) ; `BRD-Oracle-DBMS.md:99,1427` (statut documenté comme stub/non implémenté, désormais obsolète).
+- **Sévérité** : Mineure (constat positif — dette de documentation côté BRD)
+- **Recommandation** : Mettre à jour le BRD pour refléter le sous-système RMAN réel ; ne conserver l'étiquette "canned" que pour les libellés de progression d'étape, pas pour le résultat des opérations.
+
+### 10.14 Multitenant (CDB/PDB) — easter-egg "FAKED" dans un identifiant généré
+- **Constat** : Le `MultitenantManager`/`PluggableDatabase` gère un état réel (création/ouverture/fermeture de PDB, conId, etc.), mais le GUID généré pour chaque PDB contient littéralement la chaîne `FAKED` en plein milieu — un artefact de génération laissé en production qui apparaîtrait tel quel dans `V$PDBS`/`DBA_PDBS`.
+- **Preuve** : `src/database/oracle/multitenant/PluggableDatabase.ts:27` — `this.guid = \`PDB${init.conId.toString(16)…}-CONS-OLE-OURO-FAKED${Math.random()…}\`;`
+- **Sévérité** : Mineure
+- **Recommandation** : Générer un GUID hexadécimal de 32 caractères plausible (format réel `PDB$GUID` / `SYS_GUID()`), sans chaîne "FAKED" visible dans la sortie utilisateur.
+
+### 10.15 OracleExecutor / OracleDatabase — classes-dieu
+- **Constat** : `OracleExecutor.ts` totalise 5173 lignes et ~172 méthodes ; `OracleDatabase.ts` 2285 lignes ; `BaseParser.ts` (couche générique) 2395 lignes. Ces fichiers concentrent le dispatch de ~80 types de statements, l'évaluation d'expressions, le formatage de dates, le moteur PL/SQL legacy, la gestion des transactions, etc. — un god-class classique qui complique la navigation et les revues.
+- **Preuve** : `wc -l` → `OracleExecutor.ts: 5173`, `OracleDatabase.ts: 2285`, `BaseParser.ts: 2395` ; `OracleExecutor.execute` switch unique de la ligne 470 à ~650+ (>80 cases).
+- **Sévérité** : Majeure
+- **Recommandation** : Poursuivre la décomposition déjà amorcée (`requireCommandHost()`/`SqlCommandHost` pour LOCK TABLE, FLASHBACK ARCHIVE, PDB, types — lignes 591-596) en extrayant par domaine fonctionnel (DDL objets, DCL/sécurité, administration instance, PL/SQL) plutôt que de continuer à enrichir le fichier monolithique.
+
+### 10.16 Suites "debug" Oracle/RMAN — dumps de transcript sans assertions
+- **Constat** : Sur les 14 suites `debug/oracle/*.debug.test.ts`, 13 contiennent zéro `expect()` (pures suites de "transcript dump" pour analyse de gaps manuelle) ; seule `oracle-view-registration.debug.test.ts` contient 8 assertions réelles. La couverture par assertions véritable repose intégralement sur les 65 fichiers `unit/database/*.test.ts` (2902 `expect()` au total), ce qui est sain, mais le volume de suites "debug" (300+ vues testées en dump, ~3000 lignes) gonfle la base de tests sans garantir de non-régression automatique.
+- **Preuve** : `grep -c "expect("` sur `src/__tests__/debug/oracle/*.debug.test.ts` → 0 pour 13/14 fichiers, 8 pour `oracle-view-registration.debug.test.ts` ; en-tête `oracle-key-views.debug.test.ts:1-2` ("Debug — Vues clés Oracle … 300+ vues exercées").
+- **Sévérité** : Mineure
+- **Recommandation** : Conserver les suites debug pour l'analyse de gaps manuelle (usage documenté dans `CLAUDE.md`), mais s'assurer que toute régression détectée via ces dumps soit ensuite formalisée par une assertion dans `unit/database/`, comme le fait déjà `oracle-stubs-to-real.test.ts`.
+
+---
+**Synthèse des priorités** : corriger en premier le bug critique d'aiguillage `EXEC` (10.4, qui rend une fonctionnalité documentée comme "✅" totalement non opérante côté terminal), puis statuer sur le double moteur PL/SQL (10.5) et l'absence de support `CREATE PACKAGE` (10.6). Les autres constats sont soit des déviations mineures déjà assumées par le BRD (Flashback temporel, partitionnement, MV/DB Links stubs), soit des corrections de documentation à la hausse (RMAN, transactions/rollback, `DBA_AUDIT_TRAIL`/`DBA_PROFILES` désormais branchées sur l'état réel) plutôt que des régressions de code.
+
+**Fichiers clés cités** : `src/database/oracle/OracleExecutor.ts`, `src/database/oracle/OracleDatabase.ts`, `src/database/oracle/OracleParser.ts`, `src/database/oracle/commands/SQLPlusSession.ts`, `src/database/oracle/plsql/{index,PlsqlInterpreter,PlsqlParser}.ts`, `src/database/oracle/multitenant/PluggableDatabase.ts`, `src/database/oracle/views/{v_session,v_lock,v_transaction,dba_audit_trail,dba_profiles,v_sql_plan_monitor,v_fixed_view_definition}.ts`, `src/terminal/subshells/rman/job/RmanJobEngine.ts`, `src/__tests__/unit/database/{oracle-stubs-to-real,oracle-partition-lob-tolerance,oracle-access-management-comprehensive}.test.ts`, `docs/BRD-Oracle-DBMS.md`. (Note : les chemins `src/network/adapters/Oracle{Filesystem,Systemd}Sync.ts` indiqués dans la consigne sont en réalité sous `src/adapters/` — ces deux adaptateurs ont été lus et ne présentent aucun stub : ils exposent une intégration événementielle réelle avec le filesystem/systemd hôte.)
+
+---
+
+## 11. Couche UI / Store / React (conformité MVC et réactivité)
+
+La couche UI repose sur un store Zustand unique (`networkStore.ts`) qui détient des instances `Equipment` vivantes et les convertit à la demande en objets d'affichage (`NetworkDeviceUI`) via `deviceToUI()`. Le pattern est globalement sain pour le cycle de vie des terminaux (architecture par abonnement à `TerminalManager`/`useSyncExternalStore`, hook `useNetworkLogs` branché sur `Logger` pub/sub) et il existe même une couche de "read-models" réactifs prête à l'emploi (`src/react/hooks`, démontrée par `LiveDeviceStats`). Cependant, plusieurs panneaux centraux (Properties, Canvas/animation de paquets, Toolbar) n'exploitent pas cette architecture réactive : ils lisent des snapshots reconstruits à chaque rendu, contournent l'abstraction `Equipment` via des casts `as any`, ou affichent purement et simplement des données statiques/cosmétiques déconnectées du moteur réseau.
+
+### 11.1 Store Zustand et sérialisation de topologie
+- **Constat** : Le store est correct et bien isolé (pas de mediator central, délégation aux instances `Equipment`/`Cable`), avec gestion propre des effets de bord (déconnexion des câbles, `powerOff`, événements `device.removed`/`registry.cleared` avant suppression du registre). `topologySerializer.ts` régénère intégralement les instances à l'import. Aucune anomalie majeure relevée ici.
+- **Preuve** : `src/store/networkStore.ts:162-207` (séquence d'arrêt propre), `src/store/topologySerializer.ts:114-189` (réimport complet).
+- **Sévérité** : Mineure
+- **Recommandation** : RAS pour la logique métier ; voir 11.6 pour l'impact sur la réactivité du rendu (identité de `Map` recréée à chaque mutation).
+
+### 11.2 Canvas / rendu de topologie
+- **Constat** : `getDevices()` est appelé directement dans le corps du composant à chaque rendu (`NetworkCanvas`, `NetworkDesigner`, `PropertiesPanel`). Cette fonction reconstruit un tableau complet de `NetworkDeviceUI` — en relisant tous les ports, IP, masques, MAC de **chaque** appareil — sans mémoïsation ni sélecteur Zustand dédié. Comme `useNetworkStore()` est appelé sans sélecteur, tout changement d'état (y compris `moveDevice`, qui recrée systématiquement la `Map` à `networkStore.ts:232`) force un nouveau calcul de `getDevices()` et un re-rendu de la totalité de la liste de devices/connexions — un risque réel de "re-render storm" lors d'un drag-and-drop sur une topologie de grande taille.
+- **Preuve** : `src/components/network/NetworkCanvas.tsx:41` (`const devices = getDevices();`), `src/store/networkStore.ts:227-234` (`moveDevice` → `new Map(state.deviceInstances)` à chaque pixel de déplacement).
+- **Sévérité** : Majeure
+- **Recommandation** : Introduire un sélecteur mémoïsé (ou `useShallow`/comparateur personnalisé) qui ne reconstruit `NetworkDeviceUI[]` que lorsque la topologie change réellement (ajout/suppression de device/connexion), et séparer la position (`x,y`) d'un device de l'identité de la `Map` pour éviter de recréer toute la collection à chaque `mousemove`.
+
+### 11.3 Properties Panel et Logs Panel
+- **Constat** : `NetworkLogsPanel` est un exemple de bonne réactivité : il s'abonne au pub/sub du `Logger` via `useNetworkLogs` (`useEffect` + `Logger.subscribe`), avec un mode "live tail" propre. En revanche, `PropertiesPanel` casse l'abstraction `Equipment` : pour afficher la table MAC d'un switch, il fait `selectedDevice.instance as any` puis appelle dynamiquement `getMACTable`/`clearMACTable` via une vérification `typeof === 'function'`, contournant entièrement l'interface typée. De plus, la table MAC n'est rafraîchie que par un `useEffect` déclenché sur `[selectedDeviceId, isSwitch]` ou par un bouton "Refresh" manuel — ce n'est **pas** un flux réactif basé sur les événements du moteur (apprentissage MAC, vieillissement, etc.), c'est un instantané figé tant que l'utilisateur ne change pas de sélection ou ne clique pas sur Refresh.
+- **Preuve** : `src/components/network/PropertiesPanel.tsx:42-43` (`const sw = selectedDevice.instance as any; … sw.getMACTable()`), `src/components/network/PropertiesPanel.tsx:54-66` (rafraîchissement uniquement sur changement de sélection / bouton manuel, aucun abonnement aux événements switch/STP/MAC-learning).
+- **Sévérité** : Majeure
+- **Recommandation** : Exposer un read-model typé (`useSwitchMacTable(deviceId)` dans `src/react/hooks`, sur le modèle de `LiveDeviceStats`) qui s'abonne aux événements d'apprentissage MAC du moteur via `EventBus`/signaux, supprimant le cast `as any` et le rafraîchissement manuel.
+
+- **Constat** : Dans le panneau "Connexion" du `PropertiesPanel`, la bande passante et la latence affichées (`details.bandwidth`, `details.latency`) sont des constantes câblées en dur selon le type de câble (`'1 Gbps'`/`'0.1 ms'` pour Ethernet, `'1.544 Mbps'`/`'5 ms'` pour Serial), sans aucun lien avec l'état réel du `Cable`/des `Port` (qui n'exposent d'ailleurs aucune notion de bande passante/latence). C'est une donnée d'affichage purement décorative présentée comme une "Performance" en temps réel.
+- **Preuve** : `src/components/network/properties-panel-logic.ts:48-65` (`switch (connection.type) { case 'ethernet': bandwidth = '1 Gbps'; latency = '0.1 ms'; … }`), affiché dans `src/components/network/PropertiesPanel.tsx:157-173`.
+- **Sévérité** : Mineure
+- **Recommandation** : Soit retirer cette section "Performance" tant que le moteur ne modélise pas de bande passante/latence par câble, soit relier ces valeurs à de vraies propriétés de `Cable`/`Port` si elles existent ou sont ajoutées.
+
+### 11.4 Animation de paquets
+- **Constat** : L'animation de paquets est entièrement factice. `NetworkCanvas` déclare `const activePackets: any[] = []` (toujours vide, jamais alimenté), et le composant `PacketAnimation` est explicitement commenté comme un "placeholder — will be fully implemented later". Une recherche dans tout le code confirme que `ActivePacket`/`activePackets` n'existent **nulle part ailleurs** : aucun abonnement à `EventBus`/`Logger` pour les événements de transmission de trame réels (`frame.sent`, ARP, ICMP…) n'alimente ce tableau. La légende `PacketLegend` (icônes ARP/ICMP/broadcast/data) est donc affichée en permanence sans jamais correspondre à un trafic réel animé.
+- **Preuve** : `src/components/network/NetworkCanvas.tsx:43-44` (`// Packet animation (placeholder - will be implemented later)\n const activePackets: any[] = [];`), `src/components/network/PacketAnimation.tsx:8` (`// Packet animation placeholder - will be fully implemented later`).
+- **Sévérité** : Critique
+- **Recommandation** : Soit retirer entièrement l'UI d'animation de paquets (composant + légende) tant qu'elle n'est pas branchée, soit l'implémenter en s'abonnant aux événements de trame du `Logger`/`EventBus` (le pipeline `Logger` capture déjà chaque trame/échange ARP/SSH d'après le commentaire de `NetworkLogsPanel.tsx:6`) pour produire de vraies particules animées synchronisées avec le trafic simulé — exactement le type de pont que `LiveDeviceStats` démontre être possible.
+
+### 11.5 Boutons d'action décoratifs (Toolbar)
+- **Constat** : Plusieurs boutons de la barre d'outils principale n'ont **aucun gestionnaire `onClick`** : "Save", "Open", "Simulate", "Pause", "Reset" et "Help" sont rendus via `<ToolbarButton icon={...} label={...} />` sans prop `onClick`, alors que `ToolbarButton` accepte un `onClick?` optionnel. Ce sont des affordances UI mortes qui suggèrent des fonctionnalités (sauvegarde de session, contrôle pas-à-pas de la simulation, aide contextuelle) qui n'existent pas.
+- **Preuve** : `src/components/network/Toolbar.tsx:56-57` (`<ToolbarButton icon={Save} label="Save" />`, `<ToolbarButton icon={FolderOpen} label="Open" />`), `src/components/network/Toolbar.tsx:62-64` (`Play`/`Pause`/`RotateCcw` sans `onClick`), `src/components/network/Toolbar.tsx:77` (`HelpCircle` sans `onClick`).
+- **Sévérité** : Majeure
+- **Recommandation** : Soit câbler ces boutons sur de vraies actions (Export/Import existent déjà et pourraient remplacer Save/Open ; un mode "pause de simulation" pourrait piloter le `Scheduler`/`EventBus` global), soit les retirer/désactiver visuellement (`disabled` + tooltip "à venir") pour ne pas induire l'utilisateur en erreur.
+
+### 11.6 MVC / réactivité transverse
+- **Constat (architecture réactive existante mais sous-exploitée)** : Il existe une infrastructure de "read-models" totalement réactive (`src/react/hooks/*`, ex. `useArpTable`, `useOspfNeighbors`, `useHostStats`, etc., basée sur `EventBus`/signaux) qui ne touche jamais directement les instances `Equipment`. Le composant `LiveDeviceStats` (sous `devtools/`) la démontre de bout en bout, mais son commentaire indique explicitement qu'il est **"Intentionally untouched by the existing UI — opt-in for now"**. Résultat : la "vraie" UI de production (`PropertiesPanel`) n'utilise pas ce modèle et retombe sur des casts `as any` + relectures manuelles, alors qu'une architecture conforme existe déjà à côté.
+- **Preuve** : `src/components/network/devtools/LiveDeviceStats.tsx:1-12` (commentaire "Demonstrates that the read-model architecture works end-to-end … without ever touching `Equipment` instances directly … Intentionally untouched by the existing UI"), comparé à `src/components/network/PropertiesPanel.tsx:42,70` (`as any`).
+- **Sévérité** : Majeure
+- **Recommandation** : Migrer progressivement `PropertiesPanel` (et tout panneau affichant un état de protocole/table) vers les hooks de `src/react/hooks`, en supprimant les `as any` et les rafraîchissements manuels — c'est exactement la migration "Phase 6 §6.7.5" anticipée par le commentaire de `LiveDeviceStats`.
+
+- **Constat (re-render et identité d'objets)** : `useNetworkStore()` est appelé sans sélecteur dans `NetworkCanvas`, `NetworkDesigner`, `NetworkDevice`, `ConnectionLine`, `PropertiesPanel` — chaque composant se réabonne à l'intégralité de l'état (zoom, pan, sélection, connexions, `deviceInstances`…). Combiné à la recréation systématique de la `Map` `deviceInstances` à chaque `moveDevice`/`updateDevice` (`networkStore.ts:224,232`), tout déplacement de souris déclenche un nouveau calcul `getDevices()` et un nouveau rendu de **tous** les `NetworkDevice`/`ConnectionLine`, même ceux qui n'ont pas changé.
+- **Preuve** : `src/store/networkStore.ts:224,232` (`set(state => ({ deviceInstances: new Map(state.deviceInstances) }))`), `src/components/network/NetworkCanvas.tsx:25-39` (déstructuration complète du store sans sélecteur).
+- **Sévérité** : Mineure à Majeure (dépend de la taille des topologies testées dans les labos de debug à 60-400 étapes)
+- **Recommandation** : Découper le store en sélecteurs ciblés (`useNetworkStore(s => s.zoom)`, etc.) et envisager `subscribeWithSelector`/`useShallow` pour éviter les recalculs en cascade lors d'opérations purement positionnelles.
+
+### 11.7 Tests React / GUI — couverture et obsolescence
+- **Constat** : `properties-panel.test.tsx` mocke des modules à des chemins qui n'existent plus dans le code de base actuel — `@/domain/devices/types`, `@/hooks/useNetworkSimulator`, `@/domain/devices/DeviceFactory` (avec `DeviceFactory.isFullyImplemented`) — alors que le composant réel importe `Connection` depuis `@/store/networkStore`, `isFullyImplemented` depuis `@/network`, et n'utilise aucun hook `useNetworkSimulator`. Une recherche confirme qu'aucun fichier `src/domain/devices/*` ni `src/hooks/useNetworkSimulator*` n'existe. Ce test exerce donc un composant fantôme (mocks qui ne correspondent à aucune dépendance réelle du composant testé) — il est soit cassé, soit teste une version obsolète de l'arborescence du projet (probablement issue d'un renommage `domain/` → `network/` non répercuté dans les tests).
+- **Preuve** : `src/__tests__/unit/gui/properties-panel.test.tsx:7-39` (imports/mocks de `@/domain/devices/types`, `@/hooks/useNetworkSimulator`, `@/domain/devices/DeviceFactory`), comparé aux imports réels `src/components/network/PropertiesPanel.tsx:7-9` (`@/store/networkStore`, `@/network`).
+- **Sévérité** : Majeure
+- **Recommandation** : Réécrire ce test pour mocker les chemins réellement importés par `PropertiesPanel` (`@/store/networkStore`, `@/network`) — sans quoi la suite ne couvre pas le comportement réel du composant et masque une régression potentielle (faux sentiment de couverture).
+
+- **Constat** : Aucun test (unitaire React/GUI ou e2e Playwright) ne couvre `PacketAnimation`/`activePackets`, ce qui est cohérent avec son statut de placeholder, mais aussi aucun test ne couvre les boutons morts de la `Toolbar` (Save/Open/Simulate/Pause/Reset/Help) ni le flux "Settings" (bouton sans handler) de `NetworkDevice`. Les specs e2e (`network-logs-panel.spec.ts`, `network-logs-real-traffic.spec.ts`) couvrent bien le panneau de logs de bout en bout (réactivité Logger → UI), ce qui contraste avec l'absence de couverture des affordances mortes identifiées en 11.4/11.5.
+- **Preuve** : `e2e/network-logs-panel.spec.ts:1-9` (bonne couverture du flux Logger → panneau), absence de toute correspondance `grep -rn "Simulate\|Toolbar.*Save\|activePackets" e2e/`.
+- **Sévérité** : Mineure
+- **Recommandation** : Ajouter des tests qui figent explicitement le statut "non câblé" de ces affordances (ex. `expect(button).toBeDisabled()`) une fois la décision prise de les masquer/activer, pour éviter qu'elles ne dérivent silencieusement.
+
+### 11.8 Bouton "Settings" inerte sur les devices
+- **Constat** : Le menu d'actions rapides affiché lors de la sélection d'un device contient un bouton "Settings" dont le seul gestionnaire est `(e) => e.stopPropagation()` — il ne fait strictement rien d'autre, n'ouvre aucun panneau ni dialogue dédié (le `PropertiesPanel` existant joue déjà ce rôle, rendant ce bouton soit redondant, soit un vestige d'une fonctionnalité prévue puis abandonnée).
+- **Preuve** : `src/components/network/NetworkDevice.tsx:225-231` (`<button onClick={(e) => e.stopPropagation()} … title="Settings"> <Settings .../> </button>`).
+- **Sévérité** : Mineure
+- **Recommandation** : Retirer ce bouton (le `PropertiesPanel` couvre déjà ce besoin) ou lui donner un comportement réel (ex. focus/scroll vers le panneau de propriétés).
+
+---
+
+**Résumé des points critiques** : l'animation de paquets (11.4) est le constat le plus sérieux — une fonctionnalité visuellement présente (légende, conteneur SVG, composant dédié) mais totalement déconnectée du moteur réseau, ce qui est trompeur pour l'utilisateur final d'un simulateur dont la valeur pédagogique repose justement sur la visualisation du trafic. Les points majeurs concernent la sous-exploitation de l'architecture réactive déjà construite (`src/react/hooks`, 11.6) au profit de casts `as any` et de rafraîchissements manuels dans `PropertiesPanel` (11.3), des boutons d'action factices dans la `Toolbar` (11.5), et un test obsolète qui ne reflète plus l'arborescence réelle du projet (11.7).
+
+**Fichiers cités** :
+- `/home/user/ubuntu-sandbox/src/store/networkStore.ts`
+- `/home/user/ubuntu-sandbox/src/store/topologySerializer.ts`
+- `/home/user/ubuntu-sandbox/src/components/network/NetworkCanvas.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/PacketAnimation.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/PropertiesPanel.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/properties-panel-logic.ts`
+- `/home/user/ubuntu-sandbox/src/components/network/Toolbar.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/NetworkDevice.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/devtools/LiveDeviceStats.tsx`
+- `/home/user/ubuntu-sandbox/src/components/network/NetworkLogsPanel.tsx`
+- `/home/user/ubuntu-sandbox/src/__tests__/unit/gui/properties-panel.test.tsx`
+- `/home/user/ubuntu-sandbox/e2e/network-logs-panel.spec.ts`
+
+---
+
+# Synthèse globale de l'audit (sections 1-11)
+
+L'audit complet du projet (11 sections, ~150 constats individuels) dresse le portrait d'un simulateur **substantiellement plus mature que sa documentation ne le suggère** dans plusieurs sous-systèmes (RMAN, transactions Oracle, vues V$/DBA_*, AAA RADIUS/TACACS+), mais qui présente aussi de réelles zones de dette :
+
+**Constats Critiques (à traiter en priorité absolue)** :
+1. **10.4** — Bug d'aiguillage `EXEC`/`EXECUTE` : un moteur PL/SQL complet existe mais est totalement inaccessible depuis le terminal SQL*Plus à cause d'une interception "canned" dans `SQLPlusSession`.
+2. **11.4** — Animation de paquets entièrement factice : composant UI, légende et conteneur SVG existent mais `activePackets` n'est jamais alimenté par le moteur réseau réel — trompeur pour la valeur pédagogique du simulateur.
+3. (Voir aussi sections 1-9 pour les autres constats Critiques déjà identifiés et documentés au fil de l'audit : routage manquant/incomplet, stubs de protocoles avancés, désynchronisations CLI↔moteur, etc.)
+
+**Constats Majeurs récurrents (motifs transverses)** :
+- **God-classes** : `OracleExecutor` (5173 lignes), `OracleDatabase` (2285 lignes), `PowerShellExecutor` (6114 lignes), `BaseParser` (2395 lignes) — un même anti-pattern de concentration de responsabilités se retrouve dans plusieurs sous-systèmes majeurs.
+- **Duplication de moteurs** : double interpréteur PL/SQL (10.5, moderne AST vs. legacy regex) — exactement le type de duplication que l'utilisateur a demandé d'éviter en avançant dans la phase de correction.
+- **Architecture réactive sous-exploitée** : `src/react/hooks` fournit des read-models prêts à l'emploi (`LiveDeviceStats` les démontre), mais l'UI de production (`PropertiesPanel`) continue d'utiliser des casts `as any` et des rafraîchissements manuels (11.3, 11.6).
+- **Affordances UI mortes** : boutons Toolbar sans `onClick` (11.5), bouton Settings inerte (11.8) — fonctionnalités suggérées à l'utilisateur mais non implémentées.
+- **Dette de documentation bidirectionnelle** : certains BRD/docs sont *en retard* sur un code plus mature (RMAN 10.13, transactions 10.10, vues V$ 10.11), d'autres décrivent des fonctionnalités qui n'existent pas (architecture multi-SGBD 10.1).
+- **Tests obsolètes/fantômes** : `properties-panel.test.tsx` (11.7) mocke des chemins qui n'existent plus, masquant une absence réelle de couverture.
+
+**Constats Mineurs assumés (déviations documentées, pas de régression)** :
+- Flashback temporel (10.8), partitionnement (10.9), PACKAGE (10.6), DB Links/Materialized Views (10.7) — stubs conformes au statut annoncé par le BRD, mais dont le message d'erreur ou la persistance catalogue pourraient être améliorés.
+- Vues canned résiduelles légitimes (10.12), easter-egg "FAKED" dans un GUID (10.14).
+
+Cette synthèse clôt la phase d'audit. La phase suivante (corrections en profondeur, conformément à la directive de l'utilisateur) doit attaquer en priorité les constats Critiques (10.4, 11.4, et les Critiques des sections 1-9), puis les motifs Majeurs transverses (god-classes, duplication PL/SQL, sous-exploitation de l'architecture réactive), en explorant systématiquement le code existant avant toute nouvelle implémentation pour éviter tout doublon — conformément à l'insistance explicite de l'utilisateur sur ce point.
+
+---
+
+*(Audit complet — sections 1 à 11 rédigées et poussées. Phase suivante : correction en profondeur des gaps identifiés, par ordre de sévérité.)*
