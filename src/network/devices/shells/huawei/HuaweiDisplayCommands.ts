@@ -452,6 +452,9 @@ export function displayCurrentConfig(
     for (const h of helpers) {
       lines.push(` dhcp relay server-ip ${h}`);
     }
+    if (dhcp.isSnoopingEnabled(name)) {
+      lines.push(` dhcp snooping enable`);
+    }
     lines.push(...renderHuaweiInterfaceExtras(router, port, name));
     // IPSec policy/profile applied to interface
     const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
