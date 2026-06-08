@@ -316,6 +316,12 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
 }
 
 export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.registerGreedy('event manager run', 'Run an EEM applet manually', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    if (!getRouter().getEemService().getApplet(args[0])) return `% Policy '${args[0]}' not found`;
+    void getRouter().getEemEngine().runByName(args[0]).catch(() => {});
+    return '';
+  });
   trie.register('show event manager environment', 'Display EEM environment', () => {
     const env = getRouter().getEemService().getEnvironment();
     if (env.size === 0) return 'No EEM environment variables';

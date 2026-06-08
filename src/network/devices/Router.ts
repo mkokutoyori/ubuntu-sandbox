@@ -94,6 +94,8 @@ import { DmvpnService } from './router/nhrp/DmvpnService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
+import { EemEngine, type EemHost } from './router/eem/EemEngine';
+import type { SnmpAgent } from '../snmp/SnmpAgent';
 import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
 import { KeypairService } from './router/security/KeypairService';
@@ -300,6 +302,7 @@ export abstract class Router extends Equipment {
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
     this.tcpv2.start();
+    this.getEemEngine();
     this.getCredentialStore();
     this.mountSshDaemon();
   }
@@ -307,6 +310,7 @@ export abstract class Router extends Equipment {
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
+    if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 
   // ── SSH daemon over real TCP ───────────────────────────────────────
@@ -1723,6 +1727,7 @@ export abstract class Router extends Equipment {
   }
 
   private _eemService: EemService | null = null;
+  private _eemEngine: EemEngine | null = null;
   private _netflowService: NetflowService | null = null;
   private _archiveService: ArchiveService | null = null;
   private _keypairService: KeypairService | null = null;
@@ -1735,6 +1740,20 @@ export abstract class Router extends Equipment {
   getEemService(): EemService {
     if (!this._eemService) this._eemService = new EemService();
     return this._eemService;
+  }
+
+  getEemEngine(): EemEngine {
+    if (!this._eemEngine) {
+      const host: EemHost = {
+        id: this.id,
+        getHostname: () => this.getHostname(),
+        executeCommand: (command: string) => this.executeCommand(command),
+        getSnmpAgent: () => (this as unknown as { getSnmpAgent?: () => SnmpAgent }).getSnmpAgent?.(),
+      };
+      this._eemEngine = new EemEngine(host, this.getEemService(), () => this.getBus(), () => this.getRouterScheduler());
+      this._eemEngine.start();
+    }
+    return this._eemEngine;
   }
   getNetflowService(): NetflowService {
     if (!this._netflowService) this._netflowService = new NetflowService();
