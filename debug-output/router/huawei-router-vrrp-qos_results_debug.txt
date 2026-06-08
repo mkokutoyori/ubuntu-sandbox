@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-07T20:23:09.909Z
+Generated: 2026-06-08T05:57:25.342Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -177,7 +177,7 @@ Total steps: 257
 
 [56/257] r1 <R1> display vrrp
   GE0/0/0 | Virtual Router 1
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.1, 192.168.1.101
       Priority : 110
       Advertisement timer : 1 seconds
@@ -185,7 +185,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-1
   GE0/0/0 | Virtual Router 2
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.2, 192.168.1.102
       Priority : 120
       Advertisement timer : 1 seconds
@@ -193,7 +193,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-2
   GE0/0/0 | Virtual Router 3
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.3, 192.168.1.103
       Priority : 130
       Advertisement timer : 1 seconds
@@ -201,7 +201,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-3
   GE0/0/0 | Virtual Router 4
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.4, 192.168.1.104
       Priority : 140
       Advertisement timer : 1 seconds
@@ -210,12 +210,12 @@ Total steps: 257
       Description : VRRP-GRP-4
 
 [57/257] r1 <R1> display vrrp brief
-  Total: 4     Master: 0     Backup: 0     Non-active: 4
+  Total: 4     Master: 4     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
-  1     Initialize   GE0/0/0                  Normal   192.168.1.1,192.168.1.101
-  2     Initialize   GE0/0/0                  Normal   192.168.1.2,192.168.1.102
-  3     Initialize   GE0/0/0                  Normal   192.168.1.3,192.168.1.103
-  4     Initialize   GE0/0/0                  Normal   192.168.1.4,192.168.1.104
+  1     Master       GE0/0/0                  Normal   192.168.1.1,192.168.1.101
+  2     Master       GE0/0/0                  Normal   192.168.1.2,192.168.1.102
+  3     Master       GE0/0/0                  Normal   192.168.1.3,192.168.1.103
+  4     Master       GE0/0/0                  Normal   192.168.1.4,192.168.1.104
 
 [58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
   Info: No VRRP group on GigabitEthernet0/0/0
@@ -741,7 +741,7 @@ Total steps: 257
 
 [177/257] r1 [R1] display vrrp
   GE0/0/0 | Virtual Router 1
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.1, 192.168.1.101
       Priority : 110
       Advertisement timer : 1 seconds
@@ -749,7 +749,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-1
   GE0/0/0 | Virtual Router 2
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.2, 192.168.1.102
       Priority : 120
       Advertisement timer : 1 seconds
@@ -757,7 +757,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-2
   GE0/0/0 | Virtual Router 3
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.3, 192.168.1.103
       Priority : 130
       Advertisement timer : 1 seconds
@@ -765,7 +765,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-3
   GE0/0/0 | Virtual Router 4
-      State : Initialize
+      State : Master
       Virtual IP : 192.168.1.4, 192.168.1.104
       Priority : 140
       Advertisement timer : 1 seconds
@@ -774,12 +774,12 @@ Total steps: 257
       Description : VRRP-GRP-4
 
 [178/257] r1 [R1] display vrrp brief
-  Total: 4     Master: 0     Backup: 0     Non-active: 4
+  Total: 4     Master: 4     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
-  1     Initialize   GE0/0/0                  Normal   192.168.1.1,192.168.1.101
-  2     Initialize   GE0/0/0                  Normal   192.168.1.2,192.168.1.102
-  3     Initialize   GE0/0/0                  Normal   192.168.1.3,192.168.1.103
-  4     Initialize   GE0/0/0                  Normal   192.168.1.4,192.168.1.104
+  1     Master       GE0/0/0                  Normal   192.168.1.1,192.168.1.101
+  2     Master       GE0/0/0                  Normal   192.168.1.2,192.168.1.102
+  3     Master       GE0/0/0                  Normal   192.168.1.3,192.168.1.103
+  4     Master       GE0/0/0                  Normal   192.168.1.4,192.168.1.104
 
 [179/257] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -813,8 +813,8 @@ Total steps: 257
   No NTP associations
 
 [188/257] r1 [R1] display clock
-  2026-06-07 20:23:09
-  Sunday
+  2026-06-08 05:57:25
+  Monday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
@@ -826,13 +826,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-07 20:23:09
+  CPU Usage Stat. Time : 2026-06-08 05:57:25
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-07 20:23:09
+  Memory utilization statistics at 2026-06-08 05:57:25
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
