@@ -310,6 +310,7 @@ export abstract class Router extends Equipment {
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
+    if (bus) this.getSnmpService().attachToBus(bus, this.id);
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 

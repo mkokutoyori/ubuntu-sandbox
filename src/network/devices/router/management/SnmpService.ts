@@ -1,3 +1,5 @@
+import type { IEventBus } from '@/events/EventBus';
+
 export type SnmpAccess = 'ro' | 'rw';
 export type SnmpVersion = '1' | '2c' | '3';
 export type SnmpV3Level = 'noauth' | 'auth' | 'priv';
@@ -231,6 +233,28 @@ export class SnmpService {
   isEnabled(): boolean { return this.enabled; }
 
   getStats(): SnmpStats { return { ...this.stats }; }
+
+  attachToBus(bus: IEventBus, deviceId: string): () => void {
+    const isOurs = (p: { deviceId?: string }) => p.deviceId === deviceId;
+    const unsubs = [
+      bus.subscribeWhere('snmp.packet.received', isOurs, () => { this.stats.pktsIn++; }),
+      bus.subscribeWhere('snmp.packet.sent', isOurs, () => { this.stats.pktsOut++; }),
+      bus.subscribeWhere('snmp.request.served', isOurs, (e) => {
+        const p = e.payload;
+        if (p.pduType === 'get-request') this.stats.getRequests += p.oidCount;
+        else if (p.pduType === 'get-next-request') this.stats.getNextRequests += p.oidCount;
+        else if (p.pduType === 'set-request') this.stats.setRequests += p.oidCount;
+        this.stats.getResponses++;
+        if (p.errorStatus !== 'no-error') this.stats.silentDrops++;
+      }),
+      bus.subscribeWhere('snmp.auth.rejected', isOurs, (e) => {
+        if (e.payload.reason === 'unknown-community') this.stats.badCommunityNames++;
+        else this.stats.badCommunityUses++;
+      }),
+      bus.subscribeWhere('snmp.trap.sent', isOurs, () => { this.stats.trapsSent++; }),
+    ];
+    return () => { for (const u of unsubs) u(); };
+  }
   getCommunities(): readonly SnmpCommunity[] { return [...this.communities.values()]; }
   getHosts(): readonly SnmpHost[] { return [...this.hosts]; }
   getGroups(): readonly SnmpGroup[] { return [...this.groups.values()]; }
