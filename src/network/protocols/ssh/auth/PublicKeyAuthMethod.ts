@@ -18,9 +18,10 @@ export class PublicKeyAuthMethod implements ISshAuthMethod {
   constructor(private readonly keyPair: SshKeyPair) {}
 
   async attempt(user: string, ctx: ISshAuthContext): Promise<Result<void>> {
-    if (ctx.checkPublicKey(user, this.keyPair.publicKeyContent)) {
-      return ok(undefined);
-    }
+    const accepted = ctx.checkPublicKeyAsync
+      ? await ctx.checkPublicKeyAsync(user, this.keyPair.publicKeyContent)
+      : ctx.checkPublicKey(user, this.keyPair.publicKeyContent);
+    if (accepted) return ok(undefined);
     return err({ kind: 'AUTH_FAILED', user, attemptsLeft: 0 });
   }
 

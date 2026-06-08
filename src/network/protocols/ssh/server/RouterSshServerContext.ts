@@ -54,6 +54,8 @@ export interface RouterSshServerDeps {
   hostKey(): SshHostKey;
   /** Authority backing username / password validation. */
   credentials(): NetworkOsCredentialAuthority;
+  /** Optional AAA method-list authentication chain (RADIUS/TACACS+/local/enable/none). */
+  aaaAuthenticate?(username: string, password: string): Promise<boolean>;
   /** Router-style execution backend (IOS / VRP / cmd.exe line dispatch). */
   execTarget(): SshExecTarget;
   /** Optional sftp source (running-config, startup-config). */
@@ -157,6 +159,13 @@ export class RouterSshServerContext implements ISshServerContext {
         if (!this.config.passwordAuthentication) return false;
         return this.deps.credentials().authenticate(user, password);
       },
+      checkPasswordAsync: this.deps.aaaAuthenticate
+        ? async (user, password) => {
+            attemptsLeft = Math.max(0, attemptsLeft - 1);
+            if (!this.config.passwordAuthentication) return false;
+            return this.deps.aaaAuthenticate!(user, password);
+          }
+        : undefined,
       // Public-key auth on routers is plumbed but always rejects until
       // `ip ssh pubkey-chain` / `ssh user authentication-type rsa` is
       // wired into NetworkOsCredentialStore — placeholder so the handler

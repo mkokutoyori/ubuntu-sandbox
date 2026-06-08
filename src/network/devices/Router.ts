@@ -38,6 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
@@ -340,6 +341,7 @@ export abstract class Router extends Equipment {
       }),
       execTarget: () => this as unknown as SshExecTarget,
       banner: () => this.sshBannerText || null,
+      aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
     });
     return new SshServerHandler(ctx);
   }
@@ -1893,6 +1895,17 @@ export abstract class Router extends Equipment {
   override checkPassword(username: string, password: string): boolean {
     const authority = this.getSshHost().getAuthority();
     return authority.authenticate(username, password);
+  }
+
+  private _aaaAuthenticator: AaaAuthenticator | null = null;
+  getAaaAuthenticator(): AaaAuthenticator {
+    if (!this._aaaAuthenticator) this._aaaAuthenticator = new AaaAuthenticator(this);
+    return this._aaaAuthenticator;
+  }
+
+  async authenticateViaAaa(username: string, password: string, methodListName?: string): Promise<boolean> {
+    const outcome = await this.getAaaAuthenticator().authenticate(username, password, methodListName);
+    return outcome.accepted;
   }
 
   /** SshExecTarget. */
