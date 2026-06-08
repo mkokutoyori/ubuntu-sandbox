@@ -100,11 +100,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial|virtual-template|port-channel|vlan)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|tunnel|serial|virtual-template|port-channel|vlan|nve)([\d/.]+)$/i);
       if (vMatch) {
         const typeMap: Record<string, string> = {
           'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial',
           'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel', 'vlan': 'Vlan',
+          'nve': 'Nve',
         };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
@@ -271,9 +272,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     let ifName = resolveInterfaceName(ctx.r(), raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|tunnel|serial|nve)([\d/.]+)$/i);
       if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial', 'nve': 'Nve' };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;

@@ -42,6 +42,9 @@ import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
 } from './cisco/CiscoPimCommands';
 import {
+  buildVxlanInterfaceCommands, registerVxlanShowCommands,
+} from './cisco/CiscoVxlanCommands';
+import {
   buildTrackSlaConfig, registerTrackSlaShow,
 } from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
@@ -533,6 +536,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       r: () => this.d(),
     });
     buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
+    buildVxlanInterfaceCommands(this.configIfTrie, {
+      selectedInterface: () => this.getSelectedInterface(),
+      resolveInterfaceName: (s) => this.resolveInterfaceName(s),
+      r: () => this.d(),
+    });
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
     buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
       this.configIpSlaTrie, this, this.track, this.ipsla);
@@ -609,6 +617,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, { r: () => this.d() });
     registerPimShowCommands(trie, { r: () => this.d() });
+    registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
     registerPolicyShow(trie, this.policy);
 
