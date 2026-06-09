@@ -6,12 +6,23 @@ const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\
 const withText = (value: CellValue, fn: (text: string) => CellValue): CellValue =>
   value == null ? null : fn(String(value));
 
+const padTo = (str: string, targetLength: number, padText: string, left: boolean): CellValue => {
+  if (!Number.isFinite(targetLength) || targetLength <= 0) return null;
+  if (str.length >= targetLength) return str.substring(0, targetLength);
+  if (padText.length === 0) return str;
+  let fill = '';
+  while (fill.length < targetLength - str.length) fill += padText;
+  fill = fill.substring(0, targetLength - str.length);
+  return left ? fill + str : str + fill;
+};
+
 export const stringFunctions: SqlFunctionBundle = {
   UPPER: ([v]) => withText(v, t => t.toUpperCase()),
 
   LOWER: ([v]) => withText(v, t => t.toLowerCase()),
 
-  INITCAP: ([v]) => withText(v, t => t.replace(/\b\w/g, c => c.toUpperCase())),
+  INITCAP: ([v]) => withText(v, t =>
+    t.toLowerCase().replace(/[a-z0-9]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))),
 
   LENGTH: ([v]) => withText(v, t => t.length),
 
@@ -82,10 +93,10 @@ export const stringFunctions: SqlFunctionBundle = {
   }),
 
   LPAD: ([v, lenArg, padArg]) => withText(v, str =>
-    str.padStart(Number(lenArg), padArg != null ? String(padArg) : ' ')),
+    padTo(str, Number(lenArg), padArg != null ? String(padArg) : ' ', true)),
 
   RPAD: ([v, lenArg, padArg]) => withText(v, str =>
-    str.padEnd(Number(lenArg), padArg != null ? String(padArg) : ' ')),
+    padTo(str, Number(lenArg), padArg != null ? String(padArg) : ' ', false)),
 
   REPLACE: ([v, search, replacement]) => withText(v, str =>
     str.replaceAll(String(search ?? ''), String(replacement ?? ''))),
@@ -94,7 +105,7 @@ export const stringFunctions: SqlFunctionBundle = {
 
   CHR: ([v]) => (v != null ? String.fromCharCode(Number(v)) : null),
 
-  ASCII: ([v]) => withText(v, t => t.charCodeAt(0)),
+  ASCII: ([v]) => withText(v, t => (t.length ? t.charCodeAt(0) : null)),
 
   REGEXP_REPLACE: ([v, patArg, repArg]) => withText(v, src => {
     const pat = String(patArg ?? '');

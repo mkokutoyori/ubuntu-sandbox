@@ -34,6 +34,7 @@ import { OracleParser } from './OracleParser';
 import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { createDefaultSqlFunctionRegistry, type SqlFunctionContext } from './functions';
+import { coerceDateValue, formatDateValue, formatDateWithPattern, parseDateWithPattern } from './functions/dateSupport';
 
 /** Snapshot of table rows for transaction undo */
 interface TransactionSnapshot {
@@ -4046,8 +4047,8 @@ export class OracleExecutor extends BaseExecutor {
       compare: (a, b) => this.compareValues(a, b),
       coerceDate: (v) => OracleExecutor.coerceDate(v),
       formatDate: (d) => OracleExecutor.formatDate(d),
-      formatDateWithPattern: (d, pattern) => this.formatOracleDate(d, pattern),
-      parseDateWithPattern: (text, pattern) => this.parseOracleDate(text, pattern),
+      formatDateWithPattern: (d, pattern) => formatDateWithPattern(d, pattern.toUpperCase()),
+      parseDateWithPattern: (text, pattern) => parseDateWithPattern(text, pattern),
       userenv: (parameter) => {
         const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
         if (!session?.userenv) return undefined;
@@ -4056,64 +4057,6 @@ export class OracleExecutor extends BaseExecutor {
       },
       metadataDdl: (fnArgs) => this.getMetadataDDL(fnArgs),
     };
-  }
-
-  private formatOracleDate(d: Date, fmt: string): string {
-    const pad = (n: number, w: number = 2) => String(n).padStart(w, '0');
-    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-    const monthsShort = months.map(m => m.slice(0, 3));
-    const days = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
-    const daysShort = days.map(d => d.slice(0, 3));
-
-    let result = fmt;
-    // Order matters: longest tokens first to avoid partial replacement
-    result = result.replace(/YYYY/g, String(d.getFullYear()));
-    result = result.replace(/YY/g, String(d.getFullYear()).slice(-2));
-    result = result.replace(/MONTH/g, months[d.getMonth()]);
-    result = result.replace(/MON/g, monthsShort[d.getMonth()]);
-    result = result.replace(/MM/g, pad(d.getMonth() + 1));
-    result = result.replace(/DD/g, pad(d.getDate()));
-    result = result.replace(/DAY/g, days[d.getDay()]);
-    result = result.replace(/DY/g, daysShort[d.getDay()]);
-    result = result.replace(/HH24/g, pad(d.getHours()));
-    result = result.replace(/HH/g, pad(d.getHours() % 12 || 12));
-    result = result.replace(/MI/g, pad(d.getMinutes()));
-    result = result.replace(/SS/g, pad(d.getSeconds()));
-    return result;
-  }
-
-  private parseOracleDate(dateStr: string, fmt: string): string {
-    // Try ISO format first
-    const isoDate = new Date(dateStr);
-    if (!isNaN(isoDate.getTime())) {
-      return isoDate.toISOString().slice(0, 19).replace('T', ' ');
-    }
-    // Simple format-aware parsing for common Oracle formats
-    let year = 2000, month = 1, day = 1, hour = 0, min = 0, sec = 0;
-    const fmtUpper = fmt.toUpperCase();
-    const parts = dateStr.split(/[\s/\-:.,]+/);
-    const fmtParts = fmtUpper.split(/[\s/\-:.,]+/);
-    for (let i = 0; i < fmtParts.length && i < parts.length; i++) {
-      const v = parseInt(parts[i], 10);
-      if (isNaN(v) && fmtParts[i] === 'MON') {
-        const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        const idx = months.indexOf(parts[i].toUpperCase().slice(0, 3));
-        if (idx >= 0) month = idx + 1;
-        continue;
-      }
-      if (isNaN(v)) continue;
-      switch (fmtParts[i]) {
-        case 'YYYY': year = v; break;
-        case 'YY': year = 2000 + v; break;
-        case 'MM': month = v; break;
-        case 'DD': day = v; break;
-        case 'HH24': case 'HH': hour = v; break;
-        case 'MI': min = v; break;
-        case 'SS': sec = v; break;
-      }
-    }
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}`;
   }
 
   private getMetadataDDL(args: CellValue[]): CellValue {
@@ -4311,23 +4254,12 @@ export class OracleExecutor extends BaseExecutor {
     return Number.isNaN(ms) ? null : ms;
   }
 
-  /** Return a mutable Date copy of the value, or null if not a date. */
   static coerceDate(value: unknown): Date | null {
-    if (value instanceof Date) return new Date(value.getTime());
-    if (typeof value !== 'string') return null;
-    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
-      // Accept bare YYYY-MM-DD too.
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-    }
-    const ms = Date.parse(value.replace(' ', 'T'));
-    return Number.isNaN(ms) ? null : new Date(ms);
+    return coerceDateValue(value);
   }
 
-  /** Format a Date the way SYSDATE / TO_CHAR(DATE) renders in SQL*Plus. */
   static formatDate(d: Date): string {
-    const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
-      + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return formatDateValue(d);
   }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {

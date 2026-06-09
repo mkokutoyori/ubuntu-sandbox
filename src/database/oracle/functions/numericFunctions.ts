@@ -37,7 +37,18 @@ export const numericFunctions: SqlFunctionBundle = {
     return Math.trunc(Number(v));
   },
 
-  MOD: ([a, b]) => (a != null && b != null ? Number(a) % Number(b) : null),
+  MOD: ([a, b]) => {
+    if (a == null || b == null) return null;
+    const divisor = Number(b);
+    return divisor === 0 ? Number(a) : Number(a) % divisor;
+  },
+
+  REMAINDER: ([a, b]) => {
+    if (a == null || b == null) return null;
+    const n = Number(a);
+    const divisor = Number(b);
+    return divisor === 0 ? null : n - Math.round(n / divisor) * divisor;
+  },
 
   POWER: ([a, b]) => (a != null && b != null ? Math.pow(Number(a), Number(b)) : null),
 

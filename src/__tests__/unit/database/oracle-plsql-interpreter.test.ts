@@ -573,6 +573,50 @@ describe('PL/SQL dynamic SQL and built-ins', () => {
     sh.dispose();
   });
 
+  it('INSTR supports occurrence and backward search via shared registry', () => {
+    const sh = session(server('d2b'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE(INSTR('BANANA', 'A', 1, 2) || '-' || INSTR('BANANA', 'A', -1));
+      END;
+    `);
+    expect(out).toMatch(/4-6/);
+    sh.dispose();
+  });
+
+  it('LPAD truncates and INITCAP lowercases word tails via shared registry', () => {
+    const sh = session(server('d2c'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE(LPAD('hello', 3) || '-' || INITCAP('heLLo woRLD'));
+      END;
+    `);
+    expect(out).toMatch(/hel-Hello World/);
+    sh.dispose();
+  });
+
+  it('GREATEST and LEAST propagate NULL like Oracle', () => {
+    const sh = session(server('d2d'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE(NVL(GREATEST(1, NULL, 3), -1) || '-' || NVL(LEAST(NULL, 5), -1));
+      END;
+    `);
+    expect(out).toMatch(/-1--1/);
+    sh.dispose();
+  });
+
+  it('DECODE treats two NULLs as a match like Oracle', () => {
+    const sh = session(server('d2e'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE(DECODE(NULL, 1, 'one', NULL, 'null-match', 'default'));
+      END;
+    `);
+    expect(out).toMatch(/null-match/);
+    sh.dispose();
+  });
+
   it('bind variable interpolation in static SQL INSERT', () => {
     const sh = session(server('d3'));
     run(sh, 'CREATE TABLE BV_T (id NUMBER, nm VARCHAR2(20));');

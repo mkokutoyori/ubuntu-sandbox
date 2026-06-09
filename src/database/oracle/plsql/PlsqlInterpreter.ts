@@ -7,8 +7,21 @@ import {
 } from './PlsqlValue';
 import { PlsqlException, findPredefinedException, matchPredefinedException } from './PlsqlException';
 import { parsePlsql } from './PlsqlParser';
+import { createDefaultSqlFunctionRegistry, type SqlFunctionContext } from '../functions';
+import { coerceDateValue, formatDateValue, formatDateWithPattern, parseDateWithPattern } from '../functions/dateSupport';
+import type { CellValue } from '../../engine/storage/BaseStorage';
 
 const MAX_LOOP = 1_000_000;
+
+const VALUE_PRESERVING_SQL_BUILTINS = new Set([
+  'NVL', 'NVL2', 'COALESCE', 'NULLIF', 'DECODE', 'GREATEST', 'LEAST',
+]);
+
+const TEXTUAL_SQL_BUILTINS = new Set([
+  'UPPER', 'LOWER', 'INITCAP', 'LENGTH', 'SUBSTR', 'INSTR', 'LTRIM', 'RTRIM',
+  'LPAD', 'RPAD', 'REPLACE', 'CONCAT', 'CHR', 'ASCII',
+  'ABS', 'SIGN', 'SQRT', 'FLOOR', 'CEIL', 'POWER', 'MOD', 'REMAINDER',
+]);
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
@@ -21,6 +34,7 @@ const SQL_KEYWORDS = new Set([
 
 export class PlsqlInterpreter {
   private host: PlsqlHost;
+  private readonly sqlFunctions = createDefaultSqlFunctionRegistry();
   private sqlcode = 0;
   private sqlerrm = 'ORA-0000: normal, successful completion';
   private sqlRowCount = 0;
@@ -869,27 +883,9 @@ export class PlsqlInterpreter {
     const num = (i: number) => Number(ev(i));
     const str = (i: number) => { const v = ev(i); return v === null ? null : this.toText(v); };
     const h = (value: PlsqlValue) => ({ handled: true, value });
+    const delegated = this.tryDelegateToSqlRegistry(up, args, scope);
+    if (delegated) return delegated;
     switch (up) {
-      case 'NVL': { const a = ev(0); return h(a === null ? ev(1) : a); }
-      case 'NVL2': return h(ev(0) !== null ? ev(1) : ev(2));
-      case 'COALESCE': { for (let i = 0; i < args.length; i++) { const v = ev(i); if (v !== null) return h(v); } return h(null); }
-      case 'NULLIF': { const a = ev(0); const b = ev(1); return h(this.eq(a, b) ? null : a); }
-      case 'DECODE': {
-        const sel = ev(0);
-        let i = 1;
-        for (; i + 1 < args.length; i += 2) { if (this.eq(sel, ev(i))) return h(ev(i + 1)); }
-        return h(i < args.length ? ev(i) : null);
-      }
-      case 'GREATEST': { let best = ev(0); for (let i = 1; i < args.length; i++) { const v = ev(i); if (best === null || v === null) { best = null; } else if (this.cmp(v, best) > 0) best = v; } return h(best); }
-      case 'LEAST': { let best = ev(0); for (let i = 1; i < args.length; i++) { const v = ev(i); if (best === null || v === null) { best = null; } else if (this.cmp(v, best) < 0) best = v; } return h(best); }
-      case 'ABS': return h(this.nz(args, scope, 0, v => Math.abs(v)));
-      case 'SIGN': return h(this.nz(args, scope, 0, v => Math.sign(v)));
-      case 'SQRT': return h(this.nz(args, scope, 0, v => Math.sqrt(v)));
-      case 'FLOOR': return h(this.nz(args, scope, 0, v => Math.floor(v)));
-      case 'CEIL': return h(this.nz(args, scope, 0, v => Math.ceil(v)));
-      case 'POWER': return h(Math.pow(num(0), num(1)));
-      case 'MOD': { const b = num(1); return h(b === 0 ? num(0) : num(0) % b); }
-      case 'REMAINDER': { const b = num(1); return h(b === 0 ? null : num(0) - Math.round(num(0) / b) * b); }
       case 'ROUND': {
         if (ev(0) instanceof Date) return { handled: false, value: null };
         const d = args.length > 1 ? num(1) : 0; const f = Math.pow(10, d); return h(Math.round(num(0) * f) / f);
@@ -898,34 +894,7 @@ export class PlsqlInterpreter {
         if (ev(0) instanceof Date) return { handled: false, value: null };
         const d = args.length > 1 ? num(1) : 0; const f = Math.pow(10, d); return h(Math.trunc(num(0) * f) / f);
       }
-      case 'LENGTH': { const s = str(0); return h(s === null ? null : s.length); }
-      case 'UPPER': { const s = str(0); return h(s === null ? null : s.toUpperCase()); }
-      case 'LOWER': { const s = str(0); return h(s === null ? null : s.toLowerCase()); }
-      case 'INITCAP': { const s = str(0); return h(s === null ? null : s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.substr(1).toLowerCase())); }
-      case 'LTRIM': { const s = str(0); if (s === null) return h(null); const set = args.length > 1 ? str(1)! : ' '; return h(this.trimSet(s, set, true, false)); }
-      case 'RTRIM': { const s = str(0); if (s === null) return h(null); const set = args.length > 1 ? str(1)! : ' '; return h(this.trimSet(s, set, false, true)); }
       case 'TRIM': { const s = str(0); return h(s === null ? null : s.trim()); }
-      case 'LPAD': { const s = str(0) ?? ''; const len = num(1); const pad = args.length > 2 ? (str(2) ?? ' ') : ' '; return h(this.pad(s, len, pad, true)); }
-      case 'RPAD': { const s = str(0) ?? ''; const len = num(1); const pad = args.length > 2 ? (str(2) ?? ' ') : ' '; return h(this.pad(s, len, pad, false)); }
-      case 'REPLACE': { const s = str(0); if (s === null) return h(null); const from = str(1) ?? ''; const to = args.length > 2 ? (str(2) ?? '') : ''; return h(from === '' ? s : s.split(from).join(to)); }
-      case 'SUBSTR': {
-        const s = str(0); if (s === null) return h(null);
-        let start = num(1); const hasLen = args.length > 2;
-        const len = hasLen ? num(2) : undefined;
-        if (start === 0) start = 1;
-        let idx = start > 0 ? start - 1 : s.length + start;
-        if (idx < 0) idx = 0;
-        return h(hasLen ? s.substr(idx, len) : s.substring(idx));
-      }
-      case 'INSTR': {
-        const s = str(0); const sub = str(1);
-        if (s === null || sub === null) return h(null);
-        const start = args.length > 2 ? num(2) : 1;
-        return h(s.indexOf(sub, start - 1) + 1);
-      }
-      case 'CONCAT': { const a = str(0) ?? ''; const b = str(1) ?? ''; return h(a + b); }
-      case 'CHR': return h(String.fromCharCode(num(0)));
-      case 'ASCII': { const s = str(0); return h(s && s.length ? s.charCodeAt(0) : null); }
       case 'TO_CHAR': {
         const v = ev(0);
         if (v === null) return h(null);
@@ -943,27 +912,33 @@ export class PlsqlInterpreter {
     return { handled: false, value: null };
   }
 
-  private nz(args: CallArg[], scope: Scope, i: number, fn: (v: number) => number): PlsqlValue {
-    const v = this.evalExpr(args[i].value, scope);
-    if (v === null) return null;
-    return fn(Number(v));
+  private tryDelegateToSqlRegistry(up: string, args: CallArg[], scope: Scope): { handled: boolean; value: PlsqlValue } | null {
+    const preserveValues = VALUE_PRESERVING_SQL_BUILTINS.has(up);
+    if (!preserveValues && !TEXTUAL_SQL_BUILTINS.has(up)) return null;
+    const impl = this.sqlFunctions.resolve(up);
+    if (!impl) return null;
+    const cellArgs = args.map(a => this.toCellArgument(this.evalExpr(a.value, scope), preserveValues));
+    return { handled: true, value: impl(cellArgs, this.sqlFunctionContext()) as PlsqlValue };
   }
 
-  private trimSet(s: string, set: string, left: boolean, right: boolean): string {
-    const chars = new Set(set.split(''));
-    let a = 0; let b = s.length;
-    if (left) while (a < b && chars.has(s[a])) a++;
-    if (right) while (b > a && chars.has(s[b - 1])) b--;
-    return s.substring(a, b);
+  private toCellArgument(v: PlsqlValue, preserveValue: boolean): CellValue {
+    if (v instanceof PlsqlRecord || v instanceof PlsqlCollection) return null;
+    if (!preserveValue && (v instanceof Date || typeof v === 'boolean')) return this.toText(v);
+    return v as CellValue;
   }
 
-  private pad(s: string, len: number, pad: string, left: boolean): string {
-    if (s.length >= len) return s.substring(0, len);
-    if (!pad) return s;
-    let fill = '';
-    while (fill.length < len - s.length) fill += pad;
-    fill = fill.substring(0, len - s.length);
-    return left ? fill + s : s + fill;
+  private sqlFunctionContext(): SqlFunctionContext {
+    return {
+      currentUser: this.host.currentSchema(),
+      currentSchema: this.host.currentSchema(),
+      compare: (a, b) => this.cmp(a as PlsqlValue, b as PlsqlValue),
+      coerceDate: coerceDateValue,
+      formatDate: formatDateValue,
+      formatDateWithPattern,
+      parseDateWithPattern,
+      userenv: () => undefined,
+      metadataDdl: () => null,
+    };
   }
 
   private evalBinary(op: string, leftE: Expr, rightE: Expr, scope: Scope): PlsqlValue {

@@ -91,3 +91,46 @@ fichier préexistaient (aucune nouvelle).
 **Tests.** Nouveau fichier `oracle-function-registry.test.ts` (20 tests : résolution du
 registre, SUBSTR négatif, INSTR backward, NVL/NULLIF/DECODE, sémantique NULL de
 GREATEST/LEAST, ORA-00904, fonctions de paquets). Suite complète : 2546 tests verts.
+
+---
+
+## Correction n°3 — Partage du registre avec PL/SQL + support de dates unifié
+
+**Défaillances.**
+
+1. *Duplication* : ~30 fonctions scalaires (SUBSTR, INSTR, LPAD, NVL, DECODE, MOD…)
+   étaient implémentées deux fois — dans l'exécuteur SQL et dans
+   `PlsqlInterpreter.callBuiltinFunction` — avec des sémantiques divergentes.
+2. *Duplication* : le formatage/parsing de dates (`formatOracleDate`, `parseOracleDate`,
+   `coerceDate`, `formatDate`) était privé à l'exécuteur, inaccessible aux autres modules.
+3. *Fidélité SQL* (vs vrai Oracle) :
+   - `LPAD('hello', 3)` retournait `hello` au lieu de `hel` (Oracle **tronque** à la
+     longueur cible) ; `LPAD('x', 0)` doit retourner NULL.
+   - `INITCAP('heLLo woRLD')` retournait `HeLLo WoRLD` au lieu de `Hello World`
+     (Oracle minuscule le reste de chaque mot ; délimiteur = non-alphanumérique).
+   - `ASCII('')` retournait NaN au lieu de NULL.
+   - `MOD(7, 0)` retournait NaN au lieu de 7 (sémantique Oracle : diviseur 0 → dividende).
+   - `REMAINDER` absent du moteur SQL.
+4. *Fidélité PL/SQL* :
+   - `INSTR` ignorait l'argument d'occurrence et la recherche arrière (position négative).
+   - `DECODE(NULL, …, NULL, 'x')` ne matchait pas — dans le vrai Oracle, DECODE
+     considère deux NULLs comme égaux.
+   - `POWER(NULL, 2)` retournait NaN, `CHR(NULL)` retournait `'\0'`.
+
+**Correction.**
+
+- Nouveau module partagé `functions/dateSupport.ts` (`coerceDateValue`, `formatDateValue`,
+  `formatDateWithPattern`, `parseDateWithPattern`) ; l'exécuteur y délègue (les statiques
+  `OracleExecutor.coerceDate/formatDate` restent comme façade pour RMAN).
+- `PlsqlInterpreter` délègue au `SqlFunctionRegistry` partagé en deux groupes :
+  préservation de valeur (NVL, NVL2, COALESCE, NULLIF, DECODE, GREATEST, LEAST — les
+  Dates restent des Dates) et conversion textuelle (UPPER…ASCII, ABS…REMAINDER).
+  Les fonctions à sémantique PL/SQL spécifique restent natives (SQLCODE, SQLERRM,
+  TO_NUMBER → PlsqlException, ROUND/TRUNC de dates, SYSDATE → objet Date).
+- Helpers morts supprimés dans l'interpréteur (`nz`, `trimSet`, `pad`).
+- Corrections de fidélité ci-dessus appliquées dans le registre (une seule source de vérité).
+
+**Tests.** +13 tests registre (padding/INITCAP/ASCII/MOD/REMAINDER), +4 tests PL/SQL
+(INSTR occurrence/backward, LPAD/INITCAP via registre, propagation NULL GREATEST/LEAST,
+DECODE NULL-match). Suite database : 2560 tests verts. Suite unitaire globale : 13209
+verts — les 10 échecs PowerShell/terminal préexistent sur main et sont hors périmètre.

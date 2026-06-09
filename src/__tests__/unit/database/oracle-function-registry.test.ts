@@ -108,6 +108,50 @@ describe('Unknown functions raise ORA-00904', () => {
   });
 });
 
+describe('Oracle padding and case semantics', () => {
+  test('LPAD truncates when string exceeds target length', () => {
+    expect(scalar(`SELECT LPAD('hello', 3) FROM DUAL`)).toBe('hel');
+  });
+
+  test('RPAD truncates when string exceeds target length', () => {
+    expect(scalar(`SELECT RPAD('hello', 2, '*') FROM DUAL`)).toBe('he');
+  });
+
+  test('LPAD with non-positive length returns NULL', () => {
+    expect(scalar(`SELECT LPAD('x', 0) FROM DUAL`)).toBeNull();
+  });
+
+  test('LPAD fills with repeating pad string', () => {
+    expect(scalar(`SELECT LPAD('7', 5, 'ab') FROM DUAL`)).toBe('abab7');
+  });
+
+  test('INITCAP lowercases the rest of each word', () => {
+    expect(scalar(`SELECT INITCAP('heLLo woRLD') FROM DUAL`)).toBe('Hello World');
+  });
+
+  test('INITCAP treats non-alphanumeric characters as word boundaries', () => {
+    expect(scalar(`SELECT INITCAP('jean-pierre') FROM DUAL`)).toBe('Jean-Pierre');
+  });
+
+  test('ASCII of empty string is NULL', () => {
+    expect(scalar(`SELECT ASCII('') FROM DUAL`)).toBeNull();
+  });
+});
+
+describe('Oracle numeric edge semantics', () => {
+  test('MOD with zero divisor returns the dividend', () => {
+    expect(scalar(`SELECT MOD(7, 0) FROM DUAL`)).toBe(7);
+  });
+
+  test('REMAINDER uses round-half-even quotient', () => {
+    expect(scalar(`SELECT REMAINDER(10, 3) FROM DUAL`)).toBe(1);
+  });
+
+  test('REMAINDER with zero divisor returns NULL', () => {
+    expect(scalar(`SELECT REMAINDER(10, 0) FROM DUAL`)).toBeNull();
+  });
+});
+
 describe('Package functions through SQL', () => {
   test('DBMS_LOB.GETLENGTH returns string length', () => {
     expect(scalar(`SELECT DBMS_LOB.GETLENGTH('hello') FROM DUAL`)).toBe(5);
