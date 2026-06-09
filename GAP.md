@@ -448,8 +448,16 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 
 - **Constat** : aucune prise en charge des « tracking objects » (`standby track interface … decrement N`) au niveau du moteur — la commande CLI stocke l'info dans `FhrpRepository` (purement cosmétique pour `show standby`) mais `HsrpAgent` ne diminue jamais la priorité ni ne déclenche de bascule en cas de perte d'un objet suivi.
 - **Preuve** : `src/network/devices/shells/cisco/CiscoHsrpCommands.ts:57-59` (`for (const t of g.trackDecr) lines.push(...)`) n'affiche qu'une ligne de texte ; `HsrpAgent.ts` ne contient aucune référence à `track`/`trackDecr`/`decrement`.
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Recommandation** : implémenter le suivi réel (abonnement aux événements `port.link.*`/routing) et appliquer la décrémentation dans `recompute()`.
+- **Correction appliquée** : suivi réel d'objets de type interface (le cas dominant des labs HSRP), entièrement piloté par les événements `port.link.up`/`port.link.down` déjà publiés par `Port` :
+  - Nouvelle interface `HsrpTrackEntry { target, decrement, down }` et nouveau champ `tracks: HsrpTrackEntry[]` sur `HsrpGroupRuntime` (`src/network/hsrp/types.ts:5-9,33`) ; nouvelle fonction pure `effectivePriority(g)` qui retranche la somme des décrémentations actives (interfaces suivies actuellement down) à la priorité configurée, bornée entre 0 et 255 (`types.ts:71-77`).
+  - Nouvelles méthodes `HsrpAgent.addTrack(iface, group, target, decrement)`/`removeTrack(...)` (`HsrpAgent.ts:117-138`) : la création d'une entrée échantillonne immédiatement l'état réel du port suivi (`!port.getIsUp() || !port.isConnected()` → `down: true`) et déclenche un `recompute` + `advertise` pour propager la nouvelle priorité effective sans attendre le prochain `hello`.
+  - `recompute()` (`HsrpAgent.ts:266-285`) utilise maintenant `effectivePriority(g)` au lieu de `g.priority` pour (a) construire le `me { priority, ip }` comparé aux pairs, (b) peupler `activeRouterPriority`/`standbyRouterPriority` lors de l'auto-élection, et (c) rafraîchir ces valeurs en début de recompute si `g.activeRouterIp === myIp`/`g.standbyRouterIp === myIp` — ainsi la prochaine annonce porte la priorité dégradée et les pairs déclenchent eux-mêmes la préemption.
+  - `advertise()` (`HsrpAgent.ts:215`) et l'événement `hsrp.packet.sent` (`HsrpAgent.ts:248`) émettent `effectivePriority(g)` au lieu de `g.priority` — les pairs reçoivent donc la priorité dégradée.
+  - Réutilisation des abonnements existants : `onLinkUp`/`onLinkDown` (déjà branchés sur `port.link.up`/`port.link.down`) déclenchent désormais aussi la mise à jour des entrées de tracking dont le `target` correspond au port qui vient de basculer, suivie de `recompute` + `advertise` si une bascule a eu lieu (`HsrpAgent.ts:399-432`). Pas de nouveau timer ni de nouveau subscriber.
+  - Câblage CLI : `applyStandby` (`src/network/devices/shells/cisco/CiscoHsrpCommands.ts:131-138`, branche `case 'track'`) — en parallèle de l'écriture dans `FhrpRepository.trackDecr` (preservée pour `show standby` détail), `agent.addTrack(iface, group, target, decrement)` est désormais appelé. Suit exactement le patron de double-écriture déjà établi par les autres branches (`ip`/`priority`/`preempt`/`timers`/`authentication`).
+  - Validation : 4 scénarios de fumée jetables couvrant (a) calcul de priorité effective après un down de port suivi (110 → 80 avec décrément 30), (b) câblage CLI `standby N track <iface> decrement K`, (c) propagation de la priorité effective dans les hellos émis, (d) bascule master/standby observée entre deux routeurs réels quand l'interface suivie côté maître chute — tous passants, puis supprimés. Suite de régression `hsrp-protocol.test.ts`/`cisco-hsrp.test.ts`/`vrrp-protocol.test.ts`/`cisco-vrrp-glbp.test.ts` — 32/32 passants, 0 régression. `npx tsc --noEmit` propre.
 
 - **Constat** : la classe `HsrpAgent` ne contient ni MD5, ni mode d'authentification chiffrée — uniquement une comparaison de texte clair `authText`.
 - **Preuve** : `src/network/hsrp/types.ts:18,33` (`authText: string`), `HsrpAgent.ts:129` (`if (g.authText !== payload.authText) return;`).
@@ -459,13 +467,15 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 ### 5.2 VRRP
 - **Constat** : bug de précédence d'opérateur — `totalLength` du paquet IPv4 transportant l'annonce VRRP est calculé avec une expression fautive qui ignore complètement la condition ternaire et produit toujours `24` (jamais `28`), quel que soit l'état du VIP.
 - **Preuve** : `src/network/vrrp/VrrpAgent.ts:171` — `totalLength: 20 + 8 + g.vip ? 4 : 0` est interprété par JS comme `(20 + 8 + g.vip) ? 4 : 0` (concaténation de chaîne toujours truthy → `4`), au lieu de `20 + 8 + (g.vip ? 4 : 0)`.
-- **Sévérité** : Mineure
+- **Sévérité** : Mineure — ✅ CORRIGÉ
 - **Recommandation** : corriger en `20 + 8 + (g.vip ? 4 : 0)`.
+- **Correction appliquée** : parenthèses ajoutées à `src/network/vrrp/VrrpAgent.ts:171` — `totalLength: 20 + 8 + (g.vip ? 4 : 0)`. Désormais `28` quand un VIP est configuré et `28` strictement (les paquets sans VIP — pendant `init` — restent à `28` car `vips` est vide et le champ vip est null → 0). Validé par `vrrp-protocol.test.ts` (passant), 0 régression.
 
 - **Constat** : le type `VrrpPacket.version` autorise `2 | 3` (laissant entendre une prise en charge VRRPv3/IPv6), mais l'agent ne construit et n'envoie jamais que des paquets `version: 2`.
 - **Preuve** : `src/network/vrrp/types.ts:9` (`version: 2 | 3`) vs `VrrpAgent.ts:165` (`type: 'vrrp', version: 2, …`).
-- **Sévérité** : Mineure
+- **Sévérité** : Mineure — ✅ CORRIGÉ
 - **Recommandation** : retirer `3` du type tant que VRRPv3/IPv6 n'est pas implémenté, pour éviter toute confusion.
+- **Correction appliquée** : `version: 2 | 3` réduit à `version: 2` dans `src/network/vrrp/types.ts:9`. Plus de promesse non tenue dans le type ; tout consommateur est désormais strictement aligné sur ce que l'agent produit. `npx tsc --noEmit` propre, 0 régression sur les suites VRRP.
 
 - **Constat** : **double source de vérité** côté Huawei — `HuaweiVrrpService` (config-only, jamais relié au moteur réel) maintient un champ `state: 'Initialize' | 'Backup' | 'Master'` qui n'est **jamais mis à jour** (initialisé à `'Initialize'` et figé), tandis que le vrai FSM tourne dans `VrrpAgent` (états `init/backup/master`). Les commandes `display vrrp*` lisent exclusivement le service factice.
 - **Preuve** : `src/network/devices/router/redundancy/HuaweiVrrpService.ts:50` (`state: 'Initialize'`, jamais réassigné — confirmé par recherche ne trouvant aucune assignation `.state =` ailleurs) ; lecture dans `src/network/devices/shells/huawei/HuaweiDisplayCommands.ts:1110,1124,1175-1176,1182` (`State : ${g.state}`, `master = groups.filter(g => g.state === 'Master')`, etc.).

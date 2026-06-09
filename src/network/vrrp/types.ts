@@ -6,7 +6,7 @@ export type VrrpState = 'init' | 'backup' | 'master';
 
 export interface VrrpPacket {
   type: 'vrrp';
-  version: 2 | 3;
+  version: 2;
   vrid: number;
   priority: number;
   advertiseSec: number;

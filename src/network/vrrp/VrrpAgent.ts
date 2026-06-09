@@ -168,7 +168,7 @@ export class VrrpAgent {
       senderIp: srcIp.toString(),
     };
     const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + g.vip ? 4 : 0,
+      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + (g.vip ? 4 : 0),
       identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
       ttl: 255, protocol: IP_PROTO_VRRP, headerChecksum: 0,
       sourceIP: srcIp, destinationIP: new IPAddress(VRRP_MULTICAST_IP),

@@ -3,6 +3,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket, type HsrpState,
   createDefaultHsrpConfig, defaultGroupRuntime, makeKey, compareSpeaker,
+  effectivePriority,
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
@@ -113,6 +114,30 @@ export class HsrpAgent {
     this.ensureGroup(iface, group).authText = text;
   }
 
+  addTrack(iface: string, group: number, target: string, decrement: number): void {
+    const g = this.ensureGroup(iface, group);
+    const existing = g.tracks.find((t) => t.target === target);
+    if (existing) {
+      existing.decrement = decrement;
+    } else {
+      const port = this.host.getPort(target);
+      const down = !!port && (!port.getIsUp() || !port.isConnected());
+      g.tracks.push({ target, decrement, down });
+    }
+    this.recompute(g, 'priority');
+    if (this.shouldEmit(g)) this.advertise(g);
+  }
+
+  removeTrack(iface: string, group: number, target: string): void {
+    const g = this.config.groups.get(makeKey(iface, group));
+    if (!g) return;
+    const idx = g.tracks.findIndex((t) => t.target === target);
+    if (idx < 0) return;
+    g.tracks.splice(idx, 1);
+    this.recompute(g, 'priority');
+    if (this.shouldEmit(g)) this.advertise(g);
+  }
+
   setVersion(iface: string, version: 1 | 2): void {
     for (const g of this.config.groups.values()) {
       if (g.iface === iface) g.version = version;
@@ -190,7 +215,7 @@ export class HsrpAgent {
       type: 'hsrp', version: g.version,
       opcode, state: g.state,
       helloSec: g.helloSec, holdSec: g.holdSec,
-      priority: g.priority, group: g.group,
+      priority: effectivePriority(g), group: g.group,
       authText: g.authText, vip: g.vip ?? '0.0.0.0',
       senderIp: srcIp.toString(),
     };
@@ -220,7 +245,7 @@ export class HsrpAgent {
       topic: 'hsrp.packet.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        iface: g.iface, group: g.group, opcode, state: g.state, priority: g.priority,
+        iface: g.iface, group: g.group, opcode, state: g.state, priority: effectivePriority(g),
       },
     });
   }
@@ -235,20 +260,23 @@ export class HsrpAgent {
     if (!linkUp || !g.vip) {
       g.state = 'init';
     } else {
-      const me = { priority: g.priority, ip: myIp };
+      const myPriority = effectivePriority(g);
+      const me = { priority: myPriority, ip: myIp };
+      if (g.activeRouterIp === myIp) g.activeRouterPriority = myPriority;
+      if (g.standbyRouterIp === myIp) g.standbyRouterPriority = myPriority;
       const active = g.activeRouterIp
         ? { priority: g.activeRouterPriority, ip: g.activeRouterIp }
         : null;
       if (!active) {
         g.state = 'active';
         g.activeRouterIp = myIp;
-        g.activeRouterPriority = g.priority;
+        g.activeRouterPriority = myPriority;
       } else if (active.ip === myIp) {
         g.state = 'active';
       } else if (compareSpeaker(me, active) < 0) {
         g.state = 'active';
         g.activeRouterIp = myIp;
-        g.activeRouterPriority = g.priority;
+        g.activeRouterPriority = myPriority;
       } else {
         const standby = g.standbyRouterIp
           ? { priority: g.standbyRouterPriority, ip: g.standbyRouterIp }
@@ -256,7 +284,7 @@ export class HsrpAgent {
         if (!standby || standby.ip === myIp || compareSpeaker(me, standby) < 0) {
           g.state = 'standby';
           g.standbyRouterIp = myIp;
-          g.standbyRouterPriority = g.priority;
+          g.standbyRouterPriority = myPriority;
         } else {
           g.state = 'listen';
         }
@@ -341,18 +369,35 @@ export class HsrpAgent {
 
   private onLinkUp(portName: string): void {
     for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      this.recompute(g, 'config');
-      if (this.shouldEmit(g)) this.advertise(g);
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && t.down) { t.down = false; touched = true; }
+      }
+      if (g.iface === portName) {
+        this.recompute(g, 'config');
+        touched = true;
+      } else if (touched) {
+        this.recompute(g, 'priority');
+      }
+      if (touched && this.shouldEmit(g)) this.advertise(g);
     }
   }
 
   private onLinkDown(portName: string): void {
     for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      g.activeRouterIp = null;
-      g.standbyRouterIp = null;
-      this.recompute(g, 'timeout');
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && !t.down) { t.down = true; touched = true; }
+      }
+      if (g.iface === portName) {
+        g.activeRouterIp = null;
+        g.standbyRouterIp = null;
+        this.recompute(g, 'timeout');
+        touched = true;
+      } else if (touched) {
+        this.recompute(g, 'priority');
+      }
+      if (touched && this.shouldEmit(g)) this.advertise(g);
     }
   }
 }
