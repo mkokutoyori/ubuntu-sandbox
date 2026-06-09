@@ -11,6 +11,7 @@ import { DbmsWorkloadRepository } from './DbmsWorkloadRepository';
 import { DbmsResourceManager } from './DbmsResourceManager';
 import { DbmsStats } from './DbmsStats';
 import { DbmsScheduler } from './DbmsScheduler';
+import { DbmsCrypto } from './DbmsCrypto';
 
 DbmsApplicationInfo.register();
 DbmsSession.register();
@@ -18,7 +19,8 @@ DbmsWorkloadRepository.register();
 DbmsResourceManager.register();
 DbmsStats.register();
 DbmsScheduler.register();
+DbmsCrypto.register();
 
 export { builtinPackageRegistry, PackageRegistry } from './PackageRegistry';
 export type { IPackageRoutine, PackageCallContext } from './PackageRegistry';
-export { DbmsApplicationInfo, DbmsSession, DbmsWorkloadRepository, DbmsResourceManager, DbmsStats };
+export { DbmsApplicationInfo, DbmsSession, DbmsWorkloadRepository, DbmsResourceManager, DbmsStats, DbmsScheduler, DbmsCrypto };

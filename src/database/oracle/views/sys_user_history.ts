@@ -2,15 +2,15 @@
  * SYS.USER_HISTORY$ — native SYS-owned table holding the password
  * history Oracle uses to enforce PASSWORD_REUSE_TIME / PASSWORD_REUSE_MAX.
  *
- * One row per (user, changed-on) pair. Oracle stores password hashes;
- * the simulator stores plaintext (PasswordManager keeps them in
- * memory) but the column shape matches the native table 1-to-1 so DBA
- * scripts that read SYS.USER_HISTORY$ keep working.
+ * One row per (user, changed-on) pair. Oracle stores the password hash;
+ * the simulator keeps the plaintext in memory (PasswordManager) and renders
+ * the genuine legacy 10g (DES) hash here, matching the native column shape.
  */
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { oracle10gHash } from '@/crypto';
 
 registerView({
   name: 'SYS.USER_HISTORY$',
@@ -27,11 +27,8 @@ registerView({
     for (const u of catalog.getAllUsers()) {
       const hist = engine.passwords.getHistory(u.username);
       for (const h of hist) {
-        // Real Oracle stores the legacy DES hash; emit a deterministic
-        // placeholder of the same shape (16 hex chars).
-        const hash = Array.from(h.password)
-          .reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0)
-          .toString(16).padStart(16, '0').toUpperCase().slice(0, 16);
+        // The genuine legacy 10g DES hash of UPPER(username||password).
+        const hash = oracle10gHash(u.username, h.password);
         rows.push([u.userId, hash, h.changedAt.toISOString()]);
       }
     }

@@ -8,3 +8,4 @@ export type { HashAlgorithm } from './HashAlgorithm';
 export { sha256, sha256Hex, SHA256 } from './sha256';
 export { md5, md5Hex, MD5 } from './md5';
 export { sha1, sha1Hex, SHA1 } from './sha1';
+export { sha512, sha512Hex, SHA512 } from './sha512';
