@@ -68,6 +68,8 @@ export interface ARPEntry {
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
 export const ARP_REACHABLE_TIME_MS = 30_000;
+export const ARP_GC_STALE_TIME_MS = 60_000;
+export const ARP_AGING_INTERVAL_MS = 5_000;
 
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
@@ -252,6 +254,36 @@ export abstract class EndHost extends Equipment {
       _refreshHostStatsSignal: () => this._refreshHostStatsSignal(),
     });
     this.hostSignalRefreshActor.start();
+    this.startArpAgingTimer();
+  }
+
+  private arpAgingTimer: symbol | null = null;
+
+  private startArpAgingTimer(): void {
+    if (this.arpAgingTimer !== null) return;
+    this.arpAgingTimer = this.hostTimers.setInterval(
+      () => this.ageArpEntries(),
+      ARP_AGING_INTERVAL_MS,
+    );
+  }
+
+  private stopArpAgingTimer(): void {
+    if (this.arpAgingTimer === null) return;
+    this.hostTimers.clear(this.arpAgingTimer);
+    this.arpAgingTimer = null;
+  }
+
+  protected ageArpEntries(): void {
+    const now = Date.now();
+    let purged = false;
+    for (const [ip, entry] of this.arpTable) {
+      if (entry.type === 'static') continue;
+      if (now - entry.timestamp > ARP_GC_STALE_TIME_MS) {
+        this.arpTable.delete(ip);
+        purged = true;
+      }
+    }
+    if (purged) this._refreshArpSignal();
   }
 
   // ─── Actor-API: signal refresh helpers ─────────────────────────────
@@ -508,6 +540,7 @@ export abstract class EndHost extends Equipment {
     const wasOn = this.getIsPoweredOn();
     super.powerOff();
     if (wasOn) this.lifecycle.powerOff();
+    this.stopArpAgingTimer();
   }
 
   // ─── System identity ────────────────────────────────────────────

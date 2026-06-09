@@ -305,6 +305,22 @@ export abstract class Router extends Equipment {
     this.getEemEngine();
     this.getCredentialStore();
     this.mountSshDaemon();
+    this.startArpAgingTimer();
+  }
+
+  private arpAgingTimer: symbol | null = null;
+
+  private startArpAgingTimer(): void {
+    if (this.arpAgingTimer !== null) return;
+    this.arpAgingTimer = this.routerTimers.setInterval(() => this.ageArpEntries(), 5_000);
+  }
+
+  protected ageArpEntries(): void {
+    const now = Date.now();
+    for (const [ip, entry] of this.arpTable) {
+      if (entry.type === 'static') continue;
+      if (now - entry.timestamp > 60_000) this.arpTable.delete(ip);
+    }
   }
 
   override setEventBus(bus: IEventBus | null): void {
