@@ -34,10 +34,7 @@ export interface EIGRPConfig {
 const EIGRP_INTERNAL_AD = 90;
 
 function toNum(ip: string): number {
-  const p = ip.split('.').map(Number);
-  return p.length === 4 && p.every((n) => n >= 0 && n <= 255)
-    ? ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0
-    : -1;
+  return IPAddress.tryParse(ip)?.toUint32() ?? -1;
 }
 
 function classfulMaskBits(ip: string): number {

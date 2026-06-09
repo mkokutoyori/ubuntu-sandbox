@@ -36,6 +36,7 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
+import { IPAddress } from '../core/types';
 import { OSPF_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -3751,8 +3752,8 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   private ipToNumber(ip: string): number {
-    const parts = ip.split('.').map(Number);
-    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+    // Invalid input historically yielded NaN, which masks to 0; preserve that.
+    return IPAddress.tryParse(ip)?.toUint32() ?? 0;
   }
 
   private numberToIP(num: number): string {
