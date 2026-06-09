@@ -733,9 +733,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // VLAN-view features the L2 sim accepts (recognised, no datapath model).
+    this.vlanTrie.registerGreedy('igmp-snooping', 'VLAN IGMP snooping configuration', (args, raw) => {
+      if (this.selectedVlan === null) return '';
+      const v = this.swRef.getVLAN(this.selectedVlan);
+      if (!v) return '';
+      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
+      const line = raw ?? `igmp-snooping ${args.join(' ')}`.trim();
+      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
+      extra['igmp-snooping'].push(line);
+      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
+      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      if (agent && args[0] === 'enable') agent.setVlanEnabled(this.selectedVlan, true);
+      return '';
+    });
+    this.vlanTrie.registerGreedy('undo igmp-snooping', 'Disable VLAN IGMP snooping', (args, raw) => {
+      if (this.selectedVlan === null) return '';
+      const v = this.swRef.getVLAN(this.selectedVlan);
+      if (!v) return '';
+      const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
+      const line = raw ?? `undo igmp-snooping ${args.join(' ')}`.trim();
+      if (!extra['igmp-snooping']) extra['igmp-snooping'] = [];
+      extra['igmp-snooping'].push(line);
+      (v as unknown as { extras: Record<string, string[]> }).extras = extra;
+      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent }).getIgmpSnoopingAgent?.();
+      if (agent && (args.length === 0 || args[0] === 'enable')) agent.setVlanEnabled(this.selectedVlan, false);
+      return '';
+    });
+
     for (const kw of ['mux-vlan', 'aggregate-vlan', 'access-vlan',
-      'vlan-type', 'mac-vlan', 'ip', 'igmp-snooping', 'arp']) {
+      'vlan-type', 'mac-vlan', 'ip', 'arp']) {
       this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, (args, raw) => {
         if (this.selectedVlan === null) return '';
         const v = this.swRef.getVLAN(this.selectedVlan);
@@ -1095,6 +1121,32 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Eth-Trunk + counters.
+    trie.registerGreedy('display igmp-snooping', 'Display IGMP snooping state', (args) => {
+      const agent = (this.swRef as unknown as { getIgmpSnoopingAgent?: () => import('@/network/igmp-snooping/IgmpSnoopingAgent').IgmpSnoopingAgent } | null)?.getIgmpSnoopingAgent?.();
+      if (!agent) return '';
+      const vlans = agent.listVlans();
+      if (args[0] === 'group') {
+        const vIdx = args.indexOf('vlan');
+        const filter = vIdx >= 0 ? parseInt(args[vIdx + 1] ?? '', 10) : NaN;
+        const rows: string[] = [];
+        for (const { vlan, group } of agent.listGroups(Number.isNaN(filter) ? undefined : filter)) {
+          rows.push(` Group address: ${group.group}`);
+          rows.push(`  VLAN ID: ${vlan}`);
+          rows.push(`  Member ports: ${[...group.memberPorts].join(' ') || '(none)'}`);
+        }
+        return rows.length ? rows.join('\n') : 'Info: No multicast group entry is found.';
+      }
+      if (vlans.length === 0) return 'Info: IGMP snooping is not enabled on any VLAN.';
+      const cfg = agent.getConfig();
+      const lines: string[] = [];
+      for (const v of vlans) {
+        lines.push(`VLAN ID: ${v.vlan}`);
+        lines.push(`  IGMP snooping: ${v.enabled ? 'enabled' : 'disabled'}`);
+        lines.push(`  Immediate leave: ${cfg.immediateLeave.has(v.vlan) ? 'enabled' : 'disabled'}`);
+        lines.push(`  Router ports: ${[...v.routerPorts].join(' ') || '(none)'}`);
+      }
+      return lines.join('\n');
+    });
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
       const id = parseInt(args[0] ?? '', 10);
       if (isNaN(id)) {

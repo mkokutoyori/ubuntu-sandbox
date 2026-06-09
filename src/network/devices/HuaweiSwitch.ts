@@ -1,4 +1,4 @@
-import { DeviceType, EthernetFrame } from '../core/types';
+import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
@@ -8,6 +8,7 @@ import { StpAgent, type StpForwardState } from '../stp/StpAgent';
 import { ETHERTYPE_STP } from '../stp/types';
 import { LacpAgent } from '../lacp/LacpAgent';
 import { ETHERTYPE_LACP } from '../lacp/types';
+import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -15,6 +16,7 @@ export class HuaweiSwitch extends Switch {
   private readonly lldpAgent: LldpAgent;
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
+  private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -34,9 +36,23 @@ export class HuaweiSwitch extends Switch {
       onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
+    this.igmpSnoopingAgent = new IgmpSnoopingAgent({
+      ...hostBase,
+      resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
+      isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+    }, () => this.getBus());
     this.lldpAgent.start();
     this.stpAgent.start();
     this.lacpAgent.start();
+    this.igmpSnoopingAgent.start();
+  }
+
+  private resolveSnoopingVlan(portName: string): number | undefined {
+    const cfg = this.getSwitchportConfig(portName);
+    if (!cfg) return undefined;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
+    return undefined;
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState): void {
@@ -50,6 +66,7 @@ export class HuaweiSwitch extends Switch {
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
     if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
     if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
+    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -65,13 +82,27 @@ export class HuaweiSwitch extends Switch {
       this.lacpAgent.handleFrame(portName, frame);
       return;
     }
+    this.igmpSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
+  }
+
+  protected override resolveSnoopedMulticastEgressPorts(ingressPort: string, frame: EthernetFrame, vlan: number): string[] | null {
+    if (frame.etherType !== ETHERTYPE_IPV4) return null;
+    const ipPkt = frame.payload as IPv4Packet | undefined;
+    if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
+    const firstOctet = ipPkt.destinationIP.getOctets()[0];
+    if (firstOctet < 224 || firstOctet > 239) return null;
+    const vlanState = this.igmpSnoopingAgent.getVlanState(vlan);
+    if (!vlanState || !vlanState.enabled) return null;
+    const ports = this.igmpSnoopingAgent.computeEgressPorts(ingressPort, ipPkt.destinationIP.toString());
+    return ports.length > 0 ? ports : null;
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
+  getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
 
   protected getPortName(index: number, _total: number): string {
     return `GigabitEthernet0/0/${index}`;
