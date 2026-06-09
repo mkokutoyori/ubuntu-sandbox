@@ -535,7 +535,7 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
     const marker = a.preferred ? '*' : a.prefer ? '+' : ' ';
     const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
     rows.push(
-      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? 'INIT' : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
+      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
       `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
     );
   }

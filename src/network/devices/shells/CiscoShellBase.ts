@@ -386,6 +386,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
+  protected parseNtpKeyId(args: string[]): number | undefined {
+    const idx = args.indexOf('key');
+    if (idx < 0 || !args[idx + 1] || !/^\d+$/.test(args[idx + 1])) return undefined;
+    return parseInt(args[idx + 1], 10);
+  }
+
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
   getHelp(input: string): string {
@@ -1232,13 +1238,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addServer(resolved, a[2] === 'prefer' || a[3] === 'prefer');
+        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
       } else if (a[0] === 'peer' && a[1]) {
         const resolved = this.resolveNtpTarget(a[1]);
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addServer(resolved, false);
+        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
       } else if (a[0] === 'master') {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));

@@ -32,9 +32,22 @@ export interface NtpServerRespondedPayload extends NtpDeviceRef {
   stratum: number;
 }
 
+export interface NtpPeerRespondedPayload extends NtpDeviceRef {
+  peerIp: string;
+  mode: NtpMode;
+  stratum: number;
+}
+
+export interface NtpAuthRejectedPayload extends NtpDeviceRef {
+  fromIp: string;
+  reason: 'no-key' | 'untrusted-key' | 'unconfigured';
+}
+
 export type NtpDomainEvent =
   | { topic: 'ntp.packet.sent'; payload: NtpPacketSentPayload }
   | { topic: 'ntp.packet.received'; payload: NtpPacketReceivedPayload }
   | { topic: 'ntp.synced'; payload: NtpSyncedPayload }
   | { topic: 'ntp.unsynced'; payload: NtpUnsyncedPayload }
-  | { topic: 'ntp.server.responded'; payload: NtpServerRespondedPayload };
+  | { topic: 'ntp.server.responded'; payload: NtpServerRespondedPayload }
+  | { topic: 'ntp.peer.responded'; payload: NtpPeerRespondedPayload }
+  | { topic: 'ntp.auth.rejected'; payload: NtpAuthRejectedPayload };

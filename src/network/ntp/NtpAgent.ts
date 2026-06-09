@@ -1,7 +1,7 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
-  type NtpAssociation, type NtpConfig, type NtpPacket,
+  type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
   createDefaultNtpConfig, defaultAssociation, computeOffsetMs,
   UDP_PORT_NTP,
 } from './types';
@@ -71,11 +71,15 @@ export class NtpAgent {
     }
   }
 
-  addServer(serverIp: string, prefer = false): void {
+  addServer(serverIp: string, prefer = false, keyId?: number): void {
     if (!this.config.associations.has(serverIp)) {
-      this.config.associations.set(serverIp, defaultAssociation(serverIp, prefer));
-    } else if (prefer) {
-      this.config.associations.get(serverIp)!.prefer = true;
+      const a = defaultAssociation(serverIp, prefer);
+      if (keyId !== undefined) a.keyId = keyId;
+      this.config.associations.set(serverIp, a);
+    } else {
+      const a = this.config.associations.get(serverIp)!;
+      if (prefer) a.prefer = true;
+      if (keyId !== undefined) a.keyId = keyId;
     }
     if (this.config.enabled) {
       try { this.poll(serverIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
@@ -84,6 +88,22 @@ export class NtpAgent {
 
   removeServer(serverIp: string): void {
     this.config.associations.delete(serverIp);
+  }
+
+  addPeer(peerIp: string, prefer = false, keyId?: number): void {
+    if (!this.config.associations.has(peerIp)) {
+      const a = defaultAssociation(peerIp, prefer, 'symmetric-active');
+      if (keyId !== undefined) a.keyId = keyId;
+      this.config.associations.set(peerIp, a);
+    } else {
+      const a = this.config.associations.get(peerIp)!;
+      a.mode = 'symmetric-active';
+      if (prefer) a.prefer = true;
+      if (keyId !== undefined) a.keyId = keyId;
+    }
+    if (this.config.enabled) {
+      try { this.poll(peerIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
+    }
   }
 
   setSourceInterface(name: string): void { this.config.sourceInterface = name; }
@@ -98,7 +118,8 @@ export class NtpAgent {
       lines.push(`ntp master${this.config.localStratum !== 8 ? ' ' + this.config.localStratum : ''}`);
     }
     for (const [ip, a] of this.config.associations) {
-      lines.push(`ntp server ${ip}${a.prefer ? ' prefer' : ''}`);
+      const kind = a.mode === 'symmetric-active' ? 'peer' : 'server';
+      lines.push(`ntp ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
     }
     if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
     if (this.config.authenticate) lines.push('ntp authenticate');
@@ -128,7 +149,8 @@ export class NtpAgent {
   runningConfigLines(): string[] {
     const out: string[] = [];
     for (const [ip, a] of this.config.associations) {
-      out.push(`ntp server ${ip}${a.prefer ? ' prefer' : ''}`);
+      const kind = a.mode === 'symmetric-active' ? 'peer' : 'server';
+      out.push(`ntp ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
     }
     if (this.config.serverMode) out.push('ntp master');
     return out;
@@ -148,13 +170,74 @@ export class NtpAgent {
       },
     });
 
+    if (this.config.authenticate) {
+      const auth = this.checkAuthentication(payload);
+      if (!auth.ok) {
+        this.getBus().publish({
+          topic: 'ntp.auth.rejected',
+          payload: {
+            deviceId: this.host.id, hostname: this.host.getHostname(),
+            fromIp: srcIp.toString(), reason: auth.reason,
+          },
+        });
+        return;
+      }
+    }
+
     if (payload.mode === 'client') {
       if (this.config.serverMode) this.respondAsServer(inPort, srcIp, payload);
+      return;
+    }
+    if (payload.mode === 'symmetric-active') {
+      this.handleSymmetricActive(inPort, srcIp, payload);
       return;
     }
     if (payload.mode === 'server' || payload.mode === 'symmetric-passive') {
       this.acceptServerReply(srcIp.toString(), payload);
     }
+  }
+
+  private handleSymmetricActive(inPort: string, peerIp: IPAddress, request: NtpPacket): void {
+    const ip = peerIp.toString();
+    let a = this.config.associations.get(ip);
+    let responseMode: NtpMode;
+    if (a && a.mode === 'symmetric-active') {
+      responseMode = 'symmetric-active';
+    } else {
+      if (!a) {
+        a = defaultAssociation(ip, false, 'symmetric-passive');
+        this.config.associations.set(ip, a);
+      }
+      responseMode = 'symmetric-passive';
+    }
+    if (request.origTimestampMs !== 0) this.acceptServerReply(ip, request);
+    this.respondSymmetric(inPort, peerIp, request, responseMode);
+  }
+
+  private respondSymmetric(inPort: string, peerIp: IPAddress, request: NtpPacket, mode: NtpMode): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    const now = this.now();
+    const reply: NtpPacket = {
+      type: 'ntp', leapIndicator: 0, version: 4, mode,
+      stratum: this.config.localStratum, poll: 6, precision: -20,
+      rootDelay: 0, rootDispersion: 0,
+      refIdentifier: this.config.refIdentifier,
+      refTimestampMs: this.config.lastSyncMs || now,
+      origTimestampMs: request.txTimestampMs,
+      rxTimestampMs: now, txTimestampMs: now,
+      keyId: request.keyId,
+    };
+    this.sendNtp(inPort, srcIp, peerIp, reply);
+    this.getBus().publish({
+      topic: 'ntp.peer.responded',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        peerIp: peerIp.toString(), mode, stratum: this.config.localStratum,
+      },
+    });
   }
 
   private respondAsServer(inPort: string, clientIp: IPAddress, request: NtpPacket): void {
@@ -171,6 +254,7 @@ export class NtpAgent {
       refTimestampMs: this.config.lastSyncMs || now,
       origTimestampMs: request.txTimestampMs,
       rxTimestampMs: now, txTimestampMs: now,
+      keyId: request.keyId,
     };
     this.sendNtp(inPort, srcIp, clientIp, reply);
     this.getBus().publish({
@@ -180,6 +264,13 @@ export class NtpAgent {
         clientIp: clientIp.toString(), stratum: this.config.localStratum,
       },
     });
+  }
+
+  private checkAuthentication(payload: NtpPacket): { ok: boolean; reason: 'no-key' | 'untrusted-key' | 'unconfigured' } {
+    if (payload.keyId === undefined) return { ok: false, reason: 'no-key' };
+    if (!this.config.authKeys.has(payload.keyId)) return { ok: false, reason: 'unconfigured' };
+    if (!this.config.trustedKeys.has(payload.keyId)) return { ok: false, reason: 'untrusted-key' };
+    return { ok: true, reason: 'no-key' };
   }
 
   private acceptServerReply(serverIp: string, reply: NtpPacket): void {
@@ -201,10 +292,38 @@ export class NtpAgent {
     if (a.synced) this.selectAndSync();
   }
 
+  private intersect(candidates: NtpAssociation[]): NtpAssociation[] {
+    if (candidates.length <= 2) return candidates;
+    type Edge = { time: number; lower: boolean };
+    const edges: Edge[] = [];
+    for (const c of candidates) {
+      edges.push({ time: c.offsetMs - c.dispersionMs, lower: true });
+      edges.push({ time: c.offsetMs + c.dispersionMs, lower: false });
+    }
+    edges.sort((x, y) => x.time - y.time || (x.lower === y.lower ? 0 : x.lower ? -1 : 1));
+    let count = 0;
+    let bestCount = 0;
+    let bestLow = -Infinity;
+    let bestHigh = Infinity;
+    for (const e of edges) {
+      if (e.lower) {
+        count++;
+        if (count > bestCount) { bestCount = count; bestLow = e.time; bestHigh = Infinity; }
+      } else {
+        if (count === bestCount && e.time < bestHigh) bestHigh = e.time;
+        count--;
+      }
+    }
+    const majority = Math.floor(candidates.length / 2) + 1;
+    if (bestCount < majority) return candidates;
+    return candidates.filter((c) => c.offsetMs >= bestLow && c.offsetMs <= bestHigh);
+  }
+
   private selectAndSync(): void {
+    const synced = [...this.config.associations.values()].filter((a) => a.synced);
+    const truechimers = this.intersect(synced);
     let best: NtpAssociation | null = null;
-    for (const a of this.config.associations.values()) {
-      if (!a.synced) continue;
+    for (const a of truechimers) {
       if (!best) { best = a; continue; }
       if (a.prefer && !best.prefer) { best = a; continue; }
       if (a.prefer === best.prefer) {
@@ -244,19 +363,21 @@ export class NtpAgent {
     if (!srcIp) return;
     const now = Date.now();
     a.lastPollMs = now;
+    const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
     const request: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: 4, mode: 'client',
+      type: 'ntp', leapIndicator: 0, version: 4, mode,
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0, refIdentifier: this.config.refIdentifier,
       refTimestampMs: this.config.lastSyncMs,
       origTimestampMs: 0, rxTimestampMs: 0, txTimestampMs: now,
+      keyId: a.keyId,
     };
     this.sendNtp(sourcePort.name, srcIp, new IPAddress(serverIp), request);
     this.getBus().publish({
       topic: 'ntp.packet.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        serverIp, mode: 'client',
+        serverIp, mode,
       },
     });
   }

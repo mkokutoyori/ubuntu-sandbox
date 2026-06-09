@@ -18,10 +18,12 @@ export interface NtpPacket {
   origTimestampMs: number;
   rxTimestampMs: number;
   txTimestampMs: number;
+  keyId?: number;
 }
 
 export interface NtpAssociation {
   serverIp: string;
+  mode: NtpMode;
   preferred: boolean;
   prefer: boolean;
   stratum: number;
@@ -33,6 +35,7 @@ export interface NtpAssociation {
   lastPollMs: number;
   lastReplyMs: number;
   synced: boolean;
+  keyId?: number;
 }
 
 export interface NtpAuthKey {
@@ -73,9 +76,9 @@ export function createDefaultNtpConfig(): NtpConfig {
   };
 }
 
-export function defaultAssociation(serverIp: string, prefer = false): NtpAssociation {
+export function defaultAssociation(serverIp: string, prefer = false, mode: NtpMode = 'client'): NtpAssociation {
   return {
-    serverIp, preferred: false, prefer,
+    serverIp, mode, preferred: false, prefer,
     stratum: 16, reach: 0, pollSec: 64,
     delayMs: 0, offsetMs: 0, dispersionMs: 16000,
     lastPollMs: 0, lastReplyMs: 0, synced: false,

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-07T20:22:54.710Z
+Generated: 2026-06-08T07:09:53.903Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,36 +487,36 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD0519E.BBA5E353 (20:22:54.733 UTC Sun Jun 7 2026)
+  reference time is EDD0E941.EC49BA5E (07:09:53.923 UTC Mon Jun 8 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [126/322] r1 R1# show ntp associations detail
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  21:22:54.000 CET Sun Jun 7 2026
+  08:09:53.000 CET Mon Jun 8 2026
 
 [128/322] r1 R1# show clock detail
-  21:22:54.000 CET Sun Jun 7 2026
+  08:09:53.000 CET Mon Jun 8 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  20:22:54 UTC Sun Jun 7 2026
+  07:09:53 UTC Mon Jun 8 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -895,10 +895,10 @@ Total steps: 322
 
 [210/322] r1 R1# show running-config | section ntp
   ntp master 3
-  ntp server 10.0.0.21
-  ntp server 10.0.0.22
-  ntp server 10.0.0.23
-  ntp server 10.0.0.30
+  ntp server 10.0.0.21 key 1 prefer
+  ntp server 10.0.0.22 key 1 prefer
+  ntp server 10.0.0.23 key 1 prefer
+  ntp peer 10.0.0.30
   ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
@@ -991,10 +991,10 @@ Total steps: 322
   logging host 10.0.0.11
   !
   ntp master 3
-  ntp server 10.0.0.21
-  ntp server 10.0.0.22
-  ntp server 10.0.0.23
-  ntp server 10.0.0.30
+  ntp server 10.0.0.21 key 1 prefer
+  ntp server 10.0.0.22 key 1 prefer
+  ntp server 10.0.0.23 key 1 prefer
+  ntp peer 10.0.0.30
   ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
@@ -1286,20 +1286,20 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD0519E.C0000000 (20:22:54.750 UTC Sun Jun 7 2026)
+  reference time is EDD0E941.EF9DB22D (07:09:53.936 UTC Mon Jun 8 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+  +~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  21:22:54.000 CET Sun Jun 7 2026
+  08:09:53.000 CET Mon Jun 8 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1497,10 +1497,10 @@ Total steps: 322
   logging host 10.0.0.11
   !
   ntp master 3
-  ntp server 10.0.0.21
-  ntp server 10.0.0.22
-  ntp server 10.0.0.23
-  ntp server 10.0.0.30
+  ntp server 10.0.0.21 key 1 prefer
+  ntp server 10.0.0.22 key 1 prefer
+  ntp server 10.0.0.23 key 1 prefer
+  ntp peer 10.0.0.30
   ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
@@ -1781,10 +1781,10 @@ Total steps: 322
   logging host 10.0.0.10
   logging host 10.0.0.11
   ntp master 3
-  ntp server 10.0.0.21
-  ntp server 10.0.0.22
-  ntp server 10.0.0.23
-  ntp server 10.0.0.30
+  ntp server 10.0.0.21 key 1 prefer
+  ntp server 10.0.0.22 key 1 prefer
+  ntp server 10.0.0.23 key 1 prefer
+  ntp peer 10.0.0.30
   ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
@@ -2003,6 +2003,7 @@ Total steps: 322
     ssh              SSH config
     dhcp             dhcp
     route            Establish static routes
+    pim              pim
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
     access-list      access-list
