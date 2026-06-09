@@ -19,6 +19,7 @@
  *   - processRequestWithNak: Returns explicit NAK objects
  */
 
+import { IPAddress } from '../core/types';
 import {
   DHCPPoolConfig, DHCPExcludedRange, DHCPBinding, DHCPServerStats,
   DHCPConflict, DHCPDebugFlags, DHCPRelayConfig, DHCPPendingOffer,
@@ -1164,8 +1165,7 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   private ipToNumber(ip: string): number {
-    const parts = ip.split('.').map(Number);
-    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+    return new IPAddress(ip).toUint32();
   }
 
   private numberToIP(num: number): string {
