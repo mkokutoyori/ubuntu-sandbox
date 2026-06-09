@@ -11,6 +11,9 @@
  * ICMP is encapsulated in IPv4 (protocol 1).
  */
 
+import type { NetworkPdu } from './NetworkPdu';
+export type { NetworkPdu } from './NetworkPdu';
+
 // ─── MAC Address ─────────────────────────────────────────────────────
 
 let macCounter = 0;
@@ -605,7 +608,7 @@ export const UDP_PORT_IKE_NAT_T = 4500;  // RFC 3948 UDP-Encapsulated ESP
  * The checksum is computed over the header words (16-bit) using one's complement.
  * It must be recalculated whenever any header field changes (e.g. TTL decrement).
  */
-export interface IPv4Packet {
+export interface IPv4Packet extends NetworkPdu {
   type: 'ipv4';
   /** Always 4 */
   version: 4;
@@ -751,7 +754,7 @@ export function createIPv4Packet(
 
 export type ARPOperation = 'request' | 'reply';
 
-export interface ARPPacket {
+export interface ARPPacket extends NetworkPdu {
   type: 'arp';
   operation: ARPOperation;
   senderMAC: MACAddress;
@@ -773,7 +776,7 @@ export type ICMPType =
   | 'redirect'                 // Type 5
   | 'time-exceeded';           // Type 11
 
-export interface ICMPPacket {
+export interface ICMPPacket extends NetworkPdu {
   type: 'icmp';
   icmpType: ICMPType;
   /** ICMP code (0 for echo, subtypes for unreachable/time-exceeded). */
@@ -818,7 +821,7 @@ export interface TCPFlags {
   urg: boolean;
 }
 
-export interface TCPPacket {
+export interface TCPPacket extends NetworkPdu {
   type: 'tcp';
   /** Source port (16-bit). */
   sourcePort: number;
@@ -842,7 +845,7 @@ export interface TCPPacket {
 
 export const UDP_PORT_RIP = 520;
 
-export interface UDPPacket {
+export interface UDPPacket extends NetworkPdu {
   type: 'udp';
   /** Source port (16-bit). */
   sourcePort: number;
@@ -862,7 +865,7 @@ export interface UDPPacket {
  * ESP (Encapsulating Security Payload) — used for IPSec tunnel/transport mode.
  * In our simulator, no real encryption is performed; the inner packet is preserved.
  */
-export interface ESPPacket {
+export interface ESPPacket extends NetworkPdu {
   type: 'esp';
   /** Security Parameter Index — identifies the SA on the receiver */
   spi: number;
@@ -882,7 +885,7 @@ export interface ESPPacket {
 // ─── IPSec: AH Packet (IP protocol 51, RFC 4302) ────────────────────
 
 /** AH (Authentication Header) — integrity only, no confidentiality */
-export interface AHPacket {
+export interface AHPacket extends NetworkPdu {
   type: 'ah';
   spi: number;
   sequenceNumber: number;
@@ -895,7 +898,7 @@ export interface AHPacket {
  * IKESimMessage — carried inside UDP/500 packets for IKE simulation.
  * Not a real IKE PDU — collapses the multi-message IKE exchange into 2 messages.
  */
-export interface IKESimMessage {
+export interface IKESimMessage extends NetworkPdu {
   type: 'ike-sim';
   phase: 1 | 2;
   direction: 'request' | 'response';
@@ -947,7 +950,7 @@ export interface IKESimMessage {
 export const IP_PROTO_ICMPV6 = 58;
 export const IP_PROTO_NONE = 59;   // No next header
 
-export interface IPv6Packet {
+export interface IPv6Packet extends NetworkPdu {
   type: 'ipv6';
   /** Always 6 */
   version: 6;
@@ -1032,7 +1035,7 @@ export type ICMPv6Type =
   | 'packet-too-big'
   | 'time-exceeded';
 
-export interface ICMPv6Packet {
+export interface ICMPv6Packet extends NetworkPdu {
   type: 'icmpv6';
   /** ICMPv6 message type */
   icmpType: ICMPv6Type;
@@ -1321,7 +1324,7 @@ export interface RIPRouteEntry {
   metric: number;
 }
 
-export interface RIPPacket {
+export interface RIPPacket extends NetworkPdu {
   type: 'rip';
   /** 1 = Request, 2 = Response */
   command: 1 | 2;
