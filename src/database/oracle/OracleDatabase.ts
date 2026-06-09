@@ -769,6 +769,7 @@ export class OracleDatabase implements SqlCommandHost {
       || upper.startsWith('DBMS_RESOURCE_MANAGER.')
       || upper.startsWith('DBMS_STATS.')
       || upper.startsWith('DBMS_SCHEDULER.')
+      || upper.startsWith('DBMS_CRYPTO.')
     ) {
       this.invokeBuiltinPackage(executor, call, noVars, output);
       return true;
@@ -1164,6 +1165,7 @@ export class OracleDatabase implements SqlCommandHost {
       || upper.startsWith('DBMS_RESOURCE_MANAGER.')
       || upper.startsWith('DBMS_STATS.')
       || upper.startsWith('DBMS_SCHEDULER.')
+      || upper.startsWith('DBMS_CRYPTO.')
     ) {
       this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;
