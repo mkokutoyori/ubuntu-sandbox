@@ -20,6 +20,25 @@ import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
+const DEVICE_TYPE_TO_OS_TYPE: Record<DeviceType, string> = {
+  'linux-pc': 'linux',
+  'linux-server': 'linux',
+  'mac-pc': 'linux',
+  'windows-pc': 'windows',
+  'windows-server': 'windows',
+  'switch-cisco': 'cisco-ios',
+  'switch-huawei': 'huawei-vrp',
+  'switch-generic': 'linux',
+  'router-cisco': 'cisco-ios',
+  'router-huawei': 'huawei-vrp',
+  'firewall-cisco': 'linux',
+  'firewall-fortinet': 'linux',
+  'firewall-paloalto': 'linux',
+  'hub': 'linux',
+  'access-point': 'linux',
+  'cloud': 'linux',
+};
+
 export abstract class Equipment {
   /**
    * Global registry of all Equipment instances (for topology traversal).
@@ -129,11 +148,7 @@ export abstract class Equipment {
    * Override in subclasses for specific OS types.
    */
   getOSType(): string {
-    const t = this.deviceType;
-    if (t.startsWith('linux') || t === 'mac-pc') return 'linux';
-    if (t.startsWith('windows')) return 'windows';
-    if (t.includes('cisco')) return 'cisco-ios';
-    return 'linux'; // Default to linux terminal for unknown types
+    return DEVICE_TYPE_TO_OS_TYPE[this.deviceType] ?? 'linux';
   }
 
   setName(name: string): void {
