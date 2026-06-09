@@ -4,6 +4,7 @@ import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
   type RadiusAttribute,
   createDefaultClientConfig, defaultServerEntry, attr, getAttr, makeAuthenticator,
+  encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
 import {
@@ -170,15 +171,17 @@ export class RadiusClientAgent {
     if (!egress) return;
     const srcIp = egress.port.getIPAddress();
     if (!srcIp) return;
+    const authenticator = makeAuthenticator(identifier ^ Date.now());
+    const encryptedPassword = encryptUserPassword(password, server.sharedSecret, authenticator);
     const attrs: RadiusAttribute[] = [
       attr('user-name', username),
-      attr('user-password', password),
+      attr('user-password', encryptedPassword),
       attr('nas-ip-address', srcIp.toString()),
     ];
     if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
     const payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier,
-      authenticator: makeAuthenticator(identifier ^ Date.now()),
+      authenticator,
       attributes: attrs,
     };
     const udp: UDPPacket = {

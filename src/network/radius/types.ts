@@ -1,3 +1,6 @@
+import { md5 } from '@/crypto/hash';
+import { bytesToHex, bytesToUtf8, hexToBytes, utf8ToBytes } from '@/crypto/encoding';
+
 export const UDP_PORT_RADIUS_AUTH = 1812;
 export const UDP_PORT_RADIUS_ACCT = 1813;
 
@@ -138,4 +141,52 @@ export function makeAuthenticator(seed: number): string {
     out.push(((s >>> 16) & 0xff).toString(16).padStart(2, '0'));
   }
   return out.join('');
+}
+
+export function encryptUserPassword(plain: string, secret: string, authenticatorHex: string): string {
+  const plainBytes = utf8ToBytes(plain);
+  const padded = new Uint8Array(Math.max(16, Math.ceil(plainBytes.length / 16) * 16));
+  padded.set(plainBytes);
+  const secretBytes = utf8ToBytes(secret);
+  let prev = hexToBytes(authenticatorHex);
+  const cipher = new Uint8Array(padded.length);
+  for (let off = 0; off < padded.length; off += 16) {
+    const padInput = new Uint8Array(secretBytes.length + prev.length);
+    padInput.set(secretBytes, 0);
+    padInput.set(prev, secretBytes.length);
+    const pad = md5(padInput);
+    const block = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) block[i] = padded[off + i] ^ pad[i];
+    cipher.set(block, off);
+    prev = block;
+  }
+  return bytesToHex(cipher);
+}
+
+export function decryptUserPassword(cipherHex: string, secret: string, authenticatorHex: string): string {
+  const cipher = hexToBytes(cipherHex);
+  const secretBytes = utf8ToBytes(secret);
+  let prev = hexToBytes(authenticatorHex);
+  const plain = new Uint8Array(cipher.length);
+  for (let off = 0; off < cipher.length; off += 16) {
+    const padInput = new Uint8Array(secretBytes.length + prev.length);
+    padInput.set(secretBytes, 0);
+    padInput.set(prev, secretBytes.length);
+    const pad = md5(padInput);
+    const block = cipher.subarray(off, off + 16);
+    for (let i = 0; i < 16; i++) plain[off + i] = block[i] ^ pad[i];
+    prev = block;
+  }
+  let end = plain.length;
+  while (end > 0 && plain[end - 1] === 0) end--;
+  return bytesToUtf8(plain.subarray(0, end));
+}
+
+export function isPrintablePassword(s: string): boolean {
+  if (s.length === 0) return false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c > 0x7e) return false;
+  }
+  return true;
 }

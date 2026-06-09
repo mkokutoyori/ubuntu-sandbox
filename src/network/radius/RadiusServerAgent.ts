@@ -3,6 +3,7 @@ import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
   createDefaultServerConfig, attr, getAttr, makeAuthenticator,
+  decryptUserPassword, isPrintablePassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
 import {
@@ -80,12 +81,15 @@ export class RadiusServerAgent {
     }
 
     const username = String(usernameAttr.value);
-    const password = String(passwordAttr.value);
+    const encryptedPassword = String(passwordAttr.value);
+    const decrypted = decryptUserPassword(encryptedPassword, this.config.sharedSecret, payload.authenticator);
     const user = this.config.users.get(username);
-    const accepted = !!user && user.password === password;
+    const secretLooksWrong = !isPrintablePassword(decrypted);
+    const accepted = !secretLooksWrong && !!user && user.password === decrypted;
 
     if (!accepted) {
-      const reason: 'unknown-user' | 'bad-password' = !user ? 'unknown-user' : 'bad-password';
+      const reason: 'unknown-user' | 'bad-password' | 'bad-secret' =
+        secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
       this.publishRejected(senderIp, username, reason);
     }
 

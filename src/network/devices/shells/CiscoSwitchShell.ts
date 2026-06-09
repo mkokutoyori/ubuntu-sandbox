@@ -966,9 +966,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const sw = this.d();
         const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
         const stpStates = sw._getSTPStates();
-        const root = agent?.getRootBridge();
-        const myBridgeId = agent?.getConfig?.()?.bridgeId ?? sw.getMACAddress().toString();
-        const isRoot = root?.mac === myBridgeId;
+        const isRoot = agent?.isRoot() ?? false;
         const rootForVlan = isRoot ? 'VLAN0001' : 'none';
         let blocking = 0, listening = 0, learning = 0, forwarding = 0;
         for (const state of stpStates.values()) {
