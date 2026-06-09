@@ -19,6 +19,7 @@
  *   - per-port enable: true on every interface that exists
  */
 import type { MACAddress, IPAddress, DeviceType } from '../core/types';
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 /** Cisco's SNAP-encapsulated CDP "ethertype" — used to discriminate in the sim. */
 export const ETHERTYPE_CDP = 0x2000;
@@ -32,7 +33,7 @@ export type CdpCapability = 'Router' | 'Switch' | 'Host' | 'IGMP' | 'Repeater';
  * set (real CDPv2 has ~25 TLVs; we model the ones every `show cdp
  * neighbors detail` line actually displays).
  */
-export interface CdpFrame {
+export interface CdpFrame extends NetworkPdu {
   type: 'cdp';
   version: 2;
   /** Time the receiver should keep this entry alive (sec). */

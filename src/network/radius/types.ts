@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_RADIUS_AUTH = 1812;
 export const UDP_PORT_RADIUS_ACCT = 1813;
 
@@ -62,7 +63,7 @@ export interface RadiusAttribute {
   value: string | number;
 }
 
-export interface RadiusPacket {
+export interface RadiusPacket extends NetworkPdu {
   type: 'radius';
   code: RadiusCode;
   identifier: number;

@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const PORT_TACACS = 49;
 
 export type TacacsPacketType = 'authen' | 'author' | 'acct';
@@ -130,7 +131,7 @@ export type TacacsBody =
   | TacacsAcctRequest
   | TacacsAcctReply;
 
-export interface TacacsPacket {
+export interface TacacsPacket extends NetworkPdu {
   type: 'tacacs';
   header: TacacsHeader;
   body: TacacsBody;

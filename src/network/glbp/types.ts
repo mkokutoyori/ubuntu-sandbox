@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_GLBP = 3222;
 export const GLBP_MULTICAST_IP = '224.0.0.102';
 export const GLBP_MULTICAST_MAC = '01:00:5e:00:00:66';
@@ -40,7 +41,7 @@ export interface GlbpAssignTlv {
 
 export type GlbpTlv = GlbpHelloTlv | GlbpRequestTlv | GlbpAssignTlv;
 
-export interface GlbpPacket {
+export interface GlbpPacket extends NetworkPdu {
   type: 'glbp';
   version: 1;
   group: number;

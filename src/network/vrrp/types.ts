@@ -1,10 +1,11 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const IP_PROTO_VRRP = 112;
 export const VRRP_MULTICAST_IP = '224.0.0.18';
 export const VRRP_MULTICAST_MAC = '01:00:5e:00:00:12';
 
 export type VrrpState = 'init' | 'backup' | 'master';
 
-export interface VrrpPacket {
+export interface VrrpPacket extends NetworkPdu {
   type: 'vrrp';
   version: 2;
   vrid: number;

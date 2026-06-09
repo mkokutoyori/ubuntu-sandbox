@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_EAPOL = 0x888e;
 export const EAPOL_PAE_GROUP_MAC = '01:80:c2:00:00:03';
 
@@ -42,7 +43,7 @@ export const EAP_TYPE: Record<EapType, number> = {
   peap: 25,
 };
 
-export interface EapPacket {
+export interface EapPacket extends NetworkPdu {
   type: 'eap';
   code: EapCode;
   identifier: number;
@@ -50,7 +51,7 @@ export interface EapPacket {
   payload?: string;
 }
 
-export interface EapolPacket {
+export interface EapolPacket extends NetworkPdu {
   type: 'eapol';
   version: number;
   packetType: EapolPacketType;

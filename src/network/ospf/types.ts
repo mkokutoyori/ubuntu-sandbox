@@ -434,7 +434,7 @@ export type OSPFPacketType = 1 | 2 | 3 | 4 | 5;
 // 1 = Hello, 2 = Database Description, 3 = Link State Request,
 // 4 = Link State Update, 5 = Link State Acknowledgment
 
-export interface OSPFPacketHeader {
+export interface OSPFPacketHeader extends NetworkPdu {
   type: 'ospf';
   /** OSPF version (2 or 3) */
   version: number;

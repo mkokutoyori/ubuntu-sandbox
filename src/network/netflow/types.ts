@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_NETFLOW = 2055;
 export const NETFLOW_V5_MAX_RECORDS = 30;
 export const NETFLOW_V5_VERSION = 5;
@@ -35,7 +36,7 @@ export interface NetFlowV5Header {
   samplingInterval: number;
 }
 
-export interface NetFlowV5Packet {
+export interface NetFlowV5Packet extends NetworkPdu {
   type: 'netflow-v5';
   header: NetFlowV5Header;
   records: NetFlowV5Record[];

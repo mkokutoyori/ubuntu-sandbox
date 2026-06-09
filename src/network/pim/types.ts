@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const IP_PROTO_PIM = 103;
 export const PIM_ALL_ROUTERS = '224.0.0.13';
 export const PIM_ALL_ROUTERS_MAC = '01:00:5e:00:00:0d';
@@ -34,7 +35,7 @@ export interface PimJoinPruneBody {
   groups: PimJoinPruneGroup[];
 }
 
-export interface PimPacket {
+export interface PimPacket extends NetworkPdu {
   type: 'pim';
   version: 2;
   messageType: PimMessageType;

@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const IP_PROTO_GRE = 47;
 
 export const GRE_PROTOCOL_IPV4 = 0x0800;
@@ -5,7 +6,7 @@ export const GRE_PROTOCOL_IPV6 = 0x86dd;
 export const GRE_PROTOCOL_MPLS = 0x8847;
 export const GRE_PROTOCOL_ARP = 0x0806;
 
-export interface GrePacket {
+export interface GrePacket extends NetworkPdu {
   type: 'gre';
   checksumPresent: boolean;
   keyPresent: boolean;
