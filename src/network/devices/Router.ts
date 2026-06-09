@@ -806,6 +806,30 @@ export abstract class Router extends Equipment {
         srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
         etherType: ETHERTYPE_ARP, payload: reply,
       });
+    } else if (arp.operation === 'request' && port.isProxyArpEnabled()) {
+      const targetMask = port.getSubnetMask();
+      if (targetMask && !myIP.isInSameSubnet(arp.targetIP, targetMask)) {
+        const route = this.lookupRoute(arp.targetIP);
+        if (route && route.iface !== portName) {
+          const reply: ARPPacket = {
+            type: 'arp', operation: 'reply',
+            senderMAC: port.getMAC(), senderIP: arp.targetIP,
+            targetMAC: arp.senderMAC, targetIP: arp.senderIP,
+          };
+          this.sendFrame(portName, {
+            srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
+            etherType: ETHERTYPE_ARP, payload: reply,
+          });
+          this.getBus().publish({
+            topic: 'arp.proxy.responded',
+            payload: {
+              deviceId: this.id, hostname: this.getHostname(),
+              port: portName, targetIp: arp.targetIP.toString(),
+              senderIp: arp.senderIP.toString(), viaIface: route.iface,
+            },
+          });
+        }
+      }
     } else if (arp.operation === 'reply') {
       // Phase 5.8: callers awaiting resolution use waitForEvent('host.arp.entry-learned').
       // The receive handler just flushes the packet queue waiting on this IP.

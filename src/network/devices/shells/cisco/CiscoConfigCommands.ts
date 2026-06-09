@@ -435,7 +435,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.register('ip proxy-arp', 'Enable proxy-ARP', () => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { proxyArp?: boolean }).proxyArp = true;
+    if (port) port.setProxyArp(true);
     return '';
   });
   trie.register('ip redirects', 'Enable ICMP redirects', () => {

@@ -721,14 +721,14 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
-    if (port) (port as any).proxyArp = true;
+    if (port) port.setProxyArp(true, true);
     return '';
   });
   trie.register('undo arp-proxy enable', 'Disable proxy-ARP', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
-    if (port) (port as any).proxyArp = false;
+    if (port) port.setProxyArp(false, true);
     return '';
   });
   trie.register('arp broadcast enable', 'Enable ARP broadcast (sub-if)', () => {

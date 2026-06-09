@@ -899,7 +899,9 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   }
   if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
   if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
-  if (port.proxyArp) lines.push(` arp-proxy enable`);
+  if (typeof port.isProxyArpExplicit === 'function' && port.isProxyArpExplicit() && port.isProxyArpEnabled?.()) {
+    lines.push(` arp-proxy enable`);
+  }
   if (port.arpTimeoutSec !== undefined && port.arpTimeoutSec !== 4 * 60 * 60 && typeof port.getArpTimeoutSec === 'function') {
     lines.push(` arp expire-time ${port.getArpTimeoutSec()}`);
   }
