@@ -22,6 +22,7 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
+import { UdpStack } from '../udp/UdpStack';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -39,6 +40,7 @@ import {
   ARPPacket, ICMPPacket, UDPPacket, TCPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP,
+  ICMP_CODE_PORT_UNREACHABLE, ICMP_CODE_ADMIN_PROHIBITED,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
@@ -195,6 +197,9 @@ export abstract class EndHost extends Equipment {
   protected ipv6RoutingTable: HostIPv6RouteEntry[] = [];
 
   protected readonly tcpv2: TcpStack;
+
+  /** UDP transport (RFC 768) — real datagrams over the simulated network. */
+  protected readonly udpv2: UdpStack;
 
   // ─── DHCP Client (RFC 2131) ─────────────────────────────────────
   protected dhcpClient: DHCPClient;
@@ -475,6 +480,16 @@ export abstract class EndHost extends Equipment {
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
     this.tcpv2.start();
+    this.udpv2 = new UdpStack({
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPorts: () => this.getPorts(),
+      resolveRoute: (dstIp: IPAddress) => this.resolveRoute(dstIp),
+      resolveMacAddress: (portName: string, nextHopIp: IPAddress, timeoutMs?: number) =>
+        this.resolveARP(portName, nextHopIp, timeoutMs),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      getDefaultTtl: () => this.defaultTTL,
+    }, () => this.getBus());
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
@@ -1072,6 +1087,13 @@ export abstract class EndHost extends Equipment {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
+      } else if (ipPkt.protocol === IP_PROTO_UDP) {
+        const delivered = this.udpv2.handleIp(portName, ipPkt);
+        // RFC 1122 §4.1.3.1: closed port → ICMP Port Unreachable.
+        // RFC 1122 §3.2.2: never send ICMP errors for broadcast datagrams.
+        if (!delivered && !isBroadcast) {
+          this.sendICMPDestinationUnreachable(portName, ipPkt, ICMP_CODE_PORT_UNREACHABLE);
+        }
       }
       return;
     }
@@ -1318,7 +1340,20 @@ export abstract class EndHost extends Equipment {
    * Send ICMP destination-unreachable (admin prohibited) back to the sender.
    * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
    */
+  /** Firewall 'reject' verdict → ICMP admin-prohibited (RFC 1812 §5.3.7). */
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
+    this.sendICMPDestinationUnreachable(portName, offendingPkt, ICMP_CODE_ADMIN_PROHIBITED);
+  }
+
+  /**
+   * Send ICMP Destination Unreachable (type 3) back to the offending
+   * packet's source, embedding the original packet per RFC 792.
+   */
+  private sendICMPDestinationUnreachable(
+    portName: string,
+    offendingPkt: IPv4Packet,
+    code: number,
+  ): void {
     const port = this.ports.get(portName);
     if (!port) return;
     const myIP = port.getIPAddress();
@@ -1327,7 +1362,7 @@ export abstract class EndHost extends Equipment {
     const icmpError: ICMPPacket = {
       type: 'icmp',
       icmpType: 'destination-unreachable',
-      code: 13, // Communication administratively prohibited
+      code,
       id: 0,
       sequence: 0,
       dataSize: 0,
@@ -1362,6 +1397,11 @@ export abstract class EndHost extends Equipment {
    * new server-side TcpConnection so it can set up onData() before data arrives.
    */
   public getTcpStack(): TcpStack { return this.tcpv2; }
+
+  // ─── UDP Transport (RFC 768) ───────────────────────────────────
+
+  /** The host's UDP stack — services listen, clients send datagrams. */
+  public getUdpStack(): UdpStack { return this.udpv2; }
 
   public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
     const socket = this.tcpv2.connect(dstIp, dstPort);
