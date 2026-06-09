@@ -913,8 +913,9 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 ### 8.4 Builtins / utilitaires « canned » déconnectés de l'état machine
 - **Constat** : `md5sum`/`sha256sum`/`sha1sum` génèrent une empreinte **purement aléatoire** (`Math.random()`) sans lire le contenu réel du fichier via le VFS — deux exécutions consécutives sur le même fichier renvoient des hachages différents, et `file` renvoie systématiquement `"<target>: ASCII text"` sans inspecter le contenu.
 - **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2341-2347` (hash `Array.from({length:...}, () => Math.floor(Math.random()*16)...)`) et `LinuxCommandExecutor.ts:2336-2339`.
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Recommandation** : calculer un hachage déterministe (ex. simple FNV/CRC32 du contenu lu via `vfs.readFile`) pour que `md5sum file1 file2` et les vérifications de cohérence (`md5sum -c`) donnent des résultats stables et exploitables dans les scripts pédagogiques.
+- **Correction appliquée** : `checksumVfs()` (`src/network/devices/linux/LinuxCommandExecutor.ts`) remplace l'ancienne implémentation FNV pseudo-aléatoire par un appel direct au module partagé `src/crypto/hash` — `md5Hex(content)`, `sha1Hex(content)`, `sha256Hex(content)` selon la commande invoquée. Import ajouté : `import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash'`. La vérification `md5sum -c` utilise désormais la vraie empreinte pour comparer, ce qui rend `md5sum file > checksums.txt; md5sum -c checksums.txt` fonctionnel dans les scripts. Validé par les 383 tests bash (`npx vitest run src/__tests__/unit/bash/`) — 0 régression.
 
 - **Constat** : `tar`, `gzip`, `gunzip`, `zip`, `unzip` sont de purs no-ops renvoyant une sortie vide, sans aucun effet de bord sur le VFS (pas de création d'archive, pas de décompression, pas de modification de la taille/contenu des fichiers).
 - **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2349-2354`.
@@ -931,11 +932,12 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 - **Sévérité** : Mineure
 - **Recommandation** : router ces commandes vers le même chemin réel que `Ping.ts` même depuis l'intérieur de l'interpréteur bash (scripts/`bash -c`) afin que `ping` dans un script shell produise des résultats cohérents avec la topologie simulée (latence selon la distance réseau, échec si hôte injoignable).
 
-### 8.5 Réseau (`netstat`/`ss`/`ip`) — violations MVC partielles
+### 8.5 Réseau (`netstat`/`ss`/`ip`) — violations MVC partielles — ✅ CORRIGÉ (constat 1)
 - **Constat** : `netstat -r` (table de routage) et `netstat -i` (statistiques d'interfaces) renvoient un texte **entièrement statique** (« `0.0.0.0  10.0.0.1  ...  eth0` », compteurs RX/TX figés) — le paramètre `ctx: IpNetworkContext` reçu par `cmdNetstat` n'est jamais déréférencé dans ces deux branches, donc la sortie ne reflète ni les IP/masques réellement configurés sur la machine, ni les vraies statistiques de trafic.
 - **Preuve** : `src/network/devices/linux/LinuxNetCommands.ts:115-130` (les littéraux `'0.0.0.0 10.0.0.1 ... eth0'`/`'eth0 1500 1024 ...'`) ; absence de toute référence `ctx.` dans le corps de `cmdNetstat` (`LinuxNetCommands.ts:99-191`).
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Recommandation** : dériver ces tableaux de `ctx.getRoutingTable()` / `ctx.getInterfaceInfo()` (déjà exposés par `IpNetworkContext`, voir `LinuxIpCommand.ts:45-65`) — l'infrastructure existe, il suffit de la brancher.
+- **Statut** : Correction déjà appliquée dans une passe antérieure — `cmdNetstat` (`src/network/devices/linux/LinuxNetCommands.ts:113-160`) utilise désormais `ctx.getRoutingTable()` et `ctx.getInterfaceInfo()`/`ctx.getInterfaceNames()` pour construire les tableaux `-r` et `-i` ; le fallback statique ne s'applique que quand `ctx` est `null` (cas dégradé, jamais atteint en usage normal).
 
 - **Constat** : `ss -s` (résumé) renvoie des compteurs globaux figés (« Total: 120 », « TCP: 8 ... ») sans rapport avec le `SocketTable` réel de la machine ; le chemin de repli (`else` quand `socketTable` est absent) imprime des PID fixes (`pid=985`, `pid=2001`, `pid=1200`) déconnectés de la table de processus réelle.
 - **Preuve** : `src/network/devices/linux/LinuxNetCommands.ts:212-221` (bloc `summary`) et `LinuxNetCommands.ts:258-268` (fallback avec PID en dur).
@@ -953,16 +955,14 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 - **Sévérité** : Mineure (limite assumée et documentée)
 - **Recommandation** : si une intégration `Scheduler` est ajoutée pour `cron`, étendre la même mécanique à `LinuxAtQueue` pour cohérence.
 
-### 8.7 Code mort / duplication — plusieurs implémentations concurrentes
+### 8.7 Code mort / duplication — plusieurs implémentations concurrentes — ✅ CORRIGÉ
 - **Constat** : `LinuxScriptExecutor.ts` (412 lignes) est un **second interpréteur de scripts shell entièrement mort** — `executeScript`/`executeScriptContent` ne sont importés/référencés nulle part dans `src/`. Il réimplémente, en moins bien, ce que fait `BashInterpreter` : sa fonction `resolveVars` traite la substitution de commande `$(cmd)` en renvoyant **le texte littéral de la commande** (pas son résultat), utilise `Function(...)` (équivalent `eval`) pour l'arithmétique, et procède par chaînes de `replace` regex plutôt que par AST.
 - **Preuve** : `src/network/devices/linux/LinuxScriptExecutor.ts:392,401-404` (`// Command substitution - simplified` ; `return cmd;`) ; absence de toute référence externe (`grep -rln "LinuxScriptExecutor|executeScriptContent"` ne retourne que le fichier lui-même).
-- **Sévérité** : Majeure
-- **Recommandation** : supprimer purement et simplement ce fichier — il s'agit d'une ancienne génération remplacée par `BashInterpreter`/`ScriptRunner`, et sa présence risque d'induire en erreur un futur contributeur qui le réutiliserait par accident (sa sémantique de substitution de commande est fausse).
+- **Sévérité** : Majeure — ✅ CORRIGÉ (fichier déjà supprimé dans une passe antérieure)
 
 - **Constat** : `LinuxSystemCommands.ts` contient trois fonctions exportées **mortes et redondantes** — `cmdSystemctl(args, isServer: boolean)`, `cmdService(args, isServer: boolean)` et `cmdTop(...)` — qui dupliquent (avec une signature plus pauvre, basée sur un simple booléen `isServer` plutôt que sur le `LinuxServiceManager`/`LinuxProcessManager` réels) les fonctions homonymes effectivement utilisées dans `LinuxProcessCommands.ts`. La version morte produit des valeurs aléatoires (`Math.random()` pour mémoire/CPU/tâches) et un PID calculé par formule (`1000 + index`) plutôt que dérivé de la table de processus.
 - **Preuve** : définitions mortes en `src/network/devices/linux/LinuxSystemCommands.ts:56` (`cmdSystemctl`), `:198` (`cmdService`), `:377` (`cmdTop`) avec, par ex., `Math.floor(Math.random() * 5) + 1` à la ligne 87 et `Main PID: ${1000 + services.indexOf(svc)}` à la ligne 86 ; import effectif des homonymes vivants depuis `LinuxProcessCommands` en `LinuxCommandExecutor.ts:51` (`cmdSystemctl`, `cmdService`, `cmdTop` — utilisés lignes 2276-2277, 2285-2286) ; seules `cmdDf/cmdDu/cmdFree/cmdMount/cmdLsblk` de `LinuxSystemCommands.ts` sont importées (`LinuxCommandExecutor.ts:36`).
-- **Sévérité** : Majeure
-- **Recommandation** : supprimer les trois fonctions mortes de `LinuxSystemCommands.ts` (et renommer le fichier en quelque chose comme `LinuxDiskCommands.ts` puisqu'il ne contient plus que `df`/`du`/`free`/`mount`/`lsblk`), pour éviter toute confusion entre deux implémentations de `systemctl status` aux comportements radicalement différents (l'une dérivée de l'état réel des services, l'autre aléatoire).
+- **Sévérité** : Majeure — ✅ CORRIGÉ (fonctions mortes déjà supprimées dans une passe antérieure — `LinuxSystemCommands.ts` ne contient désormais plus que `cmdDf`/`cmdDu`/`cmdFree`/`cmdMount`/`cmdLsblk`)
 
 ### 8.8 God-class et organisation
 - **Constat** : `LinuxCommandExecutor.ts` totalise 3 842 lignes, ~127 méthodes privées et 227 branches `case` dans son dispatcher de commandes — un fichier « orchestrateur » qui mélange dispatch de commandes, gestion SSH/SFTP/SCP, gestion utilisateurs (`adduser`/`passwd`/`gpasswd`), IPsec (`ipsec`/`strongswan`), jobs en arrière-plan, ACL, etc.
