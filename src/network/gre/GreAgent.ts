@@ -1,7 +1,7 @@
 import type { IEventBus } from '@/events/EventBus';
 import {
   type GreConfig, type GreTunnel, type GrePacket,
-  createDefaultGreConfig, defaultTunnel, matchTunnel,
+  createDefaultGreConfig, defaultTunnel, matchTunnel, computeGreChecksum,
   IP_PROTO_GRE, GRE_PROTOCOL_IPV4,
 } from './types';
 import {
@@ -81,6 +81,18 @@ export class GreAgent {
     if (t) t.enabled = on;
   }
 
+  setSequenceEnabled(tunnelId: string, on: boolean): void {
+    const t = this.config.tunnels.get(tunnelId);
+    if (!t) return;
+    t.sequenceEnabled = on;
+    if (!on) { t.sendSeq = 0; t.expectedRecvSeq = 0; }
+  }
+
+  setChecksumEnabled(tunnelId: string, on: boolean): void {
+    const t = this.config.tunnels.get(tunnelId);
+    if (t) t.checksumEnabled = on;
+  }
+
   getTunnel(tunnelId: string): GreTunnel | undefined { return this.config.tunnels.get(tunnelId); }
 
   listTunnels(): GreTunnel[] {
@@ -99,19 +111,25 @@ export class GreAgent {
     if (!egress) { this.dropped(t.sourceIp, t.destinationIp, 'no-egress'); return false; }
     const srcIp = egress.port.getIPAddress();
     if (!srcIp) { this.dropped(t.sourceIp, t.destinationIp, 'no-source-ip'); return false; }
+    const sequence = t.sequenceEnabled ? t.sendSeq : null;
+    if (t.sequenceEnabled) t.sendSeq = (t.sendSeq + 1) >>> 0;
     const gre: GrePacket = {
       type: 'gre',
-      checksumPresent: false,
+      checksumPresent: t.checksumEnabled,
       keyPresent: t.key !== null,
-      sequencePresent: false,
+      sequencePresent: t.sequenceEnabled,
       version: 0,
       protocolType,
       checksum: 0,
       key: t.key,
-      sequence: null,
+      sequence,
       payload: innerPacket,
     };
-    const headerLen = 4 + (t.key !== null ? 4 : 0);
+    if (t.checksumEnabled) gre.checksum = computeGreChecksum(gre);
+    const headerLen = 4
+      + (t.checksumEnabled ? 4 : 0)
+      + (t.key !== null ? 4 : 0)
+      + (t.sequenceEnabled ? 4 : 0);
     const outer: IPv4Packet = {
       type: 'ipv4', version: 4, ihl: 5, tos: 0,
       totalLength: 20 + headerLen + innerPacket.totalLength,
@@ -157,6 +175,23 @@ export class GreAgent {
       this.dropped(srcIp.toString(), ipPkt.destinationIP.toString(), reason);
       return null;
     }
+    if (tunnel.checksumEnabled && gre.checksumPresent) {
+      const wireChecksum = gre.checksum;
+      const recomputed = computeGreChecksum({ ...gre, checksum: 0 });
+      if (wireChecksum !== recomputed) {
+        tunnel.checksumDrops++;
+        this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'checksum-mismatch');
+        return null;
+      }
+    }
+    if (tunnel.sequenceEnabled && gre.sequencePresent && gre.sequence !== null) {
+      if (gre.sequence < tunnel.expectedRecvSeq) {
+        tunnel.outOfOrderDrops++;
+        this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'out-of-order');
+        return null;
+      }
+      tunnel.expectedRecvSeq = (gre.sequence + 1) >>> 0;
+    }
     tunnel.packetsIn++;
     tunnel.bytesIn += ipPkt.totalLength;
     const inner = gre.payload as IPv4Packet | undefined;
@@ -185,7 +220,7 @@ export class GreAgent {
   }
 
   private dropped(sourceIp: string, destinationIp: string,
-                  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down'): void {
+                  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down' | 'checksum-mismatch' | 'out-of-order'): void {
     this.getBus().publish({
       topic: 'gre.packet.dropped',
       payload: {
