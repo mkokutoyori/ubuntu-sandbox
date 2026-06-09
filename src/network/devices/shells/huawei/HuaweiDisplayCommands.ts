@@ -10,6 +10,7 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { IPAddress } from '../../../core/types';
+import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import {
@@ -574,14 +575,19 @@ export function displayCurrentConfig(
   }
 
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean }>;
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router).filter(u => !u.factoryDefault);
     if (users.length > 0) {
       lines.push('aaa');
       for (const u of users) {
-        lines.push(` local-user ${u.name} password cipher ${u.secret}`);
+        // Real VRP never echoes the cleartext: 'cipher' is reversible
+        // (AES), everything else is hashed one-way (irreversible-cipher).
+        const field = u.secretAlgo === 'cipher'
+          ? `password cipher ${huaweiCipher(u.secret)}`
+          : `password irreversible-cipher ${huaweiIrreversibleCipher(u.secret)}`;
+        lines.push(` local-user ${u.name} ${field}`);
         lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
         lines.push(` local-user ${u.name} service-type ssh`);
       }

@@ -1335,13 +1335,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'type-7') => void };
-      let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = 'md5';
+      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
       let secret = '';
       if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
       else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
-      else if (args[0] === '8' || args[0] === '9') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
         secret = args.slice(2).join(' ');
       } else { secret = args.join(' '); }
@@ -1364,14 +1365,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('username', 'Configure a local user', (args) => {
       const dev = this.d() as unknown as {
         _upsertCiscoUsername?: (name: string, kv: {
-          privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+          privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
           autocommand?: string; nopassword?: boolean; description?: string;
         }) => void;
       };
       const name = args[0];
       if (!name || typeof dev._upsertCiscoUsername !== 'function') return '';
       const kv: {
-        privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+        privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
         autocommand?: string; nopassword?: boolean; description?: string;
       } = {};
       for (let i = 1; i < args.length; i++) {
@@ -1383,13 +1384,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (tok === 'secret' || tok === 'password') {
           const isSecret = tok === 'secret';
           const next = args[i + 1];
-          let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = isSecret ? 'md5' : 'plain';
+          let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = isSecret ? 'md5' : 'plain';
           let value: string;
           if (next === '0') { algo = 'plain'; value = args[i + 2] ?? ''; i += 2; }
           else if (next === '5') { algo = 'md5'; value = args[i + 2] ?? ''; i += 2; }
           else if (next === '7') { algo = 'type-7'; value = args[i + 2] ?? ''; i += 2; }
           else if (next === '8') { algo = 'sha256'; value = args[i + 2] ?? ''; i += 2; }
-          else if (next === '9') { algo = 'sha256'; value = args[i + 2] ?? ''; i += 2; }
+          else if (next === '9') { algo = 'scrypt'; value = args[i + 2] ?? ''; i += 2; }
           else { value = next ?? ''; i++; }
           kv.secret = value;
           kv.secretAlgo = algo;

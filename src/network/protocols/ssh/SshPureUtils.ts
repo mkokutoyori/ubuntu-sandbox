@@ -8,6 +8,7 @@
 
 import { SshFingerprint } from './SshFingerprint';
 import { SshHostKey, type SshKeyAlgorithm } from './SshHostKey';
+import { hmac, SHA1, sha1, bytesToBase64, base64ToBytes, utf8ToBytes } from '@/crypto';
 
 export interface KnownHostEntry {
   readonly host: string;
@@ -64,16 +65,17 @@ export function formatKnownHostsEntry(host: string, key: SshHostKey): string {
 
 /**
  * Produce an OpenSSH-style `|1|<salt>|<hash>` host token for the
- * `HashKnownHosts yes` mode. Real OpenSSH uses HMAC-SHA1 over the host name
- * with a random per-entry salt. The simulator has no crypto (BRD C-02), so
- * we use a deterministic non-cryptographic hash that still round-trips
- * through `matchHashedHost`. The shape (`|1|…|…`) is faithful so that the
- * file is visually indistinguishable from an OpenSSH `known_hosts`.
+ * `HashKnownHosts yes` mode: HMAC-SHA1 over the host name, keyed by the raw
+ * (base64-decoded) salt, with both fields base64-encoded — exactly the real
+ * OpenSSH format. The salt is derived deterministically per host (OpenSSH
+ * uses 20 random bytes; the simulator favours stability so the same host
+ * always hashes identically and `matchHashedHost` round-trips).
  */
 export function hashKnownHostsToken(host: string, salt?: string): string {
-  const effectiveSalt = salt ?? deriveSalt(host);
-  const hash = simulatedHmac(effectiveSalt, host);
-  return `|1|${effectiveSalt}|${hash}`;
+  const saltB64 = salt ?? deriveSalt(host);
+  const saltBytes = base64ToBytes(saltB64);
+  const hashB64 = bytesToBase64(hmac(SHA1, saltBytes, utf8ToBytes(host)));
+  return `|1|${saltB64}|${hashB64}`;
 }
 
 export function isHashedKnownHostsToken(host: string): boolean {
@@ -88,26 +90,12 @@ export function matchHashedHost(hashedToken: string, candidate: string): boolean
   return hashKnownHostsToken(candidate, salt) === hashedToken;
 }
 
+/**
+ * Deterministic 20-byte salt (SHA-1 output size) for a host, base64-encoded.
+ * Stable across runs so a given host always produces the same token.
+ */
 function deriveSalt(host: string): string {
-  return base64UrlSafe(`salt:${host}`).slice(0, 20);
-}
-
-function simulatedHmac(salt: string, host: string): string {
-  let h = 0x811c9dc5;
-  const mat = `${salt}|${host}`;
-  for (let i = 0; i < mat.length; i++) {
-    h ^= mat.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
-  }
-  const hex = h.toString(16).padStart(8, '0');
-  return base64UrlSafe(`hmac:${hex}:${host}:${salt}`).slice(0, 28);
-}
-
-function base64UrlSafe(input: string): string {
-  const b64 = typeof btoa === 'function'
-    ? btoa(unescape(encodeURIComponent(input)))
-    : Buffer.from(input, 'utf-8').toString('base64');
-  return b64.replace(/=+$/, '');
+  return bytesToBase64(sha1(utf8ToBytes(`salt:${host}`)));
 }
 
 export function parseSshConfigBlock(block: string): SshHostConfig {

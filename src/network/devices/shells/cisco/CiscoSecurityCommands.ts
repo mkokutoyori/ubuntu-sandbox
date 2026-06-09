@@ -122,7 +122,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     const name = args[0];
     let privilege: number | undefined;
     let secret: string | undefined;
-    let secretAlgo: 'plain' | 'md5' | 'sha256' | 'type-7' = 'plain';
+    let secretAlgo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
     let nopassword = false;
     let description: string | undefined;
     for (let i = 1; i < args.length; i++) {
@@ -135,9 +135,10 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; break; }
         if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
         if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
+        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
         if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; break;
+        // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; break;
       }
       else if (t === 'password') {
         const next = args[i + 1];
@@ -149,7 +150,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     const router = ctx.r() as unknown as {
       _upsertCiscoUsername?: (n: string, kv: {
         privilege?: number; secret?: string;
-        secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+        secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
         nopassword?: boolean; description?: string;
       }) => void;
     };
@@ -161,16 +162,17 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   });
 
   trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-    let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = 'md5';
+    let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
     let secret: string;
     if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
     else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
     else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
-    else if (args[0] === '8' || args[0] === '9') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+    else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+    else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
     else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) { secret = args.slice(2).join(' '); }
     else { secret = args.join(' '); }
     sec().enableSecret = secret;
-    const r = ctx.r() as unknown as { _setEnableSecret?: (s: string, a: 'plain' | 'md5' | 'sha256' | 'type-7') => void };
+    const r = ctx.r() as unknown as { _setEnableSecret?: (s: string, a: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
     r._setEnableSecret?.(secret, algo);
     return '';
   });

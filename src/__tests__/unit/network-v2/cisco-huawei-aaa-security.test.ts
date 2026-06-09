@@ -770,6 +770,6 @@ describe('§P — Cisco username captures hash algorithm + secret form', () => {
     await lab.ciscoR1.executeCommand('username admin secret 9 $9$xyz');
     await lab.ciscoR1.executeCommand('end');
     const acc = lab.ciscoR1.getCredentialStore().get('admin');
-    expect(acc?.passwordHashAlgorithm).toBe('sha256');
+    expect(acc?.passwordHashAlgorithm).toBe('scrypt');
   });
 });
