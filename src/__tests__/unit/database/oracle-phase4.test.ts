@@ -774,5 +774,40 @@ describe('Additional Oracle Functions', () => {
       const result = exec(db, `SELECT * FROM scores WHERE ROWNUM <= 1`);
       expect(result.rows.length).toBe(1);
     });
+
+    test('WHERE ROWNUM = 1 returns the first row', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM = 1`);
+      expect(result.rows.length).toBe(1);
+    });
+
+    test('WHERE ROWNUM = 2 returns no rows (Oracle semantics)', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM = 2`);
+      expect(result.rows.length).toBe(0);
+    });
+
+    test('WHERE ROWNUM > 1 returns no rows (Oracle semantics)', () => {
+      const result = exec(db, `SELECT * FROM scores WHERE ROWNUM > 1`);
+      expect(result.rows.length).toBe(0);
+    });
+
+    test('ROWNUM counts only rows passing the rest of the predicate', () => {
+      const result = exec(db, `SELECT student FROM scores WHERE subject = 'Science' AND ROWNUM <= 2`);
+      expect(result.rows.length).toBe(2);
+    });
+
+    test('SELECT ROWNUM projects sequential numbers', () => {
+      const result = exec(db, `SELECT ROWNUM, student FROM scores WHERE subject = 'Science'`);
+      const nums = result.rows.map((r: any[]) => r[0]);
+      expect(nums).toEqual([1, 2, 3]);
+    });
+
+    test('ROWNUM in subquery does not clobber outer query ROWNUM', () => {
+      const result = exec(
+        db,
+        `SELECT ROWNUM, student FROM scores WHERE subject = (SELECT subject FROM scores WHERE ROWNUM = 1)`
+      );
+      const nums = result.rows.map((r: any[]) => r[0]);
+      expect(nums).toEqual(nums.map((_: any, i: number) => i + 1));
+    });
   });
 });
