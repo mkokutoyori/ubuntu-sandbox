@@ -34,6 +34,17 @@ describe('renderSecretField (enable secret / username secret)', () => {
     );
   });
 
+  it('hashes a plaintext sha256 secret with real type-8 (PBKDF2)', () => {
+    const out = renderSecretField('cisco', 'sha256');
+    expect(out).toMatch(/^8 \$8\$[./0-9A-Za-z]{14}\$[./0-9A-Za-z]{43}$/);
+    expect(out).not.toContain(' cisco');
+  });
+
+  it('preserves the type number of a pre-hashed $8$/$9$ value', () => {
+    expect(renderSecretField('$8$abcdefghijklmn$0123', 'sha256')).toBe('8 $8$abcdefghijklmn$0123');
+    expect(renderSecretField('$9$abcdefghijklmn$0123', 'sha256')).toBe('9 $9$abcdefghijklmn$0123');
+  });
+
   it('renders a plaintext (type 0) secret verbatim', () => {
     expect(renderSecretField('cisco', 'plain')).toBe('0 cisco');
   });

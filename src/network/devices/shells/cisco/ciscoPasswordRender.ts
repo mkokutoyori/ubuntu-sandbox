@@ -8,26 +8,33 @@
  * algorithms in `@/crypto`, so the simulator stops leaking plaintext.
  */
 
-import { md5Crypt, encryptType7, md5Hex } from '@/crypto';
-
-/** A value already in modular-crypt form ("$1$…", "$5$…", "$6$…"). */
-const CRYPT_PREFIX = /^\$\d+\$/;
+import { md5Crypt, ciscoType8, encryptType7, md5Hex } from '@/crypto';
 
 export type SecretAlgo = 'plain' | 'md5' | 'sha256' | 'type-7';
 
+/** Map a modular-crypt prefix to the Cisco "type" number IOS prints for it. */
+function cryptPrefixType(value: string): number | null {
+  if (value.startsWith('$1$')) return 5; // md5crypt
+  if (value.startsWith('$8$')) return 8; // pbkdf2-sha256
+  if (value.startsWith('$9$')) return 9; // scrypt
+  return null;
+}
+
 /**
  * Render the `<type-number> <value>` suffix of an `enable secret` /
- * `username … secret` line. A plaintext md5 secret becomes a real md5crypt
- * hash; pre-hashed and other-typed values pass through untouched.
+ * `username … secret` line. Plaintext is hashed with the real algorithm for
+ * its type (md5crypt for type-5, PBKDF2 for type-8); values already in
+ * modular-crypt form pass through under their own type number.
  */
 export function renderSecretField(value: string, algo: SecretAlgo): string {
-  if (CRYPT_PREFIX.test(value)) return `5 ${value}`;
+  const preHashed = cryptPrefixType(value);
+  if (preHashed !== null) return `${preHashed} ${value}`;
   switch (algo) {
     case 'md5':
       return `5 ${md5Crypt(value, deriveCryptSalt(value))}`;
     case 'sha256':
-      // PBKDF2 (type 8) / scrypt (type 9) are not modelled yet — pass through.
-      return `8 ${value}`;
+      // type-8 (PBKDF2-HMAC-SHA256). type-9 (scrypt) is not modelled yet.
+      return `8 ${ciscoType8(value, deriveType8Salt(value))}`;
     case 'type-7':
       return `7 ${value}`;
     default:
@@ -56,6 +63,11 @@ export function renderPasswordField(
  */
 function deriveCryptSalt(seed: string): string {
   return md5Hex(`cisco-secret:${seed}`).slice(0, 8);
+}
+
+/** Deterministic 14-char type-8 salt (hex is a subset of the crypt alphabet). */
+function deriveType8Salt(seed: string): string {
+  return md5Hex(`cisco-type8:${seed}`).slice(0, 14);
 }
 
 /** Deterministic type-7 key offset in [0, 15] derived from the secret. */

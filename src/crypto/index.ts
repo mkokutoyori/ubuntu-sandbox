@@ -11,10 +11,12 @@
  *   encoding/   bytes ↔ hex / base64 / utf-8
  *   hash/       md5, sha1, sha256 (+ the HashAlgorithm abstraction)
  *   mac/        hmac (parameterised by any HashAlgorithm)
- *   passwords/  vendor password schemes (Cisco type-7, …)
+ *   kdf/        pbkdf2 (parameterised by any HashAlgorithm)
+ *   passwords/  vendor password schemes (Cisco type-7 / type-8, md5crypt, …)
  */
 
 export * from './encoding';
 export * from './hash';
 export * from './mac';
+export * from './kdf';
 export * from './passwords';
