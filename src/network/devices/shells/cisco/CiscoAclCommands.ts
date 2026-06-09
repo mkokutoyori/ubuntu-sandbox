@@ -70,7 +70,7 @@ function resolvePortName(token: string): number | null {
   return v ?? null;
 }
 
-function parsePortSpec(args: string[], offset: number): { spec: import('../../../acl/ACLEngine').PortSpec; consumed: number } | null {
+function parsePortSpec(args: string[], offset: number): { spec: import('../../router/ACLEngine').PortSpec; consumed: number } | null {
   if (offset >= args.length) return null;
   const op = args[offset].toLowerCase();
   if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'lt') {
@@ -99,8 +99,8 @@ const ICMP_TYPE_KEYWORDS = new Set([
 ]);
 
 interface ExtendedOptions {
-  srcPortSpec?: import('../../../acl/ACLEngine').PortSpec;
-  dstPortSpec?: import('../../../acl/ACLEngine').PortSpec;
+  srcPortSpec?: import('../../router/ACLEngine').PortSpec;
+  dstPortSpec?: import('../../router/ACLEngine').PortSpec;
   icmpType?: string;
   icmpCode?: number;
   tcpEstablished?: boolean;
