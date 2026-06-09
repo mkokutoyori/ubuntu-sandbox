@@ -1210,10 +1210,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
-      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof dev._setSshBanner === 'function' && args[0]?.toLowerCase() === 'motd') {
-        const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
-        dev._setSshBanner(rest);
+      const dev = this.d() as unknown as {
+        _setSshBanner?: (b: string) => void;
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+      };
+      const which = args[0]?.toLowerCase();
+      const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
+      if (which === 'motd') {
+        dev._setMotdBanner?.(rest);
+        dev._setSshBanner?.(rest);
+      } else if (which === 'login') {
+        dev._setLoginBanner?.(rest);
+      } else if (which === 'exec') {
+        dev._setExecBanner?.(rest);
       }
       return '';
     });

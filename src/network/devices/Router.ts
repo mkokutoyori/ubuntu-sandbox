@@ -1570,9 +1570,19 @@ export abstract class Router extends Equipment {
   }
 
   getBanner(type: string): string {
-    if (type === 'motd') return '';
+    if (type === 'motd') return this.motdBannerText;
+    if (type === 'login') return this.loginBannerText;
+    if (type === 'exec') return this.execBannerText;
     return '';
   }
+
+  protected motdBannerText: string = '';
+  protected loginBannerText: string = '';
+  protected execBannerText: string = '';
+
+  _setMotdBanner(text: string): void { this.motdBannerText = text; }
+  _setLoginBanner(text: string): void { this.loginBannerText = text; }
+  _setExecBanner(text: string): void { this.execBannerText = text; }
 
   // ── Public accessors used by CLI shells ──────────────────────
 
