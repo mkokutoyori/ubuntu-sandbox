@@ -606,6 +606,41 @@ export class SQLPlusSession {
     return renderer.render(result);
   }
 
+
+  private renderShowErrors(target: string | null): string[] {
+    let owner: string | null = null;
+    let name: string | null = null;
+    let type: string | null = null;
+
+    if (target) {
+      const parts = target.trim().split(/\s+/);
+      type = parts.length > 1 ? parts[0].toUpperCase() : null;
+      const qualified = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+      const dotted = qualified.split('.');
+      owner = dotted.length > 1 ? dotted[0] : this.currentUser.toUpperCase();
+      name = dotted.length > 1 ? dotted[1] : dotted[0];
+    } else {
+      const last = this.db.getLastCompiledUnit();
+      if (!last) return ['No errors.'];
+      owner = last.schema;
+      name = last.name;
+      type = last.type;
+    }
+
+    const entry = this.db.catalog.getCompilationErrors(owner, name);
+    if (!entry || entry.errors.length === 0) return ['No errors.'];
+
+    const lines: string[] = [];
+    lines.push(`Errors for ${type ?? entry.type} ${entry.owner}.${entry.name}:`);
+    lines.push('');
+    lines.push('LINE/COL ERROR');
+    lines.push('-------- ' + '-'.repeat(65));
+    for (const err of entry.errors) {
+      lines.push(`${`${err.line}/${err.position}`.padEnd(8)} ${err.text}`);
+    }
+    return lines;
+  }
+
   // ── SET command ──────────────────────────────────────────────────
 
   private handleSet(args: string): SQLPlusResult {
@@ -761,7 +796,7 @@ export class SQLPlusSession {
         output.push(`wrap ${this.settings.wrap ? 'ON' : 'OFF'}`);
         break;
       case 'ERRORS':
-        output.push('No errors.');
+        output.push(...this.renderShowErrors(null));
         break;
       case 'RELEASE':
         output.push('release 1903000000');
@@ -770,6 +805,10 @@ export class SQLPlusSession {
         output.push(`sqlprompt "${this.settings.sqlprompt}"`);
         break;
       default: {
+        if (option.startsWith('ERRORS ') || option.startsWith('ERR ')) {
+          output.push(...this.renderShowErrors(option.replace(/^ERR(ORS)?\s+/, '')));
+          break;
+        }
         // SHOW PARAMETER <name> — show matching parameters with TYPE column
         if (option.startsWith('PARAMETER ') || option.startsWith('PARAMETERS ') || option === 'PARAMETER' || option === 'PARAMETERS') {
           const search = option.replace(/^PARAMETERS?\s*/, '').toLowerCase();

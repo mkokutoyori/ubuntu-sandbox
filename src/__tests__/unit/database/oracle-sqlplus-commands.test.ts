@@ -543,6 +543,65 @@ describe('COLUMN formats applied to query output', () => {
   });
 });
 
+describe('PL/SQL compilation errors and SHOW ERRORS', () => {
+  const brokenProc = 'CREATE OR REPLACE PROCEDURE bad_proc AS BEGIN x := ; END;';
+  const validProc = 'CREATE OR REPLACE PROCEDURE good_proc AS BEGIN NULL; END;';
+
+  test('a valid procedure compiles without warnings', () => {
+    const out = output(validProc);
+    expect(out).toContain('Procedure created.');
+    expect(out).not.toContain('Warning');
+  });
+
+  test('a broken procedure is created with a compilation warning', () => {
+    const out = output(brokenProc);
+    expect(out).toContain('Warning: Procedure created with compilation errors.');
+  });
+
+  test('SHOW ERRORS lists errors of the last compiled unit', () => {
+    cmd(brokenProc);
+    const out = output('SHOW ERRORS');
+    expect(out).toContain('Errors for PROCEDURE SYS.BAD_PROC:');
+    expect(out).toContain('LINE/COL ERROR');
+    expect(out).toMatch(/\d+\/\d+\s+PLS-00103/);
+  });
+
+  test('SHOW ERRORS PROCEDURE name targets a specific unit', () => {
+    cmd(brokenProc);
+    cmd(validProc);
+    const out = output('SHOW ERRORS PROCEDURE BAD_PROC');
+    expect(out).toMatch(/PLS-00103/);
+  });
+
+  test('SHOW ERRORS reports No errors. after a clean recompile', () => {
+    cmd(brokenProc);
+    cmd('CREATE OR REPLACE PROCEDURE bad_proc AS BEGIN NULL; END;');
+    const out = output('SHOW ERRORS');
+    expect(out).toContain('No errors.');
+  });
+
+  test('USER_ERRORS exposes the compilation errors', () => {
+    cmd(brokenProc);
+    const out = output('SELECT name, type, line, text FROM user_errors;');
+    expect(out).toContain('BAD_PROC');
+    expect(out).toMatch(/PLS-00103/);
+  });
+
+  test('DBA_OBJECTS reports the unit as INVALID', () => {
+    cmd(brokenProc);
+    const out = output("SELECT status FROM dba_objects WHERE object_name = 'BAD_PROC';");
+    expect(out).toContain('INVALID');
+  });
+
+  test('a failed compile then a clean one flips status back to VALID', () => {
+    cmd(brokenProc);
+    cmd('CREATE OR REPLACE PROCEDURE bad_proc AS BEGIN NULL; END;');
+    const out = output("SELECT status FROM dba_objects WHERE object_name = 'BAD_PROC';");
+    expect(out).toContain('VALID');
+    expect(out).not.toContain('INVALID');
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // 10. PROMPT
 // ═══════════════════════════════════════════════════════════════════

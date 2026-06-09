@@ -167,3 +167,58 @@ correspondre au comportement du vrai SQL*Plus.
 
 **Tests.** +7 tests de rendu (troncature/wrap A-format, masque avec séparateurs,
 débordement `###`, NOPRINT, alignement droit, HEADING). Suite database : 2567 verts.
+
+---
+
+## Correction n°5 — Vraies erreurs de compilation PL/SQL (SHOW ERRORS, USER_ERRORS)
+
+**Défaillances.**
+
+- `CREATE PROCEDURE/FUNCTION` acceptait n'importe quel corps (même du charabia) avec
+  « Procedure created. » et statut VALID — aucun passage par le compilateur.
+- `SHOW ERRORS` retournait toujours « No errors. » (chaîne en dur).
+- `DBA_ERRORS` était synthétisée depuis le journal d'alertes (alert log) — sans rapport
+  avec les vraies erreurs de compilation ; `USER_ERRORS` / `ALL_ERRORS` n'existaient pas.
+- Bug latent dans la reconstruction du source des unités stockées : un corps de forme
+  standard `AS <déclarations> BEGIN … END` (sans DECLARE) était ré-emballé dans un
+  `BEGIN … END` supplémentaire → l'unité devenait inexécutable ; et un `;` final dans le
+  corps produisait `END;;` imparsable.
+
+**Correction.**
+
+- `PlsqlLexParseError` porte désormais la ligne de l'erreur ; le parser la renseigne.
+- Nouveau module `plsql/unitSource.ts` : `buildSubprogramSource` (reconstruction unique
+  du source, corrigée pour les deux bugs ci-dessus, partagée avec l'interpréteur qui
+  dupliquait cette logique) et `compileStoredUnit` (validation par le vrai parser PL/SQL).
+- À la création : parse du corps → statut VALID/INVALID honnête, message réel d'Oracle
+  (« Warning: Procedure created with compilation errors. »), erreurs enregistrées dans
+  `OracleCatalog` (setCompilationErrors/clear/get), recompilation propre → purge.
+- `SHOW ERRORS` affiche le format réel de SQL*Plus (« Errors for PROCEDURE SYS.X: »,
+  table LINE/COL + texte PLS-xxxxx) pour la dernière unité compilée, et supporte
+  `SHOW ERRORS PROCEDURE nom` / `schema.nom`.
+- `DBA_ERRORS` rebranchée sur le vrai magasin avec les colonnes réelles d'Oracle
+  (POSITION avant TEXT, ATTRIBUTE, MESSAGE_NUMBER) ; ajout de `USER_ERRORS` (filtrée
+  par propriétaire) et `ALL_ERRORS`.
+- `DBA_OBJECTS.STATUS` reflète désormais INVALID/VALID selon la compilation.
+
+**Tests.** +8 tests (warning à la création, SHOW ERRORS format réel, ciblage par nom,
+No errors après recompilation, USER_ERRORS, statut INVALID puis retour à VALID).
+
+---
+
+## Correction n°6 — Verifiers de mots de passe recalculés à chaque lecture de SYS.USER$
+
+**Défaillance.** Chaque `SELECT … FROM SYS.USER$` recalculait les verifiers 10g/11g/12c
+de **tous** les utilisateurs, dont un PBKDF2-SHA512 à 4096 itérations par compte (en JS
+pur ≈ 50 ms+/compte). Une base avec ~20 comptes mettait ~1 s par requête sur USER$ —
+c'était la cause du test instable observé dès l'état de référence (timeout 5 s
+intermittent sur `SELECT * FROM sys.user$`). Le vrai Oracle dérive les verifiers une
+seule fois au changement de mot de passe et les stocke dans USER$ — il ne re-dérive
+jamais à la lecture du dictionnaire.
+
+**Correction.** Architecture alignée sur le vrai Oracle : les verifiers sont dérivés
+**à l'écriture du mot de passe** (`OracleCatalog.setPassword`, utilisé par CREATE USER,
+ALTER USER et le seed des comptes par défaut) et stockés dans le catalogue ; la vue
+`SYS.USER$` ne fait plus que lire. En complément, `deriveStoredVerifiers` est mémoïsée
+(cache borné à 512 entrées, éviction FIFO) pour amortir les recréations d'instances
+dans les tests. Mesure : `SELECT * FROM sys.user$` répété : ~1 s → ~7 ms.

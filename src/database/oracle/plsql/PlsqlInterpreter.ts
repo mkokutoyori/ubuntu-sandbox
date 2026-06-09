@@ -7,6 +7,7 @@ import {
 } from './PlsqlValue';
 import { PlsqlException, findPredefinedException, matchPredefinedException } from './PlsqlException';
 import { parsePlsql } from './PlsqlParser';
+import { buildSubprogramSource } from './unitSource';
 import { createDefaultSqlFunctionRegistry, type SqlFunctionContext } from '../functions';
 import { coerceDateValue, formatDateValue, formatDateWithPattern, parseDateWithPattern } from '../functions/dateSupport';
 import type { CellValue } from '../../engine/storage/BaseStorage';
@@ -633,20 +634,7 @@ export class PlsqlInterpreter {
   private parseUnit(unit: import('./PlsqlValue').StoredUnitLike): SubprogramDecl | null {
     const cached = this.unitCache.get(unit);
     if (cached !== undefined) return cached;
-    const params = unit.parameters.map(p => `${p.name} ${p.mode} ${p.dataType}${p.defaultValue ? ' DEFAULT ' + p.defaultValue : ''}`).join(', ');
-    const header = unit.type === 'FUNCTION'
-      ? `FUNCTION ${unit.name}${params ? '(' + params + ')' : ''} RETURN ${unit.returnType} IS `
-      : `PROCEDURE ${unit.name}${params ? '(' + params + ')' : ''} IS `;
-    const body = unit.body.trim();
-    const bodyUpper = body.toUpperCase();
-    let src: string;
-    if (bodyUpper.startsWith('DECLARE')) {
-      src = header.replace(/ IS $/, ' IS ') + body.replace(/^DECLARE/i, '') + ';';
-    } else if (bodyUpper.startsWith('BEGIN')) {
-      src = header + body + ';';
-    } else {
-      src = header + 'BEGIN ' + body + ' END;';
-    }
+    const src = buildSubprogramSource(unit);
     try {
       const block = parsePlsql(`DECLARE ${src} BEGIN NULL; END;`);
       const found = block.declarations.find(d => d.kind === 'subprogram') as SubprogramDecl | undefined;
