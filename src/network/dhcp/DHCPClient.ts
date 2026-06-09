@@ -373,27 +373,31 @@ export class DHCPClient implements IProtocolEngine {
         xid: state.xid,
       },
     });
-    const ackResult = offer.serverRef.server.processRequest({
+    const replyResult = offer.serverRef.server.processRequestWithNak({
       clientMAC: mac,
       xid: state.xid,
-      requestedIP: offer.ip,                    // Option 50
-      serverIdentifier: offer.serverIdentifier,  // Option 54
-      clientIdentifier,                          // Option 61
+      requestedIP: offer.ip,
+      serverIdentifier: offer.serverIdentifier,
+      clientIdentifier,
     });
+    const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
+      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime }
+      : null;
 
     if (!ackResult) {
-      // NAK
       this.naksReceived++;
+      const nakMessage = replyResult && replyResult.type === 'NAK' ? replyResult.message : undefined;
       this.getBus().publish({
         topic: 'dhcp.nak.received',
-        payload: { ...this.deviceRef(), iface, serverIp: offer.serverIdentifier },
+        payload: { ...this.deviceRef(), iface, serverIp: offer.serverIdentifier, reason: nakMessage },
       });
       this.emitStateChange(iface, 'REQUESTING', 'INIT', 'NAK');
       state.state = 'INIT';
-      state.logs.push(`DHCPNAK from ${offer.serverIdentifier} - restarting`);
+      const reason = nakMessage ? ` (${nakMessage})` : '';
+      state.logs.push(`DHCPNAK from ${offer.serverIdentifier}${reason} - restarting`);
       if (verbose) {
         lines.push(`DHCPREQUEST of ${offer.ip} on ${iface} to 255.255.255.255 port 67`);
-        lines.push(`DHCPNAK from ${offer.serverIdentifier} (${iface})`);
+        lines.push(`DHCPNAK from ${offer.serverIdentifier}${reason} (${iface})`);
         lines.push(`DHCPDISCOVER on ${iface} - restarting`);
       }
       return lines.join('\n');

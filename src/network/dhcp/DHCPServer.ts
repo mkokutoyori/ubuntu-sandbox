@@ -338,65 +338,6 @@ export class DHCPServer implements IProtocolEngine {
   // ─── Address Allocation (DORA Server-Side) ────────────────────────
 
   /**
-   * Allocate an IP from the appropriate pool for a client.
-   * Returns null if no address is available or client is denied.
-   */
-  allocateAddress(clientMAC: string, requestedIP?: string): DHCPBinding | null {
-    if (!this.enabled) return null;
-
-    // Find a matching pool
-    for (const [, pool] of this.pools) {
-      if (!pool.network || !pool.mask) continue;
-
-      // Check deny patterns
-      if (this.isClientDenied(clientMAC, pool)) {
-        this.stats.naks++;
-        return null;
-      }
-
-      // Check if client already has a binding
-      for (const [ip, binding] of this.bindings) {
-        if (binding.clientId === clientMAC && binding.poolName === pool.name) {
-          // Renew existing binding
-          binding.leaseStart = Date.now();
-          binding.leaseExpiration = Date.now() + pool.leaseDuration * 1000;
-          this.stats.acks++;
-          return binding;
-        }
-      }
-
-      // Try to allocate new address
-      const ip = this.findAvailableIP(pool, clientMAC);
-      if (!ip) continue;
-
-      const binding: DHCPBinding = {
-        ipAddress: ip,
-        clientId: clientMAC,
-        leaseStart: Date.now(),
-        leaseExpiration: Date.now() + pool.leaseDuration * 1000,
-        poolName: pool.name,
-        type: 'automatic',
-      };
-
-      this.bindings.set(ip, binding);
-      this.getBus().publish({
-        topic: 'dhcp.pool.lease-allocated',
-        payload: {
-          ...this.deviceRef(),
-          pool: pool.name,
-          clientMac: clientMAC,
-          ip,
-          leaseTimeSec: pool.leaseDuration,
-        },
-      });
-      this.refreshServerSignals();
-      return binding;
-    }
-
-    return null;
-  }
-
-  /**
    * Process a DHCPDISCOVER and return an offer IP.
    * RFC 2131 §3.1.2: The server reserves the offered address until the client responds.
    *
