@@ -83,6 +83,9 @@ import {
   AR2220_HARDWARE_PROFILE,
   renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
 } from './huawei/HuaweiHardwareProfile';
+import {
+  buildHuaweiVxlanInterfaceCommands, registerHuaweiVxlanDisplayCommands,
+} from './huawei/HuaweiVxlanCommands';
 import { collectListeningSockets } from '../router/management/SocketInventory';
 
 function renderHuaweiTcpStatus(router: Router): string {
@@ -951,6 +954,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // NAT display commands
     registerHuaweiNATDisplayCommands(t, getRouter);
 
+    // VXLAN display commands
+    registerHuaweiVxlanDisplayCommands(t, { r: getRouter });
+
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
       return cmdIpRouteStatic(getRouter(), args);
@@ -1352,6 +1358,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiNATDisplayCommands(t, () => this.r());
     registerHuaweiNATSystemCommands(t, this);
 
+    // VXLAN display commands
+    registerHuaweiVxlanDisplayCommands(t, { r: () => this.r() });
+
     // DHCP display + DHCPv6 system commands
     registerDhcpDisplayCommands(t, () => this.r());
     registerDhcpv6SystemCommands(t, this);
@@ -1606,6 +1615,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     registerHuaweiNATInterfaceCommands(t, this);
     registerDhcpInterfaceCommands(t, this);
+
+    buildHuaweiVxlanInterfaceCommands(t, {
+      getSelectedInterface: () => this.getSelectedInterface(),
+      r: () => this.r(),
+    });
 
     const ripIf = (key: string) => (args: string[]) => {
       const r = this.r() as any;
