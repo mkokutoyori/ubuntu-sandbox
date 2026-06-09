@@ -4,3 +4,4 @@ export { ciscoType8 } from './ciscoType8';
 export { ciscoType9 } from './ciscoType9';
 export { md5Crypt } from './md5Crypt';
 export { huaweiIrreversibleCipher, huaweiCipher, huaweiDecipher } from './huawei';
+export { oracle10gHash, oracle11gVerifier, oracle12cVerifier } from './oracle';
