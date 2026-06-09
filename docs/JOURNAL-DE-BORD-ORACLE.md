@@ -222,3 +222,24 @@ ALTER USER et le seed des comptes par défaut) et stockés dans le catalogue ; l
 `SYS.USER$` ne fait plus que lire. En complément, `deriveStoredVerifiers` est mémoïsée
 (cache borné à 512 entrées, éviction FIFO) pour amortir les recréations d'instances
 dans les tests. Mesure : `SELECT * FROM sys.user$` répété : ~1 s → ~7 ms.
+
+---
+
+## Correction n°7 — Dispatch SQL*Plus en table de commandes
+
+**Défaillance.** `SQLPlusSession.processLine` routait ~25 commandes via une chaîne
+if/else de ~200 lignes, avec les règles de correspondance (mot exact, `;` toléré,
+préfixe, alias, formes multi-mots comme `ARCHIVE LOG LIST`) écrites à la main et
+dupliquées à chaque branche. Ajouter une commande imposait de modifier le cœur du
+dispatch (violation Open/Closed), et l'ordre implicite des branches était fragile.
+
+**Correction.** Table déclarative `SqlPlusCommand[]` construite une fois au
+constructeur : chaque commande = `{ name, matches(upper, trimmed), run(trimmed, upper) }`,
+avec des fabriques de matchers réutilisables (`exact`, `wordOrPrefix`, `prefixOnly`)
+qui encodent les conventions SQL*Plus (mot seul, `;` final toléré, préfixe espace).
+`processLine` se réduit à une boucle sur la table puis aux fallbacks SQL / STARTUP-
+SHUTDOWN / bloc PL/SQL / SP2-0734. Les sémantiques de correspondance d'origine sont
+préservées à l'identique (vérifié par les 113 tests de commandes existants).
+
+**Tests.** Suite database complète : 2575 verts ; suite terminal : inchangée
+(1 échec préexistant hors périmètre, présent sur main).
