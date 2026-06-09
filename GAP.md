@@ -813,7 +813,7 @@ Globalement, cette zone du code est d'une maturité élevée et bien plus abouti
 - **Sévérité** : Mineure
 - **Recommandation** : terminer la « Phase 1B » pour supprimer l'adaptateur et unifier sur `IShell`/`AbstractShell` partout — réduit la surface de duplication et les risques de bugs « ça marche en SSH mais pas en local » (déjà mentionnés en commentaire comme bug historique, cf. `CrossVendorRemoteShell.ts:12-14`).
 
-### 7.10 Terminal — fichiers `STUB FILE` complètement morts dans `src/terminal/`
+### 7.10 Terminal — fichiers `STUB FILE` complètement morts dans `src/terminal/` — ✅ CORRIGÉ
 - **Constat** : quatre fichiers explicitement marqués « STUB FILE - will be rebuilt with TDD » sont restés dans l'arborescence : `commands.ts`, `packages.ts`, `shellUtils.ts`, `types.ts`. Le premier (`commands.ts`) importe même un module `./filesystem` **qui n'existe pas** dans `src/terminal/` — il ne compile probablement que parce qu'il n'est jamais référencé. Aucun de ces fichiers n'est importé ailleurs (sauf `packages.ts`, voir 7.11).
 - **Preuve** :
   - `src/terminal/commands.ts:1-51` (import `./filesystem` inexistant ; `ls`/`cat` renvoient `'STUB: directory listing'` / `'STUB: file contents'`)
@@ -823,18 +823,21 @@ Globalement, cette zone du code est d'une maturité élevée et bien plus abouti
   - vérifié : aucun import de `terminal/commands'`, `terminal/shellUtils'`, `terminal/types'` dans toute la codebase ; `src/terminal/filesystem.ts` n'existe pas.
 - **Sévérité** : Mineure
 - **Recommandation** : supprimer ces quatre fichiers morts (et leur contenu hors-sujet comme le système d'achievements) — ils n'apportent rien et induisent en erreur quiconque cherche l'implémentation réelle des commandes du terminal (qui se trouve en réalité dans `LinuxTerminalSession.ts`/`bash/` interpreter).
+- **Correction appliquée** : `src/terminal/commands.ts`, `src/terminal/packages.ts`, `src/terminal/shellUtils.ts`, `src/terminal/types.ts` — supprimés intégralement (185 lignes mortes au total, dont le système d'achievements/tutorials hors-sujet). Confirmé préalablement par grep que les exports `expandPath`/`escapeShellArg`/`ACHIEVEMENTS`/`TUTORIAL_STEPS`/`EditorState`/`TerminalState`/`PackageManager` n'avaient aucun consommateur, et que l'unique `OutputLine` consommé par `TerminalView.tsx` provenait de `sessions/TerminalSession.ts` (différent fichier). `npx tsc --noEmit` propre, 284 tests de la suite RMAN passants — 0 régression.
 
-### 7.11 Terminal — `preInstallForDevice` : pont vers un stub no-op encore appelé en production
+### 7.11 Terminal — `preInstallForDevice` : pont vers un stub no-op encore appelé en production — ✅ CORRIGÉ
 - **Constat** : contrairement aux trois autres fichiers stub, `packages.ts` est bel et bien importé et appelé par `TerminalManager.openTerminal()` pour tout device dont le type commence par `db-`. Or l'implémentation se contente d'un `console.log('STUB: Pre-installing packages for ...')` sans aucun effet.
 - **Preuve** : `src/terminal/packages.ts:32-35` (corps de fonction = `console.log` uniquement) ; appel production `src/terminal/sessions/TerminalManager.ts:24,166-168`.
 - **Sévérité** : Mineure
 - **Recommandation** : soit retirer cet appel mort (`preInstallForDevice`) du chemin chaud `openTerminal`, soit le brancher sur le vrai mécanisme d'amorçage du filesystem Oracle (`initOracleFilesystem` / `OracleFilesystemSync`) si l'intention de « pré-installation » est toujours pertinente — actuellement il s'agit d'un appel sans effet observable qui pollue la console à chaque ouverture de terminal sur un device `db-*`.
+- **Correction appliquée** : appel `preInstallForDevice(deviceType)` retiré du chemin chaud `TerminalManager.openTerminal` (`src/terminal/sessions/TerminalManager.ts:166-168`) ainsi que l'import. Le vrai mécanisme d'amorçage Oracle (`initOracleFilesystem`/`OracleFilesystemSync`) est déjà branché ailleurs ; le `console.log` polluant disparaît, et le fichier source de `preInstallForDevice` est lui aussi supprimé (cf. 7.10).
 
-### 7.12 Sub-shells — `RmanSubShell.ts` legacy entièrement mort, supplanté par `ReactiveRmanSubShell`
+### 7.12 Sub-shells — `RmanSubShell.ts` legacy entièrement mort, supplanté par `ReactiveRmanSubShell` — ✅ CORRIGÉ
 - **Constat** : `src/terminal/subshells/RmanSubShell.ts` est une implémentation RMAN « stubbed » à sortie canée (« Provides a realistic stubbed RMAN> prompt … returning plausible output »), entièrement remplacée par la suite réactive complète (`ReactiveRmanSubShell` + moteur `rman/job/RmanJobEngine`, catalogue, channels, policies — ~30 fichiers). Vérification faite : aucun import de `RmanSubShell` (hors lui-même) nulle part dans le repo ; `RmanShell` (l'adaptateur `IShell` enregistré dans `registerDefaults.ts`) instancie exclusivement `ReactiveRmanSubShell`.
 - **Preuve** : `src/terminal/subshells/RmanSubShell.ts:1-6` (« Provides a realistic stubbed RMAN> prompt with common backup/recovery commands returning plausible output »), absence totale de référence ailleurs (`grep -rn "import.*RmanSubShell\b"` ne renvoie que des correspondances `ReactiveRmanSubShell`), `src/shell/adapters/RmanShell.ts:15` instancie `ReactiveRmanSubShell.create`.
 - **Sévérité** : Mineure
 - **Recommandation** : supprimer purement et simplement `RmanSubShell.ts` — c'est un vestige d'une itération antérieure remplacée par une implémentation nettement plus aboutie (architecture Engine+events+actors+reactive conforme à la convention documentée du projet).
+- **Correction appliquée** : `src/terminal/subshells/RmanSubShell.ts` supprimé. Confirmé préalablement qu'aucun import vers le nom strict `RmanSubShell` (sans préfixe `Reactive`) n'existait dans `src/`. `npx tsc --noEmit` propre, suite RMAN (284 tests) passante — 0 régression.
 
 ### 7.13 Cross-cutting — duplication potentielle `RemoteDeviceSubShell` vs `RemoteShellSubShell`
 - **Constat** : deux classes `ISubShell` couvrent un terrain voisin — un sous-shell distant générique pilotant `executeCommand` directement (`RemoteDeviceSubShell`, multi-vendor via `RemotePromptStrategy`) et un sous-shell distant via canal SSH exec avec gestion explicite du `cwd` (`RemoteShellSubShell`, Linux uniquement). La docstring de `RemoteDeviceSubShell` indique explicitement « Use this whenever RemoteShellSubShell … is too narrow », ce qui suggère une coexistence voulue plutôt qu'une duplication accidentelle, mais le chevauchement de responsabilités (gestion de prompt, mots de sortie, `clear`) entre les deux mérite vigilance pour éviter une dérive de comportement entre les deux chemins SSH.
