@@ -64,6 +64,8 @@ import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
+import * as WinSys from './windows/WinSystemCommands';
+import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
@@ -1331,62 +1333,31 @@ export class WindowsPC extends EndHost {
     }
   }
 
-  private cmdSysteminfo(): string {
-    const lines: string[] = [];
-    const os = this.getIdentity().os;
-    lines.push(`Host Name:                 ${this.hostname}`);
-    lines.push(`OS Name:                   ${os.prettyName}`);
-    lines.push(`OS Version:                ${os.version}`);
-    lines.push(`OS Manufacturer:           Microsoft Corporation`);
-    lines.push(`OS Configuration:          Member Workstation`);
-    lines.push(`OS Build Type:             Multiprocessor Free`);
-    const bootedAt = this.getLifecycle().bootedAt();
-    if (bootedAt) {
-      lines.push(`System Boot Time:          ${bootedAt.toLocaleString('en-US')}`);
-    }
-    lines.push(`System Manufacturer:       ${this.hardware.manufacturer}`);
-    lines.push(`System Model:              ${this.hardware.productName}`);
-    lines.push(`System Type:               x64-based PC`);
-    lines.push(...this.systeminfoHardwareLines());
-    lines.push(`Network Card(s):           ${this.ports.size} NIC(s) Installed.`);
-    let idx = 1;
-    for (const [name, port] of this.ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
-      lines.push(`                           [${String(idx).padStart(2, '0')}]: Intel(R) Ethernet Connection`);
-      const ip = port.getIPAddress();
-      if (ip) {
-        lines.push(`                                 Connection Name: ${displayName}`);
-        lines.push(`                                 DHCP Enabled:    ${this.isDHCPConfigured(name) ? 'Yes' : 'No'}`);
-        lines.push(`                                 IP address(es)`);
-        lines.push(`                                 [01]: ${ip}`);
-      } else {
-        lines.push(`                                 Connection Name: ${displayName}`);
-        lines.push(`                                 Status:          Media disconnected`);
-      }
-      idx++;
-    }
-    return lines.join('\n');
+  /**
+   * Narrow surface handed to the extracted cmd.exe system commands
+   * (WinSystemCommands.ts). Rebuilt per call so it always reflects the
+   * live hostname / user / hardware state.
+   */
+  private buildSystemContext(): WinSys.WinSystemContext {
+    return {
+      hostname: this.hostname,
+      os: this.getIdentity().os,
+      bootedAt: () => this.getLifecycle().bootedAt() ?? null,
+      hardware: this.hardware,
+      ports: this.ports,
+      isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
+      getVolumeSerialNumber: (letter) => this.fs.getVolumeSerialNumber(letter),
+      doskey: this.doskey,
+      env: this.env,
+      processManager: this.procMgr,
+      currentUser: this.userMgr.currentUser,
+      isServiceRunning: (name) => this.svcMgr.getService(name)?.state === 'Running',
+      scheduledTasks: this.scheduledTasks,
+    };
   }
 
-  /**
-   * The processor / BIOS / memory block of `systeminfo`, rendered from the
-   * host's hardware inventory so it stays coherent with the device model.
-   */
-  private systeminfoHardwareLines(): string[] {
-    const { cpu, memory, firmware } = this.hardware;
-    const mb = (kib: number): string =>
-      `${Math.round(kib / 1024).toLocaleString('en-US')} MB`;
-    return [
-      `Processor(s):              ${cpu.sockets} Processor(s) Installed.`,
-      `                           [01]: Intel64 Family ${cpu.cpuFamily} ` +
-        `Model ${cpu.model} Stepping ${cpu.stepping} ${cpu.vendor} ` +
-        `~${cpu.clockMhz} Mhz`,
-      `BIOS Version:              ${firmware.vendor} ${firmware.version}, ` +
-        `${firmware.releaseDate}`,
-      `Total Physical Memory:     ${mb(memory.totalKib)}`,
-      `Available Physical Memory: ${mb(memory.availableKib)}`,
-      `Virtual Memory: Max Size:  ${mb(memory.totalKib + memory.swapTotalKib)}`,
-    ];
+  private cmdSysteminfo(): string {
+    return WinSys.cmdSysteminfo(this.buildSystemContext());
   }
 
   // ─── PSDeviceContext implementation ───────────────────────────
@@ -1405,271 +1376,48 @@ export class WindowsPC extends EndHost {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
   }
 
-  /**
-   * vol — print volume label + serial.  Real cmd output:
-   *   Volume in drive C has no label.
-   *   Volume Serial Number is XXXX-XXXX
-   */
-  /**
-   * `doskey NAME=BODY` installs a macro consumed by every subsequent
-   * cmd dispatch. Without args, lists current macros (cmd.exe form).
-   */
   private cmdDoskey(args: string[]): string {
-    if (args.length === 0) {
-      return this.doskey.entries().map(e => `${e.head}=${e.body}`).join('\n');
-    }
-    const joined = args.join(' ');
-    if (!joined.includes('=')) {
-      return this.doskey.entries().map(e => `${e.head}=${e.body}`).join('\n');
-    }
-    this.doskey.define(joined);
-    return '';
+    return WinSys.cmdDoskey(this.buildSystemContext(), args);
   }
 
   private cmdVol(args: string[]): string {
-    const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
-    const letter = arg.charAt(0) || 'C';
-    // Single source of truth — same serial `dir` prints for this volume.
-    const serial = this.fs.getVolumeSerialNumber(letter);
-    return [
-      ` Volume in drive ${letter} has no label.`,
-      ` Volume Serial Number is ${serial}`,
-    ].join('\n');
+    return WinSys.cmdVol(this.buildSystemContext(), args);
   }
 
-  /** chcp — print/set active code page.  Defaults to 65001 (UTF-8). */
   private cmdChcp(args: string[]): string {
-    if (args.length === 0) return 'Active code page: 65001';
-    const cp = parseInt(args[0], 10);
-    if (isNaN(cp)) return 'Invalid code page';
-    return `Active code page: ${cp}`;
+    return WinSys.cmdChcp(args);
   }
 
-  /** date /t — print today's date in MM/DD/YYYY (en-US). */
   private cmdDate(args: string[]): string {
-    const wantOnly = args.includes('/t') || args.includes('/T');
-    void wantOnly;
-    const d = new Date();
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dow = days[d.getDay()];
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dow} ${mm}/${dd}/${yyyy}`;
+    return WinSys.cmdDate(args);
   }
 
-  /** time /t — print current time in h:mm AM/PM (en-US). */
-  private cmdTime(_args: string[]): string {
-    const d = new Date();
-    const h24 = d.getHours();
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const tt = h24 >= 12 ? 'PM' : 'AM';
-    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    return `${h12}:${min} ${tt}`;
+  private cmdTime(args: string[]): string {
+    return WinSys.cmdTime(args);
   }
 
-  /** `start <program>` — simulator stub: returns silently (real cmd
-   *  detaches a new process and returns immediately). */
-  /**
-   * `start <command>` — launch a program in a new session. Spawns into the
-   * shared process manager so both `tasklist` and `Get-Process` see it.
-   * Returns an empty string on success (matches cmd.exe semantics).
-   */
   private cmdStart(args: string[]): string {
-    // Strip cmd-style flags (/B, /WAIT, /MIN, ...) and the optional "title"
-    // argument that precedes the executable.
-    const filtered = args.filter(a => !a.startsWith('/'));
-    if (filtered.length === 0) return '';
-    let target = filtered[0].replace(/^["']|["']$/g, '');
-    // `start "title" prog ...` form: drop the title token.
-    if (filtered.length >= 2 && /^"[^"]*"$/.test(args.find(a => /^"[^"]*"$/.test(a)) ?? '')) {
-      target = filtered[1].replace(/^["']|["']$/g, '');
-    }
-    if (!target) return '';
-    const leaf = target.split(/[\\/]/).pop() ?? target;
-    const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
-    const parent = this.procMgr.getAllProcesses().find(p => p.name.toLowerCase() === 'explorer.exe');
-    const ppid = parent?.pid ?? 1;
-    this.procMgr.spawnProcess(imageName, ppid, this.userMgr.currentUser, {
-      session: 'Console', sessionId: 1,
-    });
-    return '';
+    return WinSys.cmdStart(this.buildSystemContext(), args);
   }
 
-  /** `setx VAR VALUE [/M]` — persists an environment variable. */
   private cmdSetx(args: string[]): string {
-    const machine = args.some(a => a.toUpperCase() === '/M');
-    const filtered = args.filter(a => a.toUpperCase() !== '/M');
-    if (filtered.length < 2) {
-      return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';
-    }
-    const name = filtered[0];
-    const value = filtered.slice(1).join(' ').replace(/^"(.*)"$/, '$1');
-    this.env.set(name, value);
-    return machine
-      ? `SUCCESS: Specified value was saved.`
-      : `SUCCESS: Specified value was saved.`;
+    return WinSys.cmdSetx(this.buildSystemContext(), args);
   }
 
-  /**
-   * `schtasks` — query/create/delete entries in the shared
-   * `scheduledTasks` map so PowerShell's `Get-ScheduledTask` and
-   * `Register-ScheduledTask` see the same data.
-   */
   private cmdSchtasks(args: string[]): string {
-    if (this.svcMgr.getService('Schedule')?.state !== 'Running') {
-      return `ERROR: The Task Scheduler service is not running.`;
-    }
-    const action = args[0]?.toLowerCase();
-    const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
-    const tn      = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();
-
-    if (action === '/query') {
-      const filtered = tn
-        ? Array.from(this.scheduledTasks.values()).filter(t => t.taskName.toLowerCase() === tn.toLowerCase())
-        : Array.from(this.scheduledTasks.values());
-      const lines = [
-        'Folder: \\',
-        'TaskName                                 Next Run Time          Status',
-        '======================================== ====================== ===============',
-      ];
-      for (const t of filtered) {
-        lines.push(`${t.taskName.padEnd(40)} N/A                    ${t.state}`);
-      }
-      return lines.join('\n');
-    }
-    if (action === '/create') {
-      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
-      this.scheduledTasks.set(tn.toLowerCase(), { taskName: tn, taskPath: '\\', state: 'Ready' });
-      return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
-    }
-    if (action === '/delete') {
-      if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
-      const removed = this.scheduledTasks.delete(tn.toLowerCase());
-      return removed
-        ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
-        : `ERROR: The system cannot find the file specified.`;
-    }
-    if (action === '/run' || action === '/end' || action === '/change') {
-      return 'SUCCESS: The scheduled task was created/modified successfully.';
-    }
-    return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
+    return WinSys.cmdSchtasks(this.buildSystemContext(), args);
   }
 
-  /** `nbtstat -n / -a / -A` — returns a minimal local NetBIOS name table. */
   private cmdNbtstat(args: string[]): string {
-    const flag = args[0]?.toLowerCase();
-    if (flag === '-n') {
-      return [
-        '',
-        '    Node IpAddress: [0.0.0.0] Scope Id: []',
-        '',
-        '                       NetBIOS Local Name Table',
-        '',
-        '       Name               Type         Status',
-        '    ---------------------------------------------',
-        `    ${this.hostname.toUpperCase().padEnd(16)} <00>  UNIQUE      Registered`,
-        `    WORKGROUP        <00>  GROUP       Registered`,
-        '',
-      ].join('\n');
-    }
-    return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
+    return WinSys.cmdNbtstat(this.buildSystemContext(), args);
   }
 
-  /** `wmic logicaldisk get name` / minimal WMI stub. */
   private cmdWmic(args: string[]): string {
-    if (args.length === 0) return 'wmic:root\\cli>';
-    const joined = args.join(' ').toLowerCase();
-    if (joined.includes('logicaldisk') && joined.includes('get name')) {
-      return 'Name  \nC:    ';
-    }
-    if (joined.includes('os get caption')) {
-      return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';
-    }
-    if (joined.includes('cpu get name')) {
-      return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-    }
-    return '';
+    return WinSys.cmdWmic(args);
   }
 
-  /** `reg query | add | delete` — bridges cmd.exe's reg.exe to the
-   *  PowerShell registry provider so changes made from cmd are visible
-   *  from `Get-ItemProperty HKCU:\…` in PS (and vice versa). */
   private cmdReg(args: string[]): string {
-    if (args.length === 0) {
-      return 'ERROR: Invalid syntax. Type "REG /?" for usage.';
-    }
-    const action = args[0].toLowerCase();
-    const rawKey = args[1] ?? '';
-    // `reg.exe` uses unprefixed HKCU\..., PS provider expects HKCU:\...
-    const psKey = rawKey.replace(/^(HKCU|HKLM|HKCR|HKU|HKCC)\\/i, '$1:\\');
-    if (action === 'query') {
-      if (!this.registry.testPath(psKey)) {
-        return 'ERROR: The system was unable to find the specified registry key or value.';
-      }
-      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
-      const recurse = args.some(a => a.toLowerCase() === '/s');
-      const valueFilter = vIdx >= 0 ? args[vIdx + 1] : undefined;
-      return this.formatRegQuery(rawKey, psKey, valueFilter, recurse);
-    }
-    if (action === 'add') {
-      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
-      const tIdx = args.findIndex(a => a.toLowerCase() === '/t');
-      const dIdx = args.findIndex(a => a.toLowerCase() === '/d');
-      this.registry.newItem(psKey, true);
-      if (vIdx >= 0) {
-        const valueName = args[vIdx + 1];
-        const data: string | number = dIdx >= 0
-          ? args[dIdx + 1].replace(/^"(.*)"$/, '$1')
-          : '';
-        const typ = tIdx >= 0 ? args[tIdx + 1].toUpperCase() : 'REG_SZ';
-        const coerced: string | number = typ === 'REG_DWORD' ? Number(data) : data;
-        this.registry.setItemProperty(psKey, valueName, coerced);
-      }
-      return 'The operation completed successfully.';
-    }
-    if (action === 'delete') {
-      const vIdx = args.findIndex(a => a.toLowerCase() === '/v');
-      if (vIdx >= 0) {
-        this.registry.removeItemProperty(psKey, args[vIdx + 1]);
-      } else {
-        this.registry.removeItem(psKey, true);
-      }
-      return 'The operation completed successfully.';
-    }
-    return 'ERROR: Invalid syntax.';
-  }
-
-  /**
-   * Render a `reg query` result in the canonical reg.exe layout:
-   *   <RootKey>\<Sub>\<Sub>
-   *       Name    REG_TYPE    Value
-   * Optionally filters to a single value (`/v Name`) or recurses (`/s`).
-   */
-  private formatRegQuery(rawKey: string, psKey: string, valueFilter: string | undefined, recurse: boolean): string {
-    const lines: string[] = [];
-    const visit = (currentRaw: string, currentPs: string): void => {
-      const values = this.registry.getItemPropertyValues(currentPs);
-      const subkeys = this.registry.listSubkeyNames(currentPs);
-      lines.push('');
-      lines.push(currentRaw);
-      if (values) {
-        for (const [name, val] of Object.entries(values)) {
-          if (valueFilter && name.toLowerCase() !== valueFilter.toLowerCase()) continue;
-          const t = typeof val === 'number' ? 'REG_DWORD' : 'REG_SZ';
-          const v = typeof val === 'number' ? `0x${val.toString(16)}` : String(val);
-          lines.push(`    ${name}    ${t}    ${v}`);
-        }
-      }
-      if (recurse) {
-        for (const sub of subkeys) {
-          visit(`${currentRaw}\\${sub}`, `${currentPs}\\${sub}`);
-        }
-      }
-    };
-    visit(rawKey, psKey);
-    lines.push('');
-    return lines.join('\n');
+    return winCmdReg(this.registry, args);
   }
 
   /** nslookup command implementation for Windows */
@@ -1727,7 +1475,7 @@ export class WindowsPC extends EndHost {
   getProcessManager(): WindowsProcessManager { return this.procMgr; }
 
   /** runas command — simplified non-interactive version */
-  private cmdRunas(args: string[]): string {
+  private async cmdRunas(args: string[]): Promise<string> {
     if (args.length === 0) {
       return 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
     }
@@ -1761,12 +1509,16 @@ export class WindowsPC extends EndHost {
       return 'RUNAS ERROR: No command specified.';
     }
 
-    // Switch context, run command, (in simulation, stay switched)
-    const prevUser = this.userMgr.currentUser;
+    // Real runas launches the program AS the target user in a separate
+    // logon session — the calling shell keeps its own identity. Run the
+    // command under the switched context, then restore the caller.
+    const previousUser = this.userMgr.currentUser;
     this.setCurrentUser(user.name);
-    // For simulation, just execute the command as the new user
-    // and return the result (user stays switched for simplicity)
-    return this.executeCmdCommand(cmdParts.join(' ')) as unknown as string;
+    try {
+      return await this.executeCmdCommand(cmdParts.join(' '));
+    } finally {
+      this.setCurrentUser(previousUser);
+    }
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

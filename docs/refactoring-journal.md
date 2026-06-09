@@ -187,3 +187,39 @@ fenêtres lecture seule). Non-régression : 58 fichiers terminal/terminal-core
 préexistant sur main (`duplicate-display-fixes`, indépendant).
 
 ---
+
+## Lot 4 — Décomposition de la god-class WindowsPC (D5 partiel) + bug runas
+
+**Défaillances corrigées :**
+1. `WindowsPC.ts` mélangeait le device réseau et ~430 lignes
+   d'implémentations de commandes cmd.exe inline (`systeminfo`, `doskey`,
+   `vol`, `chcp`, `date`, `time`, `start`, `setx`, `schtasks`, `nbtstat`,
+   `wmic`, `reg`), en violation du pattern établi par le projet lui-même
+   (`WinPing.ts`, `WinTracert.ts`, `WinIpconfig.ts`… = un module par
+   commande avec un contexte étroit injecté).
+2. **Bug de réalisme `runas`** : après `runas /user:X cmd`, le shell
+   appelant **restait commuté sur l'utilisateur X** (le code l'assumait :
+   « user stays switched for simplicity »), avec en prime un cast
+   `as unknown as string` masquant une Promise non attendue. Sur un vrai
+   Windows, runas lance le programme dans une session de logon séparée et
+   le shell appelant garde son identité.
+
+**Correction :**
+- Nouveau `windows/WinSystemCommands.ts` : 11 commandes systèmes en
+  fonctions pures sur un `WinSystemContext` étroit (hostname, identité OS,
+  hardware, lifecycle, doskey, scheduledTasks, process manager…) —
+  testables sans instance `WindowsPC`.
+- Nouveau `windows/WinRegCommand.ts` : `reg query|add|delete` +
+  formatage reg.exe, dépendant uniquement de l'interface
+  `WinRegistryProvider` (pont vers le provider registre PowerShell).
+- `WindowsPC` garde des délégations d'une ligne (les 18 sites de dispatch
+  inchangés) et passe de ~1996 à ~1734 lignes.
+- `cmdRunas` : exécution sous l'identité cible puis **restauration
+  systématique** de l'utilisateur appelant (`try/finally`), signature
+  `async` honnête.
+
+**Tests :** 439 tests Windows/host (8 fichiers ciblés) + 1881 tests
+PowerShell passent ; seuls les 9 échecs DateTime préexistants sur main
+subsistent.
+
+---
