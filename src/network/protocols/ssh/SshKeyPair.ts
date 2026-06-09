@@ -7,6 +7,7 @@
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { type Result, ok, err } from './Result';
 import { SshFingerprint } from './SshFingerprint';
+import { deriveKeyMaterial } from './sshKeyMaterial';
 
 export class SshKeyPair {
   constructor(
@@ -30,7 +31,7 @@ export class SshKeyPair {
     comment: string = 'user@host',
   ): SshKeyPair {
     const seed = `${algorithm}:${comment}`;
-    const pub = simpleMaterial(seed, 43);
+    const pub = deriveKeyMaterial(seed, 43);
     const privPath = '~/.ssh/id_ed25519';
     const pubPath = '~/.ssh/id_ed25519.pub';
     return new SshKeyPair(privPath, pubPath, pub, comment, algorithm);
@@ -84,18 +85,3 @@ function parsePublicKeyLine(line: string): {
   };
 }
 
-function simpleMaterial(seed: string, length: number): string {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let state = 0x9e3779b9;
-  for (let i = 0; i < seed.length; i++) {
-    state = Math.imul(state ^ seed.charCodeAt(i), 0x85ebca6b);
-    state ^= state >>> 13;
-  }
-  let out = '';
-  for (let i = 0; i < length; i++) {
-    state = Math.imul(state ^ (state >>> 16), 0xc2b2ae35);
-    out += alphabet[(state >>> 0) % alphabet.length];
-  }
-  return out;
-}
