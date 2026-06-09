@@ -51,3 +51,43 @@ le filtre WHERE, qu'elle satisfasse ou non le prédicat. Conséquences :
 
 **Tests.** 6 tests de régression ajoutés dans `oracle-phase4.test.ts` (ROWNUM=1, ROWNUM=2,
 ROWNUM>1, prédicat combiné, projection séquentielle, isolation sous-requête).
+
+---
+
+## Correction n°2 — Registre de fonctions SQL (pattern Registry/Strategy)
+
+**Défaillance.** `OracleExecutor.evaluateFunction` était un switch monolithique de ~400 lignes
+mélangeant ~80 fonctions (chaînes, numériques, dates, conversion, système, paquets DBMS_*).
+Conséquences : impossible d'ajouter une fonction sans modifier le cœur de l'exécuteur
+(violation Open/Closed), duplication massive du pattern null-safe, et un God class de
+5167 lignes. De plus :
+
+- Un appel qualifié sur un paquet inconnu pouvait exécuter la fonction non qualifiée
+  homonyme (`FOO.SUBSTR(...)` exécutait `SUBSTR`) — le switch ne testait que `expr.name`.
+- Les noms réservés aux paquets (`VALUE`, `GET_TIME`, `GATHER_TABLE_STATS`…) appelés sans
+  qualification retournaient silencieusement NULL au lieu de lever ORA-00904.
+- `GREATEST(1, NULL, 3)` retournait 3 et `LEAST(NULL, 5)` retournait 5 — dans le vrai
+  Oracle, GREATEST/LEAST retournent NULL dès qu'un argument est NULL.
+
+**Correction.** Nouveau module `src/database/oracle/functions/` :
+
+- `SqlFunctionRegistry` : registre clé = nom qualifié (`UPPER`, `DBMS_RANDOM.VALUE`),
+  insensible à la casse, extensible (`register`/`registerBundle`).
+- Implémentations groupées par domaine : `stringFunctions`, `numericFunctions`,
+  `dateFunctions`, `conversionFunctions`, `nullFunctions`, `systemFunctions`,
+  `packageFunctions` — chaque fichier < 150 lignes.
+- `SqlFunctionContext` : interface injectée (Dependency Inversion) exposant uniquement
+  ce dont les fonctions ont besoin (comparaison Oracle, coercition de dates, USERENV,
+  DDL métadonnées) sans coupler les fonctions à l'exécuteur.
+- `evaluateFunction` ne garde que les agrégats (dépendants de l'AST) puis délègue au
+  registre ; fonction inconnue → ORA-00904 avec le nom pleinement qualifié.
+
+**Fidélité améliorée.** GREATEST/LEAST propagent NULL ; ORA-00904 levé pour les noms de
+fonctions de paquets non qualifiés et pour les paquets inconnus.
+
+**Mesure.** `OracleExecutor.ts` : 5180 → 4823 lignes. Les 13 erreurs ESLint restantes du
+fichier préexistaient (aucune nouvelle).
+
+**Tests.** Nouveau fichier `oracle-function-registry.test.ts` (20 tests : résolution du
+registre, SUBSTR négatif, INSTR backward, NVL/NULLIF/DECODE, sémantique NULL de
+GREATEST/LEAST, ORA-00904, fonctions de paquets). Suite complète : 2546 tests verts.
