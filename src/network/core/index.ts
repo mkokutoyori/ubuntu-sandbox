@@ -36,5 +36,3 @@ export * from './constants';
 export * from './interfaces';
 export { RoutingTable, createIPv4RoutingTable, createIPv6RoutingTable, maskToPrefixLength, ipMatchesNetwork, ipv6MatchesPrefix } from './RoutingTable';
 export { PacketQueue } from './PacketQueue';
-export { NeighborResolver } from './NeighborResolver';
-export type { NeighborEntry } from './NeighborResolver';
