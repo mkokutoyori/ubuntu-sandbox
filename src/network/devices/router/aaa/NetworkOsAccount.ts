@@ -2,7 +2,7 @@ import type { IEventBus } from '@/events/EventBus';
 
 export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
 export type PasswordHashAlgorithm =
-  | 'plain' | 'md5' | 'sha256' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
+  | 'plain' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
 export type AccountServiceType =
   | 'ssh' | 'stelnet' | 'telnet' | 'ftp' | 'http' | 'terminal' | 'web' | 'snmp' | 'ppp' | 'mail';
 

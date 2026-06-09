@@ -27,6 +27,10 @@ import {
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
+import {
+  prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256,
+  utf8ToBytes, bytesToHex, hexToBytes,
+} from '@/crypto';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -155,23 +159,23 @@ const ESP_OVERHEAD_BASE = IPSEC_CONSTANTS.ESP_OVERHEAD_BASE;
 const AH_OVERHEAD_BASE = 24;
 
 /**
- * Generate a random hex key of the specified bit length.
- * Used to simulate IKE-derived KEYMAT for SA keying material.
+ * Derive `bits` of hex key material from a shared secret + a per-key label,
+ * using the real IKEv2 PRF+ (HMAC-SHA256) instead of `Math.random()`. Because
+ * the derivation is deterministic, both ends of an SA that feed it the same
+ * seed obtain identical KEYMAT — the prerequisite for verifiable ESP ICVs.
  */
-function generateSimulatedKey(bits: number): string {
-  const bytes = bits / 8;
-  const hex: string[] = [];
-  for (let i = 0; i < bytes; i++) {
-    hex.push(Math.floor(Math.random() * 256).toString(16).padStart(2, '0'));
-  }
-  return hex.join('');
+function deriveKeymatHex(secret: string, label: string, bits: number): string {
+  if (bits <= 0) return '';
+  const bytes = Math.ceil(bits / 8);
+  return bytesToHex(prfPlus(SHA256, utf8ToBytes(secret), utf8ToBytes(label), bytes));
 }
 
 /**
  * Derive key lengths and algorithm names from a transform set's transforms array.
- * Returns a SACryptoKeys structure with simulated key material.
+ * Key material is derived deterministically from `keymatSeed` via PRF+ so that
+ * peers sharing the seed share the keys (RFC 4301 §4.4.2 fields #7-9).
  */
-function deriveCryptoKeys(transforms: string[]): SACryptoKeys {
+function deriveCryptoKeys(transforms: string[], keymatSeed: string): SACryptoKeys {
   let espEncAlgorithm = 'null';
   let espEncKeyLength = 0;
   let espAuthAlgorithm = 'none';
@@ -226,15 +230,54 @@ function deriveCryptoKeys(transforms: string[]): SACryptoKeys {
 
   return {
     espEncAlgorithm,
-    espEncKey: espEncKeyLength > 0 ? generateSimulatedKey(espEncKeyLength) : '',
+    espEncKey: espEncKeyLength > 0 ? deriveKeymatHex(keymatSeed, 'esp-enc', espEncKeyLength) : '',
     espEncKeyLength,
     espAuthAlgorithm,
-    espAuthKey: espAuthKeyLength > 0 ? generateSimulatedKey(espAuthKeyLength) : '',
+    espAuthKey: espAuthKeyLength > 0 ? deriveKeymatHex(keymatSeed, 'esp-auth', espAuthKeyLength) : '',
     espAuthKeyLength,
     ahAuthAlgorithm,
-    ahAuthKey: ahAuthKeyLength > 0 ? generateSimulatedKey(ahAuthKeyLength) : '',
+    ahAuthKey: ahAuthKeyLength > 0 ? deriveKeymatHex(keymatSeed, 'ah-auth', ahAuthKeyLength) : '',
     ahAuthKeyLength,
   };
+}
+
+/**
+ * Map an ESP/AH integrity transform name to the hash backing its HMAC.
+ * Returns null for transforms the simulator does not model with a real hash
+ * (GCM inline auth, SHA-384/512) — those simply get no ICV.
+ */
+function espIcvHash(authAlgorithm: string): HashAlgorithm | null {
+  switch (authAlgorithm) {
+    case 'hmac-md5': return MD5;
+    case 'hmac-sha-1': return SHA1;
+    case 'hmac-sha-256': return SHA256;
+    default: return null;
+  }
+}
+
+/**
+ * Canonical byte-message an ESP ICV is computed over: the ESP header fields
+ * plus the immutable identity of the inner packet. Stable across transit so
+ * sender and receiver hash exactly the same bytes.
+ */
+export function espIcvMessage(esp: ESPPacket): string {
+  const p = esp.innerPacket;
+  return [
+    esp.spi, esp.sequenceNumber,
+    String(p?.sourceIP ?? ''), String(p?.destinationIP ?? ''),
+    p?.protocol ?? 0, p?.identification ?? 0, p?.totalLength ?? 0,
+  ].join('|');
+}
+
+/**
+ * Compute the ESP ICV (RFC 4303 §2.8) for `esp` under the SA's auth key,
+ * using the real HMAC in `@/crypto`. Returns undefined when no integrity
+ * transform is modelled (then there is nothing to sign or verify).
+ */
+export function computeEspIcv(cryptoKeys: SACryptoKeys, esp: ESPPacket): string | undefined {
+  const hash = espIcvHash(cryptoKeys.espAuthAlgorithm);
+  if (!hash || !cryptoKeys.espAuthKey) return undefined;
+  return bytesToHex(hmac(hash, hexToBytes(cryptoKeys.espAuthKey), utf8ToBytes(espIcvMessage(esp))));
 }
 
 /** Compute overhead for ESP/AH encapsulation to derive ipMTU from pathMTU. */
@@ -1378,7 +1421,8 @@ export class IPSecEngine implements IProtocolEngine {
     const spi = randomSPI();
     const hasESP = transforms.some(t => t.startsWith('esp'));
     const hasAH = transforms.some(t => t.startsWith('ah'));
-    const cryptoKeys = deriveCryptoKeys(transforms);
+    const keymatSeed = `ipsec-mcast-keymat|${groupAddress}|${senderAddress}|${spi}|${transforms.join(',')}`;
+    const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
 
     const msa: MulticastIPSecSA = {
       groupAddress,
@@ -1647,6 +1691,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: msa.outboundSeqNum,
         innerPacket: pkt,
       };
+      espPayload.icv = computeEspIcv(msa.cryptoKeys, espPayload);
       const outerSize = 20 + 8 + pkt.totalLength;
       const outerPkt = createIPv4Packet(srcAddr, dstAddr, IP_PROTO_ESP, 64, espPayload, outerSize);
       outerPkt.headerChecksum = computeIPv4Checksum(outerPkt);
@@ -2058,6 +2103,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
+      espPayload.icv = computeEspIcv(sa.cryptoKeys, espPayload);
       const espSize = 20 + 8 + innerPkt.totalLength;
       const espPkt = makeOuterPkt(IP_PROTO_ESP, espPayload, espSize);
       // Step 2: AH wrap the ESP packet
@@ -2076,6 +2122,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
+      espPayload.icv = computeEspIcv(sa.cryptoKeys, espPayload);
       // NAT-T: wrap ESP in UDP 4500 (RFC 3948)
       if (sa.natT) {
         const udpPayload: UDPPacket = {
@@ -2367,6 +2414,20 @@ export class IPSecEngine implements IProtocolEngine {
       if (this.debugIpsec) {
         Logger.info(this.router.id, 'debug:ipsec',
           `IPSEC(i): anti-replay check FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
+      }
+      return null;
+    }
+
+    // ESP ICV verification (RFC 4303 §3.4.4). The SA shares KEYMAT with the
+    // sender, so a genuine packet's HMAC matches; a tampered inner packet or
+    // a key mismatch is dropped. Packets that carry no ICV (no integrity
+    // transform, or a transform we don't model) are accepted unchanged.
+    const expectedIcv = computeEspIcv(sa.cryptoKeys, esp);
+    if (expectedIcv !== undefined && esp.icv !== undefined && esp.icv !== expectedIcv) {
+      sa.recvErrors++;
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC(i): ICV verification FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
       }
       return null;
     }
@@ -2849,10 +2910,20 @@ export class IPSecEngine implements IProtocolEngine {
 
     const localIP = this.getLocalIP(egressIface) || '';
 
-    // Derive cryptographic key material from negotiated transforms (RFC 4301 §4.4.2 fields #7-9)
-    const cryptoKeys = deriveCryptoKeys(chosenTs.transforms);
-    // Peer gets its own independent KEYMAT (simulated)
-    const peerCryptoKeys = deriveCryptoKeys(chosenTs.transforms);
+    // Derive cryptographic key material from negotiated transforms (RFC 4301 §4.4.2 fields #7-9).
+    // The seed is symmetric (sorted SPIs + PSK + transforms) so both ends of the
+    // SA derive identical KEYMAT — modelling IKE's shared key material and making
+    // ESP ICVs verifiable across the pair (vs. the old per-side Math.random keys).
+    const psk = this.preSharedKeys.get(peerIP)
+      ?? this.preSharedKeys.get(apparentSrcIP)
+      ?? this.preSharedKeys.get('0.0.0.0')
+      ?? '';
+    const loSpi = Math.min(spiInitIn, spiRespIn);
+    const hiSpi = Math.max(spiInitIn, spiRespIn);
+    const keymatSeed = `ipsec-keymat|${psk}|${loSpi}|${hiSpi}|${chosenTs.transforms.join(',')}`;
+    const cryptoKeys = deriveCryptoKeys(chosenTs.transforms, keymatSeed);
+    // Same seed → identical material; each SA keeps its own (immutable) struct.
+    const peerCryptoKeys = deriveCryptoKeys(chosenTs.transforms, keymatSeed);
 
     // Build traffic selectors from the ACL (RFC 4301 §4.4.2 field #12)
     const trafficSelectors = this.buildTrafficSelectorsFromACL(entry.aclName);
