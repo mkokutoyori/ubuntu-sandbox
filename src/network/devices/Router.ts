@@ -168,10 +168,34 @@ import type { IRouterShell } from './shells/IRouterShell';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
+export interface IPv6ACLEntry {
+  action: 'permit' | 'deny';
+  protocol?: string;
+  srcPrefix?: string;
+  srcPrefixLength?: number;
+  dstPrefix?: string;
+  dstPrefixLength?: number;
+  dstPort?: string;
+  log?: boolean;
+  sequence?: number;
+  remark?: string;
+  evaluate?: string;
+  prefix?: string;
+  prefixLength?: number;
+}
+
+export interface IPv6ACL {
+  name: string;
+  entries: IPv6ACLEntry[];
+}
+
 export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
+  protected ipv6AccessLists: IPv6ACL[] = [];
+
+  getIpv6AccessLists(): IPv6ACL[] { return this.ipv6AccessLists; }
 
   _clearArpEntry(ip: string): number {
     return this.arpTable.delete(ip) ? 1 : 0;
@@ -271,7 +295,7 @@ export abstract class Router extends Equipment {
       getArpEntry: (ip) => this.arpTable.get(ip),
       getACLEngine: () => this.aclEngine,
       getIPv6Engine: () => this.ipv6Engine,
-      getIPv6AccessLists: () => (this as any).ipv6AccessLists,
+      getIPv6AccessLists: () => this.ipv6AccessLists,
     });
     this.dynamicRouting = new RouterDynamicRouting({
       id: this.id,

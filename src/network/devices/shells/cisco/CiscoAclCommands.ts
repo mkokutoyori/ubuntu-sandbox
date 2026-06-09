@@ -658,9 +658,8 @@ export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Rout
 }
 
 export function showIPv6AccessLists(router: Router, name?: string): string {
-  const r = router as any;
-  const acls: any[] = r.ipv6AccessLists ?? [];
-  const filtered = name ? acls.filter((a: any) => a.name === name) : acls;
+  const acls = router.getIpv6AccessLists();
+  const filtered = name ? acls.filter((a) => a.name === name) : acls;
   if (filtered.length === 0) return '';
   const lines: string[] = [];
   for (const acl of filtered) {
@@ -683,12 +682,11 @@ export function showIPv6AccessLists(router: Router, name?: string): string {
 // ─── IPv6 Named ACL Commands ──────────────────────────────────────────
 
 function addIPv6ACLEntry(router: Router, name: string, action: 'permit' | 'deny', prefixStr: string | null): void {
-  const r = router as any;
-  if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
-  let acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+  const acls = router.getIpv6AccessLists();
+  let acl = acls.find((a) => a.name === name);
   if (!acl) {
     acl = { name, entries: [] };
-    r.ipv6AccessLists.push(acl);
+    acls.push(acl);
   }
   if (prefixStr) {
     const slash = prefixStr.indexOf('/');
@@ -710,9 +708,8 @@ export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoAC
     if (!name) return '% Incomplete command.';
     // Ensure the ACL exists
     addIPv6ACLEntry(ctx.r(), name, 'permit', null);
-    const r = ctx.r() as any;
-    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
-    if (acl) acl.entries = []; // reset if re-entering
+    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
+    if (acl) acl.entries = [];
     ctx.setSelectedACL(name);
     ctx.setMode('config-ipv6-nacl');
     return '';
@@ -727,13 +724,12 @@ export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     const name = ctx.getSelectedACL();
     if (!name) return '% No ACL selected';
     if (args.length < 1) return '% Incomplete command.';
-    const r = ctx.r() as any;
-    if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
-    let acl = r.ipv6AccessLists.find((a: any) => a.name === name);
-    if (!acl) { acl = { name, entries: [] }; r.ipv6AccessLists.push(acl); }
+    const acls = ctx.r().getIpv6AccessLists();
+    let acl = acls.find((a) => a.name === name);
+    if (!acl) { acl = { name, entries: [] }; acls.push(acl); }
     const protocol = args[0].toLowerCase();
     const isProtoFamily = protocol === 'ipv6' || protocol === 'tcp' || protocol === 'udp' || protocol === 'icmp';
-    const entry: any = { action, protocol };
+    const entry: import('../../Router').IPv6ACLEntry = { action, protocol };
     let i = isProtoFamily ? 1 : 0;
     if (args[i]?.toLowerCase() === 'any') { entry.srcPrefix = 'any'; i++; }
     else if (args[i]?.toLowerCase() === 'host' && args[i + 1]) { entry.srcPrefix = args[i + 1]; i += 2; }
@@ -766,18 +762,14 @@ export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellCo
   trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
     const name = ctx.getSelectedACL();
     if (!name || !args[0]) return '';
-    const r = ctx.r() as any;
-    if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
-    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
     if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', evaluate: args[0] });
     return '';
   });
   trie.registerGreedy('remark', 'ACL remark', (args) => {
     const name = ctx.getSelectedACL();
     if (!name) return '';
-    const r = ctx.r() as any;
-    if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
-    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
     if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', remark: args.join(' ') });
     return '';
   });
