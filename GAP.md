@@ -137,8 +137,9 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 - **Constat** : `display eth-trunk` côté Huawei est rendu à partir d'une structure CLI locale `ethTrunks` totalement déconnectée du `LacpAgent` réellement mis à jour par `eth-trunk <id>` ; en particulier le statut `Up`/`Down` de chaque membre est dérivé de `t.members.length` (nombre total de membres) plutôt que de l'état réel du port/LACP (`bundled`, `partner`, link).
 - **Preuve** : `src/network/devices/shells/HuaweiSwitchShell.ts:1397-1409` (`displayEthTrunk`, `t.members.map(m => ... (t.members.length ? 'Up' : 'Down') ...)`) vs `src/network/devices/shells/HuaweiSwitchShell.ts:639-643` (`applyToLacpAgent(a => { ... a.addPortToGroup(...) })`) — deux sources de vérité disjointes.
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Recommandation** : Faire lire `displayEthTrunk` depuis `getLacpAgent().getGroupMembers(id)` (comme le fait `show etherchannel` côté Cisco, `CiscoSwitchShell.ts:1050-1071`) afin que l'affichage reflète l'état de bundling/partenaire réel.
+- **Correction appliquée** : `displayEthTrunk()` (`src/network/devices/shells/HuaweiSwitchShell.ts:1449-1473`) consulte désormais le `LacpAgent` réel via `getLacpAgent().getGroupMembers(id)` (suivant exactement le patron Cisco recommandé). Le statut par port est dérivé du champ `LacpPortInfo.bundled` (vrai état d'agrégation LACP, qui intègre lien/partner/négociation), le compteur `Number Of Up Ports In Trunk` reflète le nombre réel de ports bundled, et `Operate status` est `up`/`down` selon `upCount > 0`. La liste des membres reste pilotée par `ethTrunks` (config CLI, source légitime de l'ordre d'affichage), mais leur état est croisé avec l'info live via une `Map<portName, LacpPortInfo>`. Aucune duplication ni nouvelle méthode d'agent. Validé par `lacp-protocol.test.ts` + `huawei-eth-trunk.test.ts` + `huawei-switch-shell.test.ts` — 76/76 passants, 0 régression. `npx tsc --noEmit` propre.
 
 ### 2.3 CDP/LLDP
 

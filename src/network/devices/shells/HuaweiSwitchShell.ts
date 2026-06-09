@@ -1449,14 +1449,23 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private displayEthTrunk(id: number): string {
     const t = this.ethTrunks.get(id);
     if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    const liveMembers = agent ? agent.getGroupMembers(id) : [];
+    const liveByPort = new Map(liveMembers.map(m => [m.portName, m] as const));
+    const upCount = liveMembers.filter(m => m.bundled).length;
+    const operate = upCount > 0 ? 'up' : 'down';
     const lines = [
       `Eth-Trunk${id}'s state information is:`,
       `WorkingMode: ${t.mode.toUpperCase()}`,
       `Least Active-linknumber: 1   Max Active-linknumber: ${t.members.length || 8}`,
-      `Operate status: ${t.members.length ? 'up' : 'down'}   Number Of Up Ports In Trunk: ${t.members.length}`,
+      `Operate status: ${operate}   Number Of Up Ports In Trunk: ${upCount}`,
       '--------------------------------------------------------------------------------',
       'PortName                      Status      Weight',
-      ...t.members.map(m => `${m.padEnd(30)}${(t.members.length ? 'Up' : 'Down').padEnd(12)}1`),
+      ...t.members.map(m => {
+        const info = liveByPort.get(m);
+        const status = info?.bundled ? 'Up' : 'Down';
+        return `${m.padEnd(30)}${status.padEnd(12)}1`;
+      }),
     ];
     return lines.join('\n');
   }
