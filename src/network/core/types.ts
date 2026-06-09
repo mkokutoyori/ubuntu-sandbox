@@ -901,6 +901,14 @@ export interface ESPPacket extends NetworkPdu {
    * packets stay valid.
    */
   icv?: string;
+  /**
+   * Confidentiality (RFC 4303 §2): when a real encryption transform is
+   * negotiated, the inner packet is AES-CBC encrypted and carried here as
+   * `<iv-hex><ciphertext-hex>`; `innerPacket` is then a sealed (opaque)
+   * sentinel so the cleartext is not present in transit. Decryption on the
+   * receiving SA rebuilds the real inner packet.
+   */
+  ciphertext?: string;
 }
 
 // ─── IPSec: AH Packet (IP protocol 51, RFC 4302) ────────────────────
