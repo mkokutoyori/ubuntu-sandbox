@@ -14,7 +14,7 @@ corrections sont structurelles, jamais cosmétiques.
 | # | Sujet | Norme / Pattern | Sévérité | Statut |
 |---|-------|-----------------|----------|--------|
 | 1 | STP : états Listening/Learning absents + tie-break d'élection du root port incomplet | IEEE 802.1D | Haute | ✅ Corrigé |
-| 2 | TCP : état TIME_WAIT déclaré mais jamais utilisé (pas de 2MSL) | RFC 793 §3.5 | Haute | À faire |
+| 2 | TCP : état TIME_WAIT déclaré mais jamais utilisé (pas de 2MSL) | RFC 793 §3.5 | Haute | ✅ Corrigé |
 | 3 | HSRPv2 : MAC virtuelle malformée (`0000.0c9f.fXXX` sur 3 digits) | RFC visant HSRPv2 (draft) / réalité Cisco | Moyenne | À faire |
 | 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Template Method | Haute | À faire |
 | 5 | Helpers IP réimplémentés localement dans OSPF / EIGRP / BGP (`ipToNumber`, `toNum`) au lieu de `core/types.ts` | DRY | Moyenne | À faire |
@@ -72,6 +72,51 @@ corrections sont structurelles, jamais cosmétiques.
   transition sur re-blocage.
 - Non-régression : 6570 tests `network-v2` passent (les 2 unhandled rejections
   de `linux-iptables.test.ts` sont préexistantes et sans rapport).
+
+---
+
+## Entrée 2 — TCP : état TIME_WAIT et temporisation 2MSL
+
+**Date** : 2026-06-09
+
+### Défaillance constatée
+
+`TcpStack` (`src/network/tcp/TcpStack.ts`) déclarait `time-wait` dans l'union
+`TcpState` mais aucun chemin n'y entrait : `fin-wait-1`+FIN/ACK,
+`fin-wait-2`+FIN et `closing`+ACK appelaient tous `_teardown()` qui détruisait
+immédiatement le socket. RFC 793 §3.5 impose au fermeur actif de rester en
+TIME_WAIT pendant 2 × MSL pour :
+- absorber les segments retardés de l'ancienne incarnation de la connexion
+  (sinon corruption possible d'une nouvelle connexion sur le même 4-tuple) ;
+- ré-ACKer une retransmission du FIN distant si le dernier ACK s'est perdu.
+
+### Correction
+
+- Constante `TCP_MSL_MS = 30 s` (2MSL = 60 s, aligné Linux
+  `TCP_TIMEWAIT_LEN`) dans `tcp/types.ts`.
+- Transitions conformes : `fin-wait-1 --FIN+ACK--> time-wait`,
+  `fin-wait-2 --FIN--> time-wait`, `closing --ACK--> time-wait` ; le fermeur
+  passif (`last-ack --ACK--> closed`) reste immédiat, conforme.
+- **Fidélité au modèle OS réel** : l'application est notifiée immédiatement
+  (handlers `onClose` + événement `tcp.connection.closed`) — comme un
+  `close()` POSIX — mais le 4-tuple reste réservé dans la table des sockets
+  (visible dans `listSockets()`/netstat, comme une vraie ligne TIME_WAIT)
+  jusqu'à expiration du timer 2MSL, piloté par le `Scheduler` injectable.
+- En TIME_WAIT, un FIN retransmis est ré-ACKé et le timer 2MSL est réarmé.
+- `stop()` libère les sockets TIME_WAIT sans émettre de double événement de
+  fermeture.
+
+### Tests
+
+- 5 nouveaux tests (suite « TIME_WAIT (RFC 793 §3.5) ») en temps virtuel :
+  réservation 2MSL exacte (libération à t=2MSL, pas avant), notification
+  applicative immédiate, ré-ACK d'un FIN retransmis + réarmement du timer,
+  fermeture passive sans TIME_WAIT, `stop()` propre.
+- 2 tests existants mis à jour : ils assertaient le comportement non conforme
+  (fermeur actif `closed` immédiatement).
+- Non-régression : network-v2 + shell + terminal = 7470 tests verts. Le seul
+  échec (`duplicate-display-fixes.test.ts`, prompt sudo) est préexistant —
+  vérifié par bisection avec `git stash` sur l'arbre vierge.
 
 ---
 
