@@ -10,13 +10,26 @@ import { isFullyImplemented } from '@/network';
 import { getConnectionDetails } from './properties-panel-logic';
 import { cn } from '@/lib/utils';
 
-// MAC Table entry type
 interface MACTableEntry {
   macAddress: string;
   interfaceId: string;
   vlan: number;
   timestamp: number;
   type: 'dynamic' | 'static';
+}
+
+interface SwitchInstance {
+  getMACTable(): Map<string, string>;
+  clearMACTable(): void;
+}
+
+function isSwitchInstance(obj: unknown): obj is SwitchInstance {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    typeof (obj as Record<string, unknown>)['getMACTable'] === 'function' &&
+    typeof (obj as Record<string, unknown>)['clearMACTable'] === 'function'
+  );
 }
 
 export function PropertiesPanel() {
@@ -39,9 +52,8 @@ export function PropertiesPanel() {
 
   const getSwitchMACTable = () => {
     if (!selectedDevice || !isSwitch) return [];
-    const sw = selectedDevice.instance as any;
-    if (typeof sw.getMACTable !== 'function') return [];
-    const table: Map<string, string> = sw.getMACTable();
+    if (!isSwitchInstance(selectedDevice.instance)) return [];
+    const table = selectedDevice.instance.getMACTable();
     return Array.from(table.entries()).map(([mac, port]) => ({
       macAddress: mac,
       interfaceId: port,
@@ -66,9 +78,8 @@ export function PropertiesPanel() {
   };
 
   const handleClearMACTable = () => {
-    if (selectedDevice && isSwitch) {
-      const sw = selectedDevice.instance as any;
-      if (typeof sw.clearMACTable === 'function') sw.clearMACTable();
+    if (selectedDevice && isSwitch && isSwitchInstance(selectedDevice.instance)) {
+      selectedDevice.instance.clearMACTable();
       setMacTable([]);
     }
   };
