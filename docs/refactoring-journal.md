@@ -223,3 +223,51 @@ PowerShell passent ; seuls les 9 échecs DateTime préexistants sur main
 subsistent.
 
 ---
+
+## Lot 5 — Correction du mapping d'état SCM Windows → OSService
+
+`ContinuePending` (reprise d'un service en pause par le SCM) était mappé
+sur `deactivating` ; c'est une transition **montante** — l'équivalent
+cross-OS de `activating` (systemd). Corrigé dans
+`windows/service/WindowsService.ts` (`winStateToOs`).
+
+---
+
+## Bilan
+
+**Régression finale :** 519 fichiers / 13 187 tests unitaires passent.
+Les 13 échecs restants (PowerShell DateTime ×9, duplicate-display ×1,
+Oracle access-management ×3) préexistent tous sur `main` (vérifié par
+`git stash` + relance) et sont indépendants de ces travaux.
+
+**Corrigé :** D1 (pas de pile UDP), D2 (DNS god-mode), D4 partiel
+(sessions shell dédupliquées), D5 partiel (WindowsPC décomposé),
+bug `runas` (fuite d'identité), bug mapping SCM.
+
+**Chantiers restants documentés (par ordre de valeur) :**
+1. **D3 — DHCP god-mode** : `DHCPClient` appelle `processDiscover()`
+   directement sur l'objet serveur + bail fictif auto-assigné sans serveur.
+   La migration vers de vraies trames UDP 67/68 broadcast est désormais
+   possible grâce à `UdpStack` (le broadcast 255.255.255.255 est géré) ;
+   il faudra autoriser l'émission depuis 0.0.0.0 (client sans IP, RFC 2131)
+   et rendre `requestLease` asynchrone (impact : dhclient, ipconfig /renew,
+   store UI, grosse suite `dhcp_complete.test.ts`).
+2. **D5 — EndHost (~2500 lignes)** : extraire les sous-systèmes IPv6/NDP
+   (~520 lignes), ARP et ICMP en modules composés sous `devices/host/`.
+3. **D4 — câblage SSH** : `getSshHost()`/autorités dupliqués
+   structurellement entre LinuxMachine et WindowsPC (contenu largement
+   OS-spécifique — gain modéré, risque de régression sur les grosses
+   suites SSH cross-vendor).
+4. `DnsNssSource` (getent) : résolution par parcours du registre
+   d'équipements — à brancher sur `DnsClient` si l'on veut un `getent
+   hosts` strictement réaliste.
+5. Parité Windows : pas de `FilterChain` iptables-like complet (le
+   firewall Windows n'évalue que les règles dynamiques), pas d'équivalent
+   `LinuxFeatureGate` côté Linux (les commandes ne vérifient pas leurs
+   services prérequis comme le fait `WinFeatureGate`).
+
+**Effet UI :** le trafic UDP/DNS étant désormais fait de vraies trames,
+`PacketAnimation` (branchée sur `cable.frame.dispatched`) anime les
+échanges DNS, et le panneau de logs réseau (Logger) montre les
+`cable:transmit` correspondants — sans modification de l'UI.
+
