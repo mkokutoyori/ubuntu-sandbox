@@ -159,7 +159,7 @@ interface QueuedPacket {
   frame: IPv4Packet;
   outIface: string;
   nextHopIP: IPAddress;
-  timer: ReturnType<typeof setTimeout>;
+  timer: symbol;
 }
 
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
@@ -1432,7 +1432,7 @@ export abstract class Router extends Equipment {
 
   private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
-    const timer = setTimeout(() => {
+    const timer = this.routerTimers.setTimeout(() => {
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
@@ -1463,7 +1463,7 @@ export abstract class Router extends Equipment {
     this.inFlightFwdARPs.delete(resolvedIP.toString());
 
     for (const q of ready) {
-      clearTimeout(q.timer);
+      this.routerTimers.clear(q.timer);
       const outPort = this.ports.get(q.outIface);
       if (outPort) {
         this.counters.ipForwDatagrams++;
