@@ -57,6 +57,31 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
+/**
+ * Decode an RFC 4648 base64 string into bytes. Trailing `=` padding is
+ * optional. Throws on any character outside the standard alphabet so a
+ * corrupt token fails fast rather than decoding to silent garbage.
+ */
+export function base64ToBytes(b64: string): Uint8Array {
+  const clean = b64.replace(/=+$/, '');
+  const out: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const idx = BASE64_ALPHABET.indexOf(clean[i]);
+    if (idx === -1) {
+      throw new Error(`base64ToBytes: invalid base64 character "${clean[i]}"`);
+    }
+    buffer = (buffer << 6) | idx;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
 /** Standard RFC 4648 base64 encoding (with `=` padding). */
 export function bytesToBase64(bytes: Uint8Array): string {
   let out = '';

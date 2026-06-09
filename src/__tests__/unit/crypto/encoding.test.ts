@@ -12,6 +12,7 @@ import {
   bytesToHex,
   hexToBytes,
   bytesToBase64,
+  base64ToBytes,
 } from '@/crypto/encoding';
 
 describe('utf8ToBytes', () => {
@@ -92,5 +93,34 @@ describe('bytesToBase64', () => {
 
   it('encodes high bytes correctly', () => {
     expect(bytesToBase64(Uint8Array.of(0xff, 0xff, 0xff))).toBe('////');
+  });
+});
+
+describe('base64ToBytes', () => {
+  it.each([
+    ['', ''],
+    ['Zg==', 'f'],
+    ['Zm8=', 'fo'],
+    ['Zm9v', 'foo'],
+    ['Zm9vYmFy', 'foobar'],
+  ])('decodes %j to %j', (b64, expected) => {
+    expect(bytesToUtf8(base64ToBytes(b64))).toBe(expected);
+  });
+
+  it('decodes a 20-byte salt (used by hashed known_hosts)', () => {
+    expect(bytesToHex(base64ToBytes('CwsLCwsLCwsLCwsLCwsLCwsLCws='))).toBe(
+      '0b'.repeat(20),
+    );
+  });
+
+  it('round-trips through bytesToBase64', () => {
+    const bytes = Uint8Array.of(0, 1, 2, 250, 251, 252, 253, 254, 255);
+    expect(Array.from(base64ToBytes(bytesToBase64(bytes)))).toEqual(
+      Array.from(bytes),
+    );
+  });
+
+  it('throws on a character outside the base64 alphabet', () => {
+    expect(() => base64ToBytes('not valid!')).toThrow(/base64/i);
   });
 });
