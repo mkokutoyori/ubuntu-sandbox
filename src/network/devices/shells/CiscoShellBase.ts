@@ -1090,31 +1090,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `vrf definition ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('key chain', 'Define a key chain', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key chain ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('key', 'Key chain key (sub-key)', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('key-string', 'Set key string', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key-string ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('accept-lifetime', 'Key accept lifetime', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `accept-lifetime ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('send-lifetime', 'Key send lifetime', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `send-lifetime ${args.join(' ')}`);
-      return '';
-    });
     this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);

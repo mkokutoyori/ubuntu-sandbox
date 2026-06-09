@@ -1,12 +1,12 @@
 ============================================================
 RMAN debug transcript — rman-pitr-duplicate-phase2
-Generated: 2026-06-05T10:09:00.884Z
+Generated: 2026-06-09T08:13:04.246Z
 Topology:  db-pitr — Oracle PITRDB SHUTDOWN (session should auto-dispose)
 Total commands: 7
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 05-JUN-2026 10:09:00
+  Recovery Manager: Release 19.0.0.0.0 - Production on 09-JUN-2026 08:13:04
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   

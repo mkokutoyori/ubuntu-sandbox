@@ -93,6 +93,8 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-archive-log':        '{host}(config-archive-log-cfg)#',
   'config-dhcp-class':         '{host}(config-dhcp-class)#',
   'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
+  'config-keychain':           '{host}(config-keychain)#',
+  'config-keychain-key':       '{host}(config-keychain-key)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

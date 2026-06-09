@@ -27,7 +27,11 @@ export type HuaweiShellMode =
   | 'ikev2-proposal' | 'ikev2-policy' | 'ikev2-profile'
   | 'ikev2-keyring' | 'ikev2-keyring-peer'
   | 'route-policy' | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy'
-  | 'nqa-test';
+  | 'nqa-test'
+  | 'aaa' | 'aaa-authen' | 'aaa-author' | 'aaa-accounting' | 'aaa-domain'
+  | 'radius-template' | 'hwtacacs-template'
+  | 'cpu-defend-policy'
+  | 'bfd-global' | 'bfd-session';
 
 export interface HuaweiShellContext {
   r(): Router;

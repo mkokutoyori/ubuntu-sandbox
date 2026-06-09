@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-05T10:10:05.027Z
+Generated: 2026-06-09T08:25:13.437Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [4/482] r1 R1> show calendar
-  10:10:05 UTC Fri Jun 5 2026
+  08:25:13 UTC Tue Jun 9 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -371,7 +371,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCD1EFD.0C49BA5E (10:10:05.048 UTC Fri Jun 5 2026)
+  reference time is EDD24C69.7374BC6A (08:25:13.451 UTC Tue Jun 9 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -680,6 +680,7 @@ Total steps: 482
     interface       Display interface status
     interfaces      Display interface status
     vlans           Display VLANs (router)
+    key             key
     radius          radius
     tacacs          Display TACACS
     login           Display login config
@@ -735,10 +736,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [81/482] r1 R1# show calendar
-  10:10:05 UTC Fri Jun 5 2026
+  08:25:13 UTC Tue Jun 9 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1077,7 +1078,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCD1EFD.0D916872 (10:10:05.053 UTC Fri Jun 5 2026)
+  reference time is EDD24C69.74395810 (08:25:13.454 UTC Tue Jun 9 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1361,7 +1362,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1370,7 +1371,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1379,7 +1380,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1388,7 +1389,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1397,7 +1398,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1406,7 +1407,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1415,7 +1416,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1424,7 +1425,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1433,7 +1434,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1442,7 +1443,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1451,7 +1452,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1460,7 +1461,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1469,7 +1470,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1478,7 +1479,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1487,7 +1488,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1496,7 +1497,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1505,7 +1506,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1514,7 +1515,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1523,7 +1524,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1531,123 +1532,89 @@ Total steps: 482
 [213/482] r1 R1(config)# key chain KC1
 <empty>
 
-[214/482] r1 R1(config)# do show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+[214/482] r1 R1(config-keychain)# do show clock
+  *08:25:13.000 UTC Tue Jun 9 2026
 
-[215/482] r1 R1(config)# exit
+[215/482] r1 R1(config-keychain)# exit
 <empty>
 
-[216/482] r1 R1# track 1 interface GigabitEthernet0/0 line-protocol
-  % Invalid input detected at '^' marker.
-  track 1 interface GigabitEthernet0/0 line-protocol
-  ^
-
-[217/482] r1 R1# do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[218/482] r1 R1# exit
+[216/482] r1 R1(config)# track 1 interface GigabitEthernet0/0 line-protocol
 <empty>
 
-[219/482] r1 R1> vrf definition CUST
-  % Invalid input detected at '^' marker.
-  vrf definition CUST
-  ^
+[217/482] r1 R1(config-track)# do show clock
+  *08:25:13.000 UTC Tue Jun 9 2026
 
-[220/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[221/482] r1 R1> exit
+[218/482] r1 R1(config-track)# exit
 <empty>
 
-[222/482] r1 R1> end
+[219/482] r1 R1(config)# vrf definition CUST
+<empty>
+
+[220/482] r1 R1(config)# do show clock
+  *08:25:13.000 UTC Tue Jun 9 2026
+
+[221/482] r1 R1(config)# exit
+<empty>
+
+[222/482] r1 R1# end
 <empty>
 
 
 --- [223] § hostname / domain / banner ---
-[223/482] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[223/482] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[224/482] r1 R1> hostname R1-CORE
-  % Invalid input detected at '^' marker.
-  hostname R1-CORE
-  ^
-
-[225/482] r1 R1> ip domain-name lab.local
-  % Invalid input detected at '^' marker.
-  ip domain-name lab.local
-  ^
-
-[226/482] r1 R1> ip domain-lookup
-  % Invalid input detected at '^' marker.
-  ip domain-lookup
-  ^
-
-[227/482] r1 R1> no ip domain-lookup
-  % Invalid input detected at '^' marker.
-  no ip domain-lookup
-     ^
-
-[228/482] r1 R1> ip name-server 8.8.8.8
-  % Invalid input detected at '^' marker.
-  ip name-server 8.8.8.8
-  ^
-
-[229/482] r1 R1> ip name-server 8.8.4.4 1.1.1.1
-  % Invalid input detected at '^' marker.
-  ip name-server 8.8.4.4 1.1.1.1
-  ^
-
-[230/482] r1 R1> banner motd # Authorized access only #
-  % Invalid input detected at '^' marker.
-  banner motd # Authorized access only #
-  ^
-
-[231/482] r1 R1> banner login ^C Login banner ^C
-  % Invalid input detected at '^' marker.
-  banner login ^C Login banner ^C
-  ^
-
-[232/482] r1 R1> banner exec $ Exec banner $
-  % Invalid input detected at '^' marker.
-  banner exec $ Exec banner $
-  ^
-
-[233/482] r1 R1> clock timezone UTC 0
-  % Invalid input detected at '^' marker.
-  clock timezone UTC 0
-  ^
-
-[234/482] r1 R1> clock summer-time CEST recurring
-  % Invalid input detected at '^' marker.
-  clock summer-time CEST recurring
-  ^
-
-[235/482] r1 R1> no banner motd
-  % Invalid input detected at '^' marker.
-  no banner motd
-     ^
-
-[236/482] r1 R1> end
+[224/482] r1 R1(config)# hostname R1-CORE
 <empty>
 
-[237/482] r1 R1> show running-config | include banner
+[225/482] r1 R1-CORE(config)# ip domain-name lab.local
+<empty>
+
+[226/482] r1 R1-CORE(config)# ip domain-lookup
+<empty>
+
+[227/482] r1 R1-CORE(config)# no ip domain-lookup
+<empty>
+
+[228/482] r1 R1-CORE(config)# ip name-server 8.8.8.8
+<empty>
+
+[229/482] r1 R1-CORE(config)# ip name-server 8.8.4.4 1.1.1.1
+<empty>
+
+[230/482] r1 R1-CORE(config)# banner motd # Authorized access only #
+<empty>
+
+[231/482] r1 R1-CORE(config)# banner login ^C Login banner ^C
+<empty>
+
+[232/482] r1 R1-CORE(config)# banner exec $ Exec banner $
+<empty>
+
+[233/482] r1 R1-CORE(config)# clock timezone UTC 0
+<empty>
+
+[234/482] r1 R1-CORE(config)# clock summer-time CEST recurring
+<empty>
+
+[235/482] r1 R1-CORE(config)# no banner motd
+<empty>
+
+[236/482] r1 R1-CORE(config)# end
+<empty>
+
+[237/482] r1 R1-CORE# show running-config | include banner
 <empty>
 
 
 --- [238] § abbreviations ---
-[238/482] r1 R1> en
+[238/482] r1 R1-CORE# en
 <empty>
 
-[239/482] r1 R1# conf t
+[239/482] r1 R1-CORE# conf t
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[240/482] r1 R1(config)# host R1-EDGE
+[240/482] r1 R1-CORE(config)# host R1-EDGE
 <empty>
 
 [241/482] r1 R1-EDGE(config)# do sh ver
@@ -1778,6 +1745,7 @@ Total steps: 482
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 
@@ -2032,8 +2000,11 @@ Total steps: 482
    version 2
   line vty 0 4
   no ip routing
+  vrf definition CUST
+  clock summer-time CEST recurring  
   key chain KC1
   no cdp run
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2074,10 +2045,14 @@ Total steps: 482
   no ip routing
   !
   !
+  vrf definition CUST
+  clock summer-time CEST recurring  
+  !
   key chain KC1
   !
   no cdp run
   !
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2178,10 +2153,14 @@ Total steps: 482
   no ip routing
   !
   !
+  vrf definition CUST
+  clock summer-time CEST recurring  
+  !
   key chain KC1
   !
   no cdp run
   !
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2234,10 +2213,14 @@ Total steps: 482
   no ip routing
   !
   !
+  vrf definition CUST
+  clock summer-time CEST recurring  
+  !
   key chain KC1
   !
   no cdp run
   !
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2290,10 +2273,14 @@ Total steps: 482
   no ip routing
   !
   !
+  vrf definition CUST
+  clock summer-time CEST recurring  
+  !
   key chain KC1
   !
   no cdp run
   !
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2458,13 +2445,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2580,13 +2571,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2680,13 +2675,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2748,13 +2747,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2971,7 +2974,9 @@ Total steps: 482
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [405/482] r1 R1-EDGE# show track
-  No tracked objects configured.
+  Track 1
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
 
 [406/482] r1 R1-EDGE# show ip sla statistics
   No IP SLA operations configured.
@@ -2998,7 +3003,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCD1EFD.1851EB85 (10:10:05.095 UTC Fri Jun 5 2026)
+  reference time is EDD24C69.7A9FBE76 (08:25:13.479 UTC Tue Jun 9 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -3007,7 +3012,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *10:10:05.000 UTC Fri Jun 5 2026
+  *08:25:13.000 UTC Tue Jun 9 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3198,13 +3203,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3398,13 +3407,17 @@ Total steps: 482
   enable password 0 weakpass
   service password-encryption
   !
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  !
+  key chain KC1
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3451,11 +3464,14 @@ Total steps: 482
   enable secret 5 cisco123
   enable password 0 weakpass
   service password-encryption
-  key chain KC1
+  vrf definition CUST
   privilege exec level 5 show running-config
+  clock summer-time CEST recurring  
+  key chain KC1
   no cdp run
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
+  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3674,6 +3690,7 @@ Total steps: 482
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 
@@ -3681,7 +3698,7 @@ Total steps: 482
 <empty>
 
 [481/482] r1 R1-EDGE# show running-config | count !
-  18
+  19
 
 [482/482] r1 R1-EDGE# write memory
   Building configuration...

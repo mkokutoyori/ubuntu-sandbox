@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-05T10:10:37.340Z
+Generated: 2026-06-09T08:25:18.245Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -308,7 +308,7 @@ Total steps: 279
 <empty>
 
 [85/279] r1 [R1-acl-adv-3100] rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [86/279] r1 [R1-acl-adv-3100] quit
 <empty>
@@ -745,6 +745,9 @@ Total steps: 279
    ipsec profile PROF1
   #
   #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  #
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -839,6 +842,9 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
+  #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1034,7 +1040,10 @@ Total steps: 279
   No DHCP pools configured.
 
 [197/279] r1 [R1] display acl all
-  Total 0 ACL(s)
+  Advanced ACL 3100, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  Total 1 ACL(s)
 
 [198/279] r1 [R1] display dhcp server statistics
   DHCP server packets statistics:
@@ -1161,8 +1170,8 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 [R1] display clock
-  2026-06-05 10:10:37
-  Friday
+  2026-06-09 08:25:18
+  Tuesday
   Time Zone(UTC) : UTC
 
 [211/279] r1 [R1] display lldp neighbor
@@ -1174,13 +1183,13 @@ Total steps: 279
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-05 10:10:37
+  CPU Usage Stat. Time : 2026-06-09 08:25:18
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-05 10:10:37
+  Memory utilization statistics at 2026-06-09 08:25:18
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1334,6 +1343,9 @@ Total steps: 279
    ipsec profile PROF1
   #
   #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  #
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1473,6 +1485,9 @@ Total steps: 279
    ipsec profile PROF1
   #
   #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  #
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1558,6 +1573,8 @@ Total steps: 279
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1744,6 +1761,7 @@ Total steps: 279
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6

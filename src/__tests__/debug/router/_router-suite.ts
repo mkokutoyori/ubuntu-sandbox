@@ -324,10 +324,10 @@ export async function dumpRouter(
           try {
             if (options.resyncVendor === 'cisco') {
               await r1.executeCommand('end');
-              if (first !== 'enable' && first !== 'en' && !/^conf/.test(first)) {
+              if (first !== 'enable' && first !== 'en') {
                 await r1.executeCommand('enable');
               }
-              if (!/^conf/.test(first)) {
+              if (!/^conf/.test(first) && first !== 'enable' && first !== 'en') {
                 await r1.executeCommand('configure terminal');
               }
             } else {

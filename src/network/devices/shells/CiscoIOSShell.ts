@@ -40,6 +40,7 @@ import {
 } from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { TrackRepository } from '../inspection/config/TrackRepository';
+import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
@@ -59,6 +60,12 @@ import {
   registerDhcpShowCommands,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
+import {
+  registerKeyChainGlobalCommands,
+  buildKeyChainSubmode,
+  buildKeyChainKeySubmode,
+  registerKeyChainShowCommands,
+} from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow,
 } from './cisco/CiscoRoutingProtoCommands';
@@ -107,6 +114,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private readonly fhrp = new FhrpRepository();
+  private readonly keyChains = new KeyChainRepository();
+  getKeyChains(): KeyChainRepository { return this.keyChains; }
   /** Real config-driven object-tracking & IP SLA state. */
   private readonly track = new TrackRepository();
   private readonly ipsla = new IpSlaRepository();
@@ -188,6 +197,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configArchiveLogTrie = new CommandTrie();
   private configDhcpClassTrie = new CommandTrie();
   private configIpv6DhcpTrie = new CommandTrie();
+  private configKeychainTrie = new CommandTrie();
+  private configKeychainKeyTrie = new CommandTrie();
+  private selectedKeyChain: string | null = null;
+  private selectedKeyChainKey: number | null = null;
+  getSelectedKeyChain(): string | null { return this.selectedKeyChain; }
+  setSelectedKeyChain(n: string | null): void { this.selectedKeyChain = n; }
+  getSelectedKeyChainKey(): number | null { return this.selectedKeyChainKey; }
+  setSelectedKeyChainKey(n: number | null): void { this.selectedKeyChainKey = n; }
 
   private selectedTimeRange: string | null = null;
   private selectedClassMap: string | null = null;
@@ -444,6 +461,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-archive-log': return this.configArchiveLogTrie;
       case 'config-dhcp-class': return this.configDhcpClassTrie;
       case 'config-ipv6-dhcp': return this.configIpv6DhcpTrie;
+      case 'config-keychain': return this.configKeychainTrie;
+      case 'config-keychain-key': return this.configKeychainKeyTrie;
       default: return this.userTrie;
     }
   }
@@ -469,6 +488,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
       if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
       if (f === 'selectedTimeRange') this.selectedTimeRange = null;
+      if (f === 'selectedKeyChain') this.selectedKeyChain = null;
+      if (f === 'selectedKeyChainKey') this.selectedKeyChainKey = null;
       if (f === 'selectedClassMap') this.selectedClassMap = null;
       if (f === 'selectedPolicyMap') this.selectedPolicyMap = null;
       if (f === 'selectedPolicyClass') this.selectedPolicyClass = null;
@@ -529,6 +550,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
     buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
+    registerKeyChainGlobalCommands(this.configTrie, this);
+    buildKeyChainSubmode(this.configKeychainTrie, this);
+    buildKeyChainKeySubmode(this.configKeychainKeyTrie, this);
+    registerKeyChainShowCommands(this.privilegedTrie, this);
+    registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);

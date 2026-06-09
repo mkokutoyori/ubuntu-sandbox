@@ -145,6 +145,8 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-archive-log':        { parent: 'config-archive' },
   'config-dhcp-class':         { parent: 'config' },
   'config-ipv6-dhcp':          { parent: 'config' },
+  'config-keychain':           { parent: 'config', clearOnExit: ['selectedKeyChain'] },
+  'config-keychain-key':       { parent: 'config-keychain', clearOnExit: ['selectedKeyChainKey'] },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-05T10:10:19.613Z
+Generated: 2026-06-09T08:25:16.834Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-05 10:10:19
-  Friday
+  2026-06-09 08:25:16
+  Tuesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-05 10:10:19
+  CPU Usage Stat. Time : 2026-06-09 08:25:16
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-05 10:10:19
+  Memory utilization statistics at 2026-06-09 08:25:16
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -519,6 +519,14 @@ Total steps: 304
     route-policy            Display a route-policy
     traffic-policy          traffic-policy
     nqa                     nqa
+    domain                  Display AAA domains
+    radius-server           radius-server
+    hwtacacs-server         hwtacacs-server
+    rsa                     rsa
+    time-range              time-range
+    traffic-filter          traffic-filter
+    cpu-defend              cpu-defend
+    firewall                firewall
     this                    Display current view configuration
 
 [61/304] r1 <R1> ping 10.0.0.2
@@ -717,9 +725,9 @@ Total steps: 304
 <empty>
 
 [93/304] r1 [R1-CORE] acl name MGMT
-  Error: Incomplete command.
+<empty>
 
-[94/304] r1 [R1-CORE] display this
+[94/304] r1 [R1-CORE-acl-basic-MGMT] display this
   #
   sysname R1-CORE
   #
@@ -748,91 +756,28 @@ Total steps: 304
   ospf 1
   #
 
-[95/304] r1 [R1-CORE] quit
+[95/304] r1 [R1-CORE-acl-basic-MGMT] quit
 <empty>
 
-[96/304] r1 <R1-CORE> ip pool LAN
-  % Invalid input detected at '^' marker.
+[96/304] r1 [R1-CORE] ip pool LAN
+<empty>
+
+[97/304] r1 [R1-CORE-ip-pool-LAN] display this
+  #
   ip pool LAN
-     ^
-
-[97/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
   #
 
-[98/304] r1 <R1-CORE> quit
+[98/304] r1 [R1-CORE-ip-pool-LAN] quit
 <empty>
 
-[99/304] r1 <R1-CORE> aaa
-  % Invalid input detected at '^' marker.
-  aaa
-  ^
-
-[100/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-
-[101/304] r1 <R1-CORE> quit
+[99/304] r1 [R1-CORE] aaa
 <empty>
 
-[102/304] r1 <R1-CORE> user-interface console 0
-  % Invalid input detected at '^' marker.
-  user-interface console 0
-  ^
-
-[103/304] r1 <R1-CORE> display this
+[100/304] r1 [R1-CORE-aaa] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -859,7 +804,44 @@ Total steps: 304
   ospf 1
   #
 
-[104/304] r1 <R1-CORE> quit
+[101/304] r1 [R1-CORE-aaa] quit
+<empty>
+
+[102/304] r1 [R1-CORE] user-interface console 0
+<empty>
+
+[103/304] r1 [R1-CORE] display this
+  #
+  sysname R1-CORE
+  #
+  ip pool LAN
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+  ospf 1
+  #
+
+[104/304] r1 [R1-CORE] quit
 <empty>
 
 [105/304] r1 <R1-CORE> user-interface vty 0 4
@@ -870,6 +852,8 @@ Total steps: 304
 [106/304] r1 <R1-CORE> display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -908,6 +892,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -945,6 +931,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -981,6 +969,8 @@ Total steps: 304
 [115/304] r1 <R1-CORE> display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1025,6 +1015,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1062,6 +1054,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1093,6 +1087,8 @@ Total steps: 304
 [125/304] r1 [R1-EDGE] dis th
   #
   sysname R1-EDGE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1128,6 +1124,8 @@ Total steps: 304
 [128/304] r1 <R1-EDGE> dis cu
   #
   sysname R1-EDGE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1206,6 +1204,7 @@ Total steps: 304
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1344,12 +1343,14 @@ Total steps: 304
 
 --- [171] § pipe filters ---
 [171/304] r1 <Huawei> display current-configuration | include ip
+  ip pool LAN
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
 
 [172/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
   dhcp enable
+  ip pool LAN
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -1429,7 +1430,9 @@ Total steps: 304
 <empty>
 
 [182/304] r1 [Huawei] authentication-mode password
-<empty>
+  % Invalid input detected at '^' marker.
+  authentication-mode password
+  ^
 
 [183/304] r1 [Huawei] set authentication password cipher Huawei@123
 <empty>
@@ -1487,6 +1490,8 @@ Total steps: 304
   sysname Huawei
   #
   dhcp enable
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1555,6 +1560,8 @@ Total steps: 304
   #
   dhcp enable
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1586,6 +1593,8 @@ Total steps: 304
   sysname Huawei
   #
   dhcp enable
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1764,7 +1773,16 @@ Total steps: 304
   No NAT address pools configured.
 
 [221/304] r1 <Huawei> display ip pool
-  No DHCP pools configured.
+  Pool-name      : LAN
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : not configured
+  Network        : not configured
+  Mask           : not configured
+  DNS-list       : not configured
+  Domain-name    : not configured
+  Lease          : 1 day(s)
 
 [222/304] r1 <Huawei> display acl all
   Total 0 ACL(s)
@@ -1777,7 +1795,7 @@ Total steps: 304
     Request: 0       Ack: 0
     Nak: 0           Release: 0
     Inform: 0        Decline: 0
-  Pool number: 0
+  Pool number: 1
 
 [224/304] r1 <Huawei> display vrrp
   Info: No VRRP backup group is configured.
@@ -1818,8 +1836,8 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-05 10:10:19
-  Friday
+  2026-06-09 08:25:16
+  Tuesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <Huawei> display lldp neighbor
@@ -1831,13 +1849,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-05 10:10:19
+  CPU Usage Stat. Time : 2026-06-09 08:25:16
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-05 10:10:19
+  Memory utilization statistics at 2026-06-09 08:25:16
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1961,6 +1979,8 @@ Total steps: 304
   #
   dhcp enable
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -2064,6 +2084,7 @@ Total steps: 304
 [263/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
   dhcp enable
+  ip pool LAN
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -2215,6 +2236,7 @@ Total steps: 304
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6

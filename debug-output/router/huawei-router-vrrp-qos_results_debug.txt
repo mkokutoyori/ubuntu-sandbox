@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-05T10:10:58.554Z
+Generated: 2026-06-09T08:25:19.515Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -234,66 +234,58 @@ Total steps: 257
 [61/257] r1 [R1] bfd
 <empty>
 
-[62/257] r1 [R1] quit
+[62/257] r1 [R1-bfd] quit
 <empty>
 
-[63/257] r1 <R1> bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
-  % Invalid input detected at '^' marker.
-  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
-  ^
-
-[64/257] r1 <R1> discriminator local 1
-  % Invalid input detected at '^' marker.
-  discriminator local 1
-  ^
-
-[65/257] r1 <R1> discriminator remote 2
-  % Invalid input detected at '^' marker.
-  discriminator remote 2
-  ^
-
-[66/257] r1 <R1> min-tx-interval 100
-  % Invalid input detected at '^' marker.
-  min-tx-interval 100
-  ^
-
-[67/257] r1 <R1> min-rx-interval 100
-  % Invalid input detected at '^' marker.
-  min-rx-interval 100
-  ^
-
-[68/257] r1 <R1> detect-multiplier 3
-  % Invalid input detected at '^' marker.
-  detect-multiplier 3
-  ^
-
-[69/257] r1 <R1> commit
+[63/257] r1 [R1] bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
 <empty>
 
-[70/257] r1 <R1> quit
+[64/257] r1 [R1-bfd-session-VRRP1] discriminator local 1
 <empty>
 
-[71/257] r1 <R1> interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0
-  ^
-
-[72/257] r1 <R1> vrrp vrid 1 track bfd-session 1 reduced 50
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 track bfd-session 1 reduced 50
-  ^
-
-[73/257] r1 <R1> quit
+[65/257] r1 [R1-bfd-session-VRRP1] discriminator remote 2
 <empty>
 
-[74/257] r1 <R1> return
+[66/257] r1 [R1-bfd-session-VRRP1] min-tx-interval 100
+<empty>
+
+[67/257] r1 [R1-bfd-session-VRRP1] min-rx-interval 100
+<empty>
+
+[68/257] r1 [R1-bfd-session-VRRP1] detect-multiplier 3
+<empty>
+
+[69/257] r1 [R1-bfd-session-VRRP1] commit
+<empty>
+
+[70/257] r1 [R1-bfd-session-VRRP1] quit
+<empty>
+
+[71/257] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[72/257] r1 [R1-GE0/0/0] vrrp vrid 1 track bfd-session 1 reduced 50
+<empty>
+
+[73/257] r1 [R1-GE0/0/0] quit
+<empty>
+
+[74/257] r1 [R1] return
 <empty>
 
 [75/257] r1 <R1> display bfd configuration all
-  Info: BFD is not enabled
+  Session: VRRP1
+    Peer IP: 10.0.0.2
+    Source IP: 10.0.0.1
+    Local discriminator: 1
+    Remote discriminator: 2
+    Min Tx interval: 100ms
+    Min Rx interval: 100ms
+    Detect multiplier: 3
 
 [76/257] r1 <R1> display bfd session all
-  Info: No BFD sessions
+  Local Remote      PeerIpAddr       State     Type        InterfaceName
+  1     2           10.0.0.2         Down      AUTO        -
 
 
 --- [77] § QoS — classifier/behavior/policy ---
@@ -304,7 +296,7 @@ Total steps: 257
 <empty>
 
 [79/257] r1 [R1-acl-adv-3000] rule 5 permit ip dscp ef
-  Error: Expected permit or deny.
+<empty>
 
 [80/257] r1 [R1-acl-adv-3000] quit
 <empty>
@@ -355,17 +347,13 @@ Total steps: 257
 <empty>
 
 [96/257] r1 [R1-behavior-B-VOICE] queue ef bandwidth 2000
-  % Invalid input detected at '^' marker.
-  queue ef bandwidth 2000
-  ^
+<empty>
 
 [97/257] r1 [R1-behavior-B-VOICE] car cir 2000 pir 4000 cbs 50000 pbs 100000
 <empty>
 
 [98/257] r1 [R1-behavior-B-VOICE] statistics enable
-  % Invalid input detected at '^' marker.
-  statistics enable
-  ^
+<empty>
 
 [99/257] r1 [R1-behavior-B-VOICE] quit
 <empty>
@@ -377,9 +365,7 @@ Total steps: 257
 <empty>
 
 [102/257] r1 [R1-behavior-B-VIDEO] queue af bandwidth pct 25
-  % Invalid input detected at '^' marker.
-  queue af bandwidth pct 25
-  ^
+<empty>
 
 [103/257] r1 [R1-behavior-B-VIDEO] quit
 <empty>
@@ -391,9 +377,7 @@ Total steps: 257
 <empty>
 
 [106/257] r1 [R1-behavior-B-CRIT] queue af bandwidth pct 15
-  % Invalid input detected at '^' marker.
-  queue af bandwidth pct 15
-  ^
+<empty>
 
 [107/257] r1 [R1-behavior-B-CRIT] quit
 <empty>
@@ -604,6 +588,9 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
 [156/257] r1 [R1] display saved-configuration
   #
@@ -621,6 +608,9 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
+  #
+  acl number 3000
+   rule 0 permit
   #
 
 [157/257] r1 [R1] display ip interface brief
@@ -727,7 +717,10 @@ Total steps: 257
   No DHCP pools configured.
 
 [175/257] r1 [R1] display acl all
-  Total 0 ACL(s)
+  Advanced ACL 3000, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit
+  Total 1 ACL(s)
 
 [176/257] r1 [R1] display dhcp server statistics
   DHCP server packets statistics:
@@ -813,8 +806,8 @@ Total steps: 257
   No NTP associations
 
 [188/257] r1 [R1] display clock
-  2026-06-05 10:10:58
-  Friday
+  2026-06-09 08:25:19
+  Tuesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
@@ -826,13 +819,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-05 10:10:58
+  CPU Usage Stat. Time : 2026-06-09 08:25:19
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-05 10:10:58
+  Memory utilization statistics at 2026-06-09 08:25:19
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -965,6 +958,9 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
 [207/257] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1027,6 +1023,9 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
 [216/257] r1 [R1] display current-configuration | exclude #
   sysname R1
@@ -1038,6 +1037,8 @@ Total steps: 257
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
+  acl number 3000
+   rule 0 permit
 
 [217/257] r1 [R1] display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
@@ -1175,6 +1176,7 @@ Total steps: 257
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6

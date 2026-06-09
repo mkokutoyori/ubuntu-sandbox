@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-05T10:10:35.618Z
+Generated: 2026-06-09T08:25:14.557Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -136,66 +136,52 @@ Total steps: 355
 [42/355] r1 R1(config)# key chain RIP-KEY
 <empty>
 
-[43/355] r1 R1(config)# key 1
+[43/355] r1 R1(config-keychain)# key 1
 <empty>
 
-[44/355] r1 R1(config)# key-string secretrip
+[44/355] r1 R1(config-keychain-key)# key-string secretrip
 <empty>
 
-[45/355] r1 R1(config)# accept-lifetime 00:00:00 Jan 1 2020 infinite
+[45/355] r1 R1(config-keychain-key)# accept-lifetime 00:00:00 Jan 1 2020 infinite
 <empty>
 
-[46/355] r1 R1(config)# send-lifetime 00:00:00 Jan 1 2020 infinite
+[46/355] r1 R1(config-keychain-key)# send-lifetime 00:00:00 Jan 1 2020 infinite
 <empty>
 
-[47/355] r1 R1(config)# exit
+[47/355] r1 R1(config-keychain-key)# exit
 <empty>
 
-[48/355] r1 R1# exit
+[48/355] r1 R1(config-keychain)# exit
 <empty>
 
-[49/355] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[50/355] r1 R1> ip rip authentication mode md5
-  % Invalid input detected at '^' marker.
-  ip rip authentication mode md5
-  ^
-
-[51/355] r1 R1> ip rip authentication key-chain RIP-KEY
-  % Invalid input detected at '^' marker.
-  ip rip authentication key-chain RIP-KEY
-  ^
-
-[52/355] r1 R1> ip rip send version 2
-  % Invalid input detected at '^' marker.
-  ip rip send version 2
-  ^
-
-[53/355] r1 R1> ip rip receive version 1 2
-  % Invalid input detected at '^' marker.
-  ip rip receive version 1 2
-  ^
-
-[54/355] r1 R1> ip rip v2-broadcast
-  % Invalid input detected at '^' marker.
-  ip rip v2-broadcast
-  ^
-
-[55/355] r1 R1> ip summary-address rip 10.0.0.0 255.0.0.0
-  % Invalid input detected at '^' marker.
-  ip summary-address rip 10.0.0.0 255.0.0.0
-  ^
-
-[56/355] r1 R1> exit
+[49/355] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
-[57/355] r1 R1> end
+[50/355] r1 R1(config-if)# ip rip authentication mode md5
 <empty>
 
-[58/355] r1 R1> show ip rip database
+[51/355] r1 R1(config-if)# ip rip authentication key-chain RIP-KEY
+<empty>
+
+[52/355] r1 R1(config-if)# ip rip send version 2
+<empty>
+
+[53/355] r1 R1(config-if)# ip rip receive version 1 2
+<empty>
+
+[54/355] r1 R1(config-if)# ip rip v2-broadcast
+<empty>
+
+[55/355] r1 R1(config-if)# ip summary-address rip 10.0.0.0 255.0.0.0
+<empty>
+
+[56/355] r1 R1(config-if)# exit
+<empty>
+
+[57/355] r1 R1(config)# end
+<empty>
+
+[58/355] r1 R1# show ip rip database
   10.1.0.0/8    auto-summary
   10.1.0.0/8
       [1] directly connected, via configured network
@@ -221,7 +207,7 @@ Total steps: 355
   10.0.0.0/8
       [1] directly connected, via configured network
 
-[59/355] r1 R1> show ip protocols
+[59/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -254,235 +240,183 @@ Total steps: 355
     validate-update-source
     Distance: 120
 
-[60/355] r1 R1> show ip route rip
+[60/355] r1 R1# show ip route rip
   % Network not in table
 
-[61/355] r1 R1> debug ip rip
-  % Invalid input detected at '^' marker.
-  debug ip rip
-           ^
+[61/355] r1 R1# debug ip rip
+  RIP debugging is on
 
-[62/355] r1 R1> debug ip rip events
-  % Invalid input detected at '^' marker.
-  debug ip rip events
-           ^
+[62/355] r1 R1# debug ip rip events
+  IP packet debugging is on for rip events
 
-[63/355] r1 R1> undebug all
+[63/355] r1 R1# undebug all
   All possible debugging has been turned off
 
-[64/355] r1 R1> clear ip route *
-  % Invalid input detected at '^' marker.
-  clear ip route *
-           ^
+[64/355] r1 R1# clear ip route *
+<empty>
 
 
 --- [65] § EIGRP classic ---
-[65/355] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[65/355] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[66/355] r1 R1> router eigrp 100
-  % Invalid input detected at '^' marker.
-  router eigrp 100
-  ^
-
-[67/355] r1 R1> eigrp router-id 1.1.1.1
-  % Invalid input detected at '^' marker.
-  eigrp router-id 1.1.1.1
-  ^
-
-[68/355] r1 R1> no auto-summary
-  % Invalid input detected at '^' marker.
-  no auto-summary
-     ^
-
-[69/355] r1 R1> network 10.1.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.1.0.0 0.0.255.255
-  ^
-
-[70/355] r1 R1> network 10.2.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.2.0.0 0.0.255.255
-  ^
-
-[71/355] r1 R1> network 10.3.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.3.0.0 0.0.255.255
-  ^
-
-[72/355] r1 R1> network 10.4.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.4.0.0 0.0.255.255
-  ^
-
-[73/355] r1 R1> network 10.5.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.5.0.0 0.0.255.255
-  ^
-
-[74/355] r1 R1> network 10.6.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  network 10.6.0.0 0.0.255.255
-  ^
-
-[75/355] r1 R1> network 192.168.1.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  network 192.168.1.0 0.0.0.255
-  ^
-
-[76/355] r1 R1> network 10.0.0.0 0.0.0.3
-  % Invalid input detected at '^' marker.
-  network 10.0.0.0 0.0.0.3
-  ^
-
-[77/355] r1 R1> passive-interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  passive-interface GigabitEthernet0/0
-  ^
-
-[78/355] r1 R1> eigrp stub connected summary
-  % Invalid input detected at '^' marker.
-  eigrp stub connected summary
-  ^
-
-[79/355] r1 R1> metric weights 0 1 0 1 0 0
-  % Invalid input detected at '^' marker.
-  metric weights 0 1 0 1 0 0
-  ^
-
-[80/355] r1 R1> metric maximum-hops 50
-  % Invalid input detected at '^' marker.
-  metric maximum-hops 50
-  ^
-
-[81/355] r1 R1> variance 4
-  % Invalid input detected at '^' marker.
-  variance 4
-  ^
-
-[82/355] r1 R1> maximum-paths 6
-  % Invalid input detected at '^' marker.
-  maximum-paths 6
-  ^
-
-[83/355] r1 R1> distance eigrp 90 170
-  % Invalid input detected at '^' marker.
-  distance eigrp 90 170
-  ^
-
-[84/355] r1 R1> timers active-time 3
-  % Invalid input detected at '^' marker.
-  timers active-time 3
-  ^
-
-[85/355] r1 R1> redistribute connected
-  % Invalid input detected at '^' marker.
-  redistribute connected
-  ^
-
-[86/355] r1 R1> redistribute static metric 10000 100 255 1 1500
-  % Invalid input detected at '^' marker.
-  redistribute static metric 10000 100 255 1 1500
-  ^
-
-[87/355] r1 R1> redistribute ospf 1 metric 10000 100 255 1 1500
-  % Invalid input detected at '^' marker.
-  redistribute ospf 1 metric 10000 100 255 1 1500
-  ^
-
-[88/355] r1 R1> default-metric 10000 100 255 1 1500
-  % Invalid input detected at '^' marker.
-  default-metric 10000 100 255 1 1500
-  ^
-
-[89/355] r1 R1> traffic-share balanced
-  % Invalid input detected at '^' marker.
-  traffic-share balanced
-  ^
-
-[90/355] r1 R1> exit
+[66/355] r1 R1(config)# router eigrp 100
 <empty>
 
-[91/355] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[92/355] r1 R1> ip summary-address eigrp 100 172.16.0.0 255.255.0.0
-  % Invalid input detected at '^' marker.
-  ip summary-address eigrp 100 172.16.0.0 255.255.0.0
-  ^
-
-[93/355] r1 R1> ip bandwidth-percent eigrp 100 50
-  % Invalid input detected at '^' marker.
-  ip bandwidth-percent eigrp 100 50
-  ^
-
-[94/355] r1 R1> ip hello-interval eigrp 100 5
-  % Invalid input detected at '^' marker.
-  ip hello-interval eigrp 100 5
-  ^
-
-[95/355] r1 R1> ip hold-time eigrp 100 15
-  % Invalid input detected at '^' marker.
-  ip hold-time eigrp 100 15
-  ^
-
-[96/355] r1 R1> ip authentication mode eigrp 100 md5
-  % Invalid input detected at '^' marker.
-  ip authentication mode eigrp 100 md5
-  ^
-
-[97/355] r1 R1> ip authentication key-chain eigrp 100 RIP-KEY
-  % Invalid input detected at '^' marker.
-  ip authentication key-chain eigrp 100 RIP-KEY
-  ^
-
-[98/355] r1 R1> no ip split-horizon eigrp 100
-  % Invalid input detected at '^' marker.
-  no ip split-horizon eigrp 100
-     ^
-
-[99/355] r1 R1> exit
+[67/355] r1 R1(config-router)# eigrp router-id 1.1.1.1
 <empty>
 
-[100/355] r1 R1> end
+[68/355] r1 R1(config-router)# no auto-summary
 <empty>
 
-[101/355] r1 R1> show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+[69/355] r1 R1(config-router)# network 10.1.0.0 0.0.255.255
+<empty>
 
-[102/355] r1 R1> show ip eigrp neighbors detail
-  % EIGRP not running (no autonomous-system configured)
+[70/355] r1 R1(config-router)# network 10.2.0.0 0.0.255.255
+<empty>
 
-[103/355] r1 R1> show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+[71/355] r1 R1(config-router)# network 10.3.0.0 0.0.255.255
+<empty>
 
-[104/355] r1 R1> show ip eigrp topology all-links
-  % EIGRP not running (no autonomous-system configured)
+[72/355] r1 R1(config-router)# network 10.4.0.0 0.0.255.255
+<empty>
 
-[105/355] r1 R1> show ip eigrp interfaces
-  % EIGRP not running (no autonomous-system configured)
+[73/355] r1 R1(config-router)# network 10.5.0.0 0.0.255.255
+<empty>
 
-[106/355] r1 R1> show ip eigrp interfaces detail
-  % EIGRP not running (no autonomous-system configured)
+[74/355] r1 R1(config-router)# network 10.6.0.0 0.0.255.255
+<empty>
 
-[107/355] r1 R1> show ip eigrp traffic
+[75/355] r1 R1(config-router)# network 192.168.1.0 0.0.0.255
+<empty>
+
+[76/355] r1 R1(config-router)# network 10.0.0.0 0.0.0.3
+<empty>
+
+[77/355] r1 R1(config-router)# passive-interface GigabitEthernet0/0
+<empty>
+
+[78/355] r1 R1(config-router)# eigrp stub connected summary
+<empty>
+
+[79/355] r1 R1(config-router)# metric weights 0 1 0 1 0 0
+<empty>
+
+[80/355] r1 R1(config-router)# metric maximum-hops 50
+<empty>
+
+[81/355] r1 R1(config-router)# variance 4
+<empty>
+
+[82/355] r1 R1(config-router)# maximum-paths 6
+<empty>
+
+[83/355] r1 R1(config-router)# distance eigrp 90 170
+<empty>
+
+[84/355] r1 R1(config-router)# timers active-time 3
+<empty>
+
+[85/355] r1 R1(config-router)# redistribute connected
+<empty>
+
+[86/355] r1 R1(config-router)# redistribute static metric 10000 100 255 1 1500
+<empty>
+
+[87/355] r1 R1(config-router)# redistribute ospf 1 metric 10000 100 255 1 1500
+<empty>
+
+[88/355] r1 R1(config-router)# default-metric 10000 100 255 1 1500
+<empty>
+
+[89/355] r1 R1(config-router)# traffic-share balanced
+<empty>
+
+[90/355] r1 R1(config-router)# exit
+<empty>
+
+[91/355] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[92/355] r1 R1(config-if)# ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+<empty>
+
+[93/355] r1 R1(config-if)# ip bandwidth-percent eigrp 100 50
+<empty>
+
+[94/355] r1 R1(config-if)# ip hello-interval eigrp 100 5
+<empty>
+
+[95/355] r1 R1(config-if)# ip hold-time eigrp 100 15
+<empty>
+
+[96/355] r1 R1(config-if)# ip authentication mode eigrp 100 md5
+<empty>
+
+[97/355] r1 R1(config-if)# ip authentication key-chain eigrp 100 RIP-KEY
+<empty>
+
+[98/355] r1 R1(config-if)# no ip split-horizon eigrp 100
+<empty>
+
+[99/355] r1 R1(config-if)# exit
+<empty>
+
+[100/355] r1 R1(config)# end
+<empty>
+
+[101/355] r1 R1# show ip eigrp neighbors
+  EIGRP-IPv4 Neighbors for AS(100)
+  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  (no neighbours — no real EIGRP peer cabled)
+
+[102/355] r1 R1# show ip eigrp neighbors detail
+  EIGRP-IPv4 Neighbors for AS(100)
+  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  (no neighbours — no real EIGRP peer cabled)
+
+[103/355] r1 R1# show ip eigrp topology
+  EIGRP-IPv4 Topology Table for AS(100)
+  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
+  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
+
+[104/355] r1 R1# show ip eigrp topology all-links
+  EIGRP-IPv4 Topology Table for AS(100)
+  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
+  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
+
+[105/355] r1 R1# show ip eigrp interfaces
+  EIGRP-IPv4 Interfaces for AS(100)
+
+[106/355] r1 R1# show ip eigrp interfaces detail
+  EIGRP-IPv4 Interfaces for AS(100)
+
+[107/355] r1 R1# show ip eigrp traffic
   % Invalid input detected at '^' marker.
   show ip eigrp traffic
                 ^
 
-[108/355] r1 R1> show ip eigrp accounting
+[108/355] r1 R1# show ip eigrp accounting
   % Invalid input detected at '^' marker.
   show ip eigrp accounting
                 ^
 
-[109/355] r1 R1> show ip route eigrp
+[109/355] r1 R1# show ip route eigrp
   % Network not in table
 
-[110/355] r1 R1> show ip protocols
+[110/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -514,604 +448,540 @@ Total steps: 355
     flash-update-threshold 10
     validate-update-source
     Distance: 120
+  Routing Protocol is "eigrp 100"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      10.1.0.0 0.0.255.255
+      10.2.0.0 0.0.255.255
+      10.3.0.0 0.0.255.255
+      10.4.0.0 0.0.255.255
+      10.5.0.0 0.0.255.255
+      10.6.0.0 0.0.255.255
+      192.168.1.0 0.0.0.255
+      10.0.0.0 0.0.0.3
+    redistribute connected
+    redistribute static metric 10000 100 255 1 1500
+    redistribute ospf 1 metric 10000 100 255 1 1500
 
-[111/355] r1 R1> clear ip eigrp neighbors
+[111/355] r1 R1# clear ip eigrp neighbors
   % Invalid input detected at '^' marker.
   clear ip eigrp neighbors
            ^
 
-[112/355] r1 R1> debug eigrp packets
-  % Invalid input detected at '^' marker.
-  debug eigrp packets
-        ^
+[112/355] r1 R1# debug eigrp packets
+  EIGRP debugging is on
 
-[113/355] r1 R1> debug ip eigrp
-  % Invalid input detected at '^' marker.
-  debug ip eigrp
-           ^
+[113/355] r1 R1# debug ip eigrp
+  EIGRP debugging is on
 
-[114/355] r1 R1> undebug all
+[114/355] r1 R1# undebug all
   All possible debugging has been turned off
 
 
 --- [115] § EIGRP named mode ---
-[115/355] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[115/355] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[116/355] r1 R1> router eigrp CORP
-  % Invalid input detected at '^' marker.
-  router eigrp CORP
-  ^
+[116/355] r1 R1(config)# router eigrp CORP
+<empty>
 
-[117/355] r1 R1> address-family ipv4 unicast autonomous-system 200
-  % Invalid input detected at '^' marker.
-  address-family ipv4 unicast autonomous-system 200
-  ^
+[117/355] r1 R1(config-router)# address-family ipv4 unicast autonomous-system 200
+<empty>
 
-[118/355] r1 R1> network 192.168.1.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  network 192.168.1.0 0.0.0.255
-  ^
+[118/355] r1 R1(config-router)# network 192.168.1.0 0.0.0.255
+<empty>
 
-[119/355] r1 R1> eigrp router-id 1.1.1.1
-  % Invalid input detected at '^' marker.
-  eigrp router-id 1.1.1.1
-  ^
+[119/355] r1 R1(config-router)# eigrp router-id 1.1.1.1
+<empty>
 
-[120/355] r1 R1> af-interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  af-interface GigabitEthernet0/1
-  ^
+[120/355] r1 R1(config-router)# af-interface GigabitEthernet0/1
+<empty>
 
-[121/355] r1 R1> hello-interval 5
+[121/355] r1 R1(config-router)# hello-interval 5
   % Invalid input detected at '^' marker.
   hello-interval 5
   ^
 
-[122/355] r1 R1> hold-time 15
+[122/355] r1 R1(config-router)# hold-time 15
   % Invalid input detected at '^' marker.
   hold-time 15
   ^
 
-[123/355] r1 R1> authentication mode md5
+[123/355] r1 R1(config-router)# authentication mode md5
   % Invalid input detected at '^' marker.
   authentication mode md5
   ^
 
-[124/355] r1 R1> summary-address 172.16.0.0 255.255.0.0
+[124/355] r1 R1(config-router)# summary-address 172.16.0.0 255.255.0.0
   % Invalid input detected at '^' marker.
   summary-address 172.16.0.0 255.255.0.0
   ^
 
-[125/355] r1 R1> exit-af-interface
-  % Invalid input detected at '^' marker.
-  exit-af-interface
-  ^
-
-[126/355] r1 R1> topology base
-  % Invalid input detected at '^' marker.
-  topology base
-  ^
-
-[127/355] r1 R1> redistribute static
-  % Invalid input detected at '^' marker.
-  redistribute static
-  ^
-
-[128/355] r1 R1> variance 2
-  % Invalid input detected at '^' marker.
-  variance 2
-  ^
-
-[129/355] r1 R1> exit-af-topology
-  % Invalid input detected at '^' marker.
-  exit-af-topology
-  ^
-
-[130/355] r1 R1> exit-address-family
-  % Invalid input detected at '^' marker.
-  exit-address-family
-  ^
-
-[131/355] r1 R1> exit
+[125/355] r1 R1(config-router)# exit-af-interface
 <empty>
 
-[132/355] r1 R1> end
+[126/355] r1 R1(config-router)# topology base
 <empty>
 
-[133/355] r1 R1> show eigrp protocols
+[127/355] r1 R1(config-router)# redistribute static
+<empty>
+
+[128/355] r1 R1(config-router)# variance 2
+<empty>
+
+[129/355] r1 R1(config-router)# exit-af-topology
+<empty>
+
+[130/355] r1 R1(config-router)# exit-address-family
+<empty>
+
+[131/355] r1 R1(config-router)# exit
+<empty>
+
+[132/355] r1 R1(config)# end
+<empty>
+
+[133/355] r1 R1# show eigrp protocols
   % Invalid input detected at '^' marker.
   show eigrp protocols
        ^
 
-[134/355] r1 R1> show eigrp address-family ipv4 neighbors
+[134/355] r1 R1# show eigrp address-family ipv4 neighbors
   % Invalid input detected at '^' marker.
   show eigrp address-family ipv4 neighbors
        ^
 
 
 --- [135] § BGP ---
-[135/355] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[135/355] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[136/355] r1 R1> router bgp 65000
-  % Invalid input detected at '^' marker.
-  router bgp 65000
-  ^
+[136/355] r1 R1(config)# router bgp 65000
+<empty>
 
-[137/355] r1 R1> bgp router-id 1.1.1.1
-  % Invalid input detected at '^' marker.
-  bgp router-id 1.1.1.1
-  ^
+[137/355] r1 R1(config-router)# bgp router-id 1.1.1.1
+<empty>
 
-[138/355] r1 R1> bgp log-neighbor-changes
-  % Invalid input detected at '^' marker.
-  bgp log-neighbor-changes
-  ^
+[138/355] r1 R1(config-router)# bgp log-neighbor-changes
+<empty>
 
-[139/355] r1 R1> no bgp default ipv4-unicast
+[139/355] r1 R1(config-router)# no bgp default ipv4-unicast
   % Invalid input detected at '^' marker.
   no bgp default ipv4-unicast
      ^
 
-[140/355] r1 R1> bgp always-compare-med
-  % Invalid input detected at '^' marker.
-  bgp always-compare-med
-  ^
-
-[141/355] r1 R1> bgp deterministic-med
-  % Invalid input detected at '^' marker.
-  bgp deterministic-med
-  ^
-
-[142/355] r1 R1> bgp bestpath as-path multipath-relax
-  % Invalid input detected at '^' marker.
-  bgp bestpath as-path multipath-relax
-  ^
-
-[143/355] r1 R1> bgp graceful-restart
-  % Invalid input detected at '^' marker.
-  bgp graceful-restart
-  ^
-
-[144/355] r1 R1> timers bgp 10 30
-  % Invalid input detected at '^' marker.
-  timers bgp 10 30
-  ^
-
-[145/355] r1 R1> neighbor 10.0.0.2 remote-as 65002
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 remote-as 65002
-  ^
-
-[146/355] r1 R1> neighbor 10.0.0.2 description PEER-1
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 description PEER-1
-  ^
-
-[147/355] r1 R1> neighbor 10.0.0.2 update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 update-source Loopback0
-  ^
-
-[148/355] r1 R1> neighbor 10.0.0.2 ebgp-multihop 2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 ebgp-multihop 2
-  ^
-
-[149/355] r1 R1> neighbor 10.0.0.2 password bgpsecret
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 password bgpsecret
-  ^
-
-[150/355] r1 R1> neighbor 10.0.0.2 timers 10 30
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 timers 10 30
-  ^
-
-[151/355] r1 R1> neighbor 10.0.0.2 fall-over bfd
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2 fall-over bfd
-  ^
-
-[152/355] r1 R1> neighbor 10.0.0.3 remote-as 65003
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 remote-as 65003
-  ^
-
-[153/355] r1 R1> neighbor 10.0.0.3 description PEER-2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 description PEER-2
-  ^
-
-[154/355] r1 R1> neighbor 10.0.0.3 update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 update-source Loopback0
-  ^
-
-[155/355] r1 R1> neighbor 10.0.0.3 ebgp-multihop 2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 ebgp-multihop 2
-  ^
-
-[156/355] r1 R1> neighbor 10.0.0.3 password bgpsecret
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 password bgpsecret
-  ^
-
-[157/355] r1 R1> neighbor 10.0.0.3 timers 10 30
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 timers 10 30
-  ^
-
-[158/355] r1 R1> neighbor 10.0.0.3 fall-over bfd
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.3 fall-over bfd
-  ^
-
-[159/355] r1 R1> neighbor 10.0.0.4 remote-as 65004
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 remote-as 65004
-  ^
-
-[160/355] r1 R1> neighbor 10.0.0.4 description PEER-3
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 description PEER-3
-  ^
-
-[161/355] r1 R1> neighbor 10.0.0.4 update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 update-source Loopback0
-  ^
-
-[162/355] r1 R1> neighbor 10.0.0.4 ebgp-multihop 2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 ebgp-multihop 2
-  ^
-
-[163/355] r1 R1> neighbor 10.0.0.4 password bgpsecret
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 password bgpsecret
-  ^
-
-[164/355] r1 R1> neighbor 10.0.0.4 timers 10 30
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 timers 10 30
-  ^
-
-[165/355] r1 R1> neighbor 10.0.0.4 fall-over bfd
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.4 fall-over bfd
-  ^
-
-[166/355] r1 R1> neighbor 10.0.0.5 remote-as 65005
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 remote-as 65005
-  ^
-
-[167/355] r1 R1> neighbor 10.0.0.5 description PEER-4
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 description PEER-4
-  ^
-
-[168/355] r1 R1> neighbor 10.0.0.5 update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 update-source Loopback0
-  ^
-
-[169/355] r1 R1> neighbor 10.0.0.5 ebgp-multihop 2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 ebgp-multihop 2
-  ^
-
-[170/355] r1 R1> neighbor 10.0.0.5 password bgpsecret
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 password bgpsecret
-  ^
-
-[171/355] r1 R1> neighbor 10.0.0.5 timers 10 30
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 timers 10 30
-  ^
-
-[172/355] r1 R1> neighbor 10.0.0.5 fall-over bfd
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.5 fall-over bfd
-  ^
-
-[173/355] r1 R1> neighbor 10.0.0.6 remote-as 65006
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 remote-as 65006
-  ^
-
-[174/355] r1 R1> neighbor 10.0.0.6 description PEER-5
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 description PEER-5
-  ^
-
-[175/355] r1 R1> neighbor 10.0.0.6 update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 update-source Loopback0
-  ^
-
-[176/355] r1 R1> neighbor 10.0.0.6 ebgp-multihop 2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 ebgp-multihop 2
-  ^
-
-[177/355] r1 R1> neighbor 10.0.0.6 password bgpsecret
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 password bgpsecret
-  ^
-
-[178/355] r1 R1> neighbor 10.0.0.6 timers 10 30
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 timers 10 30
-  ^
-
-[179/355] r1 R1> neighbor 10.0.0.6 fall-over bfd
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.6 fall-over bfd
-  ^
-
-[180/355] r1 R1> neighbor IBGP peer-group
-  % Invalid input detected at '^' marker.
-  neighbor IBGP peer-group
-  ^
-
-[181/355] r1 R1> neighbor IBGP remote-as 65000
-  % Invalid input detected at '^' marker.
-  neighbor IBGP remote-as 65000
-  ^
-
-[182/355] r1 R1> neighbor IBGP update-source Loopback0
-  % Invalid input detected at '^' marker.
-  neighbor IBGP update-source Loopback0
-  ^
-
-[183/355] r1 R1> neighbor 10.0.0.10 peer-group IBGP
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.10 peer-group IBGP
-  ^
-
-[184/355] r1 R1> address-family ipv4 unicast
-  % Invalid input detected at '^' marker.
-  address-family ipv4 unicast
-  ^
-
-[185/355] r1 R1> network 192.168.1.0 mask 255.255.255.0
-  % Invalid input detected at '^' marker.
-  network 192.168.1.0 mask 255.255.255.0
-  ^
-
-[186/355] r1 R1> network 10.0.0.0 mask 255.255.255.252
-  % Invalid input detected at '^' marker.
-  network 10.0.0.0 mask 255.255.255.252
-  ^
-
-[187/355] r1 R1> aggregate-address 192.168.0.0 255.255.0.0 summary-only
-  % Invalid input detected at '^' marker.
-  aggregate-address 192.168.0.0 255.255.0.0 summary-only
-  ^
-
-[188/355] r1 R1> aggregate-address 172.16.0.0 255.255.0.0 as-set
-  % Invalid input detected at '^' marker.
-  aggregate-address 172.16.0.0 255.255.0.0 as-set
-  ^
-
-[189/355] r1 R1> redistribute connected
-  % Invalid input detected at '^' marker.
-  redistribute connected
-  ^
-
-[190/355] r1 R1> redistribute static
-  % Invalid input detected at '^' marker.
-  redistribute static
-  ^
-
-[191/355] r1 R1> redistribute ospf 1 match internal external
-  % Invalid input detected at '^' marker.
-  redistribute ospf 1 match internal external
-  ^
-
-[192/355] r1 R1> neighbor 10.0.0.1 activate
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 activate
-  ^
-
-[193/355] r1 R1> neighbor 10.0.0.1 next-hop-self
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 next-hop-self
-  ^
-
-[194/355] r1 R1> neighbor 10.0.0.1 route-reflector-client
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 route-reflector-client
-  ^
-
-[195/355] r1 R1> neighbor 10.0.0.1 send-community both
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 send-community both
-  ^
-
-[196/355] r1 R1> neighbor 10.0.0.1 soft-reconfiguration inbound
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 soft-reconfiguration inbound
-  ^
-
-[197/355] r1 R1> neighbor 10.0.0.1 maximum-prefix 1000 80
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 maximum-prefix 1000 80
-  ^
-
-[198/355] r1 R1> neighbor 10.0.0.1 route-map RM-IN in
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 route-map RM-IN in
-  ^
-
-[199/355] r1 R1> neighbor 10.0.0.1 route-map RM-OUT out
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 route-map RM-OUT out
-  ^
-
-[200/355] r1 R1> neighbor 10.0.0.1 prefix-list PL-IN in
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 prefix-list PL-IN in
-  ^
-
-[201/355] r1 R1> neighbor 10.0.0.1 filter-list 1 out
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 filter-list 1 out
-  ^
-
-[202/355] r1 R1> neighbor 10.0.0.1 default-originate
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 default-originate
-  ^
-
-[203/355] r1 R1> neighbor 10.0.0.1 weight 100
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 weight 100
-  ^
-
-[204/355] r1 R1> neighbor 10.0.0.1 allowas-in 3
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 allowas-in 3
-  ^
-
-[205/355] r1 R1> distance bgp 20 200 200
-  % Invalid input detected at '^' marker.
-  distance bgp 20 200 200
-  ^
-
-[206/355] r1 R1> maximum-paths 4
-  % Invalid input detected at '^' marker.
-  maximum-paths 4
-  ^
-
-[207/355] r1 R1> maximum-paths ibgp 4
-  % Invalid input detected at '^' marker.
-  maximum-paths ibgp 4
-  ^
-
-[208/355] r1 R1> exit-address-family
-  % Invalid input detected at '^' marker.
-  exit-address-family
-  ^
-
-[209/355] r1 R1> address-family vpnv4
-  % Invalid input detected at '^' marker.
-  address-family vpnv4
-  ^
-
-[210/355] r1 R1> neighbor 10.0.0.1 activate
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.1 activate
-  ^
-
-[211/355] r1 R1> exit-address-family
-  % Invalid input detected at '^' marker.
-  exit-address-family
-  ^
-
-[212/355] r1 R1> address-family ipv6 unicast
-  % Invalid input detected at '^' marker.
-  address-family ipv6 unicast
-  ^
-
-[213/355] r1 R1> network 2001:db8::/32
-  % Invalid input detected at '^' marker.
-  network 2001:db8::/32
-  ^
-
-[214/355] r1 R1> exit-address-family
-  % Invalid input detected at '^' marker.
-  exit-address-family
-  ^
-
-[215/355] r1 R1> exit
+[140/355] r1 R1(config-router)# bgp always-compare-med
 <empty>
 
-[216/355] r1 R1> ip community-list 1 permit 65000:100
-  % Invalid input detected at '^' marker.
-  ip community-list 1 permit 65000:100
-  ^
-
-[217/355] r1 R1> ip as-path access-list 1 permit ^65001$
-  % Invalid input detected at '^' marker.
-  ip as-path access-list 1 permit ^65001$
-  ^
-
-[218/355] r1 R1> route-map RM-IN permit 10
-  % Invalid input detected at '^' marker.
-  route-map RM-IN permit 10
-  ^
-
-[219/355] r1 R1> set local-preference 200
-  % Invalid input detected at '^' marker.
-  set local-preference 200
-  ^
-
-[220/355] r1 R1> set community 65000:100 additive
-  % Invalid input detected at '^' marker.
-  set community 65000:100 additive
-  ^
-
-[221/355] r1 R1> set as-path prepend 65000 65000
-  % Invalid input detected at '^' marker.
-  set as-path prepend 65000 65000
-  ^
-
-[222/355] r1 R1> exit
+[141/355] r1 R1(config-router)# bgp deterministic-med
 <empty>
 
-[223/355] r1 R1> end
+[142/355] r1 R1(config-router)# bgp bestpath as-path multipath-relax
 <empty>
 
-[224/355] r1 R1> show ip bgp
-  % BGP not active
+[143/355] r1 R1(config-router)# bgp graceful-restart
+<empty>
 
-[225/355] r1 R1> show ip bgp summary
-  % BGP not active
+[144/355] r1 R1(config-router)# timers bgp 10 30
+<empty>
 
-[226/355] r1 R1> show ip bgp neighbors
-  % BGP not active
+[145/355] r1 R1(config-router)# neighbor 10.0.0.2 remote-as 65002
+<empty>
 
-[227/355] r1 R1> show ip bgp neighbors 10.0.0.2 advertised-routes
-  % BGP not active
+[146/355] r1 R1(config-router)# neighbor 10.0.0.2 description PEER-1
+<empty>
 
-[228/355] r1 R1> show ip bgp neighbors 10.0.0.2 received-routes
-  % BGP not active
+[147/355] r1 R1(config-router)# neighbor 10.0.0.2 update-source Loopback0
+<empty>
 
-[229/355] r1 R1> show ip bgp neighbors 10.0.0.2 routes
-  % BGP not active
+[148/355] r1 R1(config-router)# neighbor 10.0.0.2 ebgp-multihop 2
+<empty>
 
-[230/355] r1 R1> show ip bgp 192.168.1.0
-  % BGP not active
+[149/355] r1 R1(config-router)# neighbor 10.0.0.2 password bgpsecret
+<empty>
 
-[231/355] r1 R1> show ip bgp paths
-  % BGP not active
+[150/355] r1 R1(config-router)# neighbor 10.0.0.2 timers 10 30
+<empty>
 
-[232/355] r1 R1> show ip bgp community
-  % BGP not active
+[151/355] r1 R1(config-router)# neighbor 10.0.0.2 fall-over bfd
+<empty>
 
-[233/355] r1 R1> show ip bgp cidr-only
-  % BGP not active
+[152/355] r1 R1(config-router)# neighbor 10.0.0.3 remote-as 65003
+<empty>
 
-[234/355] r1 R1> show ip bgp regexp ^65001
-  % BGP not active
+[153/355] r1 R1(config-router)# neighbor 10.0.0.3 description PEER-2
+<empty>
 
-[235/355] r1 R1> show bgp ipv6 unicast
-  % BGP not active
+[154/355] r1 R1(config-router)# neighbor 10.0.0.3 update-source Loopback0
+<empty>
 
-[236/355] r1 R1> show ip route bgp
+[155/355] r1 R1(config-router)# neighbor 10.0.0.3 ebgp-multihop 2
+<empty>
+
+[156/355] r1 R1(config-router)# neighbor 10.0.0.3 password bgpsecret
+<empty>
+
+[157/355] r1 R1(config-router)# neighbor 10.0.0.3 timers 10 30
+<empty>
+
+[158/355] r1 R1(config-router)# neighbor 10.0.0.3 fall-over bfd
+<empty>
+
+[159/355] r1 R1(config-router)# neighbor 10.0.0.4 remote-as 65004
+<empty>
+
+[160/355] r1 R1(config-router)# neighbor 10.0.0.4 description PEER-3
+<empty>
+
+[161/355] r1 R1(config-router)# neighbor 10.0.0.4 update-source Loopback0
+<empty>
+
+[162/355] r1 R1(config-router)# neighbor 10.0.0.4 ebgp-multihop 2
+<empty>
+
+[163/355] r1 R1(config-router)# neighbor 10.0.0.4 password bgpsecret
+<empty>
+
+[164/355] r1 R1(config-router)# neighbor 10.0.0.4 timers 10 30
+<empty>
+
+[165/355] r1 R1(config-router)# neighbor 10.0.0.4 fall-over bfd
+<empty>
+
+[166/355] r1 R1(config-router)# neighbor 10.0.0.5 remote-as 65005
+<empty>
+
+[167/355] r1 R1(config-router)# neighbor 10.0.0.5 description PEER-4
+<empty>
+
+[168/355] r1 R1(config-router)# neighbor 10.0.0.5 update-source Loopback0
+<empty>
+
+[169/355] r1 R1(config-router)# neighbor 10.0.0.5 ebgp-multihop 2
+<empty>
+
+[170/355] r1 R1(config-router)# neighbor 10.0.0.5 password bgpsecret
+<empty>
+
+[171/355] r1 R1(config-router)# neighbor 10.0.0.5 timers 10 30
+<empty>
+
+[172/355] r1 R1(config-router)# neighbor 10.0.0.5 fall-over bfd
+<empty>
+
+[173/355] r1 R1(config-router)# neighbor 10.0.0.6 remote-as 65006
+<empty>
+
+[174/355] r1 R1(config-router)# neighbor 10.0.0.6 description PEER-5
+<empty>
+
+[175/355] r1 R1(config-router)# neighbor 10.0.0.6 update-source Loopback0
+<empty>
+
+[176/355] r1 R1(config-router)# neighbor 10.0.0.6 ebgp-multihop 2
+<empty>
+
+[177/355] r1 R1(config-router)# neighbor 10.0.0.6 password bgpsecret
+<empty>
+
+[178/355] r1 R1(config-router)# neighbor 10.0.0.6 timers 10 30
+<empty>
+
+[179/355] r1 R1(config-router)# neighbor 10.0.0.6 fall-over bfd
+<empty>
+
+[180/355] r1 R1(config-router)# neighbor IBGP peer-group
+<empty>
+
+[181/355] r1 R1(config-router)# neighbor IBGP remote-as 65000
+<empty>
+
+[182/355] r1 R1(config-router)# neighbor IBGP update-source Loopback0
+<empty>
+
+[183/355] r1 R1(config-router)# neighbor 10.0.0.10 peer-group IBGP
+<empty>
+
+[184/355] r1 R1(config-router)# address-family ipv4 unicast
+<empty>
+
+[185/355] r1 R1(config-router)# network 192.168.1.0 mask 255.255.255.0
+<empty>
+
+[186/355] r1 R1(config-router)# network 10.0.0.0 mask 255.255.255.252
+<empty>
+
+[187/355] r1 R1(config-router)# aggregate-address 192.168.0.0 255.255.0.0 summary-only
+<empty>
+
+[188/355] r1 R1(config-router)# aggregate-address 172.16.0.0 255.255.0.0 as-set
+<empty>
+
+[189/355] r1 R1(config-router)# redistribute connected
+<empty>
+
+[190/355] r1 R1(config-router)# redistribute static
+<empty>
+
+[191/355] r1 R1(config-router)# redistribute ospf 1 match internal external
+<empty>
+
+[192/355] r1 R1(config-router)# neighbor 10.0.0.1 activate
+<empty>
+
+[193/355] r1 R1(config-router)# neighbor 10.0.0.1 next-hop-self
+<empty>
+
+[194/355] r1 R1(config-router)# neighbor 10.0.0.1 route-reflector-client
+<empty>
+
+[195/355] r1 R1(config-router)# neighbor 10.0.0.1 send-community both
+<empty>
+
+[196/355] r1 R1(config-router)# neighbor 10.0.0.1 soft-reconfiguration inbound
+<empty>
+
+[197/355] r1 R1(config-router)# neighbor 10.0.0.1 maximum-prefix 1000 80
+<empty>
+
+[198/355] r1 R1(config-router)# neighbor 10.0.0.1 route-map RM-IN in
+<empty>
+
+[199/355] r1 R1(config-router)# neighbor 10.0.0.1 route-map RM-OUT out
+<empty>
+
+[200/355] r1 R1(config-router)# neighbor 10.0.0.1 prefix-list PL-IN in
+<empty>
+
+[201/355] r1 R1(config-router)# neighbor 10.0.0.1 filter-list 1 out
+<empty>
+
+[202/355] r1 R1(config-router)# neighbor 10.0.0.1 default-originate
+<empty>
+
+[203/355] r1 R1(config-router)# neighbor 10.0.0.1 weight 100
+<empty>
+
+[204/355] r1 R1(config-router)# neighbor 10.0.0.1 allowas-in 3
+<empty>
+
+[205/355] r1 R1(config-router)# distance bgp 20 200 200
+<empty>
+
+[206/355] r1 R1(config-router)# maximum-paths 4
+<empty>
+
+[207/355] r1 R1(config-router)# maximum-paths ibgp 4
+<empty>
+
+[208/355] r1 R1(config-router)# exit-address-family
+<empty>
+
+[209/355] r1 R1(config-router)# address-family vpnv4
+<empty>
+
+[210/355] r1 R1(config-router)# neighbor 10.0.0.1 activate
+<empty>
+
+[211/355] r1 R1(config-router)# exit-address-family
+<empty>
+
+[212/355] r1 R1(config-router)# address-family ipv6 unicast
+<empty>
+
+[213/355] r1 R1(config-router)# network 2001:db8::/32
+<JS EXCEPTION> Invalid IP address: 2001:db8::/32
+
+[214/355] r1 R1(config-router)# exit-address-family
+<empty>
+
+[215/355] r1 R1(config-router)# exit
+<empty>
+
+[216/355] r1 R1(config)# ip community-list 1 permit 65000:100
+<empty>
+
+[217/355] r1 R1(config)# ip as-path access-list 1 permit ^65001$
+<empty>
+
+[218/355] r1 R1(config)# route-map RM-IN permit 10
+<empty>
+
+[219/355] r1 R1(config-route-map)# set local-preference 200
+<empty>
+
+[220/355] r1 R1(config-route-map)# set community 65000:100 additive
+<empty>
+
+[221/355] r1 R1(config-route-map)# set as-path prepend 65000 65000
+<empty>
+
+[222/355] r1 R1(config-route-map)# exit
+<empty>
+
+[223/355] r1 R1(config)# end
+<empty>
+
+[224/355] r1 R1# show ip bgp
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[225/355] r1 R1# show ip bgp summary
+  BGP router identifier 1.1.1.1, local AS number 65000
+  
+  Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd
+  10.0.0.2        4 65002      0        0       0    0    0 never    Idle
+  10.0.0.3        4 65003      0        0       0    0    0 never    Idle
+  10.0.0.4        4 65004      0        0       0    0    0 never    Idle
+  10.0.0.5        4 65005      0        0       0    0    0 never    Idle
+  10.0.0.6        4 65006      0        0       0    0    0 never    Idle
+  IBGP            4 65000      0        0       0    0    0 never    Idle
+  10.0.0.10       4 0          0        0       0    0    0 never    Idle
+  10.0.0.1        4 0          0        0       0    0    0 never    Idle
+
+[226/355] r1 R1# show ip bgp neighbors
+  BGP neighbor is 10.0.0.2, remote AS 65002
+    Description: PEER-1
+    BGP state = Idle
+  BGP neighbor is 10.0.0.3, remote AS 65003
+    Description: PEER-2
+    BGP state = Idle
+  BGP neighbor is 10.0.0.4, remote AS 65004
+    Description: PEER-3
+    BGP state = Idle
+  BGP neighbor is 10.0.0.5, remote AS 65005
+    Description: PEER-4
+    BGP state = Idle
+  BGP neighbor is 10.0.0.6, remote AS 65006
+    Description: PEER-5
+    BGP state = Idle
+  BGP neighbor is IBGP, remote AS 65000
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.10, remote AS unset
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.1, remote AS unset
+    Description: (none)
+    BGP state = Idle
+
+[227/355] r1 R1# show ip bgp neighbors 10.0.0.2 advertised-routes
+  BGP neighbor is 10.0.0.2, remote AS 65002
+    Description: PEER-1
+    BGP state = Idle
+  BGP neighbor is 10.0.0.3, remote AS 65003
+    Description: PEER-2
+    BGP state = Idle
+  BGP neighbor is 10.0.0.4, remote AS 65004
+    Description: PEER-3
+    BGP state = Idle
+  BGP neighbor is 10.0.0.5, remote AS 65005
+    Description: PEER-4
+    BGP state = Idle
+  BGP neighbor is 10.0.0.6, remote AS 65006
+    Description: PEER-5
+    BGP state = Idle
+  BGP neighbor is IBGP, remote AS 65000
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.10, remote AS unset
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.1, remote AS unset
+    Description: (none)
+    BGP state = Idle
+
+[228/355] r1 R1# show ip bgp neighbors 10.0.0.2 received-routes
+  BGP neighbor is 10.0.0.2, remote AS 65002
+    Description: PEER-1
+    BGP state = Idle
+  BGP neighbor is 10.0.0.3, remote AS 65003
+    Description: PEER-2
+    BGP state = Idle
+  BGP neighbor is 10.0.0.4, remote AS 65004
+    Description: PEER-3
+    BGP state = Idle
+  BGP neighbor is 10.0.0.5, remote AS 65005
+    Description: PEER-4
+    BGP state = Idle
+  BGP neighbor is 10.0.0.6, remote AS 65006
+    Description: PEER-5
+    BGP state = Idle
+  BGP neighbor is IBGP, remote AS 65000
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.10, remote AS unset
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.1, remote AS unset
+    Description: (none)
+    BGP state = Idle
+
+[229/355] r1 R1# show ip bgp neighbors 10.0.0.2 routes
+  BGP neighbor is 10.0.0.2, remote AS 65002
+    Description: PEER-1
+    BGP state = Idle
+  BGP neighbor is 10.0.0.3, remote AS 65003
+    Description: PEER-2
+    BGP state = Idle
+  BGP neighbor is 10.0.0.4, remote AS 65004
+    Description: PEER-3
+    BGP state = Idle
+  BGP neighbor is 10.0.0.5, remote AS 65005
+    Description: PEER-4
+    BGP state = Idle
+  BGP neighbor is 10.0.0.6, remote AS 65006
+    Description: PEER-5
+    BGP state = Idle
+  BGP neighbor is IBGP, remote AS 65000
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.10, remote AS unset
+    Description: (none)
+    BGP state = Idle
+  BGP neighbor is 10.0.0.1, remote AS unset
+    Description: (none)
+    BGP state = Idle
+
+[230/355] r1 R1# show ip bgp 192.168.1.0
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[231/355] r1 R1# show ip bgp paths
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[232/355] r1 R1# show ip bgp community
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[233/355] r1 R1# show ip bgp cidr-only
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[234/355] r1 R1# show ip bgp regexp ^65001
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+
+[235/355] r1 R1# show bgp ipv6 unicast
+  BGP local AS 65000, 8 neighbour(s), 0 established
+
+[236/355] r1 R1# show ip route bgp
   % Network not in table
 
-[237/355] r1 R1> show ip protocols
+[237/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -1143,44 +1013,67 @@ Total steps: 355
     flash-update-threshold 10
     validate-update-source
     Distance: 120
+  Routing Protocol is "eigrp 0"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      192.168.1.0 0.0.0.255
+    redistribute static
+  Routing Protocol is "eigrp 100"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      10.1.0.0 0.0.255.255
+      10.2.0.0 0.0.255.255
+      10.3.0.0 0.0.255.255
+      10.4.0.0 0.0.255.255
+      10.5.0.0 0.0.255.255
+      10.6.0.0 0.0.255.255
+      192.168.1.0 0.0.0.255
+      10.0.0.0 0.0.0.3
+    redistribute connected
+    redistribute static metric 10000 100 255 1 1500
+    redistribute ospf 1 metric 10000 100 255 1 1500
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 8
+      10.0.0.2 remote-as 65002
+      10.0.0.3 remote-as 65003
+      10.0.0.4 remote-as 65004
+      10.0.0.5 remote-as 65005
+      10.0.0.6 remote-as 65006
+      IBGP remote-as 65000
+      10.0.0.10 remote-as unset
+      10.0.0.1 remote-as unset
 
-[238/355] r1 R1> show bgp all summary
-  % BGP not active
+[238/355] r1 R1# show bgp all summary
+  BGP local AS 65000, 8 neighbour(s), 0 established
 
-[239/355] r1 R1> show ip bgp vpnv4 all
-  % BGP not active
+[239/355] r1 R1# show ip bgp vpnv4 all
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
 
-[240/355] r1 R1> clear ip bgp *
-  % Invalid input detected at '^' marker.
-  clear ip bgp *
-           ^
+[240/355] r1 R1# clear ip bgp *
+<empty>
 
-[241/355] r1 R1> clear ip bgp 10.0.0.2 soft in
-  % Invalid input detected at '^' marker.
-  clear ip bgp 10.0.0.2 soft in
-           ^
+[241/355] r1 R1# clear ip bgp 10.0.0.2 soft in
+<empty>
 
-[242/355] r1 R1> clear ip bgp * soft out
-  % Invalid input detected at '^' marker.
-  clear ip bgp * soft out
-           ^
+[242/355] r1 R1# clear ip bgp * soft out
+<empty>
 
-[243/355] r1 R1> debug ip bgp
-  % Invalid input detected at '^' marker.
-  debug ip bgp
-           ^
+[243/355] r1 R1# debug ip bgp
+  BGP debugging is on
 
-[244/355] r1 R1> debug ip bgp updates
-  % Invalid input detected at '^' marker.
-  debug ip bgp updates
-           ^
+[244/355] r1 R1# debug ip bgp updates
+  IP packet debugging is on for bgp updates
 
-[245/355] r1 R1> undebug all
+[245/355] r1 R1# undebug all
   All possible debugging has been turned off
 
 
 --- [246] § regression: show family ---
-[246/355] r1 R1> enable
+[246/355] r1 R1# enable
 <empty>
 
 [247/355] r1 R1# show version
@@ -1235,11 +1128,14 @@ Total steps: 355
    network 192.168.1.0
    network 10.0.0.0
   !
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
+  !
   key chain RIP-KEY
-  key 1
-  key-string secretrip
-  accept-lifetime 00:00:00 Jan 1 2020 infinite
-  send-lifetime 00:00:00 Jan 1 2020 infinite
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   end
 
 [249/355] r1 R1# show startup-config
@@ -1340,6 +1236,36 @@ Total steps: 355
     flash-update-threshold 10
     validate-update-source
     Distance: 120
+  Routing Protocol is "eigrp 0"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      192.168.1.0 0.0.0.255
+    redistribute static
+  Routing Protocol is "eigrp 100"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      10.1.0.0 0.0.255.255
+      10.2.0.0 0.0.255.255
+      10.3.0.0 0.0.255.255
+      10.4.0.0 0.0.255.255
+      10.5.0.0 0.0.255.255
+      10.6.0.0 0.0.255.255
+      192.168.1.0 0.0.0.255
+      10.0.0.0 0.0.0.3
+    redistribute connected
+    redistribute static metric 10000 100 255 1 1500
+    redistribute ospf 1 metric 10000 100 255 1 1500
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 8
+      10.0.0.2 remote-as 65002
+      10.0.0.3 remote-as 65003
+      10.0.0.4 remote-as 65004
+      10.0.0.5 remote-as 65005
+      10.0.0.6 remote-as 65006
+      IBGP remote-as 65000
+      10.0.0.10 remote-as unset
+      10.0.0.1 remote-as unset
 
 [255/355] r1 R1# show ip arp
   No ARP entries.
@@ -1360,16 +1286,40 @@ Total steps: 355
   % OSPF is not configured
 
 [261/355] r1 R1# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+  EIGRP-IPv4 Neighbors for AS(0)
+  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  (no neighbours — no real EIGRP peer cabled)
 
 [262/355] r1 R1# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+  EIGRP-IPv4 Topology Table for AS(0)
+  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
+  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
+  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
+  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
 
 [263/355] r1 R1# show ip bgp
-  % BGP not active
+  BGP table version is 1, local router ID is 1.1.1.1
+       Network          Next Hop            Metric LocPrf Weight Path
+  *>   192.168.1.0/24      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0               0         32768 i
 
 [264/355] r1 R1# show ip bgp summary
-  % BGP not active
+  BGP router identifier 1.1.1.1, local AS number 65000
+  
+  Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd
+  10.0.0.2        4 65002      0        0       0    0    0 never    Idle
+  10.0.0.3        4 65003      0        0       0    0    0 never    Idle
+  10.0.0.4        4 65004      0        0       0    0    0 never    Idle
+  10.0.0.5        4 65005      0        0       0    0    0 never    Idle
+  10.0.0.6        4 65006      0        0       0    0    0 never    Idle
+  IBGP            4 65000      0        0       0    0    0 never    Idle
+  10.0.0.10       4 0          0        0       0    0    0 never    Idle
+  10.0.0.1        4 0          0        0       0    0    0 never    Idle
 
 [265/355] r1 R1# show ip rip database
   10.1.0.0/8    auto-summary
@@ -1471,7 +1421,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCD1F1B.AB439581 (10:10:35.669 UTC Fri Jun 5 2026)
+  reference time is EDD24C6A.953F7CED (08:25:14.583 UTC Tue Jun 9 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1480,7 +1430,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *10:10:35.000 UTC Fri Jun 5 2026
+  *08:25:14.000 UTC Tue Jun 9 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1658,11 +1608,14 @@ Total steps: 355
    network 192.168.1.0
    network 10.0.0.0
   !
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
+  !
   key chain RIP-KEY
-  key 1
-  key-string secretrip
-  accept-lifetime 00:00:00 Jan 1 2020 infinite
-  send-lifetime 00:00:00 Jan 1 2020 infinite
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   end
   
   ------------------ show ip interface brief ------------------
@@ -1848,11 +1801,13 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
   key chain RIP-KEY
-  key 1
-  key-string secretrip
-  accept-lifetime 00:00:00 Jan 1 2020 infinite
-  send-lifetime 00:00:00 Jan 1 2020 infinite
+   key 1
+    key-string secretrip
+    accept-lifetime 00:00:00 Jan 1 2020 infinite
+    send-lifetime 00:00:00 Jan 1 2020 infinite
   end
 
 [313/355] r1 R1# show ip route | include via
@@ -1993,6 +1948,36 @@ Total steps: 355
     flash-update-threshold 10
     validate-update-source
     Distance: 120
+  Routing Protocol is "eigrp 0"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      192.168.1.0 0.0.0.255
+    redistribute static
+  Routing Protocol is "eigrp 100"
+    Router-ID: 1.1.1.1
+    Routing for Networks:
+      10.1.0.0 0.0.255.255
+      10.2.0.0 0.0.255.255
+      10.3.0.0 0.0.255.255
+      10.4.0.0 0.0.255.255
+      10.5.0.0 0.0.255.255
+      10.6.0.0 0.0.255.255
+      192.168.1.0 0.0.0.255
+      10.0.0.0 0.0.0.3
+    redistribute connected
+    redistribute static metric 10000 100 255 1 1500
+    redistribute ospf 1 metric 10000 100 255 1 1500
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 8
+      10.0.0.2 remote-as 65002
+      10.0.0.3 remote-as 65003
+      10.0.0.4 remote-as 65004
+      10.0.0.5 remote-as 65005
+      10.0.0.6 remote-as 65006
+      IBGP remote-as 65000
+      10.0.0.10 remote-as unset
+      10.0.0.1 remote-as unset
 
 [343/355] r1 R1(config-router)# exit
 <empty>
@@ -2075,6 +2060,7 @@ Total steps: 355
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 
@@ -2082,7 +2068,7 @@ Total steps: 355
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  11
+  12
 
 [355/355] r1 R1# write memory
   Building configuration...

@@ -13,8 +13,11 @@ export type TrafficBehaviorAction =
   | { kind: 'redirect-interface'; iface: string }
   | { kind: 'remark-dscp'; value: number }
   | { kind: 'remark-precedence'; value: number }
-  | { kind: 'car'; cir: number; cbs?: number }
+  | { kind: 'car'; cir: number; pir?: number; cbs?: number; pbs?: number }
   | { kind: 'statistic'; enabled: boolean }
+  | { kind: 'queue-ef'; bandwidthKbps?: number; cbs?: number }
+  | { kind: 'queue-af'; bandwidthKbps?: number; bandwidthPct?: number }
+  | { kind: 'queue-wfq'; queueNumber?: number }
   | { kind: 'mirror-to'; iface: string };
 
 export class TrafficClassifier {
@@ -62,8 +65,27 @@ export class TrafficBehavior {
         case 'redirect-interface': out.push(` redirect interface ${a.iface}`); break;
         case 'remark-dscp': out.push(` remark dscp ${a.value}`); break;
         case 'remark-precedence': out.push(` remark ip-precedence ${a.value}`); break;
-        case 'car': out.push(` car cir ${a.cir}${a.cbs !== undefined ? ` cbs ${a.cbs}` : ''}`); break;
+        case 'car': {
+          const parts = [`car cir ${a.cir}`];
+          if (a.pir !== undefined) parts.push(`pir ${a.pir}`);
+          if (a.cbs !== undefined) parts.push(`cbs ${a.cbs}`);
+          if (a.pbs !== undefined) parts.push(`pbs ${a.pbs}`);
+          out.push(` ${parts.join(' ')}`);
+          break;
+        }
         case 'statistic': out.push(a.enabled ? ' statistic enable' : ' undo statistic enable'); break;
+        case 'queue-ef':
+          out.push(` queue ef${a.bandwidthKbps !== undefined ? ` bandwidth ${a.bandwidthKbps}` : ''}${a.cbs !== undefined ? ` cbs ${a.cbs}` : ''}`);
+          break;
+        case 'queue-af': {
+          if (a.bandwidthPct !== undefined) out.push(` queue af bandwidth pct ${a.bandwidthPct}`);
+          else if (a.bandwidthKbps !== undefined) out.push(` queue af bandwidth ${a.bandwidthKbps}`);
+          else out.push(' queue af');
+          break;
+        }
+        case 'queue-wfq':
+          out.push(` queue wfq${a.queueNumber !== undefined ? ` queue-number ${a.queueNumber}` : ''}`);
+          break;
         case 'mirror-to': out.push(` mirror to interface ${a.iface}`); break;
       }
     }
