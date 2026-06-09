@@ -2255,9 +2255,12 @@ export class PSRuntime {
     env: PSEnvironment,
   ): PSValue {
     // Extract common parameters before dispatch
-    const errorVarName  = named['errorvariable']  ? psValueToString(named['errorvariable'])  : null;
-    const errorAction   = named['erroraction']    ? psValueToString(named['erroraction']).toLowerCase() : null;
-    const silentlyCont  = errorAction === 'silentlycontinue' || errorAction === 'ignore';
+    const errorVarName     = named['errorvariable']  ? psValueToString(named['errorvariable'])  : null;
+    const explicitAction   = named['erroraction']    ? psValueToString(named['erroraction']).toLowerCase() : null;
+    const prefAction       = psValueToString(env.get('ErrorActionPreference') ?? 'Continue').toLowerCase();
+    const errorAction      = explicitAction ?? prefAction;
+    const silentlyCont     = errorAction === 'silentlycontinue' || errorAction === 'ignore';
+    const stopOnError      = errorAction === 'stop';
 
     // Remove common params from named so cmdlets don't see them
     const cmdletNamed = { ...named };
@@ -2285,7 +2288,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
-    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont);
+    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError);
     let result: PSValue;
     try {
       result = cmdlet.execute(ctx);
@@ -2330,6 +2333,7 @@ export class PSRuntime {
     env: PSEnvironment,
     emittedValues: PSValue[],
     silentlyContinue: boolean = false,
+    stopOnError: boolean = false,
   ): CmdletContext {
     const self = this;
 
@@ -2369,15 +2373,16 @@ export class PSRuntime {
       emit: (val: PSValue) => emittedValues.push(val),
 
       emitError: (msg: string) => {
-        // Always record the error object (so $Error and -ErrorVariable
-        // see it). Suppress the visible "ERROR:" line when the caller
-        // used -ErrorAction SilentlyContinue / Ignore.
-        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
-        self.errorObjects.push({
+        const errObj = {
           Exception: { Message: msg },
           CategoryInfo: { Category: 'NotSpecified' },
           TargetObject: null,
-        } as Record<string, PSValue>);
+        } as Record<string, PSValue>;
+        self.errorObjects.push(errObj);
+        const prevGlobalErrors = (env.get('Error') as PSValue[] | null) ?? [];
+        env.set('Error', [errObj, ...prevGlobalErrors]);
+        if (stopOnError) throw new PSRuntimeError(msg);
+        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
       },
 
       invokeBlock: (

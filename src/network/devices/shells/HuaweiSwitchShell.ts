@@ -1401,14 +1401,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayStp(): string {
     const modeName = this.stp.mode.toUpperCase();
+    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | undefined)?.getStpAgent?.();
+    const root = ag?.getRootBridge();
+    const cfg = ag?.getConfig();
+    const rootPort = ag?.getRootPort();
+    const own = ag?.ownBridgeId();
+    const helloSec = cfg?.helloSec ?? 2;
+    const maxAgeSec = cfg?.maxAgeSec ?? 20;
+    const fwDelaySec = cfg?.forwardDelaySec ?? 15;
+    const rootCost = ag?.getRootPathCost() ?? 0;
+    const localPrio = own?.priority ?? this.stp.priority;
+    const localMacFmt = own ? own.mac.replace(/(.{2})(.{2})(.{2})(.{2})(.{2})(.{2})/, '$1$2-$3$4-$5$6') : '0000-0000-0000';
+    const rootMacFmt = root ? root.mac.replace(/(.{2})(.{2})(.{2})(.{2})(.{2})(.{2})/, '$1$2-$3$4-$5$6') : localMacFmt;
+    const rootPrio = root?.priority ?? localPrio;
+    const portNames = this.swRef?.getPortNames() ?? [];
+    const rootPortIdx = rootPort ? portNames.indexOf(rootPort) : -1;
+    const rootPortId = rootPortIdx >= 0 ? `${rootPortIdx + 1}.${rootPortIdx + 1}` : '0.0';
     return [
       `-------[CIST Global Info][Mode ${modeName}]-------`,
-      `CIST Bridge         :${this.stp.priority}.${this.swRef?.getHostname() ?? ''}`,
-      `Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
-      `Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
-      `CIST Root/ERPC      :${this.stp.priority}.0000-0000-0000 / 0`,
-      `CIST RegRoot/IRPC   :${this.stp.priority}.0000-0000-0000 / 0`,
-      `CIST RootPortId     :0.0`,
+      `CIST Bridge         :${localPrio}.${this.swRef?.getHostname() ?? ''}`,
+      `Config Times        :Hello ${helloSec}s MaxAge ${maxAgeSec}s FwDly ${fwDelaySec}s MaxHop 20`,
+      `Active Times        :Hello ${helloSec}s MaxAge ${maxAgeSec}s FwDly ${fwDelaySec}s MaxHop 20`,
+      `CIST Root/ERPC      :${rootPrio}.${rootMacFmt} / ${rootCost}`,
+      `CIST RegRoot/IRPC   :${rootPrio}.${rootMacFmt} / 0`,
+      `CIST RootPortId     :${rootPortId}`,
       `BPDU-Protection     :${this.stp.bpduProtection ? 'Enabled' : 'Disabled'}`,
       `TC or TCN received  :0`,
       `STP Status          :${this.stp.enabled ? 'Enabled' : 'Disabled'}`,
