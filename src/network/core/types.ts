@@ -870,6 +870,13 @@ export interface ESPPacket {
   sequenceNumber: number;
   /** The protected inner IPv4 packet (tunnel mode) or upper-layer payload */
   innerPacket: IPv4Packet;
+  /**
+   * Integrity Check Value (RFC 4303 §2.8) — HMAC over the ESP header + inner
+   * packet, keyed by the SA's auth key. Set when an integrity transform is
+   * negotiated and verified on receipt. Optional so legacy / manually-built
+   * packets stay valid.
+   */
+  icv?: string;
 }
 
 // ─── IPSec: AH Packet (IP protocol 51, RFC 4302) ────────────────────
