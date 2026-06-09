@@ -106,10 +106,31 @@ export class IPAddress {
     const parts = ip.split('.');
     if (parts.length !== 4) throw new Error(`Invalid IP address: ${ip}`);
     return parts.map(p => {
+      if (!/^\d{1,3}$/.test(p)) throw new Error(`Invalid IP octet: ${p}`);
       const n = parseInt(p, 10);
       if (isNaN(n) || n < 0 || n > 255) throw new Error(`Invalid IP octet: ${p}`);
       return n;
     });
+  }
+
+  /** Whether `ip` is a well-formed dotted-decimal IPv4 address. */
+  static isValid(ip: string): boolean {
+    return IPAddress.tryParse(ip) !== null;
+  }
+
+  /** Parse `ip`, returning null instead of throwing on malformed input. */
+  static tryParse(ip: string): IPAddress | null {
+    try {
+      return new IPAddress(ip);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The network address for this IP under `mask` (host bits cleared). */
+  networkAddress(mask: SubnetMask): IPAddress {
+    const m = mask.getOctets();
+    return new IPAddress(this.octets.map((o, i) => o & m[i]));
   }
 
   equals(other: IPAddress): boolean {

@@ -11,6 +11,7 @@
 
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
@@ -2394,14 +2395,9 @@ function maskToCIDR(mask: string): number {
   return bits;
 }
 
-function ipToNumber(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
-}
-
 function ipInSubnet(ip: string, network: string, mask: string): boolean {
-  const ipNum = ipToNumber(ip);
-  const netNum = ipToNumber(network);
-  const maskNum = ipToNumber(mask);
-  return (ipNum & maskNum) === (netNum & maskNum);
+  const addr = IPAddress.tryParse(ip);
+  if (!addr) return false;
+  const m = new SubnetMask(mask);
+  return addr.networkAddress(m).equals(new IPAddress(network).networkAddress(m));
 }
