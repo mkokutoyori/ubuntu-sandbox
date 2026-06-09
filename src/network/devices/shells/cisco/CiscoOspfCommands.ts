@@ -2386,13 +2386,7 @@ function countFullNeighbors(iface: any): number {
 }
 
 function maskToCIDR(mask: string): number {
-  const parts = mask.split('.').map(Number);
-  let bits = 0;
-  for (const p of parts) {
-    let n = p;
-    while (n) { bits += n & 1; n >>>= 1; }
-  }
-  return bits;
+  return new SubnetMask(mask).toCIDR();
 }
 
 function ipInSubnet(ip: string, network: string, mask: string): boolean {
