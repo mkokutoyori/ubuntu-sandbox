@@ -495,8 +495,9 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 ### 5.3 GLBP
 - **Constat** : implémentation relativement complète (AVG/AVF, TLV hello/request/assign, 3 modes de répartition de charge `round-robin`/`weighted`/`host-dependent`, élections AVG avec préemption). Cependant, l'état `GlbpAvgState` déclare `'speak'`/`'listen'` qui ne sont jamais assignés par le moteur — seuls `init/active/standby` (et transitoirement `disabled`) sont effectivement atteints, comme pour HSRP.
 - **Preuve** : `src/network/glbp/types.ts:5` (`'disabled' | 'init' | 'listen' | 'speak' | 'standby' | 'active'`) vs assignations réelles dans `GlbpAgent.ts:387,389,394,396,399` (`newState = 'init'|'active'|'standby'` uniquement).
-- **Sévérité** : Mineure
+- **Sévérité** : Mineure — ✅ CORRIGÉ
 - **Recommandation** : aligner le type sur les états réellement modélisés ou compléter la FSM pour traverser `listen`/`speak` durant la phase d'élection (utile pour la temporisation `helloSec`/`holdSec`).
+- **Correction appliquée** : type aligné sur la FSM réellement modélisée — `GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active'` (`src/network/glbp/types.ts:5`). Les promesses non tenues `'listen'`/`'speak'` sont retirées du type pour ne pas induire l'utilisateur en erreur. `npx tsc --noEmit` propre, 0 régression sur la suite GLBP.
 
 - **Constat** : pas de tracking objects pour GLBP non plus (même lacune que HSRP/VRRP) — `weighting`/`preempt` sont configurables manuellement mais aucun objet suivi ne module dynamiquement la pondération.
 - **Preuve** : aucune occurrence de `track`/`decrement` dans `src/network/glbp/GlbpAgent.ts` ni `types.ts`.
