@@ -317,11 +317,11 @@ L'OSPF (v2) est de loin le sous-système le plus mature de cette famille — FSM
 - **Sévérité** : Information (point positif notable — contraste avec d'autres sous-systèmes potentiellement plus statiques).
 - **Recommandation** : maintenir cette discipline « live state only » lors de l'ajout de nouvelles commandes `show`.
 
-### 3.15 Artefact de fichier de test orphelin (`ospf-full.test` sans extension `.ts`)
+### 3.15 Artefact de fichier de test orphelin (`ospf-full.test` sans extension `.ts`) — ✅ CORRIGÉ
 - **Constat** : le répertoire de tests OSPF contient un fichier `ospf-full.test` (≈96 Ko, sans extension `.ts`) quasi-identique à `ospf-full.test.ts` mais avec des imports différents (`Router` au lieu de `CiscoRouter`/`CiscoSwitch`) — manifestement un reliquat d'une refactorisation, non exécuté par Vitest (extension non reconnue) et non référencé ailleurs.
 - **Preuve** : `src/__tests__/unit/network-v2/ospf-full.test` (≈96 Ko) coexistant avec `ospf-full.test.ts`, imports divergents dès la ligne 18 (`Router` vs `CiscoRouter`/`CiscoSwitch`).
-- **Sévérité** : Mineure.
-- **Recommandation** : supprimer le fichier orphelin `ospf-full.test` (poids mort, source de confusion lors de recherches/diffs).
+- **Sévérité** : Mineure — ✅ CORRIGÉ
+- **Correction appliquée** : fichier orphelin `src/__tests__/unit/network-v2/ospf-full.test` supprimé. Préalablement vérifié par `grep -rln "ospf-full.test\b"` qu'aucune référence (vite config, scripts) ne pointait dessus. La version `ospf-full.test.ts` (à jour, avec les vrais imports `CiscoRouter`/`CiscoSwitch`) reste en place et est exécutée par Vitest comme avant.
 
 ### 3.16 Parité IPv4/IPv6 — le plan de données IPv6 ne consomme aucune route de protocole dynamique
 - **Constat** : `IPv6DataPlane` gère exclusivement des routes statiques/connectées/par défaut (`type: 'static' | 'connected' | 'default'`) ; aucune référence à OSPF, OSPFv3, BGP ou tout autre protocole dynamique n'existe dans ce fichier (679 lignes). Les seules routes OSPFv3 injectées dans sa table le sont via le contournement décrit en 3.6 (`v3ComputeRoutes`), pas via une intégration générique pérenne.
@@ -1220,11 +1220,11 @@ La couche UI repose sur un store Zustand unique (`networkStore.ts`) qui détient
 - **Sévérité** : Mineure
 - **Recommandation** : Soit retirer cette section "Performance" tant que le moteur ne modélise pas de bande passante/latence par câble, soit relier ces valeurs à de vraies propriétés de `Cable`/`Port` si elles existent ou sont ajoutées.
 
-### 11.4 Animation de paquets
+### 11.4 Animation de paquets — ✅ CORRIGÉ
 - **Constat** : L'animation de paquets est entièrement factice. `NetworkCanvas` déclare `const activePackets: any[] = []` (toujours vide, jamais alimenté), et le composant `PacketAnimation` est explicitement commenté comme un "placeholder — will be fully implemented later". Une recherche dans tout le code confirme que `ActivePacket`/`activePackets` n'existent **nulle part ailleurs** : aucun abonnement à `EventBus`/`Logger` pour les événements de transmission de trame réels (`frame.sent`, ARP, ICMP…) n'alimente ce tableau. La légende `PacketLegend` (icônes ARP/ICMP/broadcast/data) est donc affichée en permanence sans jamais correspondre à un trafic réel animé.
 - **Preuve** : `src/components/network/NetworkCanvas.tsx:43-44` (`// Packet animation (placeholder - will be implemented later)\n const activePackets: any[] = [];`), `src/components/network/PacketAnimation.tsx:8` (`// Packet animation placeholder - will be fully implemented later`).
-- **Sévérité** : Critique
-- **Recommandation** : Soit retirer entièrement l'UI d'animation de paquets (composant + légende) tant qu'elle n'est pas branchée, soit l'implémenter en s'abonnant aux événements de trame du `Logger`/`EventBus` (le pipeline `Logger` capture déjà chaque trame/échange ARP/SSH d'après le commentaire de `NetworkLogsPanel.tsx:6`) pour produire de vraies particules animées synchronisées avec le trafic simulé — exactement le type de pont que `LiveDeviceStats` démontre être possible.
+- **Sévérité** : Critique — ✅ CORRIGÉ
+- **Correction appliquée** : Nouveau hook `src/react/hooks/useActivePackets.ts` (~85 lignes) qui s'abonne à `cable.frame.dispatched` sur le bus partagé `getDefaultEventBus()`, classifie chaque trame en `arp` / `icmp` / `broadcast` / `data` (via `ETHERTYPE_ARP`, `ETHERTYPE_IPV4 + protocol === IP_PROTO_ICMP`, `dstMAC === FF:FF:FF:FF:FF:FF`), spawne un `ActivePacket` (avec `connectionId = payload.cableId`, qui correspond à `Connection.id` puisque `networkStore.addConnection` passe `connId` au constructeur de `Cable`), puis anime via `requestAnimationFrame` sur 600ms (progression linéaire 0→1) avant retrait automatique. Plafond `MAX_CONCURRENT_PACKETS = 64` pour éviter les tempêtes (FIFO). `NetworkCanvas.tsx` consomme `useActivePackets()` au lieu du tableau vide ; la légende reste mais correspond enfin à du trafic réel. `PacketAnimation.tsx` corrige aussi le bug latent `packet.direction` (champ inexistant) en dérivant la direction à partir de `sourceDeviceId === source.id`. `ActivePacket.type` typé `PacketKind = 'arp' | 'icmp' | 'broadcast' | 'data'`. Validé par un smoke test (dispatcher un événement ARP/broadcast et ICMP → vérification du type classifié, comptage, structure du packet retourné) — 2/2 passants. 68/68 tests GUI passent, build production propre.
 
 ### 11.5 Boutons d'action décoratifs (Toolbar) — ✅ CORRIGÉ
 - **Constat** : Plusieurs boutons de la barre d'outils principale n'ont **aucun gestionnaire `onClick`** : "Save", "Open", "Simulate", "Pause", "Reset" et "Help" sont rendus via `<ToolbarButton icon={...} label={...} />` sans prop `onClick`, alors que `ToolbarButton` accepte un `onClick?` optionnel. Ce sont des affordances UI mortes qui suggèrent des fonctionnalités (sauvegarde de session, contrôle pas-à-pas de la simulation, aide contextuelle) qui n'existent pas.

@@ -8,6 +8,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
+import { useActivePackets } from '@/react/hooks/useActivePackets';
 import { Equipment } from '@/network';
 import type { DeviceType } from '@/network';
 type BaseDevice = Equipment;
@@ -40,8 +41,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
   const devices = getDevices();
 
-  // Packet animation (placeholder - will be implemented later)
-  const activePackets: any[] = [];
+  const activePackets = useActivePackets();
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
