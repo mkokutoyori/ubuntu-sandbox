@@ -486,6 +486,63 @@ describe('COLUMN col FORMAT fmt', () => {
   });
 });
 
+describe('COLUMN formats applied to query output', () => {
+  beforeEach(() => {
+    cmd('CREATE TABLE fmt_demo (label VARCHAR2(40), amount NUMBER);');
+    cmd(`INSERT INTO fmt_demo VALUES ('a-very-long-label-value', 1234567.5);`);
+  });
+
+  test('FORMAT An truncates character values with WRAP OFF', () => {
+    cmd('SET WRAP OFF');
+    cmd('COLUMN LABEL FORMAT A10');
+    const out = output('SELECT label FROM fmt_demo;');
+    expect(out).toContain('a-very-lon');
+    expect(out).not.toContain('a-very-long');
+  });
+
+  test('FORMAT An wraps character values with WRAP ON', () => {
+    cmd('SET WRAP ON');
+    cmd('COLUMN LABEL FORMAT A10');
+    const lines = cmd('SELECT label FROM fmt_demo;').output;
+    expect(lines).toContain('a-very-lon');
+    expect(lines.some(l => l.startsWith('g-label-va'))).toBe(true);
+  });
+
+  test('numeric mask 999,999,990.00 formats with separators and decimals', () => {
+    cmd('COLUMN AMOUNT FORMAT 999,999,990.00');
+    const out = output('SELECT amount FROM fmt_demo;');
+    expect(out).toContain('1,234,567.50');
+  });
+
+  test('numeric overflow renders pound signs like SQL*Plus', () => {
+    cmd('COLUMN AMOUNT FORMAT 999');
+    const out = output('SELECT amount FROM fmt_demo;');
+    expect(out).toMatch(/#{3}/);
+    expect(out).not.toContain('1234567.5');
+  });
+
+  test('NOPRINT hides the column from output', () => {
+    cmd('COLUMN AMOUNT NOPRINT');
+    const out = output('SELECT label, amount FROM fmt_demo;');
+    expect(out).not.toContain('AMOUNT');
+    expect(out).not.toContain('1234567.5');
+  });
+
+  test('numbers are right-aligned within their column', () => {
+    cmd(`INSERT INTO fmt_demo VALUES ('x', 7);`);
+    const lines = cmd('SELECT amount FROM fmt_demo;').output;
+    const seven = lines.find(l => l.trim() === '7');
+    expect(seven).toBeDefined();
+    expect(seven!.startsWith(' ')).toBe(true);
+  });
+
+  test('HEADING replaces the column header in output', () => {
+    cmd(`COLUMN LABEL HEADING 'Description'`);
+    const out = output('SELECT label FROM fmt_demo;');
+    expect(out).toContain('Description');
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // 10. PROMPT
 // ═══════════════════════════════════════════════════════════════════

@@ -22,12 +22,8 @@ import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
 import type { HostCommandRunner } from './HostCommandRunner';
 
-export interface ColumnFormat {
-  name: string;
-  format?: string;
-  heading?: string;
-  width?: number;
-}
+import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
+export type { ColumnFormat } from './QueryResultRenderer';
 
 export interface SQLPlusSettings {
   linesize: number;
@@ -594,83 +590,20 @@ export class SQLPlusSession {
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
-  /**
-   * Format a query result as a text table (SQL*Plus style).
-   */
   private formatQueryResult(result: ResultSet): string[] {
-    const output: string[] = [];
-    const { columns, rows } = result;
-
-    // Calculate column widths
-    const widths = columns.map((col, i) => {
-      const headerWidth = (col.alias || col.name).length;
-      let maxData = 0;
-      for (const row of rows) {
-        const val = this.formatCell(row[i]);
-        if (val.length > maxData) maxData = val.length;
-      }
-      return Math.max(headerWidth, maxData);
-    });
-
-    // Cap widths at linesize
-    const totalWidth = widths.reduce((a, b) => a + b, 0) + (widths.length - 1) * this.settings.colsep.length;
-    if (totalWidth > this.settings.linesize && !this.settings.wrap) {
-      // Simple truncation for now
-    }
-
-    output.push('');
-
-    if (this.settings.heading) {
-      // Header row
-      const headerParts = columns.map((col, i) => {
-        const name = (col.alias || col.name).toUpperCase();
-        return name.padEnd(widths[i]);
-      });
-      output.push(headerParts.join(this.settings.colsep));
-
-      // Separator
-      const sepParts = widths.map(w => this.settings.underline.repeat(w));
-      output.push(sepParts.join(this.settings.colsep));
-    }
-
-    // Data rows
-    let rowCount = 0;
-    for (const row of rows) {
-      const parts = columns.map((_, i) => {
-        const val = this.formatCell(row[i]);
-        return val.padEnd(widths[i]);
-      });
-      output.push(parts.join(this.settings.colsep));
-      rowCount++;
-      // Page break
-      if (this.settings.pagesize > 0 && rowCount % this.settings.pagesize === 0 && rowCount < rows.length) {
-        output.push('');
-        if (this.settings.heading) {
-          const headerParts = columns.map((col, i) => {
-            const name = (col.alias || col.name).toUpperCase();
-            return name.padEnd(widths[i]);
-          });
-          output.push(headerParts.join(this.settings.colsep));
-          const sepParts = widths.map(w => this.settings.underline.repeat(w));
-          output.push(sepParts.join(this.settings.colsep));
-        }
-      }
-    }
-
-    return output;
-  }
-
-  private formatCell(value: unknown): string {
-    if (value === null || value === undefined) return this.settings.null_display;
-    if (value instanceof Date) {
-      // Oracle default date format: DD-MON-YY
-      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-      const d = value.getDate().toString().padStart(2, '0');
-      const m = months[value.getMonth()];
-      const y = (value.getFullYear() % 100).toString().padStart(2, '0');
-      return `${d}-${m}-${y}`;
-    }
-    return String(value);
+    const renderer = new QueryResultRenderer(
+      {
+        heading: this.settings.heading,
+        pagesize: this.settings.pagesize,
+        linesize: this.settings.linesize,
+        colsep: this.settings.colsep,
+        underline: this.settings.underline,
+        nullDisplay: this.settings.null_display,
+        wrap: this.settings.wrap,
+      },
+      this.columnFormats,
+    );
+    return renderer.render(result);
   }
 
   // ── SET command ──────────────────────────────────────────────────
@@ -1295,10 +1228,16 @@ export class SQLPlusSession {
     const headMatch = args.match(/HEADING\s+'([^']+)'/i) || args.match(/HEADING\s+"([^"]+)"/i) || args.match(/HEADING\s+(\S+)/i);
     if (headMatch) fmt.heading = headMatch[1];
 
-    // Parse width from format (e.g., A30 = 30 chars, 9999 = 4 digits)
+    if (/(^|\s)NOPRINT(\s|$)/i.test(args)) fmt.noprint = true;
+    if (/(^|\s)PRINT(\s|$)/i.test(args)) fmt.noprint = false;
+
     if (fmt.format) {
       const aMatch = fmt.format.match(/^A(\d+)$/i);
-      if (aMatch) fmt.width = parseInt(aMatch[1]);
+      if (aMatch) {
+        fmt.width = parseInt(aMatch[1]);
+      } else if (/^[$]?[09,.]+$/.test(fmt.format)) {
+        fmt.width = fmt.format.length;
+      }
     }
 
     this.columnFormats.set(colName, fmt);

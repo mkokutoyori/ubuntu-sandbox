@@ -134,3 +134,36 @@ GREATEST/LEAST, ORA-00904, fonctions de paquets). Suite complète : 2546 tests v
 (INSTR occurrence/backward, LPAD/INITCAP via registre, propagation NULL GREATEST/LEAST,
 DECODE NULL-match). Suite database : 2560 tests verts. Suite unitaire globale : 13209
 verts — les 10 échecs PowerShell/terminal préexistent sur main et sont hors périmètre.
+
+---
+
+## Correction n°4 — Rendu SQL*Plus fidèle (COLUMN FORMAT, alignement, wrap)
+
+**Défaillances.** Le rendu des résultats dans `SQLPlusSession.formatQueryResult` ignorait
+l'essentiel du modèle de formatage du vrai SQL*Plus :
+
+- `COLUMN col FORMAT A10 / 999,990.00` était parsé et stocké… puis jamais appliqué.
+- Toutes les colonnes étaient alignées à gauche — le vrai SQL*Plus aligne les **nombres à
+  droite** (en-tête compris).
+- Aucune gestion du débordement : pas de wrap à la largeur de colonne (WRAP ON), pas de
+  troncature (WRAP OFF), pas de `#####` pour les nombres qui dépassent leur masque.
+- `LINESIZE` jamais appliqué (un commentaire « Simple truncation for now » en tenait lieu).
+- `HEADING` personnalisé et `NOPRINT` non honorés au rendu.
+
+**Correction.** Nouvelle classe `commands/QueryResultRenderer.ts` (SRP : la session de
+1415 lignes ne porte plus la logique de rendu) :
+
+- Plan de colonnes : largeur issue de `FORMAT An` ou du masque numérique, sinon largeur
+  naturelle, plafonnée à LINESIZE ; colonnes NOPRINT exclues ; HEADING substitué.
+- Alignement : nombres à droite, chaînes à gauche (détection par type des valeurs).
+- Masques numériques `[$]9/0/,/.` : séparateurs de milliers, décimales fixes, `$`,
+  zéros obligatoires, débordement → `####` sur la largeur du masque (comme SQL*Plus).
+- Débordement caractère : wrap multi-lignes si `SET WRAP ON`, troncature sinon.
+- `handleColumn` parse désormais la largeur des masques numériques et NOPRINT/PRINT.
+
+**Adaptations de tests.** Deux tests existants supposaient l'ancien rendu non réaliste
+(valeur de 200 caractères non wrappée ; nombre aligné à gauche) — mis à jour pour
+correspondre au comportement du vrai SQL*Plus.
+
+**Tests.** +7 tests de rendu (troncature/wrap A-format, masque avec séparateurs,
+débordement `###`, NOPRINT, alignement droit, HEADING). Suite database : 2567 verts.
