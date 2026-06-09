@@ -535,7 +535,7 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
     const marker = a.preferred ? '*' : a.prefer ? '+' : ' ';
     const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
     rows.push(
-      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? 'INIT' : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
+      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? a.serverIp : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
       `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
     );
   }
@@ -568,14 +568,27 @@ export function showSshSessions(): string {
   ].join('\n');
 }
 
-/** `show hosts` — the device's real (empty) name cache. */
-export function showHosts(): string {
-  return [
-    'Default domain is not set',
-    'Name/address lookup uses domain service',
-    '',
-    'Host                      Port  Flags      Age Type   Address(es)',
-  ].join('\n');
+export function showHosts(router?: { _getHostsTable?: () => import('../../router/dns/RouterHostsTable').RouterHostsTable; getManagementService?: () => { domainName: string; ipDomainLookupEnabled: boolean; nameServers: string[] } }): string {
+  const hosts = router?._getHostsTable?.();
+  const mgmt = router?.getManagementService?.();
+  const lines: string[] = [];
+  if (mgmt?.domainName) lines.push(`Default domain is ${mgmt.domainName}`);
+  else lines.push('Default domain is not set');
+  if (mgmt && mgmt.nameServers.length > 0) {
+    lines.push(`Name servers are ${mgmt.nameServers.join(', ')}`);
+  } else {
+    lines.push('Name servers are 255.255.255.255');
+  }
+  lines.push(mgmt?.ipDomainLookupEnabled === false
+    ? 'Name/address lookup is disabled'
+    : 'Name/address lookup uses static table only (recursive resolver not simulated)');
+  lines.push('');
+  lines.push('Host                      Port  Flags      Age Type   Address(es)');
+  const entries = hosts?.entries() ?? [];
+  for (const e of entries) {
+    lines.push(`${e.name.padEnd(26)}None  (perm, OK)  0   IP     ${e.ip}`);
+  }
+  return lines.join('\n');
 }
 
 /** `show vrf` / `show ip vrf` — no VRF instances exist in the model. */

@@ -20,6 +20,12 @@ export interface HsrpPacket {
   senderIp: string;
 }
 
+export interface HsrpTrackEntry {
+  target: string;
+  decrement: number;
+  down: boolean;
+}
+
 export interface HsrpGroupRuntime {
   iface: string;
   group: number;
@@ -38,6 +44,7 @@ export interface HsrpGroupRuntime {
   lastHeardActiveMs: number;
   lastHeardStandbyMs: number;
   lastTransitionMs: number;
+  tracks: HsrpTrackEntry[];
 }
 
 export interface HsrpConfig {
@@ -60,7 +67,16 @@ export function defaultGroupRuntime(iface: string, group: number, version: 1 | 2
     activeRouterIp: null, activeRouterPriority: 0,
     standbyRouterIp: null, standbyRouterPriority: 0,
     lastHeardActiveMs: 0, lastHeardStandbyMs: 0, lastTransitionMs: Date.now(),
+    tracks: [],
   };
+}
+
+export function effectivePriority(g: HsrpGroupRuntime): number {
+  let p = g.priority;
+  for (const t of g.tracks) if (t.down) p -= t.decrement;
+  if (p < 0) p = 0;
+  if (p > 255) p = 255;
+  return p;
 }
 
 export function hsrpVirtualMac(group: number, version: 1 | 2): string {

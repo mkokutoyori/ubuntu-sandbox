@@ -706,6 +706,8 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
   trie.register('no ip proxy-arp', 'Disable proxy-ARP', () => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
     sec().ifaceFlags(i).noProxyArp = true;
+    const port = ctx.r().getPort(i);
+    if (port) port.setProxyArp(false);
     return '';
   });
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {

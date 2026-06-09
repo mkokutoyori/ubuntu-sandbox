@@ -21,7 +21,6 @@ import { LinuxTerminalSession } from './LinuxTerminalSession';
 import { CiscoTerminalSession } from './CiscoTerminalSession';
 import { HuaweiTerminalSession } from './HuaweiTerminalSession';
 import { WindowsTerminalSession } from './WindowsTerminalSession';
-import { preInstallForDevice } from '@/terminal/packages';
 import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
 
 let nextSessionId = 1;
@@ -161,11 +160,6 @@ export class TerminalManager {
     const osType = device.getOSType();
     const deviceType = device.getDeviceType();
     const deviceId = device.getId();
-
-    // Pre-install database packages
-    if (deviceType.startsWith('db-')) {
-      preInstallForDevice(deviceType);
-    }
 
     const sessionId = `session-${nextSessionId++}`;
     let session: TerminalSession;

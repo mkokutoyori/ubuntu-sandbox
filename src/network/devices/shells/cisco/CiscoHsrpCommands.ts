@@ -130,10 +130,10 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
     }
     case 'track': {
       const decrIdx = rest.indexOf('decrement');
-      g.trackDecr.push({
-        target: rest[0],
-        decrement: decrIdx >= 0 ? parseInt(rest[decrIdx + 1], 10) || 10 : 10,
-      });
+      const target = rest[0];
+      const decrement = decrIdx >= 0 ? parseInt(rest[decrIdx + 1], 10) || 10 : 10;
+      g.trackDecr.push({ target, decrement });
+      agent?.addTrack(iface, group, target, decrement);
       return '';
     }
     case 'name':

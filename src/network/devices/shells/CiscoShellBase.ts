@@ -386,6 +386,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
+  protected parseNtpKeyId(args: string[]): number | undefined {
+    const idx = args.indexOf('key');
+    if (idx < 0 || !args[idx + 1] || !/^\d+$/.test(args[idx + 1])) return undefined;
+    return parseInt(args[idx + 1], 10);
+  }
+
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
   getHelp(input: string): string {
@@ -504,7 +510,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());
-    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts());
+    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     trie.register('show ip vrf', 'Display VRFs', () => showVrf());
     trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf());
     trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
@@ -1204,10 +1210,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
-      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof dev._setSshBanner === 'function' && args[0]?.toLowerCase() === 'motd') {
-        const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
-        dev._setSshBanner(rest);
+      const dev = this.d() as unknown as {
+        _setSshBanner?: (b: string) => void;
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+      };
+      const which = args[0]?.toLowerCase();
+      const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
+      if (which === 'motd') {
+        dev._setMotdBanner?.(rest);
+        dev._setSshBanner?.(rest);
+      } else if (which === 'login') {
+        dev._setLoginBanner?.(rest);
+      } else if (which === 'exec') {
+        dev._setExecBanner?.(rest);
       }
       return '';
     });
@@ -1232,13 +1249,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addServer(resolved, a[2] === 'prefer' || a[3] === 'prefer');
+        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
       } else if (a[0] === 'peer' && a[1]) {
         const resolved = this.resolveNtpTarget(a[1]);
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addServer(resolved, false);
+        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
       } else if (a[0] === 'master') {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));

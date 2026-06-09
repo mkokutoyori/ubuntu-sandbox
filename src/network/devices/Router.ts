@@ -159,7 +159,7 @@ interface QueuedPacket {
   frame: IPv4Packet;
   outIface: string;
   nextHopIP: IPAddress;
-  timer: ReturnType<typeof setTimeout>;
+  timer: symbol;
 }
 
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
@@ -168,10 +168,34 @@ import type { IRouterShell } from './shells/IRouterShell';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
+export interface IPv6ACLEntry {
+  action: 'permit' | 'deny';
+  protocol?: string;
+  srcPrefix?: string;
+  srcPrefixLength?: number;
+  dstPrefix?: string;
+  dstPrefixLength?: number;
+  dstPort?: string;
+  log?: boolean;
+  sequence?: number;
+  remark?: string;
+  evaluate?: string;
+  prefix?: string;
+  prefixLength?: number;
+}
+
+export interface IPv6ACL {
+  name: string;
+  entries: IPv6ACLEntry[];
+}
+
 export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
+  protected ipv6AccessLists: IPv6ACL[] = [];
+
+  getIpv6AccessLists(): IPv6ACL[] { return this.ipv6AccessLists; }
 
   _clearArpEntry(ip: string): number {
     return this.arpTable.delete(ip) ? 1 : 0;
@@ -271,7 +295,7 @@ export abstract class Router extends Equipment {
       getArpEntry: (ip) => this.arpTable.get(ip),
       getACLEngine: () => this.aclEngine,
       getIPv6Engine: () => this.ipv6Engine,
-      getIPv6AccessLists: () => (this as any).ipv6AccessLists,
+      getIPv6AccessLists: () => this.ipv6AccessLists,
     });
     this.dynamicRouting = new RouterDynamicRouting({
       id: this.id,
@@ -305,6 +329,22 @@ export abstract class Router extends Equipment {
     this.getEemEngine();
     this.getCredentialStore();
     this.mountSshDaemon();
+    this.startArpAgingTimer();
+  }
+
+  private arpAgingTimer: symbol | null = null;
+
+  private startArpAgingTimer(): void {
+    if (this.arpAgingTimer !== null) return;
+    this.arpAgingTimer = this.routerTimers.setInterval(() => this.ageArpEntries(), 5_000);
+  }
+
+  protected ageArpEntries(): void {
+    const now = Date.now();
+    for (const [ip, entry] of this.arpTable) {
+      if (entry.type === 'static') continue;
+      if (now - entry.timestamp > 60_000) this.arpTable.delete(ip);
+    }
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -806,6 +846,30 @@ export abstract class Router extends Equipment {
         srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
         etherType: ETHERTYPE_ARP, payload: reply,
       });
+    } else if (arp.operation === 'request' && port.isProxyArpEnabled()) {
+      const targetMask = port.getSubnetMask();
+      if (targetMask && !myIP.isInSameSubnet(arp.targetIP, targetMask)) {
+        const route = this.lookupRoute(arp.targetIP);
+        if (route && route.iface !== portName) {
+          const reply: ARPPacket = {
+            type: 'arp', operation: 'reply',
+            senderMAC: port.getMAC(), senderIP: arp.targetIP,
+            targetMAC: arp.senderMAC, targetIP: arp.senderIP,
+          };
+          this.sendFrame(portName, {
+            srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
+            etherType: ETHERTYPE_ARP, payload: reply,
+          });
+          this.getBus().publish({
+            topic: 'arp.proxy.responded',
+            payload: {
+              deviceId: this.id, hostname: this.getHostname(),
+              port: portName, targetIp: arp.targetIP.toString(),
+              senderIp: arp.senderIP.toString(), viaIface: route.iface,
+            },
+          });
+        }
+      }
     } else if (arp.operation === 'reply') {
       // Phase 5.8: callers awaiting resolution use waitForEvent('host.arp.entry-learned').
       // The receive handler just flushes the packet queue waiting on this IP.
@@ -1368,7 +1432,7 @@ export abstract class Router extends Equipment {
 
   private queueAndResolve(pkt: IPv4Packet, iface: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
-    const timer = setTimeout(() => {
+    const timer = this.routerTimers.setTimeout(() => {
       this.packetQueue = this.packetQueue.filter(
         q => !(q.nextHopIP.equals(nextHopIP) && q.outIface === iface)
       );
@@ -1399,7 +1463,7 @@ export abstract class Router extends Equipment {
     this.inFlightFwdARPs.delete(resolvedIP.toString());
 
     for (const q of ready) {
-      clearTimeout(q.timer);
+      this.routerTimers.clear(q.timer);
       const outPort = this.ports.get(q.outIface);
       if (outPort) {
         this.counters.ipForwDatagrams++;
@@ -1530,9 +1594,19 @@ export abstract class Router extends Equipment {
   }
 
   getBanner(type: string): string {
-    if (type === 'motd') return '';
+    if (type === 'motd') return this.motdBannerText;
+    if (type === 'login') return this.loginBannerText;
+    if (type === 'exec') return this.execBannerText;
     return '';
   }
+
+  protected motdBannerText: string = '';
+  protected loginBannerText: string = '';
+  protected execBannerText: string = '';
+
+  _setMotdBanner(text: string): void { this.motdBannerText = text; }
+  _setLoginBanner(text: string): void { this.loginBannerText = text; }
+  _setExecBanner(text: string): void { this.execBannerText = text; }
 
   // ── Public accessors used by CLI shells ──────────────────────
 

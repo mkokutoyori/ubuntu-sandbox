@@ -2,7 +2,7 @@ export const UDP_PORT_GLBP = 3222;
 export const GLBP_MULTICAST_IP = '224.0.0.102';
 export const GLBP_MULTICAST_MAC = '01:00:5e:00:00:66';
 
-export type GlbpAvgState = 'disabled' | 'init' | 'listen' | 'speak' | 'standby' | 'active';
+export type GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active';
 export type GlbpAvfState = 'disabled' | 'init' | 'listen' | 'active';
 export type GlbpLoadBalancing = 'round-robin' | 'weighted' | 'host-dependent';
 

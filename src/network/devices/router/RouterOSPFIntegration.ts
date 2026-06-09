@@ -78,7 +78,7 @@ export interface OSPFRouterContext {
   getArpEntry(ip: string): { mac: MACAddress; iface: string } | undefined;
   getACLEngine(): ACLEngine;
   getIPv6Engine(): IPv6DataPlane;
-  getIPv6AccessLists(): any[] | undefined;
+  getIPv6AccessLists(): import('../Router').IPv6ACL[] | undefined;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -1155,7 +1155,7 @@ export class RouterOSPFIntegration {
 
     if (this.extraConfig.v3DistributeList) {
       const aclName = this.extraConfig.v3DistributeList.aclId;
-      const v3Acl = this.ctx.getIPv6AccessLists()?.find((a: any) => a.name === aclName);
+      const v3Acl = this.ctx.getIPv6AccessLists()?.find((a) => a.name === aclName);
       if (v3Acl) {
         ipv6Engine.setRoutingTable(ipv6Engine.getRoutingTableInternal().filter((rt: any) => {
           if (rt.type !== 'ospf') return true;

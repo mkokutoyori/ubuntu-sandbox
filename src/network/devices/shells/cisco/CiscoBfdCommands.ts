@@ -66,6 +66,7 @@ export function registerBfdShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
         `  Local Diag: ${s.localDiag}`,
         `  Tx interval ${Math.round(s.desiredMinTxUs / 1000)} ms, Rx ${Math.round(s.requiredMinRxUs / 1000)} ms`,
         `  Detect multiplier ${s.detectMultiplier}`,
+        `  Type: single-hop, Mode: async (echo not supported)`,
       ].join('\n')).join('\n');
     }
     const header = 'NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int';

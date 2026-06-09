@@ -71,6 +71,8 @@ export class Port {
   private inputServicePolicy: string | null = null;
   private outputServicePolicy: string | null = null;
   private description: string = '';
+  private proxyArpEnabled: boolean = true;
+  private proxyArpExplicit: boolean = false;
 
   getBandwidthKbps(): number { return this.bandwidthKbps; }
   setBandwidthKbps(v: number): void { this.bandwidthKbps = v; }
@@ -95,6 +97,12 @@ export class Port {
   setOutputServicePolicy(name: string | null): void { this.outputServicePolicy = name; }
   getDescriptionText(): string { return this.description; }
   setDescriptionText(s: string): void { this.description = s; }
+  isProxyArpEnabled(): boolean { return this.proxyArpEnabled; }
+  setProxyArp(on: boolean, explicit = false): void {
+    this.proxyArpEnabled = on;
+    if (explicit) this.proxyArpExplicit = on;
+  }
+  isProxyArpExplicit(): boolean { return this.proxyArpExplicit; }
 
   // ─── Port Security (delegated to PortSecurity class) ──────────────
   private _security: PortSecurity | null = null;
