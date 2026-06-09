@@ -8,7 +8,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Power, Settings, Terminal, Trash2, Link } from 'lucide-react';
+import { Power, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
 import { InterfaceSelectorPopover } from './InterfaceSelectorPopover';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
@@ -222,13 +222,6 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
                 <Terminal className="w-3.5 h-3.5" />
               </button>
             )}
-            <button
-              onClick={(e) => e.stopPropagation()}
-              className="p-1.5 rounded-md hover:bg-white/10 text-white/60 transition-colors"
-              title="Settings"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
             <button
               onClick={(e) => { e.stopPropagation(); removeDevice(device.id); }}
               className="p-1.5 rounded-md hover:bg-white/10 text-red-400 transition-colors"

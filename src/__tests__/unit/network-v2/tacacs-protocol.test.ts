@@ -11,6 +11,7 @@ import {
   PORT_TACACS, TACACS_TYPE, TACACS_AUTHEN_STATUS, TACACS_AUTHOR_STATUS,
   TACACS_AUTHEN_ACTION, TACACS_AUTHEN_TYPE, TACACS_AUTHEN_SERVICE,
 } from '@/network/tacacs/types';
+import { decryptBody } from '@/network/tacacs/encryption';
 
 beforeEach(() => {
   resetCounters();
@@ -156,20 +157,24 @@ describe('TACACS+ — wire format', () => {
     nas.setEventBus(bus); aaa.setEventBus(bus); sw.setEventBus(bus);
     const cable = new Cable('a');
     cable.setEventBus(bus);
-    let seen: { dport: number; bodyType: string; user: string } | null = null;
+    let seen: { dport: number; bodyType: string; user: string; wireBodyType: string } | null = null;
     bus.subscribe('cable.frame.delivered', (e) => {
       const ipPkt = (e.payload.frame.payload as unknown) as {
         protocol?: number;
         payload?: {
           type?: string; destinationPort?: number;
-          payload?: { type?: string; body?: { type?: string; user?: string } }
+          payload?: { type?: string; header?: { sessionId: number; version: number; seqNo: number }; body?: { type?: string; cipherHex?: string; user?: string } }
         };
       } | undefined;
       const tcp = ipPkt?.payload;
       if (tcp?.type === 'tcp' && tcp.destinationPort === PORT_TACACS) {
         const tac = tcp.payload;
-        if (tac?.type === 'tacacs') {
-          seen = { dport: tcp.destinationPort, bodyType: tac.body!.type!, user: tac.body!.user! };
+        if (tac?.type === 'tacacs' && tac.body?.type === 'tacacs-encrypted' && tac.header) {
+          const json = decryptBody(tac.body.cipherHex!, tac.header.sessionId, 'shared', tac.header.version, tac.header.seqNo);
+          if (json) {
+            const decoded = JSON.parse(json) as { type: string; user: string };
+            seen = { dport: tcp.destinationPort, wireBodyType: tac.body.type, bodyType: decoded.type, user: decoded.user };
+          }
         }
       }
     });
@@ -185,6 +190,7 @@ describe('TACACS+ — wire format', () => {
 
     expect(seen).not.toBeNull();
     expect(seen!.dport).toBe(PORT_TACACS);
+    expect(seen!.wireBodyType).toBe('tacacs-encrypted');
     expect(seen!.bodyType).toBe('tacacs-authen-start');
     expect(seen!.user).toBe('alice');
   });

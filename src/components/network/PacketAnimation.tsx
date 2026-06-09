@@ -5,14 +5,16 @@
 import { useMemo } from 'react';
 import { NetworkDeviceUI, Connection } from '@/store/networkStore';
 
-// Packet animation placeholder - will be fully implemented later
+export type PacketKind = 'arp' | 'icmp' | 'broadcast' | 'data';
+
 export interface ActivePacket {
   id: string;
   connectionId: string;
   sourceDeviceId: string;
   destinationDeviceId: string;
   progress: number;
-  type: string;
+  type: PacketKind;
+  startTime?: number;
 }
 
 interface PacketAnimationProps {
@@ -54,9 +56,8 @@ export function PacketAnimation({ packet, connection, devices }: PacketAnimation
     const midX = (source.x + target.x) / 2;
     const midY = (source.y + target.y) / 2 - curveFactor * 0.2;
 
-    // Calculate position along quadratic bezier curve
-    const progress = packet.direction === 'forward' ? packet.progress : (1 - packet.progress);
-    const t = progress;
+    const direction = packet.sourceDeviceId === source.id ? 'forward' : 'reverse';
+    const t = direction === 'forward' ? packet.progress : (1 - packet.progress);
 
     // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
     const x = Math.pow(1 - t, 2) * source.x + 2 * (1 - t) * t * midX + Math.pow(t, 2) * target.x;

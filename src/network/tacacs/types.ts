@@ -121,6 +121,12 @@ export interface TacacsAcctReply {
   data: string;
 }
 
+export interface TacacsEncryptedBody {
+  type: 'tacacs-encrypted';
+  cipherHex: string;
+  originalType: TacacsBody['type'];
+}
+
 export type TacacsBody =
   | TacacsAuthenStart
   | TacacsAuthenContinue
@@ -130,10 +136,12 @@ export type TacacsBody =
   | TacacsAcctRequest
   | TacacsAcctReply;
 
+export const TACACS_FLAG_UNENCRYPTED = 0x01;
+
 export interface TacacsPacket {
   type: 'tacacs';
   header: TacacsHeader;
-  body: TacacsBody;
+  body: TacacsBody | TacacsEncryptedBody;
 }
 
 export interface TacacsServerConfig {

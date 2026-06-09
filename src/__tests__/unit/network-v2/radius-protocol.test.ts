@@ -9,6 +9,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import {
   UDP_PORT_RADIUS_AUTH, RADIUS_CODE, RADIUS_ATTR, getAttr, attr,
+  decryptUserPassword,
   type RadiusPacket,
 } from '@/network/radius/types';
 
@@ -138,13 +139,13 @@ describe('RADIUS — wire format', () => {
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
     const cable = new Cable('a');
     cable.setEventBus(bus);
-    let seen: { code: string; dport: number; username: string; password: string } | null = null;
+    let seen: { code: string; dport: number; username: string; password: string; authenticator: string } | null = null;
     bus.subscribe('cable.frame.delivered', (e) => {
       const ipPkt = (e.payload.frame.payload as unknown) as {
         protocol?: number;
         payload?: {
           type?: string; destinationPort?: number;
-          payload?: { type?: string; code?: string; attributes?: Array<{ type: string; value: string | number }> }
+          payload?: { type?: string; code?: string; authenticator?: string; attributes?: Array<{ type: string; value: string | number }> }
         };
       } | undefined;
       const udp = ipPkt?.payload;
@@ -153,7 +154,7 @@ describe('RADIUS — wire format', () => {
         if (r?.type === 'radius') {
           const u = r.attributes!.find(a => a.type === 'user-name')?.value as string;
           const p = r.attributes!.find(a => a.type === 'user-password')?.value as string;
-          seen = { code: r.code!, dport: udp.destinationPort, username: u, password: p };
+          seen = { code: r.code!, dport: udp.destinationPort, username: u, password: p, authenticator: r.authenticator! };
         }
       }
     });
@@ -170,7 +171,9 @@ describe('RADIUS — wire format', () => {
     expect(seen!.code).toBe('access-request');
     expect(seen!.dport).toBe(UDP_PORT_RADIUS_AUTH);
     expect(seen!.username).toBe('alice');
-    expect(seen!.password).toBe('wonderland');
+    expect(seen!.password).not.toBe('wonderland');
+    expect(seen!.password).toMatch(/^[0-9a-f]+$/);
+    expect(decryptUserPassword(seen!.password, 'shared', seen!.authenticator)).toBe('wonderland');
   });
 });
 

@@ -2,10 +2,11 @@ import type { IEventBus } from '@/events/EventBus';
 import {
   type TacacsClientConfig, type TacacsServerConfig, type TacacsPacket,
   type TacacsAuthenStatus, type TacacsAuthorStatus, type TacacsAcctStatus, type TacacsAcctFlag,
-  type TacacsHeader, type TacacsBody,
+  type TacacsHeader, type TacacsBody, type TacacsEncryptedBody,
   createDefaultClientConfig, defaultServerEntry,
   PORT_TACACS,
 } from './types';
+import { encryptBody, decryptBody } from './encryption';
 import type { TcpStack, TcpSocket } from '../tcp/TcpStack';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
@@ -166,10 +167,17 @@ export class TacacsClientAgent {
       };
       socketRef = stack.connect(server.ip, server.port, {
         onOpen: (s) => {
+          const seqNo = 1;
+          const version = 0xc1;
           const header: TacacsHeader = {
-            version: 0xc1, type, seqNo: 1, flags: 0, sessionId, length: 64,
+            version, type, seqNo, flags: 0, sessionId, length: 64,
           };
-          const packet: TacacsPacket = { type: 'tacacs', header, body };
+          const encrypted: TacacsEncryptedBody = {
+            type: 'tacacs-encrypted',
+            cipherHex: encryptBody(JSON.stringify(body), sessionId, server.sharedSecret, version, seqNo),
+            originalType: body.type,
+          };
+          const packet: TacacsPacket = { type: 'tacacs', header, body: encrypted };
           this.getBus().publish({
             topic: 'tacacs.packet.sent',
             payload: {
@@ -182,15 +190,18 @@ export class TacacsClientAgent {
         onData: (data) => {
           const pkt = data as TacacsPacket | undefined;
           if (pkt && pkt.type === 'tacacs') {
-            received = pkt;
-            this.getBus().publish({
-              topic: 'tacacs.packet.received',
-              payload: {
-                deviceId: this.host.id, hostname: this.host.getHostname(),
-                fromIp: server.ip, sessionId: pkt.header.sessionId,
-                bodyType: pkt.body.type,
-              },
-            });
+            const decrypted = decryptReplyBody(pkt, server.sharedSecret);
+            if (decrypted) {
+              received = { type: 'tacacs', header: pkt.header, body: decrypted };
+              this.getBus().publish({
+                topic: 'tacacs.packet.received',
+                payload: {
+                  deviceId: this.host.id, hostname: this.host.getHostname(),
+                  fromIp: server.ip, sessionId: pkt.header.sessionId,
+                  bodyType: decrypted.type,
+                },
+              });
+            }
             if (socketRef) socketRef.close();
           }
         },
@@ -248,3 +259,16 @@ export class TacacsClientAgent {
 }
 
 void PORT_TACACS;
+
+function decryptReplyBody(pkt: TacacsPacket, secret: string): TacacsBody | null {
+  if (pkt.body.type !== 'tacacs-encrypted') return pkt.body;
+  const json = decryptBody(pkt.body.cipherHex, pkt.header.sessionId, secret, pkt.header.version, pkt.header.seqNo);
+  if (json === null) return null;
+  try {
+    const parsed = JSON.parse(json) as TacacsBody;
+    if (!parsed || typeof parsed.type !== 'string' || !parsed.type.startsWith('tacacs-')) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}

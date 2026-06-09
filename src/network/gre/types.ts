@@ -31,6 +31,12 @@ export interface GreTunnel {
   bytesOut: number;
   packetsIn: number;
   packetsOut: number;
+  sequenceEnabled: boolean;
+  sendSeq: number;
+  expectedRecvSeq: number;
+  outOfOrderDrops: number;
+  checksumEnabled: boolean;
+  checksumDrops: number;
 }
 
 export interface GreConfig {
@@ -48,7 +54,24 @@ export function defaultTunnel(tunnelId: string, sourceIp: string, destinationIp:
     overlayIp: null, overlayMask: null,
     key: null, ttl: 255, enabled: true,
     bytesIn: 0, bytesOut: 0, packetsIn: 0, packetsOut: 0,
+    sequenceEnabled: false, sendSeq: 0, expectedRecvSeq: 0, outOfOrderDrops: 0,
+    checksumEnabled: false, checksumDrops: 0,
   };
+}
+
+export function computeGreChecksum(gre: { protocolType: number; key: number | null; sequence: number | null; payload: unknown }): number {
+  const seed = JSON.stringify({
+    p: gre.protocolType,
+    k: gre.key,
+    s: gre.sequence,
+    body: gre.payload,
+  });
+  let sum = 0;
+  for (let i = 0; i < seed.length; i++) {
+    sum = (sum + seed.charCodeAt(i)) & 0xffff;
+    sum = (((sum >> 8) | (sum << 8)) & 0xffff) ^ 0xa5a5;
+  }
+  return (~sum) & 0xffff;
 }
 
 export function matchTunnel(tunnels: Iterable<GreTunnel>, srcIp: string, dstIp: string, key: number | null): GreTunnel | null {
