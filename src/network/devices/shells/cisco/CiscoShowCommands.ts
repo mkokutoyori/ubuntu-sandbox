@@ -10,6 +10,7 @@ import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands'
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 
 import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 
 export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
@@ -303,14 +304,19 @@ export function showRunningConfig(router: Router): string {
 
   // Local AAA users (`username NAME privilege N secret …`).
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router).filter(u => !u.factoryDefault);
     if (users.length > 0) {
       lines.push('!');
       for (const u of users) {
-        lines.push(`username ${u.name} privilege ${u.privilege} secret 5 ${u.secret}`);
+        const algo = u.secretAlgo ?? 'md5';
+        // type-7 is a reversible *password*; everything else is a *secret*.
+        const field = algo === 'type-7'
+          ? `password ${renderPasswordField(u.secret, 'type-7', false)}`
+          : `secret ${renderSecretField(u.secret, algo)}`;
+        lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
       }
     }
   }
@@ -329,15 +335,14 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  const serviceEncryption = router.getServiceFlags().get('password-encryption') === true;
   const enableSecret = router.getEnableSecret();
   if (enableSecret) {
-    const algoNum = enableSecret.algo === 'md5' ? 5 : enableSecret.algo === 'sha256' ? 8 : enableSecret.algo === 'type-7' ? 7 : 0;
-    lines.push(`enable secret ${algoNum} ${enableSecret.value}`);
+    lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
   }
   const enablePassword = router.getEnablePassword();
   if (enablePassword) {
-    const algoNum = enablePassword.algo === 'type-7' ? 7 : 0;
-    lines.push(`enable password ${algoNum} ${enablePassword.value}`);
+    lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption)}`);
   }
   for (const [name, on] of router.getServiceFlags()) {
     lines.push(`${on ? '' : 'no '}service ${name}`);

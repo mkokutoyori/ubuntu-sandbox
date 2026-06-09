@@ -329,10 +329,10 @@ export class CiscoSecurityConfig {
       }
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
     }
-    for (const u of this.usernames.values()) {
-      const auth = u.secret ? `secret ${u.secret}` : u.password ? `password ${u.password}` : '';
-      lines.push(`username ${u.name} privilege ${u.privilege} ${auth}`.trim());
-    }
+    // Local usernames are rendered (and password-encoded) by the credential
+    // store path in CiscoShowCommands (_listLocalUsers). Rendering them here
+    // too would duplicate the line and leak the plaintext secret.
+    void this.usernames;
     void this.enableSecret;
     void this.servicePasswordEncryption;
     if (this.passwords.minLength) lines.push(`security passwords min-length ${this.passwords.minLength}`);

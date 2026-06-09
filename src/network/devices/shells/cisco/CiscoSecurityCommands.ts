@@ -137,7 +137,8 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
         if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
         if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; break;
+        // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; break;
       }
       else if (t === 'password') {
         const next = args[i + 1];

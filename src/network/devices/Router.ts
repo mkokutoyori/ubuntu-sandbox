@@ -81,7 +81,7 @@ import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { RouterDynamicRouting } from './router/RouterDynamicRouting';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
-import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
+import { NetworkOsAccount, type PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -1887,9 +1887,10 @@ export abstract class Router extends Equipment {
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; factoryDefault: boolean }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
+      secretAlgo: a.passwordHashAlgorithm,
       factoryDefault: a.factoryDefault,
     }));
   }
