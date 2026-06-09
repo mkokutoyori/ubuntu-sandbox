@@ -156,3 +156,34 @@ nouveau chemin réseau ; `hosts-file.test.ts` adapté à l'API asynchrone.
 - DHCP (D3) reste en god-mode — prochain chantier potentiel.
 
 ---
+
+## Lot 3 — Déduplication du protocole de sessions shell (D4 partiel)
+
+**Défaillance corrigée :** `LinuxMachine` et `WindowsPC` réimplémentaient
+chacun, à l'identique, deux mécanismes délicats :
+1. la **file d'exécution sérialisée** par device (chaînage
+   `tail.then(run, run)` + `catch` pour ne jamais bloquer la file après un
+   échec) — toute divergence entre les deux copies aurait créé des courses
+   d'état entre terminaux ;
+2. la **fenêtre de swap** snapshot → swapIn → tâche → capture (succès
+   uniquement) → restore (toujours), dupliquée dans 7 méthodes
+   (`executeCommandInSession`, `runInSession`, `getCompletionsForSession` ×2,
+   `handleExitInSession`, `startTailFollowInSession`, …).
+
+**Correction :** extraction dans `src/network/devices/host/session/` :
+- `SessionWorkQueue` — FIFO par device, isolation des rejets.
+- `SessionSwapWindow<TSession, TSnapshot>` — protocole générique de swap ;
+  la connaissance OS (état executor Linux vs cwd/env Windows) est injectée
+  via `SessionSwapProtocol` (Strategy/DIP). Option `capture: false` pour les
+  fenêtres en lecture seule (complétion tab, attache tail -f).
+- Les 7 méthodes des deux classes deviennent des compositions d'une ligne :
+  `sessionQueue.run(() => sessionSwap.within(session, tâche))`. Les gardes
+  métier (`isPoweredOn`, `session.disposed`) restent au niveau device.
+
+**Tests :** `session-swap.test.ts` (6 cas : ordre FIFO strict, isolation des
+rejets, capture sur succès, pas de capture sur exception, restore garanti,
+fenêtres lecture seule). Non-régression : 58 fichiers terminal/terminal-core
+(450 tests), 22 fichiers shell/SSH (539 tests) — seul échec restant :
+préexistant sur main (`duplicate-display-fixes`, indépendant).
+
+---

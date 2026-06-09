@@ -62,6 +62,8 @@ import { cmdNetUse } from './windows/WinNetUse';
 import { cmdNetShare } from './windows/WinNetShare';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
+import { SessionWorkQueue } from './host/session/SessionWorkQueue';
+import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import { cmdDir } from './windows/WinDir';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
@@ -1780,7 +1782,17 @@ export class WindowsPC extends EndHost {
    * Without it, two terminals issuing `cd` at the same time would race on
    * the device's mutable `cwd`/`env` swap window.
    */
-  private wsExecQueue: Promise<unknown> = Promise.resolve();
+  private readonly sessionQueue = new SessionWorkQueue();
+
+  /** Swap-window over the device's cwd/env state (shared protocol). */
+  private readonly sessionSwap = new SessionSwapWindow<
+    WindowsShellSession, { cwd: string; env: Map<string, string> }
+  >({
+    snapshot: () => this.snapshotShellState(),
+    swapIn: (s) => this.swapInWindowsSession(s),
+    captureInto: (s) => this.captureShellStateInto(s),
+    restore: (b) => this.restoreShellState(b),
+  });
 
   /**
    * Allocate a fresh cmd.exe shell session — one per terminal window.
@@ -1822,22 +1834,11 @@ export class WindowsPC extends EndHost {
    * another terminal.
    */
   executeCommandInSession(command: string, session: WindowsShellSession): Promise<string> {
-    const run = async () => {
+    return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      const baseline = this.snapshotShellState();
-      this.swapInWindowsSession(session);
-      try {
-        const out = await this.executeCommand(command);
-        this.captureShellStateInto(session);
-        return out;
-      } finally {
-        this.restoreShellState(baseline);
-      }
-    };
-    const promise = this.wsExecQueue.then(run, run) as Promise<string>;
-    this.wsExecQueue = promise.catch(() => undefined);
-    return promise;
+      return this.sessionSwap.within(session, () => this.executeCommand(command));
+    });
   }
 
   /**
@@ -1849,36 +1850,23 @@ export class WindowsPC extends EndHost {
    * executeCommandInSession (terminal_gap.md §7.x).
    */
   runInSession<T>(session: WindowsShellSession, fn: () => Promise<T>): Promise<T> {
-    const run = async (): Promise<T> => {
+    return this.sessionQueue.run(async (): Promise<T> => {
       if (session.disposed) {
         // Best-effort no-op so callers don't crash post-tear-down.
         return fn();
       }
-      const baseline = this.snapshotShellState();
-      this.swapInWindowsSession(session);
-      try {
-        const out = await fn();
-        this.captureShellStateInto(session);
-        return out;
-      } finally {
-        this.restoreShellState(baseline);
-      }
-    };
-    const promise = this.wsExecQueue.then(run, run) as Promise<T>;
-    this.wsExecQueue = promise.catch(() => undefined);
-    return promise;
+      return this.sessionSwap.within(session, fn);
+    });
   }
 
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: WindowsShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];
-    const baseline = this.snapshotShellState();
-    this.swapInWindowsSession(session);
-    try {
-      return this.getCompletions(partial);
-    } finally {
-      this.restoreShellState(baseline);
-    }
+    return this.sessionSwap.withinSync(
+      session,
+      () => this.getCompletions(partial),
+      { capture: false },
+    );
   }
 
   /**
