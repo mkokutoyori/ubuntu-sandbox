@@ -9,6 +9,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
+import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
 
 interface HsrpCtx {
   r(): Router;
@@ -83,6 +84,15 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
   const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
   if (args[0] === 'version') {
     const v = args[1] === '2' ? 2 : 1;
+    // Real IOS refuses to fall back to version 1 while groups above 255
+    // exist on the interface (their number no longer fits the v1 packet).
+    if (v === 1) {
+      const tooBig = repo.forInterface(iface)
+        .filter((g) => g.group > HSRP_V1_MAX_GROUP);
+      if (tooBig.length > 0) {
+        return `% Cannot change to version 1 while group numbers above ${HSRP_V1_MAX_GROUP} exist`;
+      }
+    }
     repo.setInterfaceVersion(iface, v);
     agent?.setVersion(iface, v);
     return '';
@@ -91,6 +101,13 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
 
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid standby group';
+  // Real IOS bounds the group number by HSRP version: <0-255> in v1,
+  // <0-4095> in v2.
+  const ifaceVersion = repo.interfaceVersion(iface);
+  const maxGroup = hsrpMaxGroup(ifaceVersion);
+  if (group < 0 || group > maxGroup) {
+    return `% Group number out of range. Valid range is 0-${maxGroup} for HSRP version ${ifaceVersion}`;
+  }
   const g = repo.ensure(iface, group);
   agent?.ensureGroup(iface, group, g.version);
   const kw = args[1];

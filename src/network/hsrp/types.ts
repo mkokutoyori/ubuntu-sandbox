@@ -79,7 +79,21 @@ export function effectivePriority(g: HsrpGroupRuntime): number {
   return p;
 }
 
+/** HSRPv1 carries the group in one octet (RFC 2281: 00-00-0C-07-AC-XX). */
+export const HSRP_V1_MAX_GROUP = 255;
+/** HSRPv2 carries the group in the low 12 bits (0000.0C9F.F000-FFFF). */
+export const HSRP_V2_MAX_GROUP = 4095;
+
+export function hsrpMaxGroup(version: 1 | 2): number {
+  return version === 2 ? HSRP_V2_MAX_GROUP : HSRP_V1_MAX_GROUP;
+}
+
 export function hsrpVirtualMac(group: number, version: 1 | 2): string {
+  const max = hsrpMaxGroup(version);
+  if (!Number.isInteger(group) || group < 0 || group > max) {
+    throw new RangeError(
+      `HSRP version ${version} group ${group} is out of range (0-${max})`);
+  }
   if (version === 2) {
     return `0000.0c9f.f${group.toString(16).padStart(3, '0')}`;
   }

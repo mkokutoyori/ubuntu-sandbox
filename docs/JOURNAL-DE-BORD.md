@@ -15,7 +15,7 @@ corrections sont structurelles, jamais cosmétiques.
 |---|-------|-----------------|----------|--------|
 | 1 | STP : états Listening/Learning absents + tie-break d'élection du root port incomplet | IEEE 802.1D | Haute | ✅ Corrigé |
 | 2 | TCP : état TIME_WAIT déclaré mais jamais utilisé (pas de 2MSL) | RFC 793 §3.5 | Haute | ✅ Corrigé |
-| 3 | HSRPv2 : MAC virtuelle malformée (`0000.0c9f.fXXX` sur 3 digits) | RFC visant HSRPv2 (draft) / réalité Cisco | Moyenne | À faire |
+| 3 | HSRP : plages de groupes non bornées (MAC malformée hors plage), fonction MAC dupliquée, rétrogradation v2→v1 silencieuse | RFC 2281 / réalité IOS | Moyenne | ✅ Corrigé |
 | 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Template Method | Haute | À faire |
 | 5 | Helpers IP réimplémentés localement dans OSPF / EIGRP / BGP (`ipToNumber`, `toNum`) au lieu de `core/types.ts` | DRY | Moyenne | À faire |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | À faire |
@@ -117,6 +117,53 @@ TIME_WAIT pendant 2 × MSL pour :
 - Non-régression : network-v2 + shell + terminal = 7470 tests verts. Le seul
   échec (`duplicate-display-fixes.test.ts`, prompt sudo) est préexistant —
   vérifié par bisection avec `git stash` sur l'arbre vierge.
+
+---
+
+## Entrée 3 — HSRP : bornage des groupes, MAC virtuelle, bug de version
+
+**Date** : 2026-06-09
+
+### Défaillances constatées
+
+L'audit initial suspectait une MAC HSRPv2 malformée ; la vérification a montré
+que la formule `0000.0c9f.f` + 3 digits hex est en réalité correcte pour les
+groupes 0-4095. Les vrais problèmes découverts en creusant :
+
+1. **Aucune borne de plage** : `hsrpVirtualMac(300, 1)` produisait
+   `0000.0c07.ac12c` (13 caractères, MAC invalide). La CLI acceptait
+   `standby 300 ip …` en version 1 alors que l'IOS réel borne v1 à 0-255 et
+   v2 à 0-4095.
+2. **Fonction dupliquée** : `hsrpVirtualMac` existait en double —
+   `hsrp/types.ts` ET `devices/inspection/config/FhrpRepository.ts` (c'est le
+   doublon que la CLI importait). Toute correction de l'un laissait l'autre
+   faux.
+3. **Bug latent de rétrogradation** : `HsrpAgent.ensureGroup(iface, group)`
+   avait `version = 1` par défaut et écrasait la version existante — chaque
+   `setVip`/`setPriority`/`setTimers` interne **rétrogradait silencieusement
+   un groupe v2 en v1**.
+4. L'IOS réel refuse `standby version 1` tant que des groupes > 255 existent
+   sur l'interface ; le simulateur acceptait et corrompait l'état.
+
+### Correction
+
+- `hsrp/types.ts` : constantes `HSRP_V1_MAX_GROUP`/`HSRP_V2_MAX_GROUP`,
+  `hsrpMaxGroup()`, garde fail-fast (`RangeError`) dans `hsrpVirtualMac`.
+- `FhrpRepository` ré-exporte la fonction canonique (doublon supprimé) et
+  expose `interfaceVersion(iface)`.
+- CLI (`CiscoHsrpCommands.applyStandby`) : validation de plage selon la
+  version de l'interface + refus de rétrogradation v1 avec groupes > 255,
+  messages type IOS.
+- `HsrpAgent.ensureGroup(iface, group, version?)` : la version n'est
+  modifiée que si explicitement fournie ; validation contre la version
+  effective du groupe.
+
+### Tests
+
+8 nouveaux cas : couverture des bornes (0, 255, 256, 4095), rejets
+(`RangeError` : 256/v1, 4096/v2, négatif, non-entier), CLI v1 rejette > 255,
+CLI v2 accepte 300 / rejette 4096, refus de retour en v1. Suites HSRP/GLBP
+vertes + `tsc --noEmit` propre.
 
 ---
 

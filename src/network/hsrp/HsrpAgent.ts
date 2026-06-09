@@ -3,7 +3,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket, type HsrpState,
   createDefaultHsrpConfig, defaultGroupRuntime, makeKey, compareSpeaker,
-  effectivePriority,
+  effectivePriority, hsrpMaxGroup,
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
@@ -63,13 +63,24 @@ export class HsrpAgent {
       .sort((a, b) => a.iface === b.iface ? a.group - b.group : a.iface.localeCompare(b.iface));
   }
 
-  ensureGroup(iface: string, group: number, version: 1 | 2 = 1): HsrpGroupRuntime {
+  /**
+   * Look up or create a group runtime. `version` only (re)assigns the HSRP
+   * version when explicitly provided — internal setters that omit it must
+   * not silently downgrade an existing v2 group back to v1.
+   */
+  ensureGroup(iface: string, group: number, version?: 1 | 2): HsrpGroupRuntime {
     const k = makeKey(iface, group);
     let g = this.config.groups.get(k);
+    const effectiveVersion = version ?? g?.version ?? 1;
+    const max = hsrpMaxGroup(effectiveVersion);
+    if (!Number.isInteger(group) || group < 0 || group > max) {
+      throw new RangeError(
+        `HSRP version ${effectiveVersion} group ${group} is out of range (0-${max})`);
+    }
     if (!g) {
-      g = defaultGroupRuntime(iface, group, version);
+      g = defaultGroupRuntime(iface, group, effectiveVersion);
       this.config.groups.set(k, g);
-    } else if (g.version !== version) {
+    } else if (version !== undefined && g.version !== version) {
       g.version = version;
     }
     return g;
