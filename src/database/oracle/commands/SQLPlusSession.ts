@@ -380,12 +380,9 @@ export class SQLPlusSession {
       return this.handleArchiveLogList();
     }
 
-    // EXEC / EXECUTE … — short-hand for an anonymous PL/SQL block.
-    // We don't run PL/SQL, but accepting the syntax keeps DBA scripts
-    // from producing SP2-0734 noise.
     if (upper.startsWith('EXEC ') || upper === 'EXEC' || upper === 'EXEC;'
         || upper.startsWith('EXECUTE ') || upper === 'EXECUTE' || upper === 'EXECUTE;') {
-      return { output: ['PL/SQL procedure successfully completed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      return this.executeSql(trimmed.replace(/;\s*$/, ''));
     }
 
     // @ / START — execute script (simulated)

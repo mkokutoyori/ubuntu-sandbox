@@ -316,6 +316,12 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
 }
 
 export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.registerGreedy('event manager run', 'Run an EEM applet manually', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    if (!getRouter().getEemService().getApplet(args[0])) return `% Policy '${args[0]}' not found`;
+    void getRouter().getEemEngine().runByName(args[0]).catch(() => {});
+    return '';
+  });
   trie.register('show event manager environment', 'Display EEM environment', () => {
     const env = getRouter().getEemService().getEnvironment();
     if (env.size === 0) return 'No EEM environment variables';
@@ -364,8 +370,37 @@ export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter:
       `  Maximum flows: ${m.maximumFlows ?? 4096}`,
     ].join('\n')).join('\n\n');
   });
-  trie.registerGreedy('show ip cache flow', 'Display legacy NetFlow cache', () =>
-    'IP packet size distribution (1 total packets):\n  (sim: cache empty)');
+  trie.registerGreedy('show ip cache flow', 'Display legacy NetFlow cache', () => {
+    const agent = getRouter().getNetFlowAgent();
+    if (!agent) return 'IP packet size distribution (0 total packets):\n  (sim: cache empty)';
+    const flows = agent.listActiveFlows();
+    const cfg = agent.getConfig();
+    const totalPackets = flows.reduce((sum, f) => sum + f.packets, 0);
+    const lines = [
+      `IP packet size distribution (${totalPackets} total packets):`,
+      '',
+      'IP Flow Switching Cache, 278544 bytes',
+      `  ${flows.length} active, 0 inactive, ${flows.length} added`,
+      '  0 ager polls, 0 flow alloc failures',
+      `  Active flows timeout in ${Math.max(1, Math.round(cfg.activeTimeoutSec / 60))} minutes`,
+      `  Inactive flows timeout in ${cfg.inactiveTimeoutSec} seconds`,
+      '',
+    ];
+    if (flows.length === 0) {
+      lines.push('(sim: cache empty)');
+      return lines.join('\n');
+    }
+    lines.push('SrcIPaddress    DstIPaddress    Pr SrcP DstP  Pkts');
+    for (const f of flows) {
+      lines.push(
+        `${f.sourceIp.padEnd(15)} ${f.destinationIp.padEnd(15)} `
+        + `${f.protocol.toString(16).padStart(2, '0')} `
+        + `${f.sourcePort.toString(16).padStart(4, '0')} ${f.destinationPort.toString(16).padStart(4, '0')} `
+        + `${String(f.packets).padStart(5)}`,
+      );
+    }
+    return lines.join('\n');
+  });
   trie.registerGreedy('show ip flow export', 'Display legacy NetFlow export', () => {
     const legacy = getRouter().getNetflowService().getLegacy();
     if (legacy.destinations.length === 0) return 'Flow export is not configured';

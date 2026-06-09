@@ -307,9 +307,10 @@ export class SshSession implements ISshSession {
   ): ISshAuthContext {
     let attemptsLeft = 3;
     return {
-      checkPassword: (u, password) => {
+      checkPassword: () => false,
+      checkPasswordAsync: async (u, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
-        const response = this.requestServerAuth(conn, {
+        const response = await this.requestServerAuth(conn, {
           op: 'auth',
           method: 'password',
           user: u,
@@ -317,8 +318,9 @@ export class SshSession implements ISshSession {
         });
         return response.ok === true;
       },
-      checkPublicKey: (u, publicKey) => {
-        const response = this.requestServerAuth(conn, {
+      checkPublicKey: () => false,
+      checkPublicKeyAsync: async (u, publicKey) => {
+        const response = await this.requestServerAuth(conn, {
           op: 'auth',
           method: 'publickey',
           user: u,
@@ -334,18 +336,20 @@ export class SshSession implements ISshSession {
   private requestServerAuth(
     conn: TcpConnection,
     payload: Record<string, unknown>,
-  ): { ok: boolean } {
-    let response: { ok: boolean } = { ok: false };
-    const off = conn.onData((data) => {
-      try {
-        const parsed = JSON.parse(data) as { ok?: boolean };
-        if (typeof parsed.ok === 'boolean') response = { ok: parsed.ok };
-      } catch {
-        /* ignore */
-      }
+  ): Promise<{ ok: boolean }> {
+    return new Promise((resolve) => {
+      const off = conn.onData((data) => {
+        try {
+          const parsed = JSON.parse(data) as { ok?: boolean };
+          if (typeof parsed.ok === 'boolean') {
+            off();
+            resolve({ ok: parsed.ok });
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+      conn.write(JSON.stringify(payload));
     });
-    conn.write(JSON.stringify(payload));
-    off();
-    return response;
   }
 }

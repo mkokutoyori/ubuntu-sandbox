@@ -1728,39 +1728,71 @@ export class OracleDatabase implements SqlCommandHost {
   /** Execute EXEC[UTE] procedure_name(args) */
   private executeProcedureCall(executor: OracleExecutor, sql: string): ResultSet {
     const cleaned = sql.replace(/^EXEC(?:UTE)?\s+/i, '').trim();
-    return this.callStoredUnit(executor, cleaned);
+
+    const nameMatch = cleaned.match(/^(\w+(?:\.\w+){0,2})\s*(?:\(|;|$)/);
+    if (nameMatch) {
+      const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      if (this.resolveStoredUnit(schema, nameMatch[1])) {
+        return this.callStoredUnit(executor, cleaned);
+      }
+    }
+
+    const block = /;\s*$/.test(cleaned) ? `BEGIN ${cleaned} END;` : `BEGIN ${cleaned}; END;`;
+    return this.executePLSQL(executor, block);
   }
 
-  /** Try to execute a standalone procedure call (including pkg.proc) */
   private tryExecuteProcedureCall(executor: OracleExecutor, sql: string): ResultSet | null {
-    // Match pkg.proc(args) or proc(args)
-    const match = sql.match(/^(\w+(?:\.\w+)?)\s*\(([\s\S]*)\)\s*$/);
+    const match = sql.match(/^(\w+(?:\.\w+){0,2})\s*\(([\s\S]*)\)\s*$/);
     if (!match) return null;
-    const name = match[1].toUpperCase();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
-    // For package-qualified calls, look for SCHEMA.PKG.MEMBER
-    if (name.includes('.')) {
-      const key = `${schema}.${name}`;
-      if (!this.storedUnits.has(key) && !this.storedUnits.has(`SYS.${name}`)) return null;
-    } else {
-      const key = `${schema}.${name}`;
-      if (!this.storedUnits.has(key) && !this.storedUnits.has(`SYS.${name}`)) return null;
-    }
+    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    if (!this.resolveStoredUnit(schema, match[1])) return null;
     return this.callStoredUnit(executor, sql);
   }
 
-  /** Call a stored procedure or function by name with arguments (supports pkg.proc) */
+  private resolveStoredUnit(currentSchema: string, qualifiedName: string): StoredPLSQLUnit | undefined {
+    const parts = qualifiedName.toUpperCase().split('.');
+
+    if (parts.length === 1) {
+      const [name] = parts;
+      return this.storedUnits.get(`${currentSchema}.${name}`) ?? this.storedUnits.get(`SYS.${name}`);
+    }
+
+    if (parts.length === 2) {
+      const [a, b] = parts;
+      const schemaQualified = this.catalog.userExists(a) ? this.storedUnits.get(`${a}.${b}`) : undefined;
+      const packageMember = this.storedUnits.get(`${currentSchema}.${a}.${b}`)
+        ?? this.storedUnits.get(`SYS.${a}.${b}`);
+      return schemaQualified ?? packageMember ?? this.storedUnits.get(`${a}.${b}`);
+    }
+
+    const [schema, ...rest] = parts;
+    return this.storedUnits.get(`${schema}.${rest.join('.')}`) ?? this.storedUnits.get(qualifiedName.toUpperCase());
+  }
+
   private callStoredUnit(executor: OracleExecutor, callExpr: string): ResultSet {
-    // Match pkg.proc(args) or proc(args)
-    const match = callExpr.match(/^(\w+(?:\.\w+)?)(?:\s*\(([\s\S]*)\))?\s*$/);
+    const match = callExpr.match(/^(\w+(?:\.\w+){0,2})(?:\s*\(([\s\S]*)\))?\s*$/);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
     const name = match[1].toUpperCase();
     const argsStr = match[2] || '';
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
 
-    const unit = this.storedUnits.get(`${schema}.${name}`) || this.storedUnits.get(`SYS.${name}`);
+    const unit = this.resolveStoredUnit(schema, name);
     if (!unit) return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
+
+    const ctx = (executor as { context?: { currentUser?: string } }).context;
+    const currentUser = (ctx?.currentUser || schema).toUpperCase();
+    if (currentUser !== 'SYS' && currentUser !== unit.schema) {
+      const engine = this.catalog.getSecurityEngine?.();
+      const hasExecute = !!engine && (
+        engine.privileges.isDba(currentUser)
+        || engine.privileges.hasSystemPrivilege(currentUser, 'EXECUTE ANY PROCEDURE')
+        || engine.privileges.hasObjectPrivilege(currentUser, 'EXECUTE', unit.schema, unit.name.split('.')[0])
+      );
+      if (!hasExecute) {
+        return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
+      }
+    }
 
     // Parse arguments
     const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
@@ -1790,6 +1822,19 @@ export class OracleDatabase implements SqlCommandHost {
       }
     } else {
       block += 'BEGIN\n' + body + '\nEND;';
+    }
+
+    if (ctx && unit.schema !== currentUser) {
+      const savedUser = ctx.currentUser;
+      const savedSchema = (ctx as { currentSchema?: string }).currentSchema;
+      ctx.currentUser = unit.schema;
+      (ctx as { currentSchema?: string }).currentSchema = unit.schema;
+      try {
+        return this.executePLSQL(executor, block);
+      } finally {
+        ctx.currentUser = savedUser;
+        (ctx as { currentSchema?: string }).currentSchema = savedSchema;
+      }
     }
 
     return this.executePLSQL(executor, block);

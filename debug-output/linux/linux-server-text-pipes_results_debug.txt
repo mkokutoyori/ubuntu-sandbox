@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-06-05T09:41:04.960Z
+Generated: 2026-06-07T20:22:33.119Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -499,7 +499,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  8
+  9
 
 
 --- [92] § sort — tri ---
@@ -992,8 +992,9 @@ $ [177/303]> cat /etc/passwd | wc -l
   7
 
 $ [178/303]> ls /etc | grep conf | sort | head
-  adduser.conf   gshadow        machine-id     protocols      ssh
-  cron.monthly   hosts          nsswitch.conf  services       sudoers
+  adduser.conf   gshadow-       networks       security       sudoers
+  cron.daily     hostname       nsswitch.conf  services       sudoers.d
+  group-         machine-id     resolv.conf    subgid
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
   CERISE
@@ -1189,6 +1190,7 @@ $ [235/303]> echo "fichier1 fichier2 fichier3" | xargs -n1
   -n1 fichier1 fichier2 fichier3
 
 $ [236/303]> ls /etc/*.conf | xargs -n1 basename
+  -n1 /etc/resolv.conf
   -n1 /etc/adduser.conf
   -n1 /etc/nsswitch.conf
 
@@ -1205,6 +1207,7 @@ $ [238/303]> seq 1 5 | xargs echo
 $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
   wc /etc/ufw/ufw.conf
   wc /etc/ufw/sysctl.conf
+  wc /etc/resolv.conf
   wc /etc/adduser.conf
   wc /etc/security/pwquality.conf
   wc /etc/security/faillock.conf
@@ -1272,19 +1275,19 @@ $ [256/303]> seq 1 10 | paste -sd+ - | bc
 
 --- [257] § hachage & encodage — sums/base64/md5 ---
 $ [257/303]> md5sum fruits.txt
-  3a62b53cc3081ad5ba361f43345f723c  fruits.txt
+  5ec7a45c83942abe5d919b508bc69633  fruits.txt
 
 $ [258/303]> sha1sum fruits.txt
-  6db2eec744a3671a697773b055fb22f8  fruits.txt
+  974b2a07e2c049cca16e1038585ea62a  fruits.txt
 
 $ [259/303]> sha256sum fruits.txt
-  15e9390f1b3073dfa25421d338b0cd11b7e5599c226f5d0dd0c1a55ae62362f0  fruits.txt
+  a915a4ce24de9aed9747359baa302f25a972bf8787c67f0a22a513f971f811d9  fruits.txt
 
 $ [260/303]> md5sum fruits.txt nombres.txt
-  5f298f874c7eed65017a247a9d46147a  fruits.txt
+  e6b04917eccf761b61a91731790389ff  fruits.txt
 
 $ [261/303]> echo -n 'hello' | md5sum
-  39f996e956318b1c190199b745a14608  hello
+  4d2488fad10f6d86b839a354dc9fa164  hello
 
 $ [262/303]> echo 'données' | base64
   base64: command not found

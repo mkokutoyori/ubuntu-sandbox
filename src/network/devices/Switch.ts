@@ -29,7 +29,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -159,6 +159,7 @@ export abstract class Switch extends Equipment {
   private arpRecoveryScheduler: IScheduler | null = null;
   private arpErrDisableTimestamps: Map<string, number> = new Map();
   private arpUnsubscribers: Array<() => void> = [];
+  private dhcpSnoopingUnsubscribers: Array<() => void> = [];
 
   // ─── Port-Security err-disable + aging ─────────────────────────
   private psecRecoverySec: number = 0;
@@ -182,6 +183,7 @@ export abstract class Switch extends Equipment {
     this.shell = this.createShell();
     this.initArpInspection();
     this.initPortSecurity();
+    this.initDhcpSnooping();
   }
 
   private initPortSecurity(): void {
@@ -325,6 +327,66 @@ export abstract class Switch extends Equipment {
     ));
   }
 
+  private findClientMacEntry(clientMac: string): MACTableEntry | null {
+    const mac = clientMac.toLowerCase();
+    for (const entry of this.macTable.values()) {
+      if (entry.mac === mac) return entry;
+    }
+    return null;
+  }
+
+  private upsertSnoopingBinding(binding: DHCPSnoopingBinding): void {
+    const idx = this.snoopingBindings.findIndex((b) => b.macAddress === binding.macAddress && b.vlan === binding.vlan);
+    if (idx >= 0) this.snoopingBindings[idx] = binding;
+    else this.snoopingBindings.push(binding);
+    this.snoopingLog.push(`DHCP_SNOOPING: added binding ${binding.macAddress} ${binding.ipAddress} VLAN ${binding.vlan} ${binding.port}`);
+  }
+
+  private removeSnoopingBindingByIp(ip: string): void {
+    const idx = this.snoopingBindings.findIndex((b) => b.ipAddress === ip);
+    if (idx < 0) return;
+    const [removed] = this.snoopingBindings.splice(idx, 1);
+    this.snoopingLog.push(`DHCP_SNOOPING: removed binding ${removed.macAddress} ${removed.ipAddress} VLAN ${removed.vlan} ${removed.port}`);
+  }
+
+  private tryRecordSnoopingBinding(clientMac: string, ip: string, leaseTimeSec: number, retriesLeft: number): void {
+    if (!this.dhcpSnooping.enabled) return;
+    const entry = this.findClientMacEntry(clientMac);
+    if (!entry) {
+      if (retriesLeft > 0) {
+        this.getScheduler().setTimeout(
+          () => this.tryRecordSnoopingBinding(clientMac, ip, leaseTimeSec, retriesLeft - 1),
+          50,
+        );
+      }
+      return;
+    }
+    if (this.dhcpSnooping.vlans.size > 0 && !this.dhcpSnooping.vlans.has(entry.vlan)) return;
+    if (this.dhcpSnooping.trustedPorts.has(entry.port)) return;
+    this.upsertSnoopingBinding({
+      macAddress: entry.mac,
+      ipAddress: ip,
+      lease: leaseTimeSec,
+      type: 'dynamic',
+      vlan: entry.vlan,
+      port: entry.port,
+    });
+  }
+
+  private initDhcpSnooping(): void {
+    this.dhcpSnoopingUnsubscribers.push(this.getBus().subscribeWhere(
+      'dhcp.pool.lease-allocated',
+      () => true,
+      (e) => this.tryRecordSnoopingBinding(e.payload.clientMac, e.payload.ip, e.payload.leaseTimeSec, 5),
+    ));
+
+    this.dhcpSnoopingUnsubscribers.push(this.getBus().subscribeWhere(
+      'dhcp.pool.lease-released',
+      () => true,
+      (e) => { this.removeSnoopingBindingByIp(e.payload.ip); },
+    ));
+  }
+
   private arpErrDisablePort(port: string): void {
     if (this.arpErrDisabledPorts.has(port)) return;
     this.arpErrDisabledPorts.add(port);
@@ -451,8 +513,11 @@ export abstract class Switch extends Equipment {
     this.arpUnsubscribers = [];
     for (const u of this.psecUnsubscribers) u();
     this.psecUnsubscribers = [];
+    for (const u of this.dhcpSnoopingUnsubscribers) u();
+    this.dhcpSnoopingUnsubscribers = [];
     if (this.arpInspectionPipeline) this.initArpInspection();
     this.initPortSecurity();
+    this.initDhcpSnooping();
   }
 
   // ─── Power Management ────────────────────────────────────────────
@@ -467,6 +532,8 @@ export abstract class Switch extends Equipment {
     this.arpUnsubscribers = [];
     for (const u of this.psecUnsubscribers) u();
     this.psecUnsubscribers = [];
+    for (const u of this.dhcpSnoopingUnsubscribers) u();
+    this.dhcpSnoopingUnsubscribers = [];
     this.arpInspectionPipeline?.resetStats();
     this.arpErrDisabledPorts.clear();
     this.arpErrDisableTimestamps.clear();
@@ -862,6 +929,16 @@ export abstract class Switch extends Equipment {
                         (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
+      const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;
+      if (snoopedPorts) {
+        Logger.debug(
+          this.id, 'switch:igmp-snoop-forward',
+          `${this.name}: snooped multicast ${dstMAC} VLAN ${ingressVlan} → [${snoopedPorts.join(', ')}] (ingress ${portName})`,
+          { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: snoopedPorts },
+        );
+        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan);
+        return;
+      }
       Logger.debug(
         this.id, 'switch:flood',
         `${this.name}: flood ${dstMAC} VLAN ${ingressVlan} (ingress ${portName})`,
@@ -879,6 +956,15 @@ export abstract class Switch extends Equipment {
         this.forwardToPort(dstEntry.port, frame, ingressVlan);
       }
     }
+  }
+
+  protected resolveSnoopedMulticastEgressPorts(_ingressPort: string, frame: EthernetFrame, _vlan: number): string[] | null {
+    if (frame.etherType !== ETHERTYPE_IPV4) return null;
+    const ipPkt = frame.payload as IPv4Packet | undefined;
+    if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
+    const firstOctet = ipPkt.destinationIP.getOctets()[0];
+    if (firstOctet < 224 || firstOctet > 239) return null;
+    return null;
   }
 
   // ─── Flood within VLAN ────────────────────────────────────────────

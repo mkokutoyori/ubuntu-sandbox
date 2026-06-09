@@ -128,6 +128,10 @@ export class SnmpAgent {
     return this.sendRequest(serverIp, community, 'get-next-request', oids);
   }
 
+  getLocalOidValue(oid: string): SnmpValue | null {
+    return this.resolveOid(oid)?.value ?? null;
+  }
+
   sendTrap(trapOid: string, varBindings: SnmpVarBinding[] = []): void {
     for (const t of this.config.trapHosts) {
       const egress = this.resolveEgress(t.ip);
