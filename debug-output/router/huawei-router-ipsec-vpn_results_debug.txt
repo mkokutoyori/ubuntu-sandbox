@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-07T20:23:06.615Z
+Generated: 2026-06-09T09:12:41.702Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -235,9 +235,9 @@ Total steps: 279
   
 
 [63/279] r1 <R1> display ike peer brief
-  % Invalid input detected at '^' marker.
-  display ike peer brief
-                   ^
+  Peer name           Remote addr     PSK
+    PEER1              10.0.0.2        ****
+    PEER2              10.0.0.6        ****
 
 [64/279] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
@@ -308,7 +308,7 @@ Total steps: 279
 <empty>
 
 [85/279] r1 [R1-acl-adv-3100] rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [86/279] r1 [R1-acl-adv-3100] quit
 <empty>
@@ -362,29 +362,21 @@ Total steps: 279
 <empty>
 
 [103/279] r1 [R1] ipsec policy-template TPL1 1
-  % Invalid input detected at '^' marker.
-  ipsec policy-template TPL1 1
-        ^
-
-[104/279] r1 [R1] proposal TP1
-  % Invalid input detected at '^' marker.
-  proposal TP1
-  ^
-
-[105/279] r1 [R1] ike-peer PEER1
-  % Invalid input detected at '^' marker.
-  ike-peer PEER1
-  ^
-
-[106/279] r1 [R1] quit
 <empty>
 
-[107/279] r1 <R1> ipsec policy DYN1 100 isakmp template TPL1
-  % Invalid input detected at '^' marker.
-  ipsec policy DYN1 100 isakmp template TPL1
-  ^
+[104/279] r1 [R1-ipsec-policy-TPL1-1] proposal TP1
+<empty>
 
-[108/279] r1 <R1> return
+[105/279] r1 [R1-ipsec-policy-TPL1-1] ike-peer PEER1
+<empty>
+
+[106/279] r1 [R1-ipsec-policy-TPL1-1] quit
+<empty>
+
+[107/279] r1 [R1] ipsec policy DYN1 100 isakmp template TPL1
+<empty>
+
+[108/279] r1 [R1] return
 <empty>
 
 [109/279] r1 <R1> display ipsec proposal
@@ -415,6 +407,23 @@ Total steps: 279
   		TP2: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map MAP1:
+  Crypto Map "TPL1" 1 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map TPL1:
+  Crypto Map "DYN1" 100 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DYN1:
 
 [111/279] r1 <R1> display ipsec policy brief
   Crypto Map "MAP1" 10 ipsec-isakmp
@@ -436,14 +445,34 @@ Total steps: 279
   		TP2: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map MAP1:
+  Crypto Map "TPL1" 1 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map TPL1:
+  Crypto Map "DYN1" 100 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DYN1:
 
 [112/279] r1 <R1> display ipsec sa
   No IPSec SAs established.
 
 [113/279] r1 <R1> display ipsec statistics esp
-  % Invalid input detected at '^' marker.
-  display ipsec statistics esp
-                           ^
+  crypto engine name:  Cisco Software Crypto Engine
+  crypto engine type:  software
+  State: Enabled
+  Number of IPSec SAs: 0
+  Number of IKEv1 SAs: 0
+  Number of IKEv2 SAs: 0
 
 
 --- [114] § apply policy / IPsec profile ---
@@ -520,9 +549,54 @@ Total steps: 279
 <empty>
 
 [138/279] r1 <R1> display ipsec policy interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display ipsec policy interface GigabitEthernet0/0/1
-                       ^
+  Interface GigabitEthernet0/0/1: Crypto Map "MAP1" 10 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group14
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  		GE0/0/1
+  Crypto Map "MAP1" 20 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  		GE0/0/1
+  Crypto Map "TPL1" 1 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map TPL1:
+  Crypto Map "DYN1" 100 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DYN1:
+  Crypto Map "PROF1" 0 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group19
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map PROF1:
 
 [139/279] r1 <R1> display ipsec profile
   IPsec Profile "PROF1"
@@ -546,153 +620,118 @@ Total steps: 279
   Enter system view, return user view with return command.
 
 [142/279] r1 [R1] ikev2 proposal IKEV2P
-  % Invalid input detected at '^' marker.
-  ikev2 proposal IKEV2P
-  ^
-
-[143/279] r1 [R1] encryption-algorithm aes-256
-  % Invalid input detected at '^' marker.
-  encryption-algorithm aes-256
-  ^
-
-[144/279] r1 [R1] integrity-algorithm hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  integrity-algorithm hmac-sha2-256
-  ^
-
-[145/279] r1 [R1] dh group14
-  % Ambiguous command: "dh" (matches: dhcp, dhcpv6)
-
-[146/279] r1 [R1] prf hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  prf hmac-sha2-256
-  ^
-
-[147/279] r1 [R1] quit
 <empty>
 
-[148/279] r1 <R1> ikev2 policy IKEV2POL
-  % Invalid input detected at '^' marker.
-  ikev2 policy IKEV2POL
-  ^
-
-[149/279] r1 <R1> match local-address 10.0.0.1
-  % Invalid input detected at '^' marker.
-  match local-address 10.0.0.1
-  ^
-
-[150/279] r1 <R1> proposal IKEV2P
-  % Invalid input detected at '^' marker.
-  proposal IKEV2P
-  ^
-
-[151/279] r1 <R1> quit
+[143/279] r1 [R1-ikev2-proposal-IKEV2P] encryption-algorithm aes-256
 <empty>
 
-[152/279] r1 <R1> ikev2 keychain KC1
-  % Invalid input detected at '^' marker.
-  ikev2 keychain KC1
-  ^
-
-[153/279] r1 <R1> peer P1
-  % Invalid input detected at '^' marker.
-  peer P1
-  ^
-
-[154/279] r1 <R1> address 10.0.0.2
-  % Invalid input detected at '^' marker.
-  address 10.0.0.2
-  ^
-
-[155/279] r1 <R1> pre-shared-key cipher V2Key@123
-  % Invalid input detected at '^' marker.
-  pre-shared-key cipher V2Key@123
-  ^
-
-[156/279] r1 <R1> quit
+[144/279] r1 [R1-ikev2-proposal-IKEV2P] integrity-algorithm hmac-sha2-256
 <empty>
 
-[157/279] r1 <R1> quit
+[145/279] r1 [R1-ikev2-proposal-IKEV2P] dh group14
 <empty>
 
-[158/279] r1 <R1> ikev2 profile IKEV2PRF
-  % Invalid input detected at '^' marker.
-  ikev2 profile IKEV2PRF
-  ^
-
-[159/279] r1 <R1> authentication-method local pre-share
-  % Invalid input detected at '^' marker.
-  authentication-method local pre-share
-  ^
-
-[160/279] r1 <R1> keychain KC1
-  % Invalid input detected at '^' marker.
-  keychain KC1
-  ^
-
-[161/279] r1 <R1> quit
+[146/279] r1 [R1-ikev2-proposal-IKEV2P] prf hmac-sha2-256
 <empty>
 
-[162/279] r1 <R1> return
+[147/279] r1 [R1-ikev2-proposal-IKEV2P] quit
+<empty>
+
+[148/279] r1 [R1] ikev2 policy IKEV2POL
+<empty>
+
+[149/279] r1 [R1-ikev2-policy-IKEV2POL] match local-address 10.0.0.1
+<empty>
+
+[150/279] r1 [R1-ikev2-policy-IKEV2POL] proposal IKEV2P
+<empty>
+
+[151/279] r1 [R1-ikev2-policy-IKEV2POL] quit
+<empty>
+
+[152/279] r1 [R1] ikev2 keychain KC1
+<empty>
+
+[153/279] r1 [R1-ikev2-keyring-KC1] peer P1
+<empty>
+
+[154/279] r1 [R1-ikev2-keyring-peer-P1] address 10.0.0.2
+<empty>
+
+[155/279] r1 [R1-ikev2-keyring-peer-P1] pre-shared-key cipher V2Key@123
+<empty>
+
+[156/279] r1 [R1-ikev2-keyring-peer-P1] quit
+<empty>
+
+[157/279] r1 [R1-ikev2-keyring-KC1] quit
+<empty>
+
+[158/279] r1 [R1] ikev2 profile IKEV2PRF
+<empty>
+
+[159/279] r1 [R1-ikev2-profile-IKEV2PRF] authentication-method local pre-share
+<empty>
+
+[160/279] r1 [R1-ikev2-profile-IKEV2PRF] keychain KC1
+<empty>
+
+[161/279] r1 [R1-ikev2-profile-IKEV2PRF] quit
+<empty>
+
+[162/279] r1 [R1] return
 <empty>
 
 [163/279] r1 <R1> display ikev2 proposal
-  % Invalid input detected at '^' marker.
-  display ikev2 proposal
-          ^
+  IKEv2 proposal: IKEV2P
+    Encryption  : aes-256
+    Integrity   : hmac-sha2-256
+    DH Group    : group14
+    PRF         : hmac-sha2-256
 
 [164/279] r1 <R1> display ikev2 policy
-  % Invalid input detected at '^' marker.
-  display ikev2 policy
-          ^
+  IKEv2 policy: IKEV2POL
+    Match local : 10.0.0.1
+    Proposals   : IKEV2P
 
 [165/279] r1 <R1> display ikev2 profile
-  % Invalid input detected at '^' marker.
-  display ikev2 profile
-          ^
+  IKEv2 profile: IKEV2PRF
+    Auth local  : pre-share
+    Auth remote : pre-share
+    Keychain    : KC1
 
 [166/279] r1 <R1> display ikev2 sa
-  % Invalid input detected at '^' marker.
-  display ikev2 sa
-          ^
+  Info: No IKEv2 SAs.
 
 
 --- [167] § crypto reset / debug ---
-[167/279] r1 [R1] reset ike sa
+[167/279] r1 <R1> reset ike sa
   Info: IKE SAs cleared.
 
-[168/279] r1 [R1] reset ipsec sa
+[168/279] r1 <R1> reset ipsec sa
   Info: IPSec SAs cleared.
 
-[169/279] r1 [R1] reset ike sa remote 10.0.0.2
-  % Invalid input detected at '^' marker.
-  reset ike sa remote 10.0.0.2
-               ^
+[169/279] r1 <R1> reset ike sa remote 10.0.0.2
+  Info: IKE SAs cleared.
 
-[170/279] r1 [R1] debugging ike all
-  % Invalid input detected at '^' marker.
-  debugging ike all
-                ^
+[170/279] r1 <R1> debugging ike all
+  Info: IKE debugging is on.
 
-[171/279] r1 [R1] debugging ipsec all
-  % Invalid input detected at '^' marker.
-  debugging ipsec all
-                  ^
+[171/279] r1 <R1> debugging ipsec all
+  Info: IPSec debugging is on.
 
-[172/279] r1 [R1] undo debugging all
+[172/279] r1 <R1> undo debugging all
   Info: All debugging turned off.
 
-[173/279] r1 [R1] display ike error-info
-  % Invalid input detected at '^' marker.
-  display ike error-info
-              ^
+[173/279] r1 <R1> display ike error-info
+   Info: No IKE error records.
 
-[174/279] r1 [R1] display ipsec sa brief
+[174/279] r1 <R1> display ipsec sa brief
   No IPSec SAs established.
 
 
 --- [175] § regression: display family ---
-[175/279] r1 [R1] display version
+[175/279] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -701,7 +740,7 @@ Total steps: 279
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[176/279] r1 [R1] display version
+[176/279] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -710,7 +749,7 @@ Total steps: 279
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[177/279] r1 [R1] display current-configuration
+[177/279] r1 <R1> display current-configuration
   #
   sysname R1
   #
@@ -744,6 +783,9 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
+  #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -798,6 +840,12 @@ Total steps: 279
   ipsec policy MAP1 20 isakmp
    proposal TP2
   #
+  ipsec policy TPL1 1 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy DYN1 100 isakmp
+  #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
    proposal TP1
@@ -805,7 +853,7 @@ Total steps: 279
   ipsec profile PROF1
   #
 
-[178/279] r1 [R1] display saved-configuration
+[178/279] r1 <R1> display saved-configuration
   #
   sysname R1
   #
@@ -839,6 +887,9 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
+  #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -893,6 +944,12 @@ Total steps: 279
   ipsec policy MAP1 20 isakmp
    proposal TP2
   #
+  ipsec policy TPL1 1 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy DYN1 100 isakmp
+  #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
    proposal TP1
@@ -900,7 +957,7 @@ Total steps: 279
   ipsec profile PROF1
   #
 
-[179/279] r1 [R1] display ip interface brief
+[179/279] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -919,7 +976,7 @@ Total steps: 279
   Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
   Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
 
-[180/279] r1 [R1] display interface
+[180/279] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/255.255.255.0
@@ -969,7 +1026,7 @@ Total steps: 279
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[181/279] r1 [R1] display ip routing-table
+[181/279] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -982,61 +1039,64 @@ Total steps: 279
   172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
-[182/279] r1 [R1] display ip routing-table statistics
+[182/279] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    5
   --------------------
   Total     5
 
-[183/279] r1 [R1] display arp
+[183/279] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[184/279] r1 [R1] display arp all
+[184/279] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[185/279] r1 [R1] display ospf peer
+[185/279] r1 <R1> display ospf peer
   Error: OSPF is not configured.
 
-[186/279] r1 [R1] display ospf interface
+[186/279] r1 <R1> display ospf interface
   Error: OSPF is not configured.
 
-[187/279] r1 [R1] display ospf routing
+[187/279] r1 <R1> display ospf routing
   Info: OSPF is not running.
 
-[188/279] r1 [R1] display ospf lsdb
+[188/279] r1 <R1> display ospf lsdb
   Error: OSPF is not configured.
 
-[189/279] r1 [R1] display ospf brief
+[189/279] r1 <R1> display ospf brief
   Error: OSPF is not configured.
 
-[190/279] r1 [R1] display rip
+[190/279] r1 <R1> display rip
   Info: RIP is not enabled.
 
-[191/279] r1 [R1] display rip 1 route
+[191/279] r1 <R1> display rip 1 route
   Info: RIP is not enabled.
 
-[192/279] r1 [R1] display bgp peer
+[192/279] r1 <R1> display bgp peer
   Info: BGP is not running.
 
-[193/279] r1 [R1] display bgp routing-table
+[193/279] r1 <R1> display bgp routing-table
   Info: BGP is not running.
 
-[194/279] r1 [R1] display nat session all
+[194/279] r1 <R1> display nat session all
   Info: No NAT session is found.
 
-[195/279] r1 [R1] display nat address-group
+[195/279] r1 <R1> display nat address-group
   No NAT address pools configured.
 
-[196/279] r1 [R1] display ip pool
+[196/279] r1 <R1> display ip pool
   No DHCP pools configured.
 
-[197/279] r1 [R1] display acl all
-  Total 0 ACL(s)
+[197/279] r1 <R1> display acl all
+  Advanced ACL 3100, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  Total 1 ACL(s)
 
-[198/279] r1 [R1] display dhcp server statistics
+[198/279] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -1046,23 +1106,23 @@ Total steps: 279
     Inform: 0        Decline: 0
   Pool number: 0
 
-[199/279] r1 [R1] display vrrp
+[199/279] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[200/279] r1 [R1] display vrrp brief
+[200/279] r1 <R1> display vrrp brief
   Total: 0     Master: 0     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
 
-[201/279] r1 [R1] display ike sa
+[201/279] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
   dst             src             state          conn-id status
   
   There are no IKEv1 SAs (no SA established)
 
-[202/279] r1 [R1] display ipsec sa
+[202/279] r1 <R1> display ipsec sa
   No IPSec SAs established.
 
-[203/279] r1 [R1] display ipsec policy
+[203/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
   	Peer = PEER1
   	Extended IP access list 3100
@@ -1084,6 +1144,23 @@ Total steps: 279
   	}
   	Interfaces using crypto map MAP1:
   		GE0/0/1
+  Crypto Map "TPL1" 1 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map TPL1:
+  Crypto Map "DYN1" 100 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DYN1:
   Crypto Map "PROF1" 0 ipsec-isakmp
   	Peer = PEER1
   	Extended IP access list 
@@ -1095,7 +1172,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map PROF1:
 
-[204/279] r1 [R1] display ipsec proposal
+[204/279] r1 <R1> display ipsec proposal
   Transform set TP1: { esp-aes 256 esp-sha256-hmac }
      will negotiate = { Tunnel },
   Transform set TP2: { esp-aes 256 esp-sha256-hmac }
@@ -1103,7 +1180,7 @@ Total steps: 279
   Transform set TP3: { esp-aes 256 esp-sha256-hmac }
      will negotiate = { Tunnel },
 
-[205/279] r1 [R1] display ike proposal
+[205/279] r1 <R1> display ike proposal
   Global IKE policy
   Protection suite of priority 1
   	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
@@ -1136,7 +1213,7 @@ Total steps: 279
   	Diffie-Hellman group:   #1 (768 bit)
   	lifetime:               86400 seconds, no volume limit
 
-[206/279] r1 [R1] display ike peer
+[206/279] r1 <R1> display ike peer
   IKE Peer Configuration:
     Peer name   : PEER1
     Remote addr : 10.0.0.2
@@ -1147,45 +1224,45 @@ Total steps: 279
     PSK         : ****
   
 
-[207/279] r1 [R1] display snmp-agent sys-info
+[207/279] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[208/279] r1 [R1] display ntp status
+[208/279] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[209/279] r1 [R1] display ntp session
+[209/279] r1 <R1> display ntp session
   No NTP associations
 
-[210/279] r1 [R1] display clock
-  2026-06-07 20:23:06
-  Sunday
+[210/279] r1 <R1> display clock
+  2026-06-09 09:12:41
+  Tuesday
   Time Zone(UTC) : UTC
 
-[211/279] r1 [R1] display lldp neighbor
+[211/279] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[212/279] r1 [R1] display lldp neighbor brief
+[212/279] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[213/279] r1 [R1] display cpu-usage
+[213/279] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-07 20:23:06
+  CPU Usage Stat. Time : 2026-06-09 09:12:41
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-07 20:23:06
+[214/279] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-06-09 09:12:41
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[215/279] r1 [R1] display device
+[215/279] r1 <R1> display device
   R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
@@ -1196,13 +1273,13 @@ Total steps: 279
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[216/279] r1 [R1] display users
+[216/279] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[217/279] r1 [R1] display history-command
+[217/279] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -1214,7 +1291,7 @@ Total steps: 279
   display users
   display history-command
 
-[218/279] r1 [R1] display logbuffer
+[218/279] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -1223,7 +1300,7 @@ Total steps: 279
   Overwritten messages : 0
   Current messages : 0
 
-[219/279] r1 [R1] display trapbuffer
+[219/279] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -1231,10 +1308,10 @@ Total steps: 279
   Dropped messages : 0
   Current messages : 0
 
-[220/279] r1 [R1] display alarm all
+[220/279] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[221/279] r1 [R1] display startup
+[221/279] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -1246,10 +1323,10 @@ Total steps: 279
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[222/279] r1 [R1] display patch-information
+[222/279] r1 <R1> display patch-information
   Info: No patch exists.
 
-[223/279] r1 [R1] display elabel
+[223/279] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
@@ -1262,12 +1339,12 @@ Total steps: 279
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[224/279] r1 [R1] display license
+[224/279] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[225/279] r1 [R1] display interface brief
+[225/279] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -1278,7 +1355,7 @@ Total steps: 279
   Tunnel0/0/0                 down    down      0%    0%       0          0
   Tunnel0/0/1                 down    down      0%    0%       0          0
 
-[226/279] r1 [R1] display ip interface GigabitEthernet0/0/0
+[226/279] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
@@ -1291,7 +1368,7 @@ Total steps: 279
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[227/279] r1 [R1] display interface GigabitEthernet0/0/0
+[227/279] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/255.255.255.0
@@ -1299,7 +1376,7 @@ Total steps: 279
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[228/279] r1 [R1] display this
+[228/279] r1 <R1> display this
   #
   sysname R1
   #
@@ -1333,6 +1410,9 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
+  #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1387,6 +1467,12 @@ Total steps: 279
   ipsec policy MAP1 20 isakmp
    proposal TP2
   #
+  ipsec policy TPL1 1 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy DYN1 100 isakmp
+  #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
    proposal TP1
@@ -1394,12 +1480,12 @@ Total steps: 279
   ipsec profile PROF1
   #
 
-[229/279] r1 [R1] display diagnostic-information
+[229/279] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[230/279] r1 [R1] display aaa configuration
+[230/279] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -1409,13 +1495,13 @@ Total steps: 279
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[231/279] r1 [R1] display aaa online-fail-record
+[231/279] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[232/279] r1 [R1] display ssh server status
+[232/279] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[233/279] r1 [R1] display ssh user-information
+[233/279] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -1423,7 +1509,7 @@ Total steps: 279
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[234/279] r1 [R1] display user-interface
+[234/279] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -1432,16 +1518,16 @@ Total steps: 279
     37     VTY 3           -        -      0      0            N      -
     38     VTY 4           -        -      0      0            N      -
 
-[235/279] r1 [R1] display port-security
+[235/279] r1 <R1> display port-security
   Port-security is enabled on the following interfaces:
    (configuration is recorded per interface; see display this)
 
 
 --- [236] § regression: pipe filters ---
-[236/279] r1 [R1] display current-configuration | include ospf
+[236/279] r1 <R1> display current-configuration | include ospf
 <empty>
 
-[237/279] r1 [R1] display current-configuration | begin interface
+[237/279] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -1472,6 +1558,9 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
+  #
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1526,6 +1615,12 @@ Total steps: 279
   ipsec policy MAP1 20 isakmp
    proposal TP2
   #
+  ipsec policy TPL1 1 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy DYN1 100 isakmp
+  #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
    proposal TP1
@@ -1533,7 +1628,7 @@ Total steps: 279
   ipsec profile PROF1
   #
 
-[238/279] r1 [R1] display current-configuration | exclude #
+[238/279] r1 <R1> display current-configuration | exclude #
   sysname R1
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1558,6 +1653,8 @@ Total steps: 279
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
+  acl number 3100
+   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1600,19 +1697,23 @@ Total steps: 279
    proposal TP1
   ipsec policy MAP1 20 isakmp
    proposal TP2
+  ipsec policy TPL1 1 isakmp
+   ike-peer PEER1
+   proposal TP1
+  ipsec policy DYN1 100 isakmp
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
    proposal TP1
   ipsec profile PROF1
 
-[239/279] r1 [R1] display ip routing-table | include Direct
+[239/279] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
   1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
   172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
-[240/279] r1 [R1] display ip interface brief | include up
+[240/279] r1 <R1> display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
   GE0/0/0                           192.168.1.1/24       UP         UP
@@ -1741,9 +1842,10 @@ Total steps: 279
     routing-table  routing-table
 
 [276/279] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1755,6 +1857,7 @@ Total steps: 279
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

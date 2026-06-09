@@ -214,6 +214,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ipsecPolicyTrie = new CommandTrie();
   // OSPFv3 sub-mode trie
   private ospfv3Trie = new CommandTrie();
+  private ospfv3AreaTrie = new CommandTrie();
   // user-interface vty sub-mode trie ([host-ui-vty<n>])
   private uiTrie = new CommandTrie();
   private uiLabel: string = '0';
@@ -266,7 +267,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildNqaTestView(this.nqaTestTrie, this);
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
-      this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ripTrie,
+      this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,
       this.ikeProposalTrie, this.ikePeerTrie, this.ipsecProposalTrie, this.ipsecPolicyTrie,
       this.uiTrie, this.aclBasicTrie, this.aclAdvancedTrie,
       this.ikev2ProposalTrie, this.ikev2PolicyTrie, this.ikev2KeyringTrie,
@@ -393,6 +394,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
+      case 'ospfv3-area': return `[${host}-ospfv3-1-area-${this.ospfArea ?? '0.0.0.0'}]`;
       case 'rip':        return `[${host}-rip-1]`;
       case 'ui':         return `[${host}-ui-vty${this.uiLabel}]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
@@ -597,6 +599,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospfv3':
         this.mode = 'system';
         return '';
+      case 'ospfv3-area':
+        this.mode = 'ospfv3';
+        this.ospfArea = null;
+        return '';
       case 'rip':
         this.mode = 'system';
         return '';
@@ -730,6 +736,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'bgp': return this.bgpTrie;
       case 'isis': return this.isisTrie;
       case 'ospfv3': return this.ospfv3Trie;
+      case 'ospfv3-area': return this.ospfv3AreaTrie;
       case 'rip': return this.ripTrie;
       case 'ike-proposal': return this.ikeProposalTrie;
       case 'ike-peer': return this.ikePeerTrie;
@@ -946,6 +953,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const s = fwState();
       if (s.defenses.size === 0) return 'No firewall defenses enabled.';
       return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
+    });
+    t.register('display logbuffer summary', 'Display logbuffer summary', () => 'Log buffer: 0 messages.');
+    t.register('display channel', 'Display info-center channels', () => 'Info: No info-center channels configured.');
+    t.registerGreedy('reset logbuffer', 'Reset logbuffer', () => '');
+    t.register('display lldp local', 'Display local LLDP info', () => {
+      const cfg = (this.r() as any)._huaweiLldp;
+      if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
+      return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
+    });
+    t.registerGreedy('display lldp', 'Display LLDP', (args) => {
+      if (args[0]?.toLowerCase() === 'local') {
+        const cfg = (this.r() as any)._huaweiLldp;
+        if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
+        return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
+      }
+      return ' No LLDP neighbors.';
     });
   }
 
@@ -1353,13 +1376,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
     // device's accepted VTY transports.
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
-      if (args[0]?.toLowerCase() === 'vty') {
+      const head = args[0]?.toLowerCase();
+      if (head === 'vty') {
         this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
         this.mode = 'ui';
         const first = Number.parseInt(args[1] ?? '0', 10);
         const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
         this.selectedUiRange = { first, last };
         this.routerRef?._getVtyLineConfig?.().upsert({ first, last });
+      } else if (head === 'console' || head === 'aux') {
+        this.uiLabel = `${head}${args[1] ?? '0'}`;
+        this.mode = 'ui';
+        this.selectedUiRange = null;
+      } else if (head === 'maximum-vty' && args[1]) {
+        return '';
       }
       return '';
     });
@@ -1592,6 +1622,38 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+
+    t.registerGreedy('lldp', 'LLDP configuration', (args, raw) => {
+      const r = this.r() as any;
+      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
+      if (args[0]?.toLowerCase() === 'enable') cfg.enabled = true;
+      else if (args[0]?.toLowerCase() === 'management-address' && args[1]) cfg.mgmtAddress = args[1];
+      cfg.lines.push(raw ?? `lldp ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('undo lldp', 'Disable LLDP', () => {
+      const r = this.r() as any;
+      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
+      cfg.enabled = false;
+      return '';
+    });
+
+    t.registerGreedy('qos queue-profile', 'Configure queue profile', (args, raw) => {
+      const r = this.r() as any;
+      const ps = r._huaweiQueueProfiles ?? (r._huaweiQueueProfiles = new Map<string, any>());
+      if (args[0]) {
+        if (!ps.has(args[0])) ps.set(args[0], { name: args[0], lines: [] });
+        ps.get(args[0]).lines.push(raw ?? `qos queue-profile ${args.join(' ')}`);
+      }
+      return '';
+    });
+    t.registerGreedy('schedule', 'Schedule WFQ / queue assignment', () => '');
+    t.registerGreedy('display qos queue-profile', 'Display queue profiles', () => {
+      const r = this.r() as any;
+      const ps = r._huaweiQueueProfiles as Map<string, any> | undefined;
+      if (!ps || ps.size === 0) return 'Info: No queue-profile configured.';
+      return [...ps.keys()].map(n => ` Queue profile: ${n}`).join('\n');
+    });
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
@@ -1672,6 +1734,55 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.r().getTrafficPolicyStore().removeApplication(this.selectedInterface, d);
       return '';
     });
+
+    const ifAttr = (bucket: string) => (key: string) => (args: string[], raw?: string) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const store = r[bucket] ?? (r[bucket] = new Map<string, any>());
+      const entry = store.get(ifName) ?? {};
+      entry[key] = raw ?? args.join(' ');
+      store.set(ifName, entry);
+      return '';
+    };
+    const lldpIf = ifAttr('_huaweiLldpIf');
+    t.register('lldp enable', 'Enable LLDP on interface', () => { lldpIf('enable')(['on']); return ''; });
+    t.registerGreedy('lldp admin-status', 'Set LLDP admin-status on interface', lldpIf('adminStatus'));
+    t.register('undo lldp enable', 'Disable LLDP on interface', () => { lldpIf('enable')(['off']); return ''; });
+
+    const sflowIf = ifAttr('_huaweiSflowIf');
+    t.registerGreedy('sflow flow-sampling', 'sFlow flow sampling', sflowIf('flowSampling'));
+    t.registerGreedy('sflow counter-sampling', 'sFlow counter sampling', sflowIf('counterSampling'));
+
+    const qosIf = (key: string) => (args: string[], raw?: string) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const ext = r._huaweiQosIf ?? (r._huaweiQosIf = new Map<string, any>());
+      const entry = ext.get(ifName) ?? {};
+      entry[key] = raw ?? args.join(' ');
+      ext.set(ifName, entry);
+      return '';
+    };
+    t.registerGreedy('qos lr', 'QoS line rate', qosIf('lr'));
+    t.registerGreedy('qos gts', 'QoS generic traffic shaping', qosIf('gts'));
+    t.registerGreedy('qos queue', 'QoS queue length', qosIf('queueLength'));
+    t.register('qos wfq', 'Enable WFQ on interface', () => { qosIf('wfq')(['on']); return ''; });
+    t.registerGreedy('qos wred', 'Configure WRED on interface', qosIf('wred'));
+    t.registerGreedy('trust', 'Trust DSCP / 802.1p', qosIf('trust'));
+    t.registerGreedy('qos queue-profile', 'Bind queue profile to interface', qosIf('queueProfile'));
+    t.registerGreedy('qos car', 'CAR on interface', qosIf('car'));
+    t.register('qos pq', 'Enable priority queueing', () => { qosIf('pq')(['on']); return ''; });
+    t.register('qos cq', 'Enable custom queueing', () => { qosIf('cq')(['on']); return ''; });
+    t.register('qos wrr', 'Enable WRR queueing', () => { qosIf('wrr')(['on']); return ''; });
+    t.registerGreedy('qos priority', 'Set QoS priority', qosIf('priority'));
+    t.register('undo qos pq', 'Disable priority queueing', () => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      const ext = r._huaweiQosIf as Map<string, any> | undefined;
+      if (ifName && ext?.has(ifName)) delete ext.get(ifName).pq;
+      return '';
+    });
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
@@ -1698,6 +1809,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfv3Trie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfv3Trie, getRouter);
     buildOSPFv3ViewCommands(this.ospfv3Trie, this as any);
+    registerDisplayCommands(this.ospfv3AreaTrie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfv3AreaTrie, getRouter);
   }
 
   // ─── IPSec Sub-Views ─────────────────────────────────────────

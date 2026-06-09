@@ -327,12 +327,14 @@ export async function dumpRouter(
               if (first !== 'enable' && first !== 'en') {
                 await r1.executeCommand('enable');
               }
-              if (!/^conf/.test(first) && first !== 'enable' && first !== 'en') {
+              const privilegedOnly = /^(show|clear|debug|undebug|reload|copy|reset|ping|traceroute|telnet|ssh|write|verify|terminal|enable|en)\b/.test(first);
+              if (!/^conf/.test(first) && first !== 'enable' && first !== 'en' && !privilegedOnly) {
                 await r1.executeCommand('configure terminal');
               }
             } else {
               await r1.executeCommand('return');
-              if (!/^sys(tem-view)?$/.test(first)) {
+              const userOnly = /^(display|reset|debugging|undo\s+debugging|ping|tracert|telnet|stelnet|save|reboot|startup)\b/.test(first);
+              if (!/^sys(tem-view)?$/.test(first) && !userOnly) {
                 await r1.executeCommand('system-view');
               }
             }

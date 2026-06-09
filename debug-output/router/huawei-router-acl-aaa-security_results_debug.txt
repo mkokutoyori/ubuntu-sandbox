@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-06-07T20:23:04.572Z
+Generated: 2026-06-09T09:12:49.897Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -35,67 +35,67 @@ Total steps: 274
 <empty>
 
 [9/274] r1 [R1-acl-basic-2000] rule 5 permit source 192.168.1.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [10/274] r1 [R1-acl-basic-2000] rule 10 permit source 192.168.2.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [11/274] r1 [R1-acl-basic-2000] rule 15 permit source 192.168.3.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [12/274] r1 [R1-acl-basic-2000] rule 20 permit source 192.168.4.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [13/274] r1 [R1-acl-basic-2000] rule 25 permit source 192.168.5.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [14/274] r1 [R1-acl-basic-2000] rule 30 permit source 192.168.6.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [15/274] r1 [R1-acl-basic-2000] rule 35 permit source 192.168.7.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [16/274] r1 [R1-acl-basic-2000] rule 40 permit source 192.168.8.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [17/274] r1 [R1-acl-basic-2000] rule 45 permit source 192.168.9.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [18/274] r1 [R1-acl-basic-2000] rule 50 permit source 192.168.10.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [19/274] r1 [R1-acl-basic-2000] rule 55 permit source 192.168.11.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [20/274] r1 [R1-acl-basic-2000] rule 60 permit source 192.168.12.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [21/274] r1 [R1-acl-basic-2000] rule 65 permit source 192.168.13.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [22/274] r1 [R1-acl-basic-2000] rule 70 permit source 192.168.14.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [23/274] r1 [R1-acl-basic-2000] rule 75 permit source 192.168.15.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [24/274] r1 [R1-acl-basic-2000] rule 80 permit source 192.168.16.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [25/274] r1 [R1-acl-basic-2000] rule 85 permit source 192.168.17.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [26/274] r1 [R1-acl-basic-2000] rule 90 permit source 192.168.18.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [27/274] r1 [R1-acl-basic-2000] rule 95 permit source 192.168.19.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [28/274] r1 [R1-acl-basic-2000] rule 100 permit source 192.168.20.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [29/274] r1 [R1-acl-basic-2000] rule 1000 deny source any
-  Error: Expected permit or deny.
+<empty>
 
 [30/274] r1 [R1-acl-basic-2000] step 10
 <empty>
@@ -104,24 +104,70 @@ Total steps: 274
 <empty>
 
 [32/274] r1 [R1] acl number 2001
-  Error: Invalid ACL number.
-
-[33/274] r1 [R1] rule permit source 10.0.0.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  rule permit source 10.0.0.0 0.0.0.255
-  ^
-
-[34/274] r1 [R1] quit
 <empty>
 
-[35/274] r1 <R1> return
+[33/274] r1 [R1-acl-basic-2001] rule permit source 10.0.0.0 0.0.0.255
+<empty>
+
+[34/274] r1 [R1-acl-basic-2001] quit
+<empty>
+
+[35/274] r1 [R1] return
 <empty>
 
 [36/274] r1 <R1> display acl 2000
-  Error: ACL 2000 does not exist or has no rules.
+  Basic ACL 2000, 21 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
 
 [37/274] r1 <R1> display acl all
-  Total 0 ACL(s)
+  Basic ACL 2000, 21 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  Basic ACL 2001, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  Total 2 ACL(s)
 
 
 --- [38] § advanced ACL (3000-3999) ---
@@ -132,110 +178,136 @@ Total steps: 274
 <empty>
 
 [40/274] r1 [R1-acl-adv-3000] rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-  Error: Expected permit or deny.
+<empty>
 
 [41/274] r1 [R1-acl-adv-3000] rule 6 permit udp source any destination 10.0.0.1 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [42/274] r1 [R1-acl-adv-3000] rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-  Error: Expected permit or deny.
+<empty>
 
 [43/274] r1 [R1-acl-adv-3000] rule 11 permit udp source any destination 10.0.0.2 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [44/274] r1 [R1-acl-adv-3000] rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-  Error: Expected permit or deny.
+<empty>
 
 [45/274] r1 [R1-acl-adv-3000] rule 16 permit udp source any destination 10.0.0.3 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [46/274] r1 [R1-acl-adv-3000] rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-  Error: Expected permit or deny.
+<empty>
 
 [47/274] r1 [R1-acl-adv-3000] rule 21 permit udp source any destination 10.0.0.4 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [48/274] r1 [R1-acl-adv-3000] rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-  Error: Expected permit or deny.
+<empty>
 
 [49/274] r1 [R1-acl-adv-3000] rule 26 permit udp source any destination 10.0.0.5 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [50/274] r1 [R1-acl-adv-3000] rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-  Error: Expected permit or deny.
+<empty>
 
 [51/274] r1 [R1-acl-adv-3000] rule 31 permit udp source any destination 10.0.0.6 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [52/274] r1 [R1-acl-adv-3000] rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-  Error: Expected permit or deny.
+<empty>
 
 [53/274] r1 [R1-acl-adv-3000] rule 36 permit udp source any destination 10.0.0.7 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [54/274] r1 [R1-acl-adv-3000] rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-  Error: Expected permit or deny.
+<empty>
 
 [55/274] r1 [R1-acl-adv-3000] rule 41 permit udp source any destination 10.0.0.8 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [56/274] r1 [R1-acl-adv-3000] rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-  Error: Expected permit or deny.
+<empty>
 
 [57/274] r1 [R1-acl-adv-3000] rule 46 permit udp source any destination 10.0.0.9 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [58/274] r1 [R1-acl-adv-3000] rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-  Error: Expected permit or deny.
+<empty>
 
 [59/274] r1 [R1-acl-adv-3000] rule 51 permit udp source any destination 10.0.0.10 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [60/274] r1 [R1-acl-adv-3000] rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-  Error: Expected permit or deny.
+<empty>
 
 [61/274] r1 [R1-acl-adv-3000] rule 56 permit udp source any destination 10.0.0.11 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [62/274] r1 [R1-acl-adv-3000] rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-  Error: Expected permit or deny.
+<empty>
 
 [63/274] r1 [R1-acl-adv-3000] rule 61 permit udp source any destination 10.0.0.12 0 destination-port eq 53
-  Error: Expected permit or deny.
+<empty>
 
 [64/274] r1 [R1-acl-adv-3000] rule 900 permit icmp icmp-type echo
-  Error: Expected permit or deny.
+<empty>
 
 [65/274] r1 [R1-acl-adv-3000] rule 1000 deny ip
-  Error: Expected permit or deny.
+<empty>
 
 [66/274] r1 [R1-acl-adv-3000] quit
 <empty>
 
 [67/274] r1 [R1] acl name WAN-IN advance
-  Error: Expected basic or advanced.
-
-[68/274] r1 [R1] rule 5 permit tcp destination-port eq 443
-  % Invalid input detected at '^' marker.
-  rule 5 permit tcp destination-port eq 443
-  ^
-
-[69/274] r1 [R1] rule 10 deny ip
-  % Invalid input detected at '^' marker.
-  rule 10 deny ip
-  ^
-
-[70/274] r1 [R1] quit
 <empty>
 
-[71/274] r1 <R1> return
+[68/274] r1 [R1-acl-adv-WAN-IN] rule 5 permit tcp destination-port eq 443
+<empty>
+
+[69/274] r1 [R1-acl-adv-WAN-IN] rule 10 deny ip
+<empty>
+
+[70/274] r1 [R1-acl-adv-WAN-IN] quit
+<empty>
+
+[71/274] r1 [R1] return
 <empty>
 
 [72/274] r1 <R1> display acl 3000
-  Error: ACL 3000 does not exist or has no rules.
+  Advanced ACL 3000, 26 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
 
 [73/274] r1 <R1> display acl name WAN-IN
-  Error: ACL WAN-IN does not exist or has no rules.
+  Advanced ACL WAN-IN, 2 rule(s)
+  ACL's step is 5
+   rule 0 permit
+   rule 5 deny
 
 
 --- [74] § time-range / traffic-filter ---
@@ -252,7 +324,7 @@ Total steps: 274
 <empty>
 
 [78/274] r1 [R1-acl-adv-3001] rule 5 permit ip time-range BUSINESS
-  Error: Expected permit or deny.
+<empty>
 
 [79/274] r1 [R1-acl-adv-3001] quit
 <empty>
@@ -273,14 +345,11 @@ Total steps: 274
 <empty>
 
 [85/274] r1 <R1> display time-range all
-  % Invalid input detected at '^' marker.
-  display time-range all
-          ^
+   Name: BUSINESS, spec: time-range BUSINESS 08:00 to 18:00 working-day
+   Name: OFF, spec: time-range OFF 00:00 to 23:59 off-day
 
 [86/274] r1 <R1> display traffic-filter applied-record
-  % Invalid input detected at '^' marker.
-  display traffic-filter applied-record
-          ^
+   No traffic-filter applied on any interface.
 
 
 --- [87] § AAA ---
@@ -290,134 +359,94 @@ Total steps: 274
 [88/274] r1 [R1] aaa
 <empty>
 
-[89/274] r1 [R1] authentication-scheme sch1
+[89/274] r1 [R1-aaa] authentication-scheme sch1
 <empty>
 
-[90/274] r1 [R1] authentication-mode radius local
+[90/274] r1 [R1-aaa-authen-sch1] authentication-mode radius local
 <empty>
 
-[91/274] r1 [R1] quit
+[91/274] r1 [R1-aaa-authen-sch1] quit
 <empty>
 
-[92/274] r1 <R1> authorization-scheme aut1
-  % Invalid input detected at '^' marker.
-  authorization-scheme aut1
-  ^
-
-[93/274] r1 <R1> authorization-mode hwtacacs local
-  % Invalid input detected at '^' marker.
-  authorization-mode hwtacacs local
-  ^
-
-[94/274] r1 <R1> quit
+[92/274] r1 [R1-aaa] authorization-scheme aut1
 <empty>
 
-[95/274] r1 <R1> accounting-scheme acc1
-  % Invalid input detected at '^' marker.
-  accounting-scheme acc1
-  ^
-
-[96/274] r1 <R1> accounting-mode radius
-  % Invalid input detected at '^' marker.
-  accounting-mode radius
-  ^
-
-[97/274] r1 <R1> quit
+[93/274] r1 [R1-aaa-author-aut1] authorization-mode hwtacacs local
 <empty>
 
-[98/274] r1 <R1> domain lab.local
-  % Invalid input detected at '^' marker.
-  domain lab.local
-  ^
-
-[99/274] r1 <R1> authentication-scheme sch1
-  % Invalid input detected at '^' marker.
-  authentication-scheme sch1
-  ^
-
-[100/274] r1 <R1> accounting-scheme acc1
-  % Invalid input detected at '^' marker.
-  accounting-scheme acc1
-  ^
-
-[101/274] r1 <R1> radius-server group RG1
-  % Invalid input detected at '^' marker.
-  radius-server group RG1
-  ^
-
-[102/274] r1 <R1> quit
+[94/274] r1 [R1-aaa-author-aut1] quit
 <empty>
 
-[103/274] r1 <R1> local-user admin password irreversible-cipher Admin@12345
-  % Invalid input detected at '^' marker.
-  local-user admin password irreversible-cipher Admin@12345
-  ^
-
-[104/274] r1 <R1> local-user admin privilege level 15
-  % Invalid input detected at '^' marker.
-  local-user admin privilege level 15
-  ^
-
-[105/274] r1 <R1> local-user admin service-type ssh terminal
-  % Invalid input detected at '^' marker.
-  local-user admin service-type ssh terminal
-  ^
-
-[106/274] r1 <R1> local-user oper password irreversible-cipher Oper@12345
-  % Invalid input detected at '^' marker.
-  local-user oper password irreversible-cipher Oper@12345
-  ^
-
-[107/274] r1 <R1> local-user oper privilege level 3
-  % Invalid input detected at '^' marker.
-  local-user oper privilege level 3
-  ^
-
-[108/274] r1 <R1> quit
+[95/274] r1 [R1-aaa] accounting-scheme acc1
 <empty>
 
-[109/274] r1 <R1> radius-server template RT1
-  % Invalid input detected at '^' marker.
-  radius-server template RT1
-  ^
-
-[110/274] r1 <R1> radius-server authentication 10.0.0.2 1812
-  % Invalid input detected at '^' marker.
-  radius-server authentication 10.0.0.2 1812
-  ^
-
-[111/274] r1 <R1> radius-server accounting 10.0.0.2 1813
-  % Invalid input detected at '^' marker.
-  radius-server accounting 10.0.0.2 1813
-  ^
-
-[112/274] r1 <R1> radius-server shared-key cipher RadKey123
-  % Invalid input detected at '^' marker.
-  radius-server shared-key cipher RadKey123
-  ^
-
-[113/274] r1 <R1> quit
+[96/274] r1 [R1-aaa-accounting-acc1] accounting-mode radius
 <empty>
 
-[114/274] r1 <R1> hwtacacs-server template HT1
-  % Invalid input detected at '^' marker.
-  hwtacacs-server template HT1
-  ^
-
-[115/274] r1 <R1> hwtacacs-server authentication 10.0.0.3
-  % Invalid input detected at '^' marker.
-  hwtacacs-server authentication 10.0.0.3
-  ^
-
-[116/274] r1 <R1> hwtacacs-server shared-key cipher TacKey123
-  % Invalid input detected at '^' marker.
-  hwtacacs-server shared-key cipher TacKey123
-  ^
-
-[117/274] r1 <R1> quit
+[97/274] r1 [R1-aaa-accounting-acc1] quit
 <empty>
 
-[118/274] r1 <R1> return
+[98/274] r1 [R1-aaa] domain lab.local
+<empty>
+
+[99/274] r1 [R1-aaa-domain-lab.local] authentication-scheme sch1
+<empty>
+
+[100/274] r1 [R1-aaa-domain-lab.local] accounting-scheme acc1
+<empty>
+
+[101/274] r1 [R1-aaa-domain-lab.local] radius-server group RG1
+<empty>
+
+[102/274] r1 [R1-aaa-domain-lab.local] quit
+<empty>
+
+[103/274] r1 [R1-aaa] local-user admin password irreversible-cipher Admin@12345
+<empty>
+
+[104/274] r1 [R1-aaa] local-user admin privilege level 15
+<empty>
+
+[105/274] r1 [R1-aaa] local-user admin service-type ssh terminal
+<empty>
+
+[106/274] r1 [R1-aaa] local-user oper password irreversible-cipher Oper@12345
+<empty>
+
+[107/274] r1 [R1-aaa] local-user oper privilege level 3
+<empty>
+
+[108/274] r1 [R1-aaa] quit
+<empty>
+
+[109/274] r1 [R1] radius-server template RT1
+<empty>
+
+[110/274] r1 [R1-radius-RT1] radius-server authentication 10.0.0.2 1812
+<empty>
+
+[111/274] r1 [R1-radius-RT1] radius-server accounting 10.0.0.2 1813
+<empty>
+
+[112/274] r1 [R1-radius-RT1] radius-server shared-key cipher RadKey123
+<empty>
+
+[113/274] r1 [R1-radius-RT1] quit
+<empty>
+
+[114/274] r1 [R1] hwtacacs-server template HT1
+<empty>
+
+[115/274] r1 [R1-hwtacacs-HT1] hwtacacs-server authentication 10.0.0.3
+<empty>
+
+[116/274] r1 [R1-hwtacacs-HT1] hwtacacs-server shared-key cipher TacKey123
+<empty>
+
+[117/274] r1 [R1-hwtacacs-HT1] quit
+<empty>
+
+[118/274] r1 [R1] return
 <empty>
 
 [119/274] r1 <R1> display aaa configuration
@@ -431,9 +460,7 @@ Total steps: 274
     HWTACACS-server-template: -
 
 [120/274] r1 <R1> display domain
-  % Invalid input detected at '^' marker.
-  display domain
-          ^
+   Domain: lab.local
 
 [121/274] r1 <R1> display local-user
     ----------------------------------------------------------------------
@@ -444,14 +471,10 @@ Total steps: 274
     Total 0 user(s)
 
 [122/274] r1 <R1> display radius-server configuration
-  % Invalid input detected at '^' marker.
-  display radius-server configuration
-          ^
+   RADIUS template: RT1
 
 [123/274] r1 <R1> display hwtacacs-server template
-  % Invalid input detected at '^' marker.
-  display hwtacacs-server template
-          ^
+   HWTACACS template: HT1
 
 
 --- [124] § SSH / STelnet hardening ---
@@ -532,9 +555,7 @@ Total steps: 274
   SSH server: Disabled
 
 [148/274] r1 <R1> display ssh server session
-  % Invalid input detected at '^' marker.
-  display ssh server session
-                     ^
+  SSH server is not enabled.
 
 [149/274] r1 <R1> display ssh user-information
   SSH version                     : 2.0
@@ -545,9 +566,7 @@ Total steps: 274
   STELNET server                  : Enable
 
 [150/274] r1 <R1> display rsa local-key-pair public
-  % Invalid input detected at '^' marker.
-  display rsa local-key-pair public
-          ^
+  Info: No RSA key pair has been generated.
 
 
 --- [151] § attack-defense / CPU-defend ---
@@ -557,82 +576,64 @@ Total steps: 274
 [152/274] r1 [R1] cpu-defend policy P1
 <empty>
 
-[153/274] r1 [R1] car packet-type arp-request cir 64
+[153/274] r1 [R1-cpu-defend-policy-P1] car packet-type arp-request cir 64
 <empty>
 
-[154/274] r1 [R1] car packet-type icmp cir 32
+[154/274] r1 [R1-cpu-defend-policy-P1] car packet-type icmp cir 32
 <empty>
 
-[155/274] r1 [R1] quit
+[155/274] r1 [R1-cpu-defend-policy-P1] quit
 <empty>
 
-[156/274] r1 <R1> cpu-defend-policy P1 global
-  % Invalid input detected at '^' marker.
-  cpu-defend-policy P1 global
-  ^
-
-[157/274] r1 <R1> firewall enable
-  % Invalid input detected at '^' marker.
-  firewall enable
-  ^
-
-[158/274] r1 <R1> firewall defend ip-spoofing enable
-  % Invalid input detected at '^' marker.
-  firewall defend ip-spoofing enable
-  ^
-
-[159/274] r1 <R1> firewall defend land enable
-  % Invalid input detected at '^' marker.
-  firewall defend land enable
-  ^
-
-[160/274] r1 <R1> firewall defend smurf enable
-  % Invalid input detected at '^' marker.
-  firewall defend smurf enable
-  ^
-
-[161/274] r1 <R1> firewall defend icmp-flood enable
-  % Invalid input detected at '^' marker.
-  firewall defend icmp-flood enable
-  ^
-
-[162/274] r1 <R1> firewall defend tcp-syn-flood enable
-  % Invalid input detected at '^' marker.
-  firewall defend tcp-syn-flood enable
-  ^
-
-[163/274] r1 <R1> interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/1
-  ^
-
-[164/274] r1 <R1> ip urpf strict
-  % Invalid input detected at '^' marker.
-  ip urpf strict
-     ^
-
-[165/274] r1 <R1> undo ip urpf
+[156/274] r1 [R1] cpu-defend-policy P1 global
 <empty>
 
-[166/274] r1 <R1> quit
+[157/274] r1 [R1] firewall enable
 <empty>
 
-[167/274] r1 <R1> return
+[158/274] r1 [R1] firewall defend ip-spoofing enable
+<empty>
+
+[159/274] r1 [R1] firewall defend land enable
+<empty>
+
+[160/274] r1 [R1] firewall defend smurf enable
+<empty>
+
+[161/274] r1 [R1] firewall defend icmp-flood enable
+<empty>
+
+[162/274] r1 [R1] firewall defend tcp-syn-flood enable
+<empty>
+
+[163/274] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[164/274] r1 [R1-GE0/0/1] ip urpf strict
+<empty>
+
+[165/274] r1 [R1-GE0/0/1] undo ip urpf
+<empty>
+
+[166/274] r1 [R1-GE0/0/1] quit
+<empty>
+
+[167/274] r1 [R1] return
 <empty>
 
 [168/274] r1 <R1> display cpu-defend policy P1
-  % Invalid input detected at '^' marker.
-  display cpu-defend policy P1
-          ^
+   Policy: P1
 
 [169/274] r1 <R1> display firewall defend flag
-  % Invalid input detected at '^' marker.
-  display firewall defend flag
-          ^
+   ip-spoofing: enabled
+   land: enabled
+   smurf: enabled
+   icmp-flood: enabled
+   tcp-syn-flood: enabled
 
 
 --- [170] § regression: display family ---
-[170/274] r1 [R1] display version
+[170/274] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -641,7 +642,7 @@ Total steps: 274
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[171/274] r1 [R1] display version
+[171/274] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -650,7 +651,7 @@ Total steps: 274
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[172/274] r1 [R1] display current-configuration
+[172/274] r1 <R1> display current-configuration
   #
   sysname R1
   #
@@ -668,13 +669,82 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
+  #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  #
+  acl number 2001
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  #
+  acl number 3000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  #
+  acl name WAN-IN advanced
+   rule 0 permit
+   rule 5 deny
+  #
+  acl number 3001
+   rule 0 permit
   user-interface vty 0 4
    authentication-mode aaa
    protocol inbound ssh
   #
+  aaa
+   local-user admin password cipher Admin@12345
+   local-user admin privilege level 15
+   local-user admin service-type ssh
+   local-user oper password cipher Oper@12345
+   local-user oper privilege level 3
+   local-user oper service-type ssh
+  #
   #
 
-[173/274] r1 [R1] display saved-configuration
+[173/274] r1 <R1> display saved-configuration
   #
   sysname R1
   #
@@ -692,13 +762,82 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
+  #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  #
+  acl number 2001
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  #
+  acl number 3000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  #
+  acl name WAN-IN advanced
+   rule 0 permit
+   rule 5 deny
+  #
+  acl number 3001
+   rule 0 permit
   user-interface vty 0 4
    authentication-mode aaa
    protocol inbound ssh
   #
+  aaa
+   local-user admin password cipher Admin@12345
+   local-user admin privilege level 15
+   local-user admin service-type ssh
+   local-user oper password cipher Oper@12345
+   local-user oper privilege level 3
+   local-user oper service-type ssh
+  #
   #
 
-[174/274] r1 [R1] display ip interface brief
+[174/274] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -714,7 +853,7 @@ Total steps: 274
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
 
-[175/274] r1 [R1] display interface
+[175/274] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -740,7 +879,7 @@ Total steps: 274
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[176/274] r1 [R1] display ip routing-table
+[176/274] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -749,61 +888,122 @@ Total steps: 274
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[177/274] r1 [R1] display ip routing-table statistics
+[177/274] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    1
   --------------------
   Total     1
 
-[178/274] r1 [R1] display arp
+[178/274] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[179/274] r1 [R1] display arp all
+[179/274] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[180/274] r1 [R1] display ospf peer
+[180/274] r1 <R1> display ospf peer
   Error: OSPF is not configured.
 
-[181/274] r1 [R1] display ospf interface
+[181/274] r1 <R1> display ospf interface
   Error: OSPF is not configured.
 
-[182/274] r1 [R1] display ospf routing
+[182/274] r1 <R1> display ospf routing
   Info: OSPF is not running.
 
-[183/274] r1 [R1] display ospf lsdb
+[183/274] r1 <R1> display ospf lsdb
   Error: OSPF is not configured.
 
-[184/274] r1 [R1] display ospf brief
+[184/274] r1 <R1> display ospf brief
   Error: OSPF is not configured.
 
-[185/274] r1 [R1] display rip
+[185/274] r1 <R1> display rip
   Info: RIP is not enabled.
 
-[186/274] r1 [R1] display rip 1 route
+[186/274] r1 <R1> display rip 1 route
   Info: RIP is not enabled.
 
-[187/274] r1 [R1] display bgp peer
+[187/274] r1 <R1> display bgp peer
   Info: BGP is not running.
 
-[188/274] r1 [R1] display bgp routing-table
+[188/274] r1 <R1> display bgp routing-table
   Info: BGP is not running.
 
-[189/274] r1 [R1] display nat session all
+[189/274] r1 <R1> display nat session all
   Info: No NAT session is found.
 
-[190/274] r1 [R1] display nat address-group
+[190/274] r1 <R1> display nat address-group
   No NAT address pools configured.
 
-[191/274] r1 [R1] display ip pool
+[191/274] r1 <R1> display ip pool
   No DHCP pools configured.
 
-[192/274] r1 [R1] display acl all
-  Total 0 ACL(s)
+[192/274] r1 <R1> display acl all
+  Basic ACL 2000, 21 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  Basic ACL 2001, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  Advanced ACL 3000, 26 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  Advanced ACL WAN-IN, 2 rule(s)
+  ACL's step is 5
+   rule 0 permit
+   rule 5 deny
+  Advanced ACL 3001, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit
+  Total 5 ACL(s)
 
-[193/274] r1 [R1] display dhcp server statistics
+[193/274] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -813,70 +1013,70 @@ Total steps: 274
     Inform: 0        Decline: 0
   Pool number: 0
 
-[194/274] r1 [R1] display vrrp
+[194/274] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[195/274] r1 [R1] display vrrp brief
+[195/274] r1 <R1> display vrrp brief
   Total: 0     Master: 0     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
 
-[196/274] r1 [R1] display ike sa
+[196/274] r1 <R1> display ike sa
   Info: No IPSec configuration.
 
-[197/274] r1 [R1] display ipsec sa
+[197/274] r1 <R1> display ipsec sa
   Info: No IPSec configuration.
 
-[198/274] r1 [R1] display ipsec policy
+[198/274] r1 <R1> display ipsec policy
   Info: No IPSec configuration.
 
-[199/274] r1 [R1] display ipsec proposal
+[199/274] r1 <R1> display ipsec proposal
   Info: No IPSec configuration.
 
-[200/274] r1 [R1] display ike proposal
+[200/274] r1 <R1> display ike proposal
   Info: No IPSec configuration.
 
-[201/274] r1 [R1] display ike peer
+[201/274] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[202/274] r1 [R1] display snmp-agent sys-info
+[202/274] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[203/274] r1 [R1] display ntp status
+[203/274] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[204/274] r1 [R1] display ntp session
+[204/274] r1 <R1> display ntp session
   No NTP associations
 
-[205/274] r1 [R1] display clock
-  2026-06-07 20:23:04
-  Sunday
+[205/274] r1 <R1> display clock
+  2026-06-09 09:12:49
+  Tuesday
   Time Zone(UTC) : UTC
 
-[206/274] r1 [R1] display lldp neighbor
+[206/274] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[207/274] r1 [R1] display lldp neighbor brief
+[207/274] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[208/274] r1 [R1] display cpu-usage
+[208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-07 20:23:04
+  CPU Usage Stat. Time : 2026-06-09 09:12:49
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[209/274] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-07 20:23:04
+[209/274] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-06-09 09:12:49
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[210/274] r1 [R1] display device
+[210/274] r1 <R1> display device
   R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
@@ -887,13 +1087,13 @@ Total steps: 274
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[211/274] r1 [R1] display users
+[211/274] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[212/274] r1 [R1] display history-command
+[212/274] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -905,7 +1105,7 @@ Total steps: 274
   display users
   display history-command
 
-[213/274] r1 [R1] display logbuffer
+[213/274] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -914,7 +1114,7 @@ Total steps: 274
   Overwritten messages : 0
   Current messages : 0
 
-[214/274] r1 [R1] display trapbuffer
+[214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -922,10 +1122,10 @@ Total steps: 274
   Dropped messages : 0
   Current messages : 0
 
-[215/274] r1 [R1] display alarm all
+[215/274] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[216/274] r1 [R1] display startup
+[216/274] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -937,10 +1137,10 @@ Total steps: 274
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[217/274] r1 [R1] display patch-information
+[217/274] r1 <R1> display patch-information
   Info: No patch exists.
 
-[218/274] r1 [R1] display elabel
+[218/274] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
@@ -953,12 +1153,12 @@ Total steps: 274
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[219/274] r1 [R1] display license
+[219/274] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[220/274] r1 [R1] display interface brief
+[220/274] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -966,7 +1166,7 @@ Total steps: 274
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
 
-[221/274] r1 [R1] display ip interface GigabitEthernet0/0/0
+[221/274] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
@@ -979,7 +1179,7 @@ Total steps: 274
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[222/274] r1 [R1] display interface GigabitEthernet0/0/0
+[222/274] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -987,7 +1187,7 @@ Total steps: 274
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[223/274] r1 [R1] display this
+[223/274] r1 <R1> display this
   #
   sysname R1
   #
@@ -1005,18 +1205,87 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
+  #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  #
+  acl number 2001
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  #
+  acl number 3000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  #
+  acl name WAN-IN advanced
+   rule 0 permit
+   rule 5 deny
+  #
+  acl number 3001
+   rule 0 permit
   user-interface vty 0 4
    authentication-mode aaa
    protocol inbound ssh
   #
+  aaa
+   local-user admin password cipher Admin@12345
+   local-user admin privilege level 15
+   local-user admin service-type ssh
+   local-user oper password cipher Oper@12345
+   local-user oper privilege level 3
+   local-user oper service-type ssh
+  #
   #
 
-[224/274] r1 [R1] display diagnostic-information
+[224/274] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[225/274] r1 [R1] display aaa configuration
+[225/274] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -1026,13 +1295,13 @@ Total steps: 274
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[226/274] r1 [R1] display aaa online-fail-record
+[226/274] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[227/274] r1 [R1] display ssh server status
+[227/274] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[228/274] r1 [R1] display ssh user-information
+[228/274] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -1040,7 +1309,7 @@ Total steps: 274
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[229/274] r1 [R1] display user-interface
+[229/274] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -1054,16 +1323,16 @@ Total steps: 274
    protocol inbound ssh
   #
 
-[230/274] r1 [R1] display port-security
+[230/274] r1 <R1> display port-security
   Port-security is enabled on the following interfaces:
    (configuration is recorded per interface; see display this)
 
 
 --- [231] § regression: pipe filters ---
-[231/274] r1 [R1] display current-configuration | include ospf
+[231/274] r1 <R1> display current-configuration | include ospf
 <empty>
 
-[232/274] r1 [R1] display current-configuration | begin interface
+[232/274] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1078,13 +1347,82 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
+  #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  #
+  acl number 2001
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  #
+  acl number 3000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  #
+  acl name WAN-IN advanced
+   rule 0 permit
+   rule 5 deny
+  #
+  acl number 3001
+   rule 0 permit
   user-interface vty 0 4
    authentication-mode aaa
    protocol inbound ssh
   #
+  aaa
+   local-user admin password cipher Admin@12345
+   local-user admin privilege level 15
+   local-user admin service-type ssh
+   local-user oper password cipher Oper@12345
+   local-user oper privilege level 3
+   local-user oper service-type ssh
+  #
   #
 
-[233/274] r1 [R1] display current-configuration | exclude #
+[233/274] r1 <R1> display current-configuration | exclude #
   sysname R1
   interface GigabitEthernet0/0/0
    shutdown
@@ -1096,14 +1434,77 @@ Total steps: 274
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+   rule 10 permit source 192.168.3.0 0.0.0.255
+   rule 15 permit source 192.168.4.0 0.0.0.255
+   rule 20 permit source 192.168.5.0 0.0.0.255
+   rule 25 permit source 192.168.6.0 0.0.0.255
+   rule 30 permit source 192.168.7.0 0.0.0.255
+   rule 35 permit source 192.168.8.0 0.0.0.255
+   rule 40 permit source 192.168.9.0 0.0.0.255
+   rule 45 permit source 192.168.10.0 0.0.0.255
+   rule 50 permit source 192.168.11.0 0.0.0.255
+   rule 55 permit source 192.168.12.0 0.0.0.255
+   rule 60 permit source 192.168.13.0 0.0.0.255
+   rule 65 permit source 192.168.14.0 0.0.0.255
+   rule 70 permit source 192.168.15.0 0.0.0.255
+   rule 75 permit source 192.168.16.0 0.0.0.255
+   rule 80 permit source 192.168.17.0 0.0.0.255
+   rule 85 permit source 192.168.18.0 0.0.0.255
+   rule 90 permit source 192.168.19.0 0.0.0.255
+   rule 95 permit source 192.168.20.0 0.0.0.255
+   rule 100 deny
+  acl number 2001
+   rule 0 permit source 10.0.0.0 0.0.0.255
+  acl number 3000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit destination 10.0.0.1 0.0.0.0
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit destination 10.0.0.2 0.0.0.0
+   rule 20 permit source 192.168.3.0 0.0.0.255
+   rule 25 permit destination 10.0.0.3 0.0.0.0
+   rule 30 permit source 192.168.4.0 0.0.0.255
+   rule 35 permit destination 10.0.0.4 0.0.0.0
+   rule 40 permit source 192.168.5.0 0.0.0.255
+   rule 45 permit destination 10.0.0.5 0.0.0.0
+   rule 50 permit source 192.168.6.0 0.0.0.255
+   rule 55 permit destination 10.0.0.6 0.0.0.0
+   rule 60 permit source 192.168.7.0 0.0.0.255
+   rule 65 permit destination 10.0.0.7 0.0.0.0
+   rule 70 permit source 192.168.8.0 0.0.0.255
+   rule 75 permit destination 10.0.0.8 0.0.0.0
+   rule 80 permit source 192.168.9.0 0.0.0.255
+   rule 85 permit destination 10.0.0.9 0.0.0.0
+   rule 90 permit source 192.168.10.0 0.0.0.255
+   rule 95 permit destination 10.0.0.10 0.0.0.0
+   rule 100 permit source 192.168.11.0 0.0.0.255
+   rule 105 permit destination 10.0.0.11 0.0.0.0
+   rule 110 permit source 192.168.12.0 0.0.0.255
+   rule 115 permit destination 10.0.0.12 0.0.0.0
+   rule 120 permit
+   rule 125 deny
+  acl name WAN-IN advanced
+   rule 0 permit
+   rule 5 deny
+  acl number 3001
+   rule 0 permit
   user-interface vty 0 4
    authentication-mode aaa
    protocol inbound ssh
+  aaa
+   local-user admin password cipher Admin@12345
+   local-user admin privilege level 15
+   local-user admin service-type ssh
+   local-user oper password cipher Oper@12345
+   local-user oper privilege level 3
+   local-user oper service-type ssh
 
-[234/274] r1 [R1] display ip routing-table | include Direct
+[234/274] r1 <R1> display ip routing-table | include Direct
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[235/274] r1 [R1] display ip interface brief | include up
+[235/274] r1 <R1> display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
   GE0/0/0                           unassigned           UP         UP
@@ -1235,9 +1636,10 @@ Total steps: 274
     routing-table  routing-table
 
 [271/274] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1249,6 +1651,7 @@ Total steps: 274
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

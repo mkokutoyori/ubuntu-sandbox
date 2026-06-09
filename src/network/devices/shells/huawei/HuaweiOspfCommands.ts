@@ -412,15 +412,15 @@ export function buildOSPFv3ViewCommands(
   });
 
   trie.registerGreedy('area', 'OSPFv3 area parameters', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
+    if (args.length < 1) return 'Error: Incomplete command.';
     const v3 = ctx.r()._getOSPFv3EngineInternal();
     if (!v3) return 'Error: OSPFv3 is not enabled.';
     const areaId = args[0];
-    const subCmd = args[1].toLowerCase();
-    if (subCmd === 'stub') {
-      v3.addArea(areaId, 'stub');
-      v3.setAreaType(areaId, 'stub');
-    }
+    v3.addArea(areaId);
+    const subCmd = args[1]?.toLowerCase();
+    if (subCmd === 'stub') v3.setAreaType(areaId, 'stub');
+    (ctx as any).ospfArea = areaId;
+    ctx.setMode('ospfv3-area');
     return '';
   });
 
@@ -632,7 +632,7 @@ export function registerOSPFInterfaceCommands(
     if (args.length < 3) return 'Error: Incomplete command.';
     const processId = parseInt(args[0], 10);
     if (isNaN(processId)) return 'Error: Invalid process ID.';
-    if (args[1].toLowerCase() !== 'area') return 'Error: Expected "area" keyword.';
+    if (!'area'.startsWith(args[1].toLowerCase())) return 'Error: Expected "area" keyword.';
     const areaId = args[2];
     const router = ctx.r();
     if (!router._getOSPFv3EngineInternal()) {

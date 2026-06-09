@@ -181,6 +181,23 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
+  trie.registerGreedy('crypto isakmp profile', 'Define an ISAKMP profile', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const name = args[0];
+    const e = eng(ctx) as any;
+    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
+    if (!profiles.has(name)) profiles.set(name, { name });
+    ctx.setSelectedISAKMPProfile(name);
+    ctx.setMode('config-isakmp-profile');
+    return '';
+  });
+  trie.registerGreedy('no crypto isakmp profile', 'Remove an ISAKMP profile', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const e = eng(ctx) as any;
+    (e.isakmpProfiles as Map<string, any> | undefined)?.delete(args[0]);
+    return '';
+  });
+
   // ── crypto isakmp aggressive-mode ───────────────────────────────
   trie.register('crypto isakmp aggressive-mode disable', 'Disable Aggressive Mode', () => {
     eng(ctx).setAggressiveMode(false);
@@ -372,6 +389,44 @@ export function buildISAKMPPolicyCommands(trie: CommandTrie, ctx: CiscoShellCont
   });
 }
 
+export function buildISAKMPProfileCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  const profile = () => {
+    const e = eng(ctx) as any;
+    const name = ctx.getSelectedISAKMPProfile();
+    if (!name) return null;
+    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
+    let p = profiles.get(name);
+    if (!p) { p = { name }; profiles.set(name, p); }
+    return p;
+  };
+  trie.registerGreedy('keyring', 'Reference a keyring', (args) => {
+    const p = profile(); if (!p) return '';
+    p.keyring = args[0] ?? 'default';
+    return '';
+  });
+  trie.registerGreedy('match identity address', 'Match peer identity by address', (args) => {
+    const p = profile(); if (!p) return '';
+    p.matchAddress = args[0];
+    if (args[1]) p.matchAddressMask = args[1];
+    return '';
+  });
+  trie.registerGreedy('match identity hostname', 'Match peer identity by hostname', (args) => {
+    const p = profile(); if (!p) return '';
+    p.matchHostname = args[0];
+    return '';
+  });
+  trie.registerGreedy('self-identity', 'Set local IKE identity', (args) => {
+    const p = profile(); if (!p) return '';
+    p.selfIdentity = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('vrf', 'Bind to a VRF', (args) => {
+    const p = profile(); if (!p) return '';
+    p.vrf = args[0];
+    return '';
+  });
+}
+
 // ─── config-tfset sub-mode ────────────────────────────────────────────
 
 export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -385,6 +440,40 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
     } else {
       return '% Invalid mode. Use tunnel or transport.';
     }
+    return '';
+  });
+
+  trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set', (args) => {
+    if (args.length < 2) return '% Incomplete command.';
+    const name = args[0];
+    const transforms = normalizeTransforms(args.slice(1));
+    eng(ctx).addTransformSet(name, transforms, 'tunnel');
+    ctx.setSelectedTransformSet(name);
+    return '';
+  });
+  trie.registerGreedy('crypto ipsec security-association lifetime seconds', 'Global SA lifetime (seconds)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) eng(ctx).setGlobalSALifetime(n);
+    return '';
+  });
+  trie.registerGreedy('crypto ipsec security-association lifetime kilobytes', 'Global SA lifetime (KB)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) eng(ctx).setGlobalSALifetimeKB(n);
+    return '';
+  });
+  trie.registerGreedy('crypto ipsec security-association replay window-size', 'Set anti-replay window', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) eng(ctx).setReplayWindowSize(n);
+    return '';
+  });
+  trie.registerGreedy('crypto ipsec security-association idle-time', 'Set SA idle time', () => '');
+  trie.registerGreedy('crypto ipsec df-bit', 'Configure DF-bit handling', () => '');
+  trie.registerGreedy('crypto ipsec fragmentation', 'Configure IPSec fragmentation', () => '');
+  trie.registerGreedy('crypto ipsec profile', 'Enter IPSec profile config', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).getOrCreateIPSecProfile(args[0]);
+    ctx.setSelectedIPSecProfile(args[0]);
+    ctx.setMode('config-ipsec-profile' as any);
     return '';
   });
 }
@@ -501,6 +590,27 @@ export function buildIPSecProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
     if (!name) return '% No IPSec profile selected';
     const profile = eng(ctx).getOrCreateIPSecProfile(name);
     profile.saLifetimeSeconds = parseInt(args[0] ?? '3600', 10);
+    return '';
+  });
+  trie.registerGreedy('set pfs', 'Set Perfect Forward Secrecy group', (args) => {
+    const name = ctx.getSelectedIPSecProfile();
+    if (!name) return '% No IPSec profile selected';
+    const profile = eng(ctx).getOrCreateIPSecProfile(name) as any;
+    profile.pfsGroup = args[0]?.toLowerCase() || 'group14';
+    return '';
+  });
+  trie.registerGreedy('set ikev2-profile', 'Associate IKEv2 profile', (args) => {
+    const name = ctx.getSelectedIPSecProfile();
+    if (!name) return '% No IPSec profile selected';
+    const profile = eng(ctx).getOrCreateIPSecProfile(name) as any;
+    profile.ikev2Profile = args[0];
+    return '';
+  });
+  trie.registerGreedy('set security-association lifetime kilobytes', 'Set SA lifetime KB', (args) => {
+    const name = ctx.getSelectedIPSecProfile();
+    if (!name) return '% No IPSec profile selected';
+    const profile = eng(ctx).getOrCreateIPSecProfile(name) as any;
+    profile.saLifetimeKb = parseInt(args[0] ?? '', 10);
     return '';
   });
 }

@@ -21,7 +21,7 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 export type HuaweiShellMode =
   | 'user' | 'system' | 'interface' | 'dhcp-pool' | 'ospf' | 'ospf-area'
   | 'bgp' | 'isis'
-  | 'ospfv3' | 'rip' | 'ui' | 'ike-proposal' | 'ike-peer'
+  | 'ospfv3' | 'ospfv3-area' | 'rip' | 'ui' | 'ike-proposal' | 'ike-peer'
   | 'ipsec-proposal' | 'ipsec-policy'
   | 'acl-basic' | 'acl-advanced'
   | 'ikev2-proposal' | 'ikev2-policy' | 'ikev2-profile'

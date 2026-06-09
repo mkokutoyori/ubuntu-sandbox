@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-08T05:57:25.350Z
+Generated: 2026-06-09T09:12:41.707Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-08 05:57:25
-  Monday
+  2026-06-09 09:12:41
+  Tuesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-08 05:57:25
+  CPU Usage Stat. Time : 2026-06-09 09:12:41
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-08 05:57:25
+  Memory utilization statistics at 2026-06-09 09:12:41
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -477,7 +477,7 @@ Total steps: 304
     ntp-service             Display NTP status
     info-center             Display info-center configuration
     sflow                   Display sFlow configuration
-    lldp                    lldp
+    lldp                    Display LLDP
     bgp                     bgp
     isis                    isis
     ospf                    ospf
@@ -504,6 +504,7 @@ Total steps: 304
     ospfv3                  ospfv3
     ike                     ike
     ipsec                   ipsec
+    ikev2                   ikev2
     acl                     Display ACL configuration
     health                  Display device health
     temperature             temperature
@@ -519,6 +520,15 @@ Total steps: 304
     route-policy            Display a route-policy
     traffic-policy          traffic-policy
     nqa                     nqa
+    domain                  Display AAA domains
+    radius-server           radius-server
+    hwtacacs-server         hwtacacs-server
+    rsa                     rsa
+    time-range              time-range
+    traffic-filter          traffic-filter
+    cpu-defend              cpu-defend
+    firewall                firewall
+    channel                 Display info-center channels
     this                    Display current view configuration
 
 [61/304] r1 <R1> ping 10.0.0.2
@@ -717,9 +727,9 @@ Total steps: 304
 <empty>
 
 [93/304] r1 [R1-CORE] acl name MGMT
-  Error: Incomplete command.
+<empty>
 
-[94/304] r1 [R1-CORE] display this
+[94/304] r1 [R1-CORE-acl-basic-MGMT] display this
   #
   sysname R1-CORE
   #
@@ -748,17 +758,28 @@ Total steps: 304
   ospf 1
   #
 
-[95/304] r1 [R1-CORE] quit
+[95/304] r1 [R1-CORE-acl-basic-MGMT] quit
 <empty>
 
-[96/304] r1 <R1-CORE> ip pool LAN
-  % Invalid input detected at '^' marker.
+[96/304] r1 [R1-CORE] ip pool LAN
+<empty>
+
+[97/304] r1 [R1-CORE-ip-pool-LAN] display this
+  #
   ip pool LAN
-     ^
+  #
 
-[97/304] r1 <R1-CORE> display this
+[98/304] r1 [R1-CORE-ip-pool-LAN] quit
+<empty>
+
+[99/304] r1 [R1-CORE] aaa
+<empty>
+
+[100/304] r1 [R1-CORE-aaa] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -785,17 +806,17 @@ Total steps: 304
   ospf 1
   #
 
-[98/304] r1 <R1-CORE> quit
+[101/304] r1 [R1-CORE-aaa] quit
 <empty>
 
-[99/304] r1 <R1-CORE> aaa
-  % Invalid input detected at '^' marker.
-  aaa
-  ^
+[102/304] r1 [R1-CORE] user-interface console 0
+<empty>
 
-[100/304] r1 <R1-CORE> display this
+[103/304] r1 [R1-CORE-ui-vtyconsole0] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -822,17 +843,17 @@ Total steps: 304
   ospf 1
   #
 
-[101/304] r1 <R1-CORE> quit
+[104/304] r1 [R1-CORE-ui-vtyconsole0] quit
 <empty>
 
-[102/304] r1 <R1-CORE> user-interface console 0
-  % Invalid input detected at '^' marker.
-  user-interface console 0
-  ^
+[105/304] r1 [R1-CORE] user-interface vty 0 4
+<empty>
 
-[103/304] r1 <R1-CORE> display this
+[106/304] r1 [R1-CORE-ui-vty0 4] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -857,19 +878,60 @@ Total steps: 304
    version 2
   #
   ospf 1
-  #
-
-[104/304] r1 <R1-CORE> quit
-<empty>
-
-[105/304] r1 <R1-CORE> user-interface vty 0 4
-  % Invalid input detected at '^' marker.
   user-interface vty 0 4
-  ^
+  #
+  #
 
-[106/304] r1 <R1-CORE> display this
+[107/304] r1 [R1-CORE-ui-vty0 4] quit
+<empty>
+
+[108/304] r1 [R1-CORE] route-policy RP permit node 10
+<empty>
+
+[109/304] r1 [R1-CORE-route-policy-RP-10] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+  ospf 1
+  user-interface vty 0 4
+  #
+  #
+
+[110/304] r1 [R1-CORE-route-policy-RP-10] quit
+<empty>
+
+[111/304] r1 [R1-CORE] ike proposal 1
+<empty>
+
+[112/304] r1 [R1-CORE-ike-proposal-1] display this
+  #
+  sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -895,55 +957,24 @@ Total steps: 304
   #
   ospf 1
   #
-
-[107/304] r1 <R1-CORE> quit
-<empty>
-
-[108/304] r1 <R1-CORE> route-policy RP permit node 10
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 10
-  ^
-
-[109/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-
-[110/304] r1 <R1-CORE> quit
-<empty>
-
-[111/304] r1 <R1-CORE> ike proposal 1
-  % Invalid input detected at '^' marker.
   ike proposal 1
-  ^
+   authentication-algorithm sha
+   dh group1
+  user-interface vty 0 4
+  #
+  #
 
-[112/304] r1 <R1-CORE> display this
+[113/304] r1 [R1-CORE-ike-proposal-1] quit
+<empty>
+
+[114/304] r1 [R1-CORE] ipsec proposal P1
+<empty>
+
+[115/304] r1 [R1-CORE-ipsec-proposal-P1] display this
   #
   sysname R1-CORE
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -969,62 +1000,34 @@ Total steps: 304
   #
   ospf 1
   #
-
-[113/304] r1 <R1-CORE> quit
-<empty>
-
-[114/304] r1 <R1-CORE> ipsec proposal P1
-  % Invalid input detected at '^' marker.
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
   ipsec proposal P1
-  ^
-
-[115/304] r1 <R1-CORE> display this
+   encapsulation-mode tunnel
+  user-interface vty 0 4
   #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
   #
 
-[116/304] r1 <R1-CORE> quit
+[116/304] r1 [R1-CORE-ipsec-proposal-P1] quit
 <empty>
 
-[117/304] r1 <R1-CORE> info-center enable
-  % Invalid input detected at '^' marker.
-  info-center enable
-  ^
-
-[118/304] r1 <R1-CORE> undo info-center enable
+[117/304] r1 [R1-CORE] info-center enable
 <empty>
 
-[119/304] r1 <R1-CORE> return
+[118/304] r1 [R1-CORE] undo info-center enable
+<empty>
+
+[119/304] r1 [R1-CORE] return
 <empty>
 
 [120/304] r1 <R1-CORE> display current-configuration
   #
   sysname R1-CORE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1048,6 +1051,15 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+  #
   #
 
 
@@ -1062,6 +1074,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1085,6 +1099,15 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+  #
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
@@ -1094,6 +1117,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1117,6 +1142,15 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+  #
   #
 
 [126/304] r1 [R1-EDGE] q
@@ -1129,6 +1163,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1152,6 +1188,15 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+  #
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -1203,9 +1248,10 @@ Total steps: 304
     <cr>  
 
 [135/304] r1 [R1-EDGE] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1217,6 +1263,7 @@ Total steps: 304
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy
@@ -1344,12 +1391,15 @@ Total steps: 304
 
 --- [171] § pipe filters ---
 [171/304] r1 <Huawei> display current-configuration | include ip
+  ip pool LAN
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
+  ipsec proposal P1
 
 [172/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
   dhcp enable
+  ip pool LAN
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -1366,6 +1416,12 @@ Total steps: 304
   rip 1
    version 2
   ospf 1
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1392,6 +1448,15 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+  #
   #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
@@ -1425,47 +1490,37 @@ Total steps: 304
 [180/304] r1 [Huawei] user-interface console 0
 <empty>
 
-[181/304] r1 [Huawei] idle-timeout 0 0
+[181/304] r1 [Huawei-ui-vtyconsole0] idle-timeout 0 0
 <empty>
 
-[182/304] r1 [Huawei] authentication-mode password
+[182/304] r1 [Huawei-ui-vtyconsole0] authentication-mode password
 <empty>
 
-[183/304] r1 [Huawei] set authentication password cipher Huawei@123
+[183/304] r1 [Huawei-ui-vtyconsole0] set authentication password cipher Huawei@123
 <empty>
 
-[184/304] r1 [Huawei] quit
+[184/304] r1 [Huawei-ui-vtyconsole0] quit
 <empty>
 
-[185/304] r1 <Huawei> user-interface vty 0 4
-  % Invalid input detected at '^' marker.
-  user-interface vty 0 4
-  ^
-
-[186/304] r1 <Huawei> protocol inbound ssh
-  % Invalid input detected at '^' marker.
-  protocol inbound ssh
-  ^
-
-[187/304] r1 <Huawei> authentication-mode aaa
-  % Invalid input detected at '^' marker.
-  authentication-mode aaa
-  ^
-
-[188/304] r1 <Huawei> user privilege level 15
-  % Invalid input detected at '^' marker.
-  user privilege level 15
-  ^
-
-[189/304] r1 <Huawei> idle-timeout 5 0
-  % Invalid input detected at '^' marker.
-  idle-timeout 5 0
-  ^
-
-[190/304] r1 <Huawei> quit
+[185/304] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[191/304] r1 <Huawei> return
+[186/304] r1 [Huawei-ui-vty0 4] protocol inbound ssh
+<empty>
+
+[187/304] r1 [Huawei-ui-vty0 4] authentication-mode aaa
+<empty>
+
+[188/304] r1 [Huawei-ui-vty0 4] user privilege level 15
+<empty>
+
+[189/304] r1 [Huawei-ui-vty0 4] idle-timeout 5 0
+<empty>
+
+[190/304] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[191/304] r1 [Huawei] return
 <empty>
 
 
@@ -1487,6 +1542,8 @@ Total steps: 304
   sysname Huawei
   #
   dhcp enable
+  #
+  ip pool LAN
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1512,6 +1569,18 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
   #
 
 [195/304] r1 <Huawei> reset saved-configuration
@@ -1555,6 +1624,8 @@ Total steps: 304
   #
   dhcp enable
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1579,6 +1650,18 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
   #
 
 [203/304] r1 <Huawei> display saved-configuration
@@ -1587,6 +1670,8 @@ Total steps: 304
   #
   dhcp enable
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1611,6 +1696,18 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
   #
 
 [204/304] r1 <Huawei> display ip interface brief
@@ -1764,7 +1861,16 @@ Total steps: 304
   No NAT address pools configured.
 
 [221/304] r1 <Huawei> display ip pool
-  No DHCP pools configured.
+  Pool-name      : LAN
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : not configured
+  Network        : not configured
+  Mask           : not configured
+  DNS-list       : not configured
+  Domain-name    : not configured
+  Lease          : 1 day(s)
 
 [222/304] r1 <Huawei> display acl all
   Total 0 ACL(s)
@@ -1777,7 +1883,7 @@ Total steps: 304
     Request: 0       Ack: 0
     Nak: 0           Release: 0
     Inform: 0        Decline: 0
-  Pool number: 0
+  Pool number: 1
 
 [224/304] r1 <Huawei> display vrrp
   Info: No VRRP backup group is configured.
@@ -1787,19 +1893,35 @@ Total steps: 304
   VRID  State        Interface                Type     Virtual IP
 
 [226/304] r1 <Huawei> display ike sa
-  Info: No IPSec configuration.
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
 
 [227/304] r1 <Huawei> display ipsec sa
-  Info: No IPSec configuration.
+  No IPSec SAs established.
 
 [228/304] r1 <Huawei> display ipsec policy
-  Info: No IPSec configuration.
+  No crypto maps configured.
 
 [229/304] r1 <Huawei> display ipsec proposal
-  Info: No IPSec configuration.
+  Transform set P1: {  }
+     will negotiate = { Tunnel },
 
 [230/304] r1 <Huawei> display ike proposal
-  Info: No IPSec configuration.
+  Global IKE policy
+  Protection suite of priority 1
+  	encryption algorithm:   DES
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
+  Default protection suite
+  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
 
 [231/304] r1 <Huawei> display ike peer
   Info: No IKE peers configured.
@@ -1818,8 +1940,8 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-08 05:57:25
-  Monday
+  2026-06-09 09:12:41
+  Tuesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <Huawei> display lldp neighbor
@@ -1831,13 +1953,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-08 05:57:25
+  CPU Usage Stat. Time : 2026-06-09 09:12:41
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-08 05:57:25
+  Memory utilization statistics at 2026-06-09 09:12:41
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1961,6 +2083,8 @@ Total steps: 304
   #
   dhcp enable
   #
+  ip pool LAN
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1985,6 +2109,18 @@ Total steps: 304
    version 2
   #
   ospf 1
+  #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
   #
 
 [254/304] r1 <Huawei> display diagnostic-information
@@ -2024,6 +2160,12 @@ Total steps: 304
     36     VTY 2           -        -      0      0            N      -
     37     VTY 3           -        -      0      0            N      -
     38     VTY 4           -        -      0      0            N      -
+  
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
 
 [260/304] r1 <Huawei> display port-security
   Port-security is enabled on the following interfaces:
@@ -2060,10 +2202,23 @@ Total steps: 304
   #
   ospf 1
   #
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  #
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
+  #
+  #
 
 [263/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
   dhcp enable
+  ip pool LAN
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -2080,6 +2235,15 @@ Total steps: 304
   rip 1
    version 2
   ospf 1
+  ike proposal 1
+   authentication-algorithm sha
+   dh group1
+  ipsec proposal P1
+   encapsulation-mode tunnel
+  user-interface vty 0 4
+   authentication-mode aaa
+   idle-timeout 5 0
+   protocol inbound ssh
 
 [264/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
@@ -2212,9 +2376,10 @@ Total steps: 304
     routing-table  routing-table
 
 [301/304] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -2226,6 +2391,7 @@ Total steps: 304
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

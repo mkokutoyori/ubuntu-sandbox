@@ -153,6 +153,15 @@ export function buildTrackSlaConfig(
     return '';
   });
 
+  trackTrie.registerGreedy('track', 'Define another tracked object', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const id = parseInt(args[0], 10);
+    if (Number.isNaN(id)) return '% Invalid track number';
+    defineTrack(track, args);
+    ctx.setSelectedTrack(id);
+    return '';
+  });
+
   // ── config-track sub-mode ──
   trackTrie.registerGreedy('object', 'Add object to list', (args) => {
     const o = ctx.getSelectedTrack();

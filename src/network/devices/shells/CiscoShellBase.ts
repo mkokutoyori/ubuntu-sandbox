@@ -258,7 +258,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
-    if (lower === 'exit') return this.cmdExit();
+    if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
@@ -474,6 +474,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args));
 
+    trie.registerGreedy('copy', 'Copy file/configuration', (args) => {
+      const src = args[0];
+      const dst = args[1];
+      if (!src) return '% Incomplete command.';
+      if (dst) return `${src} → ${dst}: copy complete`;
+      return `Destination filename [${src}]?\n${src} copied`;
+    });
+
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
     trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
@@ -591,8 +599,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
+      if (sub === 'monitor') return '';
       return CISCO_ERRORS.INVALID_INPUT;
     }
+    if (head === 'monitor') return '';
+    if (head === 'exec') return '';
     if (head === 'history') {
       // `terminal history size N` — accepted, value ignored (history is
       // capped by the session container, not by line config).
@@ -798,11 +809,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
-    // Outbound SSH client — `ssh -l <user> <host> [cmd]`. Dispatches
-    // through runSshClient so every gate (host key, sshd policy, ACLs)
-    // applies exactly as it would from a Linux origin.
     this.privilegedTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
       return this.runOutboundSshClient(args);
+    });
+    this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
+      return this.runOutboundSshClient(args);
+    });
+    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
+    });
+    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
     });
   }
 

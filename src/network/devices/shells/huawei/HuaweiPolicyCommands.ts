@@ -210,8 +210,14 @@ export function registerHuaweiPolicyDisplayCommands(
     return rp.render().join('\n');
   });
 
-  t.register('display traffic policy user-defined', 'Display traffic policies', () => {
-    const lines = getRouter().getTrafficPolicyStore().renderHuawei();
+  t.registerGreedy('display traffic policy user-defined', 'Display traffic policies', (args) => {
+    const store = getRouter().getTrafficPolicyStore();
+    if (args[0]) {
+      const pol = store.getPolicy(args[0]);
+      if (!pol) return `Info: traffic-policy ${args[0]} does not exist.`;
+      return pol.render().join('\n');
+    }
+    const lines = store.renderHuawei();
     return lines.length > 0 ? lines.join('\n') : 'Info: No traffic policy configured.';
   });
   t.register('display traffic-policy applied-record', 'Display applied traffic policies', () => {
