@@ -962,12 +962,33 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     // show spanning-tree summary | mst configuration | interface <if>
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show spanning-tree summary', 'STP summary', () =>
-        `Switch is in ${this.stpMode} mode\nRoot bridge for: none\n` +
-        `Extended system ID           is enabled\n` +
-        `Portfast Default             is disabled\n` +
-        `Name                   Blocking Listening Learning Forwarding STP Active\n` +
-        `---------------------- -------- --------- -------- ---------- ----------`);
+      t.register('show spanning-tree summary', 'STP summary', () => {
+        const sw = this.d();
+        const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+        const stpStates = sw._getSTPStates();
+        const root = agent?.getRootBridge();
+        const myBridgeId = agent?.getConfig?.()?.bridgeId ?? sw.getMACAddress().toString();
+        const isRoot = root?.mac === myBridgeId;
+        const rootForVlan = isRoot ? 'VLAN0001' : 'none';
+        let blocking = 0, listening = 0, learning = 0, forwarding = 0;
+        for (const state of stpStates.values()) {
+          if (state === 'blocking') blocking++;
+          else if (state === 'listening') listening++;
+          else if (state === 'learning') learning++;
+          else if (state === 'forwarding') forwarding++;
+        }
+        const total = blocking + listening + learning + forwarding;
+        return [
+          `Switch is in ${this.stpMode} mode`,
+          `Root bridge for: ${rootForVlan}`,
+          `Extended system ID           is enabled`,
+          `Portfast Default             is disabled`,
+          ``,
+          `Name                   Blocking Listening Learning Forwarding STP Active`,
+          `---------------------- -------- --------- -------- ---------- ----------`,
+          `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
+        ].join('\n');
+      });
       t.register('show spanning-tree mst configuration', 'MST region config', () =>
         this.showMstConfig());
       t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {

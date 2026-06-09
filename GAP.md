@@ -935,11 +935,11 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 - **Sévérité** : Mineure
 - **Recommandation** : calculer le résumé à partir de `socketTable.getAll()` (compter par protocole/état) plutôt que de coder les nombres en dur ; le chemin de repli ne devrait être atteint qu'en l'absence de table — documenter ce cas comme dégradé volontaire.
 
-### 8.6 Cron / at — état stocké mais jamais « tiqué » (pas d'ordonnancement réel)
+### 8.6 Cron / at — état stocké mais jamais « tiqué » (pas d'ordonnancement réel) — ✅ CORRIGÉ
 - **Constat** : `LinuxCronManager` (164 lignes) implémente un parseur d'expression cron correct (`CronSchedule.isDue`, `dueJobs`), mais **rien ne consomme `dueJobs()` au fil du temps simulé** : la seule invocation se produit au moment de l'installation d'une nouvelle crontab (`crontab -`), et même là, elle se contente de **journaliser** « (user) CMD (...) » sans exécuter réellement la commande planifiée. Aucun lien avec `src/events/Scheduler`.
 - **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2622-2629` (seul site d'appel de `cron.dueJobs()`, qui se contente de `logMgr.logDaemon('CRON', ...)`) ; `LinuxCronManager.ts:151-154` (`dueJobs`) jamais référencé ailleurs.
-- **Sévérité** : Majeure
-- **Recommandation** : brancher `LinuxCronManager` sur le `Scheduler`/l'horloge simulée du device pour déclencher réellement `dueJobs()` à chaque « minute » simulée et exécuter la commande via `LinuxCommandExecutor.execute()` (avec effets de bord visibles dans `journalctl`/VFS), à l'image de ce qui est fait pour `cmd &` (`handleBackgroundIfTrailing`, `LinuxCommandExecutor.ts:1159-1169`).
+- **Sévérité** : Majeure — ✅ CORRIGÉ
+- **Correction appliquée** : `src/network/devices/LinuxMachine.ts` — ajout d'un `cronTimer: symbol | null` ; `startCronTicker()` programmé à la fin du constructeur via `this.hostTimers.setInterval(() => this.tickCron(), 60_000)` ; `tickCron()` vérifie `isServiceActive('cron')`, appelle `this.executor.cron.dueJobs()` et exécute chaque commande due via `this.executor.execute(job.command)` avec emprunt temporaire des UID/GID/CWD du propriétaire du job. Les effets de bord (écriture VFS, logs) sont donc réels et observables.
 
 - **Constat** : la file `at` est documentée comme volontairement inerte — « the simulator does not fire jobs on a timer » — confirmant l'absence générale d'ordonnancement temporisé pour les tâches utilisateur (cron + at).
 - **Preuve** : `src/network/devices/linux/jobs/LinuxAtQueue.ts:7`.
@@ -993,13 +993,13 @@ L'ensemble PowerShell/Windows est dans un état de **migration architecturale ac
 
 - **Constat** : Bug latent — `$Error` n'est alimenté que par les exceptions terminantes capturées dans `execTry` (`this.global.set('Error', ...)`), tandis que les erreurs *non terminantes* émises via `ctx.emitError()` sont accumulées dans un tableau séparé `self.errorObjects` jamais fusionné dans la variable globale `$Error`. Résultat : `Get-Item C:\NoExist -ErrorAction SilentlyContinue; $Error[0].Exception.Message` ne renvoie rien.
 - **Preuve** : `src/powershell/runtime/PSRuntime.ts:1656` (`this.global.set('Error', [errRecord, ...errList])`) vs `:2376-2380` (`self.errorObjects.push({...})`, jamais reporté vers `global.Error`); test correspondant désactivé : `src/__tests__/unit/powershell/ps_machine_level.test.ts:748` (`it.skip('$Error contains last error after non‑terminating error'`).
-- **Sévérité** : Majeure
-- **Recommandation** : Fusionner `errorObjects` dans `global.Error` à chaque `emitError`, ou unifier les deux mécanismes derrière un seul accumulateur.
+- **Sévérité** : Majeure — ✅ CORRIGÉ
+- **Correction appliquée** : `src/powershell/runtime/PSRuntime.ts` — `emitError` prepend désormais l'objet erreur dans `env.get('Error')` (liste `$Error` globale, ordre newest-first conforme PS), et consulte `$ErrorActionPreference` quand aucun `-ErrorAction` explicite n'est fourni.
 
 - **Constat** : `-ErrorAction Stop` n'est pas traité spécialement — il est simplement extrait des paramètres communs (`delete cmdletNamed['erroraction']`) sans jamais transformer une erreur non terminante en exception levée. Donc `try { Get-Content C:\ghost.txt -ErrorAction Stop } catch { ... }` ne peut pas fonctionner puisque le cmdlet appelle `ctx.emitError` (non bloquant) et retourne normalement.
 - **Preuve** : `src/powershell/runtime/PSRuntime.ts:2259-2304` (aucune branche `errorAction === 'stop'`); test désactivé : `src/__tests__/unit/powershell/ps_machine_level.test.ts:756` (`it.skip('try/catch catches file not found and writes custom error'`).
-- **Sévérité** : Majeure
-- **Recommandation** : Quand `-ErrorAction Stop` est positionné, convertir le premier appel à `ctx.emitError` en exception `PSRuntimeError` propagée (sémantique « erreur terminante »).
+- **Sévérité** : Majeure — ✅ CORRIGÉ
+- **Correction appliquée** : `src/powershell/runtime/PSRuntime.ts` — `dispatchCmdlet` dérive `stopOnError` depuis `effectiveAction === 'stop'` et le passe à `buildCmdletContext` ; `emitError` lève `new PSRuntimeError(msg)` quand `stopOnError` est actif, convertissant l'erreur non terminante en exception propageable par `try/catch`.
 
 - **Constat** : Le moteur de pipeline « legacy » est entièrement dupliqué : `src/network/devices/windows/PSPipeline.ts` réimplémente `Where-Object`/`Select-Object`/`Sort-Object`/`Measure-Object`/`Format-Table`/`Format-List` à coups de regex sur arguments-chaîne et de parsing de tables texte (`parseTable`), alors que la même fonctionnalité existe en version AST/objet propre dans `src/powershell/cmdlets/core/CollectionCmdlets.ts` (15 classes `ICmdlet`).
 - **Preuve** : `src/network/devices/windows/PSPipeline.ts:254` (`whereObject`), `:580` (`formatTable`), `:40` (`parseTable` — reconstruit des objets à partir d'une table texte pré-formatée, signe d'un pipeline texte déguisé en « objet »); doublon AST : `src/powershell/cmdlets/core/CollectionCmdlets.ts:102,232,312,409,485,660,689` (`WhereObjectCmdlet`, `ForEachObjectCmdlet`, `SelectObjectCmdlet`, `SortObjectCmdlet`, `MeasureObjectCmdlet`, `FormatTableCmdlet`, `FormatListCmdlet`).
@@ -1089,11 +1089,11 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure
 - **Recommandation** : Mettre à jour le BRD pour refléter l'architecture réelle (verrouillage/transactions Oracle-only), ou extraire une interface générique si une réutilisation multi-SGBD reste un objectif.
 
-### 10.2 EXPLAIN PLAN — sortie templée, pas de CBO
+### 10.2 EXPLAIN PLAN — sortie templée, pas de CBO — ✅ CORRIGÉ
 - **Constat** : Il n'existe aucun `OracleOptimizer.ts` (pourtant prévu au BRD comme "CBO — Cost-Based Optimizer"). `EXPLAIN PLAN` produit systématiquement `TABLE ACCESS FULL` quel que soit le nombre d'index réels sur la table, et le coût est une simple fonction du `rowCount` stocké.
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:2801-2862` (`executeExplainPlan` — `addStep('TABLE ACCESS FULL', tableName…)` est appelé inconditionnellement aux lignes 2831 et 2833, sans jamais consulter `storage.getIndexes`); absence de `src/database/oracle/OracleOptimizer.ts`.
-- **Sévérité** : Majeure
-- **Recommandation** : Faire dépendre le plan de la présence d'index (`TABLE ACCESS BY INDEX ROWID` / `INDEX RANGE SCAN`) pour que `EXPLAIN PLAN` reflète l'état réel du catalogue, conformément à la promesse "Real engine/storage state, not canned text".
+- **Sévérité** : Majeure — ✅ CORRIGÉ
+- **Correction appliquée** : `src/database/oracle/OracleExecutor.ts:executeExplainPlan` — quand `_db.planGenerator` est disponible (cas normal depuis `OracleDatabase.setDatabaseRef`), délègue directement à `PlanGenerator.generate(innerStmt, …)` — qui consulte réellement `storage.getIndexes()` pour choisir `TABLE ACCESS BY INDEX ROWID` + `INDEX RANGE SCAN` ou `TABLE ACCESS FULL` selon la présence d'un index utilisable sur les colonnes du WHERE. Les jointures utilisent `NESTED LOOPS` ou `HASH JOIN` selon le cardinalité. L'ancien code « toujours TABLE ACCESS FULL » est conservé uniquement comme fallback quand `_db` est absent (tests unitaires isolés).
 
 ### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire
 - **Constat** : `BaseStorage`/`OracleStorage` gèrent bien des `IndexMeta` (création/suppression/listing), mais aucune structure de données indexée n'accélère les lectures : toutes les requêtes passent par `storage.getRows(schema, table)` puis un filtrage JS linéaire. `getIndexes` n'est utilisé que pour vérifier l'unicité de noms ou alimenter les vues de catalogue.

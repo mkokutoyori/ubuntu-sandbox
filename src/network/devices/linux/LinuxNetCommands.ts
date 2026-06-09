@@ -111,22 +111,52 @@ export function cmdNetstat(
   const ifaces  = hasFlag('i') || args.includes('--interfaces');
 
   if (routing) {
-    return [
+    const header = [
       'Kernel IP routing table',
       'Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface',
-      '0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0',
-      '10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0',
-      '127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo',
-    ].join('\n');
+    ];
+    const rows: string[] = [];
+    if (ctx) {
+      for (const r of ctx.getRoutingTable()) {
+        const dest = r.type === 'default' ? '0.0.0.0' : r.network;
+        const gw   = r.nextHop ?? '0.0.0.0';
+        const mask = cidrToMask(r.cidr);
+        const flags = (r.type === 'default' || r.nextHop) ? 'UG' : 'U';
+        rows.push(
+          `${dest.padEnd(16)}${gw.padEnd(16)}${mask.padEnd(16)}${flags.padEnd(8)}0 0          0 ${r.iface}`,
+        );
+      }
+      rows.push('127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo');
+    } else {
+      rows.push('0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0');
+      rows.push('10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0');
+      rows.push('127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo');
+    }
+    return [...header, ...rows].join('\n');
   }
 
   if (ifaces) {
-    return [
+    const header = [
       'Kernel Interface table',
       'Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg',
-      'eth0      1500     1024      0      0 0           512      0      0      0 BMRU',
-      'lo       65536      128      0      0 0           128      0      0      0 LRU',
-    ].join('\n');
+    ];
+    const rows: string[] = [];
+    if (ctx) {
+      for (const name of ctx.getInterfaceNames()) {
+        const info = ctx.getInterfaceInfo(name);
+        if (!info) continue;
+        const mtu = String(info.mtu).padStart(7);
+        const rx  = String(info.counters.framesIn).padStart(8);
+        const tx  = String(info.counters.framesOut).padStart(9);
+        const flags = info.isUp ? (info.isConnected ? 'BMRU' : 'BMU') : 'BMU';
+        rows.push(`${name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
+      }
+      rows.push(`lo        65536      128      0      0 0           128      0      0      0 LRU`);
+    } else {
+      rows.push('eth0      1500     1024      0      0 0           512      0      0      0 BMRU');
+      rows.push('lo       65536      128      0      0 0           128      0      0      0 LRU');
+    }
+    return [...header, ...rows].join('\n');
   }
 
   // Determine which protocols to show (no -t/-u → show both)
@@ -426,4 +456,11 @@ export function cmdWget(args: string[]): string {
     `Resolving ${host}... failed: Temporary failure in name resolution.`,
     `wget: unable to resolve host address '${host}'`,
   ].join('\n');
+}
+
+function cidrToMask(cidr: number): string {
+  if (cidr <= 0) return '0.0.0.0';
+  if (cidr >= 32) return '255.255.255.255';
+  const mask = (~0 << (32 - cidr)) >>> 0;
+  return [(mask >>> 24) & 0xff, (mask >>> 16) & 0xff, (mask >>> 8) & 0xff, mask & 0xff].join('.');
 }

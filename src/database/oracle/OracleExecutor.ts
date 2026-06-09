@@ -2800,40 +2800,47 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
     const innerStmt = stmt.statement;
+    const columns: ColumnMeta[] = [
+      { name: 'ID', dataType: 'NUMBER' },
+      { name: 'OPERATION', dataType: 'VARCHAR2' },
+      { name: 'NAME', dataType: 'VARCHAR2' },
+      { name: 'ROWS', dataType: 'NUMBER' },
+      { name: 'BYTES', dataType: 'NUMBER' },
+      { name: 'COST', dataType: 'NUMBER' },
+    ];
+
+    const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
+    if (db) {
+      const plan = db.planGenerator.generate(innerStmt, '0', '', this.context.currentSchema);
+      const rows: Row[] = plan.nodes.map(n => [
+        n.id,
+        n.options ? `${n.operation} ${n.options}` : n.operation,
+        n.objectName ?? '',
+        n.cardinality,
+        n.bytes,
+        n.cost,
+      ]);
+      return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+    }
+
     const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
     let nextId = 0;
-
     const addStep = (operation: string, name: string, rows: number, cost: number) => {
       plan.push({ id: nextId++, operation, name, rows, bytes: rows * 100, cost });
     };
 
     if (innerStmt.type === 'SelectStatement') {
       const select = innerStmt as SelectStatement;
-      // Build a simulated execution plan
       if (select.from && select.from.length > 0) {
         const tableName = select.from[0].type === 'TableRef' ? select.from[0].name : 'SUBQUERY';
         const schema = (select.from[0].type === 'TableRef' ? select.from[0].schema : null) || this.context.currentSchema;
-
-        // Estimate row count
         let estimatedRows = 1000;
         const meta = this.storage.getTableMeta(schema.toUpperCase(), tableName.toUpperCase());
         if (meta) estimatedRows = meta.rowCount || 1;
-
         addStep('SELECT STATEMENT', '', estimatedRows, estimatedRows);
-
-        if (select.orderBy && select.orderBy.length > 0) {
-          addStep('SORT ORDER BY', '', estimatedRows, estimatedRows + 1);
-        }
-        if (select.groupBy && select.groupBy.length > 0) {
-          addStep('HASH GROUP BY', '', Math.ceil(estimatedRows / 10), Math.ceil(estimatedRows / 10));
-        }
-        if (select.where) {
-          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
-        } else {
-          addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
-        }
-
-        // Add JOIN steps
+        if (select.orderBy && select.orderBy.length > 0) addStep('SORT ORDER BY', '', estimatedRows, estimatedRows + 1);
+        if (select.groupBy && select.groupBy.length > 0) addStep('HASH GROUP BY', '', Math.ceil(estimatedRows / 10), Math.ceil(estimatedRows / 10));
+        addStep('TABLE ACCESS FULL', tableName.toUpperCase(), estimatedRows, estimatedRows);
         if (select.joins) {
           for (const join of select.joins) {
             const rightTable = join.table.type === 'TableRef' ? join.table.name.toUpperCase() : 'SUBQUERY';
@@ -2844,34 +2851,21 @@ export class OracleExecutor extends BaseExecutor {
       }
     } else if (innerStmt.type === 'InsertStatement') {
       const ins = innerStmt as InsertStatement;
-      const tName = ins.table.name.toUpperCase();
       addStep('INSERT STATEMENT', '', 1, 1);
-      addStep('LOAD TABLE CONVENTIONAL', tName, 1, 1);
+      addStep('LOAD TABLE CONVENTIONAL', ins.table.name.toUpperCase(), 1, 1);
     } else if (innerStmt.type === 'UpdateStatement') {
       const upd = innerStmt as UpdateStatement;
-      const tName = upd.table.name.toUpperCase();
       addStep('UPDATE STATEMENT', '', 1, 1);
-      addStep('UPDATE', tName, 1, 1);
-      addStep('TABLE ACCESS FULL', tName, 1, 1);
+      addStep('UPDATE', upd.table.name.toUpperCase(), 1, 1);
+      addStep('TABLE ACCESS FULL', upd.table.name.toUpperCase(), 1, 1);
     } else if (innerStmt.type === 'DeleteStatement') {
       const del = innerStmt as DeleteStatement;
-      const tName = del.table.name.toUpperCase();
       addStep('DELETE STATEMENT', '', 1, 1);
-      addStep('DELETE', tName, 1, 1);
-      addStep('TABLE ACCESS FULL', tName, 1, 1);
+      addStep('DELETE', del.table.name.toUpperCase(), 1, 1);
+      addStep('TABLE ACCESS FULL', del.table.name.toUpperCase(), 1, 1);
     }
 
-    // Return as a result set mimicking DBMS_XPLAN.DISPLAY_CURSOR output
-    const columns: ColumnMeta[] = [
-      { name: 'ID', dataType: 'NUMBER' },
-      { name: 'OPERATION', dataType: 'VARCHAR2' },
-      { name: 'NAME', dataType: 'VARCHAR2' },
-      { name: 'ROWS', dataType: 'NUMBER' },
-      { name: 'BYTES', dataType: 'NUMBER' },
-      { name: 'COST', dataType: 'NUMBER' },
-    ];
     const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
-
     return { columns, rows, rowCount: rows.length, message: 'Explained.' };
   }
 

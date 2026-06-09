@@ -167,6 +167,40 @@ export abstract class LinuxMachine extends EndHost {
         this.getSshServerHandler().register(socket, socket.remoteIp);
       },
     });
+
+    // 7. Cron daemon ticker — fires due jobs every simulated minute.
+    this.startCronTicker();
+  }
+
+  private cronTimer: symbol | null = null;
+
+  private startCronTicker(): void {
+    if (this.cronTimer !== null) return;
+    this.cronTimer = this.hostTimers.setInterval(() => this.tickCron(), 60_000);
+  }
+
+  private tickCron(): void {
+    if (!this.isServiceActive('cron')) return;
+    const due = this.executor.cron.dueJobs();
+    for (const job of due) {
+      const um = this.executor.userMgr;
+      const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.cwd };
+      const userEntry = um.getUser(job.user);
+      if (userEntry) {
+        um.currentUser = job.user;
+        um.currentUid = userEntry.uid;
+        um.currentGid = userEntry.gid;
+        this.executor.cwd = userEntry.home ?? `/home/${job.user}`;
+      }
+      try {
+        this.executor.execute(job.command);
+      } finally {
+        um.currentUser = prev.user;
+        um.currentUid = prev.uid;
+        um.currentGid = prev.gid;
+        this.executor.cwd = prev.cwd;
+      }
+    }
   }
 
   /**

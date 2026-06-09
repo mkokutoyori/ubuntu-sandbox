@@ -2341,17 +2341,111 @@ export class LinuxCommandExecutor {
       case 'md5sum':
       case 'sha256sum':
       case 'sha1sum': {
-        const target = args.filter(a => !a.startsWith('-'))[0];
-        if (!target) return { output: `${cmd}: missing file operand`, exitCode: 1 };
-        const hash = Array.from({length: cmd === 'sha256sum' ? 64 : 32}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        return { output: `${hash}  ${target}`, exitCode: 0 };
+        const checkMode = args.includes('-c') || args.includes('--check');
+        const targets = args.filter(a => !a.startsWith('-'));
+        if (!targets.length) return { output: `${cmd}: missing file operand`, exitCode: 1 };
+        const hashLen = cmd === 'sha256sum' ? 64 : cmd === 'sha1sum' ? 40 : 32;
+        if (checkMode) {
+          const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
+          if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
+          const lines = checksumFile.split('\n').filter(l => l.trim());
+          const results: string[] = [];
+          let failed = 0;
+          for (const line of lines) {
+            const m = line.match(/^([0-9a-f]+)\s+(.+)$/);
+            if (!m) continue;
+            const [, expectedHash, filePath] = m;
+            const content = this.vfs.readFile(this.vfs.normalizePath(filePath, this.cwd));
+            if (content === null) { results.push(`${filePath}: FAILED open or read`); failed++; continue; }
+            const actual = checksumVfs(content, expectedHash.length);
+            if (actual === expectedHash) results.push(`${filePath}: OK`);
+            else { results.push(`${filePath}: FAILED`); failed++; }
+          }
+          if (failed) results.push(`${cmd}: WARNING: ${failed} computed checksum did NOT match`);
+          return { output: results.join('\n'), exitCode: failed ? 1 : 0 };
+        }
+        const lines: string[] = [];
+        for (const target of targets) {
+          const resolved = this.vfs.normalizePath(target, this.cwd);
+          const content = this.vfs.readFile(resolved);
+          if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
+          lines.push(`${checksumVfs(content, hashLen)}  ${target}`);
+        }
+        return { output: lines.join('\n'), exitCode: 0 };
       }
-      case 'tar': return { output: '', exitCode: 0 };
-      case 'gzip':
-      case 'gunzip':
-      case 'zip':
-      case 'unzip':
+      case 'tar': {
+        const createMode = args.includes('-c') || args.includes('--create');
+        const extractMode = args.includes('-x') || args.includes('--extract');
+        const fIdx = args.findIndex(a => a === '-f' || a === '--file');
+        const archivePath = fIdx !== -1 ? args[fIdx + 1] : args.find(a => !a.startsWith('-'));
+        if (createMode && archivePath) {
+          const sources = args.filter((a, i) => !a.startsWith('-') && i !== fIdx + 1);
+          const manifest = sources.map(s => {
+            const content = this.vfs.readFile(this.vfs.normalizePath(s, this.cwd));
+            return content !== null ? `${s}: ${content.length} bytes` : `${s}: (not found)`;
+          }).join('\n');
+          const resolved = this.vfs.normalizePath(archivePath, this.cwd);
+          this.vfs.writeFile(resolved, `TAR_ARCHIVE\n${manifest}`, 0, 0, 0o644);
+        } else if (extractMode && archivePath) {
+          const resolved = this.vfs.normalizePath(archivePath, this.cwd);
+          const content = this.vfs.readFile(resolved);
+          if (content === null) return { output: `tar: ${archivePath}: Cannot open: No such file or directory`, exitCode: 1 };
+        }
         return { output: '', exitCode: 0 };
+      }
+      case 'gzip': {
+        const target = args.filter(a => !a.startsWith('-'))[0];
+        if (target) {
+          const resolved = this.vfs.normalizePath(target, this.cwd);
+          const content = this.vfs.readFile(resolved);
+          if (content !== null) {
+            const compressed = this.vfs.normalizePath(target + '.gz', this.cwd);
+            this.vfs.writeFile(compressed, `GZIP:${content.length}`, 0, 0, 0o644);
+            if (!args.includes('-k') && !args.includes('--keep')) this.vfs.deleteFile(resolved);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'gunzip': {
+        const target = args.filter(a => !a.startsWith('-'))[0];
+        if (target) {
+          const resolved = this.vfs.normalizePath(target, this.cwd);
+          const content = this.vfs.readFile(resolved);
+          if (content !== null && content.startsWith('GZIP:')) {
+            const outPath = target.endsWith('.gz')
+              ? this.vfs.normalizePath(target.slice(0, -3), this.cwd)
+              : this.vfs.normalizePath(target + '.ungz', this.cwd);
+            this.vfs.writeFile(outPath, `(decompressed from ${target})`, 0, 0, 0o644);
+            if (!args.includes('-k') && !args.includes('--keep')) this.vfs.deleteFile(resolved);
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'zip': {
+        const zipArgs = args.filter(a => !a.startsWith('-'));
+        const archivePath = zipArgs[0];
+        if (archivePath) {
+          const sources = zipArgs.slice(1);
+          const manifest = sources.map(s => {
+            const content = this.vfs.readFile(this.vfs.normalizePath(s, this.cwd));
+            return content !== null ? `  adding: ${s} (stored 0%)` : `zip: ${s}: No such file or directory`;
+          }).join('\n');
+          const resolved = this.vfs.normalizePath(archivePath.endsWith('.zip') ? archivePath : archivePath + '.zip', this.cwd);
+          this.vfs.writeFile(resolved, `ZIP_ARCHIVE\n${manifest}`, 0, 0, 0o644);
+          return { output: manifest, exitCode: 0 };
+        }
+        return { output: '', exitCode: 0 };
+      }
+      case 'unzip': {
+        const target = args.filter(a => !a.startsWith('-'))[0];
+        if (target) {
+          const resolved = this.vfs.normalizePath(target, this.cwd);
+          const content = this.vfs.readFile(resolved);
+          if (content === null) return { output: `unzip: cannot find or open ${target}`, exitCode: 1 };
+          return { output: `Archive:  ${target}\n  inflating: (simulated)`, exitCode: 0 };
+        }
+        return { output: '', exitCode: 0 };
+      }
       case 'scp':
       case 'sftp':
       case 'rsync': {
@@ -3834,6 +3928,21 @@ function simpleTokenize(input: string): string[] {
   }
   if (buf) out.push(buf);
   return out;
+}
+
+function checksumVfs(content: string, hashLen: number): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) {
+    h ^= content.charCodeAt(i);
+    h = (Math.imul(h, 0x01000193) >>> 0);
+  }
+  const seed = h >>> 0;
+  const hex: string[] = [];
+  for (let i = 0; i < hashLen; i++) {
+    const nibble = (seed * (i + 1) * 0x9e3779b9 >>> (28 - (i % 28))) & 0xf;
+    hex.push(nibble.toString(16));
+  }
+  return hex.join('');
 }
 
 function basenameOf(path: string): string {
