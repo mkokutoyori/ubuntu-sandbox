@@ -45,6 +45,12 @@ describe('renderSecretField (enable secret / username secret)', () => {
     expect(renderSecretField('$9$abcdefghijklmn$0123', 'sha256')).toBe('9 $9$abcdefghijklmn$0123');
   });
 
+  it('hashes a plaintext scrypt secret with real type-9', () => {
+    const out = renderSecretField('cisco', 'scrypt');
+    expect(out).toMatch(/^9 \$9\$[./0-9A-Za-z]{14}\$[./0-9A-Za-z]{43}$/);
+    expect(out).not.toContain(' cisco');
+  });
+
   it('renders a plaintext (type 0) secret verbatim', () => {
     expect(renderSecretField('cisco', 'plain')).toBe('0 cisco');
   });

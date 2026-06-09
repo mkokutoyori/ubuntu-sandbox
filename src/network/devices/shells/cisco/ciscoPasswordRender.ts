@@ -8,9 +8,9 @@
  * algorithms in `@/crypto`, so the simulator stops leaking plaintext.
  */
 
-import { md5Crypt, ciscoType8, encryptType7, md5Hex } from '@/crypto';
+import { md5Crypt, ciscoType8, ciscoType9, encryptType7, md5Hex } from '@/crypto';
 
-export type SecretAlgo = 'plain' | 'md5' | 'sha256' | 'type-7';
+export type SecretAlgo = 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
 
 /** Map a modular-crypt prefix to the Cisco "type" number IOS prints for it. */
 function cryptPrefixType(value: string): number | null {
@@ -33,8 +33,9 @@ export function renderSecretField(value: string, algo: SecretAlgo): string {
     case 'md5':
       return `5 ${md5Crypt(value, deriveCryptSalt(value))}`;
     case 'sha256':
-      // type-8 (PBKDF2-HMAC-SHA256). type-9 (scrypt) is not modelled yet.
-      return `8 ${ciscoType8(value, deriveType8Salt(value))}`;
+      return `8 ${ciscoType8(value, deriveType8Salt(value))}`; // PBKDF2-HMAC-SHA256
+    case 'scrypt':
+      return `9 ${ciscoType9(value, deriveType9Salt(value))}`;
     case 'type-7':
       return `7 ${value}`;
     default:
@@ -68,6 +69,11 @@ function deriveCryptSalt(seed: string): string {
 /** Deterministic 14-char type-8 salt (hex is a subset of the crypt alphabet). */
 function deriveType8Salt(seed: string): string {
   return md5Hex(`cisco-type8:${seed}`).slice(0, 14);
+}
+
+/** Deterministic 14-char type-9 (scrypt) salt. */
+function deriveType9Salt(seed: string): string {
+  return md5Hex(`cisco-type9:${seed}`).slice(0, 14);
 }
 
 /** Deterministic type-7 key offset in [0, 15] derived from the secret. */
