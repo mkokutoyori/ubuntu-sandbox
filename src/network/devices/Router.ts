@@ -67,6 +67,7 @@ import {
   DeviceType,
   IPv6Address, IPv6Packet,
 } from '../core/types';
+import type { IIPv4Route } from '../core/interfaces';
 import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
@@ -106,14 +107,11 @@ export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslatio
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
-export interface RouteEntry {
-  network: IPAddress;
-  mask: SubnetMask;
-  nextHop: IPAddress | null;
-  iface: string;
-  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
-  ad: number;
-  metric: number;
+/**
+ * A router's IPv4 routing-table entry — the canonical IIPv4Route
+ * (network/mask/nextHop/iface/type/ad/metric) plus router-only annotations.
+ */
+export interface RouteEntry extends IIPv4Route {
   preference?: number;
   tag?: number;
   description?: string;
