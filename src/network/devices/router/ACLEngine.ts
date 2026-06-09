@@ -5,8 +5,19 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
-import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket, ICMPPacket } from '../../core/types';
+import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
+
+const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
+  default: 0, cs0: 0, cs1: 8, cs2: 16, cs3: 24, cs4: 32, cs5: 40, cs6: 48, cs7: 56,
+  af11: 10, af12: 12, af13: 14, af21: 18, af22: 20, af23: 22,
+  af31: 26, af32: 28, af33: 30, af41: 34, af42: 36, af43: 38, ef: 46,
+};
+
+const PRECEDENCE_KEYWORD_TO_VALUE: Record<string, number> = {
+  routine: 0, priority: 1, immediate: 2, flash: 3,
+  'flash-override': 4, critical: 5, internet: 6, network: 7,
+};
 
 const ACL_ICMP_KEYWORD_TO_TYPE: Record<string, string> = {
   'echo': 'echo-request',
@@ -286,12 +297,38 @@ export class ACLEngine {
         if (!this.portMatches(udp.destinationPort, entry.dstPort, entry.dstPortSpec)) return false;
       }
 
+      if (entry.protocol === 'tcp' && entry.tcpEstablished) {
+        const tcp = ipPkt.payload as TCPPacket | undefined;
+        const flags = tcp && tcp.type === 'tcp' ? tcp.flags : undefined;
+        if (!flags || (!flags.ack && !flags.rst)) return false;
+      }
+
       if (entry.protocol === 'icmp' && entry.icmpType) {
         const icmp = ipPkt.payload as ICMPPacket | undefined;
         const pktType = icmp && icmp.type === 'icmp' ? icmp.icmpType : undefined;
         const expected = ACL_ICMP_KEYWORD_TO_TYPE[entry.icmpType];
         if (expected !== undefined && expected !== pktType) return false;
       }
+    }
+
+    if (entry.dscp !== undefined) {
+      const want = /^\d+$/.test(entry.dscp) ? parseInt(entry.dscp, 10) : DSCP_KEYWORD_TO_VALUE[entry.dscp.toLowerCase()];
+      if (want !== undefined && ((ipPkt.tos >> 2) & 0x3f) !== want) return false;
+    }
+
+    if (entry.precedence !== undefined) {
+      const want = /^\d+$/.test(entry.precedence) ? parseInt(entry.precedence, 10) : PRECEDENCE_KEYWORD_TO_VALUE[entry.precedence.toLowerCase()];
+      if (want !== undefined && ((ipPkt.tos >> 5) & 0x7) !== want) return false;
+    }
+
+    if (entry.tos !== undefined) {
+      const want = /^\d+$/.test(entry.tos) ? parseInt(entry.tos, 10) : NaN;
+      if (!Number.isNaN(want) && (ipPkt.tos & 0xff) !== want) return false;
+    }
+
+    if (entry.fragments) {
+      const isFragment = (ipPkt.fragmentOffset > 0) || ((ipPkt.flags & 0x1) !== 0);
+      if (!isFragment) return false;
     }
 
     return true;
