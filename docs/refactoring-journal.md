@@ -95,3 +95,64 @@ Non-régression : 252 fichiers / 6571 tests network-v2 passent.
 DHCP vers de vraies trames broadcast UDP 67/68.
 
 ---
+
+## Lot 2 — Résolution DNS par le vrai réseau (UDP/53)
+
+**Défaillance corrigée : D2.**
+
+Avant : `dig`, `nslookup`, `host` (Linux **et** Windows) et la résolution de
+noms de `ping`/`traceroute`/`tracert` interrogeaient **directement l'objet
+`DnsService` du serveur en mémoire** via `findDnsServerByIP()` (parcours du
+registre global d'équipements). La résolution « fonctionnait » câble
+débranché, démon arrêté, sans route ni ARP.
+
+**Correction :**
+- Nouveau module protocole `src/network/dns/` (pattern des autres protocoles) :
+  - `types.ts` — messages filaires (`DnsQueryMessage`/`DnsResponseMessage`,
+    transaction ID RFC 1035 §4.1.1, rcodes symboliques `NOERROR`/`NXDOMAIN`/…).
+  - `DnsServerEndpoint.ts` — lie la base d'enregistrements (le `DnsService`
+    dnsmasq existant, conservé tel quel) au port UDP/53 de l'hôte. Démarré /
+    arrêté en phase avec le cycle de vie du démon (`DnsService.onStateChange`,
+    nouveau hook observer) ; la `SocketTable` est synchronisée pour que
+    `ss`/`netstat` montrent udp/53.
+  - `DnsClient.ts` — stub resolver asynchrone : requête UDP/53 réelle
+    (routage + ARP + trames), corrélation par transaction ID, timeout via
+    scheduler, détection « connection refused » par l'erreur ICMP Port
+    Unreachable renvoyée quand le démon est arrêté.
+- **Un seul client pour les deux OS** : `EndHost.getDnsClient()` (lazy) —
+  supprime la duplication de la logique de résolution entre `LinuxMachine`
+  et `WindowsPC`.
+- `executeDig`/`executeNslookup`/`executeHost` deviennent asynchrones et
+  reçoivent une fonction `DnsLookup` injectée (inversion de dépendance —
+  testable sans topologie). `findDnsServerByIP()` est **supprimé**.
+- `LinuxNetKernel.resolveHostname` et `WinCommandContext.resolveHostname`
+  deviennent asynchrones ; ordre NSS préservé (IP littérale → fichier hosts →
+  DNS), et le resolver Linux lit désormais **tous** les `nameserver` de
+  `/etc/resolv.conf` dans l'ordre (avant : seulement le premier).
+- Sémantique RFC 2308 côté serveur : nom inexistant → `NXDOMAIN` ; nom
+  existant sans enregistrement du type demandé → `NOERROR` réponse vide.
+- Correction au passage : `nslookup domaine serveur` ignore maintenant le
+  resolver configuré quand un serveur explicite est donné (comportement réel ;
+  l'ancien code ne permettait pas de surcharger le serveur).
+
+**Comportements réels gagnés :** dig vers un serveur dont le démon est coupé →
+« connection refused » (via ICMP type 3 code 3) ; câble débranché → timeout
+réel ; serveur sans route → échec ; le trafic DNS est visible comme trames
+UDP sur le réseau simulé.
+
+**Fichiers :** `src/network/dns/{types,DnsClient,DnsServerEndpoint}.ts`,
+`LinuxDnsService.ts` (réécrit), `EndHost.ts`, `LinuxMachine.ts`,
+`WindowsPC.ts`, `LinuxNetKernel.ts`, `LinuxCommandContext.ts`,
+`commands/dns/{Dig,Nslookup,Host}.ts`, `commands/net/{Ping,Traceroute}.ts`,
+`windows/{WinPing,WinTracert,WinCommandExecutor}.ts`.
+
+**Tests :** nouveau `dns-over-udp.test.ts` (8 cas de réalisme) ; la suite TDD
+existante `nslookup-skeleton1.test.ts` (44 cas) passe sans modification sur le
+nouveau chemin réseau ; `hosts-file.test.ts` adapté à l'API asynchrone.
+
+**Limites restantes (documentées, non corrigées dans ce lot) :**
+- `DnsNssSource` (getent) parcourt encore le registre d'équipements — choix
+  documenté dans son en-tête pour simuler un LAN auto-résolu.
+- DHCP (D3) reste en god-mode — prochain chantier potentiel.
+
+---

@@ -2,28 +2,25 @@
  * LinuxDnsService - Simulated DNS server (dnsmasq) and client tools (dig, nslookup, host)
  *
  * Implements:
- *   - dnsmasq config parsing and DNS record storage
+ *   - dnsmasq config parsing and DNS record storage (`DnsService`)
  *   - dig command (Linux DNS lookup utility)
  *   - nslookup command (cross-platform DNS lookup)
  *   - host command (simple DNS lookup)
  *
- * DNS resolution is simulated by directly looking up records on the target DNS
- * server device (found via the Equipment registry), bypassing actual packet-level
- * DNS protocol — just like the existing ping implementation that calls
- * executePingSequence() synchronously.
+ * Resolution goes through the real simulated network: the command layer
+ * receives a `DnsLookup` function (backed by `DnsClient`) that sends an
+ * actual UDP/53 query through routing + ARP and awaits the server's answer.
+ * The server side is `DnsServerEndpoint`, bound to UDP/53 whenever the
+ * dnsmasq `DnsService` is running. Unplugged cables, stopped daemons and
+ * missing routes now fail name resolution exactly like on real machines.
  */
 
-import { Equipment } from '../../equipment/Equipment';
+import { DNS_PORT, type DnsRecord } from '../../dns/types';
+import type { DnsLookup } from '../../dns/DnsClient';
 
-// ─── DNS Record Types ──────────────────────────────────────────────
-
-export interface DnsRecord {
-  name: string;
-  type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
-  value: string;
-  ttl: number;
-  priority?: number; // For MX records
-}
+// Re-export so existing importers keep working — the wire-level home of
+// these types is src/network/dns/types.ts.
+export type { DnsRecord, DnsRecordType } from '../../dns/types';
 
 // ─── DNS Service (runs on a LinuxPC acting as DNS server) ─────────
 
@@ -31,10 +28,39 @@ export class DnsService {
   /** All DNS records served by this instance */
   private records: DnsRecord[] = [];
   private running = false;
+  private readonly stateListeners: Array<(running: boolean) => void> = [];
 
-  start(): void { this.running = true; }
-  stop(): void { this.running = false; }
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.notifyStateChange();
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.notifyStateChange();
+  }
+
   isRunning(): boolean { return this.running; }
+
+  /**
+   * Observe start/stop transitions — used by the host to open/close the
+   * UDP/53 endpoint in step with the daemon lifecycle.
+   */
+  onStateChange(listener: (running: boolean) => void): () => void {
+    this.stateListeners.push(listener);
+    return () => {
+      const index = this.stateListeners.indexOf(listener);
+      if (index !== -1) this.stateListeners.splice(index, 1);
+    };
+  }
+
+  private notifyStateChange(): void {
+    for (const listener of [...this.stateListeners]) {
+      try { listener(this.running); } catch { /* listener must not break the daemon */ }
+    }
+  }
 
   addRecord(record: DnsRecord): void {
     this.records.push(record);
@@ -146,28 +172,13 @@ export class DnsService {
   getAllRecords(): DnsRecord[] { return [...this.records]; }
 }
 
-// ─── Find DNS server device by IP ────────────────────────────────
-
-export function findDnsServerByIP(serverIP: string): DnsService | null {
-  for (const eq of Equipment.getAllEquipment()) {
-    // Check if this equipment has a matching IP and a DNS service
-    const ports = (eq as any).ports as Map<string, any> | undefined;
-    if (!ports) continue;
-    for (const [, port] of ports) {
-      const ip = port.getIPAddress?.();
-      if (ip && ip.toString() === serverIP) {
-        // Found the device, check if it has a DNS service
-        const dns = (eq as any).dnsService as DnsService | undefined;
-        if (dns && dns.isRunning()) return dns;
-      }
-    }
-  }
-  return null;
-}
-
 // ─── dig command implementation ──────────────────────────────────
 
-export function executeDig(args: string[], resolverIP?: string): string {
+export async function executeDig(
+  args: string[],
+  resolverIP: string | undefined,
+  lookup: DnsLookup,
+): Promise<string> {
   // Parse dig arguments
   let server = resolverIP || '';
   let domain = '';
@@ -176,17 +187,13 @@ export function executeDig(args: string[], resolverIP?: string): string {
   let isReverse = false;
   let noAll = false;
   let showAnswer = false;
-  let isTcp = false;
   let timeout = 5;
-  let tries = 3;
 
   for (const arg of args) {
     if (arg.startsWith('@')) {
       server = arg.slice(1);
     } else if (arg === '+short') {
       isShort = true;
-    } else if (arg === '+tcp') {
-      isTcp = true;
     } else if (arg === '+noall') {
       noAll = true;
     } else if (arg === '+answer') {
@@ -195,8 +202,6 @@ export function executeDig(args: string[], resolverIP?: string): string {
       isReverse = true;
     } else if (arg.startsWith('+time=')) {
       timeout = parseInt(arg.slice(6), 10);
-    } else if (arg.startsWith('+tries=')) {
-      tries = parseInt(arg.slice(7), 10);
     } else if (['A', 'AAAA', 'MX', 'TXT', 'CNAME', 'NS', 'SOA', 'PTR', 'ANY'].includes(arg.toUpperCase())) {
       qtype = arg.toUpperCase();
     } else if (!arg.startsWith('+') && !arg.startsWith('-') && arg.includes('.')) {
@@ -216,23 +221,27 @@ export function executeDig(args: string[], resolverIP?: string): string {
   }
 
   // Validate server IP
-  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(server)) {
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(server) || server.split('.').some(o => Number(o) > 255)) {
     return '; <<>> DiG <<>> @' + server + ' ' + domain + '\n;; connection timed out; no servers could be reached';
   }
 
-  // Find the DNS server
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
+  // Send the query through the simulated network
+  const result = await lookup(server, domain, {
+    qtype, reverse: isReverse,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout * 1000 : undefined,
+  });
+
+  if (result.status === 'timeout') {
     return '; <<>> DiG <<>> ' + domain + '\n;; connection timed out; no servers could be reached';
   }
-
-  // Perform query
-  let records: DnsRecord[];
-  if (isReverse) {
-    records = dns.reverseQuery(domain);
-  } else {
-    records = dns.query(domain, qtype);
+  if (result.status === 'unreachable') {
+    return '; <<>> DiG <<>> ' + domain +
+      `\n;; communications error to ${server}#${DNS_PORT}: connection refused` +
+      '\n;; no servers could be reached';
   }
+
+  const records = result.answers;
+  const status = result.rcode;
 
   // +short format
   if (isShort) {
@@ -255,12 +264,6 @@ export function executeDig(args: string[], resolverIP?: string): string {
   const lines: string[] = [];
   lines.push(`; <<>> DiG <<>> ${domain} ${qtype}`);
   lines.push(';; global options: +cmd');
-
-  // Determine status
-  let status = 'NOERROR';
-  if (records.length === 0 && !dns.hasDomain(domain) && !isReverse) {
-    status = 'NXDOMAIN';
-  }
 
   lines.push(`;; Got answer:`);
   lines.push(`;; ->>HEADER<<- opcode: QUERY, status: ${status}, id: ${Math.floor(Math.random() * 65536)}`);
@@ -285,7 +288,7 @@ export function executeDig(args: string[], resolverIP?: string): string {
   }
 
   lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
-  lines.push(`;; SERVER: ${server}#53(${server})`);
+  lines.push(`;; SERVER: ${server}#${DNS_PORT}(${server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; MSG SIZE  rcvd: ${64 + records.length * 32}`);
 
@@ -311,19 +314,25 @@ function formatDigAnswer(r: DnsRecord): string {
 
 // ─── nslookup command implementation ─────────────────────────────
 
-export function executeNslookup(args: string[], resolverIP?: string): string {
+export async function executeNslookup(
+  args: string[],
+  resolverIP: string | undefined,
+  lookup: DnsLookup,
+): Promise<string> {
   let domain = '';
   let server = resolverIP || '';
   let qtype = 'A';
 
   // Parse nslookup args: nslookup [-type=TYPE] domain [server]
+  let domainSeen = false;
   for (const arg of args) {
     if (arg.startsWith('-type=') || arg.startsWith('-querytype=')) {
       qtype = arg.split('=')[1].toUpperCase();
-    } else if (!domain) {
+    } else if (!domainSeen) {
       domain = arg;
-    } else if (!server) {
-      server = arg;
+      domainSeen = true;
+    } else {
+      server = arg; // explicit server overrides the configured resolver
     }
   }
 
@@ -336,22 +345,24 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
     return `** server can't find ${domain}: REFUSED`;
   }
 
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
-    return `** server can't find ${domain}: REFUSED`;
+  const result = await lookup(server, domain, { qtype: isReverse ? 'PTR' : qtype, reverse: isReverse });
+  if (result.status === 'timeout') {
+    return `;; connection timed out; no servers could be reached`;
+  }
+  if (result.status === 'unreachable') {
+    return `;; communications error to ${server}#${DNS_PORT}: connection refused`;
   }
 
   const lines: string[] = [];
   lines.push(`Server:\t\t${server}`);
-  lines.push(`Address:\t${server}#53`);
+  lines.push(`Address:\t${server}#${DNS_PORT}`);
   lines.push('');
 
   if (isReverse) {
-    const records = dns.reverseQuery(domain);
-    if (records.length === 0) {
+    if (result.answers.length === 0) {
       lines.push(`** server can't find ${domain}: NXDOMAIN`);
     } else {
-      for (const r of records) {
+      for (const r of result.answers) {
         lines.push(`${domain}\tname = ${r.value}.`);
       }
     }
@@ -359,41 +370,29 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
   }
 
   // Forward lookup
+  if (result.rcode === 'NXDOMAIN') {
+    lines.push(`** server can't find ${domain}: NXDOMAIN`);
+    return lines.join('\n');
+  }
+
   if (qtype === 'MX') {
-    const records = dns.query(domain, 'MX');
     lines.push(`Non-authoritative answer:`);
-    if (records.length === 0) {
+    if (result.answers.length === 0) {
       lines.push(`*** Can't find ${domain}: No answer`);
     } else {
-      for (const r of records) {
+      for (const r of result.answers) {
         lines.push(`${domain}\tmail exchanger = ${r.priority} ${r.value}`);
       }
     }
     return lines.join('\n');
   }
 
-  if (qtype === 'AAAA') {
-    const records = dns.query(domain, 'AAAA');
-    lines.push(`Non-authoritative answer:`);
-    if (records.length === 0) {
-      lines.push(`*** Can't find ${domain}: No answer`);
-    } else {
-      lines.push(`Name:\t${domain}`);
-      for (const r of records) {
-        lines.push(`Address: ${r.value}`);
-      }
-    }
-    return lines.join('\n');
-  }
-
-  // Default A record lookup
-  const records = dns.query(domain, 'A');
   lines.push(`Non-authoritative answer:`);
-  if (records.length === 0) {
+  if (result.answers.length === 0) {
     lines.push(`*** Can't find ${domain}: No answer`);
   } else {
     lines.push(`Name:\t${domain}`);
-    for (const r of records) {
+    for (const r of result.answers) {
       lines.push(`Address: ${r.value}`);
     }
   }
@@ -403,7 +402,11 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
 
 // ─── host command implementation ─────────────────────────────────
 
-export function executeHost(args: string[], resolverIP?: string): string {
+export async function executeHost(
+  args: string[],
+  resolverIP: string | undefined,
+  lookup: DnsLookup,
+): Promise<string> {
   const domain = args[0];
   const server = args[1] || resolverIP || '';
 
@@ -413,15 +416,13 @@ export function executeHost(args: string[], resolverIP?: string): string {
     return `Host ${domain} not found: 5(REFUSED)`;
   }
 
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
+  const result = await lookup(server, domain, { qtype: 'A' });
+  if (result.status !== 'ok') {
     return `;; connection timed out; no servers could be reached`;
   }
-
-  const records = dns.query(domain, 'A');
-  if (records.length === 0) {
+  if (result.rcode === 'NXDOMAIN' || result.answers.length === 0) {
     return `Host ${domain} not found: 3(NXDOMAIN)`;
   }
 
-  return records.map(r => `${domain} has address ${r.value}`).join('\n');
+  return result.answers.map(r => `${domain} has address ${r.value}`).join('\n');
 }

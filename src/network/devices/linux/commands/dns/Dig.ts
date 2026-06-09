@@ -26,7 +26,7 @@ export const digCommand: LinuxCommand = {
     '  name          The domain name to look up.\n' +
     '  type          The query type (A, AAAA, MX, NS, etc.).',
 
-  run(ctx: LinuxCommandContext, args: string[]): string {
-    return executeDig(args, readResolverIP(ctx.executor));
+  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return executeDig(args, readResolverIP(ctx.executor), ctx.dnsLookup);
   },
 };

@@ -46,7 +46,9 @@ import type {
   IpNeighborEntry,
   IpXfrmContext,
 } from './linux/LinuxIpCommand';
-import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
+import { DnsService } from './linux/LinuxDnsService';
+import { DnsServerEndpoint } from '../dns/DnsServerEndpoint';
+import { DNS_PORT } from '../dns/types';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -110,6 +112,9 @@ export abstract class LinuxMachine extends EndHost {
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
 
+  /** UDP/53 network endpoint — bound while the dnsmasq daemon is running. */
+  private dnsEndpoint: DnsServerEndpoint | null = null;
+
   /** Configured DNS resolver IP (from /etc/resolv.conf). */
   protected dnsResolverIP = '';
 
@@ -148,6 +153,21 @@ export abstract class LinuxMachine extends EndHost {
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
+
+    // 3b. DNS daemon ↔ network endpoint: dnsmasq answering on UDP/53 only
+    //     while running, with the socket table kept in sync for netstat/ss.
+    this.dnsEndpoint = new DnsServerEndpoint(this.getUdpStack(), this.dnsService);
+    this.dnsService.onStateChange((running) => {
+      if (running) {
+        this.dnsEndpoint!.start();
+        try {
+          this.socketTable.bind('udp', '0.0.0.0', DNS_PORT, undefined, 'dnsmasq');
+        } catch { /* port row already present (e.g. systemd-resolved stub) */ }
+      } else {
+        this.dnsEndpoint!.stop();
+        this.socketTable.unbind('udp', '0.0.0.0', DNS_PORT);
+      }
+    });
 
     // 4. Command registry
     this.commands = new LinuxCommandRegistry();
@@ -620,6 +640,7 @@ export abstract class LinuxMachine extends EndHost {
       executor: this.executor,
       net: this.net,
       dnsService: this.dnsService,
+      dnsLookup: (serverIp, name, options) => this.getDnsClient().query(serverIp, name, options),
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,
@@ -923,15 +944,17 @@ export abstract class LinuxMachine extends EndHost {
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
 
-  private static resolveHostnameImpl(
-    name: string,
-    executor: LinuxCommandExecutor,
-  ): IPAddress | null {
+  /**
+   * Resolve a name following the NSS `files dns` order: literal IP →
+   * /etc/hosts → real DNS queries (UDP/53 through the simulated network)
+   * to every nameserver listed in /etc/resolv.conf, in order.
+   */
+  private async resolveHostnameImpl(name: string): Promise<IPAddress | null> {
     // 1. Already a valid IPv4 address → pass through
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
     // 2. /etc/hosts lookup (IPv4 only — the netkernel speaks IPv4).
-    const hostsContent = executor.readFile('/etc/hosts');
+    const hostsContent = this.executor.readFile('/etc/hosts');
     if (hostsContent) {
       const ip = HostsFile.parse(hostsContent).resolve(name, 4);
       if (ip) {
@@ -939,17 +962,16 @@ export abstract class LinuxMachine extends EndHost {
       }
     }
 
-    // 3. DNS fallback via /etc/resolv.conf
-    const resolvConf = executor.readFile('/etc/resolv.conf');
+    // 3. DNS fallback via /etc/resolv.conf — all nameservers, in order.
+    const resolvConf = this.executor.readFile('/etc/resolv.conf');
     if (resolvConf) {
-      const match = resolvConf.match(/nameserver\s+(\S+)/);
-      if (match) {
-        const dnsServer = findDnsServerByIP(match[1]);
-        if (dnsServer) {
-          const records = dnsServer.query(name, 'A');
-          if (records.length > 0) {
-            try { return new IPAddress(records[0].value); } catch { /* skip */ }
-          }
+      const nameservers = Array.from(
+        resolvConf.matchAll(/^\s*nameserver\s+(\S+)/gm), m => m[1],
+      );
+      if (nameservers.length > 0) {
+        const ip = await this.getDnsClient().resolveFirstA(nameservers, name);
+        if (ip) {
+          try { return new IPAddress(ip); } catch { /* malformed record */ }
         }
       }
     }
@@ -1197,8 +1219,8 @@ export abstract class LinuxMachine extends EndHost {
       extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number } {
         return self.extractPorts(pkt);
       },
-      resolveHostname(name: string): IPAddress | null {
-        return LinuxMachine.resolveHostnameImpl(name, self.executor);
+      resolveHostname(name: string): Promise<IPAddress | null> {
+        return self.resolveHostnameImpl(name);
       },
       readFile(path: string): string | null {
         return self.executor.readFile(path);

@@ -30,7 +30,6 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
-import { findDnsServerByIP } from './linux/LinuxDnsService';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -621,8 +620,31 @@ export class WindowsPC extends EndHost {
   /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.
+   * The DNS step sends real UDP/53 queries through the simulated network.
    */
-  resolveHostname(name: string): IPAddress | null {
+  async resolveHostname(name: string): Promise<IPAddress | null> {
+    // 1.–3. Local sources (literal IP, hosts file, own name).
+    const local = this.resolveHostnameLocally(name);
+    if (local) return local;
+
+    // 4. DNS fallback — query every statically/DHCP-configured server.
+    const servers: string[] = [];
+    for (const cfg of this.dnsConfig.values()) {
+      for (const server of cfg.servers) {
+        if (!servers.includes(server)) servers.push(server);
+      }
+    }
+    if (servers.length > 0) {
+      const ip = await this.getDnsClient().resolveFirstA(servers, name);
+      if (ip) {
+        try { return new IPAddress(ip); } catch { /* malformed record */ }
+      }
+    }
+    return null;
+  }
+
+  /** Synchronous part of the Windows resolver: literal IP → hosts → own name. */
+  private resolveHostnameLocally(name: string): IPAddress | null {
     // 1. Already a literal IP address.
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
@@ -635,18 +657,6 @@ export class WindowsPC extends EndHost {
     // 3. The machine's own name always resolves to loopback.
     if (name.toLowerCase() === this.hostname.toLowerCase()) {
       return new IPAddress('127.0.0.1');
-    }
-
-    // 4. DNS fallback — query every statically/DHCP-configured server.
-    for (const cfg of this.dnsConfig.values()) {
-      for (const server of cfg.servers) {
-        const dns = findDnsServerByIP(server);
-        if (!dns) continue;
-        const records = dns.query(name, 'A');
-        if (records.length > 0) {
-          try { return new IPAddress(records[0].value); } catch { /* skip */ }
-        }
-      }
     }
     return null;
   }
@@ -1314,8 +1324,7 @@ export class WindowsPC extends EndHost {
       case 'arp':      return cmdArp(netCtx, args);
       case 'getmac':   return cmdGetmac(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
-      case 'nslookup': return this.cmdNslookup(args);
-      // ping / tracert are async — no sync path.
+      // ping / tracert / nslookup are async — no sync path.
       default: return null;
     }
   }
@@ -1662,7 +1671,7 @@ export class WindowsPC extends EndHost {
   }
 
   /** nslookup command implementation for Windows */
-  private cmdNslookup(args: string[]): string {
+  private async cmdNslookup(args: string[]): Promise<string> {
     const host = args.find(a => !a.startsWith('-')) ?? '';
     // The static hosts table (including the machine's own name) is
     // answered locally, ahead of any DNS query — same order as the
@@ -1685,8 +1694,10 @@ export class WindowsPC extends EndHost {
       const servers = this.getDnsServers(ifName);
       if (servers.length > 0) { resolverIP = servers[0]; break; }
     }
-    // Allow specifying server as second argument: nslookup domain server
-    return executeNslookup(args, resolverIP);
+    // Allow specifying server as second argument: nslookup domain server.
+    // The query is a real UDP/53 exchange over the simulated network.
+    return executeNslookup(args, resolverIP,
+      (serverIp, name, options) => this.getDnsClient().query(serverIp, name, options));
   }
 
   // ─── User / Access Control ──────────────────────────────────────

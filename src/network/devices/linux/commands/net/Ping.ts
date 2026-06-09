@@ -66,7 +66,7 @@ export const pingCommand: LinuxCommand = {
 
     if (!targetStr) return 'Usage: ping [-c count] [-t ttl] [-s size] <destination>';
 
-    const targetIP = ctx.net.resolveHostname(targetStr);
+    const targetIP = await ctx.net.resolveHostname(targetStr);
     if (!targetIP) {
       return `ping: ${targetStr}: Name or service not known`;
     }

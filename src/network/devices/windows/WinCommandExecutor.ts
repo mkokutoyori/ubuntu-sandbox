@@ -125,8 +125,9 @@ export interface WinCommandContext {
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
 
-  // Hostname resolution
-  resolveHostname(name: string): IPAddress | null;
+  // Hostname resolution — literal IP and hosts file resolve locally;
+  // DNS goes over the simulated network (real UDP/53 queries).
+  resolveHostname(name: string): Promise<IPAddress | null>;
 
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;

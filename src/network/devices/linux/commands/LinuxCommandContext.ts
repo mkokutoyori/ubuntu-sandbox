@@ -17,6 +17,7 @@
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
+import type { DnsLookup } from '../../../dns/DnsClient';
 import type { IpXfrmContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
@@ -30,6 +31,12 @@ export interface LinuxCommandContext {
 
   /** DNS daemon co-located with this machine (dnsmasq). */
   readonly dnsService: DnsService;
+
+  /**
+   * Stub resolver — sends a real DNS query over UDP/53 through the
+   * simulated network and awaits the answer (dig/nslookup/host).
+   */
+  readonly dnsLookup: DnsLookup;
 
   /** XFRM SAD/SPD context for `ip xfrm` commands. */
   readonly xfrm: IpXfrmContext;

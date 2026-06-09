@@ -23,6 +23,7 @@ import { Port } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import { UdpStack } from '../udp/UdpStack';
+import { DnsClient } from '../dns/DnsClient';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -1402,6 +1403,27 @@ export abstract class EndHost extends Equipment {
 
   /** The host's UDP stack — services listen, clients send datagrams. */
   public getUdpStack(): UdpStack { return this.udpv2; }
+
+  // ─── DNS stub resolver ─────────────────────────────────────────
+
+  private dnsClientInstance: DnsClient | null = null;
+
+  /**
+   * The host's DNS stub resolver — sends real UDP/53 queries through the
+   * simulated network. Shared by Linux (dig/nslookup/host, gethostbyname)
+   * and Windows (nslookup, name resolution for ping/tracert).
+   */
+  public getDnsClient(): DnsClient {
+    if (!this.dnsClientInstance) {
+      this.dnsClientInstance = new DnsClient({
+        deviceId: this.id,
+        getUdpStack: () => this.udpv2,
+        getScheduler: () => this.getScheduler(),
+        getBus: () => this.getBus(),
+      });
+    }
+    return this.dnsClientInstance;
+  }
 
   public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
     const socket = this.tcpv2.connect(dstIp, dstPort);
