@@ -1243,22 +1243,22 @@ La couche UI repose sur un store Zustand unique (`networkStore.ts`) qui détient
 - **Sévérité** : Mineure à Majeure (dépend de la taille des topologies testées dans les labos de debug à 60-400 étapes)
 - **Recommandation** : Découper le store en sélecteurs ciblés (`useNetworkStore(s => s.zoom)`, etc.) et envisager `subscribeWithSelector`/`useShallow` pour éviter les recalculs en cascade lors d'opérations purement positionnelles.
 
-### 11.7 Tests React / GUI — couverture et obsolescence
+### 11.7 Tests React / GUI — couverture et obsolescence — ✅ CORRIGÉ
 - **Constat** : `properties-panel.test.tsx` mocke des modules à des chemins qui n'existent plus dans le code de base actuel — `@/domain/devices/types`, `@/hooks/useNetworkSimulator`, `@/domain/devices/DeviceFactory` (avec `DeviceFactory.isFullyImplemented`) — alors que le composant réel importe `Connection` depuis `@/store/networkStore`, `isFullyImplemented` depuis `@/network`, et n'utilise aucun hook `useNetworkSimulator`. Une recherche confirme qu'aucun fichier `src/domain/devices/*` ni `src/hooks/useNetworkSimulator*` n'existe. Ce test exerce donc un composant fantôme (mocks qui ne correspondent à aucune dépendance réelle du composant testé) — il est soit cassé, soit teste une version obsolète de l'arborescence du projet (probablement issue d'un renommage `domain/` → `network/` non répercuté dans les tests).
 - **Preuve** : `src/__tests__/unit/gui/properties-panel.test.tsx:7-39` (imports/mocks de `@/domain/devices/types`, `@/hooks/useNetworkSimulator`, `@/domain/devices/DeviceFactory`), comparé aux imports réels `src/components/network/PropertiesPanel.tsx:7-9` (`@/store/networkStore`, `@/network`).
-- **Sévérité** : Majeure
-- **Recommandation** : Réécrire ce test pour mocker les chemins réellement importés par `PropertiesPanel` (`@/store/networkStore`, `@/network`) — sans quoi la suite ne couvre pas le comportement réel du composant et masque une régression potentielle (faux sentiment de couverture).
+- **Sévérité** : Majeure — ✅ CORRIGÉ
+- **Correction appliquée** : `src/__tests__/unit/gui/properties-panel.test.tsx` réécrit avec les vrais imports et mocks réels du composant : (a) `Connection`/`NetworkDeviceUI` importés depuis `@/store/networkStore` (fin du fantôme `@/domain/devices/types`) ; (b) mock de `@/network` pour stubber `isFullyImplemented` (fin du fantôme `DeviceFactory.isFullyImplemented`) ; (c) suppression complète du mock `@/hooks/useNetworkSimulator` (le composant ne l'a jamais utilisé) ; (d) factories `fakeDevice`/`fakeConnection`/`fakeInstance` typées qui respectent les vrais shapes (`NetworkDeviceUI.instance: Equipment` et `Connection.cable: Cable` désormais fournis). Le test exerce maintenant le composant réel (3/3 passants) ; 68/68 tests GUI passants. Le faux sentiment de couverture est dissipé : une régression dans `PropertiesPanel` ferait désormais réellement échouer le test.
 
 - **Constat** : Aucun test (unitaire React/GUI ou e2e Playwright) ne couvre `PacketAnimation`/`activePackets`, ce qui est cohérent avec son statut de placeholder, mais aussi aucun test ne couvre les boutons morts de la `Toolbar` (Save/Open/Simulate/Pause/Reset/Help) ni le flux "Settings" (bouton sans handler) de `NetworkDevice`. Les specs e2e (`network-logs-panel.spec.ts`, `network-logs-real-traffic.spec.ts`) couvrent bien le panneau de logs de bout en bout (réactivité Logger → UI), ce qui contraste avec l'absence de couverture des affordances mortes identifiées en 11.4/11.5.
 - **Preuve** : `e2e/network-logs-panel.spec.ts:1-9` (bonne couverture du flux Logger → panneau), absence de toute correspondance `grep -rn "Simulate\|Toolbar.*Save\|activePackets" e2e/`.
 - **Sévérité** : Mineure
 - **Recommandation** : Ajouter des tests qui figent explicitement le statut "non câblé" de ces affordances (ex. `expect(button).toBeDisabled()`) une fois la décision prise de les masquer/activer, pour éviter qu'elles ne dérivent silencieusement.
 
-### 11.8 Bouton "Settings" inerte sur les devices
+### 11.8 Bouton "Settings" inerte sur les devices — ✅ CORRIGÉ
 - **Constat** : Le menu d'actions rapides affiché lors de la sélection d'un device contient un bouton "Settings" dont le seul gestionnaire est `(e) => e.stopPropagation()` — il ne fait strictement rien d'autre, n'ouvre aucun panneau ni dialogue dédié (le `PropertiesPanel` existant joue déjà ce rôle, rendant ce bouton soit redondant, soit un vestige d'une fonctionnalité prévue puis abandonnée).
 - **Preuve** : `src/components/network/NetworkDevice.tsx:225-231` (`<button onClick={(e) => e.stopPropagation()} … title="Settings"> <Settings .../> </button>`).
-- **Sévérité** : Mineure
-- **Recommandation** : Retirer ce bouton (le `PropertiesPanel` couvre déjà ce besoin) ou lui donner un comportement réel (ex. focus/scroll vers le panneau de propriétés).
+- **Sévérité** : Mineure — ✅ CORRIGÉ
+- **Correction appliquée** : Bouton « Settings » retiré de `NetworkDevice.tsx` (option « retirer » de la recommandation) — il était purement redondant : (a) le `PropertiesPanel` à droite couvre déjà toute la configuration du device sélectionné, (b) un bouton **Power** existe déjà juste à côté (`NetworkDevice.tsx:200-207`, `handleTogglePower`). L'import `Settings` correspondant retiré de l'import `lucide-react`. 68/68 tests GUI passent.
 
 ---
 
