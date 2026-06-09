@@ -17,12 +17,16 @@ import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
 import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
+import { HelpDialog } from './HelpDialog';
 import { TerminalModal } from './TerminalModal';
 import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
+import {
+  saveTopologyToBrowser, loadTopologyFromBrowser, listSavedTopologies, deleteTopologyFromBrowser,
+} from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
 import { getTerminalManager } from '@/terminal/sessions';
 
@@ -41,6 +45,9 @@ export function NetworkDesigner() {
 
   // Minimized sessions (by session ID)
   const [minimizedSessions, setMinimizedSessions] = useState<Set<string>>(new Set());
+
+  // Help dialog
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
@@ -86,6 +93,72 @@ export function NetworkDesigner() {
       }
     }
   }, [clearAll, allSessions, manager]);
+
+  // ── Save / Open via localStorage ──
+  const handleSave = useCallback(() => {
+    const name = window.prompt('Save topology as:', projectName);
+    if (!name || !name.trim()) return;
+    try {
+      const topology = exportTopology(name, deviceInstances, connections);
+      saveTopologyToBrowser(name, topology);
+      setProjectName(name);
+    } catch (err) {
+      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [projectName, deviceInstances, connections]);
+
+  const handleOpen = useCallback(() => {
+    const saved = listSavedTopologies();
+    if (saved.length === 0) {
+      alert('No saved topologies in browser storage. Use "Save" first, or "Import" to load a JSON file.');
+      return;
+    }
+    const choices = saved
+      .map((s, i) => `${i + 1}. ${s.name} (${s.deviceCount} devices, saved ${new Date(s.savedAt).toLocaleString()})`)
+      .join('\n');
+    const pick = window.prompt(`Choose a topology to open (1-${saved.length}):\n\n${choices}\n\nType the number, or prefix with "delete " to remove (e.g. "delete 2"):`, '1');
+    if (!pick) return;
+    const trimmed = pick.trim();
+    const deleteMatch = trimmed.match(/^delete\s+(\d+)$/i);
+    if (deleteMatch) {
+      const idx = Number.parseInt(deleteMatch[1], 10) - 1;
+      if (idx >= 0 && idx < saved.length) deleteTopologyFromBrowser(saved[idx].name);
+      return;
+    }
+    const idx = Number.parseInt(trimmed, 10) - 1;
+    if (idx < 0 || idx >= saved.length) return;
+    const topology = loadTopologyFromBrowser(saved[idx].name);
+    if (!topology) {
+      alert('Could not read this topology from storage (corrupted entry).');
+      return;
+    }
+    try {
+      const result = importTopology(topology);
+      clearAll();
+      useNetworkStore.setState({
+        deviceInstances: result.deviceInstances,
+        connections: result.connections,
+        selectedDeviceId: null,
+        selectedConnectionId: null,
+      });
+      setProjectName(result.projectName);
+      setMinimizedSessions(new Set());
+    } catch (err) {
+      alert(`Open failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [clearAll]);
+
+  // ── Reset: power-cycle every device on the canvas ──
+  const handleReset = useCallback(() => {
+    if (deviceInstances.size === 0) return;
+    if (!window.confirm(`Power-cycle ${deviceInstances.size} device(s)? Running protocol state will be reset.`)) return;
+    deviceInstances.forEach((device) => {
+      try { device.powerOff(); } catch { /* ignore */ }
+    });
+    deviceInstances.forEach((device) => {
+      try { device.powerOn(); } catch { /* ignore */ }
+    });
+  }, [deviceInstances]);
 
   const handleOpenTerminal = useCallback((device: Equipment) => {
     if (!device.getIsPoweredOn()) return;
@@ -303,9 +376,14 @@ export function NetworkDesigner() {
         hasDevices={devices.length > 0}
         onExport={handleExport}
         onImport={handleImport}
+        onSave={handleSave}
+        onOpen={handleOpen}
+        onReset={handleReset}
+        onHelp={() => setHelpOpen(true)}
         logsOpen={logsOpen}
         onToggleLogs={() => setLogsOpen(o => !o)}
       />
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       <div className={cn(
         "flex-1 flex overflow-hidden",

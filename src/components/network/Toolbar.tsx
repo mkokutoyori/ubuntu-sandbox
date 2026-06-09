@@ -2,7 +2,7 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle, Trash2, ScrollText } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ToolbarProps {
@@ -12,11 +12,19 @@ interface ToolbarProps {
   hasDevices?: boolean;
   onExport?: () => void;
   onImport?: () => void;
+  onSave?: () => void;
+  onOpen?: () => void;
+  onReset?: () => void;
+  onHelp?: () => void;
   logsOpen?: boolean;
   onToggleLogs?: () => void;
 }
 
-export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices, onExport, onImport, logsOpen, onToggleLogs }: ToolbarProps) {
+export function Toolbar({
+  projectName, onProjectNameChange, onClearAll, hasDevices,
+  onExport, onImport, onSave, onOpen, onReset, onHelp,
+  logsOpen, onToggleLogs,
+}: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
       {/* Left section - Project name */}
@@ -53,15 +61,13 @@ export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevic
 
       {/* Center section - Actions */}
       <div className="flex items-center gap-1">
-        <ToolbarButton icon={Save} label="Save" />
-        <ToolbarButton icon={FolderOpen} label="Open" />
+        <ToolbarButton icon={Save} label="Save" onClick={onSave} />
+        <ToolbarButton icon={FolderOpen} label="Open" onClick={onOpen} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolbarButton icon={Download} label="Export" onClick={onExport} />
         <ToolbarButton icon={Upload} label="Import" onClick={onImport} />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolbarButton icon={Play} label="Simulate" variant="primary" />
-        <ToolbarButton icon={Pause} label="Pause" />
-        <ToolbarButton icon={RotateCcw} label="Reset" />
+        <ToolbarButton icon={RotateCcw} label="Reset" onClick={onReset} />
       </div>
 
       {/* Right section - Help */}
@@ -74,7 +80,7 @@ export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevic
             variant={logsOpen ? 'primary' : 'default'}
           />
         )}
-        <ToolbarButton icon={HelpCircle} label="Help" />
+        <ToolbarButton icon={HelpCircle} label="Help" onClick={onHelp} />
       </div>
     </div>
   );
