@@ -56,9 +56,9 @@ export class HuaweiSwitch extends Switch {
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState): void {
-    if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
-    else if (state === 'blocking') this.setSTPState(portName, 'blocking');
-    else this.setSTPState(portName, 'disabled');
+    // StpForwardState is a subset of STPPortState — apply verbatim so the
+    // data plane honors the 802.1D listening/learning transitions.
+    this.setSTPState(portName, state);
   }
 
   override setEventBus(bus: IEventBus | null): void {
