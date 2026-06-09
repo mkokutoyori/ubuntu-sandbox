@@ -38,6 +38,7 @@
 import { Equipment } from '../equipment/Equipment';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
@@ -69,6 +70,7 @@ import {
 import { Logger } from '../core/Logger';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
+import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
@@ -92,6 +94,8 @@ import { DmvpnService } from './router/nhrp/DmvpnService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
+import { EemEngine, type EemHost } from './router/eem/EemEngine';
+import type { SnmpAgent } from '../snmp/SnmpAgent';
 import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
 import { KeypairService } from './router/security/KeypairService';
@@ -299,6 +303,7 @@ export abstract class Router extends Equipment {
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
     this.tcpv2.start();
+    this.getEemEngine();
     this.getCredentialStore();
     this.mountSshDaemon();
   }
@@ -306,6 +311,8 @@ export abstract class Router extends Equipment {
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
+    if (bus) this.getSnmpService().attachToBus(bus, this.id);
+    if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 
   // ── SSH daemon over real TCP ───────────────────────────────────────
@@ -340,6 +347,7 @@ export abstract class Router extends Equipment {
       }),
       execTarget: () => this as unknown as SshExecTarget,
       banner: () => this.sshBannerText || null,
+      aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
     });
     return new SshServerHandler(ctx);
   }
@@ -1054,6 +1062,41 @@ export abstract class Router extends Equipment {
 
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
 
+  protected recordNetflowSample(_input: NetFlowRecordInput): void {}
+
+  getNetFlowAgent(): NetFlowAgent | null { return null; }
+
+  private sampleNetflowForward(pkt: IPv4Packet, nextHopIP: IPAddress): void {
+    let sourcePort: number | undefined;
+    let destinationPort: number | undefined;
+    let tcpFlags: number | undefined;
+    if (pkt.protocol === IP_PROTO_TCP) {
+      const tcp = pkt.payload as TCPPacket;
+      sourcePort = tcp.sourcePort;
+      destinationPort = tcp.destinationPort;
+      tcpFlags = (tcp.flags.fin ? 0x01 : 0)
+        | (tcp.flags.syn ? 0x02 : 0)
+        | (tcp.flags.rst ? 0x04 : 0)
+        | (tcp.flags.psh ? 0x08 : 0)
+        | (tcp.flags.ack ? 0x10 : 0)
+        | (tcp.flags.urg ? 0x20 : 0);
+    } else if (pkt.protocol === IP_PROTO_UDP) {
+      const udp = pkt.payload as UDPPacket;
+      sourcePort = udp.sourcePort;
+      destinationPort = udp.destinationPort;
+    }
+    this.recordNetflowSample({
+      sourceIp: pkt.sourceIP.toString(),
+      destinationIp: pkt.destinationIP.toString(),
+      sourcePort, destinationPort, tcpFlags,
+      protocol: pkt.protocol,
+      bytes: pkt.totalLength,
+      packets: 1,
+      tos: pkt.tos,
+      nextHopIp: nextHopIP.toString(),
+    });
+  }
+
   /**
    * Forward an IPv4 packet to the next hop.
    * Implements the full RFC 1812 forwarding pipeline.
@@ -1135,6 +1178,8 @@ export abstract class Router extends Equipment {
     // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
     const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
     if (natOutbound) fwdPkt = natOutbound;
+
+    this.sampleNetflowForward(fwdPkt, nextHopIP);
 
     // Phase E.2c: SPD outbound check (RFC 4301 §4.4.1) + IPSec encryption
     if (this.ipsecEngine) {
@@ -1684,6 +1729,7 @@ export abstract class Router extends Equipment {
   }
 
   private _eemService: EemService | null = null;
+  private _eemEngine: EemEngine | null = null;
   private _netflowService: NetflowService | null = null;
   private _archiveService: ArchiveService | null = null;
   private _keypairService: KeypairService | null = null;
@@ -1696,6 +1742,20 @@ export abstract class Router extends Equipment {
   getEemService(): EemService {
     if (!this._eemService) this._eemService = new EemService();
     return this._eemService;
+  }
+
+  getEemEngine(): EemEngine {
+    if (!this._eemEngine) {
+      const host: EemHost = {
+        id: this.id,
+        getHostname: () => this.getHostname(),
+        executeCommand: (command: string) => this.executeCommand(command),
+        getSnmpAgent: () => (this as unknown as { getSnmpAgent?: () => SnmpAgent }).getSnmpAgent?.(),
+      };
+      this._eemEngine = new EemEngine(host, this.getEemService(), () => this.getBus(), () => this.getRouterScheduler());
+      this._eemEngine.start();
+    }
+    return this._eemEngine;
   }
   getNetflowService(): NetflowService {
     if (!this._netflowService) this._netflowService = new NetflowService();
@@ -1862,6 +1922,17 @@ export abstract class Router extends Equipment {
   override checkPassword(username: string, password: string): boolean {
     const authority = this.getSshHost().getAuthority();
     return authority.authenticate(username, password);
+  }
+
+  private _aaaAuthenticator: AaaAuthenticator | null = null;
+  getAaaAuthenticator(): AaaAuthenticator {
+    if (!this._aaaAuthenticator) this._aaaAuthenticator = new AaaAuthenticator(this);
+    return this._aaaAuthenticator;
+  }
+
+  async authenticateViaAaa(username: string, password: string, methodListName?: string): Promise<boolean> {
+    const outcome = await this.getAaaAuthenticator().authenticate(username, password, methodListName);
+    return outcome.accepted;
   }
 
   /** SshExecTarget. */

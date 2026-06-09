@@ -15,6 +15,8 @@
 import { CommandTrie } from './CommandTrie';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
+import type { Router } from '../Router';
+import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -163,6 +165,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const h of c.hosts) {
       agent.addServer(h, { facility: fac, severityThreshold: mapSev(c.trapSeverity) });
     }
+  }
+
+  protected syncSnmpAgent(): void {
+    const dev = this.d() as unknown as {
+      getSnmpAgent?: () => import('@/network/snmp/SnmpAgent').SnmpAgent;
+      getSnmpService?: () => import('./router/management/SnmpService').SnmpService;
+    };
+    const agent = dev.getSnmpAgent?.();
+    const svc = dev.getSnmpService?.();
+    if (!agent || !svc) return;
+    agent.setContact(svc.getContact());
+    agent.setLocation(svc.getLocation());
+    const cfg = agent.getConfig();
+    const desiredCommunities = svc.getCommunities();
+    const desiredNames = new Set(desiredCommunities.map((c) => c.name));
+    for (const c of cfg.communities) {
+      if (!desiredNames.has(c.community)) agent.removeCommunity(c.community);
+    }
+    for (const c of desiredCommunities) agent.addCommunity(c.name, c.access);
+    const desiredHosts = svc.getHosts();
+    const desiredIps = new Set(desiredHosts.map((h) => h.host));
+    for (const h of cfg.trapHosts) {
+      if (!desiredIps.has(h.ip)) agent.removeTrapHost(h.ip);
+    }
+    for (const h of desiredHosts) agent.addTrapHost(h.host, h.community, h.udpPort);
   }
 
   protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
@@ -501,8 +528,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showStacks());
     trie.registerGreedy('show reload', 'Display reload schedule', () =>
       showReload());
-    trie.registerGreedy('show aaa', 'Display AAA state', (a) =>
-      showAaa(a.join(' ')));
+    trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
+      const dev = this.d() as unknown as Router;
+      return showAaa(getSecurityConfig(dev), a.join(' '));
+    });
     trie.register('show aliases', 'Display command aliases', () =>
       this.aliases.render());
   }
@@ -1214,6 +1243,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const svc = dev.getSnmpService?.();
       if (!svc) return '';
       svc.configure(args);
+      this.syncSnmpAgent();
       return '';
     });
 

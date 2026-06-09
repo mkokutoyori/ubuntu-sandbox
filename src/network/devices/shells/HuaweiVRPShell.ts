@@ -2056,21 +2056,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (isNaN(vrid)) return 'Error: Invalid VRID';
       const svc = this.r().getHuaweiVrrpService();
       const g = svc.ensure(ifName, vrid);
+      const agent = (this.r() as unknown as { getVrrpAgent?: () => import('../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+      agent?.ensureGroup(ifName, vrid);
       let i = vridIdx + 1;
       const sub = args[i]?.toLowerCase();
       if (sub === 'virtual-ip' && args[i + 1]) {
         if (!g.virtualIps.includes(args[i + 1])) g.virtualIps.push(args[i + 1]);
+        agent?.setVip(ifName, vrid, g.virtualIps[0]);
       } else if (sub === 'priority' && args[i + 1]) {
         g.priority = parseInt(args[i + 1], 10);
+        agent?.setPriority(ifName, vrid, g.priority);
       } else if (sub === 'preempt-mode') {
         if (args[i + 1] === 'timer' && args[i + 2] === 'delay' && args[i + 3]) {
           g.preemptMode = true;
           g.preemptDelaySec = parseInt(args[i + 3], 10);
         } else g.preemptMode = true;
+        agent?.setPreempt(ifName, vrid, g.preemptMode);
       } else if (sub === 'description') {
         g.description = args.slice(i + 1).join(' ');
       } else if (sub === 'timer' && args[i + 1] === 'advertise' && args[i + 2]) {
         g.advertiseTimerSec = parseInt(args[i + 2], 10);
+        agent?.setAdvertiseSec(ifName, vrid, g.advertiseTimerSec);
       } else if (sub === 'authentication-mode' && args[i + 1]) {
         const mode = args[i + 1].toLowerCase();
         if (mode === 'md5' || mode === 'simple' || mode === 'none') g.authMode = mode;

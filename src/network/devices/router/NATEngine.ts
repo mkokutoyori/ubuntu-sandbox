@@ -643,7 +643,7 @@ function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv
     } else if (pkt.protocol === IP_PROTO_ICMP) {
       const icmp = pkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp') {
-        result.payload = { ...icmp, identifier: newSrcPort };
+        result.payload = { ...icmp, id: newSrcPort };
       }
     }
   }
@@ -664,7 +664,7 @@ function rewriteDestIP(pkt: IPv4Packet, newDst: string, newDstPort?: number): IP
     } else if (pkt.protocol === IP_PROTO_ICMP) {
       const icmp = pkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp') {
-        result.payload = { ...icmp, identifier: newDstPort };
+        result.payload = { ...icmp, id: newDstPort };
       }
     }
   }
@@ -678,7 +678,7 @@ function getPacketSrcPort(pkt: IPv4Packet): number {
   if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.sourcePort;
   if (pkt.protocol === IP_PROTO_ICMP) {
     const icmp = pkt.payload as ICMPPacket;
-    if (icmp && icmp.type === 'icmp') return icmp.identifier ?? 0;
+    if (icmp && icmp.type === 'icmp') return icmp.id ?? 0;
   }
   return 0;
 }
@@ -688,7 +688,7 @@ function getPacketDstPort(pkt: IPv4Packet): number {
   if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
   if (pkt.protocol === IP_PROTO_ICMP) {
     const icmp = pkt.payload as ICMPPacket;
-    if (icmp && icmp.type === 'icmp') return icmp.identifier ?? 0;
+    if (icmp && icmp.type === 'icmp') return icmp.id ?? 0;
   }
   return 0;
 }

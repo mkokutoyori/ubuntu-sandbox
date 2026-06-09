@@ -1,0 +1,1956 @@
+============================================================
+Network protocol debug transcript — stp
+Generated: 2026-06-07T20:22:25.839Z
+Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
+protocol=STP/RSTP/MSTP (IEEE 802.1D/802.1w/802.1s) — focus: élection racine, rôles/états de ports, blocage de boucle, coût/priorité, PortFast/edged, BPDU/Root/Loop guard, timers, convergence sur panne, régions MST — fabric redondante Cisco (triangle HQ) + Huawei (BR)
+Total steps: 300
+============================================================
+
+
+--- [1] § STP — passage en mode privilégié (Cisco) ---
+[1/300] swhq SW-HQ# enable
+<empty>
+
+[2/300] swhq SW-HQ# enable
+<empty>
+
+[3/300] dsw1 DSW-HQ-1> enable
+<empty>
+
+[4/300] dsw2 DSW-HQ-2> enable
+<empty>
+
+
+--- [5] § STP — activation logs & debug (Cisco) ---
+[5/300] swhq SW-HQ# terminal monitor
+<empty>
+
+[6/300] swhq SW-HQ# terminal monitor
+<empty>
+
+[7/300] swhq SW-HQ# debug spanning-tree events
+  % Invalid input detected at '^' marker.
+  debug spanning-tree events
+        ^
+
+[8/300] swhq SW-HQ# show debugging
+  % Invalid input detected at '^' marker.
+  show debugging
+       ^
+
+[9/300] dsw1 DSW-HQ-1# terminal monitor
+<empty>
+
+[10/300] dsw1 DSW-HQ-1# debug spanning-tree events
+  % Invalid input detected at '^' marker.
+  debug spanning-tree events
+        ^
+
+[11/300] dsw1 DSW-HQ-1# show debugging
+  % Invalid input detected at '^' marker.
+  show debugging
+       ^
+
+[12/300] dsw2 DSW-HQ-2# terminal monitor
+<empty>
+
+[13/300] dsw2 DSW-HQ-2# debug spanning-tree events
+  % Invalid input detected at '^' marker.
+  debug spanning-tree events
+        ^
+
+[14/300] dsw2 DSW-HQ-2# show debugging
+  % Invalid input detected at '^' marker.
+  show debugging
+       ^
+
+
+--- [15] § STP — activation logs & debug (Huawei) ---
+[15/300] swbr <SW-BR> terminal monitor
+  Error: Unrecognized command "terminal monitor"
+
+[16/300] swbr <SW-BR> terminal monitor
+  Error: Unrecognized command "terminal monitor"
+
+[17/300] swbr <SW-BR> terminal debugging
+  Error: Unrecognized command "terminal debugging"
+
+[18/300] swbr <SW-BR> debugging stp packet
+  Error: Unrecognized command "debugging stp packet"
+
+[19/300] dswbr <DSW-BR> terminal monitor
+  Error: Unrecognized command "terminal monitor"
+
+[20/300] dswbr <DSW-BR> terminal debugging
+  Error: Unrecognized command "terminal debugging"
+
+[21/300] dswbr <DSW-BR> debugging stp packet
+  Error: Unrecognized command "debugging stp packet"
+
+
+--- [22] § STP — état initial (Cisco) ---
+[22/300] swhq SW-HQ# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[23/300] swhq SW-HQ# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[24/300] swhq SW-HQ# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[25/300] swhq SW-HQ# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[26/300] swhq SW-HQ# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+[27/300] swhq SW-HQ# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[28/300] dsw1 DSW-HQ-1# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        200
+               Port        Fa0/1
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Root  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[29/300] dsw1 DSW-HQ-1# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[30/300] dsw1 DSW-HQ-1# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[31/300] dsw1 DSW-HQ-1# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+[32/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[33/300] dsw2 DSW-HQ-2# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.000d
+               Cost        200
+               Port        Fa0/1
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Root  FWD  19        128.01    P2p
+  Fa0/2            Altn  BLK  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[34/300] dsw2 DSW-HQ-2# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[35/300] dsw2 DSW-HQ-2# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[36/300] dsw2 DSW-HQ-2# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+[37/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+
+--- [38] § STP — état initial (Huawei) ---
+[38/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[39/300] swbr <SW-BR> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.SW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[40/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[41/300] swbr <SW-BR> display stp global
+  Error: Unrecognized command "display stp global"
+
+[42/300] dswbr <DSW-BR> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.DSW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[43/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[44/300] dswbr <DSW-BR> display stp global
+  Error: Unrecognized command "display stp global"
+
+
+--- [45] § STP — rôles & états des ports (Cisco) ---
+[45/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/4
+  FastEthernet0/4
+    (default STP settings)
+
+[46/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/4 detail
+  FastEthernet0/4 detail
+    (default STP settings)
+
+[47/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/5
+  FastEthernet0/5
+    (default STP settings)
+
+[48/300] swhq SW-HQ# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[49/300] dsw1 DSW-HQ-1# show spanning-tree interface FastEthernet0/1
+  FastEthernet0/1
+    (default STP settings)
+
+[50/300] dsw1 DSW-HQ-1# show spanning-tree interface FastEthernet0/2
+  FastEthernet0/2
+    (default STP settings)
+
+[51/300] dsw2 DSW-HQ-2# show spanning-tree interface FastEthernet0/1
+  FastEthernet0/1
+    (default STP settings)
+
+[52/300] dsw2 DSW-HQ-2# show spanning-tree interface FastEthernet0/2
+  FastEthernet0/2
+    (default STP settings)
+
+[53/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[54/300] dsw1 DSW-HQ-1# show spanning-tree detail
+  % Invalid input detected at '^' marker.
+  show spanning-tree detail
+                     ^
+
+
+--- [55] § STP — rôles & états des ports (Huawei) ---
+[55/300] swbr <SW-BR> display stp interface GigabitEthernet0/0/4
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+
+[56/300] swbr <SW-BR> display stp interface GigabitEthernet0/0/5
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+
+[57/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/1
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+
+[58/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/2
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+
+[59/300] dswbr <DSW-BR> display stp topology-change
+  Error: Unrecognized command "display stp topology-change"
+
+
+--- [60] § STP — élection de la racine HQ (priority) ---
+[60/300] dsw1 DSW-HQ-1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[61/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 priority 4096
+<empty>
+
+[62/300] dsw1 DSW-HQ-1(config)# end
+<empty>
+
+[63/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[64/300] swhq SW-HQ(config)# spanning-tree vlan 1 priority 8192
+<empty>
+
+[65/300] swhq SW-HQ(config)# end
+<empty>
+
+[66/300] dsw2 DSW-HQ-2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[67/300] dsw2 DSW-HQ-2(config)# spanning-tree vlan 1 priority 32768
+<empty>
+
+[68/300] dsw2 DSW-HQ-2(config)# end
+<empty>
+
+[69/300] swhq SW-HQ# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[70/300] dsw1 DSW-HQ-1# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[71/300] dsw2 DSW-HQ-2# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[72/300] dsw1 DSW-HQ-1# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[73/300] swhq SW-HQ# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        200
+               Port        Fa0/4
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Root  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[74/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+
+--- [75] § STP — root primary/secondary (macro) ---
+[75/300] dsw1 DSW-HQ-1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[76/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 root primary
+<empty>
+
+[77/300] dsw1 DSW-HQ-1(config)# end
+<empty>
+
+[78/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[79/300] swhq SW-HQ(config)# spanning-tree vlan 1 root secondary
+<empty>
+
+[80/300] swhq SW-HQ(config)# end
+<empty>
+
+[81/300] dsw1 DSW-HQ-1# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[82/300] swhq SW-HQ# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+
+--- [83] § STP — élection de la racine BR (Huawei priority) ---
+[83/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[84/300] swbr [SW-BR] stp priority 4096
+<empty>
+
+[85/300] swbr [SW-BR] quit
+<empty>
+
+[86/300] dswbr <DSW-BR> system-view
+  Enter system view, return user view with return command.
+
+[87/300] dswbr [DSW-BR] stp priority 32768
+<empty>
+
+[88/300] dswbr [DSW-BR] quit
+<empty>
+
+[89/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[90/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[91/300] dswbr <DSW-BR> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.DSW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[92/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[93/300] swbr [SW-BR] stp root primary
+<empty>
+
+[94/300] swbr [SW-BR] quit
+<empty>
+
+[95/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+
+--- [96] § STP — coût & priorité de port (Cisco) ---
+[96/300] dsw2 DSW-HQ-2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[97/300] dsw2 DSW-HQ-2(config)# interface FastEthernet0/1
+<empty>
+
+[98/300] dsw2 DSW-HQ-2(config-if)# spanning-tree cost 100
+<empty>
+
+[99/300] dsw2 DSW-HQ-2(config-if)# spanning-tree port-priority 64
+<empty>
+
+[100/300] dsw2 DSW-HQ-2(config-if)# do show spanning-tree interface FastEthernet0/1 detail
+  FastEthernet0/1 detail
+    (default STP settings)
+
+[101/300] dsw2 DSW-HQ-2(config-if)# no spanning-tree cost
+<empty>
+
+[102/300] dsw2 DSW-HQ-2(config-if)# end
+<empty>
+
+[103/300] dsw2 DSW-HQ-2# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        200
+               Port        Fa0/2
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Altn  BLK  19        128.01    P2p
+  Fa0/2            Root  FWD  19        128.02    P2p
+  Fa0/3            Disa  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Disa  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+
+--- [104] § STP — coût & priorité de port (Huawei) ---
+[104/300] dswbr <DSW-BR> system-view
+  Enter system view, return user view with return command.
+
+[105/300] dswbr [DSW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[106/300] dswbr [DSW-BR-GigabitEthernet0/0/2] stp cost 200000
+<empty>
+
+[107/300] dswbr [DSW-BR-GigabitEthernet0/0/2] stp port priority 64
+<empty>
+
+[108/300] dswbr [DSW-BR-GigabitEthernet0/0/2] display this
+  interface GigabitEthernet0/0/2
+   port link-type access
+   stp cost 200000
+   stp port priority 64
+  #
+
+[109/300] dswbr [DSW-BR-GigabitEthernet0/0/2] undo stp cost
+<empty>
+
+[110/300] dswbr [DSW-BR-GigabitEthernet0/0/2] quit
+<empty>
+
+[111/300] dswbr [DSW-BR] quit
+<empty>
+
+[112/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/2
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+
+
+--- [113] § STP — modes PVST/RSTP/MSTP (Cisco) ---
+[113/300] swhq SW-HQ# show spanning-tree summary totals
+  % Invalid input detected at '^' marker.
+  show spanning-tree summary totals
+                             ^
+
+[114/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[115/300] swhq SW-HQ(config)# spanning-tree mode rapid-pvst
+<empty>
+
+[116/300] swhq SW-HQ(config)# do show spanning-tree summary
+  Switch is in rapid-pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[117/300] swhq SW-HQ(config)# spanning-tree mode mst
+<empty>
+
+[118/300] swhq SW-HQ(config)# do show spanning-tree mst configuration
+  Name      []
+  Revision  0     Instances configured 1
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+
+[119/300] swhq SW-HQ(config)# spanning-tree mode pvst
+<empty>
+
+[120/300] swhq SW-HQ(config)# end
+<empty>
+
+[121/300] swhq SW-HQ# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+
+--- [122] § STP — modes STP/RSTP/MSTP (Huawei) ---
+[122/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[123/300] swbr [SW-BR] stp mode rstp
+<empty>
+
+[124/300] swbr [SW-BR] display stp mode
+  Error: Unrecognized command "display stp mode"
+
+[125/300] swbr [SW-BR] stp mode mstp
+<empty>
+
+[126/300] swbr [SW-BR] display stp region-configuration
+  Error: Unrecognized command "display stp region-configuration"
+
+[127/300] swbr [SW-BR] stp mode stp
+<empty>
+
+[128/300] swbr [SW-BR] quit
+<empty>
+
+[129/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+
+--- [130] § STP — PortFast / edged-port (ports d'accès) ---
+[130/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[131/300] swhq SW-HQ(config)# interface FastEthernet0/2
+<empty>
+
+[132/300] swhq SW-HQ(config-if)# spanning-tree portfast
+<empty>
+
+[133/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[134/300] swhq SW-HQ(config)# interface FastEthernet0/3
+<empty>
+
+[135/300] swhq SW-HQ(config-if)# spanning-tree portfast
+<empty>
+
+[136/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[137/300] swhq SW-HQ(config)# spanning-tree portfast default
+<empty>
+
+[138/300] swhq SW-HQ(config)# end
+<empty>
+
+[139/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/2 portfast
+  FastEthernet0/2 portfast
+    (default STP settings)
+
+[140/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[141/300] swbr [SW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[142/300] swbr [SW-BR-GigabitEthernet0/0/2] stp edged-port enable
+<empty>
+
+[143/300] swbr [SW-BR-GigabitEthernet0/0/2] display this
+  interface GigabitEthernet0/0/2
+   port link-type access
+   stp edged-port enable
+  #
+
+[144/300] swbr [SW-BR-GigabitEthernet0/0/2] quit
+<empty>
+
+[145/300] swbr [SW-BR] stp edged-port default
+  Error: Unrecognized command "stp edged-port default"
+
+[146/300] swbr [SW-BR] quit
+<empty>
+
+
+--- [147] § sécurité STP — BPDU Guard / Root Guard / Loop Guard (Cisco) ---
+[147/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[148/300] swhq SW-HQ(config)# interface FastEthernet0/2
+<empty>
+
+[149/300] swhq SW-HQ(config-if)# spanning-tree bpduguard enable
+<empty>
+
+[150/300] swhq SW-HQ(config-if)# spanning-tree bpdufilter enable
+<empty>
+
+[151/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[152/300] swhq SW-HQ(config)# interface FastEthernet0/4
+<empty>
+
+[153/300] swhq SW-HQ(config-if)# spanning-tree guard root
+<empty>
+
+[154/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[155/300] swhq SW-HQ(config)# interface FastEthernet0/5
+<empty>
+
+[156/300] swhq SW-HQ(config-if)# spanning-tree guard loop
+<empty>
+
+[157/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[158/300] swhq SW-HQ(config)# spanning-tree loopguard default
+<empty>
+
+[159/300] swhq SW-HQ(config)# spanning-tree portfast bpduguard default
+<empty>
+
+[160/300] swhq SW-HQ(config)# end
+<empty>
+
+[161/300] swhq SW-HQ# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[162/300] swhq SW-HQ# show spanning-tree inconsistentports
+  % Invalid input detected at '^' marker.
+  show spanning-tree inconsistentports
+                     ^
+
+
+--- [163] § sécurité STP — protections (Huawei) ---
+[163/300] dswbr <DSW-BR> system-view
+  Enter system view, return user view with return command.
+
+[164/300] dswbr [DSW-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[165/300] dswbr [DSW-BR-GigabitEthernet0/0/1] stp root-protection
+<empty>
+
+[166/300] dswbr [DSW-BR-GigabitEthernet0/0/1] exit
+  Error: Unrecognized command "exit"
+
+[167/300] dswbr [DSW-BR-GigabitEthernet0/0/1] interface GigabitEthernet0/0/2
+  Error: Unrecognized command "interface GigabitEthernet0/0/2"
+
+[168/300] dswbr [DSW-BR-GigabitEthernet0/0/1] stp loop-protection
+<empty>
+
+[169/300] dswbr [DSW-BR-GigabitEthernet0/0/1] quit
+<empty>
+
+[170/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[171/300] swbr [SW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[172/300] swbr [SW-BR-GigabitEthernet0/0/2] stp bpdu-protection
+<empty>
+
+[173/300] swbr [SW-BR-GigabitEthernet0/0/2] stp edged-port enable
+<empty>
+
+[174/300] swbr [SW-BR-GigabitEthernet0/0/2] quit
+<empty>
+
+[175/300] swbr [SW-BR] stp bpdu-protection
+<empty>
+
+[176/300] swbr [SW-BR] quit
+<empty>
+
+[177/300] dswbr [DSW-BR] quit
+<empty>
+
+[178/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/1
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+
+
+--- [179] § STP — timers (hello/forward/max-age) ---
+[179/300] dsw1 DSW-HQ-1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[180/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 hello-time 1
+<empty>
+
+[181/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 forward-time 4
+<empty>
+
+[182/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 max-age 6
+<empty>
+
+[183/300] dsw1 DSW-HQ-1(config)# do show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[184/300] dsw1 DSW-HQ-1(config)# no spanning-tree vlan 1 hello-time
+<empty>
+
+[185/300] dsw1 DSW-HQ-1(config)# end
+<empty>
+
+[186/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[187/300] swbr [SW-BR] stp timer hello 100
+<empty>
+
+[188/300] swbr [SW-BR] stp timer forward-delay 400
+<empty>
+
+[189/300] swbr [SW-BR] stp timer max-age 600
+<empty>
+
+[190/300] swbr [SW-BR] display stp
+  -------[CIST Global Info][Mode STP]-------
+  CIST Bridge         :0.SW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :0.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Enabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[191/300] swbr [SW-BR] undo stp timer hello
+<empty>
+
+[192/300] swbr [SW-BR] quit
+<empty>
+
+
+--- [193] § STP — convergence sur panne de lien (HQ) ---
+[193/300] lhq lhq$ ping -c 1 10.1.1.11
+  PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.458 ms
+  
+  --- 10.1.1.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.458/0.458/0.458/0.000 ms
+
+[194/300] swhq SW-HQ# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[195/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[196/300] swhq SW-HQ(config)# interface FastEthernet0/4
+<empty>
+
+[197/300] swhq SW-HQ(config-if)# shutdown
+<empty>
+
+[198/300] swhq SW-HQ(config-if)# end
+<empty>
+
+[199/300] swhq SW-HQ# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    8193
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Disa  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[200/300] dsw1 DSW-HQ-1# show spanning-tree root
+  % Invalid input detected at '^' marker.
+  show spanning-tree root
+                     ^
+
+[201/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[202/300] lhq lhq$ ping -c 2 10.1.1.11
+  PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.441 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.387 ms
+  
+  --- 10.1.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.387/0.414/0.441/0.027 ms
+
+[203/300] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.827 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.624 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.624/0.725/0.827/0.102 ms
+
+[204/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[205/300] swhq SW-HQ(config)# interface FastEthernet0/4
+<empty>
+
+[206/300] swhq SW-HQ(config-if)# no shutdown
+<empty>
+
+[207/300] swhq SW-HQ(config-if)# end
+<empty>
+
+[208/300] swhq SW-HQ# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    8193
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Disa  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Disa  FWD  19        128.06    P2p
+  Fa0/7            Disa  FWD  19        128.07    P2p
+  Fa0/8            Disa  FWD  19        128.08    P2p
+  Fa0/9            Disa  FWD  19        128.09    P2p
+  Fa0/10           Disa  FWD  19        128.010   P2p
+  Fa0/11           Disa  FWD  19        128.011   P2p
+  Fa0/12           Disa  FWD  19        128.012   P2p
+  Fa0/13           Disa  FWD  19        128.013   P2p
+  Fa0/14           Disa  FWD  19        128.014   P2p
+  Fa0/15           Disa  FWD  19        128.015   P2p
+  Fa0/16           Disa  FWD  19        128.016   P2p
+  Fa0/17           Disa  FWD  19        128.017   P2p
+  Fa0/18           Disa  FWD  19        128.018   P2p
+  Fa0/19           Disa  FWD  19        128.019   P2p
+  Fa0/20           Disa  FWD  19        128.020   P2p
+  Fa0/21           Disa  FWD  19        128.021   P2p
+  Fa0/22           Disa  FWD  19        128.022   P2p
+  Fa0/23           Disa  FWD  19        128.023   P2p
+  Gi0/0            Disa  FWD  19        128.00    P2p
+  Gi0/1            Disa  FWD  19        128.01    P2p
+
+[209/300] lhq lhq$ ping -c 2 10.1.1.11
+  PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.266 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.322 ms
+  
+  --- 10.1.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.266/0.294/0.322/0.028 ms
+
+
+--- [210] § STP — convergence sur panne de lien (BR Huawei) ---
+[210/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[211/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[212/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[213/300] swbr [SW-BR] interface GigabitEthernet0/0/4
+<empty>
+
+[214/300] swbr [SW-BR-GigabitEthernet0/0/4] shutdown
+<empty>
+
+[215/300] swbr [SW-BR-GigabitEthernet0/0/4] quit
+<empty>
+
+[216/300] swbr [SW-BR] quit
+<empty>
+
+[217/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[218/300] wbr wbr$ ping -n 2 10.2.2.11
+  
+  Pinging 10.2.2.11 with 32 bytes of data:
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 10.2.2.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[219/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[220/300] swbr [SW-BR] interface GigabitEthernet0/0/4
+<empty>
+
+[221/300] swbr [SW-BR-GigabitEthernet0/0/4] undo shutdown
+<empty>
+
+[222/300] swbr [SW-BR-GigabitEthernet0/0/4] quit
+<empty>
+
+[223/300] swbr [SW-BR] quit
+<empty>
+
+[224/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+
+--- [225] § STP — région MST (Cisco) & topologie ---
+[225/300] dsw1 DSW-HQ-1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[226/300] dsw1 DSW-HQ-1(config)# spanning-tree mst configuration
+<empty>
+
+[227/300] dsw1 DSW-HQ-1(config-mst)# name ACME
+<empty>
+
+[228/300] dsw1 DSW-HQ-1(config-mst)# revision 1
+<empty>
+
+[229/300] dsw1 DSW-HQ-1(config-mst)# instance 1 vlan 1-100
+<empty>
+
+[230/300] dsw1 DSW-HQ-1(config-mst)# show current
+  Name      [ACME]
+  Revision  1     Instances configured 2
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+  1         vlan 1-100
+
+[231/300] dsw1 DSW-HQ-1(config-mst)# exit
+<empty>
+
+[232/300] dsw1 DSW-HQ-1(config)# end
+<empty>
+
+[233/300] dsw1 DSW-HQ-1# show spanning-tree mst configuration
+  Name      [ACME]
+  Revision  1     Instances configured 2
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+  1         vlan 1-100
+
+[234/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[235/300] swbr [SW-BR] stp region-configuration
+<empty>
+
+[236/300] swbr [SW-BR-mst-region] region-name ACME
+<empty>
+
+[237/300] swbr [SW-BR-mst-region] revision-level 1
+<empty>
+
+[238/300] swbr [SW-BR-mst-region] instance 1 vlan 1 to 100
+<empty>
+
+[239/300] swbr [SW-BR-mst-region] active region-configuration
+  Info: This operation may take a few seconds. Please wait for a moment...done.
+
+[240/300] swbr [SW-BR-mst-region] check region-configuration
+  Region Name: ACME
+  Revision Level: 1
+  Instance Vlans Mapped
+
+[241/300] swbr [SW-BR-mst-region] quit
+<empty>
+
+[242/300] swbr [SW-BR] quit
+<empty>
+
+
+--- [243] § STP — compteurs & changements de topologie ---
+[243/300] swhq SW-HQ# show spanning-tree detail
+  % Invalid input detected at '^' marker.
+  show spanning-tree detail
+                     ^
+
+[244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
+  % Invalid input detected at '^' marker.
+  show spanning-tree summary totals
+                             ^
+
+[245/300] swbr <SW-BR> display stp topology-change
+  Error: Unrecognized command "display stp topology-change"
+
+[246/300] dswbr <DSW-BR> display stp topology-change
+  Error: Unrecognized command "display stp topology-change"
+
+[247/300] swbr <SW-BR> reset stp
+  Error: Unrecognized command "reset stp"
+
+[248/300] swhq SW-HQ# clear spanning-tree detected-protocols
+  % Invalid input detected at '^' marker.
+  clear spanning-tree detected-protocols
+        ^
+
+[249/300] swhq SW-HQ# clear spanning-tree counters
+  % Invalid input detected at '^' marker.
+  clear spanning-tree counters
+        ^
+
+
+--- [250] § STP — vérification L2 hôtes ---
+[250/300] lhq lhq$ ip -d link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[251/300] lhq lhq$ ping -c 1 10.1.1.11
+  PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.248 ms
+  
+  --- 10.1.1.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.248/0.248/0.248/0.000 ms
+
+[252/300] lbr lbr$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.209 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.209/0.209/0.209/0.000 ms
+
+[253/300] ldc ldc$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.245 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.245/0.245/0.245/0.000 ms
+
+[254/300] whq whq$ getmac
+  Physical Address  Transport Name          
+  ================= ========================
+  02-00-00-00-00-4B \Device\Tcpip_Ethernet_0
+  02-00-00-00-00-4C Media disconnected      
+  02-00-00-00-00-4D Media disconnected      
+  02-00-00-00-00-4E Media disconnected      
+
+
+--- [255] § STP — détail des liens de la fabric (Cisco) ---
+[255/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/4 detail
+  FastEthernet0/4 detail
+    (default STP settings)
+
+[256/300] swhq SW-HQ# show spanning-tree interface FastEthernet0/5 detail
+  FastEthernet0/5 detail
+    (default STP settings)
+
+[257/300] dsw1 DSW-HQ-1# show spanning-tree interface FastEthernet0/1 detail
+  FastEthernet0/1 detail
+    (default STP settings)
+
+[258/300] dsw1 DSW-HQ-1# show spanning-tree interface FastEthernet0/2 detail
+  FastEthernet0/2 detail
+    (default STP settings)
+
+[259/300] dsw2 DSW-HQ-2# show spanning-tree interface FastEthernet0/1 detail
+  FastEthernet0/1 detail
+    (default STP settings)
+
+[260/300] dsw2 DSW-HQ-2# show spanning-tree interface FastEthernet0/2 detail
+  FastEthernet0/2 detail
+    (default STP settings)
+
+[261/300] swhq SW-HQ# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[262/300] swhq SW-HQ# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+[263/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[264/300] dsw1 DSW-HQ-1# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+[265/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 1
+                     ^
+
+[266/300] dsw2 DSW-HQ-2# show spanning-tree bridge
+  % Invalid input detected at '^' marker.
+  show spanning-tree bridge
+                     ^
+
+
+--- [267] § STP — détail des liens de la fabric (Huawei) ---
+[267/300] swbr <SW-BR> display stp interface GigabitEthernet0/0/4
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+
+[268/300] swbr <SW-BR> display stp interface GigabitEthernet0/0/5
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+
+[269/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/1
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+
+[270/300] dswbr <DSW-BR> display stp interface GigabitEthernet0/0/2
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+
+[271/300] swbr <SW-BR> display stp
+  -------[CIST Global Info][Mode STP]-------
+  CIST Bridge         :0.SW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :0.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Enabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[272/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[273/300] dswbr <DSW-BR> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.DSW-BR
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[274/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+
+--- [275] § STP — cas négatifs / mal formés ---
+[275/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[276/300] swhq SW-HQ(config)# spanning-tree vlan 1 priority 5000
+<empty>
+
+[277/300] swhq SW-HQ(config)# spanning-tree mode bidon
+<empty>
+
+[278/300] swhq SW-HQ(config)# end
+<empty>
+
+[279/300] swhq SW-HQ# show spanning-tree vlan 4094
+  % Invalid input detected at '^' marker.
+  show spanning-tree vlan 4094
+                     ^
+
+[280/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[281/300] swbr [SW-BR] stp priority 5000
+  Error: Wrong parameter found at '^' position.
+
+[282/300] swbr [SW-BR] stp mode bidon
+  Error: Wrong parameter found at '^' position.
+
+[283/300] swbr [SW-BR] quit
+<empty>
+
+[284/300] swbr <SW-BR> display stp interface GigabitEthernet9/9/9
+  Error: The port GigabitEthernet9/9/9 does not exist.
+
+
+--- [285] § STP — désactivation debug & état final ---
+[285/300] swhq SW-HQ# undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+[286/300] swhq SW-HQ# undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+[287/300] dsw1 DSW-HQ-1# undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+[288/300] dsw2 DSW-HQ-2# undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+[289/300] swbr <SW-BR> undo debugging all
+  Error: Unrecognized command "undo debugging all"
+
+[290/300] dswbr <DSW-BR> undo debugging all
+  Error: Unrecognized command "undo debugging all"
+
+[291/300] swhq SW-HQ# show spanning-tree summary
+  Switch is in bidon mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[292/300] dsw1 DSW-HQ-1# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[293/300] dsw2 DSW-HQ-2# show spanning-tree summary
+  Switch is in pvst mode
+  Root bridge for: none
+  Extended system ID           is enabled
+  Portfast Default             is disabled
+  Name                   Blocking Listening Learning Forwarding STP Active
+  ---------------------- -------- --------- -------- ---------- ----------
+
+[294/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[295/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[296/300] swhq SW-HQ# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[297/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
+  % Invalid input detected at '^' marker.
+  show spanning-tree blockedports
+                     ^
+
+[298/300] dswbr <DSW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[299/300] swbr <SW-BR> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+
+[300/300] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.610 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.610/0.610/0.610/0.000 ms

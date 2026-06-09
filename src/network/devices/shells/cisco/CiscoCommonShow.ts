@@ -673,9 +673,24 @@ export function showReload(): string {
   return 'No reload is scheduled.';
 }
 
-export function showAaa(arg = ''): string {
-  if (arg.toLowerCase().includes('server')) {
-    return 'No AAA servers configured';
+export function showAaa(sec: import('@/network/devices/router/security/CiscoSecurityConfig').CiscoSecurityConfig, arg = ''): string {
+  const lower = arg.toLowerCase();
+  if (lower.includes('server')) {
+    if (sec.radiusServers.size === 0 && sec.tacacsServers.size === 0) return 'No AAA servers configured';
+    const lines: string[] = [];
+    for (const r of sec.radiusServers.values()) lines.push(`RADIUS: ${r.name} (${r.address ?? 'unconfigured'})`);
+    for (const t of sec.tacacsServers.values()) lines.push(`TACACS+: ${t.name} (${t.address ?? 'unconfigured'})`);
+    return lines.join('\n');
+  }
+  if (lower.includes('group')) {
+    if (sec.aaaGroups.size === 0) return 'No AAA server groups configured';
+    const lines: string[] = [];
+    for (const g of sec.aaaGroups.values()) {
+      lines.push(`Server group: ${g.name}`);
+      lines.push(`  Server protocol: ${g.kind}`);
+      lines.push(`  Server (${g.kind === 'radius' ? 'A.B.C.D' : 'name'}): ${g.members.length ? g.members.join(', ') : '<none>'}`);
+    }
+    return lines.join('\n');
   }
   return 'Total sessions since last reload: 0';
 }

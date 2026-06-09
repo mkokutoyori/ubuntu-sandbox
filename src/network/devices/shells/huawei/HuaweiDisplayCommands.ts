@@ -452,6 +452,9 @@ export function displayCurrentConfig(
     for (const h of helpers) {
       lines.push(` dhcp relay server-ip ${h}`);
     }
+    if (dhcp.isSnoopingEnabled(name)) {
+      lines.push(` dhcp snooping enable`);
+    }
     lines.push(...renderHuaweiInterfaceExtras(router, port, name));
     // IPSec policy/profile applied to interface
     const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
@@ -919,6 +922,22 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
 
 // ─── Trie Registration ──────────────────────────────────────────────
 
+function huaweiVrrpAgent(router: Router): import('../../../vrrp/VrrpAgent').VrrpAgent | undefined {
+  return (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+}
+
+function huaweiVrrpLiveState(
+  router: Router,
+  ifName: string,
+  vrid: number,
+): 'Initialize' | 'Backup' | 'Master' | undefined {
+  const live = huaweiVrrpAgent(router)?.getGroup(ifName, vrid);
+  if (!live) return undefined;
+  if (live.state === 'master') return 'Master';
+  if (live.state === 'backup') return 'Backup';
+  return 'Initialize';
+}
+
 /**
  * Register all "display" commands on a CommandTrie.
  * Used by HuaweiVRPShell to wire display commands onto per-mode tries.
@@ -1113,7 +1132,7 @@ export function registerDisplayCommands(
     if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
     return groups.map(g => [
       `${g.ifName} | Virtual Router ${g.vrid}`,
-      `    State : ${g.state}`,
+      `    State : ${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state}`,
       `    Virtual IP : ${g.virtualIps.join(', ') || '<none>'}`,
       `    Priority : ${g.priority}`,
       `    Advertisement timer : ${g.advertiseTimerSec} seconds`,
@@ -1127,7 +1146,7 @@ export function registerDisplayCommands(
     const ifName = args.join(' ');
     const groups = svc?.list().filter(g => g.ifName === ifName) ?? [];
     if (groups.length === 0) return `Info: No VRRP group on ${ifName}`;
-    return groups.map(g => `VRID ${g.vrid}: state=${g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
+    return groups.map(g => `VRID ${g.vrid}: state=${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
   });
   trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
     const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
@@ -1178,14 +1197,15 @@ export function registerDisplayCommands(
   trie.register('display vrrp brief', 'Display VRRP brief', () => {
     const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
     const groups = svc?.list() ?? [];
-    const master = groups.filter(g => g.state === 'Master').length;
-    const backup = groups.filter(g => g.state === 'Backup').length;
+    const states = groups.map(g => huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state);
+    const master = states.filter(s => s === 'Master').length;
+    const backup = states.filter(s => s === 'Backup').length;
     const total = groups.length;
     const lines = [
       `Total: ${total}     Master: ${master}     Backup: ${backup}     Non-active: ${total - master - backup}`,
       'VRID  State        Interface                Type     Virtual IP',
     ];
-    for (const g of groups) lines.push(`${String(g.vrid).padEnd(6)}${g.state.padEnd(13)}${g.ifName.padEnd(25)}Normal   ${g.virtualIps.join(',')}`);
+    groups.forEach((g, idx) => lines.push(`${String(g.vrid).padEnd(6)}${states[idx].padEnd(13)}${g.ifName.padEnd(25)}Normal   ${g.virtualIps.join(',')}`));
     return lines.join('\n');
   });
 

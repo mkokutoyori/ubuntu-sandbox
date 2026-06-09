@@ -1,0 +1,1157 @@
+============================================================
+Shell debug transcript — linux-pc-users-perms
+Generated: 2026-06-07T20:22:42.698Z
+Engine: linux
+host=L-PC-USR-DBG (linux-pc) — focus: utilisateurs, groupes & permissions
+Total commands: 301
+============================================================
+
+
+--- [1] § identité courante ---
+$ [1/301]> whoami
+  user
+
+$ [2/301]> id
+  uid=1000(user) gid=1000(user) groups=4(adm),27(sudo),1000(user)
+
+$ [3/301]> id -u
+  1000
+
+$ [4/301]> id -g
+  1000
+
+$ [5/301]> id -un
+  user
+
+$ [6/301]> id -gn
+  user
+
+$ [7/301]> id -G
+  4 27 1000
+
+$ [8/301]> id -Gn
+  adm sudo user
+
+$ [9/301]> groups
+  adm sudo user
+
+$ [10/301]> logname
+  logname: command not found
+
+$ [11/301]> echo $USER
+  user
+
+$ [12/301]> echo $HOME
+  /home/user
+
+$ [13/301]> echo $UID
+  1000
+
+$ [14/301]> who
+  user     tty1     2026-06-07 20:22 (:0)
+
+$ [15/301]> who am i
+  user     tty1     2026-06-07 20:22 (:0)
+
+$ [16/301]> w
+   07 Jun 2026 20:2  up 0 min,  1 users,  load average: 0.00, 0.00, 0.00
+  USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+  user      tty1      :0               20:22    0.00s   0.00s 0.00s -bash
+
+$ [17/301]> users
+  users: command not found
+
+$ [18/301]> last
+  user     tty1         :0               Sun, 07 Jun 2026 20:2  still logged in
+
+$ [19/301]> lastb
+  
+  btmp begins Sun, Jun 7
+
+$ [20/301]> last -n 5
+  user     tty1         :0               Sun, 07 Jun 2026 20:2  still logged in
+
+
+--- [21] § bases de comptes — inventaire ---
+$ [21/301]> cat /etc/passwd
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+  user:x:1000:1000::/home/user:/bin/bash
+  alice:x:1001:1001::/home/alice:/bin/bash
+  bob:x:1002:1002::/home/bob:/bin/bash
+  carl:x:1003:1003::/home/carl:/bin/bash
+  dave:x:1004:1004::/home/dave:/bin/bash
+
+$ [22/301]> cat /etc/group
+  root:x:0:
+  daemon:x:1:
+  adm:x:4:user
+  sudo:x:27:user,alice,bob,carl,dave
+  video:x:44:
+  plugdev:x:46:
+  users:x:100:
+  nogroup:x:65534:
+  user:x:1000:
+  alice:x:1001:
+  bob:x:1002:
+  carl:x:1003:
+  dave:x:1004:
+
+$ [23/301]> head -5 /etc/passwd
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+  user:x:1000:1000::/home/user:/bin/bash
+  alice:x:1001:1001::/home/alice:/bin/bash
+
+$ [24/301]> getent passwd
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+  user:x:1000:1000::/home/user:/bin/bash
+  alice:x:1001:1001::/home/alice:/bin/bash
+  bob:x:1002:1002::/home/bob:/bin/bash
+  carl:x:1003:1003::/home/carl:/bin/bash
+  dave:x:1004:1004::/home/dave:/bin/bash
+
+$ [25/301]> getent group
+  root:x:0:
+  daemon:x:1:
+  adm:x:4:user
+  sudo:x:27:user,alice,bob,carl,dave
+  video:x:44:
+  plugdev:x:46:
+  users:x:100:
+  nogroup:x:65534:
+  user:x:1000:
+  alice:x:1001:
+  bob:x:1002:
+  carl:x:1003:
+  dave:x:1004:
+
+$ [26/301]> getent passwd root
+  root:x:0:0:root:/root:/bin/bash
+
+$ [27/301]> getent group root
+  root:x:0:
+
+$ [28/301]> cut -d: -f1 /etc/passwd | sort
+  alice
+  bob
+  carl
+  daemon
+  dave
+  nobody
+  root
+  user
+
+$ [29/301]> cut -d: -f1 /etc/group | sort
+  adm
+  alice
+  bob
+  carl
+  daemon
+  dave
+  nogroup
+  plugdev
+  root
+  sudo
+  user
+  users
+  video
+
+$ [30/301]> awk -F: '$3 >= 1000 {print $1}' /etc/passwd
+  nobody
+  user
+  alice
+  bob
+  carl
+  dave
+
+$ [31/301]> awk -F: '$3 == 0 {print $1}' /etc/passwd
+  root
+
+$ [32/301]> getent passwd 0
+  root:x:0:0:root:/root:/bin/bash
+
+$ [33/301]> getent passwd utilisateur_inexistant_xyz
+<empty>
+
+
+--- [34] § création utilisateur — useradd (SET puis SHOW) ---
+$ [34/301]> useradd alice
+  useradd: Permission denied
+
+$ [35/301]> getent passwd alice
+  alice:x:1001:1001::/home/alice:/bin/bash
+
+$ [36/301]> id alice
+  uid=1001(alice) gid=1001(alice) groups=27(sudo),1001(alice)
+
+$ [37/301]> useradd -m -s /bin/bash bob
+  useradd: Permission denied
+
+$ [38/301]> getent passwd bob
+  bob:x:1002:1002::/home/bob:/bin/bash
+
+$ [39/301]> id bob
+  uid=1002(bob) gid=1002(bob) groups=27(sudo),1002(bob)
+
+$ [40/301]> useradd -u 1500 -c "Carol Dupont" carol
+  useradd: Permission denied
+
+$ [41/301]> getent passwd carol
+<empty>
+
+$ [42/301]> useradd -d /home/dan -m dan
+  useradd: Permission denied
+
+$ [43/301]> getent passwd dan
+<empty>
+
+$ [44/301]> useradd -r service1
+  useradd: Permission denied
+
+$ [45/301]> getent passwd service1
+<empty>
+
+$ [46/301]> useradd -m -s /bin/zsh eve
+  useradd: Permission denied
+
+$ [47/301]> getent passwd eve
+<empty>
+
+$ [48/301]> useradd alice
+  useradd: Permission denied
+
+$ [49/301]> useradd -u 0 doublon_root
+  useradd: Permission denied
+
+$ [50/301]> useradd
+  useradd: Permission denied
+
+$ [51/301]> cut -d: -f1 /etc/passwd | grep -E "alice|bob|carol|dan|eve"
+  alice
+  bob
+
+
+--- [52] § modification — usermod ---
+$ [52/301]> usermod -c "Alice Martin" alice
+  usermod: Permission denied
+
+$ [53/301]> getent passwd alice
+  alice:x:1001:1001::/home/alice:/bin/bash
+
+$ [54/301]> usermod -s /bin/sh alice
+  usermod: Permission denied
+
+$ [55/301]> getent passwd alice
+  alice:x:1001:1001::/home/alice:/bin/bash
+
+$ [56/301]> usermod -d /home/alice2 alice
+  usermod: Permission denied
+
+$ [57/301]> getent passwd alice
+  alice:x:1001:1001::/home/alice:/bin/bash
+
+$ [58/301]> usermod -l alicia alice
+  usermod: Permission denied
+
+$ [59/301]> getent passwd alicia
+<empty>
+
+$ [60/301]> usermod -L bob
+  usermod: Permission denied
+
+$ [61/301]> passwd -S bob
+  bob P 06/07/2026 0 99999 7 -1
+
+$ [62/301]> usermod -U bob
+  usermod: Permission denied
+
+$ [63/301]> passwd -S bob
+  bob P 06/07/2026 0 99999 7 -1
+
+$ [64/301]> usermod -u 1600 carol
+  usermod: Permission denied
+
+$ [65/301]> getent passwd carol
+<empty>
+
+$ [66/301]> usermod -aG sudo bob
+  usermod: Permission denied
+
+$ [67/301]> id bob
+  uid=1002(bob) gid=1002(bob) groups=27(sudo),1002(bob)
+
+$ [68/301]> usermod utilisateur_inexistant_xyz
+  usermod: Permission denied
+
+
+--- [69] § mots de passe — passwd / chage ---
+$ [69/301]> passwd -S alicia
+  passwd: user 'alicia' does not exist
+
+$ [70/301]> passwd -S bob
+  bob P 06/07/2026 0 99999 7 -1
+
+$ [71/301]> passwd -S root
+  root P 06/07/2026 0 99999 7 -1
+
+$ [72/301]> echo "bob:NouveauPass123" | chpasswd
+  chpasswd: Permission denied
+
+$ [73/301]> passwd -S bob
+  bob P 06/07/2026 0 99999 7 -1
+
+$ [74/301]> passwd -l dan
+  usermod: user 'dan' does not exist
+
+$ [75/301]> passwd -S dan
+  passwd: user 'dan' does not exist
+
+$ [76/301]> passwd -u dan
+  usermod: user 'dan' does not exist
+
+$ [77/301]> passwd -S dan
+  passwd: user 'dan' does not exist
+
+$ [78/301]> passwd -d eve
+  passwd: user 'eve' does not exist
+
+$ [79/301]> passwd -S eve
+  passwd: user 'eve' does not exist
+
+$ [80/301]> chage -l bob
+  chage: Permission denied
+
+$ [81/301]> chage -M 90 bob
+  chage: Permission denied
+
+$ [82/301]> chage -l bob
+  chage: Permission denied
+
+$ [83/301]> chage -m 7 bob
+  chage: Permission denied
+
+$ [84/301]> chage -l bob
+  chage: Permission denied
+
+$ [85/301]> chage -E 2026-12-31 bob
+  chage: Permission denied
+
+$ [86/301]> chage -l bob
+  chage: Permission denied
+
+$ [87/301]> chage -W 14 bob
+  chage: Permission denied
+
+$ [88/301]> chage -l bob
+  chage: Permission denied
+
+$ [89/301]> passwd -S utilisateur_inexistant_xyz
+  passwd: user 'utilisateur_inexistant_xyz' does not exist
+
+$ [90/301]> chage -l utilisateur_inexistant_xyz
+  chage: Permission denied
+
+
+--- [91] § groupes — groupadd / groupmod / gpasswd ---
+$ [91/301]> groupadd developpeurs
+  groupadd: Permission denied
+
+$ [92/301]> getent group developpeurs
+<empty>
+
+$ [93/301]> groupadd -g 2000 ops
+  groupadd: Permission denied
+
+$ [94/301]> getent group ops
+<empty>
+
+$ [95/301]> groupadd admins
+  groupadd: Permission denied
+
+$ [96/301]> getent group admins
+<empty>
+
+$ [97/301]> groupmod -n devs developpeurs
+  groupmod: Permission denied
+
+$ [98/301]> getent group devs
+<empty>
+
+$ [99/301]> groupmod -g 2100 ops
+  groupmod: Permission denied
+
+$ [100/301]> getent group ops
+<empty>
+
+$ [101/301]> gpasswd -a bob devs
+<empty>
+
+$ [102/301]> getent group devs
+<empty>
+
+$ [103/301]> gpasswd -a carol devs
+<empty>
+
+$ [104/301]> getent group devs
+<empty>
+
+$ [105/301]> gpasswd -d bob devs
+  gpasswd: group 'devs' does not exist
+
+$ [106/301]> getent group devs
+<empty>
+
+$ [107/301]> usermod -aG devs,ops eve
+  usermod: Permission denied
+
+$ [108/301]> id eve
+  id: 'eve': no such user
+
+$ [109/301]> groups eve
+  groups: 'eve': no such user
+
+$ [110/301]> groupadd devs
+  groupadd: Permission denied
+
+$ [111/301]> groupadd
+  groupadd: Permission denied
+
+
+--- [112] § suppression — userdel / groupdel ---
+$ [112/301]> userdel dan
+  userdel: Permission denied
+
+$ [113/301]> getent passwd dan
+<empty>
+
+$ [114/301]> userdel -r eve
+  userdel: Permission denied
+
+$ [115/301]> getent passwd eve
+<empty>
+
+$ [116/301]> groupdel admins
+  groupdel: Permission denied
+
+$ [117/301]> getent group admins
+<empty>
+
+$ [118/301]> groupdel ops
+  groupdel: Permission denied
+
+$ [119/301]> getent group ops
+<empty>
+
+$ [120/301]> userdel utilisateur_inexistant_xyz
+  userdel: Permission denied
+
+$ [121/301]> groupdel groupe_inexistant_xyz
+  groupdel: Permission denied
+
+$ [122/301]> cut -d: -f1 /etc/passwd | grep -E "alicia|bob|carol"
+  bob
+
+
+--- [123] § escalade — su / sudo ---
+$ [123/301]> sudo -l
+  Matching Defaults entries for user on linux-pc:
+      env_reset, mail_badpass, secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+  
+  User user may run the following commands on linux-pc:
+      (ALL : ALL) ALL
+
+$ [124/301]> sudo whoami
+  root
+
+$ [125/301]> sudo id
+  uid=0(root) gid=0(root) groups=0(root)
+
+$ [126/301]> sudo -n true
+<empty>
+
+$ [127/301]> sudo cat /etc/shadow
+  root:x:20611:0:99999:7:::
+  daemon:!*:20611:0:99999:7:::
+  nobody:!*:20611:0:99999:7:::
+  user:$6$simulated$admin:20611:0:99999:7:::
+  alice:$6$simulated$alice:20611:0:99999:7:::
+  bob:$6$simulated$bob:20611:0:99999:7:::
+  carl:$6$simulated$carl:20611:0:99999:7:::
+  dave:$6$simulated$dave:20611:0:99999:7:::
+
+$ [128/301]> sudo -u bob whoami
+  bob
+
+$ [129/301]> sudo -k
+  usage: sudo [-u user] command
+         sudo -l
+
+$ [130/301]> sudo -v
+  usage: sudo [-u user] command
+         sudo -l
+
+$ [131/301]> su --help
+<empty>
+
+$ [132/301]> su -c whoami root
+<empty>
+
+$ [133/301]> whoami
+  root
+
+$ [134/301]> sudo commande_inexistante_xyz
+  commande_inexistante_xyz: command not found
+
+
+--- [135] § permissions symboliques — chmod ---
+$ [135/301]> cd /tmp
+<empty>
+
+$ [136/301]> touch p_chmod.txt
+<empty>
+
+$ [137/301]> ls -l p_chmod.txt
+  -rw-r--r-- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [138/301]> chmod u+x p_chmod.txt
+<empty>
+
+$ [139/301]> ls -l p_chmod.txt
+  -rwxr--r-- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [140/301]> chmod g+w p_chmod.txt
+<empty>
+
+$ [141/301]> ls -l p_chmod.txt
+  -rwxrw-r-- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [142/301]> chmod o-r p_chmod.txt
+<empty>
+
+$ [143/301]> ls -l p_chmod.txt
+  -rwxrw---- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [144/301]> chmod a+r p_chmod.txt
+<empty>
+
+$ [145/301]> ls -l p_chmod.txt
+  -rwxrw-r-- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [146/301]> chmod u=rwx,g=rx,o= p_chmod.txt
+<empty>
+
+$ [147/301]> ls -l p_chmod.txt
+  -rwxr-x--- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [148/301]> chmod ug+s p_chmod.txt
+<empty>
+
+$ [149/301]> ls -l p_chmod.txt
+  -rwsr-s--- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [150/301]> chmod +t p_chmod.txt
+<empty>
+
+$ [151/301]> ls -l p_chmod.txt
+  -rwsr-s--T 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [152/301]> chmod -t p_chmod.txt
+<empty>
+
+$ [153/301]> ls -l p_chmod.txt
+  -rwsr-s--- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+
+--- [154] § permissions octales — chmod ---
+$ [154/301]> chmod 644 p_chmod.txt
+<empty>
+
+$ [155/301]> stat -c "%a %A" p_chmod.txt
+  644 -rw-r--r--
+
+$ [156/301]> chmod 600 p_chmod.txt
+<empty>
+
+$ [157/301]> stat -c "%a %A" p_chmod.txt
+  600 -rw-------
+
+$ [158/301]> chmod 755 p_chmod.txt
+<empty>
+
+$ [159/301]> stat -c "%a %A" p_chmod.txt
+  755 -rwxr-xr-x
+
+$ [160/301]> chmod 750 p_chmod.txt
+<empty>
+
+$ [161/301]> stat -c "%a %A" p_chmod.txt
+  750 -rwxr-x---
+
+$ [162/301]> chmod 4755 p_chmod.txt
+<empty>
+
+$ [163/301]> stat -c "%a %A" p_chmod.txt
+  4755 -rwsr-xr-x
+
+$ [164/301]> chmod 2755 p_chmod.txt
+<empty>
+
+$ [165/301]> stat -c "%a %A" p_chmod.txt
+  2755 -rwxr-sr-x
+
+$ [166/301]> chmod 1777 p_chmod.txt
+<empty>
+
+$ [167/301]> stat -c "%a %A" p_chmod.txt
+  1777 -rwxrwxrwt
+
+$ [168/301]> mkdir p_chmoddir
+<empty>
+
+$ [169/301]> chmod -R 700 p_chmoddir
+<empty>
+
+$ [170/301]> stat -c "%a" p_chmoddir
+  700
+
+$ [171/301]> chmod 999 p_chmod.txt
+<empty>
+
+$ [172/301]> chmod abc p_chmod.txt
+  chmod: invalid mode: 'abc'
+
+$ [173/301]> chmod 644 fichier_inexistant_xyz
+  chmod: cannot access 'fichier_inexistant_xyz': No such file or directory
+
+
+--- [174] § propriété — chown / chgrp ---
+$ [174/301]> chown root p_chmod.txt
+<empty>
+
+$ [175/301]> ls -l p_chmod.txt
+  ---------- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [176/301]> chown root:root p_chmod.txt
+<empty>
+
+$ [177/301]> ls -l p_chmod.txt
+  ---------- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [178/301]> chgrp devs p_chmod.txt
+  chgrp: invalid group: 'devs'
+
+$ [179/301]> ls -l p_chmod.txt
+  ---------- 1 root root 0 Jun  7 20:22 p_chmod.txt
+
+$ [180/301]> chown :devs p_chmod.txt
+<empty>
+
+$ [181/301]> ls -l p_chmod.txt
+  ---------- 1 root -1 0 Jun  7 20:22 p_chmod.txt
+
+$ [182/301]> chown bob p_chmod.txt
+<empty>
+
+$ [183/301]> ls -l p_chmod.txt
+  ---------- 1 bob -1 0 Jun  7 20:22 p_chmod.txt
+
+$ [184/301]> chown -R root:root p_chmoddir
+<empty>
+
+$ [185/301]> ls -ld p_chmoddir
+  drwx------ 2 root root 0 Jun  7 20:22 p_chmoddir
+
+$ [186/301]> chown --reference=p_chmod.txt p_chmoddir
+  chown: missing operand
+
+$ [187/301]> chown utilisateur_inexistant_xyz p_chmod.txt
+<empty>
+
+$ [188/301]> chgrp groupe_inexistant_xyz p_chmod.txt
+  chgrp: invalid group: 'groupe_inexistant_xyz'
+
+
+--- [189] § umask & masque ---
+$ [189/301]> umask
+  0022
+
+$ [190/301]> umask -S
+  umask: -S: invalid octal number
+
+$ [191/301]> umask 022
+<empty>
+
+$ [192/301]> umask
+  0022
+
+$ [193/301]> touch sous_022.txt
+<empty>
+
+$ [194/301]> ls -l sous_022.txt
+  -rw-r--r-- 1 root root 0 Jun  7 20:22 sous_022.txt
+
+$ [195/301]> mkdir sous_022dir
+<empty>
+
+$ [196/301]> ls -ld sous_022dir
+  drwxr-xr-x 2 root root 0 Jun  7 20:22 sous_022dir
+
+$ [197/301]> umask 077
+<empty>
+
+$ [198/301]> umask -S
+  umask: -S: invalid octal number
+
+$ [199/301]> touch sous_077.txt
+<empty>
+
+$ [200/301]> ls -l sous_077.txt
+  -rw------- 1 root root 0 Jun  7 20:22 sous_077.txt
+
+$ [201/301]> umask 0022
+<empty>
+
+
+--- [202] § ACL — getfacl / setfacl ---
+$ [202/301]> getfacl p_chmod.txt
+  # file: p_chmod.txt
+  # owner: -1
+  # group: -1
+  user::---
+  group::---
+  other::---
+
+$ [203/301]> setfacl -m u:bob:rwx p_chmod.txt
+<empty>
+
+$ [204/301]> getfacl p_chmod.txt
+  # file: p_chmod.txt
+  # owner: -1
+  # group: -1
+  user::---
+  user:bob:rwx
+  group::---
+  mask::rwx
+  other::---
+
+$ [205/301]> setfacl -m g:devs:r-x p_chmod.txt
+<empty>
+
+$ [206/301]> getfacl p_chmod.txt
+  # file: p_chmod.txt
+  # owner: -1
+  # group: -1
+  user::---
+  user:bob:rwx
+  group::---
+  group:devs:r-x
+  mask::rwx
+  other::---
+
+$ [207/301]> ls -l p_chmod.txt
+  ---------- 1 -1 -1 0 Jun  7 20:22 p_chmod.txt
+
+$ [208/301]> setfacl -x u:bob p_chmod.txt
+  setfacl: Option -m: Invalid argument near character u:bob
+
+$ [209/301]> getfacl p_chmod.txt
+  # file: p_chmod.txt
+  # owner: -1
+  # group: -1
+  user::---
+  user:bob:rwx
+  group::---
+  group:devs:r-x
+  mask::rwx
+  other::---
+
+$ [210/301]> setfacl -b p_chmod.txt
+  setfacl: Option -m: Invalid argument near character *
+
+$ [211/301]> getfacl p_chmod.txt
+  # file: p_chmod.txt
+  # owner: -1
+  # group: -1
+  user::---
+  user:bob:rwx
+  group::---
+  group:devs:r-x
+  mask::rwx
+  other::---
+
+$ [212/301]> setfacl -d -m u:bob:rwx p_chmoddir
+<empty>
+
+$ [213/301]> getfacl p_chmoddir
+  # file: p_chmoddir
+  # owner: root
+  # group: root
+  user::rwx
+  user:bob:rwx
+  group::---
+  mask::rwx
+  other::---
+
+$ [214/301]> getfacl fichier_inexistant_xyz
+  getfacl: fichier_inexistant_xyz: No such file or directory
+
+
+--- [215] § scénario composé — projet partagé ---
+$ [215/301]> groupadd projetX
+<empty>
+
+$ [216/301]> useradd -m -G projetX membre1
+<empty>
+
+$ [217/301]> useradd -m -G projetX membre2
+<empty>
+
+$ [218/301]> getent group projetX
+  projetX:x:1005:membre1,membre2
+
+$ [219/301]> mkdir -p /srv/projetX
+<empty>
+
+$ [220/301]> chgrp projetX /srv/projetX
+<empty>
+
+$ [221/301]> chmod 2770 /srv/projetX
+<empty>
+
+$ [222/301]> ls -ld /srv/projetX
+  drwxrws--- 2 root projetX 0 Jun  7 20:22 /srv/projetX
+
+$ [223/301]> id membre1
+  uid=1005(membre1) gid=1006(membre1) groups=1005(projetX),1006(membre1)
+
+$ [224/301]> id membre2
+  uid=1006(membre2) gid=1007(membre2) groups=1005(projetX),1007(membre2)
+
+$ [225/301]> gpasswd -a membre1 projetX
+<empty>
+
+$ [226/301]> getent group projetX
+  projetX:x:1005:membre1,membre2
+
+$ [227/301]> userdel membre2
+<empty>
+
+$ [228/301]> groupdel projetX
+<empty>
+
+
+--- [229] § fichiers de configuration comptes ---
+$ [229/301]> cat /etc/login.defs
+  #
+  # /etc/login.defs - Configuration control definitions for the login package.
+  #
+  
+  MAIL_DIR        /var/mail
+  
+  PASS_MAX_DAYS   99999
+  PASS_MIN_DAYS   0
+  PASS_WARN_AGE   7
+  
+  UID_MIN         1000
+  UID_MAX         60000
+  SYS_UID_MIN     100
+  SYS_UID_MAX     999
+  
+  GID_MIN         1000
+  GID_MAX         60000
+  SYS_GID_MIN     100
+  SYS_GID_MAX     999
+  
+  CREATE_HOME     yes
+  UMASK           022
+  USERGROUPS_ENAB yes
+  ENCRYPT_METHOD  YESCRYPT
+
+$ [230/301]> grep -E "UID_MIN|UID_MAX|GID_MIN" /etc/login.defs
+  UID_MIN         1000
+  UID_MAX         60000
+  SYS_UID_MIN     100
+  SYS_UID_MAX     999
+  GID_MIN         1000
+  SYS_GID_MIN     100
+
+$ [231/301]> grep -E "PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_WARN_AGE" /etc/login.defs
+  PASS_MAX_DAYS   99999
+  PASS_MIN_DAYS   0
+  PASS_WARN_AGE   7
+
+$ [232/301]> cat /etc/default/useradd
+  # useradd defaults file
+  GROUP=100
+  HOME=/home
+  INACTIVE=-1
+  EXPIRE=
+  SHELL=/bin/sh
+  SKEL=/etc/skel
+  CREATE_MAIL_SPOOL=yes
+
+$ [233/301]> ls -la /etc/skel
+  total 40
+  drwxr-xr-x  2 root root   0 Jun  7 20:22 .
+  drwxr-xr-x 15 root root   0 Jun  7 20:22 ..
+  -rw-r--r--  1 root root 220 Jun  7 20:22 .bash_logout
+  -rw-r--r--  1 root root 282 Jun  7 20:22 .bashrc
+  -rw-r--r--  1 root root 337 Jun  7 20:22 .profile
+
+$ [234/301]> cat /etc/shells
+  /bin/bash
+  /bin/sh
+
+$ [235/301]> cat /etc/sudoers
+  root ALL=(ALL:ALL) ALL
+  %sudo ALL=(ALL:ALL) ALL
+
+$ [236/301]> ls -l /etc/sudoers.d
+  total 0
+
+$ [237/301]> cat /etc/subuid
+  user:100000:65536
+  alice:165536:65536
+  bob:231072:65536
+  carl:296608:65536
+  dave:362144:65536
+  membre1:427680:65536
+
+$ [238/301]> cat /etc/subgid
+  user:100000:65536
+  alice:165536:65536
+  bob:231072:65536
+  carl:296608:65536
+  dave:362144:65536
+  membre1:427680:65536
+
+$ [239/301]> ls -l /etc/passwd /etc/shadow /etc/group /etc/gshadow
+  -rw-r--r-- 1 root root 377 Jun  7 20:22 /etc/passwd
+  -rw-r----- 1 root root 324 Jun  7 20:22 /etc/shadow
+  -rw-r--r-- 1 root root 207 Jun  7 20:22 /etc/group
+  -rw-r----- 1 root root 166 Jun  7 20:22 /etc/gshadow
+
+$ [240/301]> stat -c "%a %n" /etc/passwd
+  644 /etc/passwd
+
+$ [241/301]> stat -c "%a %n" /etc/shadow
+  640 /etc/shadow
+
+
+--- [242] § home & profil utilisateur ---
+$ [242/301]> ls -la /home
+  total 80
+  drwxr-xr-x 10 root    root    0 Jun  7 20:22 .
+  drwxr-xr-x 17 root    root    0 Jun  7 20:22 ..
+  drwxr-xr-x  2 alice   alice   0 Jun  7 20:22 alice
+  drwxr-xr-x  2 bob     bob     0 Jun  7 20:22 bob
+  drwxr-xr-x  2 carl    carl    0 Jun  7 20:22 carl
+  drwxr-xr-x  2 dave    dave    0 Jun  7 20:22 dave
+  drwxr-xr-x  2 membre1 membre1 0 Jun  7 20:22 membre1
+  drwxr-xr-x  2 1006    1007    0 Jun  7 20:22 membre2
+  drwxr-xr-x  2 root    root    0 Jun  7 20:22 scripts
+  drwxr-xr-x  2 user    user    0 Jun  7 20:22 user
+
+$ [243/301]> ls -la /root
+  total 16
+  drwx------  2 root root 0 Jun  7 20:22 .
+  drwxr-xr-x 17 root root 0 Jun  7 20:22 ..
+
+$ [244/301]> ls -ld /home/bob
+  drwxr-xr-x 2 bob bob 0 Jun  7 20:22 /home/bob
+
+$ [245/301]> echo $HOME
+  /root
+
+$ [246/301]> echo ~
+  /root
+
+$ [247/301]> echo ~root
+  /root
+
+$ [248/301]> cat /etc/profile | head
+  cat: /etc/profile: No such file or directory
+
+$ [249/301]> ls -la /etc/profile.d
+  ls: cannot access '/etc/profile.d': No such file or directory
+
+$ [250/301]> getent passwd bob | cut -d: -f6
+  /home/bob
+
+$ [251/301]> getent passwd bob | cut -d: -f7
+  /bin/bash
+
+
+--- [252] § NSS & résolution comptes — getent ---
+$ [252/301]> getent passwd | wc -l
+  9
+
+$ [253/301]> getent group | wc -l
+  14
+
+$ [254/301]> getent passwd root
+  root:x:0:0:root:/root:/bin/bash
+
+$ [255/301]> getent passwd 0
+  root:x:0:0:root:/root:/bin/bash
+
+$ [256/301]> getent group root
+  root:x:0:
+
+$ [257/301]> getent group 0
+  root:x:0:
+
+$ [258/301]> getent shadow root
+  root:x:20611:0:99999:7:::
+
+$ [259/301]> getent passwd alicia bob carol
+  bob:x:1002:1002::/home/bob:/bin/bash
+
+$ [260/301]> getent group devs
+<empty>
+
+$ [261/301]> getent initgroups bob
+  bob             1002 27
+
+$ [262/301]> getent ahosts localhost
+  127.0.0.1                               STREAM localhost
+  127.0.0.1                               DGRAM 
+  127.0.0.1                               RAW   
+  ::1                                     STREAM localhost
+  ::1                                     DGRAM 
+  ::1                                     RAW   
+
+$ [263/301]> getent services ssh
+  ssh             22/tcp
+
+$ [264/301]> getent protocols tcp
+  tcp             6  TCP
+
+
+--- [265] § verrouillage & sécurité — faillock/chage ---
+$ [265/301]> passwd -S root
+  root P 06/07/2026 0 99999 7 -1
+
+$ [266/301]> chage -l root
+  Last password change					: Jun 07, 2026
+  Password expires					: never
+  Password inactive					: never
+  Account expires						: never
+  Minimum number of days between password change		: 0
+  Maximum number of days between password change		: 99999
+  Number of days of warning before password expires	: 7
+
+$ [267/301]> faillock
+<empty>
+
+$ [268/301]> faillock --user bob
+  bob:
+  When                Type  Source                                           Valid
+
+$ [269/301]> faillock --user bob --reset
+<empty>
+
+$ [270/301]> usermod -L carol
+  usermod: user 'carol' does not exist
+
+$ [271/301]> passwd -S carol
+  passwd: user 'carol' does not exist
+
+$ [272/301]> usermod -U carol
+  usermod: user 'carol' does not exist
+
+$ [273/301]> passwd -S carol
+  passwd: user 'carol' does not exist
+
+$ [274/301]> chage -d 0 carol
+  chage: user 'carol' does not exist
+
+$ [275/301]> chage -l carol
+  chage: user 'carol' does not exist
+
+$ [276/301]> chage -E -1 carol
+  chage: user 'carol' does not exist
+
+$ [277/301]> chage -l carol
+  chage: user 'carol' does not exist
+
+$ [278/301]> passwd --status carol
+  passwd: user 'carol' does not exist
+
+
+--- [279] § appartenance & vérification croisée ---
+$ [279/301]> groups bob
+  bob : sudo bob
+
+$ [280/301]> groups carol
+  groups: 'carol': no such user
+
+$ [281/301]> groups root
+  root : root
+
+$ [282/301]> id -nG bob
+  sudo bob
+
+$ [283/301]> id -nG carol
+  id: 'carol': no such user
+
+$ [284/301]> lid bob
+  lid: command not found
+
+$ [285/301]> members devs
+  members: command not found
+
+$ [286/301]> getent group devs | cut -d: -f4
+<empty>
+
+$ [287/301]> usermod -aG devs carol
+  usermod: user 'carol' does not exist
+
+$ [288/301]> id carol
+  id: 'carol': no such user
+
+$ [289/301]> gpasswd -d carol devs
+  gpasswd: group 'devs' does not exist
+
+$ [290/301]> id carol
+  id: 'carol': no such user
+
+$ [291/301]> newgrp devs
+  newgrp: command not found
+
+
+--- [292] § mal formées — fin de transcript ---
+$ [292/301]> usradd toto
+  usradd: command not found
+
+$ [293/301]> chmodd 644 p_chmod.txt
+  chmodd: command not found
+
+$ [294/301]> chown
+  chown: missing operand
+
+$ [295/301]> usermod
+  usermod: missing username
+
+$ [296/301]> passwd
+  passwd: password updated successfully
+
+$ [297/301]> chage
+  Usage: chage [options] LOGIN
+
+$ [298/301]> groupadd -g abc grp
+<empty>
+
+$ [299/301]> useradd -u abc user
+  useradd: user 'user' already exists
+
+$ [300/301]> id --truc
+  0
+
+$ [301/301]> echo "fin du transcript users & perms"
+  fin du transcript users & perms

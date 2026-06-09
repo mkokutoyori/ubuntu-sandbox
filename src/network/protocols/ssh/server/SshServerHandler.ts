@@ -119,12 +119,13 @@ export class SshServerHandler {
         }
 
         case 'auth': {
-          const result = this.handleAuth(parsed, clientIp);
-          conn.write(JSON.stringify({ ok: result.ok }));
-          if (result.ok) {
-            userCtx = result.userCtx;
-            this.ctx.recordLogin(result.userCtx.username, clientIp);
-          }
+          void this.handleAuth(parsed, clientIp).then((result) => {
+            conn.write(JSON.stringify({ ok: result.ok }));
+            if (result.ok) {
+              userCtx = result.userCtx;
+              this.ctx.recordLogin(result.userCtx.username, clientIp);
+            }
+          });
           break;
         }
 
@@ -322,12 +323,13 @@ export class SshServerHandler {
     };
   }
 
-  private handleAuth(
+  private async handleAuth(
     payload: Record<string, unknown>,
     clientIp: string,
-  ):
+  ): Promise<
     | { ok: false }
-    | { ok: true; userCtx: SshUserContext } {
+    | { ok: true; userCtx: SshUserContext }
+  > {
     const method = payload.method as string | undefined;
     const user = (payload.user as string | undefined) ?? '';
     const password = (payload.password as string | undefined) ?? '';
@@ -399,9 +401,11 @@ export class SshServerHandler {
 
     let success = false;
     if (method === 'password') {
-      success =
-        this.ctx.config.passwordAuthentication &&
-        this.ctx.auth.checkPassword(user, password);
+      success = this.ctx.config.passwordAuthentication && (
+        this.ctx.auth.checkPasswordAsync
+          ? await this.ctx.auth.checkPasswordAsync(user, password)
+          : this.ctx.auth.checkPassword(user, password)
+      );
     } else if (method === 'publickey') {
       success =
         this.ctx.config.pubkeyAuthentication &&

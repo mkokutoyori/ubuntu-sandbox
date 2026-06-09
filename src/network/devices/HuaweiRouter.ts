@@ -37,7 +37,7 @@ import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { UDP_PORT_SNMP } from '../snmp/types';
-import { NetFlowAgent } from '../netflow/NetFlowAgent';
+import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
 import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
@@ -216,7 +216,11 @@ export class HuaweiRouter extends Router {
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
-  getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
+  override getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
+
+  protected override recordNetflowSample(input: NetFlowRecordInput): void {
+    this.netflowAgent.recordFlow(input);
+  }
   getTacacsClient(): TacacsClientAgent { return this.tacacsClient; }
   getTacacsServer(): TacacsServerAgent { return this.tacacsServer; }
   getVxlanAgent(): VxlanAgent { return this.vxlanAgent; }

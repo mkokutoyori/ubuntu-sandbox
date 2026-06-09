@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-06-09T08:25:20.676Z
+Generated: 2026-06-07T20:23:09.230Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -577,7 +577,7 @@ Total steps: 288
 <empty>
 
 [149/288] r1 [R1-acl-basic-2000] rule 5 permit source 192.168.1.0 0.0.0.255
-<empty>
+  Error: Expected permit or deny.
 
 [150/288] r1 [R1-acl-basic-2000] quit
 <empty>
@@ -586,7 +586,7 @@ Total steps: 288
 <empty>
 
 [152/288] r1 [R1-acl-basic-2001] rule 5 permit source 192.168.2.0 0.0.0.255
-<empty>
+  Error: Expected permit or deny.
 
 [153/288] r1 [R1-acl-basic-2001] quit
 <empty>
@@ -807,12 +807,6 @@ Total steps: 288
    shutdown
   #
   #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
-  #
 
 [187/288] r1 [R1] display saved-configuration
   #
@@ -888,12 +882,6 @@ Total steps: 288
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
   #
 
 [188/288] r1 [R1] display ip interface brief
@@ -1076,13 +1064,7 @@ Total steps: 288
   Lease          : 1 day(s)
 
 [206/288] r1 [R1] display acl all
-  Basic ACL 2000, 1 rule(s)
-  ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  Basic ACL 2001, 1 rule(s)
-  ACL's step is 5
-   rule 0 permit source 192.168.2.0 0.0.0.255
-  Total 2 ACL(s)
+  Total 0 ACL(s)
 
 [207/288] r1 [R1] display dhcp server statistics
   DHCP server packets statistics:
@@ -1133,8 +1115,8 @@ Total steps: 288
   No NTP associations
 
 [219/288] r1 [R1] display clock
-  2026-06-09 08:25:20
-  Tuesday
+  2026-06-07 20:23:09
+  Sunday
   Time Zone(UTC) : UTC
 
 [220/288] r1 [R1] display lldp neighbor
@@ -1146,13 +1128,13 @@ Total steps: 288
 [222/288] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-09 08:25:20
+  CPU Usage Stat. Time : 2026-06-07 20:23:09
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-09 08:25:20
+  Memory utilization statistics at 2026-06-07 20:23:09
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1343,12 +1325,6 @@ Total steps: 288
    shutdown
   #
   #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
-  #
 
 [238/288] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1413,12 +1389,6 @@ Total steps: 288
    shutdown
   #
   #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
-  #
 
 [247/288] r1 [R1] display current-configuration | exclude #
   sysname R1
@@ -1479,10 +1449,6 @@ Total steps: 288
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
 
 [248/288] r1 [R1] display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1622,7 +1588,6 @@ Total steps: 288
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
-    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6

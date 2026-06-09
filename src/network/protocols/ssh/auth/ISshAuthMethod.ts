@@ -16,7 +16,9 @@ export type AuthMethodType = 'password' | 'publickey' | 'keyboard-interactive';
  */
 export interface ISshAuthContext {
   checkPassword(user: string, password: string): boolean;
+  checkPasswordAsync?(user: string, password: string): Promise<boolean>;
   checkPublicKey(user: string, publicKey: string): boolean;
+  checkPublicKeyAsync?(user: string, publicKey: string): Promise<boolean>;
   getAttemptsRemaining(): number;
   getAvailableMethods(): readonly AuthMethodType[];
 }

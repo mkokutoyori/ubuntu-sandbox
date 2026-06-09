@@ -25,7 +25,10 @@ export class KeyboardInteractiveAuthMethod implements ISshAuthMethod {
     const responses = await this.promptHandler(this.prompts);
     // Convention: the last response is treated as the password.
     const password = responses[responses.length - 1] ?? '';
-    if (ctx.checkPassword(user, password)) return ok(undefined);
+    const accepted = ctx.checkPasswordAsync
+      ? await ctx.checkPasswordAsync(user, password)
+      : ctx.checkPassword(user, password);
+    if (accepted) return ok(undefined);
     return err({ kind: 'AUTH_FAILED', user, attemptsLeft: 0 });
   }
 

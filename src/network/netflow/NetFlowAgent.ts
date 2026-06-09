@@ -26,11 +26,20 @@ interface ActiveFlow extends NetFlowV5Record {
   key: string;
 }
 
+export interface NetFlowRecordInput {
+  sourceIp: string; destinationIp: string;
+  inputIfIndex?: number; outputIfIndex?: number;
+  sourcePort?: number; destinationPort?: number;
+  protocol: number; bytes?: number; packets?: number;
+  tos?: number; nextHopIp?: string; tcpFlags?: number;
+}
+
 export class NetFlowAgent {
   private config: NetFlowConfig = createDefaultNetFlowConfig();
   private activeFlows = new Map<string, ActiveFlow>();
   private startedAtMs = Date.now();
   private flowSequence = 0;
+  private samplingCounter = 0;
   private exportTimer: TimerHandle | null = null;
   private agingTimer: TimerHandle | null = null;
   private scheduler: IScheduler | null = null;
@@ -107,14 +116,12 @@ export class NetFlowAgent {
     return Array.from(this.activeFlows.values()).map((f) => ({ ...f }));
   }
 
-  recordFlow(input: {
-    sourceIp: string; destinationIp: string;
-    inputIfIndex?: number; outputIfIndex?: number;
-    sourcePort?: number; destinationPort?: number;
-    protocol: number; bytes?: number; packets?: number;
-    tos?: number; nextHopIp?: string; tcpFlags?: number;
-  }): void {
+  recordFlow(input: NetFlowRecordInput): void {
     if (!this.config.enabled) return;
+    if (this.config.samplingInterval > 1) {
+      this.samplingCounter = (this.samplingCounter + 1) % this.config.samplingInterval;
+      if (this.samplingCounter !== 0) return;
+    }
     const r = newRecord(input);
     const key = flowKey(r);
     const existing = this.activeFlows.get(key);

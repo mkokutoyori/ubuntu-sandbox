@@ -1911,7 +1911,10 @@ export class OSPFEngine implements IProtocolEngine {
 
     for (const lsa of lsu.lsas) {
       // RFC 2328 §13 step 1: Validate checksum — discard if invalid.
-      if (!verifyOSPFLSAChecksum(lsa)) continue;
+      if (!verifyOSPFLSAChecksum(lsa)) {
+        this.packetStats.rxChecksumErrors++;
+        continue;
+      }
 
       // Reactive: announce reception so observers (capture, replay,
       // telemetry) can audit incoming LSAs without instrumenting the
@@ -2103,6 +2106,17 @@ export class OSPFEngine implements IProtocolEngine {
       topic: 'ospf.lsa.installed',
       payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa) },
     });
+  }
+
+  mergeLSA(areaId: string, lsa: LSA): boolean {
+    const existing = this.lookupLSA(areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+    if (existing && !this.isNewerLSA(lsa, existing)) return false;
+    this.installLSA(areaId, structuredClone(lsa));
+    return true;
+  }
+
+  lsaIsNewer(a: LSA, b: LSA): boolean {
+    return this.isNewerLSA(a, b);
   }
 
   lookupLSA(areaId: string, lsType: LSAType, linkStateId: string, advertisingRouter: string): LSA | undefined {
