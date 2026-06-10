@@ -14,7 +14,7 @@ import { Hub } from './Hub';
 import { CiscoRouter } from './CiscoRouter';
 import { HuaweiRouter } from './HuaweiRouter';
 
-let deviceCounters: Map<string, number> = new Map();
+const deviceCounters: Map<string, number> = new Map();
 
 function nextName(prefix: string): string {
   const count = (deviceCounters.get(prefix) || 0) + 1;
