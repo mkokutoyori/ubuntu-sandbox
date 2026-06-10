@@ -811,6 +811,15 @@ export type ICMPType =
   | 'redirect'                 // Type 5
   | 'time-exceeded';           // Type 11
 
+// ICMP Destination Unreachable codes (RFC 792, RFC 1122 §3.2.2.1)
+export const ICMP_CODE_NET_UNREACHABLE = 0;
+export const ICMP_CODE_HOST_UNREACHABLE = 1;
+export const ICMP_CODE_PROTOCOL_UNREACHABLE = 2;
+export const ICMP_CODE_PORT_UNREACHABLE = 3;
+export const ICMP_CODE_FRAGMENTATION_NEEDED = 4;
+/** Communication administratively prohibited (RFC 1812 §5.3.7). */
+export const ICMP_CODE_ADMIN_PROHIBITED = 13;
+
 export interface ICMPPacket extends NetworkPdu {
   type: 'icmp';
   icmpType: ICMPType;

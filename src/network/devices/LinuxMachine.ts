@@ -38,6 +38,8 @@ import {
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import type { HardwareProfile } from './host/hardware';
 import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
+import { SessionWorkQueue } from './host/session/SessionWorkQueue';
+import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import type { LinuxProfile } from './linux/LinuxProfile';
 import type {
   IpNetworkContext,
@@ -1546,7 +1548,24 @@ export abstract class LinuxMachine extends EndHost {
    * this, two terminals issuing commands at the same time would race on
    * `executor.cwd`.
    */
-  private execQueue: Promise<unknown> = Promise.resolve();
+  private readonly sessionQueue = new SessionWorkQueue();
+
+  /** Swap-window over the executor's per-process state (shared protocol). */
+  private _sessionSwap:
+    | SessionSwapWindow<LinuxShellSession, ReturnType<LinuxCommandExecutor['snapshotState']>>
+    | null = null;
+
+  private get sessionSwap(): SessionSwapWindow<LinuxShellSession, ReturnType<LinuxCommandExecutor['snapshotState']>> {
+    if (!this._sessionSwap) {
+      this._sessionSwap = new SessionSwapWindow({
+        snapshot: () => this.executor.snapshotState(),
+        swapIn: (s) => this.executor.swapInSession(s),
+        captureInto: (s) => this.executor.captureStateInto(s),
+        restore: (b) => this.executor.restoreFromSnapshot(b),
+      });
+    }
+    return this._sessionSwap;
+  }
 
   /**
    * Allocate a fresh shell session — one per terminal window. Spawns a
@@ -1633,25 +1652,12 @@ export abstract class LinuxMachine extends EndHost {
    * mutation window is never observed by another concurrent terminal.
    */
   executeCommandInSession(command: string, session: LinuxShellSession): Promise<string> {
-    const exec = this.executor;
-    const run = async () => {
+    // Chain on the per-device queue: subsequent commands wait their turn.
+    return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      const baseline = exec.snapshotState();
-      // Apply session state to executor for the full async chain.
-      exec.swapInSession(session);
-      try {
-        const out = await this.executeCommand(command);
-        exec.captureStateInto(session);
-        return out;
-      } finally {
-        exec.restoreFromSnapshot(baseline);
-      }
-    };
-    // Chain on the per-device queue: subsequent commands wait their turn.
-    const promise = this.execQueue.then(run, run) as Promise<string>;
-    this.execQueue = promise.catch(() => undefined);
-    return promise;
+      return this.sessionSwap.within(session, () => this.executeCommand(command));
+    });
   }
 
   /**
@@ -1669,27 +1675,21 @@ export abstract class LinuxMachine extends EndHost {
   ): import('./linux/coreutils').TailFollowHandle | null {
     if (!this.isPoweredOn) return null;
     if (session.disposed) return null;
-    const exec = this.executor;
-    const baseline = exec.snapshotState();
-    exec.swapInSession(session);
-    try {
-      return exec.startTailFollow(commandLine, sink);
-    } finally {
-      exec.restoreFromSnapshot(baseline);
-    }
+    return this.sessionSwap.withinSync(
+      session,
+      () => this.executor.startTailFollow(commandLine, sink),
+      { capture: false },
+    );
   }
 
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: LinuxShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];
-    const exec = this.executor;
-    const baseline = exec.snapshotState();
-    exec.swapInSession(session);
-    try {
-      return this.getCompletions(partial);
-    } finally {
-      exec.restoreFromSnapshot(baseline);
-    }
+    return this.sessionSwap.withinSync(
+      session,
+      () => this.getCompletions(partial),
+      { capture: false },
+    );
   }
 
   /**
@@ -1700,16 +1700,7 @@ export abstract class LinuxMachine extends EndHost {
    */
   handleExitInSession(session: LinuxShellSession): { output: string; inSu: boolean } {
     if (session.disposed || !this.isPoweredOn) return { output: '', inSu: false };
-    const exec = this.executor;
-    const baseline = exec.snapshotState();
-    exec.swapInSession(session);
-    try {
-      const result = exec.handleExit();
-      exec.captureStateInto(session);
-      return result;
-    } finally {
-      exec.restoreFromSnapshot(baseline);
-    }
+    return this.sessionSwap.withinSync(session, () => this.executor.handleExit());
   }
 
   /**
