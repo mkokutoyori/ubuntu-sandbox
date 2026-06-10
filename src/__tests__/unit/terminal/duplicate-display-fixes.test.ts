@@ -67,9 +67,12 @@ describe('terminal_gap.md §9 — double-display fixes', () => {
       session.handleKey({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
       await new Promise(r => setTimeout(r, 30));
 
-      // After submit, the prompt line should appear exactly ONCE.
+      // After submit, the prompt should appear exactly ONCE in scrollback.
+      // The renderer composes echo lines from `promptText` + `text`
+      // (addEchoLine keeps the prompt out of `text` so search/clipboard
+      // see the typed value alone), so the prompt may live in either field.
       const promptLines = session.lines.filter(
-        l => /password for user/.test(l.text),
+        l => /password for user/.test(l.text) || /password for user/.test(l.promptText ?? ''),
       );
       expect(promptLines).toHaveLength(1);
     });

@@ -319,3 +319,33 @@ fonctionnait, mais :
 ### Preuves
 - 2538 tests `unit/database` verts ; `npx eslint src/database/` : 0 erreur ;
   typecheck propre.
+
+---
+
+## Itération 10 — UI terminal : test sudo-prompt préexistant en échec (2026-06-10)
+
+### Défaillance constatée
+`duplicate-display-fixes.test.ts §9.1` (« echoes the prompt to scrollback
+once the user submits ») échouait **déjà sur main**. Cause : deux chemins
+de soumission de mot de passe coexistent — le flow-engine écrit le prompt
+dans `line.text` (`addLine`), le broker d'input le range dans le champ
+dédié `line.promptText` (`addEchoLine`, le texte ne contenant que la
+valeur masquée `***`). Le test ne filtrait que `line.text`, alors que le
+chemin actif (broker) est devenu le chemin par défaut.
+
+### Analyse de l'arbitrage
+Deux specs existantes contradictoires : `BashReadIntegration` et
+`SessionInputHost` exigent l'écho masqué `******` dans `text` (contrat
+`addEchoLine` : le renderer compose visuellement `promptText` + `text`,
+recherche/presse-papiers ne voient que la valeur). L'intention du §9.1
+(« le prompt apparaît exactement une fois à l'écran ») est satisfaite par
+ce contrat — c'est le filtre du test qui regardait le mauvais champ.
+
+### Correction
+Test corrigé pour matcher `text` **ou** `promptText` (avec commentaire du
+contrat) ; commentaire clarifié dans `handleBrokerKey`. Aucun changement
+de comportement runtime — les 3 suites (duplicate-display, BashRead,
+SessionInputHost) sont désormais cohérentes et vertes.
+
+### Preuves
+- `unit/terminal` + `unit/shell` : 896/896 verts (1 échec préexistant résolu).
