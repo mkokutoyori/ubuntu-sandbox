@@ -139,3 +139,39 @@ affichant « successfully completed ») :
 - 2545 tests verts (unit/database + debug/oracle + debug/rman).
 - Transcripts debug : les 8 `ORA-06550/PLS-00103` introduits par
   l'itération 2 disparaissent, remplacés par de vraies exécutions.
+
+---
+
+## Itération 4 — Fidélité SQL : NULLS FIRST/LAST, ORA-01086, comparateur unifié (2026-06-10)
+
+### Défaillances constatées
+1. `ORDER BY … NULLS FIRST|LAST` était **parsé** (présent dans l'AST,
+   `OrderByItem.nullsPosition`) mais **ignoré** par l'exécuteur : la clause
+   n'avait aucun effet.
+2. Le comparateur de tri était dupliqué à l'identique dans 4 sites
+   (`executeSelectFromTable`, `projectGroupedRows`, fenêtres analytiques,
+   `applySelectClauses`) — toute correction devait être faite 4 fois.
+3. `ROLLBACK TO SAVEPOINT inexistant` renvoyait un faux
+   « Rollback to savepoint X complete. » — le vrai Oracle lève
+   `ORA-01086: savepoint 'X' never established in this session or is invalid`.
+
+(Vérifications négatives : le zero-padding des codes ORA- et la gestion de
+`DROP TABLE … PURGE` étaient déjà corrects, contrairement à ce que
+suggérait l'analyse initiale — pas de modification.)
+
+### Corrections
+- Nouveau `compareWithOrderSpec(a, b, {direction, nullsPosition})` dans
+  `OracleExecutor` : NULL traité comme la plus grande valeur (dernier en
+  ASC, premier en DESC — défaut Oracle), `NULLS FIRST/LAST` prioritaire
+  sur la direction. Les 4 sites de tri délèguent à ce comparateur unique.
+- `executeRollback` : `ORA-01086` levée pour un savepoint jamais établi.
+- Nettoyage des 12 erreurs ESLint préexistantes du fichier : 4 handlers
+  typés `any` → vrais types AST (`CreateSynonymStatement`,
+  `DropSynonymStatement`, `AlterSequenceStatement`, `AlterIndexStatement`),
+  `prefer-const`, échappements regex inutiles, espace irrégulière.
+
+### Preuves
+- Nouveau fichier `oracle-orderby-savepoint-fidelity.test.ts` : 6 tests
+  (défauts ASC/DESC, overrides NULLS FIRST/LAST, ORA-01086, rollback vers
+  savepoint valide inchangé).
+- 2532 tests `unit/database` verts ; lint et typecheck propres.

@@ -19,7 +19,8 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
   CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
-  AuditStatement, NoauditStatement,
+  AuditStatement, NoauditStatement, OrderByItem,
+  CreateSynonymStatement, DropSynonymStatement, AlterSequenceStatement, AlterIndexStatement,
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
@@ -707,7 +708,7 @@ export class OracleExecutor extends BaseExecutor {
         }
         return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
       }
-      return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
+      throw new OracleError(1086, `savepoint '${sp}' never established in this session or is invalid`);
     }
     if (this._txnSnapshot) {
       this.restoreSnapshot(this._txnSnapshot);
@@ -766,7 +767,7 @@ export class OracleExecutor extends BaseExecutor {
     return this.executeSelectFromTable(stmt);
   }
 
-  /** Detect /*+ RESULT_CACHE *​/ hint in the original source SQL. */
+  /** Detect the RESULT_CACHE optimizer hint in the original source SQL. */
   private hasResultCacheHint(stmt: SelectStatement): boolean {
     const src = (stmt as unknown as { sourceText?: string }).sourceText ?? '';
     return /\/\*\+[^*]*\bRESULT_CACHE\b/i.test(src);
@@ -969,7 +970,9 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
-    let { rows, columns } = this.resolveFromClause(stmt);
+    const fromResult = this.resolveFromClause(stmt);
+    let rows = fromResult.rows;
+    const columns = fromResult.columns;
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
@@ -1062,10 +1065,9 @@ export class OracleExecutor extends BaseExecutor {
       resultRows.sort((a, b) => {
         for (const ob of stmt.orderBy!) {
           // Try to resolve by column alias or position in result set
-          let idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
+          const idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
           if (idx < 0) continue;
-          let cmp = this.compareValues(a[idx], b[idx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -1247,7 +1249,7 @@ export class OracleExecutor extends BaseExecutor {
     const nullLeft = new Array(leftCols.length).fill(null);
 
     // Build effective ON condition for USING/NATURAL
-    let onCondition = join.on;
+    const onCondition = join.on;
     if (usingCols && usingCols.length > 0 && !onCondition) {
       // Build ON condition: left.col = right.col AND ...
       // We match by column name in the combined row
@@ -1453,8 +1455,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const ob of stmt.orderBy!) {
           const idx = this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns);
           if (idx < 0) continue;
-          let cmp = this.compareValues(a[idx], b[idx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -1500,8 +1501,7 @@ export class OracleExecutor extends BaseExecutor {
             for (const ob of windowSpec.orderBy!) {
               const va = this.evaluateExpression(ob.expr, sourceRows[a], sourceColumns);
               const vb = this.evaluateExpression(ob.expr, sourceRows[b], sourceColumns);
-              let cmp = this.compareValues(va, vb);
-              if (ob.direction === 'DESC') cmp = -cmp;
+              const cmp = this.compareWithOrderSpec(va, vb, ob);
               if (cmp !== 0) return cmp;
             }
             return 0;
@@ -2155,8 +2155,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const ob of stmt.orderBy!) {
           const colIdx = this.resolveColumnIndex(ob.expr, colMetas);
           if (colIdx < 0) continue;
-          let cmp = this.compareValues(a[colIdx], b[colIdx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[colIdx], b[colIdx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -2188,7 +2187,7 @@ export class OracleExecutor extends BaseExecutor {
         } else {
           // Expression (function call, etc.) — evaluate at runtime
           colIndices.push(-2);
-          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as any).name.toUpperCase() : 'EXPR');
+          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as IdentifierExpr).name.toUpperCase() : 'EXPR');
           projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
         }
       }
@@ -2914,7 +2913,7 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── SYNONYM ────────────────────────────────────────────────────────
 
-  private executeCreateSynonym(stmt: any): ResultSet {
+  private executeCreateSynonym(stmt: CreateSynonymStatement): ResultSet {
     const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
     const targetSchema = (stmt.targetSchema || this.context.currentSchema).toUpperCase();
     this.storage.createSynonym({
@@ -2927,7 +2926,7 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Synonym created.');
   }
 
-  private executeDropSynonym(stmt: any): ResultSet {
+  private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
     const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
     this.storage.dropSynonym(owner, stmt.name.toUpperCase());
     return emptyResult('Synonym dropped.');
@@ -2935,7 +2934,7 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── ALTER SEQUENCE ────────────────────────────────────────────────
 
-  private executeAlterSequence(stmt: any): ResultSet {
+  private executeAlterSequence(stmt: AlterSequenceStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const seq = this.storage.getSequence(schema, stmt.name.toUpperCase());
     if (!seq) throw new OracleError(2289, `sequence ${stmt.name} does not exist`);
@@ -2949,7 +2948,7 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── ALTER INDEX ───────────────────────────────────────────────────
 
-  private executeAlterIndex(stmt: any): ResultSet {
+  private executeAlterIndex(stmt: AlterIndexStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     if (stmt.action === 'REBUILD') {
       // In a simulator, REBUILD is a no-op (the index is already in memory)
@@ -4688,6 +4687,29 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  /**
+   * Comparator for one ORDER BY item. Oracle treats NULL as the largest
+   * value: last in ASC, first in DESC — unless an explicit NULLS
+   * FIRST/LAST overrides the default. The override applies regardless of
+   * direction, so NULL placement is decided here, before the DESC flip.
+   */
+  private compareWithOrderSpec(
+    a: CellValue, b: CellValue,
+    spec: Pick<OrderByItem, 'direction' | 'nullsPosition'>,
+  ): number {
+    const aNull = a === null || a === undefined;
+    const bNull = b === null || b === undefined;
+    if (aNull || bNull) {
+      if (aNull && bNull) return 0;
+      const nullsFirst = spec.nullsPosition
+        ? spec.nullsPosition === 'FIRST'
+        : spec.direction === 'DESC';
+      return aNull === nullsFirst ? -1 : 1;
+    }
+    const cmp = this.compareValues(a, b);
+    return spec.direction === 'DESC' ? -cmp : cmp;
+  }
+
   private compareValues(a: CellValue, b: CellValue): number {
     if (a === null && b === null) return 0;
     if (a === null) return 1;  // Oracle: NULLs sort last in ASC
@@ -4722,7 +4744,7 @@ export class OracleExecutor extends BaseExecutor {
     if (val == null) return null;
     const s = String(val).trim();
     // Try DD-MON-YYYY or DD-MON-YY (Oracle default NLS_DATE_FORMAT)
-    const oraMatch = s.match(/^(\d{1,2})[\-/]([A-Za-z]{3})[\-/](\d{2,4})(?:\s+(\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?)?$/);
+    const oraMatch = s.match(/^(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{2,4})(?:\s+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?$/);
     if (oraMatch) {
       const months: Record<string, number> = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
       const mon = months[oraMatch[2].toUpperCase()];
