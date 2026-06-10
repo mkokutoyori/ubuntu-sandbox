@@ -914,29 +914,53 @@ export class VirtualFileSystem {
    */
   find(startPath: string, options: {
     name?: string;
+    iname?: string;        // case-insensitive -name
+    path?: string;         // glob against the full path
+    ipath?: string;        // case-insensitive -path
     type?: 'f' | 'd' | 'l';
     empty?: boolean;
     user?: number;
     group?: number;
     mtime?: number; // -N means modified within N days
-  }): string[] {
+    /** Match {@link sizeSpec} — `{ op: '+'|'-'|'=', value: bytes }`. */
+    size?: { op: '+' | '-' | '='; value: number };
+    /** Maximum descent depth — startPath itself is depth 0. */
+    maxdepth?: number;
+    /** Minimum depth at which to start emitting hits. */
+    mindepth?: number;
+    /** If true, every individual predicate is logically negated (-not). */
+    not?: boolean;
+  } = {}): string[] {
     const results: string[] = [];
-    this._findRecursive(startPath, options, results);
+    this._findRecursive(startPath, startPath, 0, options, results);
     return results;
   }
 
-  private _findRecursive(path: string, options: any, results: string[]): void {
+  private _findRecursive(
+    rootPath: string,
+    path: string,
+    depth: number,
+    options: any,
+    results: string[],
+  ): void {
     const inode = this.resolveInode(path);
     if (!inode) return;
 
-    const matches = this._matchesFindCriteria(path, inode, options);
-    if (matches) results.push(path);
+    if (options.maxdepth !== undefined && depth > options.maxdepth) return;
+
+    const baseMatches = this._matchesFindCriteria(path, inode, options);
+    const matches = options.not ? !baseMatches : baseMatches;
+    if (matches && (options.mindepth === undefined || depth >= options.mindepth)) {
+      results.push(path);
+    }
 
     if (inode.type === 'directory') {
-      for (const [name, childId] of inode.children) {
+      // Don't descend past maxdepth.
+      if (options.maxdepth !== undefined && depth + 1 > options.maxdepth) return;
+      for (const [name] of inode.children) {
         if (name === '.' || name === '..') continue;
         const childPath = path.replace(/\/$/, '') + '/' + name;
-        this._findRecursive(childPath, options, results);
+        this._findRecursive(rootPath, childPath, depth + 1, options, results);
       }
     }
   }
@@ -947,10 +971,13 @@ export class VirtualFileSystem {
       if (inode.type !== typeMap[options.type]) return false;
     }
 
-    if (options.name !== undefined) {
-      const basename = path.split('/').pop() || '';
-      if (!this.globMatch(basename, options.name)) return false;
-    }
+    const basename = path.split('/').pop() || '';
+    if (options.name !== undefined && !this.globMatch(basename, options.name)) return false;
+    if (options.iname !== undefined
+        && !this.globMatch(basename.toLowerCase(), options.iname.toLowerCase())) return false;
+    if (options.path !== undefined && !this.globMatch(path, options.path)) return false;
+    if (options.ipath !== undefined
+        && !this.globMatch(path.toLowerCase(), options.ipath.toLowerCase())) return false;
 
     if (options.empty && inode.type === 'file' && inode.size > 0) return false;
     if (options.empty && inode.type === 'directory' && inode.children.size > 2) return false;
@@ -968,6 +995,14 @@ export class VirtualFileSystem {
         // -mtime +N: modified more than N days ago
         if (inode.mtime > threshold) return false;
       }
+    }
+
+    if (options.size !== undefined) {
+      const fileSize = inode.size;
+      const target = options.size.value;
+      if (options.size.op === '+' && !(fileSize > target)) return false;
+      if (options.size.op === '-' && !(fileSize < target)) return false;
+      if (options.size.op === '=' && fileSize !== target) return false;
     }
 
     return true;

@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_LACP = 0x8809;
 export const LACP_SLOW_MAC = '01:80:c2:00:00:02';
 
@@ -18,7 +19,7 @@ export interface LacpActorInfo {
   state: number;
 }
 
-export interface LacpFrame {
+export interface LacpFrame extends NetworkPdu {
   type: 'lacp';
   subtype: 0x01;
   version: 0x01;

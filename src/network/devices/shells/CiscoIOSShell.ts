@@ -49,6 +49,7 @@ import {
 } from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { TrackRepository } from '../inspection/config/TrackRepository';
+import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
@@ -62,12 +63,18 @@ import {
   buildConfigCommands, buildConfigIfCommands,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands,
+  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
   registerDhcpShowCommands,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
+import {
+  registerKeyChainGlobalCommands,
+  buildKeyChainSubmode,
+  buildKeyChainKeySubmode,
+  registerKeyChainShowCommands,
+} from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow,
 } from './cisco/CiscoRoutingProtoCommands';
@@ -85,7 +92,7 @@ import {
   registerOSPFInterfaceCommands, registerOSPFShowCommands,
 } from './cisco/CiscoOspfCommands';
 import {
-  buildIPSecGlobalCommands, buildISAKMPPolicyCommands,
+  buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands,
   buildIPSecPrivilegedCommands,
@@ -116,6 +123,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private readonly fhrp = new FhrpRepository();
+  private readonly keyChains = new KeyChainRepository();
+  getKeyChains(): KeyChainRepository { return this.keyChains; }
   /** Real config-driven object-tracking & IP SLA state. */
   private readonly track = new TrackRepository();
   private readonly ipsla = new IpSlaRepository();
@@ -143,6 +152,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // IPSec selection state
   private selectedISAKMPPriority: number | null = null;
+  private selectedISAKMPProfile: string | null = null;
   private selectedTransformSet: string | null = null;
   private selectedCryptoMap: string | null = null;
   private selectedCryptoMapSeq: number | null = null;
@@ -159,6 +169,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configDhcpTrie = new CommandTrie();
+  private configDhcpPoolClassTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
   private configIpSlaTrie = new CommandTrie();
   private configRouteMapTrie = new CommandTrie();
@@ -170,6 +181,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configIpv6NaclTrie = new CommandTrie();
   // IPSec sub-mode tries
   private configIsakmpTrie = new CommandTrie();
+  private configIsakmpProfileTrie = new CommandTrie();
   private configTfsetTrie = new CommandTrie();
   private configCryptoMapTrie = new CommandTrie();
   private configIpsecProfileTrie = new CommandTrie();
@@ -197,6 +209,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configArchiveLogTrie = new CommandTrie();
   private configDhcpClassTrie = new CommandTrie();
   private configIpv6DhcpTrie = new CommandTrie();
+  private configKeychainTrie = new CommandTrie();
+  private configKeychainKeyTrie = new CommandTrie();
+  private selectedKeyChain: string | null = null;
+  private selectedKeyChainKey: number | null = null;
+  getSelectedKeyChain(): string | null { return this.selectedKeyChain; }
+  setSelectedKeyChain(n: string | null): void { this.selectedKeyChain = n; }
+  getSelectedKeyChainKey(): number | null { return this.selectedKeyChainKey; }
+  setSelectedKeyChainKey(n: number | null): void { this.selectedKeyChainKey = n; }
 
   private selectedTimeRange: string | null = null;
   private selectedClassMap: string | null = null;
@@ -288,6 +308,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // IPSec context getters/setters
   getSelectedISAKMPPriority(): number | null { return this.selectedISAKMPPriority; }
   setSelectedISAKMPPriority(p: number | null): void { this.selectedISAKMPPriority = p; }
+  getSelectedISAKMPProfile(): string | null { return this.selectedISAKMPProfile; }
+  setSelectedISAKMPProfile(p: string | null): void { this.selectedISAKMPProfile = p; }
   getSelectedTransformSet(): string | null { return this.selectedTransformSet; }
   setSelectedTransformSet(ts: string | null): void { this.selectedTransformSet = ts; }
   getSelectedCryptoMap(): string | null { return this.selectedCryptoMap; }
@@ -416,6 +438,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-if': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-dhcp': return this.configDhcpTrie;
+      case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-route-map': return this.configRouteMapTrie;
@@ -426,6 +449,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ext-nacl': return this.configExtNaclTrie;
       case 'config-ipv6-nacl': return this.configIpv6NaclTrie;
       case 'config-isakmp': return this.configIsakmpTrie;
+      case 'config-isakmp-profile': return this.configIsakmpProfileTrie;
       case 'config-tfset': return this.configTfsetTrie;
       case 'config-crypto-map': return this.configCryptoMapTrie;
       case 'config-ipsec-profile': return this.configIpsecProfileTrie;
@@ -453,6 +477,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-archive-log': return this.configArchiveLogTrie;
       case 'config-dhcp-class': return this.configDhcpClassTrie;
       case 'config-ipv6-dhcp': return this.configIpv6DhcpTrie;
+      case 'config-keychain': return this.configKeychainTrie;
+      case 'config-keychain-key': return this.configKeychainKeyTrie;
       default: return this.userTrie;
     }
   }
@@ -478,6 +504,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
       if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
       if (f === 'selectedTimeRange') this.selectedTimeRange = null;
+      if (f === 'selectedKeyChain') this.selectedKeyChain = null;
+      if (f === 'selectedKeyChainKey') this.selectedKeyChainKey = null;
       if (f === 'selectedClassMap') this.selectedClassMap = null;
       if (f === 'selectedPolicyMap') this.selectedPolicyMap = null;
       if (f === 'selectedPolicyClass') this.selectedPolicyClass = null;
@@ -550,8 +578,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
+    buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
     buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
+    registerKeyChainGlobalCommands(this.configTrie, this);
+    buildKeyChainSubmode(this.configKeychainTrie, this);
+    buildKeyChainKeySubmode(this.configKeychainKeyTrie, this);
+    registerKeyChainShowCommands(this.privilegedTrie, this);
+    registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
@@ -566,6 +600,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);
     buildISAKMPPolicyCommands(this.configIsakmpTrie, this);
+    buildISAKMPProfileCommands(this.configIsakmpProfileTrie, this);
     buildTransformSetCommands(this.configTfsetTrie, this);
     buildCryptoMapEntryCommands(this.configCryptoMapTrie, this);
     buildIPSecProfileCommands(this.configIpsecProfileTrie, this);
@@ -642,6 +677,43 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
+    trie.register('show bfd summary', 'Display BFD summary', () => ' No BFD sessions configured.');
+    trie.register('show table-map', 'Display table-maps', () => ' No table-maps configured.');
+    trie.registerGreedy('show mls qos', 'Display MLS QoS', () => ' MLS QoS is disabled.');
+    trie.register('show ip nbar protocol-discovery', 'Display NBAR discovery', () => ' NBAR protocol discovery is not enabled.');
+    trie.registerGreedy('show queueing interface', 'Display interface queueing', () => ' Interface uses FIFO queueing.');
+    trie.registerGreedy('show interfaces', 'Display interface info', (args, raw) => {
+      const tail = args[args.length - 1]?.toLowerCase();
+      const router = getRouter();
+      if (tail === 'rate-limit') return ' Rate limiting is not configured on this interface.';
+      const ifName = Show.resolveInterfaceName?.(router, args.join(' ')) ?? args.join(' ');
+      const sub = args[args.length - 1]?.toLowerCase();
+      if (sub === 'accounting') return `${args.slice(0, -1).join(' ')}\n  No accounting protocols configured.`;
+      if (sub === 'switchport') return Show.showInterfaceSwitchport(router, ifName);
+      return Show.showInterface(router, ifName);
+    });
+    trie.registerGreedy('show traffic-shape', 'Display traffic shaping', (args) => {
+      if (args[0]?.toLowerCase() === 'statistics') return ' No traffic shaping statistics.';
+      return ' No traffic shaping configured.';
+    });
+    trie.register('show ip policy', 'Display PBR bindings', () => {
+      const r = getRouter() as any;
+      const m = r._ciscoIfacePolicyRouteMap as Map<string, string> | undefined;
+      const local = r._ciscoLocalPolicyRouteMap;
+      const rows: string[] = [];
+      if (local) rows.push(` Local            ${local}`);
+      if (m) for (const [iface, rm] of m) rows.push(` ${iface.padEnd(16)} ${rm}`);
+      if (rows.length === 0) return 'Interface        Route map';
+      return ['Interface        Route map', ...rows].join('\n');
+    });
+    trie.register('show ip static route', 'Display static routes', () => Show.showIpRoute(getRouter()));
+    trie.registerGreedy('show interfaces accounting', 'Display interface accounting', () => {
+      const router = getRouter();
+      const ports = router.getPortNames();
+      const out: string[] = [];
+      for (const p of ports) out.push(`${p}\n  No accounting protocols configured.`);
+      return out.join('\n');
+    });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
     trie.register('show startup-config', 'Display saved configuration', () =>
@@ -702,7 +774,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
     };
-    trie.registerGreedy('show interface', 'Display interface status', showInterfaceCmd);
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
     trie.registerGreedy('show ipv6 interface', 'Display IPv6 interface state', (args) => {
@@ -723,7 +794,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return Show.showInterface(getRouter(), ifName);
     };
     trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
-    trie.registerGreedy('show ip interfaces', 'Display IP interface status', showIpInterfaceCmd);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────

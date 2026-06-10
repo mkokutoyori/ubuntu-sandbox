@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-08T05:57:25.342Z
+Generated: 2026-06-09T09:12:46.399Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -234,66 +234,58 @@ Total steps: 257
 [61/257] r1 [R1] bfd
 <empty>
 
-[62/257] r1 [R1] quit
+[62/257] r1 [R1-bfd] quit
 <empty>
 
-[63/257] r1 <R1> bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
-  % Invalid input detected at '^' marker.
-  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
-  ^
-
-[64/257] r1 <R1> discriminator local 1
-  % Invalid input detected at '^' marker.
-  discriminator local 1
-  ^
-
-[65/257] r1 <R1> discriminator remote 2
-  % Invalid input detected at '^' marker.
-  discriminator remote 2
-  ^
-
-[66/257] r1 <R1> min-tx-interval 100
-  % Invalid input detected at '^' marker.
-  min-tx-interval 100
-  ^
-
-[67/257] r1 <R1> min-rx-interval 100
-  % Invalid input detected at '^' marker.
-  min-rx-interval 100
-  ^
-
-[68/257] r1 <R1> detect-multiplier 3
-  % Invalid input detected at '^' marker.
-  detect-multiplier 3
-  ^
-
-[69/257] r1 <R1> commit
+[63/257] r1 [R1] bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
 <empty>
 
-[70/257] r1 <R1> quit
+[64/257] r1 [R1-bfd-session-VRRP1] discriminator local 1
 <empty>
 
-[71/257] r1 <R1> interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0
-  ^
-
-[72/257] r1 <R1> vrrp vrid 1 track bfd-session 1 reduced 50
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 track bfd-session 1 reduced 50
-  ^
-
-[73/257] r1 <R1> quit
+[65/257] r1 [R1-bfd-session-VRRP1] discriminator remote 2
 <empty>
 
-[74/257] r1 <R1> return
+[66/257] r1 [R1-bfd-session-VRRP1] min-tx-interval 100
+<empty>
+
+[67/257] r1 [R1-bfd-session-VRRP1] min-rx-interval 100
+<empty>
+
+[68/257] r1 [R1-bfd-session-VRRP1] detect-multiplier 3
+<empty>
+
+[69/257] r1 [R1-bfd-session-VRRP1] commit
+<empty>
+
+[70/257] r1 [R1-bfd-session-VRRP1] quit
+<empty>
+
+[71/257] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[72/257] r1 [R1-GE0/0/0] vrrp vrid 1 track bfd-session 1 reduced 50
+<empty>
+
+[73/257] r1 [R1-GE0/0/0] quit
+<empty>
+
+[74/257] r1 [R1] return
 <empty>
 
 [75/257] r1 <R1> display bfd configuration all
-  Info: BFD is not enabled
+  Session: VRRP1
+    Peer IP: 10.0.0.2
+    Source IP: 10.0.0.1
+    Local discriminator: 1
+    Remote discriminator: 2
+    Min Tx interval: 100ms
+    Min Rx interval: 100ms
+    Detect multiplier: 3
 
 [76/257] r1 <R1> display bfd session all
-  Info: No BFD sessions
+  Local Remote      PeerIpAddr       State     Type        InterfaceName
+  1     2           10.0.0.2         Down      AUTO        -
 
 
 --- [77] § QoS — classifier/behavior/policy ---
@@ -304,7 +296,7 @@ Total steps: 257
 <empty>
 
 [79/257] r1 [R1-acl-adv-3000] rule 5 permit ip dscp ef
-  Error: Expected permit or deny.
+<empty>
 
 [80/257] r1 [R1-acl-adv-3000] quit
 <empty>
@@ -355,17 +347,13 @@ Total steps: 257
 <empty>
 
 [96/257] r1 [R1-behavior-B-VOICE] queue ef bandwidth 2000
-  % Invalid input detected at '^' marker.
-  queue ef bandwidth 2000
-  ^
+<empty>
 
 [97/257] r1 [R1-behavior-B-VOICE] car cir 2000 pir 4000 cbs 50000 pbs 100000
 <empty>
 
 [98/257] r1 [R1-behavior-B-VOICE] statistics enable
-  % Invalid input detected at '^' marker.
-  statistics enable
-  ^
+<empty>
 
 [99/257] r1 [R1-behavior-B-VOICE] quit
 <empty>
@@ -377,9 +365,7 @@ Total steps: 257
 <empty>
 
 [102/257] r1 [R1-behavior-B-VIDEO] queue af bandwidth pct 25
-  % Invalid input detected at '^' marker.
-  queue af bandwidth pct 25
-  ^
+<empty>
 
 [103/257] r1 [R1-behavior-B-VIDEO] quit
 <empty>
@@ -391,9 +377,7 @@ Total steps: 257
 <empty>
 
 [106/257] r1 [R1-behavior-B-CRIT] queue af bandwidth pct 15
-  % Invalid input detected at '^' marker.
-  queue af bandwidth pct 15
-  ^
+<empty>
 
 [107/257] r1 [R1-behavior-B-CRIT] quit
 <empty>
@@ -432,9 +416,10 @@ Total steps: 257
   Info: No traffic behaviors configured
 
 [119/257] r1 <R1> display traffic policy user-defined WAN-OUT
-  % Invalid input detected at '^' marker.
-  display traffic policy user-defined WAN-OUT
-                                      ^
+  traffic policy WAN-OUT
+   classifier VOICE behavior B-VOICE
+   classifier VIDEO behavior B-VIDEO
+   classifier CRITICAL behavior B-CRIT
 
 
 --- [120] § QoS apply / shaping ---
@@ -448,55 +433,37 @@ Total steps: 257
 <empty>
 
 [123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
-  % Invalid input detected at '^' marker.
-  qos lr outbound cir 100000 cbs 1875000
-      ^
+<empty>
 
 [124/257] r1 [R1-GE0/0/1] qos gts dscp ef cir 2000 cbs 50000
-  % Invalid input detected at '^' marker.
-  qos gts dscp ef cir 2000 cbs 50000
-      ^
+<empty>
 
 [125/257] r1 [R1-GE0/0/1] qos queue 5 length packets 100
 <empty>
 
 [126/257] r1 [R1-GE0/0/1] qos wfq
-  % Invalid input detected at '^' marker.
-  qos wfq
-      ^
+<empty>
 
 [127/257] r1 [R1-GE0/0/1] qos wred dscp
-  % Invalid input detected at '^' marker.
-  qos wred dscp
-      ^
+<empty>
 
 [128/257] r1 [R1-GE0/0/1] trust dscp
-  % Invalid input detected at '^' marker.
-  trust dscp
-  ^
+<empty>
 
 [129/257] r1 [R1-GE0/0/1] trust 8021p
-  % Invalid input detected at '^' marker.
-  trust 8021p
-  ^
+<empty>
 
 [130/257] r1 [R1-GE0/0/1] qos queue-profile QP1
-  % Invalid input detected at '^' marker.
-  qos queue-profile QP1
-      ^
+<empty>
 
 [131/257] r1 [R1-GE0/0/1] quit
 <empty>
 
 [132/257] r1 [R1] qos queue-profile QP1
-  % Invalid input detected at '^' marker.
-  qos queue-profile QP1
-  ^
+<empty>
 
 [133/257] r1 [R1] schedule wfq 0 to 5
-  % Invalid input detected at '^' marker.
-  schedule wfq 0 to 5
-  ^
+<empty>
 
 [134/257] r1 [R1] quit
 <empty>
@@ -525,29 +492,19 @@ Total steps: 257
 <empty>
 
 [142/257] r1 [R1-GE0/0/1] qos car inbound cir 8000 cbs 1500000
-  % Invalid input detected at '^' marker.
-  qos car inbound cir 8000 cbs 1500000
-      ^
+<empty>
 
 [143/257] r1 [R1-GE0/0/1] qos pq
-  % Invalid input detected at '^' marker.
-  qos pq
-      ^
+<empty>
 
 [144/257] r1 [R1-GE0/0/1] qos cq
-  % Invalid input detected at '^' marker.
-  qos cq
-      ^
+<empty>
 
 [145/257] r1 [R1-GE0/0/1] qos wrr
-  % Invalid input detected at '^' marker.
-  qos wrr
-      ^
+<empty>
 
 [146/257] r1 [R1-GE0/0/1] qos priority 5
-  % Invalid input detected at '^' marker.
-  qos priority 5
-      ^
+<empty>
 
 [147/257] r1 [R1-GE0/0/1] undo qos pq
 <empty>
@@ -569,7 +526,7 @@ Total steps: 257
 
 
 --- [153] § regression: display family ---
-[153/257] r1 [R1] display version
+[153/257] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -578,7 +535,7 @@ Total steps: 257
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[154/257] r1 [R1] display version
+[154/257] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -587,7 +544,7 @@ Total steps: 257
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[155/257] r1 [R1] display current-configuration
+[155/257] r1 <R1> display current-configuration
   #
   sysname R1
   #
@@ -604,8 +561,11 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
-[156/257] r1 [R1] display saved-configuration
+[156/257] r1 <R1> display saved-configuration
   #
   sysname R1
   #
@@ -622,8 +582,11 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
-[157/257] r1 [R1] display ip interface brief
+[157/257] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -639,7 +602,7 @@ Total steps: 257
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
 
-[158/257] r1 [R1] display interface
+[158/257] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.2/255.255.255.0
@@ -665,7 +628,7 @@ Total steps: 257
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[159/257] r1 [R1] display ip routing-table
+[159/257] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -675,61 +638,64 @@ Total steps: 257
   192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[160/257] r1 [R1] display ip routing-table statistics
+[160/257] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    2
   --------------------
   Total     2
 
-[161/257] r1 [R1] display arp
+[161/257] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[162/257] r1 [R1] display arp all
+[162/257] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[163/257] r1 [R1] display ospf peer
+[163/257] r1 <R1> display ospf peer
   Error: OSPF is not configured.
 
-[164/257] r1 [R1] display ospf interface
+[164/257] r1 <R1> display ospf interface
   Error: OSPF is not configured.
 
-[165/257] r1 [R1] display ospf routing
+[165/257] r1 <R1> display ospf routing
   Info: OSPF is not running.
 
-[166/257] r1 [R1] display ospf lsdb
+[166/257] r1 <R1> display ospf lsdb
   Error: OSPF is not configured.
 
-[167/257] r1 [R1] display ospf brief
+[167/257] r1 <R1> display ospf brief
   Error: OSPF is not configured.
 
-[168/257] r1 [R1] display rip
+[168/257] r1 <R1> display rip
   Info: RIP is not enabled.
 
-[169/257] r1 [R1] display rip 1 route
+[169/257] r1 <R1> display rip 1 route
   Info: RIP is not enabled.
 
-[170/257] r1 [R1] display bgp peer
+[170/257] r1 <R1> display bgp peer
   Info: BGP is not running.
 
-[171/257] r1 [R1] display bgp routing-table
+[171/257] r1 <R1> display bgp routing-table
   Info: BGP is not running.
 
-[172/257] r1 [R1] display nat session all
+[172/257] r1 <R1> display nat session all
   Info: No NAT session is found.
 
-[173/257] r1 [R1] display nat address-group
+[173/257] r1 <R1> display nat address-group
   No NAT address pools configured.
 
-[174/257] r1 [R1] display ip pool
+[174/257] r1 <R1> display ip pool
   No DHCP pools configured.
 
-[175/257] r1 [R1] display acl all
-  Total 0 ACL(s)
+[175/257] r1 <R1> display acl all
+  Advanced ACL 3000, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit
+  Total 1 ACL(s)
 
-[176/257] r1 [R1] display dhcp server statistics
+[176/257] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -739,7 +705,7 @@ Total steps: 257
     Inform: 0        Decline: 0
   Pool number: 0
 
-[177/257] r1 [R1] display vrrp
+[177/257] r1 <R1> display vrrp
   GE0/0/0 | Virtual Router 1
       State : Master
       Virtual IP : 192.168.1.1, 192.168.1.101
@@ -773,7 +739,7 @@ Total steps: 257
       Authentication : md5
       Description : VRRP-GRP-4
 
-[178/257] r1 [R1] display vrrp brief
+[178/257] r1 <R1> display vrrp brief
   Total: 4     Master: 4     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
   1     Master       GE0/0/0                  Normal   192.168.1.1,192.168.1.101
@@ -781,63 +747,63 @@ Total steps: 257
   3     Master       GE0/0/0                  Normal   192.168.1.3,192.168.1.103
   4     Master       GE0/0/0                  Normal   192.168.1.4,192.168.1.104
 
-[179/257] r1 [R1] display ike sa
+[179/257] r1 <R1> display ike sa
   Info: No IPSec configuration.
 
-[180/257] r1 [R1] display ipsec sa
+[180/257] r1 <R1> display ipsec sa
   Info: No IPSec configuration.
 
-[181/257] r1 [R1] display ipsec policy
+[181/257] r1 <R1> display ipsec policy
   Info: No IPSec configuration.
 
-[182/257] r1 [R1] display ipsec proposal
+[182/257] r1 <R1> display ipsec proposal
   Info: No IPSec configuration.
 
-[183/257] r1 [R1] display ike proposal
+[183/257] r1 <R1> display ike proposal
   Info: No IPSec configuration.
 
-[184/257] r1 [R1] display ike peer
+[184/257] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[185/257] r1 [R1] display snmp-agent sys-info
+[185/257] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[186/257] r1 [R1] display ntp status
+[186/257] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[187/257] r1 [R1] display ntp session
+[187/257] r1 <R1> display ntp session
   No NTP associations
 
-[188/257] r1 [R1] display clock
-  2026-06-08 05:57:25
-  Monday
+[188/257] r1 <R1> display clock
+  2026-06-09 09:12:46
+  Tuesday
   Time Zone(UTC) : UTC
 
-[189/257] r1 [R1] display lldp neighbor
+[189/257] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[190/257] r1 [R1] display lldp neighbor brief
+[190/257] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[191/257] r1 [R1] display cpu-usage
+[191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-08 05:57:25
+  CPU Usage Stat. Time : 2026-06-09 09:12:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-08 05:57:25
+[192/257] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-06-09 09:12:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[193/257] r1 [R1] display device
+[193/257] r1 <R1> display device
   R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
@@ -848,13 +814,13 @@ Total steps: 257
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[194/257] r1 [R1] display users
+[194/257] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[195/257] r1 [R1] display history-command
+[195/257] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -866,7 +832,7 @@ Total steps: 257
   display users
   display history-command
 
-[196/257] r1 [R1] display logbuffer
+[196/257] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -875,7 +841,7 @@ Total steps: 257
   Overwritten messages : 0
   Current messages : 0
 
-[197/257] r1 [R1] display trapbuffer
+[197/257] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -883,10 +849,10 @@ Total steps: 257
   Dropped messages : 0
   Current messages : 0
 
-[198/257] r1 [R1] display alarm all
+[198/257] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[199/257] r1 [R1] display startup
+[199/257] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -898,10 +864,10 @@ Total steps: 257
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[200/257] r1 [R1] display patch-information
+[200/257] r1 <R1> display patch-information
   Info: No patch exists.
 
-[201/257] r1 [R1] display elabel
+[201/257] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
@@ -914,12 +880,12 @@ Total steps: 257
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[202/257] r1 [R1] display license
+[202/257] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[203/257] r1 [R1] display interface brief
+[203/257] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -927,7 +893,7 @@ Total steps: 257
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
 
-[204/257] r1 [R1] display ip interface GigabitEthernet0/0/0
+[204/257] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.2/24
@@ -940,7 +906,7 @@ Total steps: 257
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[205/257] r1 [R1] display interface GigabitEthernet0/0/0
+[205/257] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.2/255.255.255.0
@@ -948,7 +914,7 @@ Total steps: 257
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[206/257] r1 [R1] display this
+[206/257] r1 <R1> display this
   #
   sysname R1
   #
@@ -965,13 +931,16 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
-[207/257] r1 [R1] display diagnostic-information
+[207/257] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[208/257] r1 [R1] display aaa configuration
+[208/257] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -981,13 +950,13 @@ Total steps: 257
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[209/257] r1 [R1] display aaa online-fail-record
+[209/257] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[210/257] r1 [R1] display ssh server status
+[210/257] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[211/257] r1 [R1] display ssh user-information
+[211/257] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -995,7 +964,7 @@ Total steps: 257
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[212/257] r1 [R1] display user-interface
+[212/257] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -1004,16 +973,16 @@ Total steps: 257
     37     VTY 3           -        -      0      0            N      -
     38     VTY 4           -        -      0      0            N      -
 
-[213/257] r1 [R1] display port-security
+[213/257] r1 <R1> display port-security
   Port-security is enabled on the following interfaces:
    (configuration is recorded per interface; see display this)
 
 
 --- [214] § regression: pipe filters ---
-[214/257] r1 [R1] display current-configuration | include ospf
+[214/257] r1 <R1> display current-configuration | include ospf
 <empty>
 
-[215/257] r1 [R1] display current-configuration | begin interface
+[215/257] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
   #
@@ -1027,8 +996,11 @@ Total steps: 257
    shutdown
   #
   #
+  acl number 3000
+   rule 0 permit
+  #
 
-[216/257] r1 [R1] display current-configuration | exclude #
+[216/257] r1 <R1> display current-configuration | exclude #
   sysname R1
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
@@ -1038,12 +1010,14 @@ Total steps: 257
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
+  acl number 3000
+   rule 0 permit
 
-[217/257] r1 [R1] display ip routing-table | include Direct
+[217/257] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[218/257] r1 [R1] display ip interface brief | include up
+[218/257] r1 <R1> display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
   GE0/0/0                           192.168.1.2/24       UP         UP
@@ -1172,9 +1146,10 @@ Total steps: 257
     routing-table  routing-table
 
 [254/257] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1186,6 +1161,7 @@ Total steps: 257
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

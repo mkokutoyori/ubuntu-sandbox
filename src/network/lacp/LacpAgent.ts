@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LacpAdminMode, type LacpConfig, type LacpFrame, type LacpPortInfo,
   type LacpPortState, type LacpActorInfo,
@@ -19,37 +20,18 @@ export interface LacpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
 }
 
-export class LacpAgent {
+export class LacpAgent extends ReactiveAgentBase {
   private config: LacpConfig;
   private readonly advertising = new Set<string>();
-  private slowTimer: TimerHandle | null = null;
-  private fastTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: LacpHost,
-    private readonly getBus: () => IEventBus,
+    getBus: () => IEventBus,
     systemId: string,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {
+    super(host, getBus, getScheduler);
     this.config = createDefaultLacpConfig(systemId);
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
   }
 
   getConfig(): Readonly<LacpConfig> { return this.config; }
@@ -64,7 +46,7 @@ export class LacpAgent {
     this.config.fastRate = on;
     if (this.config.enabled) {
       this.stopTimers();
-      this.startTimers();
+      this.armTimers();
     }
   }
 
@@ -206,21 +188,13 @@ export class LacpAgent {
     return idx + 1;
   }
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.slowTimer === null) {
-      this.slowTimer = s.setInterval(() => this.tick('slow'), 30_000);
-    }
-    if (this.config.fastRate && this.fastTimer === null) {
-      this.fastTimer = s.setInterval(() => this.tick('fast'), 1_000);
-    }
-  }
+  protected isEnabled(): boolean { return this.config.enabled; }
 
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.slowTimer !== null) { s.clear(this.slowTimer); this.slowTimer = null; }
-    if (this.fastTimer !== null) { s.clear(this.fastTimer); this.fastTimer = null; }
+  protected armTimers(): void {
+    this.scheduleInterval('slow', () => this.tick('slow'), 30_000);
+    if (this.config.fastRate) {
+      this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
+    }
   }
 
   private tick(rate: 'slow' | 'fast'): void {
@@ -233,28 +207,14 @@ export class LacpAgent {
     }
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkUp(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkUp(portName: string): void {
+  protected override onPortLinkUp(portName: string): void {
     const p = this.config.ports.get(portName);
     if (!p) return;
     if (p.mode === 'active') this.advertise(portName);
     this.recompute();
   }
 
-  private onLinkDown(portName: string): void {
+  protected override onPortLinkDown(portName: string): void {
     const p = this.config.ports.get(portName);
     if (!p) return;
     const wasBundled = p.bundled;

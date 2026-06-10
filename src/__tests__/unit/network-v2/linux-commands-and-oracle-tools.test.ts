@@ -245,6 +245,15 @@ describe('netstat', () => {
     expect(out).toContain('Gateway');
   });
 
+  it('netstat -s shows protocol statistics, not the connection list', async () => {
+    const out = await server.executeCommand('netstat -s');
+    expect(out).toContain('Ip:');
+    expect(out).toContain('Icmp:');
+    expect(out).toContain('Tcp:');
+    expect(out).toContain('Udp:');
+    expect(out).not.toContain('Active Internet connections');
+  });
+
   it('netstat on server shows Oracle listener port', async () => {
     const out = await server.executeCommand('netstat -tlnp');
     expect(out).toContain(':1521');

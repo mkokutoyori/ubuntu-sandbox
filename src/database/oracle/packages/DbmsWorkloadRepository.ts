@@ -15,14 +15,8 @@
 import { builtinPackageRegistry, type IPackageRoutine, type PackageCallContext } from './PackageRegistry';
 import type { AwrSnapshotManager } from '../awr/AwrSnapshotManager';
 
-/** Resolve the AwrSnapshotManager from a session context.
- *  The session does not carry the manager directly; we follow the
- *  conventional path session → instance → snapshot manager. The
- *  instance handle is injected via OracleSession.instance reference,
- *  set by OracleDatabase. */
 function manager(ctx: PackageCallContext): AwrSnapshotManager | null {
-  const s = ctx.session as unknown as { _awrManager?: AwrSnapshotManager };
-  return s._awrManager ?? null;
+  return ctx.services.awr ?? null;
 }
 
 class CreateSnapshot implements IPackageRoutine {

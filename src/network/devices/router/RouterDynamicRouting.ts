@@ -84,7 +84,11 @@ export class RouterDynamicRouting {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       if (!ip || !mask || !port.getIsUp()) continue;
-      out.push({ network: networkOf(ip, mask), mask, iface: name, localIp: ip });
+      out.push({
+        network: networkOf(ip, mask), mask, iface: name, localIp: ip,
+        bandwidthKbps: port.getEffectiveBandwidthKbps(),
+        delayUsec: port.getDelayUs(),
+      });
     }
     return out;
   }
@@ -112,6 +116,8 @@ export class RouterDynamicRouting {
         localIp: port.getIPAddress(),
         remoteIface: peerPort.getName(),
         remoteIp: peerPort.getIPAddress(),
+        linkBandwidthKbps: port.getEffectiveBandwidthKbps(),
+        linkDelayUsec: port.getDelayUs(),
         peerEngineFor: (proto) => peerDR.engineFor(proto),
       });
     }

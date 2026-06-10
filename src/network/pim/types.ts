@@ -1,17 +1,10 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { ipToUint32, prefixLengthToMaskUint32 } from '../core/ip';
 export const IP_PROTO_PIM = 103;
 export const PIM_ALL_ROUTERS = '224.0.0.13';
 export const PIM_ALL_ROUTERS_MAC = '01:00:5e:00:00:0d';
 
-export type PimMessageType =
-  | 'hello'
-  | 'register'
-  | 'register-stop'
-  | 'join-prune'
-  | 'bootstrap'
-  | 'assert'
-  | 'graft'
-  | 'graft-ack'
-  | 'candidate-rp-advertisement';
+export type PimMessageType = 'hello' | 'join-prune';
 
 export type PimMode = 'sparse' | 'dense' | 'sparse-dense';
 
@@ -34,7 +27,7 @@ export interface PimJoinPruneBody {
   groups: PimJoinPruneGroup[];
 }
 
-export interface PimPacket {
+export interface PimPacket extends NetworkPdu {
   type: 'pim';
   version: 2;
   messageType: PimMessageType;
@@ -45,7 +38,7 @@ export interface PimPacket {
   joinPrune?: PimJoinPruneBody;
 }
 
-export type PimMroutEntryType = 'star-g' | 's-g';
+export type PimMroutEntryType = 'star-g';
 
 export interface PimMroutEntry {
   groupAddress: string;
@@ -121,14 +114,12 @@ export function createDefaultPimConfig(): PimConfig {
   };
 }
 
-export function ipToUint32(ip: string): number {
-  const p = ip.split('.').map(Number);
-  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
-}
+// Canonical implementation lives in core/ip; re-exported for existing callers.
+export { ipToUint32 } from '../core/ip';
 
 export function matchesGroupRange(group: string, rangeIp: string, maskBits: number): boolean {
   if (maskBits <= 0) return true;
-  const mask = (0xffffffff << (32 - maskBits)) >>> 0;
+  const mask = prefixLengthToMaskUint32(maskBits);
   return (ipToUint32(group) & mask) === (ipToUint32(rangeIp) & mask);
 }
 

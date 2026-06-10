@@ -29,6 +29,18 @@ import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 export type FrameHandler = (portName: string, frame: EthernetFrame) => void;
 export type LinkChangeHandler = (state: 'up' | 'down') => void;
 
+/**
+ * Cisco IOS default interface delay (microseconds) for a link speed —
+ * the "DLY" figure of `show interfaces`, consumed by EIGRP's composite
+ * metric. Overridable per port via the `delay` interface command.
+ */
+export function defaultInterfaceDelayUs(speedMbps: number): number {
+  if (speedMbps >= 1000) return 10;     // Gigabit and faster
+  if (speedMbps >= 100) return 100;     // FastEthernet
+  if (speedMbps >= 10) return 1000;     // Ethernet
+  return 20_000;                        // serial-grade links
+}
+
 /** IPv6 address entry with prefix length */
 export interface IPv6AddressEntry {
   address: IPv6Address;
@@ -62,7 +74,8 @@ export class Port {
   // ─── MTU ───────────────────────────────────────────────────────────
   private mtu: number = 1500;
   private bandwidthKbps: number = 0;
-  private delayUs: number = 10;
+  /** Explicit `delay` override; null = IOS default for the link speed. */
+  private delayUs: number | null = null;
   private arpTimeoutSec: number = 4 * 60 * 60;
   private keepaliveSec: number = 10;
   private keepaliveEnabled: boolean = true;
@@ -76,8 +89,16 @@ export class Port {
 
   getBandwidthKbps(): number { return this.bandwidthKbps; }
   setBandwidthKbps(v: number): void { this.bandwidthKbps = v; }
-  getDelayUs(): number { return this.delayUs; }
+  getDelayUs(): number {
+    return this.delayUs ?? defaultInterfaceDelayUs(this.getNegotiatedSpeed());
+  }
   setDelayUs(v: number): void { this.delayUs = v; }
+  /** Effective bandwidth (kbps): explicit `bandwidth` or the link speed. */
+  getEffectiveBandwidthKbps(): number {
+    return this.bandwidthKbps > 0
+      ? this.bandwidthKbps
+      : this.getNegotiatedSpeed() * 1000;
+  }
   getArpTimeoutSec(): number { return this.arpTimeoutSec; }
   setArpTimeoutSec(v: number): void { this.arpTimeoutSec = v; }
   getKeepaliveSec(): number { return this.keepaliveSec; }

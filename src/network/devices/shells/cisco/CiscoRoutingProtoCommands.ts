@@ -171,7 +171,11 @@ export function buildRoutingProtoConfig(
     const n = parseInt(a[0], 10);
     const p = curProto(ctx).proto;
     if (p === 'rip') repo.rip.maximumPaths = n;
-    else if (p === 'eigrp') eigrp().maximumPaths = n;
+    else if (p === 'eigrp' && !Number.isNaN(n) && n >= 1) {
+      eigrp().maximumPaths = n;
+      eigrpEng().getConfig().maximumPaths = n;
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
@@ -195,6 +199,11 @@ export function buildRoutingProtoConfig(
       if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
       if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
       else if (a[1] === 'activate') bn.activated = true;
+      else if (a[1] === 'weight') {
+        const w = parseInt(a[2], 10);
+        if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
+        bn.weight = w;
+      }
       converge();
     }
     return '';
@@ -218,13 +227,48 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
-    eigrp().variance = parseInt(a[0], 10);
+    const v = parseInt(a[0], 10);
+    if (Number.isNaN(v) || v < 1 || v > 128) {
+      return '% Invalid variance value (1-128)';
+    }
+    eigrp().variance = v;
+    eigrpEng().getConfig().variance = v;
+    converge();
+    return '';
+  });
+  routerTrie.registerGreedy('metric', 'Metric options', (a, raw) => {
+    const { proto } = curProto(ctx);
+    if (proto === 'rip') {
+      // `default-metric`-style RIP knob recorded as remembered config.
+      const n = parseInt(a[a.length - 1] ?? '', 10);
+      if (!isNaN(n)) repo.rip.defaultMetric = n;
+      const line = raw ?? `metric ${a.join(' ')}`.trim();
+      if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
+      return '';
+    }
+    if (proto === 'eigrp') {
+      // `metric weights <tos> k1 k2 k3 k4 k5` — feeds the composite metric.
+      if (a[0] !== 'weights') return '% Invalid input detected.';
+      const ks = a.slice(2, 7).map((n) => parseInt(n, 10));
+      if (ks.length < 5 || ks.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+        return '% Invalid metric weights';
+      }
+      eigrpEng().getConfig().kValues = {
+        k1: ks[0], k2: ks[1], k3: ks[2], k4: ks[3], k5: ks[4],
+      };
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
     if (a[0] === 'router-id') {
       const b = bgp(); if (b) b.routerId = a[1];
       bgpEng().getConfig().routerId = a[1];
+    } else if (a[0] === 'default' && a[1] === 'local-preference') {
+      const lp = parseInt(a[2], 10);
+      if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
+      bgpEng().getConfig().defaultLocalPref = lp;
+      converge();
     }
     return '';
   });
@@ -239,8 +283,10 @@ export function buildRoutingProtoConfig(
     else if (p === 'eigrp') eigrp().addressFamilies.push(af);
     return '';
   });
+  // NOTE: `metric` is NOT in this catch-all list — it has a dedicated
+  // handler above (RIP default-metric / EIGRP `metric weights`).
   for (const kw of ['exit-address-family', 'exit-af-interface',
-    'exit-af-topology', 'af-interface', 'topology', 'metric',
+    'exit-af-topology', 'af-interface', 'topology',
     'offset-list', 'output-delay', 'flash-update-threshold',
     'validate-update-source', 'synchronization', 'no synchronization',
     'compatible', 'log-adjacency-changes',
@@ -250,10 +296,6 @@ export function buildRoutingProtoConfig(
       const proto = sp?.proto;
       const line = raw ?? `${kw} ${args.join(' ')}`.trim();
       if (proto === 'rip') {
-        if (kw === 'metric') {
-          const n = parseInt(args[args.length - 1] ?? '', 10);
-          if (!isNaN(n)) repo.rip.defaultMetric = n;
-        }
         if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
       }
       return '';
@@ -355,12 +397,34 @@ export function registerRoutingProtoShow(
     if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
     live();
     const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
-    for (const n of repo.allEigrp().flatMap((p) => p.networks)) {
-      lines.push(`P ${n}, 1 successors, FD is 0 (connected)`);
-    }
-    for (const r of e.getContributedRoutes()) {
-      lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, ` +
-        `FD is ${r.metric} via ${r.nextHop} (${r.iface})`);
+    const topo = e.getTopologyTable();
+    if (topo.size === 0) {
+      // No learned paths — show what this router really originates
+      // (real IOS lists connected, EIGRP-activated prefixes as P entries).
+      for (const pre of e.originatedPrefixes()) {
+        lines.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is 2816`);
+        lines.push(`        via Connected`);
+      }
+      for (const r of e.getContributedRoutes()) {
+        lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, FD is ${r.metric}`);
+        lines.push(`        via ${r.nextHop} (${r.metric}/${Math.max(0, r.metric - 256)}), ${r.iface}`);
+      }
+      if (lines.length === 1) {
+        // Pure config projection — no live interface matches a network
+        // statement yet, so show the configured statements themselves.
+        for (const stmt of e.getConfig().networks) {
+          lines.push(`P ${stmt.network}, 0 successors, FD is Inaccessible`);
+        }
+      }
+    } else {
+      for (const [prefix, entry] of topo) {
+        const totalSuccessors = 1 + entry.feasibleSuccessors.length;
+        lines.push(`P ${prefix}, ${totalSuccessors} successors, FD is ${entry.fd}`);
+        lines.push(`        via ${entry.successorNextHop} (${entry.fd}/${Math.max(0, entry.fd - 256)}), ${entry.successorIface}`);
+        for (const fs of entry.feasibleSuccessors) {
+          lines.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
+        }
+      }
     }
     return lines.join('\n');
   });

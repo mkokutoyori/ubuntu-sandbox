@@ -35,13 +35,9 @@ function defaults(iface: string, group: number): HsrpGroup {
   };
 }
 
-/** Well-known HSRP virtual MAC (standard formula, not fabricated). */
-export function hsrpVirtualMac(group: number, version: 1 | 2): string {
-  if (version === 2) {
-    return `0000.0c9f.f${group.toString(16).padStart(3, '0')}`;
-  }
-  return `0000.0c07.ac${group.toString(16).padStart(2, '0')}`;
-}
+// Canonical HSRP virtual-MAC formula lives with the protocol definition;
+// re-exported here so existing CLI imports keep working.
+export { hsrpVirtualMac } from '../../../hsrp/types';
 
 export interface VrrpGroup {
   iface: string;
@@ -102,6 +98,10 @@ export class FhrpRepository {
       this.groups.set(k, g);
     }
     return g;
+  }
+
+  interfaceVersion(iface: string): 1 | 2 {
+    return this.ifaceVersion.get(iface) ?? 1;
   }
 
   setInterfaceVersion(iface: string, version: 1 | 2): void {

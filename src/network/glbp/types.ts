@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_GLBP = 3222;
 export const GLBP_MULTICAST_IP = '224.0.0.102';
 export const GLBP_MULTICAST_MAC = '01:00:5e:00:00:66';
@@ -40,7 +41,7 @@ export interface GlbpAssignTlv {
 
 export type GlbpTlv = GlbpHelloTlv | GlbpRequestTlv | GlbpAssignTlv;
 
-export interface GlbpPacket {
+export interface GlbpPacket extends NetworkPdu {
   type: 'glbp';
   version: 1;
   group: number;
@@ -102,13 +103,5 @@ export function glbpVirtualMac(group: number, forwarder: number): string {
   return `00:07:b4:00:${g}:${f}`;
 }
 
-export function compareCandidate(
-  a: { priority: number; ip: string },
-  b: { priority: number; ip: string },
-): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
-  const ai = a.ip.split('.').map(Number);
-  const bi = b.ip.split('.').map(Number);
-  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
-  return 0;
-}
+// Election comparison is shared across the FHRP family.
+export { compareFhrpCandidates as compareCandidate } from '../fhrp/types';

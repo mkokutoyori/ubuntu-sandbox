@@ -84,6 +84,34 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     eng(ctx).removeIKEv2Profile(args[0]);
     return '';
   });
+
+  trie.registerGreedy('crypto ikev2 dpd', 'Global IKEv2 DPD interval / retry', (args) => {
+    const e = eng(ctx) as any;
+    const interval = parseInt(args[0] ?? '', 10);
+    const retry = parseInt(args[1] ?? '', 10);
+    if (Number.isFinite(interval)) e.ikev2GlobalDpdInterval = interval;
+    if (Number.isFinite(retry)) e.ikev2GlobalDpdRetry = retry;
+    if (args[2]) e.ikev2GlobalDpdMode = args[2].toLowerCase();
+    return '';
+  });
+  trie.registerGreedy('crypto ikev2 nat keepalive', 'Set IKEv2 NAT keepalive', (args) => {
+    const e = eng(ctx) as any;
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) e.ikev2NatKeepalive = n;
+    return '';
+  });
+  trie.registerGreedy('crypto ikev2 cookie-challenge', 'Set IKEv2 cookie-challenge threshold', (args) => {
+    const e = eng(ctx) as any;
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) e.ikev2CookieChallenge = n;
+    return '';
+  });
+  trie.registerGreedy('crypto ikev2 window', 'Set IKEv2 window size', (args) => {
+    const e = eng(ctx) as any;
+    const n = parseInt(args[0] ?? '', 10);
+    if (Number.isFinite(n)) e.ikev2WindowSize = n;
+    return '';
+  });
 }
 
 // ─── config-ikev2-proposal sub-mode ──────────────────────────────────

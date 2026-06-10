@@ -22,10 +22,12 @@ import type {
 function winStateToOs(s: WinServiceState): 'inactive' | 'activating' | 'active' | 'deactivating' | 'failed' {
   switch (s) {
     case 'Running':         return 'active';
-    case 'StartPending':    return 'activating';
+    case 'StartPending':
+    // ContinuePending resumes a paused service — the SCM is bringing it
+    // back up, the cross-OS equivalent of systemd's 'activating'.
+    case 'ContinuePending': return 'activating';
     case 'StopPending':
-    case 'PausePending':
-    case 'ContinuePending': return 'deactivating';
+    case 'PausePending':    return 'deactivating';
     case 'Paused':          return 'active'; // paused still "alive"
     case 'Stopped':
     default:                return 'inactive';

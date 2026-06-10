@@ -135,15 +135,21 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     const r = ctx.r() as any;
     const classes = r._ciscoDhcpPoolClasses ?? (r._ciscoDhcpPoolClasses = new Map<string, any>());
     const list = classes.get(p) ?? [];
-    list.push({ className: args[0], ranges: [] });
+    if (!list.find((c: any) => c.className === args[0])) {
+      list.push({ className: args[0], ranges: [] });
+    }
     classes.set(p, list);
     r._ciscoDhcpPoolCurrentClass = args[0];
+    ctx.setMode('config-dhcp-pool-class');
     return '';
   });
+}
 
+export function buildConfigDhcpPoolClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('address range', 'DHCP class address range', (args) => {
     const r = ctx.r() as any;
-    const p = pool(); const className = r._ciscoDhcpPoolCurrentClass;
+    const p = ctx.getSelectedDHCPPool();
+    const className = r._ciscoDhcpPoolCurrentClass;
     if (!p || !className) return '';
     const classes = r._ciscoDhcpPoolClasses as Map<string, any[]> | undefined;
     const list = classes?.get(p) ?? [];
@@ -205,8 +211,13 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show ip dhcp pool', 'Display DHCP pool information', (args) =>
     getRouter()._getDHCPServerInternal().formatPoolShow(args.length > 0 ? args[0] : undefined));
-  trie.register('show ip dhcp binding', 'Display DHCP address bindings', () =>
-    getRouter()._getDHCPServerInternal().formatBindingsShow());
+  trie.registerGreedy('show ip dhcp binding', 'Display DHCP address bindings', (args) => {
+    const full = getRouter()._getDHCPServerInternal().formatBindingsShow();
+    if (!args.length) return full;
+    const lines = full.split('\n');
+    const matched = lines.filter(l => l.includes(args[0]));
+    return matched.length ? [lines[0], ...matched].join('\n') : lines[0];
+  });
   trie.register('show ip dhcp server statistics', 'Display DHCP server statistics', () =>
     getRouter()._getDHCPServerInternal().formatStatsShow());
   trie.register('show ip dhcp conflict', 'Display DHCP address conflicts', () =>
@@ -225,6 +236,18 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
       `DHCP snooping VLAN configuration: ${vlans}`,
       `Insertion of option-82 information: ${r._ciscoDhcpSnoopingInfoOption ? 'yes' : 'no'}`,
     ].join('\n');
+  });
+
+  trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => {
+    const r = getRouter() as any;
+    const bindings = r._ciscoIpv6DhcpBindings as Map<string, any> | undefined;
+    if (!bindings || bindings.size === 0) return 'No IPv6 DHCP bindings.';
+    return [...bindings.values()].map(b => `${b.client} → ${b.address}`).join('\n');
+  });
+  trie.register('show dhcp lease', 'Display DHCP client leases', () => 'No DHCP leases.');
+  trie.register('show dhcp server', 'Display DHCP server status', () => {
+    const r = getRouter() as any;
+    return r._ciscoDhcpServerEnabled === false ? 'DHCP server disabled.' : 'DHCP server enabled.';
   });
 
   trie.register('show ipv6 dhcp pool', 'Display IPv6 DHCP pools', () => {
@@ -298,6 +321,10 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
   });
   trie.register('clear ip dhcp server statistics', 'Clear DHCP server statistics', () => {
     getRouter()._getDHCPServerInternal().clearStats();
+    return '';
+  });
+  trie.registerGreedy('clear ip dhcp conflict', 'Clear DHCP address conflicts', () => {
+    getRouter()._getDHCPServerInternal().clearConflicts();
     return '';
   });
 }

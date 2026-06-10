@@ -12,9 +12,12 @@ const MULTI_OPS = [':=', '..', '||', '<>', '!=', '<=', '>=', '=>', '**', '<<', '
 const SINGLE_OPS = new Set(['+', '-', '*', '/', '=', '<', '>', '(', ')', ',', ';', '.', '%', '@', ':']);
 
 export class PlsqlLexParseError extends Error {
-  constructor(message: string) {
+  readonly line: number;
+
+  constructor(message: string, line = 0) {
     super(message);
     this.name = 'PlsqlLexParseError';
+    this.line = line;
   }
 }
 

@@ -17,6 +17,8 @@ import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 
+const normalizeWildcard = (w: string): string => (w === '0' ? '0.0.0.0' : w);
+
 export type HuaweiACLMode = 'acl-basic' | 'acl-advanced';
 
 export interface HuaweiACLContext {
@@ -41,14 +43,17 @@ export function registerHuaweiACLSystemCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
 
     if (args[0].toLowerCase() === 'name') {
-      if (args.length < 3) return 'Error: Incomplete command.';
+      if (args.length < 2) return 'Error: Incomplete command.';
       const name = args[1];
-      const type = args[2].toLowerCase();
-      if (type !== 'basic' && type !== 'advanced') return 'Error: Expected basic or advanced.';
+      const typeTok = args[2]?.toLowerCase();
+      const isAdvanced = typeTok === 'advanced' || typeTok === 'advance';
+      const isBasic = typeTok === 'basic';
+      if (typeTok && !isAdvanced && !isBasic) return 'Error: Expected basic or advance.';
+      const mode = isAdvanced ? 'acl-advanced' : 'acl-basic';
       ctx.setSelectedACLName(name);
       ctx.setSelectedACLNumber(null);
-      ctx.setSelectedACLMode(type === 'basic' ? 'acl-basic' : 'acl-advanced');
-      ctx.setMode(type === 'basic' ? 'acl-basic' : 'acl-advanced');
+      ctx.setSelectedACLMode(mode);
+      ctx.setMode(mode);
       return '';
     }
 
@@ -62,7 +67,8 @@ export function registerHuaweiACLSystemCommands(
       return '';
     }
 
-    const num = parseInt(args[0], 10);
+    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
+    const num = parseInt(numTok ?? '', 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     if (num >= 2000 && num <= 2999) {
       ctx.setSelectedACLNumber(num);
@@ -87,7 +93,8 @@ export function registerHuaweiACLSystemCommands(
       getRouter().removeNamedAccessList(args[1]);
       return '';
     }
-    const num = parseInt(args[0], 10);
+    const numTok = args[0].toLowerCase() === 'number' ? args[1] : args[0];
+    const num = parseInt(numTok, 10);
     if (isNaN(num)) return 'Error: Invalid ACL number.';
     getRouter().removeAccessList(num);
     return '';
@@ -121,36 +128,39 @@ export function buildHuaweiBasicACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
-  trie.registerGreedy('rule', 'Add ACL rule', (args) => {
+  trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
+    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
     if (aclNum === null && aclName === null) return 'Error: No ACL selected.';
 
-    const action = args[0].toLowerCase();
+    let i = 0;
+    let ruleId: number | undefined;
+    if (/^\d+$/.test(args[i])) { ruleId = parseInt(args[i], 10); i++; }
+
+    const action = args[i]?.toLowerCase();
     if (action !== 'permit' && action !== 'deny') return 'Error: Expected permit or deny.';
+    i++;
 
     let srcIP = '0.0.0.0';
     let srcWild = '255.255.255.255';
 
-    for (let i = 1; i < args.length; i++) {
-      if (args[i].toLowerCase() === 'source') {
-        if (args[i + 1]?.toLowerCase() === 'any') {
-          srcIP = '0.0.0.0';
-          srcWild = '255.255.255.255';
-          i++;
-        } else if (args[i + 1] && args[i + 2]) {
-          srcIP = args[i + 1];
-          srcWild = args[i + 2];
-          i += 2;
-        }
-      }
+    while (i < args.length) {
+      const kw = args[i].toLowerCase();
+      if (kw === 'source') {
+        if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
+        if (args[i + 1] && args[i + 2]) {
+          srcIP = args[i + 1]; srcWild = normalizeWildcard(args[i + 2]); i += 3;
+        } else { i++; }
+      } else { i++; }
     }
 
-    const opts = {
+    const opts: { srcIP: IPAddress; srcWildcard: SubnetMask; sequence?: number } = {
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
     };
+    if (ruleId !== undefined) opts.sequence = ruleId;
     if (aclName) {
       getRouter().addNamedAccessListEntry(aclName, 'standard', action as 'permit' | 'deny', opts);
     } else {
@@ -167,23 +177,34 @@ export function buildHuaweiAdvancedACLCommands(
   const getRouter = () => ctx.r();
   registerAclCommonExtras(trie, ctx);
 
-  trie.registerGreedy('rule', 'Add ACL rule', (args) => {
+  trie.registerGreedy('rule', 'Add ACL rule', (rawArgs) => {
+    const args = /^\d+$/.test(rawArgs[0] ?? '') ? rawArgs.slice(1) : rawArgs;
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclNum = ctx.getSelectedACLNumber();
     const aclName = ctx.getSelectedACLName();
     if (aclNum === null && aclName === null) return 'Error: No ACL selected.';
 
-    const action = args[0].toLowerCase();
+    let i = 0;
+    let ruleId: number | undefined;
+    if (/^\d+$/.test(args[i])) { ruleId = parseInt(args[i], 10); i++; }
+
+    const action = args[i]?.toLowerCase();
     if (action !== 'permit' && action !== 'deny') return 'Error: Expected permit or deny.';
+    i++;
 
     let srcIP = '0.0.0.0';
     let srcWild = '255.255.255.255';
     let dstIP = '0.0.0.0';
     let dstWild = '255.255.255.255';
     let protocol: string | undefined;
+    let srcPortOp: string | undefined;
+    let srcPort: string | undefined;
+    let dstPortOp: string | undefined;
+    let dstPort: string | undefined;
 
-    let i = 1;
-    if (i < args.length && !['source', 'destination'].includes(args[i]?.toLowerCase())) {
+    const keywords = new Set(['source', 'destination', 'source-port', 'destination-port',
+      'time-range', 'logging', 'precedence', 'tos', 'dscp', 'fragment', 'icmp-type']);
+    if (i < args.length && !keywords.has(args[i]?.toLowerCase())) {
       protocol = args[i].toLowerCase();
       i++;
     }
@@ -193,29 +214,37 @@ export function buildHuaweiAdvancedACLCommands(
       if (kw === 'source') {
         if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
         if (args[i + 1] && args[i + 2]) {
-          srcIP = args[i + 1];
-          srcWild = args[i + 2];
-          i += 3;
+          srcIP = args[i + 1]; srcWild = normalizeWildcard(args[i + 2]); i += 3;
         } else { i++; }
       } else if (kw === 'destination') {
         if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
         if (args[i + 1] && args[i + 2]) {
-          dstIP = args[i + 1];
-          dstWild = args[i + 2];
-          i += 3;
+          dstIP = args[i + 1]; dstWild = normalizeWildcard(args[i + 2]); i += 3;
         } else { i++; }
+      } else if (kw === 'source-port') {
+        srcPortOp = args[i + 1]?.toLowerCase();
+        srcPort = args[i + 2];
+        i += srcPortOp === 'range' ? 4 : 3;
+      } else if (kw === 'destination-port') {
+        dstPortOp = args[i + 1]?.toLowerCase();
+        dstPort = args[i + 2];
+        i += dstPortOp === 'range' ? 4 : 3;
       } else {
         i++;
       }
     }
 
-    const opts = {
+    const opts: any = {
       protocol,
       srcIP: new IPAddress(srcIP),
       srcWildcard: new SubnetMask(srcWild),
       dstIP: new IPAddress(dstIP),
       dstWildcard: new SubnetMask(dstWild),
     };
+    if (ruleId !== undefined) opts.sequence = ruleId;
+    if (srcPortOp && srcPort) { opts.srcPortOp = srcPortOp; opts.srcPort = srcPort; }
+    if (dstPortOp && dstPort) { opts.dstPortOp = dstPortOp; opts.dstPort = dstPort; }
+
     if (aclName) {
       getRouter().addNamedAccessListEntry(aclName, 'extended', action as 'permit' | 'deny', opts);
     } else {

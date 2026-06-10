@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_DTP = 0x2004;
 export const DTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
@@ -10,7 +11,7 @@ export type DtpAdminMode =
 
 export type DtpOperationalMode = 'access' | 'trunk';
 
-export interface DtpFrame {
+export interface DtpFrame extends NetworkPdu {
   type: 'dtp';
   domain: string;
   adminMode: DtpAdminMode;

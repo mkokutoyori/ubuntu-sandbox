@@ -116,11 +116,39 @@ export function registerHuaweiIPSecSystemCommands(
     const name = args[0];
     const seq = parseInt(args[1], 10);
     if (isNaN(seq)) return 'Error: Invalid sequence number.';
-    // Create a crypto map entry to represent the IPsec policy
-    eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    if (args[2]?.toLowerCase() === 'isakmp' && args[3]?.toLowerCase() === 'template' && args[4]) {
+      (entry as any).template = args[4];
+      ctx.setSelectedIPSecPolicy(name);
+      ctx.setSelectedIPSecPolicySeq(seq);
+      return '';
+    }
     ctx.setSelectedIPSecPolicy(name);
     ctx.setSelectedIPSecPolicySeq(seq);
     ctx.setMode('ipsec-policy');
+    return '';
+  });
+
+  trie.registerGreedy('ipsec policy-template', 'Create or enter IPSec policy-template view', (args) => {
+    if (args.length < 2) return 'Error: Usage: ipsec policy-template NAME SEQ';
+    const name = args[0];
+    const seq = parseInt(args[1], 10);
+    if (isNaN(seq)) return 'Error: Invalid sequence number.';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    (entry as any).isTemplate = true;
+    ctx.setSelectedIPSecPolicy(name);
+    ctx.setSelectedIPSecPolicySeq(seq);
+    ctx.setMode('ipsec-policy');
+    return '';
+  });
+  trie.registerGreedy('undo ipsec policy-template', 'Remove IPSec policy-template', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = args[0];
+    if (args.length >= 2) {
+      const seq = parseInt(args[1], 10);
+      if (!isNaN(seq)) { eng(ctx).removeCryptoMapEntry(name, seq); return ''; }
+    }
+    eng(ctx).removeCryptoMap(name);
     return '';
   });
 
@@ -319,6 +347,58 @@ export function registerHuaweiIPSecSystemCommands(
   trie.registerGreedy('undo ike v2 profile', 'Remove IKEv2 profile', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     eng(ctx).removeIKEv2Profile(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ikev2 proposal', 'Create or enter IKEv2 proposal view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Proposal(args[0]);
+    ctx.setSelectedIPSecProposal(args[0]);
+    ctx.setMode('ikev2-proposal');
+    return '';
+  });
+  trie.registerGreedy('undo ikev2 proposal', 'Remove IKEv2 proposal', (args) => {
+    if (args[0]) eng(ctx).removeIKEv2Proposal(args[0]);
+    return '';
+  });
+  trie.registerGreedy('ikev2 policy', 'Create or enter IKEv2 policy view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Policy(args[0]);
+    ctx.setSelectedIPSecPolicy(args[0]);
+    ctx.setMode('ikev2-policy');
+    return '';
+  });
+  trie.registerGreedy('undo ikev2 policy', 'Remove IKEv2 policy', (args) => {
+    if (args[0]) eng(ctx).removeIKEv2Policy(args[0]);
+    return '';
+  });
+  trie.registerGreedy('ikev2 keychain', 'Create or enter IKEv2 keychain view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Keyring(args[0]);
+    ctx.setSelectedIKEPeer(args[0]);
+    ctx.setMode('ikev2-keyring');
+    return '';
+  });
+  trie.registerGreedy('undo ikev2 keychain', 'Remove IKEv2 keychain', (args) => {
+    if (args[0]) eng(ctx).removeIKEv2Keyring(args[0]);
+    return '';
+  });
+  trie.registerGreedy('ikev2 keyring', 'Create or enter IKEv2 keyring view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Keyring(args[0]);
+    ctx.setSelectedIKEPeer(args[0]);
+    ctx.setMode('ikev2-keyring');
+    return '';
+  });
+  trie.registerGreedy('ikev2 profile', 'Create or enter IKEv2 profile view', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    eng(ctx).getOrCreateIKEv2Profile(args[0]);
+    ctx.setSelectedIPSecProposal(args[0]);
+    ctx.setMode('ikev2-profile');
+    return '';
+  });
+  trie.registerGreedy('undo ikev2 profile', 'Remove IKEv2 profile', (args) => {
+    if (args[0]) eng(ctx).removeIKEv2Profile(args[0]);
     return '';
   });
 }
@@ -722,6 +802,14 @@ export function buildHuaweiIKEv2ProposalCommands(
     prop.dhGroup = args.map(a => a.toLowerCase());
     return '';
   });
+
+  trie.registerGreedy('prf', 'Set PRF algorithm(s)', (args) => {
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 proposal selected.';
+    const prop = eng(ctx).getOrCreateIKEv2Proposal(name);
+    (prop as any).prf = args.map(a => a.toLowerCase());
+    return '';
+  });
 }
 
 // ─── IKEv2 Policy sub-view ──────────────────────────────────────────
@@ -740,6 +828,15 @@ export function buildHuaweiIKEv2PolicyCommands(
 
   trie.registerGreedy('match local address', 'Match local address for policy', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    return '';
+  });
+  trie.registerGreedy('match local-address', 'Match local address for policy', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecPolicy();
+    if (name) {
+      const pol = eng(ctx).getOrCreateIKEv2Policy(name);
+      (pol as any).matchLocalAddress = args[0];
+    }
     return '';
   });
 }
@@ -789,7 +886,11 @@ export function buildHuaweiIKEv2KeyringPeerCommands(
     if (!krName || !peerName) return 'Error: No keyring peer selected.';
     const kr = eng(ctx).getOrCreateIKEv2Keyring(krName);
     const peer = kr.peers.get(peerName);
-    if (peer) peer.preSharedKey = args[0];
+    if (peer) {
+      let i = 0;
+      if (args[i]?.toLowerCase() === 'cipher' || args[i]?.toLowerCase() === 'simple') i++;
+      peer.preSharedKey = args.slice(i).join(' ');
+    }
     return '';
   });
 }
@@ -836,6 +937,14 @@ export function buildHuaweiIKEv2ProfileCommands(
   });
 
   trie.registerGreedy('keyring', 'Associate keyring with profile', (args) => {
+    if (args.length < 1) return 'Error: Incomplete command.';
+    const name = ctx.getSelectedIPSecProposal();
+    if (!name) return 'Error: No IKEv2 profile selected.';
+    const profile = eng(ctx).getOrCreateIKEv2Profile(name);
+    profile.keyringName = args[0];
+    return '';
+  });
+  trie.registerGreedy('keychain', 'Associate keychain with profile', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const name = ctx.getSelectedIPSecProposal();
     if (!name) return 'Error: No IKEv2 profile selected.';
@@ -938,12 +1047,6 @@ export function registerHuaweiIPSecDisplayCommands(
     return e.showCryptoIPSecSA();
   });
 
-  trie.register('display ipsec statistics', 'Display IPSec statistics', () => {
-    const e = engOrNull(getRouter());
-    if (!e) return 'Info: No IPSec configuration.';
-    return e.showCryptoEngineBrief();
-  });
-
   trie.register('display ipsec interface', 'Display interfaces with IPSec', () => {
     const e = engOrNull(getRouter());
     if (!e) return 'Info: No IPSec configuration.';
@@ -956,11 +1059,18 @@ export function registerHuaweiIPSecDisplayCommands(
     return e.showCryptoIPSecProfile();
   });
 
-  trie.register('display ike peer', 'Display configured IKE peers', () => {
+  trie.registerGreedy('display ike peer', 'Display configured IKE peers', (args) => {
     const e = engOrNull(getRouter());
     if (!e) return 'Info: No IKE peers configured.';
     const kr = (e as any).ikev2Keyrings?.get('default');
     if (!kr || kr.peers.size === 0) return 'Info: No IKE peers configured.';
+    if (args[0]?.toLowerCase() === 'brief') {
+      const lines = ['Peer name           Remote addr     PSK'];
+      for (const [name, peer] of kr.peers as Map<string, any>) {
+        lines.push(`  ${name.padEnd(18)} ${String(peer.address).padEnd(15)} ${peer.preSharedKey ? '****' : 'none'}`);
+      }
+      return lines.join('\n');
+    }
     const lines = ['IKE Peer Configuration:'];
     for (const [name, peer] of kr.peers as Map<string, any>) {
       lines.push(`  Peer name   : ${name}`);
@@ -970,6 +1080,70 @@ export function registerHuaweiIPSecDisplayCommands(
     }
     return lines.join('\n');
   });
+
+  trie.registerGreedy('display ipsec statistics', 'Display IPSec statistics', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IPSec configuration.';
+    return e.showCryptoEngineBrief();
+  });
+  trie.registerGreedy('display ipsec policy interface', 'Display IPSec policy on interface', (args) => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IPSec policy applied.';
+    const iface = args[0];
+    if (!iface) return 'Info: No IPSec policy applied.';
+    return `Interface ${iface}: ${e.showCryptoMap()}`;
+  });
+  trie.register('display ike error-info', 'Display IKE error info', () => {
+    return ' Info: No IKE error records.';
+  });
+
+  trie.register('display ikev2 proposal', 'Display IKEv2 proposals', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    const props = (e as any).ikev2Proposals as Map<string, any> | undefined;
+    if (!props || props.size === 0) return 'Info: No IKEv2 proposal configured.';
+    const lines: string[] = [];
+    for (const [name, p] of props) {
+      lines.push(`IKEv2 proposal: ${name}`);
+      if (p.encryption?.length) lines.push(`  Encryption  : ${p.encryption.join(', ')}`);
+      if (p.integrity?.length) lines.push(`  Integrity   : ${p.integrity.join(', ')}`);
+      if (p.dhGroup?.length) lines.push(`  DH Group    : ${p.dhGroup.join(', ')}`);
+      if (p.prf?.length) lines.push(`  PRF         : ${p.prf.join(', ')}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display ikev2 policy', 'Display IKEv2 policies', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    const pols = (e as any).ikev2Policies as Map<string, any> | undefined;
+    if (!pols || pols.size === 0) return 'Info: No IKEv2 policy configured.';
+    const lines: string[] = [];
+    for (const [name, p] of pols) {
+      lines.push(`IKEv2 policy: ${name}`);
+      if (p.matchLocalAddress) lines.push(`  Match local : ${p.matchLocalAddress}`);
+      if (p.proposalNames?.length) lines.push(`  Proposals   : ${p.proposalNames.join(', ')}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display ikev2 profile', 'Display IKEv2 profiles', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 configuration.';
+    const profs = (e as any).ikev2Profiles as Map<string, any> | undefined;
+    if (!profs || profs.size === 0) return 'Info: No IKEv2 profile configured.';
+    const lines: string[] = [];
+    for (const [name, p] of profs) {
+      lines.push(`IKEv2 profile: ${name}`);
+      if (p.matchIdentityRemoteAddress) lines.push(`  Match remote: ${p.matchIdentityRemoteAddress}`);
+      if (p.authLocal) lines.push(`  Auth local  : ${p.authLocal}`);
+      if (p.authRemote) lines.push(`  Auth remote : ${p.authRemote}`);
+      if (p.keyringName) lines.push(`  Keychain    : ${p.keyringName}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display ikev2 sa', 'Display IKEv2 SAs', () => 'Info: No IKEv2 SAs.');
 
   trie.register('display ipsec sa verbose', 'Display detailed IPSec SAs', () => {
     const e = engOrNull(getRouter());
@@ -1009,44 +1183,36 @@ export function registerHuaweiIPSecDisplayCommands(
 
   // ── reset commands (privileged) ────────────────────────────────
 
-  trie.register('reset ike sa', 'Clear all IKE SAs', () => {
+  trie.registerGreedy('reset ike sa', 'Clear IKE SAs', () => {
     engOrNull(getRouter())?.clearAllSAs();
     return 'Info: IKE SAs cleared.';
   });
 
-  trie.register('reset ipsec sa', 'Clear all IPSec SAs', () => {
+  trie.registerGreedy('reset ipsec sa', 'Clear IPSec SAs', () => {
     engOrNull(getRouter())?.clearAllSAs();
     return 'Info: IPSec SAs cleared.';
   });
 
-  // ── debug commands ────────────────────────────────────────────
-
-  trie.register('debugging ike', 'Enable IKE debug output', () => {
+  trie.registerGreedy('debugging ike', 'Enable IKE debug output', () => {
     const e = engOrNull(getRouter());
-    if (!e) {
-      (getRouter() as any)._getOrCreateIPSecEngine().setDebug('isakmp', true);
-    } else {
-      e.setDebug('isakmp', true);
-    }
+    if (!e) (getRouter() as any)._getOrCreateIPSecEngine().setDebug('isakmp', true);
+    else e.setDebug('isakmp', true);
     return 'Info: IKE debugging is on.';
   });
 
-  trie.register('undo debugging ike', 'Disable IKE debug output', () => {
+  trie.registerGreedy('undo debugging ike', 'Disable IKE debug output', () => {
     engOrNull(getRouter())?.setDebug('isakmp', false);
     return 'Info: IKE debugging is off.';
   });
 
-  trie.register('debugging ipsec', 'Enable IPSec debug output', () => {
+  trie.registerGreedy('debugging ipsec', 'Enable IPSec debug output', () => {
     const e = engOrNull(getRouter());
-    if (!e) {
-      (getRouter() as any)._getOrCreateIPSecEngine().setDebug('ipsec', true);
-    } else {
-      e.setDebug('ipsec', true);
-    }
+    if (!e) (getRouter() as any)._getOrCreateIPSecEngine().setDebug('ipsec', true);
+    else e.setDebug('ipsec', true);
     return 'Info: IPSec debugging is on.';
   });
 
-  trie.register('undo debugging ipsec', 'Disable IPSec debug output', () => {
+  trie.registerGreedy('undo debugging ipsec', 'Disable IPSec debug output', () => {
     engOrNull(getRouter())?.setDebug('ipsec', false);
     return 'Info: IPSec debugging is off.';
   });

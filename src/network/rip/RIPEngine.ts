@@ -14,12 +14,16 @@
  */
 
 import type { IProtocolEngine } from '../core/interfaces';
-import type { IPAddress, SubnetMask, RIPPacket, RIPRouteEntry, UDPPacket, MACAddress } from '../core/types';
+import type { RIPPacket, RIPRouteEntry, UDPPacket } from '../core/types';
 import {
+  IPAddress, SubnetMask, MACAddress,
   IP_PROTO_UDP, UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   ETHERTYPE_IPV4, createIPv4Packet,
 } from '../core/types';
-import { RIP_TIMERS, ADMINISTRATIVE_DISTANCE } from '../core/constants';
+import {
+  RIP_TIMERS, ADMINISTRATIVE_DISTANCE,
+  RIP_V2_MULTICAST_IP, RIP_V2_MULTICAST_MAC,
+} from '../core/constants';
 import { Logger } from '../core/Logger';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -91,6 +95,12 @@ export interface RIPCallbacks {
   removeRoute(network: IPAddress, mask: SubnetMask): void;
   /** Update an existing RIP route in the RIB */
   updateRoute(network: IPAddress, mask: SubnetMask, route: RIPRouteEntry_RIB): void;
+  /**
+   * Live protocol version (`version 1|2` CLI). v2 sends to the
+   * 224.0.0.9 multicast group (RFC 2453 §4.3); v1 broadcasts
+   * (RFC 1058). Defaults to 2 when absent.
+   */
+  getRipVersion?(): 1 | 2;
 }
 
 // ─── Default Config ─────────────────────────────────────────────────
@@ -227,6 +237,8 @@ export class RIPEngine implements IProtocolEngine {
     // TimerSet.clearAll() releases every per-route timer in one call.
     this.timers.clearAll();
     this.updateTimer = null;
+    this.triggeredTimer = null;
+    this.pendingTriggered.clear();
     for (const [, state] of this.routes) {
       state.timeoutTimer = null;
       state.gcTimer = null;
@@ -251,6 +263,11 @@ export class RIPEngine implements IProtocolEngine {
 
   getConfig(): RIPConfig {
     return { ...this.config, networks: [...this.config.networks] };
+  }
+
+  /** Merge a partial config (used by `router rip` re-entry). */
+  configure(config: Partial<RIPConfig>): void {
+    Object.assign(this.config, config);
   }
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
@@ -317,16 +334,23 @@ export class RIPEngine implements IProtocolEngine {
     return false;
   }
 
+  /** Live version: the CLI override, or RIPv2 by default. */
+  private ripVersion(): 1 | 2 {
+    return this.callbacks.getRipVersion?.() ?? 2;
+  }
+
   private sendRequest(): void {
+    // RFC 2453 §3.9.1 — a request for the full table is a single
+    // entry with AFI 0 and metric 16.
     const request: RIPPacket = {
       type: 'rip',
       command: 1,
-      version: 2,
+      version: this.ripVersion(),
       entries: [{
         afi: 0, routeTag: 0,
-        ipAddress: new (Object.getPrototypeOf(this.config.networks[0]?.network ?? {}).constructor ?? class { constructor() {} })('0.0.0.0') as IPAddress,
-        subnetMask: new (Object.getPrototypeOf(this.config.networks[0]?.mask ?? {}).constructor ?? class { constructor() {} })('0.0.0.0') as SubnetMask,
-        nextHop: new (Object.getPrototypeOf(this.config.networks[0]?.network ?? {}).constructor ?? class { constructor() {} })('0.0.0.0') as IPAddress,
+        ipAddress: new IPAddress('0.0.0.0'),
+        subnetMask: new SubnetMask('0.0.0.0'),
+        nextHop: new IPAddress('0.0.0.0'),
         metric: RIP_METRIC_INFINITY,
       }],
     };
@@ -366,7 +390,9 @@ export class RIPEngine implements IProtocolEngine {
 
     for (let i = 0; i < entries.length; i += RIP_MAX_ENTRIES_PER_MESSAGE) {
       const chunk = entries.slice(i, i + RIP_MAX_ENTRIES_PER_MESSAGE);
-      const response: RIPPacket = { type: 'rip', command: 2, version: 2, entries: chunk };
+      const response: RIPPacket = {
+        type: 'rip', command: 2, version: this.ripVersion(), entries: chunk,
+      };
       this.sendPacket(outIface, response);
     }
     this.updatesSent++;
@@ -376,32 +402,60 @@ export class RIPEngine implements IProtocolEngine {
         ...this.deviceRef(),
         iface: outIface,
         routeCount: entries.length,
-        destIp: '224.0.0.9',
+        destIp: this.destinationIp().toString(),
         triggered: false,
       },
     });
   }
 
-  private sendTriggeredUpdate(changedRoute: RIPRouteEntry_RIB): void {
+  // ── Triggered updates (RFC 2453 §3.10.1) ───────────────────────────
+  //
+  // Route changes are coalesced and flushed after a random 1–5 s delay
+  // so a cascade of changes produces ONE batched update per interface
+  // instead of an update storm.
+
+  private readonly pendingTriggered = new Map<string, RIPRouteEntry_RIB>();
+  private triggeredTimer: symbol | null = null;
+
+  private scheduleTriggeredUpdate(changedRoute: RIPRouteEntry_RIB): void {
     if (!this.running) return;
+    const key = `${changedRoute.network}/${changedRoute.mask.toCIDR()}`;
+    this.pendingTriggered.set(key, changedRoute);
+    if (this.triggeredTimer) return;            // window already armed
+    const span = RIP_TIMERS.TRIGGERED_DELAY_MAX_MS
+      - RIP_TIMERS.TRIGGERED_DELAY_MIN_MS;
+    const delay = RIP_TIMERS.TRIGGERED_DELAY_MIN_MS + Math.random() * span;
+    this.triggeredTimer = this.timers.setTimeout(
+      () => this.flushTriggeredUpdates(), delay);
+  }
+
+  private flushTriggeredUpdates(): void {
+    this.triggeredTimer = null;
+    const changed = [...this.pendingTriggered.values()];
+    this.pendingTriggered.clear();
+    if (!this.running || changed.length === 0) return;
 
     let totalEntries = 0;
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
-
-      if (this.config.splitHorizon && changedRoute.iface === portName) {
-        if (this.config.poisonedReverse) {
-          const entry = this.routeToRIPEntry(changedRoute, RIP_METRIC_INFINITY);
-          this.sendPacket(portName, { type: 'rip', command: 2, version: 2, entries: [entry] });
-          totalEntries++;
+      const entries: RIPRouteEntry[] = [];
+      for (const route of changed) {
+        if (this.config.splitHorizon && route.iface === portName) {
+          if (this.config.poisonedReverse) {
+            entries.push(this.routeToRIPEntry(route, RIP_METRIC_INFINITY));
+          }
+          continue;
         }
-        continue;
+        entries.push(this.routeToRIPEntry(
+          route, Math.min(route.metric + 1, RIP_METRIC_INFINITY)));
       }
-
-      const metric = Math.min(changedRoute.metric + 1, RIP_METRIC_INFINITY);
-      const entry = this.routeToRIPEntry(changedRoute, metric);
-      this.sendPacket(portName, { type: 'rip', command: 2, version: 2, entries: [entry] });
-      totalEntries++;
+      for (let i = 0; i < entries.length; i += RIP_MAX_ENTRIES_PER_MESSAGE) {
+        this.sendPacket(portName, {
+          type: 'rip', command: 2, version: this.ripVersion(),
+          entries: entries.slice(i, i + RIP_MAX_ENTRIES_PER_MESSAGE),
+        });
+      }
+      totalEntries += entries.length;
     }
     if (totalEntries > 0) {
       this.updatesSent++;
@@ -411,7 +465,7 @@ export class RIPEngine implements IProtocolEngine {
           ...this.deviceRef(),
           iface: '*',
           routeCount: totalEntries,
-          destIp: '224.0.0.9',
+          destIp: this.destinationIp().toString(),
           triggered: true,
         },
       });
@@ -427,9 +481,22 @@ export class RIPEngine implements IProtocolEngine {
       routeTag: 0,
       ipAddress: route.network,
       subnetMask: route.mask,
-      nextHop: new (route.network.constructor as new (s: string) => IPAddress)('0.0.0.0'),
+      nextHop: new IPAddress('0.0.0.0'),
       metric,
     };
+  }
+
+  /** RIPv2 multicasts to 224.0.0.9; RIPv1 broadcasts (RFC 2453 §4.3). */
+  private destinationIp(): IPAddress {
+    return this.ripVersion() === 2
+      ? new IPAddress(RIP_V2_MULTICAST_IP)
+      : new IPAddress('255.255.255.255');
+  }
+
+  private destinationMac(): MACAddress {
+    return this.ripVersion() === 2
+      ? new MACAddress(RIP_V2_MULTICAST_MAC)
+      : MACAddress.broadcast();
   }
 
   private sendPacket(outIface: string, ripPkt: RIPPacket): void {
@@ -447,13 +514,12 @@ export class RIPEngine implements IProtocolEngine {
       payload: ripPkt,
     };
 
-    const dstIP = new (myIP.constructor as new (s: string) => IPAddress)('255.255.255.255');
-    const ipPkt = createIPv4Packet(myIP, dstIP, IP_PROTO_UDP, 1, udpPkt, 8 + ripSize);
+    const ipPkt = createIPv4Packet(
+      myIP, this.destinationIp(), IP_PROTO_UDP, 1, udpPkt, 8 + ripSize);
 
-    const mac = this.callbacks.getPortMAC(outIface);
     this.callbacks.sendFrame(outIface, {
-      srcMAC: mac,
-      dstMAC: (mac.constructor as { broadcast(): MACAddress }).broadcast(),
+      srcMAC: this.callbacks.getPortMAC(outIface),
+      dstMAC: this.destinationMac(),
       etherType: ETHERTYPE_IPV4,
       payload: ipPkt,
     });
@@ -490,11 +556,14 @@ export class RIPEngine implements IProtocolEngine {
       if (newMetric >= RIP_METRIC_INFINITY) {
         this.invalidateRoute(key, existing);
       } else {
+        const metricChanged = existing.route.metric !== newMetric;
         existing.route.metric = newMetric;
         existing.lastUpdate = Date.now();
         existing.garbageCollect = false;
         this.resetTimeout(key, existing);
         this.callbacks.updateRoute(existing.route.network, existing.route.mask, existing.route);
+        // RFC 2453 §3.10.1 — metric changes trigger an update.
+        if (metricChanged) this.scheduleTriggeredUpdate(existing.route);
       }
     } else {
       if (newMetric < existing.route.metric) {
@@ -543,6 +612,8 @@ export class RIPEngine implements IProtocolEngine {
     this.routes.set(key, state);
     this.resetTimeout(key, state);
     this.routesAddedCount++;
+    // RFC 2453 §3.10.1 — new routes trigger an update.
+    this.scheduleTriggeredUpdate(route);
 
     Logger.info(this.equipmentId, 'rip:route-learned',
       `${this.hostname}: RIP learned ${key} via ${srcIP} metric ${metric}`);
@@ -572,7 +643,7 @@ export class RIPEngine implements IProtocolEngine {
     }
 
     this.callbacks.updateRoute(state.route.network, state.route.mask, state.route);
-    this.sendTriggeredUpdate(state.route);
+    this.scheduleTriggeredUpdate(state.route);
 
     state.gcTimer = this.timers.setTimeout(() => {
       this.garbageCollect(key);

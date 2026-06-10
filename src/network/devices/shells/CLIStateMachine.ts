@@ -118,6 +118,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ext-nacl':           { parent: 'config', clearOnExit: ['selectedACL', 'selectedACLType'] },
   'config-ipv6-nacl':          { parent: 'config', clearOnExit: ['selectedACL', 'selectedACLType'] },
   'config-isakmp':             { parent: 'config', clearOnExit: ['selectedISAKMPPriority'] },
+  'config-isakmp-profile':     { parent: 'config', clearOnExit: ['selectedISAKMPProfile'] },
   'config-tfset':              { parent: 'config', clearOnExit: ['selectedTransformSet'] },
   'config-crypto-map':         { parent: 'config', clearOnExit: ['selectedCryptoMap', 'selectedCryptoMapSeq'] },
   'config-ipsec-profile':      { parent: 'config', clearOnExit: ['selectedIPSecProfile'] },
@@ -144,7 +145,10 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-archive':            { parent: 'config' },
   'config-archive-log':        { parent: 'config-archive' },
   'config-dhcp-class':         { parent: 'config' },
+  'config-dhcp-pool-class':    { parent: 'config-dhcp' },
   'config-ipv6-dhcp':          { parent: 'config' },
+  'config-keychain':           { parent: 'config', clearOnExit: ['selectedKeyChain'] },
+  'config-keychain-key':       { parent: 'config-keychain', clearOnExit: ['selectedKeyChainKey'] },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────

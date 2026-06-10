@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_SNMP = 161;
 export const UDP_PORT_SNMP_TRAP = 162;
 
@@ -67,7 +68,7 @@ export interface SnmpVarBinding {
   value: SnmpValue;
 }
 
-export interface SnmpPacket {
+export interface SnmpPacket extends NetworkPdu {
   type: 'snmp';
   version: SnmpVersion;
   community: string;

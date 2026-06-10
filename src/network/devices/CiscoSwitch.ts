@@ -12,12 +12,14 @@
  */
 
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
+import { AgentRegistry } from './AgentRegistry';
+import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
-import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
+import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { DtpAgent } from '../dtp/DtpAgent';
 import { ETHERTYPE_DTP, type DtpOperationalMode } from '../dtp/types';
@@ -37,6 +39,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoSwitch extends Switch {
+  private readonly agents = new AgentRegistry();
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
   private readonly dtpAgent: DtpAgent;
@@ -95,16 +98,12 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
     }, () => this.getBus());
-    this.cdpAgent.start();
-    this.lldpAgent.start();
-    this.dtpAgent.start();
-    this.stpAgent.start();
-    this.lacpAgent.start();
-    this.vtpAgent.start();
-    this.udldAgent.start();
-    this.igmpSnoopingAgent.start();
-    this.syslogAgent.start();
-    this.dot1xAgent.start();
+    this.agents.registerAll(
+      this.cdpAgent, this.lldpAgent, this.dtpAgent, this.stpAgent,
+      this.lacpAgent, this.vtpAgent, this.udldAgent,
+      this.igmpSnoopingAgent, this.syslogAgent, this.dot1xAgent,
+    );
+    this.agents.startAll();
   }
 
   private applyDot1xAuth(_portName: string, _authorized: boolean): void {
@@ -132,9 +131,9 @@ export class CiscoSwitch extends Switch {
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState): void {
-    if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
-    else if (state === 'blocking') this.setSTPState(portName, 'blocking');
-    else this.setSTPState(portName, 'disabled');
+    // StpForwardState is a subset of STPPortState — apply verbatim so the
+    // data plane honors the 802.1D listening/learning transitions.
+    this.setSTPState(portName, state);
   }
 
   private applyStpBpduGuardErrDisable(portName: string): void {
@@ -145,16 +144,10 @@ export class CiscoSwitch extends Switch {
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
-    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
-    if (this.dtpAgent) { this.dtpAgent.stop(); this.dtpAgent.start(); }
-    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
-    if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
-    if (this.vtpAgent) { this.vtpAgent.stop(); this.vtpAgent.start(); }
-    if (this.udldAgent) { this.udldAgent.stop(); this.udldAgent.start(); }
-    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
-    if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
-    if (this.dot1xAgent) { this.dot1xAgent.stop(); this.dot1xAgent.start(); }
+    // Re-bind every agent's subscriptions to the newly injected bus.
+    // (setEventBus can fire from the base constructor, before the registry
+    // field initializer ran — hence the optional chain.)
+    this.agents?.restartAll();
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -197,16 +190,8 @@ export class CiscoSwitch extends Switch {
     super.handleFrame(portName, frame);
   }
 
-  protected override resolveSnoopedMulticastEgressPorts(ingressPort: string, frame: EthernetFrame, vlan: number): string[] | null {
-    if (frame.etherType !== ETHERTYPE_IPV4) return null;
-    const ipPkt = frame.payload as IPv4Packet | undefined;
-    if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
-    const firstOctet = ipPkt.destinationIP.getOctets()[0];
-    if (firstOctet < 224 || firstOctet > 239) return null;
-    const vlanState = this.igmpSnoopingAgent.getVlanState(vlan);
-    if (!vlanState || !vlanState.enabled) return null;
-    const ports = this.igmpSnoopingAgent.computeEgressPorts(ingressPort, ipPkt.destinationIP.toString());
-    return ports.length > 0 ? ports : null;
+  protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
+    return this.igmpSnoopingAgent;
   }
 
   getDtpAgent(): DtpAgent { return this.dtpAgent; }
@@ -294,25 +279,3 @@ export class CiscoSwitch extends Switch {
 }
 
 /** Map CDP neighbour rows to the inspection DTO `showCdp` consumes. */
-function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.remoteHost,
-    remotePort: n.remotePort,
-    remoteType: n.remoteType,
-    remotePlatform: n.remotePlatform,
-    remoteCapability: n.remoteCapability,
-  }));
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
-}

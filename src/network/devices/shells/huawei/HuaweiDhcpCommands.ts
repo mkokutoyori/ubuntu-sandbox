@@ -276,6 +276,15 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     if (ip && mac) getRouter()._getDHCPServerInternal().addStaticBinding(ctx.getSelectedPool()!, mac, ip);
     return '';
   });
+  trie.registerGreedy('undo static-bind', 'Remove a static binding', (args) => {
+    if (!ctx.getSelectedPool()) return '';
+    let ip = '';
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].toLowerCase() === 'ip-address' && args[i + 1]) { ip = args[++i]; }
+    }
+    getRouter()._getDHCPServerInternal().removeStaticBinding(ctx.getSelectedPool()!, ip || undefined);
+    return '';
+  });
 }
 
 // ─── DHCP Display Commands ───────────────────────────────────────────
@@ -357,6 +366,20 @@ export function registerDhcpDebugCommands(trie: CommandTrie, getRouter: () => Ro
 
   trie.register('debugging dhcp server events', 'Enable DHCP server event debugging', () => {
     getRouter()._getDHCPServerInternal().setDebugServerEvents(true);
+    return '';
+  });
+
+  trie.register('debugging dhcp server all', 'Enable all DHCP server debugging', () => {
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerPacket(true);
+    s.setDebugServerEvents(true);
+    return '';
+  });
+
+  trie.register('undo debugging dhcp server all', 'Disable all DHCP server debugging', () => {
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerPacket(false);
+    s.setDebugServerEvents(false);
     return '';
   });
 

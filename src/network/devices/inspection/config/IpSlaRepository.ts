@@ -6,6 +6,7 @@
  * fabricated probe results). State is Pending until scheduled.
  */
 import type { Router } from '../../Router';
+import { IPAddress } from '../../../core/types';
 
 export type SlaType =
   | 'icmp-echo' | 'udp-jitter' | 'tcp-connect' | 'http' | 'dns' | 'unknown';
@@ -26,15 +27,11 @@ function ipReachable(router: Router, ip: string | null): boolean {
     if (p.getIPAddress() && String(p.getIPAddress()) === ip) return true;
   }
   // Covered by any route in the REAL routing table?
-  const parts = ip.split('.').map(Number);
-  if (parts.length !== 4 || parts.some(Number.isNaN)) return false;
-  const ipNum = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+  const addr = IPAddress.tryParse(ip);
+  if (!addr) return false;
   for (const r of router.getRoutingTable()) {
-    const np = String(r.network).split('.').map(Number);
-    const netNum = ((np[0] << 24) | (np[1] << 16) | (np[2] << 8) | np[3]) >>> 0;
-    const bits = r.mask.toCIDR();
-    const maskNum = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-    if ((ipNum & maskNum) === (netNum & maskNum)) return true;
+    const net = IPAddress.tryParse(String(r.network));
+    if (net && addr.networkAddress(r.mask).equals(net.networkAddress(r.mask))) return true;
   }
   return false;
 }

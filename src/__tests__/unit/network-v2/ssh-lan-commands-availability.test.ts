@@ -75,6 +75,29 @@ const NORMALISE_TIME_FIELDS = (s: string) =>
       .replace(/\b\d+ days?,? \d+:\d{2}\b/g, '* days, *:*'),
   );
 
+/**
+ * df now reads real FS state (auth.log, wtmp, etc.) — so the Used /
+ * Available / Use% columns on the / row legitimately differ between
+ * a local invocation and one routed through SSH (the SSH path opens
+ * a session that appends to auth.log before df runs). Mask the
+ * volatile columns on the / row while keeping the rest of the table
+ * byte-comparable so the test still verifies command structure.
+ */
+const NORMALISE_DF = (s: string) =>
+  stripTrailing(
+    s
+      // 1K-blocks form: "/dev/sda1   <cap> <used> <avail> <pct>% /"
+      .replace(
+        /(\/dev\/sda1\s+\d+)\s+\d+\s+\d+\s+\d+%(\s+\/$)/m,
+        '$1   * * *%$2',
+      )
+      // human form: "/dev/sda1   50G  XK  50G  pct% /"
+      .replace(
+        /(\/dev\/sda1\s+\d+[KMGT])\s+[\d.]+[KMGT]?\s+[\d.]+[KMGT]?\s+\d+%(\s+\/$)/m,
+        '$1   * * *%$2',
+      ),
+  );
+
 const COMMAND_SPECS: readonly CmdSpec[] = [
   // ─── identity / shell ─────────────────────────────────────────────
   { label: 'pwd', cmd: 'pwd' },
@@ -180,8 +203,8 @@ const COMMAND_SPECS: readonly CmdSpec[] = [
   { label: 'uptime', cmd: 'uptime', normalise: NORMALISE_TIME_FIELDS },
   { label: 'free', cmd: 'free' },
   { label: 'free -h', cmd: 'free -h' },
-  { label: 'df', cmd: 'df' },
-  { label: 'df -h', cmd: 'df -h' },
+  { label: 'df', cmd: 'df', normalise: NORMALISE_DF },
+  { label: 'df -h', cmd: 'df -h', normalise: NORMALISE_DF },
 ];
 
 describe('SSH LAN — exhaustive command availability over SSH (BRD SSH-04-R3)', () => {

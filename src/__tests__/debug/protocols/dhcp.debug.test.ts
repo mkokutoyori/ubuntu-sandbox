@@ -100,7 +100,7 @@ function buildSteps(): ProtoStepInput[] {
     { on: 'rdc', cmd: 'show ip dhcp pool' },
     { on: 'rbr', cmd: 'display ip pool name LAN-BR' },
     { on: 'rbr', cmd: 'display dhcp server statistics' },
-    { on: 'rbr', cmd: 'display dhcp server ip-in-use' },
+    { on: 'rbr', cmd: 'display dhcp-server binding all' },
 
     { section: 'DHCP — baux côté client', on: 'lhq', cmd: 'cat /var/lib/dhcp/dhclient.leases' },
     ...each(['lhq', 'lbr', 'ldc'], (h) => ([
@@ -128,7 +128,7 @@ function buildSteps(): ProtoStepInput[] {
       ? [{ on: c.on, cmd: 'ipconfig /release' }, { on: c.on, cmd: 'ipconfig' }]
       : [{ on: c.on, cmd: 'dhclient -r eth0' }, { on: c.on, cmd: 'ip -4 addr show eth0' }]) as ProtoStepInput[]),
     { on: 'rhq', cmd: 'show ip dhcp binding' },
-    { on: 'rbr', cmd: 'display dhcp server ip-in-use' },
+    { on: 'rbr', cmd: 'display dhcp-server binding all' },
     ...each(CLIENTS, (c) => acquire(c).slice(0, 2)),
 
     { section: 'DHCP — réservation / static binding', on: 'rhq', cmd: 'configure terminal' },
@@ -217,7 +217,7 @@ function buildSteps(): ProtoStepInput[] {
     { on: 'rhq', cmd: 'show running-config | section ip dhcp' },
     { on: 'rdc', cmd: 'show running-config | section ip dhcp' },
     { on: 'rbr', cmd: 'display ip pool name LAN-BR all' },
-    { on: 'rbr', cmd: 'display dhcp server ip-in-use pool LAN-BR' },
+    { on: 'rbr', cmd: 'display dhcp-server binding all' },
     { on: 'rbr', cmd: 'display current-configuration configuration dhcp' },
     { on: 'lhq', cmd: 'cat /etc/resolv.conf' },
     { on: 'lbr', cmd: 'ip route show default' },

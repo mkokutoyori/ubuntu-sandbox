@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type UdldConfig, type UdldPortRuntime, type UdldPortStateName,
   type UdldPacket, type UdldEchoEntry, type UdldNeighborEntry, type UdldMode,
@@ -22,34 +23,16 @@ export interface UdldHost {
   onUdldErrDisable?(portName: string): void;
 }
 
-export class UdldAgent {
+export class UdldAgent extends ReactiveAgentBase {
   private config: UdldConfig = createDefaultUdldConfig();
   private readonly neighbors = new Map<string, UdldNeighborEntry>();
-  private helloTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: UdldHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
+    getBus: () => IEventBus,
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    super(host, getBus, getScheduler);
   }
 
   getConfig(): Readonly<UdldConfig> { return this.config; }
@@ -57,7 +40,7 @@ export class UdldAgent {
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
-    if (on) this.startTimers();
+    if (on) this.armTimers();
     else this.stopTimers();
   }
 
@@ -280,29 +263,19 @@ export class UdldAgent {
     this.host.sendFrame(portName, frame);
   }
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.helloTimer === null) {
-      this.helloTimer = s.setInterval(() => {
-        for (const rt of this.config.ports.values()) {
-          if (rt.mode === 'disabled') continue;
-          this.transmit(rt.port, 'probe');
-        }
-      }, this.config.helloIntervalSec * 1000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
-    }
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('hello', () => {
+      for (const rt of this.config.ports.values()) {
+        if (rt.mode === 'disabled') continue;
+        this.transmit(rt.port, 'probe');
+      }
+    }, this.config.helloIntervalSec * 1000);
+    this.scheduleInterval('expiry', () => this.expireDue(), 1000);
     for (const rt of this.config.ports.values()) {
       if (rt.mode !== 'disabled') this.transmit(rt.port, 'probe');
     }
-  }
-
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
   }
 
   private expireDue(): void {
@@ -346,21 +319,7 @@ export class UdldAgent {
     }
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkUp(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkUp(portName: string): void {
+  protected override onPortLinkUp(portName: string): void {
     const rt = this.config.ports.get(portName);
     if (!rt || rt.mode === 'disabled') return;
     if (rt.state === 'err-disable') return;
@@ -369,7 +328,7 @@ export class UdldAgent {
     this.transmit(portName, 'probe');
   }
 
-  private onLinkDown(portName: string): void {
+  protected override onPortLinkDown(portName: string): void {
     const rt = this.config.ports.get(portName);
     if (!rt) return;
     if (rt.state === 'err-disable') return;

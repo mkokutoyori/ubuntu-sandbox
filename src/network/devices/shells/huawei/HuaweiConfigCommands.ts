@@ -21,13 +21,17 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 export type HuaweiShellMode =
   | 'user' | 'system' | 'interface' | 'dhcp-pool' | 'ospf' | 'ospf-area'
   | 'bgp' | 'isis'
-  | 'ospfv3' | 'rip' | 'ui' | 'ike-proposal' | 'ike-peer'
+  | 'ospfv3' | 'ospfv3-area' | 'rip' | 'ui' | 'ike-proposal' | 'ike-peer'
   | 'ipsec-proposal' | 'ipsec-policy'
   | 'acl-basic' | 'acl-advanced'
   | 'ikev2-proposal' | 'ikev2-policy' | 'ikev2-profile'
   | 'ikev2-keyring' | 'ikev2-keyring-peer'
   | 'route-policy' | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy'
-  | 'nqa-test';
+  | 'nqa-test'
+  | 'aaa' | 'aaa-authen' | 'aaa-author' | 'aaa-accounting' | 'aaa-domain'
+  | 'radius-template' | 'hwtacacs-template'
+  | 'cpu-defend-policy'
+  | 'bfd-global' | 'bfd-session';
 
 export interface HuaweiShellContext {
   r(): Router;
@@ -715,6 +719,13 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
     if (port && !isNaN(n)) port.setArpTimeoutSec(n);
+    return '';
+  });
+  trie.registerGreedy('undo arp expire-time', 'Reset ARP expire time', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) port.setArpTimeoutSec(4 * 60 * 60);
     return '';
   });
   trie.register('arp-proxy enable', 'Enable proxy-ARP', () => {

@@ -1,10 +1,14 @@
-import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+/**
+ * GlbpAgent — Cisco GLBP on the shared FHRP foundation. Protocol-
+ * specific here: the AVG election, AVF assignment/expiry (up to 4
+ * forwarders), the three load-balancing modes, and the UDP/3222
+ * TLV wire format.
+ */
 import {
   type GlbpConfig, type GlbpGroupRuntime, type GlbpPacket,
   type GlbpAvgState, type GlbpForwarder, type GlbpLoadBalancing,
   type GlbpHelloTlv, type GlbpAssignTlv,
-  createDefaultGlbpConfig, defaultGroupRuntime, makeKey,
+  defaultGroupRuntime, makeKey,
   glbpVirtualMac, compareCandidate,
   UDP_PORT_GLBP, GLBP_MULTICAST_IP, GLBP_MULTICAST_MAC,
 } from './types';
@@ -14,93 +18,35 @@ import {
   IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
+import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
 
 const MAX_FORWARDERS = 4;
 
-export interface GlbpHost {
-  readonly id: string;
-  readonly name: string;
-  getHostname(): string;
-  getPort(name: string): import('../hardware/Port').Port | undefined;
-  getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
-}
+export type GlbpHost = FhrpHost;
 
-export class GlbpAgent {
-  private config: GlbpConfig = createDefaultGlbpConfig();
-  private readonly emitting = new Set<string>();
-  private helloTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
-
-  constructor(
-    private readonly host: GlbpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
-  }
-
+export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
   getConfig(): Readonly<GlbpConfig> { return this.config; }
 
-  getGroup(iface: string, group: number): GlbpGroupRuntime | undefined {
-    return this.config.groups.get(makeKey(iface, group));
+  // ── FhrpAgentBase hooks ───────────────────────────────────────────
+  protected groupId(g: GlbpGroupRuntime): number { return g.group; }
+
+  protected makeGroup(iface: string, group: number): GlbpGroupRuntime {
+    return defaultGroupRuntime(iface, group);
   }
 
-  listGroups(): GlbpGroupRuntime[] {
-    return Array.from(this.config.groups.values())
-      .sort((a, b) => a.iface === b.iface ? a.group - b.group : a.iface.localeCompare(b.iface));
+  protected isSpeakingState(g: GlbpGroupRuntime): boolean {
+    return g.avgState === 'active' || g.avgState === 'standby'
+      || g.avgState === 'speak' || g.avgState === 'listen';
   }
 
-  ensureGroup(iface: string, group: number): GlbpGroupRuntime {
-    const k = makeKey(iface, group);
-    let g = this.config.groups.get(k);
-    if (!g) {
-      g = defaultGroupRuntime(iface, group);
-      this.config.groups.set(k, g);
-    }
-    return g;
+  protected clearPeerState(g: GlbpGroupRuntime): void {
+    g.avgIp = null;
   }
 
-  removeGroup(iface: string, group: number): void {
-    this.config.groups.delete(makeKey(iface, group));
-  }
+  protected helloIntervalMs(): number { return 3000; }
 
-  setVip(iface: string, group: number, vip: string): void {
-    const g = this.ensureGroup(iface, group);
-    g.vip = vip;
-    this.recompute(g, 'config');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPriority(iface: string, group: number, priority: number): void {
-    const g = this.ensureGroup(iface, group);
-    g.priority = priority;
-    this.recompute(g, 'priority');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPreempt(iface: string, group: number, on: boolean): void {
-    const g = this.ensureGroup(iface, group);
-    g.preempt = on;
-    this.recompute(g, 'preempt');
-  }
-
+  // ── Protocol-specific config ─────────────────────────────────────
   setWeighting(iface: string, group: number, weighting: number): void {
     const g = this.ensureGroup(iface, group);
     g.weighting = weighting;
@@ -120,10 +66,7 @@ export class GlbpAgent {
     const g = this.ensureGroup(iface, group);
     g.helloSec = helloSec;
     g.holdSec = holdSec;
-    if (this.running) {
-      this.stopTimers();
-      this.startTimers();
-    }
+    this.restartTimers();
   }
 
   nextForwarderMacForClient(iface: string, group: number, clientIp: string): string | null {
@@ -159,6 +102,7 @@ export class GlbpAgent {
     return chosen.vmac;
   }
 
+  // ── Receive path ─────────────────────────────────────────────────
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_GLBP) return;
@@ -170,7 +114,7 @@ export class GlbpAgent {
     this.getBus().publish({
       topic: 'glbp.packet.received',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: inPort, group: g.group,
         fromIp: payload.senderIp, fromPriority: this.extractHelloPriority(payload),
       },
@@ -264,7 +208,7 @@ export class GlbpAgent {
         this.getBus().publish({
           topic: 'glbp.avf.state.changed',
           payload: {
-            deviceId: this.host.id, hostname: this.host.getHostname(),
+            ...this.deviceRef(),
             iface: g.iface, group: g.group,
             forwarderNumber: f.forwarderNumber, oldState, newState: 'active',
           },
@@ -291,7 +235,7 @@ export class GlbpAgent {
     this.getBus().publish({
       topic: 'glbp.avf.assigned',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: g.iface, group: g.group,
         forwarderNumber: n, vmac, ownerIp,
       },
@@ -299,24 +243,11 @@ export class GlbpAgent {
   }
 
   private myIpFor(g: GlbpGroupRuntime): string {
-    const port = this.host.getPort(g.iface);
-    return port?.getIPAddress()?.toString() ?? '0.0.0.0';
+    return this.linkContext(g).myIp;
   }
 
-  private shouldEmit(g: GlbpGroupRuntime): boolean {
-    if (!this.config.enabled) return false;
-    if (!g.vip) return false;
-    const port = this.host.getPort(g.iface);
-    if (!port || !port.getIsUp() || !port.isConnected()) return false;
-    return g.avgState === 'active' || g.avgState === 'standby' || g.avgState === 'speak' || g.avgState === 'listen';
-  }
-
-  private maybeAdvertiseBack(g: GlbpGroupRuntime): void {
-    if (this.emitting.has(makeKey(g.iface, g.group))) return;
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  private advertise(g: GlbpGroupRuntime): void {
+  // ── Wire format (UDP/3222, 224.0.0.102) ──────────────────────────
+  protected advertise(g: GlbpGroupRuntime): void {
     const port = this.host.getPort(g.iface);
     if (!port) return;
     const srcIp = port.getIPAddress();
@@ -363,25 +294,20 @@ export class GlbpAgent {
       srcMAC: port.getMAC(), dstMAC: new MACAddress(GLBP_MULTICAST_MAC),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
-    const key = makeKey(g.iface, g.group);
-    if (this.emitting.has(key)) return;
-    this.emitting.add(key);
-    try { this.host.sendFrame(g.iface, eth); }
-    finally { this.emitting.delete(key); }
+    this.sendGuarded(g, eth);
     this.getBus().publish({
       topic: 'glbp.packet.sent',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: g.iface, group: g.group, avgState: g.avgState, priority: g.priority,
       },
     });
   }
 
-  private recompute(g: GlbpGroupRuntime, reason: 'config' | 'peer' | 'timeout' | 'priority' | 'preempt'): void {
+  // ── AVG state machine ────────────────────────────────────────────
+  protected recompute(g: GlbpGroupRuntime, reason: FhrpRecomputeReason): void {
     const oldState = g.avgState;
-    const port = this.host.getPort(g.iface);
-    const myIp = port?.getIPAddress()?.toString() ?? '0.0.0.0';
-    const linkUp = !!port && port.getIsUp() && port.isConnected();
+    const { myIp, linkUp } = this.linkContext(g);
     let newState: GlbpAvgState;
     if (!linkUp || !g.vip) {
       newState = 'init';
@@ -407,7 +333,7 @@ export class GlbpAgent {
       this.getBus().publish({
         topic: 'glbp.avg.changed',
         payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
+          ...this.deviceRef(),
           iface: g.iface, group: g.group,
           oldState, newState, reason,
         },
@@ -423,28 +349,8 @@ export class GlbpAgent {
     return Math.abs(h);
   }
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.helloTimer === null) {
-      this.helloTimer = s.setInterval(() => {
-        for (const g of this.config.groups.values()) {
-          if (this.shouldEmit(g)) this.advertise(g);
-        }
-      }, 3000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
-    }
-  }
-
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
-  }
-
-  private expireDue(): void {
+  // ── AVG + AVF expiry ─────────────────────────────────────────────
+  protected expireDue(): void {
     const now = Date.now();
     for (const g of this.config.groups.values()) {
       if (g.avgIp && g.avgState !== 'active' && now - g.lastHeardAvgMs > g.holdSec * 1000) {
@@ -461,7 +367,7 @@ export class GlbpAgent {
             this.getBus().publish({
               topic: 'glbp.avf.state.changed',
               payload: {
-                deviceId: this.host.id, hostname: this.host.getHostname(),
+                ...this.deviceRef(),
                 iface: g.iface, group: g.group,
                 forwarderNumber: f.forwarderNumber, oldState, newState: 'init',
               },
@@ -469,36 +375,6 @@ export class GlbpAgent {
           }
         }
       }
-    }
-  }
-
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkUp(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkUp(portName: string): void {
-    for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      this.recompute(g, 'config');
-      if (this.shouldEmit(g)) this.advertise(g);
-    }
-  }
-
-  private onLinkDown(portName: string): void {
-    for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      g.avgIp = null;
-      this.recompute(g, 'timeout');
     }
   }
 }

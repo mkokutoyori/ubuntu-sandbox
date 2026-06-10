@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-07T20:23:03.620Z
+Generated: 2026-06-09T09:12:45.632Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -291,12 +291,10 @@ Total steps: 325
 <empty>
 
 [62/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
-  % Invalid input: Invalid IP address: GigabitEthernet0/1
+<empty>
 
 [63/325] r1 R1(config)# ip default-network 172.16.0.0
-  % Invalid input detected at '^' marker.
-  ip default-network 172.16.0.0
-     ^
+<empty>
 
 [64/325] r1 R1(config)# ip route 192.168.50.0 255.255.255.0 10.0.0.2 name BRANCH-A
 <empty>
@@ -305,16 +303,16 @@ Total steps: 325
 <empty>
 
 [66/325] r1 R1(config)# ip route 192.168.52.0 255.255.255.0 Null0
-  % Invalid input: Invalid IP address: Null0
+<empty>
 
 [67/325] r1 R1(config)# ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
-  % Invalid input: Invalid IP address: GigabitEthernet0/1
+<empty>
 
 [68/325] r1 R1(config)# ip route 8.8.8.0 255.255.255.0 10.0.0.2 track 1
 <empty>
 
 [69/325] r1 R1(config)# ip route vrf CUST 192.168.60.0 255.255.255.0 10.0.0.2
-  % Invalid input: Invalid IP address: vrf
+<empty>
 
 [70/325] r1 R1(config)# ip routing
 <empty>
@@ -383,6 +381,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
@@ -434,6 +433,7 @@ Total steps: 325
   0.0.0.0/0            10.0.0.6             
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
 
@@ -485,6 +485,7 @@ Total steps: 325
   0.0.0.0/0            10.0.0.6             
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
 
@@ -934,25 +935,21 @@ Total steps: 325
 <empty>
 
 [175/325] r1 R1(config-if)# ip policy route-map RM-PBR
-  % Invalid input detected at '^' marker.
-  ip policy route-map RM-PBR
-     ^
+<empty>
 
 [176/325] r1 R1(config-if)# exit
 <empty>
 
 [177/325] r1 R1(config)# ip local policy route-map RM-PBR
-  % Invalid input detected at '^' marker.
-  ip local policy route-map RM-PBR
-     ^
+<empty>
 
 [178/325] r1 R1(config)# end
 <empty>
 
 [179/325] r1 R1# show ip policy
-  % Invalid input detected at '^' marker.
-  show ip policy
-          ^
+  Interface        Route map
+   Local            RM-PBR
+   GigabitEthernet0/0 RM-PBR
 
 [180/325] r1 R1# show route-map RM-PBR
   route-map RM-PBR, permit sequence 10
@@ -1049,14 +1046,10 @@ Total steps: 325
 <empty>
 
 [192/325] r1 R1(config-track)# track 2 interface GigabitEthernet0/1 line-protocol
-  % Invalid input detected at '^' marker.
-  track 2 interface GigabitEthernet0/1 line-protocol
-  ^
+<empty>
 
 [193/325] r1 R1(config-track)# track 3 list boolean and
-  % Invalid input detected at '^' marker.
-  track 3 list boolean and
-  ^
+<empty>
 
 [194/325] r1 R1(config-track)# exit
 <empty>
@@ -1084,6 +1077,12 @@ Total steps: 325
   Track 1
     IP SLA 1 reachability
     State is Up
+  Track 2
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 3
+    List boolean and
+    State is Down
 
 [199/325] r1 R1# show track 1
   Track 1
@@ -1159,6 +1158,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
@@ -1208,6 +1208,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
@@ -1287,20 +1288,68 @@ Total steps: 325
   0.0.0.0/0            10.0.0.6             
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
 
 [215/325] r1 R1# show ip static route
-  % Invalid input detected at '^' marker.
-  show ip static route
-          ^
+  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.2.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.3.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.4.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.5.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.6.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.7.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.8.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.25.9.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.26.10.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.27.11.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.28.12.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.29.13.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.30.14.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.31.15.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.16.16.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.17.17.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.18.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.19.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.20.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.21.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.22.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.23.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.24.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.25.25.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.26.26.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.27.27.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.28.28.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.29.29.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.30.30.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.31.31.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.16.32.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.17.33.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.34.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.35.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.36.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.37.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.38.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.39.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.40.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.50.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.51.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S*    0.0.0.0/0 via 10.0.0.6, 
 
 
 --- [216] § regression: show family ---
-[216/325] r1 R1(config)# enable
-  % Incomplete command.
+[216/325] r1 R1# enable
+<empty>
 
-[217/325] r1 R1(config)# show version
+[217/325] r1 R1# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1317,7 +1366,7 @@ Total steps: 325
   
   Configuration register is 0x2102
 
-[218/325] r1 R1(config)# show running-config
+[218/325] r1 R1# show running-config
   Building configuration...
   
   Current configuration:
@@ -1386,21 +1435,22 @@ Total steps: 325
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   end
 
-[219/325] r1 R1(config)# show startup-config
+[219/325] r1 R1# show startup-config
   % startup-config is not present
 
-[220/325] r1 R1(config)# show ip interface brief
+[220/325] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
 
-[221/325] r1 R1(config)# show interfaces
+[221/325] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1436,7 +1486,7 @@ Total steps: 325
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[222/325] r1 R1(config)# show ip route
+[222/325] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
@@ -1485,66 +1535,67 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
-[223/325] r1 R1(config)# show ip route summary
+[223/325] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
-  static          44          44          0           6688        15840
+  static          45          45          0           6840        16200
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         1           1           0           152         360
-  Total           47          47          0           7144        16920
+  Total           48          48          0           7296        17280
 
-[224/325] r1 R1(config)# show ip protocols
+[224/325] r1 R1# show ip protocols
   No routing protocol is configured.
 
-[225/325] r1 R1(config)# show ip arp
+[225/325] r1 R1# show ip arp
   No ARP entries.
 
-[226/325] r1 R1(config)# show arp
+[226/325] r1 R1# show arp
   No ARP entries.
 
-[227/325] r1 R1(config)# show ip ospf
+[227/325] r1 R1# show ip ospf
   Routing Process "ospf 1" with ID 192.168.1.1
    Number of areas in this router is 0
    Reference bandwidth unit is 100 mbps
   
 
-[228/325] r1 R1(config)# show ip ospf neighbor
+[228/325] r1 R1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
 
-[229/325] r1 R1(config)# show ip ospf database
+[229/325] r1 R1# show ip ospf database
               OSPF Router with ID (192.168.1.1) (Process ID 1)
   
 
-[230/325] r1 R1(config)# show ip ospf interface brief
+[230/325] r1 R1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
 
-[231/325] r1 R1(config)# show ip eigrp neighbors
+[231/325] r1 R1# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[232/325] r1 R1(config)# show ip eigrp topology
+[232/325] r1 R1# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[233/325] r1 R1(config)# show ip bgp
+[233/325] r1 R1# show ip bgp
   % BGP not active
 
-[234/325] r1 R1(config)# show ip bgp summary
+[234/325] r1 R1# show ip bgp summary
   % BGP not active
 
-[235/325] r1 R1(config)# show ip rip database
+[235/325] r1 R1# show ip rip database
 <empty>
 
-[236/325] r1 R1(config)# show ip nat translations
+[236/325] r1 R1# show ip nat translations
   No NAT translations.
 
-[237/325] r1 R1(config)# show ip nat statistics
+[237/325] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1554,59 +1605,65 @@ Total steps: 325
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[238/325] r1 R1(config)# show ip dhcp binding
+[238/325] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[239/325] r1 R1(config)# show ip dhcp pool
+[239/325] r1 R1# show ip dhcp pool
 <empty>
 
-[240/325] r1 R1(config)# show access-lists
+[240/325] r1 R1# show access-lists
   Extended IP access list 101
       10 permit ip 192.168.1.0 0.0.0.255 any (0 matches)
   Extended IP access list 102
       10 permit ip 192.168.2.0 0.0.0.255 any (0 matches)
 
-[241/325] r1 R1(config)# show ip access-lists
+[241/325] r1 R1# show ip access-lists
   Extended IP access list 101
       10 permit ip 192.168.1.0 0.0.0.255 any (0 matches)
   Extended IP access list 102
       10 permit ip 192.168.2.0 0.0.0.255 any (0 matches)
 
-[242/325] r1 R1(config)# show crypto isakmp sa
+[242/325] r1 R1# show crypto isakmp sa
   IPSec not configured.
 
-[243/325] r1 R1(config)# show crypto ipsec sa
+[243/325] r1 R1# show crypto ipsec sa
   IPSec not configured.
 
-[244/325] r1 R1(config)# show crypto session
+[244/325] r1 R1# show crypto session
   IPSec not configured.
 
-[245/325] r1 R1(config)# show crypto map
+[245/325] r1 R1# show crypto map
   IPSec not configured.
 
-[246/325] r1 R1(config)# show standby brief
+[246/325] r1 R1# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[247/325] r1 R1(config)# show vrrp brief
+[247/325] r1 R1# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[248/325] r1 R1(config)# show track
+[248/325] r1 R1# show track
   Track 1
     IP SLA 1 reachability
     State is Up
+  Track 2
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 3
+    List boolean and
+    State is Down
 
-[249/325] r1 R1(config)# show ip sla statistics
+[249/325] r1 R1# show ip sla statistics
   IPSLA operation id: 1
     Type of operation: icmp-echo
     Latest operation state: Active (reachable)
 
-[250/325] r1 R1(config)# show policy-map interface
+[250/325] r1 R1# show policy-map interface
 <empty>
 
-[251/325] r1 R1(config)# show logging
+[251/325] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
@@ -1617,26 +1674,26 @@ Total steps: 325
       Sequence numbers: disabled
       No active syslog hosts
 
-[252/325] r1 R1(config)# show snmp
+[252/325] r1 R1# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[253/325] r1 R1(config)# show ntp status
+[253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD051A7.A9374BC6 (20:23:03.661 UTC Sun Jun 7 2026)
+  reference time is EDD2578D.AAC08312 (09:12:45.667 UTC Tue Jun 9 2026)
   clock offset is 0.00 msec
 
-[254/325] r1 R1(config)# show ntp associations
+[254/325] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   No NTP associations configured.
 
-[255/325] r1 R1(config)# show clock
-  *20:23:03.000 UTC Sun Jun 7 2026
+[255/325] r1 R1# show clock
+  *09:12:45.000 UTC Tue Jun 9 2026
 
-[256/325] r1 R1(config)# show cdp neighbors
+[256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1646,7 +1703,7 @@ Total steps: 325
   
   Total cdp entries displayed : 2
 
-[257/325] r1 R1(config)# show lldp neighbors
+[257/325] r1 R1# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1655,18 +1712,18 @@ Total steps: 325
   
   Total entries displayed: 0
 
-[258/325] r1 R1(config)# show processes cpu
+[258/325] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[259/325] r1 R1(config)# show memory statistics
+[259/325] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
   I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
-[260/325] r1 R1(config)# show flash
+[260/325] r1 R1# show flash
   Directory of flash:/
   
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
@@ -1674,13 +1731,13 @@ Total steps: 325
   
   256016384 bytes total (169782272 bytes free)
 
-[261/325] r1 R1(config)# show users
+[261/325] r1 R1# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[262/325] r1 R1(config)# show history
+[262/325] r1 R1# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1702,7 +1759,7 @@ Total steps: 325
   show users
   show history
 
-[263/325] r1 R1(config)# show ip cef
+[263/325] r1 R1# show ip cef
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
@@ -1750,10 +1807,11 @@ Total steps: 325
   0.0.0.0/0            10.0.0.6             
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
 
-[264/325] r1 R1(config)# show interfaces GigabitEthernet0/0
+[264/325] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1764,7 +1822,7 @@ Total steps: 325
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[265/325] r1 R1(config)# show interfaces GigabitEthernet0/1
+[265/325] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1775,7 +1833,7 @@ Total steps: 325
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[266/325] r1 R1(config)# show ip interface GigabitEthernet0/1
+[266/325] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1786,7 +1844,7 @@ Total steps: 325
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[267/325] r1 R1(config)# show controllers
+[267/325] r1 R1# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1804,7 +1862,7 @@ Total steps: 325
     Administrative state: up
     0 carrier transitions
 
-[268/325] r1 R1(config)# show tech-support
+[268/325] r1 R1# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1891,6 +1949,7 @@ Total steps: 325
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   end
@@ -1949,6 +2008,7 @@ Total steps: 325
   S    172.24.40.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.50.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.51.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
   S*    0.0.0.0/0 via 10.0.0.6, 
@@ -2012,37 +2072,37 @@ Total steps: 325
       Sequence numbers: disabled
       No active syslog hosts
 
-[269/325] r1 R1(config)# show inventory
+[269/325] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[270/325] r1 R1(config)# show environment
+[270/325] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[271/325] r1 R1(config)# show redundancy
+[271/325] r1 R1# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[272/325] r1 R1(config)# show ip vrf
+[272/325] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[273/325] r1 R1(config)# show vrf
+[273/325] r1 R1# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[274/325] r1 R1(config)# show hosts
+[274/325] r1 R1# show hosts
   Default domain is not set
   Name/address lookup uses domain service
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[275/325] r1 R1(config)# show ip ssh
+[275/325] r1 R1# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[276/325] r1 R1(config)# show line
+[276/325] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -2051,13 +2111,13 @@ Total steps: 325
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[277/325] r1 R1(config)# show terminal
+[277/325] r1 R1# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[278/325] r1 R1(config)# show aliases
+[278/325] r1 R1# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2070,10 +2130,10 @@ Total steps: 325
 
 
 --- [279] § regression: pipe filters ---
-[279/325] r1 R1(config)# show running-config | include router
+[279/325] r1 R1# show running-config | include router
 <empty>
 
-[280/325] r1 R1(config)# show running-config | section interface
+[280/325] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2085,10 +2145,10 @@ Total steps: 325
   interface GigabitEthernet0/3
    no shutdown
 
-[281/325] r1 R1(config)# show running-config | begin line
+[281/325] r1 R1# show running-config | begin line
 <empty>
 
-[282/325] r1 R1(config)# show running-config | exclude !
+[282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
   Current configuration:
@@ -2149,11 +2209,12 @@ Total steps: 325
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   end
 
-[283/325] r1 R1(config)# show ip route | include via
+[283/325] r1 R1# show ip route | include via
   S    172.17.1.0/24 [1/0] via 10.0.0.2
   S    172.18.2.0/24 [1/0] via 10.0.0.2
   S    172.19.3.0/24 [1/0] via 10.0.0.2
@@ -2197,10 +2258,11 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
 
-[284/325] r1 R1(config)# show ip interface brief | exclude unassigned
+[284/325] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
@@ -2333,6 +2395,9 @@ Total steps: 325
     ssh              SSH config
     dhcp             dhcp
     route            Establish static routes
+    default-network  Configure default-network
+    local            local
+    pim              pim
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
     access-list      access-list
@@ -2376,6 +2441,7 @@ Total steps: 325
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 

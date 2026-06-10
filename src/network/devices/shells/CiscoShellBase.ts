@@ -258,7 +258,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
-    if (lower === 'exit') return this.cmdExit();
+    if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
@@ -480,6 +480,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args));
 
+    trie.registerGreedy('copy', 'Copy file/configuration', (args) => {
+      const src = args[0];
+      const dst = args[1];
+      if (!src) return '% Incomplete command.';
+      if (dst) return `${src} → ${dst}: copy complete`;
+      return `Destination filename [${src}]?\n${src} copied`;
+    });
+
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
     trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
@@ -597,8 +605,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
+      if (sub === 'monitor') return '';
       return CISCO_ERRORS.INVALID_INPUT;
     }
+    if (head === 'monitor') return '';
+    if (head === 'exec') return '';
     if (head === 'history') {
       // `terminal history size N` — accepted, value ignored (history is
       // capped by the session container, not by line config).
@@ -691,6 +702,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       dev._scheduleReload?.('immediate');
       return 'Proceed with reload? [confirm]\nReload requested.';
+    });
+    this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
+      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
+      return svc ? svc.enable('ip.arp') : 'ARP packet debugging is on';
+    });
+    this.privilegedTrie.register('no debug arp', 'Disable ARP debug', () => {
+      const svc = (this.d() as unknown as { getDebugService?: () => { disable: (c: string) => string } }).getDebugService?.();
+      return svc ? svc.disable('ip.arp') : 'ARP packet debugging is off';
     });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
@@ -804,11 +823,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
-    // Outbound SSH client — `ssh -l <user> <host> [cmd]`. Dispatches
-    // through runSshClient so every gate (host key, sshd policy, ACLs)
-    // applies exactly as it would from a Linux origin.
     this.privilegedTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
       return this.runOutboundSshClient(args);
+    });
+    this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
+      return this.runOutboundSshClient(args);
+    });
+    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
+    });
+    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
     });
   }
 
@@ -1123,31 +1150,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('vrf definition', 'Define a VRF', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `vrf definition ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('key chain', 'Define a key chain', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key chain ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('key', 'Key chain key (sub-key)', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('key-string', 'Set key string', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `key-string ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('accept-lifetime', 'Key accept lifetime', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `accept-lifetime ${args.join(' ')}`);
-      return '';
-    });
-    this.configTrie.registerGreedy('send-lifetime', 'Key send lifetime', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `send-lifetime ${args.join(' ')}`);
       return '';
     });
     this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {

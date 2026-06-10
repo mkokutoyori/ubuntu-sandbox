@@ -127,6 +127,7 @@ export class RouterOSPFIntegration {
   enableOSPF(processId: number = 1): void {
     if (this.ospfEngine) return;
     this.ospfEngine = new OSPFEngine(processId);
+    this.ospfEngine.setDeviceId(this.ctx.id);
 
     // Auto-detect Router ID: highest interface IP
     let highestIP = '0.0.0.0';
@@ -889,8 +890,8 @@ export class RouterOSPFIntegration {
     return candidates;
   }
 
-  /** Form OSPFv3 neighbor adjacency */
-  private v3FormAdjacency(engine: any, localIface: any, remoteRid: string, remotePort: Port): void {
+  /** Form OSPFv3 neighbor adjacency via the engine FSM (Down→Init→ExStart→Full) */
+  private v3FormAdjacency(engine: import('@/network/ospf/OSPFv3Engine').OSPFv3Engine, localIface: any, remoteRid: string, remotePort: Port): void {
     if (localIface.neighbors.has(remoteRid)) return;
 
     const remoteIPv6Addrs = remotePort.getIPv6Addresses?.();
@@ -898,47 +899,25 @@ export class RouterOSPFIntegration {
     const globalAddr = remoteIPv6Addrs?.find((a: any) => a.origin !== 'link-local');
     const remoteIP = linkLocal?.address?.toString() || globalAddr?.address?.toString() || '::';
 
-    const neighbor: any = {
+    const localRid = engine.getRouterId();
+
+    const helloPacket: import('@/network/ospf/types').OSPFv3HelloPacket = {
+      type: 'ospf',
+      version: 3,
+      packetType: 1,
       routerId: remoteRid,
-      ipAddress: remoteIP,
-      state: 'Full',
+      areaId: localIface.areaId,
+      interfaceId: localIface.interfaceId,
       priority: localIface.priority ?? 1,
-      neighborDR: '0.0.0.0',
-      neighborBDR: '0.0.0.0',
-      deadTimer: null,
-      iface: localIface.name,
-      lsRequestList: [],
-      lsRetransmissionList: [],
-      dbSummaryList: [],
-      ddSeqNumber: 0,
       options: 0x13,
-      lastHelloReceived: Date.now(),
+      helloInterval: localIface.helloInterval,
+      deadInterval: localIface.deadInterval,
+      designatedRouter: '0.0.0.0',
+      backupDesignatedRouter: '0.0.0.0',
+      neighbors: [localRid],
     };
 
-    localIface.neighbors.set(remoteRid, neighbor);
-
-    // DR/BDR election for broadcast
-    if (localIface.networkType === 'broadcast') {
-      const localRid = engine.getRouterId();
-      const candidates: Array<{ rid: string; priority: number }> = [];
-      candidates.push({ rid: localRid, priority: localIface.priority ?? 1 });
-      for (const [rid, n] of localIface.neighbors) {
-        candidates.push({ rid, priority: (n as any).priority ?? 1 });
-      }
-      candidates.sort((a: any, b: any) => {
-        if (b.priority !== a.priority) return b.priority - a.priority;
-        const aNum = a.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
-        const bNum = b.rid.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0);
-        return bNum - aNum;
-      });
-
-      localIface.dr = candidates[0]?.rid || '0.0.0.0';
-      localIface.bdr = candidates[1]?.rid || '0.0.0.0';
-
-      if (localIface.dr === localRid) localIface.state = 'DR';
-      else if (localIface.bdr === localRid) localIface.state = 'Backup';
-      else localIface.state = 'DROther';
-    }
+    engine.processHello(localIface.name, remoteIP, helloPacket);
   }
 
   /** Compute and install OSPFv3 IPv6 routes from adjacency information */
@@ -1175,6 +1154,30 @@ export class RouterOSPFIntegration {
         }));
       }
     }
+
+    const routeTypeMap: Record<string, import('@/network/ospf/types').OSPFRouteType> = {
+      'intra-area': 'intra-area',
+      'inter-area': 'inter-area',
+      'type1-external': 'external-type1',
+      'type2-external': 'external-type2',
+      'external-type1': 'external-type1',
+      'external-type2': 'external-type2',
+    };
+    const myAreaIds = [...this.ospfv3Engine.getConfig().areas.keys()];
+    const areaId = myAreaIds[0] ?? '0';
+    const engineRoutes = ipv6Engine.getRoutingTableInternal()
+      .filter((rt: any) => rt.type === 'ospf')
+      .map((rt: any) => ({
+        network: rt.prefix?.toString() ?? '',
+        mask: String(rt.prefixLength ?? 64),
+        routeType: routeTypeMap[rt.routeType] ?? 'intra-area',
+        areaId,
+        nextHop: rt.nextHop?.toString() ?? '',
+        iface: rt.iface ?? '',
+        cost: rt.metric ?? 1,
+        advertisingRouter: this.ospfv3Engine.getRouterId(),
+      } as import('@/network/ospf/types').OSPFRouteEntry));
+    this.ospfv3Engine.setRoutes(engineRoutes);
   }
 
   // ── OSPFv3 Topology Helpers ──
@@ -1827,7 +1830,6 @@ export class RouterOSPFIntegration {
   }
 
   private ipToNum(ip: string): number {
-    const parts = ip.split('.').map(Number);
-    return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+    return new IPAddress(ip).toUint32();
   }
 }

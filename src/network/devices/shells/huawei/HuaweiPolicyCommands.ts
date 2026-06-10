@@ -210,8 +210,14 @@ export function registerHuaweiPolicyDisplayCommands(
     return rp.render().join('\n');
   });
 
-  t.register('display traffic policy user-defined', 'Display traffic policies', () => {
-    const lines = getRouter().getTrafficPolicyStore().renderHuawei();
+  t.registerGreedy('display traffic policy user-defined', 'Display traffic policies', (args) => {
+    const store = getRouter().getTrafficPolicyStore();
+    if (args[0]) {
+      const pol = store.getPolicy(args[0]);
+      if (!pol) return `Info: traffic-policy ${args[0]} does not exist.`;
+      return pol.render().join('\n');
+    }
+    const lines = store.renderHuawei();
     return lines.length > 0 ? lines.join('\n') : 'Info: No traffic policy configured.';
   });
   t.register('display traffic-policy applied-record', 'Display applied traffic policies', () => {
@@ -309,12 +315,61 @@ export function buildTrafficBehaviorView(t: CommandTrie, ctx: HuaweiPolicyShellC
   t.registerGreedy('car', 'Committed access rate', (args) => {
     const name = ctx.getSelectedBehavior(); if (!name) return '';
     const b = ctx.r().getTrafficPolicyStore().getBehavior(name); if (!b) return '';
-    let cir = 0; let cbs: number | undefined;
+    let cir = 0; let pir: number | undefined; let cbs: number | undefined; let pbs: number | undefined;
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'cir' && args[i + 1]) { cir = parseInt(args[++i], 10); }
-      else if (args[i] === 'cbs' && args[i + 1]) { cbs = parseInt(args[++i], 10); }
+      if (args[i] === 'cir' && args[i + 1]) cir = parseInt(args[++i], 10);
+      else if (args[i] === 'pir' && args[i + 1]) pir = parseInt(args[++i], 10);
+      else if (args[i] === 'cbs' && args[i + 1]) cbs = parseInt(args[++i], 10);
+      else if (args[i] === 'pbs' && args[i + 1]) pbs = parseInt(args[++i], 10);
     }
-    b.addAction({ kind: 'car', cir, cbs });
+    b.addAction({ kind: 'car', cir, pir, cbs, pbs });
+    return '';
+  });
+  t.registerGreedy('queue', 'Queue scheduling', (args) => {
+    const name = ctx.getSelectedBehavior(); if (!name) return '';
+    const b = ctx.r().getTrafficPolicyStore().getBehavior(name); if (!b) return '';
+    const head = args[0]?.toLowerCase();
+    if (head === 'ef') {
+      let bandwidth: number | undefined; let cbs: number | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === 'bandwidth' && args[i + 1]) bandwidth = parseInt(args[++i], 10);
+        else if (args[i] === 'cbs' && args[i + 1]) cbs = parseInt(args[++i], 10);
+      }
+      b.addAction({ kind: 'queue-ef', bandwidthKbps: bandwidth, cbs });
+    } else if (head === 'af') {
+      let bandwidthKbps: number | undefined; let bandwidthPct: number | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === 'bandwidth') {
+          if (args[i + 1] === 'pct' && args[i + 2]) {
+            bandwidthPct = parseInt(args[i + 2], 10); i += 2;
+          } else if (args[i + 1]) {
+            bandwidthKbps = parseInt(args[++i], 10);
+          }
+        }
+      }
+      b.addAction({ kind: 'queue-af', bandwidthKbps, bandwidthPct });
+    } else if (head === 'wfq') {
+      let queueNumber: number | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === 'queue-number' && args[i + 1]) queueNumber = parseInt(args[++i], 10);
+      }
+      b.addAction({ kind: 'queue-wfq', queueNumber });
+    }
+    return '';
+  });
+  t.register('statistics enable', 'Enable statistics', () => {
+    const name = ctx.getSelectedBehavior(); if (!name) return '';
+    ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: true });
+    return '';
+  });
+  t.register('statistic enable', 'Enable statistics', () => {
+    const name = ctx.getSelectedBehavior(); if (!name) return '';
+    ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: true });
+    return '';
+  });
+  t.register('undo statistics enable', 'Disable statistics', () => {
+    const name = ctx.getSelectedBehavior(); if (!name) return '';
+    ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: false });
     return '';
   });
 }

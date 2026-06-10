@@ -18,6 +18,7 @@
 
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
 
 export type HuaweiOSPFShellMode = 'ospf' | 'ospf-area' | 'ospfv3';
@@ -200,6 +201,15 @@ export function buildOSPFViewCommands(
     } else if (protocol === 'direct' || protocol === 'connected') {
       extra.redistributeConnected = { subnets: true };
     }
+    return '';
+  });
+
+  trie.registerGreedy('undo import-route', 'Stop redistributing routes', (args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const protocol = (args[0] ?? '').toLowerCase();
+    if (protocol === 'static') extra.redistributeStatic = undefined;
+    else if (protocol === 'direct' || protocol === 'connected') extra.redistributeConnected = undefined;
+    else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
     return '';
   });
 
@@ -387,6 +397,15 @@ export function buildOSPFAreaViewCommands(
     return '';
   });
 
+  trie.registerGreedy('undo abr-summary', 'Remove area route summary', (args) => {
+    const areaId = getOSPFArea();
+    if (!areaId) return 'Error: Not in area view.';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const ranges = extra.areaRanges.get(areaId);
+    if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[0] && r.mask === args[1])));
+    return '';
+  });
+
   trie.registerGreedy('vlink-peer', 'Configure virtual link to ABR', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const areaId = getOSPFArea();
@@ -412,15 +431,15 @@ export function buildOSPFv3ViewCommands(
   });
 
   trie.registerGreedy('area', 'OSPFv3 area parameters', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
+    if (args.length < 1) return 'Error: Incomplete command.';
     const v3 = ctx.r()._getOSPFv3EngineInternal();
     if (!v3) return 'Error: OSPFv3 is not enabled.';
     const areaId = args[0];
-    const subCmd = args[1].toLowerCase();
-    if (subCmd === 'stub') {
-      v3.addArea(areaId, 'stub');
-      v3.setAreaType(areaId, 'stub');
-    }
+    v3.addArea(areaId);
+    const subCmd = args[1]?.toLowerCase();
+    if (subCmd === 'stub') v3.setAreaType(areaId, 'stub');
+    (ctx as any).ospfArea = areaId;
+    ctx.setMode('ospfv3-area');
     return '';
   });
 
@@ -561,6 +580,23 @@ export function registerOSPFInterfaceCommands(
     return '';
   });
 
+  const undoOspfIf: Record<string, Record<string, unknown>> = {
+    'undo ospf cost': { cost: 1 },
+    'undo ospf dr-priority': { priority: 1 },
+    'undo ospf network-type': { networkType: 'broadcast' },
+    'undo ospf authentication-mode': { authType: 0, authKey: '' },
+    'undo ospf timer hello': { helloInterval: 10 },
+    'undo ospf timer dead': { deadInterval: 40 },
+  };
+  for (const [cmd, defaults] of Object.entries(undoOspfIf)) {
+    trie.registerGreedy(cmd, 'Reset OSPF interface setting', () => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return 'Error: No interface selected.';
+      setPendingOspfIf(ifName, defaults);
+      return '';
+    });
+  }
+
   trie.registerGreedy('ospf demand-circuit', 'Configure demand circuit', (_args) => {
     return '';
   });
@@ -632,7 +668,7 @@ export function registerOSPFInterfaceCommands(
     if (args.length < 3) return 'Error: Incomplete command.';
     const processId = parseInt(args[0], 10);
     if (isNaN(processId)) return 'Error: Invalid process ID.';
-    if (args[1].toLowerCase() !== 'area') return 'Error: Expected "area" keyword.';
+    if (!'area'.startsWith(args[1].toLowerCase())) return 'Error: Expected "area" keyword.';
     const areaId = args[2];
     const router = ctx.r();
     if (!router._getOSPFv3EngineInternal()) {
@@ -671,6 +707,7 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.register('display ospf abr-asbr', 'Display OSPF border routers', () => displayOspfAbrAsbr(getRouter()));
   trie.register('display ospf statistics', 'Display OSPF statistics', () => displayOspfStatistics(getRouter()));
   trie.register('display ip routing-table protocol ospf', 'Display OSPF routes', () => displayRoutingTableOspf(getRouter()));
+  trie.register('display ospf routing', 'Display OSPF routing table', () => displayOspfRouting(getRouter()));
 
   // OSPFv3 display commands
   trie.register('display ospfv3 peer', 'Display OSPFv3 neighbor information', () => displayOspfv3Peer(getRouter()));
@@ -684,6 +721,16 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
 
   trie.register('display ospf cumulative', 'Display OSPF cumulative statistics', () => displayOspfStatistics(getRouter()));
   trie.register('display ospf peer brief', 'Display brief OSPF peer information', () => displayOspfPeer(getRouter()));
+  trie.register('display ospf peer last-nbr-down', 'Display last neighbor-down record', () => {
+    const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return 'Error: OSPF is not configured.';
+    return [
+      `OSPF Process with Router ID ${ospf.getRouterId()}`,
+      '          Last Down OSPF Neighbors',
+      '',
+      ' There is no recorded neighbor down event.',
+    ].join('\n');
+  });
   trie.registerGreedy('display ospf lsdb nssa', 'Display NSSA LSAs', (_args) => displayOspfLsdbTyped(getRouter(), 7));
   trie.register('display ospf nexthop', 'Display OSPF nexthops', () => {
     const ospf = getRouter()._getOSPFEngineInternal();
@@ -856,7 +903,9 @@ function displayOspfPeerVerbose(router: Router): string {
     lines.push(` Neighbor ${n.routerId}, address ${n.ipAddress}`);
     lines.push(`   Area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
     lines.push(`   State: ${n.state.toUpperCase()}, Priority: ${n.priority}`);
-    lines.push(`   DR: ${n.neighborDR}  BDR: ${n.neighborBDR}`);
+    const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
+    const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
+    lines.push(`   DR: ${drId}  BDR: ${bdrId}`);
     lines.push(`   Dead timer remaining: ${deadInterval}s`);
     lines.push(`   Neighbor up for 00:00:00`);
     lines.push('');
@@ -1064,6 +1113,34 @@ function displayRoutingTableOspf(router: Router): string {
   return lines.join('\n');
 }
 
+export function displayOspfRouting(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return 'Info: OSPF is not running.';
+  router._ospfAutoConverge();
+  const rt = router.getRoutingTable();
+  const rows: string[] = [];
+  let count = 0;
+  for (const r of rt) {
+    if (r.type !== 'ospf') continue;
+    count++;
+    const dest = `${r.network.toString()}/${maskToCIDR(r.mask.toString())}`;
+    const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
+    rows.push(`${dest.padEnd(19)}${String(r.metric).padEnd(6)}${'Transit'.padEnd(11)}${nh.padEnd(16)}${ospf.getRouterId().padEnd(16)}0.0.0.0`);
+  }
+  const lines = [
+    `OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`,
+    '         Routing Tables',
+    '',
+    ' Routing for Network',
+    ' Destination        Cost  Type       NextHop         AdvRouter       Area',
+    ...rows,
+    '',
+    ` Total Nets: ${count}`,
+    ` Intra Area: 0  Inter Area: ${count}  ASE: 0  NSSA: 0`,
+  ];
+  return lines.join('\n');
+}
+
 // OSPFv3 display commands
 
 function displayOspfv3Peer(router: Router): string {
@@ -1102,11 +1179,5 @@ function displayOspfv3Interface(router: Router): string {
 }
 
 function maskToCIDR(mask: string): number {
-  const parts = mask.split('.').map(Number);
-  let bits = 0;
-  for (const p of parts) {
-    let n = p;
-    while (n) { bits += n & 1; n >>>= 1; }
-  }
-  return bits;
+  return new SubnetMask(mask).toCIDR();
 }

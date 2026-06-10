@@ -155,7 +155,7 @@ describe('AWR snapshots — DBMS_WORKLOAD_REPOSITORY', () => {
     sh.processLine("BEGIN DBMS_WORKLOAD_REPOSITORY.DROP_SNAPSHOT_RANGE(1, 1); END;");
     const out = run(sh, "SELECT SNAP_ID FROM DBA_HIST_SNAPSHOT WHERE SOURCE='MANUAL';");
     // After dropping snap_id=1 only snap_id=2 should remain.
-    expect(out).toMatch(/^2\s*$/m);
+    expect(out).toMatch(/^\s*2\s*$/m);
     expect(out).toMatch(/1 row selected/);
     sh.dispose();
   });

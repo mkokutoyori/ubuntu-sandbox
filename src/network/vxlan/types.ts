@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_VXLAN = 4789;
 export const VXLAN_VNI_MAX = 0xffffff;
 export const VXLAN_FLAG_I = 0x08;
@@ -9,7 +10,7 @@ export interface VxlanHeader {
   reserved2: number;
 }
 
-export interface VxlanPacket {
+export interface VxlanPacket extends NetworkPdu {
   type: 'vxlan';
   header: VxlanHeader;
   innerFrame: unknown;

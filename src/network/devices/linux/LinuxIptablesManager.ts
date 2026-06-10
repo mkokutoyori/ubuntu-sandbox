@@ -16,6 +16,7 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
+import { IPAddress } from '../../core/types';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -422,11 +423,7 @@ export class LinuxIptablesManager {
   }
 
   private ipToNumber(ip: string): number | null {
-    const parts = ip.split('.');
-    if (parts.length !== 4) return null;
-    const octets = parts.map(p => parseInt(p));
-    if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
-    return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+    return IPAddress.tryParse(ip)?.toUint32() ?? null;
   }
 
   private portMatchesSpec(port: number, spec: string): boolean {

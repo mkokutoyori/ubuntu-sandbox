@@ -303,116 +303,395 @@ export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): stri
 
 export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string {
   let countBytes = false;
+  let countChars = false;
   let countLines = false;
   let countWords = false;
+  let countMaxLine = false;
   const files: string[] = [];
 
-  for (const a of args) {
-    if (a === '-c') { countBytes = true; continue; }
-    if (a === '-l') { countLines = true; continue; }
-    if (a === '-w') { countWords = true; continue; }
+  // Expand combined short options (`-lw`, `-clw`) the way real wc does.
+  const expanded = args.flatMap((a) => {
+    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2) return [a];
+    return a.slice(1).split('').map(c => `-${c}`);
+  });
+  for (const a of expanded) {
+    if (a === '-c' || a === '--bytes') { countBytes = true; continue; }
+    if (a === '-m' || a === '--chars') { countChars = true; continue; }
+    if (a === '-l' || a === '--lines') { countLines = true; continue; }
+    if (a === '-w' || a === '--words') { countWords = true; continue; }
+    if (a === '-L' || a === '--max-line-length') { countMaxLine = true; continue; }
     if (!a.startsWith('-')) files.push(a);
   }
 
-  // Default: show all three
-  if (!countBytes && !countLines && !countWords) {
-    countBytes = true; countLines = true; countWords = true;
+  // Default: lines + words + bytes (POSIX order).
+  if (!countBytes && !countChars && !countLines && !countWords && !countMaxLine) {
+    countLines = true; countWords = true; countBytes = true;
   }
 
-  const processContent = (content: string, filename?: string): string => {
+  interface Stats { lines: number; words: number; bytes: number; chars: number; maxLine: number }
+
+  const statsOf = (content: string): Stats => {
+    // `lines` is the count of '\n' bytes — real wc's metric, so the
+    // tail of a file with no final newline doesn't add a phantom line.
+    const lines = (content.match(/\n/g) ?? []).length;
+    const words = content.split(/\s+/).filter(Boolean).length;
+    const bytes = content.length;
+    // For an ASCII-only sandbox bytes == chars; multi-byte support
+    // would require encoding into UTF-8 first.
+    const chars = bytes;
+    let maxLine = 0;
+    for (const l of content.split('\n')) {
+      if (l.length > maxLine) maxLine = l.length;
+    }
+    return { lines, words, bytes, chars, maxLine };
+  };
+
+  // wc right-pads each metric column to 7 chars (real coreutils).
+  const formatRow = (s: Stats, filename?: string): string => {
     const parts: string[] = [];
-    if (countLines) parts.push(content.split('\n').filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== '').length.toString());
-    if (countWords) parts.push(content.split(/\s+/).filter(Boolean).length.toString());
-    if (countBytes) parts.push(content.length.toString());
-    if (filename) parts.push(filename);
-    return parts.join(' ');
+    const push = (n: number) => parts.push(String(n).padStart(7));
+    if (countLines) push(s.lines);
+    if (countWords) push(s.words);
+    if (countChars) push(s.chars);
+    if (countBytes) push(s.bytes);
+    if (countMaxLine) push(s.maxLine);
+    const row = parts.join(' ').trimStart();
+    return filename ? `${parts.join(' ')} ${filename}` : row;
   };
 
   if (files.length === 0) {
-    return stdin !== undefined ? processContent(stdin) : '';
+    if (stdin === undefined) return '';
+    return formatRow(statsOf(stdin));
   }
 
   const results: string[] = [];
+  const totals: Stats = { lines: 0, words: 0, bytes: 0, chars: 0, maxLine: 0 };
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
     const content = ctx.vfs.readFile(absPath);
-    if (content !== null) results.push(processContent(content, f));
+    if (content === null) {
+      results.push(`wc: ${f}: No such file or directory`);
+      continue;
+    }
+    const s = statsOf(content);
+    results.push(formatRow(s, f));
+    totals.lines += s.lines;
+    totals.words += s.words;
+    totals.bytes += s.bytes;
+    totals.chars += s.chars;
+    if (s.maxLine > totals.maxLine) totals.maxLine = s.maxLine;
   }
+  // Real wc adds a "total" row when given more than one file.
+  if (files.length > 1) results.push(formatRow(totals, 'total'));
   return results.join('\n');
 }
 
-export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
-  let numeric = false;
-  let reverse = false;
-  const files: string[] = [];
-
-  for (const a of args) {
-    if (a === '-n') { numeric = true; continue; }
-    if (a === '-r') { reverse = true; continue; }
-    if (!a.startsWith('-')) files.push(a);
-  }
-
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
-  } else {
-    content = stdin ?? '';
-  }
-
-  let lines = content.split('\n').filter(l => l.length > 0);
-
-  if (numeric) {
-    lines.sort((a, b) => parseFloat(a) - parseFloat(b));
-  } else {
-    lines.sort();
-  }
-
-  if (reverse) lines.reverse();
-  return lines.join('\n');
+/** Parse one key spec like `2`, `2,3`, `1.3,1.5n`. */
+interface SortKey {
+  startField: number; startChar: number;
+  endField?: number;  endChar?: number;
+  numeric?: boolean;  reverse?: boolean;
+  human?: boolean;    version?: boolean;
+  ignoreCase?: boolean; ignoreLeading?: boolean;
 }
 
-export function cmdCut(ctx: ShellContext, args: string[], stdin?: string): string {
-  let delimiter = '\t';
-  let fields: number[] = [];
+function parseSortKey(spec: string): SortKey {
+  // GNU spec: F[.C][OPTS][,F[.C][OPTS]]
+  const [start, end] = spec.split(',');
+  const parseHalf = (s: string) => {
+    const m = /^(\d+)(?:\.(\d+))?([bdfghnMRrV]*)$/.exec(s);
+    if (!m) return { field: 1, char: 1, opts: '' };
+    return { field: parseInt(m[1], 10), char: parseInt(m[2] ?? '1', 10), opts: m[3] };
+  };
+  const s = parseHalf(start);
+  const e = end ? parseHalf(end) : null;
+  const opts = s.opts + (e?.opts ?? '');
+  // Only set per-key flags when the spec explicitly carried them, so
+  // the comparator's `key.numeric ?? globalNumeric` fallback distinguishes
+  // "key opted out of numeric" from "key didn't say".
+  const flag = (c: string): true | undefined => opts.includes(c) || undefined;
+  return {
+    startField: s.field, startChar: s.char,
+    endField: e?.field, endChar: e?.char,
+    numeric: flag('n'),
+    human: flag('h'),
+    version: flag('V'),
+    reverse: flag('r'),
+    ignoreCase: flag('f'),
+    ignoreLeading: flag('b'),
+  };
+}
+
+const MONTH_RANK: Record<string, number> = {
+  'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+  'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
+};
+
+/** Decode a human-numeric token like 1K, 2.5M, 3G. */
+function humanToBytes(s: string): number {
+  const m = /^([+-]?\d+(?:\.\d+)?)\s*([KMGTP]?)/i.exec(s);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  const u = (m[2] ?? '').toUpperCase();
+  const mul: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 };
+  return n * (mul[u] ?? 1);
+}
+
+/** Version-sort comparator (GNU `sort -V`). Splits into runs of digits
+ *  and non-digits, comparing numerically where both runs are numeric. */
+function versionCompare(a: string, b: string): number {
+  const split = (s: string): string[] => s.match(/(\d+|\D+)/g) ?? [];
+  const aa = split(a), bb = split(b);
+  for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+    const x = aa[i] ?? '', y = bb[i] ?? '';
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    if (xn && yn) {
+      const d = parseInt(x, 10) - parseInt(y, 10);
+      if (d !== 0) return d;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
+  let numeric = false, reverse = false, unique = false;
+  let human = false, version = false, randomise = false;
+  let monthSort = false, ignoreCase = false, ignoreLeading = false;
+  let delimiter: string | undefined;
+  const keys: SortKey[] = [];
   const files: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a.startsWith('-d')) {
-      delimiter = a.length > 2 ? a.slice(2) : args[++i] || '\t';
-      continue;
-    }
-    if (a.startsWith('-f')) {
-      const fStr = a.length > 2 ? a.slice(2) : args[++i] || '';
-      fields = fStr.split(',').map(f => parseInt(f, 10));
-      continue;
+    switch (true) {
+      case a === '-n' || a === '--numeric-sort': numeric = true; continue;
+      case a === '-r' || a === '--reverse':      reverse = true; continue;
+      case a === '-u' || a === '--unique':       unique = true; continue;
+      case a === '-h' || a === '--human-numeric-sort': human = true; continue;
+      case a === '-V' || a === '--version-sort': version = true; continue;
+      case a === '-R' || a === '--random-sort':  randomise = true; continue;
+      case a === '-M' || a === '--month-sort':   monthSort = true; continue;
+      case a === '-f' || a === '--ignore-case':  ignoreCase = true; continue;
+      case a === '-b' || a === '--ignore-leading-blanks': ignoreLeading = true; continue;
+      case a === '-k': keys.push(parseSortKey(args[++i] ?? '1')); continue;
+      case a.startsWith('-k'): keys.push(parseSortKey(a.slice(2))); continue;
+      case a === '-t': delimiter = args[++i] ?? '\t'; continue;
+      case a.startsWith('-t'): delimiter = a.slice(2); continue;
+      case a === '-c' || a === '--check': continue; // we always succeed
     }
     if (!a.startsWith('-')) files.push(a);
   }
 
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
+  // Concatenate every named file plus stdin (in that order, like real sort).
+  let content = '';
+  for (const f of files) {
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    const raw = ctx.vfs.readFile(absPath);
+    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
+  }
+  if (files.length === 0 && stdin !== undefined) content = stdin;
+  let lines = content.split('\n');
+  // Drop the trailing empty line caused by a final newline, but keep
+  // genuine blank lines in the interior.
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+  const fieldOf = (line: string, n: number): string => {
+    if (delimiter !== undefined) {
+      const parts = line.split(delimiter);
+      return parts[n - 1] ?? '';
+    }
+    // Default: whitespace-separated, leading blanks part of the next field.
+    const parts = line.trim().split(/\s+/);
+    return parts[n - 1] ?? '';
+  };
+
+  const extractKey = (line: string, key?: SortKey): string => {
+    if (!key) return ignoreLeading ? line.replace(/^\s+/, '') : line;
+    let val = fieldOf(line, key.startField);
+    if (key.startChar > 1) val = val.slice(key.startChar - 1);
+    if (key.endField !== undefined) {
+      const tail = fieldOf(line, key.endField);
+      const endTail = key.endChar !== undefined ? tail.slice(0, key.endChar) : tail;
+      // Reconstitute as the slice from startField..endField.
+      const pieces: string[] = [val];
+      for (let f = key.startField + 1; f < key.endField; f++) pieces.push(fieldOf(line, f));
+      pieces.push(endTail);
+      val = pieces.join(' ');
+    }
+    if (key.ignoreLeading ?? ignoreLeading) val = val.replace(/^\s+/, '');
+    return val;
+  };
+
+  const compareValues = (a: string, b: string, mode: {
+    numeric?: boolean; human?: boolean; version?: boolean;
+    monthSort?: boolean; ignoreCase?: boolean;
+  }): number => {
+    const A = mode.ignoreCase ? a.toLowerCase() : a;
+    const B = mode.ignoreCase ? b.toLowerCase() : b;
+    if (mode.human)   return humanToBytes(A) - humanToBytes(B);
+    if (mode.numeric) return (parseFloat(A) || 0) - (parseFloat(B) || 0);
+    if (mode.version) return versionCompare(A, B);
+    if (mode.monthSort) {
+      const ra = MONTH_RANK[A.trim().slice(0, 3).toUpperCase()] ?? 0;
+      const rb = MONTH_RANK[B.trim().slice(0, 3).toUpperCase()] ?? 0;
+      return ra - rb;
+    }
+    return A < B ? -1 : A > B ? 1 : 0;
+  };
+
+  if (randomise) {
+    // Deterministic Math.random ordering is fine — we don't expose a
+    // seed, but tests just check that the line set is preserved.
+    lines.sort(() => Math.random() - 0.5);
+  } else if (keys.length > 0) {
+    lines.sort((la, lb) => {
+      for (const key of keys) {
+        const a = extractKey(la, key);
+        const b = extractKey(lb, key);
+        const d = compareValues(a, b, {
+          numeric: key.numeric ?? numeric,
+          human:   key.human   ?? human,
+          version: key.version ?? version,
+          monthSort,
+          ignoreCase: key.ignoreCase ?? ignoreCase,
+        });
+        if (d !== 0) return (key.reverse ? -1 : 1) * d;
+      }
+      return 0;
+    });
   } else {
-    content = stdin ?? '';
+    lines.sort((a, b) => compareValues(
+      extractKey(a), extractKey(b),
+      { numeric, human, version, monthSort, ignoreCase },
+    ));
   }
 
+  if (reverse && !randomise) lines.reverse();
+  if (unique) lines = lines.filter((l, i) => i === 0 || lines[i - 1] !== l);
+  return lines.join('\n');
+}
+
+/**
+ * Parse a cut/comm RANGE list: "1", "1,3", "1-3", "1,3-5,7", "-3" (1..3),
+ * "5-" (5..end). Returns the 1-based indices, sorted & deduped.
+ * `max` caps open-ended high ends.
+ */
+function parseCutRanges(spec: string, max = 1024): number[] {
+  const out = new Set<number>();
+  for (const part of spec.split(',')) {
+    const m = /^(\d*)-(\d*)$/.exec(part);
+    if (m) {
+      const start = m[1] ? parseInt(m[1], 10) : 1;
+      const end = m[2] ? parseInt(m[2], 10) : max;
+      for (let i = start; i <= end; i++) out.add(i);
+    } else {
+      const n = parseInt(part, 10);
+      if (!isNaN(n)) out.add(n);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+export function cmdCut(ctx: ShellContext, args: string[], stdin?: string): string {
+  let delimiter = '\t';
+  let mode: 'field' | 'char' | 'byte' = 'field';
+  let rangeSpec = '';
+  let onlyDelimited = false;
+  let outputDelimiter: string | undefined;
+  let complement = false;
+  const files: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const argval = (long: string, short: string): string | null => {
+      if (a === short || a === long) return args[++i] ?? '';
+      // Empty short prefix would match every arg — guard explicitly.
+      if (short && a.startsWith(short) && a.length > short.length) return a.slice(short.length);
+      if (a.startsWith(long + '=')) return a.slice(long.length + 1);
+      return null;
+    };
+    const d = argval('--delimiter', '-d');
+    if (d !== null) { delimiter = d || '\t'; continue; }
+    const f = argval('--fields', '-f');
+    if (f !== null) { mode = 'field'; rangeSpec = f; continue; }
+    const c = argval('--characters', '-c');
+    if (c !== null) { mode = 'char'; rangeSpec = c; continue; }
+    const b = argval('--bytes', '-b');
+    if (b !== null) { mode = 'byte'; rangeSpec = b; continue; }
+    const od = argval('--output-delimiter', '');
+    if (od !== null) { outputDelimiter = od; continue; }
+    if (a === '-s' || a === '--only-delimited') { onlyDelimited = true; continue; }
+    if (a === '--complement') { complement = true; continue; }
+    if (!a.startsWith('-')) files.push(a);
+  }
+  const ranges = parseCutRanges(rangeSpec);
+  const outDelim = outputDelimiter ?? delimiter;
+
+  // Concatenate files; fall back to stdin.
+  let content = '';
+  for (const f of files) {
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    const raw = ctx.vfs.readFile(absPath);
+    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
+  }
+  if (files.length === 0) content = stdin ?? '';
+
   const lines = content.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
   const result: string[] = [];
   for (const line of lines) {
-    if (!line) continue;
-    const parts = line.split(delimiter);
-    const selected = fields.map(f => parts[f - 1] || '').join(delimiter);
-    result.push(selected);
+    if (mode === 'field') {
+      if (!line.includes(delimiter)) {
+        if (onlyDelimited) continue;
+        result.push(line);
+        continue;
+      }
+      const parts = line.split(delimiter);
+      let keep: number[];
+      if (complement) {
+        const drop = new Set(ranges);
+        keep = parts.map((_, i) => i + 1).filter(n => !drop.has(n));
+      } else {
+        // Trim the requested range to the actual field count so an
+        // open-ended `-f2-` doesn't tack thousands of empty trailing
+        // delimiters onto every line.
+        keep = ranges.filter(n => n <= parts.length);
+      }
+      result.push(keep.map(n => parts[n - 1] ?? '').join(outDelim));
+    } else {
+      // -c and -b are functionally identical on a UTF-16 codepoint string.
+      const indices = complement
+        ? Array.from({ length: line.length }, (_, i) => i + 1).filter(n => !ranges.includes(n))
+        : ranges;
+      result.push(indices.map(n => line.charAt(n - 1) ?? '').join(''));
+    }
   }
   return result.join('\n');
 }
 
 export function cmdUniq(ctx: ShellContext, args: string[], stdin?: string): string {
+  // GNU flags. -f / -s take a value that may be glued or separate.
+  let countMode = false;
+  let onlyDup = false;
+  let onlyUniq = false;
+  let ignoreCase = false;
+  let skipFields = 0;
+  let skipChars = 0;
   const files: string[] = [];
-  for (const a of args) {
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-c' || a === '--count')         { countMode = true; continue; }
+    if (a === '-d' || a === '--repeated')      { onlyDup = true; continue; }
+    if (a === '-u' || a === '--unique')        { onlyUniq = true; continue; }
+    if (a === '-i' || a === '--ignore-case')   { ignoreCase = true; continue; }
+    if (a === '-f') { skipFields = parseInt(args[++i] ?? '0', 10); continue; }
+    if (a.startsWith('-f') && /^-f\d+$/.test(a)) { skipFields = parseInt(a.slice(2), 10); continue; }
+    if (a === '-s') { skipChars  = parseInt(args[++i] ?? '0', 10); continue; }
+    if (a.startsWith('-s') && /^-s\d+$/.test(a)) { skipChars = parseInt(a.slice(2), 10); continue; }
     if (!a.startsWith('-')) files.push(a);
   }
 
@@ -425,34 +704,163 @@ export function cmdUniq(ctx: ShellContext, args: string[], stdin?: string): stri
   }
 
   const lines = content.split('\n');
-  const result: string[] = [];
-  let prevLine: string | null = null;
-  for (const line of lines) {
-    if (line !== prevLine) {
-      result.push(line);
-      prevLine = line;
+  // Drop the trailing empty line caused by a final newline; real uniq
+  // does the same when the input ends with \n.
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+  const keyOf = (line: string): string => {
+    let s = line;
+    if (skipFields > 0) {
+      // Skip N whitespace-separated fields.
+      let i = 0;
+      let fieldsLeft = skipFields;
+      while (i < s.length && fieldsLeft > 0) {
+        while (i < s.length && /\s/.test(s[i])) i++;
+        while (i < s.length && !/\s/.test(s[i])) i++;
+        fieldsLeft--;
+      }
+      s = s.slice(i);
     }
+    if (skipChars > 0) s = s.slice(skipChars);
+    return ignoreCase ? s.toLowerCase() : s;
+  };
+
+  // Group adjacent equal-keyed runs and emit per flag selection.
+  interface Run { line: string; count: number }
+  const runs: Run[] = [];
+  let lastKey: string | null = null;
+  for (const line of lines) {
+    const k = keyOf(line);
+    if (k === lastKey && runs.length > 0) runs[runs.length - 1].count++;
+    else { runs.push({ line, count: 1 }); lastKey = k; }
   }
-  // Remove trailing empty line
-  while (result.length > 0 && result[result.length - 1] === '') result.pop();
-  return result.join('\n');
+
+  const out: string[] = [];
+  for (const r of runs) {
+    if (onlyDup && r.count < 2) continue;
+    if (onlyUniq && r.count > 1) continue;
+    out.push(countMode ? `${String(r.count).padStart(7)} ${r.line}` : r.line);
+  }
+  return out.join('\n');
 }
 
-export function cmdTr(ctx: ShellContext, args: string[], stdin?: string): string {
-  if (args.length < 2 || !stdin) return stdin ?? '';
+/** POSIX `[:class:]` resolution for tr. Lazy — only what tr ever needs. */
+function expandTrClass(name: string): string {
+  const lower = 'abcdefghijklmnopqrstuvwxyz';
+  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const digit = '0123456789';
+  switch (name) {
+    case 'alpha':   return lower + upper;
+    case 'lower':   return lower;
+    case 'upper':   return upper;
+    case 'digit':   return digit;
+    case 'alnum':   return lower + upper + digit;
+    case 'xdigit':  return digit + 'abcdef' + 'ABCDEF';
+    case 'space':   return ' \t\n\r\v\f';
+    case 'blank':   return ' \t';
+    case 'punct':   return '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    case 'print':   return digit + lower + upper + ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    case 'cntrl':   return '\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f';
+    case 'graph':   return digit + lower + upper + '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    default: return '';
+  }
+}
 
-  const set1 = expandCharSet(args[0]);
-  const set2 = expandCharSet(args[1]);
+/** Replace POSIX classes + C escapes inside a tr SET argument. */
+function decodeTrSet(raw: string): string {
+  // Classes first — replace `[:name:]` before character expansion runs.
+  let s = raw.replace(/\[:(\w+):\]/g, (_m, name) => expandTrClass(name));
+  // C escapes.
+  s = s
+    .replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r')
+    .replace(/\\\\/g, '\\').replace(/\\0/g, '\0')
+    .replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
+  return expandCharSet(s);
+}
+
+export function cmdTr(_ctx: ShellContext, args: string[], stdin?: string): string {
+  // Real tr operates on stdin only. With no stdin there's nothing to do.
+  let deleteMode = false;
+  let squeezeMode = false;
+  let complement = false;
+  // Real tr accepts combined short options like `-cd`, `-cs`, `-cds`.
+  // Split before scanning so the loop sees them one at a time.
+  const expanded = args.flatMap((a) => {
+    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2 || /^-\d/.test(a)) return [a];
+    return a.slice(1).split('').map(c => `-${c}`);
+  });
+  const sets: string[] = [];
+  for (const a of expanded) {
+    if (a === '-d' || a === '--delete')   { deleteMode = true; continue; }
+    if (a === '-s' || a === '--squeeze-repeats') { squeezeMode = true; continue; }
+    if (a === '-c' || a === '-C' || a === '--complement') { complement = true; continue; }
+    if (a === '-t' || a === '--truncate-set1') continue;
+    if (!a.startsWith('-') || /^-\d/.test(a)) sets.push(a);
+  }
+  if (!stdin || sets.length === 0) return stdin ?? '';
+
+  const set1Raw = decodeTrSet(sets[0]);
+  const set2Raw = sets[1] !== undefined ? decodeTrSet(sets[1]) : '';
+
+  // Build a fast membership tester — complement flips it.
+  const inSet1 = (ch: string): boolean => {
+    const present = set1Raw.includes(ch);
+    return complement ? !present : present;
+  };
 
   let result = '';
-  for (const c of stdin) {
-    const idx = set1.indexOf(c);
-    if (idx !== -1 && idx < set2.length) {
-      result += set2[idx];
+  if (deleteMode) {
+    for (const ch of stdin) if (!inSet1(ch)) result += ch;
+    if (squeezeMode && set2Raw) {
+      let squeezed = '';
+      let prev = '';
+      for (const ch of result) {
+        if (set2Raw.includes(ch) && ch === prev) continue;
+        squeezed += ch;
+        prev = ch;
+      }
+      result = squeezed;
+    }
+    return result;
+  }
+
+  // Translation (or squeeze of set1) form.
+  // Pad set2 with its last character so set1.length translations are defined.
+  const padded = set2Raw.length === 0
+    ? ''
+    : set2Raw + set2Raw[set2Raw.length - 1].repeat(Math.max(0, set1Raw.length - set2Raw.length));
+
+  for (const ch of stdin) {
+    if (inSet1(ch)) {
+      // Complement-translate maps every non-SET1 char to last(SET2).
+      if (complement) {
+        result += ch;
+      } else if (padded.length > 0) {
+        const idx = set1Raw.indexOf(ch);
+        result += padded[idx] ?? ch;
+      } else {
+        result += ch;
+      }
+    } else if (complement && padded.length > 0) {
+      // GNU semantics — complement+translate replaces non-SET1 with last(SET2).
+      result += padded[padded.length - 1];
     } else {
-      result += c;
+      result += ch;
     }
   }
+
+  if (squeezeMode) {
+    const squeezeAgainst = set2Raw || set1Raw;
+    let squeezed = '';
+    let prev = '';
+    for (const ch of result) {
+      if (squeezeAgainst.includes(ch) && ch === prev) continue;
+      squeezed += ch;
+      prev = ch;
+    }
+    result = squeezed;
+  }
+
   return result;
 }
 

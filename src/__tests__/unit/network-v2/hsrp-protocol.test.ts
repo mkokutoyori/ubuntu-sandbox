@@ -42,6 +42,60 @@ describe('HSRP — pure helpers', () => {
     expect(hsrpVirtualMac(42, 1)).toBe('0000.0c07.ac2a');
     expect(hsrpVirtualMac(1, 2)).toBe('0000.0c9f.f001');
   });
+
+  it('hsrpVirtualMac covers the full group range of each version', () => {
+    expect(hsrpVirtualMac(0, 1)).toBe('0000.0c07.ac00');
+    expect(hsrpVirtualMac(255, 1)).toBe('0000.0c07.acff');
+    expect(hsrpVirtualMac(0, 2)).toBe('0000.0c9f.f000');
+    expect(hsrpVirtualMac(256, 2)).toBe('0000.0c9f.f100');
+    expect(hsrpVirtualMac(4095, 2)).toBe('0000.0c9f.ffff');
+  });
+
+  it('hsrpVirtualMac rejects out-of-range groups instead of emitting a malformed MAC', () => {
+    expect(() => hsrpVirtualMac(256, 1)).toThrow(RangeError);
+    expect(() => hsrpVirtualMac(4096, 2)).toThrow(RangeError);
+    expect(() => hsrpVirtualMac(-1, 1)).toThrow(RangeError);
+    expect(() => hsrpVirtualMac(1.5, 1)).toThrow(RangeError);
+  });
+});
+
+describe('HSRP — group number range enforcement (real IOS behavior)', () => {
+  async function configMode(r: CiscoRouter, iface: string): Promise<void> {
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand(`interface ${iface}`);
+  }
+
+  it('rejects a group above 255 while the interface runs HSRP version 1', async () => {
+    const r = new CiscoRouter('R1');
+    await configMode(r, 'GigabitEthernet0/0');
+    const out = await r.executeCommand('standby 300 ip 10.0.0.254');
+    expect(out).toMatch(/out of range/i);
+    expect(r.getHsrpAgent().getGroup('GigabitEthernet0/0', 300)).toBeUndefined();
+  });
+
+  it('accepts groups up to 4095 once standby version 2 is set', async () => {
+    const r = new CiscoRouter('R1');
+    await configMode(r, 'GigabitEthernet0/0');
+    await r.executeCommand('standby version 2');
+    const out = await r.executeCommand('standby 300 ip 10.0.0.254');
+    expect(out).not.toMatch(/out of range/i);
+    expect(r.getHsrpAgent().getGroup('GigabitEthernet0/0', 300)).toBeDefined();
+    const tooBig = await r.executeCommand('standby 4096 ip 10.0.0.254');
+    expect(tooBig).toMatch(/out of range/i);
+  });
+
+  it('refuses to fall back to version 1 while groups above 255 exist', async () => {
+    const r = new CiscoRouter('R1');
+    await configMode(r, 'GigabitEthernet0/0');
+    await r.executeCommand('standby version 2');
+    await r.executeCommand('standby 300 ip 10.0.0.254');
+    const out = await r.executeCommand('standby version 1');
+    expect(out).toMatch(/cannot change to version 1/i);
+    const show = await r.executeCommand('end')
+      .then(() => r.executeCommand('show standby'));
+    expect(show).toMatch(/version 2/i);
+  });
 });
 
 describe('HSRP — single-speaker election', () => {
@@ -226,5 +280,20 @@ describe('HSRP — show standby reports peer info', () => {
     const out = await r2.executeCommand('show standby brief');
     expect(out).toMatch(/Standby/);
     expect(out).toMatch(/10\.0\.0\.1/);
+  });
+});
+
+describe('HSRP — group version stability (regression)', () => {
+  it('an implicit ensureGroup (setter path) never downgrades a v2 group to v1', async () => {
+    const r = new CiscoRouter('R1');
+    const agent = r.getHsrpAgent();
+    // Explicit v2 group…
+    agent.ensureGroup('GigabitEthernet0/0', 1, 2);
+    expect(agent.getGroup('GigabitEthernet0/0', 1)!.version).toBe(2);
+    // …then a setter that re-ensures the group WITHOUT a version:
+    agent.setPriority('GigabitEthernet0/0', 1, 150);
+    // The old implementation defaulted version to 1 here and silently
+    // downgraded the group.
+    expect(agent.getGroup('GigabitEthernet0/0', 1)!.version).toBe(2);
   });
 });

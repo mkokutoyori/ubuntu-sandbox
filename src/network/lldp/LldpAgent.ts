@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LldpCapability, type LldpConfig, type LldpFrame, type LldpNeighborEntry,
   type LldpPortConfig,
@@ -21,35 +22,17 @@ export interface LldpHost {
 
 export type LldpNeighbor = Readonly<LldpNeighborEntry>;
 
-export class LldpAgent {
+export class LldpAgent extends ReactiveAgentBase {
   private config: LldpConfig = createDefaultLldpConfig();
   private readonly neighbors = new Map<string, LldpNeighborEntry>();
   private readonly advertising = new Set<string>();
-  private adTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: LldpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
+    getBus: () => IEventBus,
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    super(host, getBus, getScheduler);
   }
 
   getConfig(): Readonly<LldpConfig> { return this.config; }
@@ -77,7 +60,7 @@ export class LldpAgent {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
     if (on) {
-      this.startTimers();
+      this.armTimers();
       this.advertiseAll('config-change');
     } else {
       this.stopTimers();
@@ -91,7 +74,7 @@ export class LldpAgent {
     this.config.timerSec = sec;
     if (this.config.enabled) {
       this.stopTimers();
-      this.startTimers();
+      this.armTimers();
     }
     this.publishConfigChange();
   }
@@ -265,22 +248,20 @@ export class LldpAgent {
     this.advertise(portName, 'link-up');
   }
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.adTimer === null) {
-      this.adTimer = s.setInterval(() => this.advertiseAll('periodic'),
-        this.config.timerSec * 1000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
-    }
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('advertise',
+      () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
+    this.scheduleInterval('expiry', () => this.expireDue(), 1000);
   }
 
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.adTimer !== null) { s.clear(this.adTimer); this.adTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+  protected override onPortLinkUp(portName: string): void {
+    this.advertise(portName, 'link-up');
+  }
+
+  protected override onPortLinkDown(portName: string): void {
+    this.flushPort(portName, 'link-down');
   }
 
   private expireDue(): void {
@@ -299,20 +280,6 @@ export class LldpAgent {
     if (!n) return;
     this.neighbors.delete(key);
     this.publishExpiry(n, 'admin-disabled');
-  }
-
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.advertise(e.payload.portName, 'link-up'),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.flushPort(e.payload.portName, 'link-down'),
-    ));
   }
 
   private flushPort(portName: string, cause: 'link-down' | 'admin-disabled'): void {

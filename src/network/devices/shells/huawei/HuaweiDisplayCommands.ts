@@ -348,6 +348,34 @@ export function displayArpFiltered(router: Router, filterType: 'static' | 'dynam
   return lines.join('\n');
 }
 
+export function displayArpInterface(router: Router, ifName: string): string {
+  const arpTable = router._getArpTableInternal();
+  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
+  let found = false;
+  for (const [ip, entry] of arpTable) {
+    const et = (entry as { type?: string }).type;
+    if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
+    found = true;
+    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
+    const type = et === 'static' ? 'static' : 'D';
+    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+  }
+  if (!found) lines.push('No ARP entries found.');
+  return lines.join('\n');
+}
+
+export function displayArpStatistics(router: Router): string {
+  const arpTable = router._getArpTableInternal();
+  let stat = 0, dyn = 0;
+  for (const [, entry] of arpTable) {
+    if ((entry as { type?: string }).type === 'static') stat++; else dyn++;
+  }
+  return [
+    `Total:${arpTable.size}        Dynamic:${dyn}        Static:${stat}`,
+    `Interface:0        OpenFlow:0`,
+  ].join('\n');
+}
+
 export function displayIpRoutingTableStatistics(router: Router): string {
   const table = router.getRoutingTable();
   const counts: Record<string, number> = {};
@@ -616,6 +644,54 @@ export function displayCounters(router: Router): string {
   ].join('\n');
 }
 
+export function displayTrafficFilterApplied(router: Router): string {
+  const bindings = router._getInterfaceACLBindingsInternal();
+  const rows: string[] = [];
+  for (const [ifName, b] of bindings) {
+    if (b.inbound !== null) rows.push(` ${ifName.padEnd(33)} inbound    --     ${b.inbound}`);
+    if (b.outbound !== null) rows.push(` ${ifName.padEnd(33)} outbound   --     ${b.outbound}`);
+  }
+  if (rows.length === 0) return 'No traffic-filter applications.';
+  return [
+    ' Interface                         Direction  AppID  ACL/Policy',
+    '--------------------------------------------------------------------------------',
+    ...rows,
+  ].join('\n');
+}
+
+export function displayIpStatistics(router: Router): string {
+  const c = router.getCounters();
+  return [
+    'IP Sent packets statistics:',
+    `  Total: ${c.ipForwDatagrams}`,
+    `  Local sent out: ${c.ipForwDatagrams}`,
+    `  Forwarded: ${c.ipForwDatagrams}`,
+    '',
+    'IP Received packets statistics:',
+    `  Bytes in: ${c.ifInOctets}`,
+    `  Bytes out: ${c.ifOutOctets}`,
+    `  Header errors: ${c.ipInHdrErrors}`,
+    `  Address errors: ${c.ipInAddrErrors}`,
+  ].join('\n');
+}
+
+export function displayIcmpStatistics(router: Router): string {
+  const c = router.getCounters();
+  return [
+    'ICMP statistics:',
+    '  Received:',
+    '    echo: 0',
+    '    echo reply: 0',
+    '    destination unreachable: 0',
+    '    time exceeded: 0',
+    '  Sent:',
+    `    total: ${c.icmpOutMsgs}`,
+    `    echo reply: ${c.icmpOutEchoReps}`,
+    `    destination unreachable: ${c.icmpOutDestUnreachs}`,
+    `    time exceeded: ${c.icmpOutTimeExcds}`,
+  ].join('\n');
+}
+
 function renderHuaweiIpv6Rows(rt: any[]): string[] {
   const rows: string[] = [];
   for (const r of rt) {
@@ -707,6 +783,8 @@ export function displayIpv6InterfaceBrief(router: Router): string {
 
 export function displayDebugging(router: Router): string {
   const lines: string[] = [];
+  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
+  if (flags) for (const f of [...flags].sort()) lines.push(f);
   const dhcp = router._getDHCPServerInternal();
   const dhcpDebug = dhcp.formatDebugShow();
   if (!dhcpDebug.includes('No')) {
@@ -779,6 +857,12 @@ export function displayRip(router: Router): string {
   if (bfd) {
     const bl = bfd.asRunningConfigLines();
     if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
+  }
+
+  const aaa = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
+  if (aaa) {
+    const al = aaa.asRunningConfigLines();
+    if (al.length > 0) { lines.push('#'); lines.push(...al); }
   }
 
   return lines.join('\n');
@@ -956,14 +1040,41 @@ export function registerDisplayCommands(
     return displayIpRoutingTable(getRouter());
   });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
+  trie.register('display ip statistics', 'Display IP statistics', () => displayIpStatistics(getRouter()));
+  trie.register('display icmp statistics', 'Display ICMP statistics', () => displayIcmpStatistics(getRouter()));
   trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
   trie.register('display arp all', 'Display all ARP entries', () => displayArp(getRouter()));
   trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));
   trie.register('display arp dynamic', 'Display dynamic ARP entries', () => displayArpFiltered(getRouter(), 'dynamic'));
+  trie.register('display arp statistics', 'Display ARP statistics', () => displayArpStatistics(getRouter()));
+  trie.register('display arp statistics all', 'Display all ARP statistics', () => displayArpStatistics(getRouter()));
+  trie.registerGreedy('display arp interface', 'Display ARP entries on an interface', (args) =>
+    displayArpInterface(getRouter(), args.join(' ')));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
   });
+
+  trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
+    const s = getState();
+    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    const module = (args[0] ?? '').toLowerCase();
+    if (!module) return full;
+    const keywords = module === 'dhcp' ? ['dhcp', 'ip pool'] : [module];
+    const match = (s: string) => keywords.some(k => s.toLowerCase().includes(k));
+    const lines = full.split('\n');
+    const kept: string[] = [];
+    let inBlock = false;
+    for (const line of lines) {
+      const top = line.length > 0 && line[0] !== ' ' && line[0] !== '#';
+      if (top) inBlock = match(line);
+      if (inBlock || (!top && match(line))) kept.push(line);
+    }
+    return kept.length ? kept.join('\n') : '';
+  });
+
+  trie.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
+    displayTrafficFilterApplied(getRouter()));
 
   trie.register('display saved-configuration', 'Display saved configuration', () => {
     const s = getState();
@@ -1401,12 +1512,6 @@ export function registerDisplayCommands(
     const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'Route information for ISIS\n  No routes installed';
-  });
-
-  trie.register('display ospf routing', 'Display OSPF routing', () => {
-    const ospf = getRouter()._getOSPFEngineInternal();
-    if (!ospf) return 'Info: OSPF is not running.';
-    return 'OSPF Process 1 with Router ID 0.0.0.0\n  Routing Tables\n\n  Routing for Network';
   });
 
   trie.registerGreedy('display rip', 'Display RIP info', (args) => {

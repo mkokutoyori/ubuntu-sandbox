@@ -21,8 +21,9 @@ export type CiscoShellMode =
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
   | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
+  | 'config-dhcp-pool-class'
   // IPSec modes
-  | 'config-isakmp' | 'config-tfset' | 'config-crypto-map'
+  | 'config-isakmp' | 'config-isakmp-profile' | 'config-tfset' | 'config-crypto-map'
   | 'config-ipsec-profile'
   | 'config-ikev2-proposal' | 'config-ikev2-policy'
   | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile'
@@ -54,6 +55,8 @@ export interface CiscoShellContext {
   // IPSec context
   getSelectedISAKMPPriority(): number | null;
   setSelectedISAKMPPriority(p: number | null): void;
+  getSelectedISAKMPProfile(): string | null;
+  setSelectedISAKMPProfile(p: string | null): void;
   getSelectedTransformSet(): string | null;
   setSelectedTransformSet(ts: string | null): void;
   getSelectedCryptoMap(): string | null;
@@ -96,7 +99,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const raw = args.join(' ');
+    const typeIdx = args.findIndex((a) => a.toLowerCase() === 'type');
+    const stripped = typeIdx >= 0 ? args.slice(0, typeIdx) : args;
+    const raw = stripped.join(' ');
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
@@ -138,6 +143,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     }
     ctx.setSelectedDHCPPool(poolName);
     ctx.setMode('config-dhcp');
+    return '';
+  });
+
+  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
     return '';
   });
 
@@ -221,6 +232,15 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return cmdNoIpRoute(ctx.r(), args);
   });
 
+  trie.registerGreedy('ip default-network', 'Configure default-network', (args) => {
+    (ctx.r() as any)._ciscoDefaultNetwork = args[0];
+    return '';
+  });
+  trie.registerGreedy('ip local policy route-map', 'Apply local PBR', (args) => {
+    (ctx.r() as any)._ciscoLocalPolicyRouteMap = args[0];
+    return '';
+  });
+
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
     if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP();
     ctx.setSelectedRoutingProto({ proto: 'rip' });
@@ -265,7 +285,14 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 // ─── Interface Config Mode Commands ──────────────────────────────────
 
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  // Allow switching interfaces directly from config-if mode (real Cisco IOS behavior)
+  trie.registerGreedy('ip policy route-map', 'Apply PBR on interface', (args) => {
+    const r = ctx.r() as any;
+    const iface = ctx.getSelectedInterface();
+    if (!iface) return '';
+    const m = r._ciscoIfacePolicyRouteMap ?? (r._ciscoIfacePolicyRouteMap = new Map<string, string>());
+    if (args[0]) m.set(iface, args[0]);
+    return '';
+  });
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const raw = args.join(' ');
@@ -306,6 +333,13 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     } catch (e: any) {
       return `% Invalid input: ${e.message}`;
     }
+  });
+
+  trie.register('no ip address', 'Remove interface IP address', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r().unconfigureInterface(ifName);
+    return '';
   });
 
   trie.registerGreedy('mtu', 'Set MTU', (args) => {
@@ -732,20 +766,58 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
 
 // ─── IP Route Command (config mode) ─────────────────────────────────
 
-export function cmdIpRoute(router: Router, args: string[]): string {
-  if (args.length < 3) return '% Incomplete command.';
-  try {
-    const network = new IPAddress(args[0]);
-    const mask = new SubnetMask(args[1]);
-    const nextHop = new IPAddress(args[2]);
+const isDottedIp = (s: string) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
 
-    if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
-      return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
+export function cmdIpRoute(router: Router, args: string[]): string {
+  let cursor = 0;
+  let vrfName: string | null = null;
+  if (args[cursor]?.toLowerCase() === 'vrf' && args[cursor + 1]) {
+    vrfName = args[cursor + 1];
+    cursor += 2;
+  }
+  if (args.length - cursor < 3) return '% Incomplete command.';
+  try {
+    const network = new IPAddress(args[cursor]);
+    const mask = new SubnetMask(args[cursor + 1]);
+    const remaining = args.slice(cursor + 2);
+    let outIface: string | null = null;
+    let nextHopStr: string | null = null;
+    if (looksLikeInterfaceName(remaining[0])) {
+      outIface = remaining[0];
+      if (remaining[1] && isDottedIp(remaining[1])) nextHopStr = remaining[1];
+    } else {
+      nextHopStr = remaining[0];
     }
-    return router.addStaticRoute(network, mask, nextHop) ? '' : '% Next-hop is not reachable';
+    if (vrfName) {
+      const r = router as any;
+      const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
+      const list = vrfs.get(vrfName) ?? [];
+      list.push({ network: args[cursor], mask: args[cursor + 1], nextHop: nextHopStr, iface: outIface });
+      vrfs.set(vrfName, list);
+      return '';
+    }
+    if (outIface) {
+      // Interface (and optional next-hop) form — install a real RIB entry.
+      const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
+      return router.addStaticRoute(network, mask, nextHop, 0, { iface: outIface }) ? '' : '% Invalid route';
+    }
+    if (nextHopStr) {
+      const nextHop = new IPAddress(nextHopStr);
+      if (args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0') {
+        return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
+      }
+      return router.addStaticRoute(network, mask, nextHop) ? '' : '% Next-hop is not reachable';
+    }
+    return '% Incomplete command.';
   } catch (e: any) {
     return `% Invalid input: ${e.message}`;
   }
+}
+
+function looksLikeInterfaceName(token: string | undefined): boolean {
+  if (!token) return false;
+  return /^(gigabitethernet|gi|ge|ethernet|eth|fastethernet|fa|serial|s|loopback|lo|tunnel|tu|vlan|null|nve|virtual-template)\d/i.test(token)
+    || /^null0$/i.test(token);
 }
 
 export function cmdNoIpRoute(router: Router, args: string[]): string {
@@ -753,7 +825,7 @@ export function cmdNoIpRoute(router: Router, args: string[]): string {
   try {
     const network = new IPAddress(args[0]);
     const mask = new SubnetMask(args[1]);
-    const nextHop = args[2] ? new IPAddress(args[2]) : undefined;
+    const nextHop = args[2] && isDottedIp(args[2]) ? new IPAddress(args[2]) : undefined;
     if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
       return router.removeDefaultRoute() ? '' : '% Route not found';
     }

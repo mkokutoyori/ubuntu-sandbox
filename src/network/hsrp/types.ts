@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_HSRP = 1985;
 export const HSRP_MULTICAST_V1 = '224.0.0.2';
 export const HSRP_MULTICAST_V2 = '224.0.0.102';
@@ -6,7 +7,7 @@ export type HsrpOpcode = 'hello' | 'coup' | 'resign';
 export type HsrpState =
   | 'init' | 'listen' | 'learn' | 'speak' | 'standby' | 'active';
 
-export interface HsrpPacket {
+export interface HsrpPacket extends NetworkPdu {
   type: 'hsrp';
   version: 1 | 2;
   opcode: HsrpOpcode;
@@ -79,20 +80,26 @@ export function effectivePriority(g: HsrpGroupRuntime): number {
   return p;
 }
 
+/** HSRPv1 carries the group in one octet (RFC 2281: 00-00-0C-07-AC-XX). */
+export const HSRP_V1_MAX_GROUP = 255;
+/** HSRPv2 carries the group in the low 12 bits (0000.0C9F.F000-FFFF). */
+export const HSRP_V2_MAX_GROUP = 4095;
+
+export function hsrpMaxGroup(version: 1 | 2): number {
+  return version === 2 ? HSRP_V2_MAX_GROUP : HSRP_V1_MAX_GROUP;
+}
+
 export function hsrpVirtualMac(group: number, version: 1 | 2): string {
+  const max = hsrpMaxGroup(version);
+  if (!Number.isInteger(group) || group < 0 || group > max) {
+    throw new RangeError(
+      `HSRP version ${version} group ${group} is out of range (0-${max})`);
+  }
   if (version === 2) {
     return `0000.0c9f.f${group.toString(16).padStart(3, '0')}`;
   }
   return `0000.0c07.ac${group.toString(16).padStart(2, '0')}`;
 }
 
-export function compareSpeaker(
-  a: { priority: number; ip: string },
-  b: { priority: number; ip: string },
-): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
-  const ai = a.ip.split('.').map(Number);
-  const bi = b.ip.split('.').map(Number);
-  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
-  return 0;
-}
+// Election comparison is shared across the FHRP family.
+export { compareFhrpCandidates as compareSpeaker } from '../fhrp/types';

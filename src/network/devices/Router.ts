@@ -67,6 +67,7 @@ import {
   DeviceType,
   IPv6Address, IPv6Packet,
 } from '../core/types';
+import type { IIPv4Route } from '../core/interfaces';
 import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { DHCPServer } from '../dhcp/DHCPServer';
@@ -103,18 +104,16 @@ import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
+import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
-export interface RouteEntry {
-  network: IPAddress;
-  mask: SubnetMask;
-  nextHop: IPAddress | null;
-  iface: string;
-  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
-  ad: number;
-  metric: number;
+/**
+ * A router's IPv4 routing-table entry — the canonical IIPv4Route
+ * (network/mask/nextHop/iface/type/ad/metric) plus router-only annotations.
+ */
+export interface RouteEntry extends IIPv4Route {
   preference?: number;
   tag?: number;
   description?: string;
@@ -275,6 +274,8 @@ export abstract class Router extends Equipment {
       pushRoute: (route) => { this.routingTable.push(route); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
+      getBus: () => this.getBus(),
+      getScheduler: () => this.getRouterScheduler(),
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -325,7 +326,8 @@ export abstract class Router extends Equipment {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
     };
-    this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
+    this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
+      () => this.getRouterScheduler());
     this.tcpv2.start();
     this.getEemEngine();
     this.getCredentialStore();
@@ -488,6 +490,30 @@ export abstract class Router extends Equipment {
    * Returns true if created successfully.
    * @internal Used by CLI shells
    */
+  private findSubinterfaceForVlan(parentName: string, vid: number): string | null {
+    const prefix = `${parentName}.`;
+    for (const [name, port] of this.ports) {
+      if (!name.startsWith(prefix)) continue;
+      const vlan = (port as unknown as { encapsulation?: { vlan?: number } }).encapsulation?.vlan;
+      if (vlan === vid) return name;
+    }
+    return null;
+  }
+
+  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const dotIdx = portName.indexOf('.');
+    if (dotIdx > 0) {
+      const parent = portName.slice(0, dotIdx);
+      const subif = this.ports.get(portName);
+      const vlan = (subif as unknown as { encapsulation?: { vlan?: number } } | undefined)?.encapsulation?.vlan;
+      if (vlan !== undefined && this.ports.has(parent)) {
+        const tagged = { ...frame, dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan } };
+        return super.sendFrame(parent, tagged);
+      }
+    }
+    return super.sendFrame(portName, frame);
+  }
+
   _createVirtualInterface(name: string): boolean {
     if (this.ports.has(name)) return true; // already exists
     const port = new Port(name, 'ethernet');
@@ -542,7 +568,45 @@ export abstract class Router extends Equipment {
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
 
+    // Gratuitous ARP (RFC 5227): announce the address so neighbours
+    // refresh stale cache entries — real IOS does this on `ip address`.
+    // A dot1q subinterface is never cabled itself: its reachability is the
+    // parent's (the frame is tagged and sent through the parent by sendFrame).
+    const dotIdx = ifName.indexOf('.');
+    const wirePort = dotIdx > 0 ? this.ports.get(ifName.slice(0, dotIdx)) ?? port : port;
+    if (wirePort.isConnected() && wirePort.getIsUp()) {
+      this.sendFrame(ifName, {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP,
+        payload: {
+          type: 'arp', operation: 'request',
+          senderMAC: port.getMAC(), senderIP: ip,
+          targetMAC: MACAddress.broadcast(), targetIP: ip,
+        },
+      });
+    }
+
     // Trigger OSPF convergence if OSPF is enabled (needed for Loopback, etc.)
+    if (this.ospfIntegration.isOSPFEnabled()) {
+      this._ospfAutoConverge();
+    }
+    return true;
+  }
+
+  unconfigureInterface(ifName: string): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    port.clearIP();
+
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName)
+    );
+
+    Logger.info(this.id, 'router:interface-config',
+      `${this.name}: ${ifName} IP address removed`);
+
     if (this.ospfIntegration.isOSPFEnabled()) {
       this._ospfAutoConverge();
     }
@@ -664,7 +728,9 @@ export abstract class Router extends Equipment {
       // Virtual interfaces (Tunnel, Loopback) don't require cable connectivity
       const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
       if (!isVirtual) {
-        const port = this.ports.get(route.iface);
+        const dotIdx = route.iface.indexOf('.');
+        const physIface = dotIdx > 0 ? route.iface.slice(0, dotIdx) : route.iface;
+        const port = this.ports.get(physIface);
         if (port && !port.isConnected()) {
           // Interface went down — clear any IPSec SAs using this interface
           // (mirrors IOS: "line protocol down" triggers SA teardown)
@@ -788,6 +854,18 @@ export abstract class Router extends Equipment {
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    const tag = (frame as { dot1q?: { vid: number } }).dot1q;
+    if (tag) {
+      const subif = this.findSubinterfaceForVlan(portName, tag.vid);
+      if (subif) {
+        portName = subif;
+        frame = {
+          srcMAC: frame.srcMAC, dstMAC: frame.dstMAC,
+          etherType: frame.etherType, payload: frame.payload,
+        };
+      }
+    }
+
     const port = this.ports.get(portName);
     if (!port) return;
 
@@ -795,9 +873,12 @@ export abstract class Router extends Equipment {
     const isForUs = frame.dstMAC.equals(port.getMAC());
     const isBroadcast = frame.dstMAC.isBroadcast();
     const octets = frame.dstMAC.getOctets();
-    const isMulticast = octets[0] === 0x33 && octets[1] === 0x33; // IPv6 multicast MAC
+    const isIpv6Multicast = octets[0] === 0x33 && octets[1] === 0x33;
+    // RFC 1112 §6.4 — IPv4 multicast maps to 01:00:5e:…
+    const isIpv4Multicast =
+      octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
 
-    if (!isForUs && !isBroadcast && !isMulticast) {
+    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast) {
       return;
     }
 
@@ -808,7 +889,7 @@ export abstract class Router extends Equipment {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      if (this.ipv6Engine.isRoutingEnabled() || isMulticast) {
+      if (this.ipv6Engine.isRoutingEnabled() || isIpv6Multicast) {
         this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet);
       }
     }
@@ -923,23 +1004,26 @@ export abstract class Router extends Equipment {
 
     // Phase C: Forwarding Decision
 
-    // C.1: Is this packet for us? (any interface IP or broadcast)
+    // C.1: Is this packet for us? (any interface IP, broadcast, or
+    // link-local multicast — 224.0.0.0/24 is consumed by the control
+    // plane and MUST never be forwarded, RFC 1112/4541)
     const destIP = ipPkt.destinationIP;
     const isBroadcast = destIP.toString() === '255.255.255.255';
+    const destFirstOctet = Number(destIP.toString().split('.')[0] ?? 0);
+    const isMulticast = destFirstOctet >= 224 && destFirstOctet <= 239;
 
-    if (!isBroadcast) {
-      for (const [, port] of this.ports) {
-        const myIP = port.getIPAddress();
-        if (myIP && destIP.equals(myIP)) {
-          // Control plane — deliver locally (ACL does not filter router-destined traffic)
-          this.handleLocalDelivery(inPort, ipPkt);
-          return;
-        }
-      }
-    } else {
-      // Broadcast packet — deliver locally
+    if (isBroadcast || isMulticast) {
+      // Broadcast/multicast packet — deliver locally, never forward
       this.handleLocalDelivery(inPort, ipPkt);
       return;
+    }
+    for (const [, port] of this.ports) {
+      const myIP = port.getIPAddress();
+      if (myIP && destIP.equals(myIP)) {
+        // Control plane — deliver locally (ACL does not filter router-destined traffic)
+        this.handleLocalDelivery(inPort, ipPkt);
+        return;
+      }
     }
 
     // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL
@@ -1851,6 +1935,12 @@ export abstract class Router extends Equipment {
   getHuaweiBfdService(): HuaweiBfdService {
     if (!this._huaweiBfdService) this._huaweiBfdService = new HuaweiBfdService();
     return this._huaweiBfdService;
+  }
+
+  private _huaweiAaaService: HuaweiAaaService | null = null;
+  getHuaweiAaaService(): HuaweiAaaService {
+    if (!this._huaweiAaaService) this._huaweiAaaService = new HuaweiAaaService();
+    return this._huaweiAaaService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

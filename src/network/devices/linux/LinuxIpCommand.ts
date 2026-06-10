@@ -8,6 +8,7 @@
  */
 
 import { findHostByAddress } from './network/HostLookup';
+import { IPAddress, SubnetMask } from '../../core/types';
 
 // ─── Network Context Interface ──────────────────────────────────────
 
@@ -661,12 +662,11 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {
-  const ipParts = ip.split('.').map(Number);
-  const netParts = network.split('.').map(Number);
-  const ipInt = (ipParts[0] << 24) | (ipParts[1] << 16) | (ipParts[2] << 8) | ipParts[3];
-  const netInt = (netParts[0] << 24) | (netParts[1] << 16) | (netParts[2] << 8) | netParts[3];
-  const mask = cidr === 0 ? 0 : ((0xFFFFFFFF << (32 - cidr)) >>> 0);
-  return (ipInt & mask) === (netInt & mask);
+  const a = IPAddress.tryParse(ip);
+  const n = IPAddress.tryParse(network);
+  if (!a || !n) return false;
+  const m = SubnetMask.fromCIDR(cidr);
+  return a.networkAddress(m).equals(n.networkAddress(m));
 }
 
 // ─── ip neigh ───────────────────────────────────────────────────────

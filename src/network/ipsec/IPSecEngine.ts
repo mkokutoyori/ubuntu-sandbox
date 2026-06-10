@@ -28,9 +28,11 @@ import {
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
 import {
-  prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256,
+  prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256, sha256,
   utf8ToBytes, bytesToHex, hexToBytes,
+  aesCbcEncrypt, aesCbcDecrypt,
 } from '@/crypto';
+import { encodePacket, decodePacket } from './packetCodec';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -261,6 +263,11 @@ function espIcvHash(authAlgorithm: string): HashAlgorithm | null {
  * sender and receiver hash exactly the same bytes.
  */
 export function espIcvMessage(esp: ESPPacket): string {
+  // Encrypt-then-MAC: when the payload is encrypted, the ICV covers the
+  // ciphertext. Otherwise it covers the inner packet's stable identity.
+  if (esp.ciphertext !== undefined) {
+    return `${esp.spi}|${esp.sequenceNumber}|${esp.ciphertext}`;
+  }
   const p = esp.innerPacket;
   return [
     esp.spi, esp.sequenceNumber,
@@ -278,6 +285,50 @@ export function computeEspIcv(cryptoKeys: SACryptoKeys, esp: ESPPacket): string 
   const hash = espIcvHash(cryptoKeys.espAuthAlgorithm);
   if (!hash || !cryptoKeys.espAuthKey) return undefined;
   return bytesToHex(hmac(hash, hexToBytes(cryptoKeys.espAuthKey), utf8ToBytes(espIcvMessage(esp))));
+}
+
+/** True when the SA negotiated a real (AES-CBC) confidentiality transform. */
+function espEncrypts(cryptoKeys: SACryptoKeys): boolean {
+  return /^aes-cbc/.test(cryptoKeys.espEncAlgorithm) && cryptoKeys.espEncKey.length > 0;
+}
+
+/** Per-packet IV, derived deterministically (carried in the ciphertext). */
+function deterministicEspIV(spi: number, seq: number, keyHex: string): Uint8Array {
+  return sha256(utf8ToBytes(`esp-iv:${spi}:${seq}:${keyHex}`)).subarray(0, 16);
+}
+
+/** Opaque inner packet placed in transit so the cleartext is hidden. */
+function sealedInner(p: IPv4Packet): IPv4Packet {
+  return { ...p, sourceIP: new IPAddress('0.0.0.0'), destinationIP: new IPAddress('0.0.0.0'), payload: { type: 'esp-encrypted' } };
+}
+
+/**
+ * Apply confidentiality + integrity to an outbound ESP payload: AES-CBC
+ * encrypt the serialized inner packet (when the SA encrypts), seal the inner
+ * packet, then compute the ICV (over the ciphertext). Mutates `esp` in place.
+ */
+export function sealAndSignEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): void {
+  if (espEncrypts(cryptoKeys)) {
+    const key = hexToBytes(cryptoKeys.espEncKey);
+    const iv = deterministicEspIV(esp.spi, esp.sequenceNumber, cryptoKeys.espEncKey);
+    const ct = aesCbcEncrypt(key, iv, encodePacket(esp.innerPacket));
+    esp.ciphertext = bytesToHex(iv) + bytesToHex(ct);
+    esp.innerPacket = sealedInner(esp.innerPacket);
+  }
+  esp.icv = computeEspIcv(cryptoKeys, esp);
+}
+
+/** Decrypt an inbound ESP payload, rebuilding the real inner packet, or null. */
+export function openEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): IPv4Packet | null {
+  if (esp.ciphertext === undefined) return esp.innerPacket;
+  try {
+    const key = hexToBytes(cryptoKeys.espEncKey);
+    const iv = hexToBytes(esp.ciphertext.slice(0, 32));
+    const ct = hexToBytes(esp.ciphertext.slice(32));
+    return decodePacket(aesCbcDecrypt(key, iv, ct));
+  } catch {
+    return null;
+  }
 }
 
 /** Compute overhead for ESP/AH encapsulation to derive ipMTU from pathMTU. */
@@ -1691,7 +1742,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: msa.outboundSeqNum,
         innerPacket: pkt,
       };
-      espPayload.icv = computeEspIcv(msa.cryptoKeys, espPayload);
+      sealAndSignEsp(msa.cryptoKeys, espPayload);
       const outerSize = 20 + 8 + pkt.totalLength;
       const outerPkt = createIPv4Packet(srcAddr, dstAddr, IP_PROTO_ESP, 64, espPayload, outerSize);
       outerPkt.headerChecksum = computeIPv4Checksum(outerPkt);
@@ -2103,7 +2154,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
-      espPayload.icv = computeEspIcv(sa.cryptoKeys, espPayload);
+      sealAndSignEsp(sa.cryptoKeys, espPayload);
       const espSize = 20 + 8 + innerPkt.totalLength;
       const espPkt = makeOuterPkt(IP_PROTO_ESP, espPayload, espSize);
       // Step 2: AH wrap the ESP packet
@@ -2122,7 +2173,7 @@ export class IPSecEngine implements IProtocolEngine {
         sequenceNumber: sa.outboundSeqNum,
         innerPacket: innerPkt,
       };
-      espPayload.icv = computeEspIcv(sa.cryptoKeys, espPayload);
+      sealAndSignEsp(sa.cryptoKeys, espPayload);
       // NAT-T: wrap ESP in UDP 4500 (RFC 3948)
       if (sa.natT) {
         const udpPayload: UDPPacket = {
@@ -2432,19 +2483,32 @@ export class IPSecEngine implements IProtocolEngine {
       return null;
     }
 
+    // Decrypt (RFC 4303 §3.4.5): rebuild the real inner packet from the
+    // ciphertext using the SA's shared encryption key. A decryption failure
+    // (corrupt ciphertext / wrong key) drops the packet.
+    const inner = openEsp(sa.cryptoKeys, esp);
+    if (inner === null) {
+      sa.recvErrors++;
+      if (this.debugIpsec) {
+        Logger.info(this.router.id, 'debug:ipsec',
+          `IPSEC(i): decryption FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
+      }
+      return null;
+    }
+
     sa.pktsDecaps++;
-    sa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
+    sa.bytesDecaps += (inner?.totalLength || 0);
 
     // RFC 6040: propagate ECN congestion marks from outer to inner
-    if (esp.innerPacket) {
-      this.propagateEcnOnDecap(outerPkt, esp.innerPacket, sa);
+    if (inner) {
+      this.propagateEcnOnDecap(outerPkt, inner, sa);
     }
 
     if (this.debugIpsec) {
       Logger.info(this.router.id, 'debug:ipsec',
         `IPSEC(i): decaps ok, spi=${spiHex(esp.spi)}, seqnum=${esp.sequenceNumber}`);
     }
-    return esp.innerPacket;
+    return inner;
   }
 
   processInboundAH(outerPkt: IPv4Packet): IPv4Packet | null {
@@ -2469,12 +2533,14 @@ export class IPSecEngine implements IProtocolEngine {
     if (ah.innerPacket && ah.innerPacket.protocol === IP_PROTO_ESP) {
       const esp = ah.innerPacket.payload as ESPPacket;
       if (esp && esp.type === 'esp') {
+        const espInner = openEsp(sa.cryptoKeys, esp);
+        if (espInner === null) { sa.recvErrors++; return null; }
         sa.pktsDecaps++;
-        sa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
-        if (esp.innerPacket) {
-          this.propagateEcnOnDecap(outerPkt, esp.innerPacket, sa);
+        sa.bytesDecaps += (espInner?.totalLength || 0);
+        if (espInner) {
+          this.propagateEcnOnDecap(outerPkt, espInner, sa);
         }
-        return esp.innerPacket;
+        return espInner;
       }
     }
 

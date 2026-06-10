@@ -83,6 +83,9 @@ import {
   AR2220_HARDWARE_PROFILE,
   renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
 } from './huawei/HuaweiHardwareProfile';
+import {
+  buildHuaweiVxlanInterfaceCommands, registerHuaweiVxlanDisplayCommands,
+} from './huawei/HuaweiVxlanCommands';
 import { collectListeningSockets } from '../router/management/SocketInventory';
 
 function renderHuaweiTcpStatus(router: Router): string {
@@ -214,6 +217,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ipsecPolicyTrie = new CommandTrie();
   // OSPFv3 sub-mode trie
   private ospfv3Trie = new CommandTrie();
+  private ospfv3AreaTrie = new CommandTrie();
   // user-interface vty sub-mode trie ([host-ui-vty<n>])
   private uiTrie = new CommandTrie();
   private uiLabel: string = '0';
@@ -229,6 +233,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ikev2ProfileTrie = new CommandTrie();
   // RIP view trie
   private ripTrie = new CommandTrie();
+  // AAA submode tries
+  private aaaTrie = new CommandTrie();
+  private aaaAuthenTrie = new CommandTrie();
+  private aaaAuthorTrie = new CommandTrie();
+  private aaaAccountingTrie = new CommandTrie();
+  private aaaDomainTrie = new CommandTrie();
+  private radiusTemplateTrie = new CommandTrie();
+  private hwtacacsTemplateTrie = new CommandTrie();
+  private selectedAaaScheme: string | null = null;
+  private cpuDefendPolicyTrie = new CommandTrie();
+  private selectedCpuDefendPolicy: string | null = null;
+  private bfdGlobalTrie = new CommandTrie();
+  private bfdSessionTrie = new CommandTrie();
+  private selectedBfdSession: string | null = null;
+
+  private huaweiDebugFlags = new Set<string>();
 
   constructor() {
     this.buildUserCommands();
@@ -252,7 +272,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildNqaTestView(this.nqaTestTrie, this);
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
-      this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ripTrie,
+      this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,
       this.ikeProposalTrie, this.ikePeerTrie, this.ipsecProposalTrie, this.ipsecPolicyTrie,
       this.uiTrie, this.aclBasicTrie, this.aclAdvancedTrie,
       this.ikev2ProposalTrie, this.ikev2PolicyTrie, this.ikev2KeyringTrie,
@@ -260,6 +280,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.routePolicyTrie, this.trafficClassifierTrie, this.trafficBehaviorTrie,
       this.trafficPolicyTrie, this.nqaTestTrie,
       this.bgpTrie, this.isisTrie,
+      this.aaaTrie, this.aaaAuthenTrie, this.aaaAuthorTrie, this.aaaAccountingTrie,
+      this.aaaDomainTrie, this.radiusTemplateTrie, this.hwtacacsTemplateTrie,
+      this.cpuDefendPolicyTrie, this.bfdGlobalTrie, this.bfdSessionTrie,
     ]) {
       this.registerDisplayThis(t);
     }
@@ -376,6 +399,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
+      case 'ospfv3-area': return `[${host}-ospfv3-1-area-${this.ospfArea ?? '0.0.0.0'}]`;
       case 'rip':        return `[${host}-rip-1]`;
       case 'ui':         return `[${host}-ui-vty${this.uiLabel}]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
@@ -396,6 +420,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'nqa-test': return `[${host}-nqa-${this.selectedNqa?.admin}-${this.selectedNqa?.name}]`;
       case 'bgp':        return `[${host}-bgp${this.bgpAsn !== null ? '-' + this.bgpAsn : ''}]`;
       case 'isis':       return `[${host}-isis-${this.isisProcessId ?? '1'}]`;
+      case 'aaa':        return `[${host}-aaa]`;
+      case 'aaa-authen': return `[${host}-aaa-authen-${this.selectedAaaScheme ?? ''}]`;
+      case 'aaa-author': return `[${host}-aaa-author-${this.selectedAaaScheme ?? ''}]`;
+      case 'aaa-accounting': return `[${host}-aaa-accounting-${this.selectedAaaScheme ?? ''}]`;
+      case 'aaa-domain': return `[${host}-aaa-domain-${this.selectedAaaScheme ?? ''}]`;
+      case 'radius-template': return `[${host}-radius-${this.selectedAaaScheme ?? ''}]`;
+      case 'hwtacacs-template': return `[${host}-hwtacacs-${this.selectedAaaScheme ?? ''}]`;
+      case 'cpu-defend-policy': return `[${host}-cpu-defend-policy-${this.selectedCpuDefendPolicy ?? ''}]`;
+      case 'bfd-global':  return `[${host}-bfd]`;
+      case 'bfd-session': return `[${host}-bfd-session-${this.selectedBfdSession ?? ''}]`;
       default:           return `<${host}>`;
     }
   }
@@ -438,12 +472,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedBehavior = null;
       this.selectedTrafficPolicy = null;
       this.selectedNqa = null;
+      this.selectedAaaScheme = null;
       return '';
     }
     if (nav === 'quit') return this.cmdQuit();
 
     // Bind router reference
     this.routerRef = router;
+    (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags = this.huaweiDebugFlags;
 
     // Expand `command-alias` shortcuts before any trie match — same
     // behaviour as the SSH dispatcher so the local shell honours
@@ -569,6 +605,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospfv3':
         this.mode = 'system';
         return '';
+      case 'ospfv3-area':
+        this.mode = 'ospfv3';
+        this.ospfArea = null;
+        return '';
       case 'rip':
         this.mode = 'system';
         return '';
@@ -635,6 +675,33 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'system';
         this.selectedNqa = null;
         return '';
+      case 'aaa':
+        this.mode = 'system';
+        this.selectedAaaScheme = null;
+        return '';
+      case 'aaa-authen':
+      case 'aaa-author':
+      case 'aaa-accounting':
+      case 'aaa-domain':
+        this.mode = 'aaa';
+        this.selectedAaaScheme = null;
+        return '';
+      case 'radius-template':
+      case 'hwtacacs-template':
+        this.mode = 'system';
+        this.selectedAaaScheme = null;
+        return '';
+      case 'cpu-defend-policy':
+        this.mode = 'system';
+        this.selectedCpuDefendPolicy = null;
+        return '';
+      case 'bfd-global':
+        this.mode = 'system';
+        return '';
+      case 'bfd-session':
+        this.mode = 'system';
+        this.selectedBfdSession = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -675,6 +742,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'bgp': return this.bgpTrie;
       case 'isis': return this.isisTrie;
       case 'ospfv3': return this.ospfv3Trie;
+      case 'ospfv3-area': return this.ospfv3AreaTrie;
       case 'rip': return this.ripTrie;
       case 'ike-proposal': return this.ikeProposalTrie;
       case 'ike-peer': return this.ikePeerTrie;
@@ -693,6 +761,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'traffic-behavior': return this.trafficBehaviorTrie;
       case 'traffic-policy': return this.trafficPolicyTrie;
       case 'nqa-test': return this.nqaTestTrie;
+      case 'aaa': return this.aaaTrie;
+      case 'aaa-authen': return this.aaaAuthenTrie;
+      case 'aaa-author': return this.aaaAuthorTrie;
+      case 'aaa-accounting': return this.aaaAccountingTrie;
+      case 'aaa-domain': return this.aaaDomainTrie;
+      case 'radius-template': return this.radiusTemplateTrie;
+      case 'hwtacacs-template': return this.hwtacacsTemplateTrie;
+      case 'cpu-defend-policy': return this.cpuDefendPolicyTrie;
+      case 'bfd-global': return this.bfdGlobalTrie;
+      case 'bfd-session': return this.bfdSessionTrie;
       default: return this.userTrie;
     }
   }
@@ -817,6 +895,89 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display this', 'Display current view configuration', () => this.renderDisplayThis());
   }
 
+  private registerSecurityDisplayCommands(t: CommandTrie): void {
+    const aaa = () => this.r().getHuaweiAaaService();
+    const fwState = () => {
+      const r = this.r() as any;
+      return r._huaweiFirewall ?? (r._huaweiFirewall = { enabled: false, defenses: new Set<string>() });
+    };
+    t.register('display domain', 'Display AAA domains', () => {
+      const s = aaa();
+      if (s.domains.size === 0) return ' No AAA domain configured.';
+      return [...s.domains.keys()].map(d => ` Domain: ${d}`).join('\n');
+    });
+    t.register('display radius-server configuration', 'Display RADIUS templates', () => {
+      const s = aaa();
+      if (s.radiusTemplates.size === 0) return ' No RADIUS template configured.';
+      return [...s.radiusTemplates.keys()].map(n => ` RADIUS template: ${n}`).join('\n');
+    });
+    t.register('display hwtacacs-server template', 'Display HWTACACS templates', () => {
+      const s = aaa();
+      if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
+      return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
+    });
+    t.register('display ssh server session', 'Display SSH server sessions', () => {
+      const ssh = this.r().getManagementService().getSsh();
+      if (!ssh.enabled) return 'SSH server is not enabled.';
+      return `Conn   Ver  Idle    User       IP\n(none) ${ssh.version}    --      --         --`;
+    });
+    t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
+      const ks = this.r().getKeypairService();
+      const pair = ks.list().find((k) => k.algo === 'rsa');
+      if (!pair) return 'Info: No RSA key pair has been generated.';
+      return [
+        `Time of Key pair created: ${new Date(pair.createdAtMs).toUTCString()}`,
+        `Key size : ${pair.modulusBits}`,
+        `Fingerprint: ${pair.fingerprint}`,
+        `Public key:`,
+        pair.publicKeyBlob,
+      ].join('\n');
+    });
+    t.register('display time-range all', 'Display time-ranges', () => {
+      const r = this.r() as any;
+      const trs = r._huaweiTimeRanges as Map<string, any> | undefined;
+      if (!trs || trs.size === 0) return 'No time-range configured.';
+      return [...trs.values()].map(tr => ` Name: ${tr.name}, spec: ${tr.spec}`).join('\n');
+    });
+    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () => {
+      const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { inbound?: number | string | null; outbound?: number | string | null }>;
+      const rows: string[] = [];
+      for (const [iface, dirs] of bindings) {
+        if (dirs.inbound != null) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.inbound}`);
+        if (dirs.outbound != null) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.outbound}`);
+      }
+      if (rows.length === 0) return ' No traffic-filter applied on any interface.';
+      return [' Interface          Direction  ACL', ...rows].join('\n');
+    });
+    t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
+      const r = this.r() as any;
+      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
+      if (!ps || ps.size === 0) return 'No CPU-defend policy configured.';
+      return [...ps.keys()].map(n => ` Policy: ${n}`).join('\n');
+    });
+    t.register('display firewall defend flag', 'Display firewall defenses', () => {
+      const s = fwState();
+      if (s.defenses.size === 0) return 'No firewall defenses enabled.';
+      return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
+    });
+    t.register('display logbuffer summary', 'Display logbuffer summary', () => 'Log buffer: 0 messages.');
+    t.register('display channel', 'Display info-center channels', () => 'Info: No info-center channels configured.');
+    t.registerGreedy('reset logbuffer', 'Reset logbuffer', () => '');
+    t.register('display lldp local', 'Display local LLDP info', () => {
+      const cfg = (this.r() as any)._huaweiLldp;
+      if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
+      return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
+    });
+    t.registerGreedy('display lldp', 'Display LLDP', (args) => {
+      if (args[0]?.toLowerCase() === 'local') {
+        const cfg = (this.r() as any)._huaweiLldp;
+        if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
+        return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
+      }
+      return ' No LLDP neighbors.';
+    });
+  }
+
   getScreenLength(): number { return this.screenLength; }
   /** Symmetric with getScreenLength — column hint. */
   getScreenWidth(): number { return this.screenWidth; }
@@ -927,7 +1088,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
@@ -950,6 +1111,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // NAT display commands
     registerHuaweiNATDisplayCommands(t, getRouter);
+
+    // VXLAN display commands
+    registerHuaweiVxlanDisplayCommands(t, { r: getRouter });
 
     // Backward-compat aliases in user view
     t.registerGreedy('ip route-static', 'Configure static route', (args) => {
@@ -1107,6 +1271,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
     registerHuaweiPolicyDisplayCommands(t, getRouter);
+    this.registerSecurityDisplayCommands(t);
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
@@ -1120,7 +1285,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
@@ -1198,35 +1363,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       getRouter()._getHostsTable?.().remove(args[0]);
       return '';
     });
-    t.registerGreedy('local-user', 'Configure a local user', (args) => {
-      const router = getRouter();
-      const name = args[0];
-      if (!name || args.length < 2) return 'Error: Incomplete command.';
-      const store = router.getCredentialStore();
-      const existing = store.get(name) ?? NetworkOsAccount.create({ name });
-      const kw = args[1].toLowerCase();
-      let next = existing;
-      if (kw === 'password') {
-        const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
-        const algo: PasswordHashAlgorithm = idx >= 0
-          ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
-          : 'plain';
-        next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
-      } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
-        next = existing.withPrivilege(Number(args[3]) || existing.privilege);
-      } else if (kw === 'service-type') {
-        const types = args.slice(2).filter(t => t.length > 0) as AccountServiceType[];
-        next = existing.withServiceTypes(types);
-      } else if (kw === 'state') {
-        next = args[2] === 'active' ? existing.enable() : args[2] === 'block' ? existing.disable() : existing;
-      } else if (kw === 'ftp-directory' && args[2]) {
-        next = existing.withFtpDirectory(args[2]);
-      } else if (kw === 'idle-timeout' && args[2]) {
-        next = existing.withIdleTimeout(Number(args[2]) * 60);
-      } else if (kw === 'access-limit' && args[2]) {
-        next = existing.withMaxSessions(Number(args[2]));
-      }
-      store.upsert(next);
+    t.registerGreedy('local-user', 'Configure a local user', (args) => this.handleLocalUserCommand(args));
+    t.registerGreedy('undo local-user', 'Remove a local user', (args) => {
+      if (args[0]) this.r()._removeLocalUser(args[0]);
       return '';
     });
     this.registerScreenSizeCommands(t);
@@ -1246,13 +1385,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
     // device's accepted VTY transports.
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
-      if (args[0]?.toLowerCase() === 'vty') {
+      const head = args[0]?.toLowerCase();
+      if (head === 'vty') {
         this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
         this.mode = 'ui';
         const first = Number.parseInt(args[1] ?? '0', 10);
         const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
         this.selectedUiRange = { first, last };
         this.routerRef?._getVtyLineConfig?.().upsert({ first, last });
+      } else if (head === 'console' || head === 'aux') {
+        this.uiLabel = `${head}${args[1] ?? '0'}`;
+        this.mode = 'ui';
+        this.selectedUiRange = null;
+      } else if (head === 'maximum-vty' && args[1]) {
+        return '';
       }
       return '';
     });
@@ -1282,18 +1428,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (!isNaN(asn)) this.r().getHuaweiRoutingExtras().removeBgp();
       return '';
     });
-    t.register('bfd', 'Enable BFD globally', () => {
-      this.r().getHuaweiBfdService().enable();
-      return '';
-    });
-    t.register('undo bfd', 'Disable BFD globally', () => {
-      this.r().getHuaweiBfdService().disable();
-      return '';
-    });
-    t.registerGreedy('bfd', 'BFD session configuration', (args) => {
-      const name = args[0];
-      if (!name) return '';
+    t.registerGreedy('bfd', 'BFD configuration / session', (args) => {
       const svc = this.r().getHuaweiBfdService();
+      if (args.length === 0) {
+        svc.enable();
+        this.setMode('bfd-global' as any);
+        return '';
+      }
+      const name = args[0];
       const session = svc.ensureSession(name);
       let i = 1;
       while (i < args.length) {
@@ -1304,20 +1446,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         } else if (args[i] === 'interface' && args[i + 1]) {
           session.outIface = args[i + 1]; i += 2;
         } else if (args[i] === 'auto') { session.auto = true; i++; }
-        else if (args[i] === 'discriminator' && args[i + 1] === 'local' && args[i + 2]) {
-          session.discriminatorLocal = parseInt(args[i + 2], 10); i += 3;
-        } else if (args[i] === 'discriminator' && args[i + 1] === 'remote' && args[i + 2]) {
-          session.discriminatorRemote = parseInt(args[i + 2], 10); i += 3;
-        } else if (args[i] === 'min-tx-interval' && args[i + 1]) {
-          session.minTxIntervalMs = parseInt(args[i + 1], 10); i += 2;
-        } else if (args[i] === 'min-rx-interval' && args[i + 1]) {
-          session.minRxIntervalMs = parseInt(args[i + 1], 10); i += 2;
-        } else if (args[i] === 'detect-multiplier' && args[i + 1]) {
-          session.detectMultiplier = parseInt(args[i + 1], 10); i += 2;
-        } else { i++; }
+        else { i++; }
       }
+      this.selectedBfdSession = name;
+      this.setMode('bfd-session' as any);
       return '';
     });
+    t.register('undo bfd', 'Disable BFD globally', () => {
+      this.r().getHuaweiBfdService().disable();
+      return '';
+    });
+    this.buildBfdSubmodes();
 
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
       const pid = args[0] ? parseInt(args[0], 10) : 1;
@@ -1352,6 +1491,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiNATDisplayCommands(t, () => this.r());
     registerHuaweiNATSystemCommands(t, this);
 
+    // VXLAN display commands
+    registerHuaweiVxlanDisplayCommands(t, { r: () => this.r() });
+
     // DHCP display + DHCPv6 system commands
     registerDhcpDisplayCommands(t, () => this.r());
     registerDhcpv6SystemCommands(t, this);
@@ -1366,65 +1508,30 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
 
-    const aaaState = () => {
-      const r = this.r() as any;
-      return r._huaweiAaaState ?? (r._huaweiAaaState = {
-        authenticationSchemes: new Map<string, any>(),
-        authorizationSchemes: new Map<string, any>(),
-        accountingSchemes: new Map<string, any>(),
-        domains: new Map<string, any>(),
-        radiusTemplates: new Map<string, any>(),
-        hwtacacsTemplates: new Map<string, any>(),
-        rawLines: [] as string[],
-      });
-    };
-    t.register('aaa', 'Enter AAA view', () => '');
+    const aaa = () => this.r().getHuaweiAaaService();
+    t.register('aaa', 'Enter AAA view', () => { this.setMode('aaa' as any); return ''; });
     t.registerGreedy('idle-timeout', 'Set idle timeout (system-level no-op)', (_args) => '');
     t.registerGreedy('set authentication password', 'Set authentication password', (_args) => '');
     t.registerGreedy('protocol inbound', 'Set inbound protocol (system-level no-op)', (_args) => '');
     t.registerGreedy('user privilege', 'Set user privilege', (_args) => '');
-    t.registerGreedy('authentication-scheme', 'Define authentication scheme', (args, raw) => {
-      if (args[0]) aaaState().authenticationSchemes.set(args[0], { name: args[0], lines: [] });
-      aaaState().rawLines.push(raw ?? `authentication-scheme ${args.join(' ')}`);
+    t.registerGreedy('radius-server', 'Configure RADIUS server', (args) => {
+      if (args[0]?.toLowerCase() === 'template' && args[1]) {
+        aaa().ensureRadiusTemplate(args[1]);
+        this.selectedAaaScheme = args[1];
+        this.setMode('radius-template' as any);
+      }
       return '';
     });
-    t.registerGreedy('authentication-mode', 'Set authentication mode', (args, raw) => {
-      aaaState().rawLines.push(raw ?? `authentication-mode ${args.join(' ')}`);
+    t.registerGreedy('hwtacacs-server', 'Configure HWTACACS server', (args) => {
+      if (args[0]?.toLowerCase() === 'template' && args[1]) {
+        aaa().ensureHwtacacsTemplate(args[1]);
+        this.selectedAaaScheme = args[1];
+        this.setMode('hwtacacs-template' as any);
+      }
       return '';
     });
-    t.registerGreedy('authorization-scheme', 'Define authorization scheme', (args, raw) => {
-      if (args[0]) aaaState().authorizationSchemes.set(args[0], { name: args[0], lines: [] });
-      aaaState().rawLines.push(raw ?? `authorization-scheme ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('authorization-mode', 'Set authorization mode', (args, raw) => {
-      aaaState().rawLines.push(raw ?? `authorization-mode ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('accounting-scheme', 'Define accounting scheme', (args, raw) => {
-      if (args[0]) aaaState().accountingSchemes.set(args[0], { name: args[0], lines: [] });
-      aaaState().rawLines.push(raw ?? `accounting-scheme ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('accounting-mode', 'Set accounting mode', (args, raw) => {
-      aaaState().rawLines.push(raw ?? `accounting-mode ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('domain', 'Define AAA domain', (args, raw) => {
-      if (args[0]) aaaState().domains.set(args[0], { name: args[0], lines: [] });
-      aaaState().rawLines.push(raw ?? `domain ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('radius-server', 'Configure RADIUS server', (args, raw) => {
-      if (args[0] === 'template' && args[1]) aaaState().radiusTemplates.set(args[1], { name: args[1], lines: [] });
-      aaaState().rawLines.push(raw ?? `radius-server ${args.join(' ')}`);
-      return '';
-    });
-    t.registerGreedy('hwtacacs-server', 'Configure HWTACACS server', (args, raw) => {
-      if (args[0] === 'template' && args[1]) aaaState().hwtacacsTemplates.set(args[1], { name: args[1], lines: [] });
-      aaaState().rawLines.push(raw ?? `hwtacacs-server ${args.join(' ')}`);
-      return '';
-    });
+
+    this.buildAaaSubmodes(aaa);
 
     t.registerGreedy('time-range', 'Define a time-range', (args, raw) => {
       const r = this.r() as any;
@@ -1455,14 +1562,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
       const r = this.r() as any;
       const ps = r._huaweiCpuDefendPolicies ?? (r._huaweiCpuDefendPolicies = new Map<string, any>());
-      if (args[0]) ps.set(args[0], { name: args[0], lines: [] });
-      r._huaweiCpuDefendCurrent = args[0];
+      const name = args[0];
+      if (!name) return 'Error: Incomplete command.';
+      if (!ps.has(name)) ps.set(name, { name, lines: [] });
+      r._huaweiCpuDefendCurrent = name;
       r._huaweiCpuDefendLines = r._huaweiCpuDefendLines || [];
       r._huaweiCpuDefendLines.push(raw ?? `cpu-defend policy ${args.join(' ')}`);
+      this.selectedCpuDefendPolicy = name;
+      this.setMode('cpu-defend-policy' as any);
       return '';
     });
-    t.registerGreedy('car', 'Configure CAR rate-limit', (args, raw) => {
+    this.cpuDefendPolicyTrie.registerGreedy('car', 'Configure CAR rate-limit', (args, raw) => {
       const r = this.r() as any;
+      const name = this.selectedCpuDefendPolicy;
+      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
+      const entry = name && ps ? ps.get(name) : null;
+      if (entry) entry.lines.push(raw ?? `car ${args.join(' ')}`);
       (r._huaweiCpuDefendLines ??= []).push(raw ?? `car ${args.join(' ')}`);
       return '';
     });
@@ -1490,65 +1605,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.register('display domain', 'Display AAA domains', () => {
-      const s = aaaState();
-      if (s.domains.size === 0) return ' No AAA domain configured.';
-      return [...s.domains.keys()].map(d => ` Domain: ${d}`).join('\n');
-    });
-    t.register('display radius-server configuration', 'Display RADIUS templates', () => {
-      const s = aaaState();
-      if (s.radiusTemplates.size === 0) return ' No RADIUS template configured.';
-      return [...s.radiusTemplates.keys()].map(n => ` RADIUS template: ${n}`).join('\n');
-    });
-    t.register('display hwtacacs-server template', 'Display HWTACACS templates', () => {
-      const s = aaaState();
-      if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
-      return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
-    });
-    t.register('display ssh server session', 'Display SSH server sessions', () => {
-      const ssh = this.r().getManagementService().getSsh();
-      if (!ssh.enabled) return 'SSH server is not enabled.';
-      return `Conn   Ver  Idle    User       IP\n(none) ${ssh.version}    --      --         --`;
-    });
-    t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
-      const ks = this.r().getKeypairService();
-      const pair = ks.list().find((k) => k.algo === 'rsa');
-      if (!pair) return 'Info: No RSA key pair has been generated.';
-      return [
-        `Time of Key pair created: ${new Date(pair.createdAtMs).toUTCString()}`,
-        `Key size : ${pair.modulusBits}`,
-        `Fingerprint: ${pair.fingerprint}`,
-        `Public key:`,
-        pair.publicKeyBlob,
-      ].join('\n');
-    });
-    t.register('display time-range all', 'Display time-ranges', () => {
-      const r = this.r() as any;
-      const trs = r._huaweiTimeRanges as Map<string, any> | undefined;
-      if (!trs || trs.size === 0) return 'No time-range configured.';
-      return [...trs.values()].map(t => ` Name: ${t.name}, spec: ${t.spec}`).join('\n');
-    });
-    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () => {
-      const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { in?: number | string; out?: number | string }>;
-      const rows: string[] = [];
-      for (const [iface, dirs] of bindings) {
-        if (dirs.in !== undefined) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.in}`);
-        if (dirs.out !== undefined) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.out}`);
-      }
-      if (rows.length === 0) return ' No traffic-filter applied on any interface.';
-      return [' Interface          Direction  ACL', ...rows].join('\n');
-    });
-    t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
-      const r = this.r() as any;
-      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
-      if (!ps || ps.size === 0) return 'No CPU-defend policy configured.';
-      return [...ps.keys()].map(n => ` Policy: ${n}`).join('\n');
-    });
-    t.register('display firewall defend flag', 'Display firewall defenses', () => {
-      const s = fwState();
-      if (s.defenses.size === 0) return 'No firewall defenses enabled.';
-      return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
-    });
+    this.registerSecurityDisplayCommands(t);
 
     for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
       'ntp-service enable', 'telnet server enable', 'http server',
@@ -1576,6 +1633,38 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.r()._setGlobalToggle?.('ftp', true);
       }
       return '';
+    });
+
+    t.registerGreedy('lldp', 'LLDP configuration', (args, raw) => {
+      const r = this.r() as any;
+      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
+      if (args[0]?.toLowerCase() === 'enable') cfg.enabled = true;
+      else if (args[0]?.toLowerCase() === 'management-address' && args[1]) cfg.mgmtAddress = args[1];
+      cfg.lines.push(raw ?? `lldp ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('undo lldp', 'Disable LLDP', () => {
+      const r = this.r() as any;
+      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
+      cfg.enabled = false;
+      return '';
+    });
+
+    t.registerGreedy('qos queue-profile', 'Configure queue profile', (args, raw) => {
+      const r = this.r() as any;
+      const ps = r._huaweiQueueProfiles ?? (r._huaweiQueueProfiles = new Map<string, any>());
+      if (args[0]) {
+        if (!ps.has(args[0])) ps.set(args[0], { name: args[0], lines: [] });
+        ps.get(args[0]).lines.push(raw ?? `qos queue-profile ${args.join(' ')}`);
+      }
+      return '';
+    });
+    t.registerGreedy('schedule', 'Schedule WFQ / queue assignment', () => '');
+    t.registerGreedy('display qos queue-profile', 'Display queue profiles', () => {
+      const r = this.r() as any;
+      const ps = r._huaweiQueueProfiles as Map<string, any> | undefined;
+      if (!ps || ps.size === 0) return 'Info: No queue-profile configured.';
+      return [...ps.keys()].map(n => ` Queue profile: ${n}`).join('\n');
     });
   }
 
@@ -1606,6 +1695,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     registerHuaweiNATInterfaceCommands(t, this);
     registerDhcpInterfaceCommands(t, this);
+
+    buildHuaweiVxlanInterfaceCommands(t, {
+      getSelectedInterface: () => this.getSelectedInterface(),
+      r: () => this.r(),
+    });
 
     const ripIf = (key: string) => (args: string[]) => {
       const r = this.r() as any;
@@ -1657,6 +1751,55 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.r().getTrafficPolicyStore().removeApplication(this.selectedInterface, d);
       return '';
     });
+
+    const ifAttr = (bucket: string) => (key: string) => (args: string[], raw?: string) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const store = r[bucket] ?? (r[bucket] = new Map<string, any>());
+      const entry = store.get(ifName) ?? {};
+      entry[key] = raw ?? args.join(' ');
+      store.set(ifName, entry);
+      return '';
+    };
+    const lldpIf = ifAttr('_huaweiLldpIf');
+    t.register('lldp enable', 'Enable LLDP on interface', () => { lldpIf('enable')(['on']); return ''; });
+    t.registerGreedy('lldp admin-status', 'Set LLDP admin-status on interface', lldpIf('adminStatus'));
+    t.register('undo lldp enable', 'Disable LLDP on interface', () => { lldpIf('enable')(['off']); return ''; });
+
+    const sflowIf = ifAttr('_huaweiSflowIf');
+    t.registerGreedy('sflow flow-sampling', 'sFlow flow sampling', sflowIf('flowSampling'));
+    t.registerGreedy('sflow counter-sampling', 'sFlow counter sampling', sflowIf('counterSampling'));
+
+    const qosIf = (key: string) => (args: string[], raw?: string) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const ext = r._huaweiQosIf ?? (r._huaweiQosIf = new Map<string, any>());
+      const entry = ext.get(ifName) ?? {};
+      entry[key] = raw ?? args.join(' ');
+      ext.set(ifName, entry);
+      return '';
+    };
+    t.registerGreedy('qos lr', 'QoS line rate', qosIf('lr'));
+    t.registerGreedy('qos gts', 'QoS generic traffic shaping', qosIf('gts'));
+    t.registerGreedy('qos queue', 'QoS queue length', qosIf('queueLength'));
+    t.register('qos wfq', 'Enable WFQ on interface', () => { qosIf('wfq')(['on']); return ''; });
+    t.registerGreedy('qos wred', 'Configure WRED on interface', qosIf('wred'));
+    t.registerGreedy('trust', 'Trust DSCP / 802.1p', qosIf('trust'));
+    t.registerGreedy('qos queue-profile', 'Bind queue profile to interface', qosIf('queueProfile'));
+    t.registerGreedy('qos car', 'CAR on interface', qosIf('car'));
+    t.register('qos pq', 'Enable priority queueing', () => { qosIf('pq')(['on']); return ''; });
+    t.register('qos cq', 'Enable custom queueing', () => { qosIf('cq')(['on']); return ''; });
+    t.register('qos wrr', 'Enable WRR queueing', () => { qosIf('wrr')(['on']); return ''; });
+    t.registerGreedy('qos priority', 'Set QoS priority', qosIf('priority'));
+    t.register('undo qos pq', 'Disable priority queueing', () => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      const ext = r._huaweiQosIf as Map<string, any> | undefined;
+      if (ifName && ext?.has(ifName)) delete ext.get(ifName).pq;
+      return '';
+    });
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
@@ -1683,6 +1826,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfv3Trie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfv3Trie, getRouter);
     buildOSPFv3ViewCommands(this.ospfv3Trie, this as any);
+    registerDisplayCommands(this.ospfv3AreaTrie, getRouter, getState);
+    registerOSPFDisplayCommands(this.ospfv3AreaTrie, getRouter);
   }
 
   // ─── IPSec Sub-Views ─────────────────────────────────────────
@@ -1709,6 +1854,319 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private buildACLSubViewCommands(): void {
     buildHuaweiBasicACLCommands(this.aclBasicTrie, this);
     buildHuaweiAdvancedACLCommands(this.aclAdvancedTrie, this);
+  }
+
+  private handleLocalUserCommand(args: string[]): string {
+    const router = this.r();
+    const name = args[0];
+    if (!name || args.length < 2) return 'Error: Incomplete command.';
+    const store = router.getCredentialStore();
+    const existing = store.get(name) ?? NetworkOsAccount.create({ name });
+    const kw = args[1].toLowerCase();
+    let next = existing;
+    if (kw === 'password') {
+      const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
+      const algo: PasswordHashAlgorithm = idx >= 0
+        ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
+        : 'plain';
+      next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
+    } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
+      next = existing.withPrivilege(Number(args[3]) || existing.privilege);
+    } else if (kw === 'service-type') {
+      const types = args.slice(2).filter(t => t.length > 0) as AccountServiceType[];
+      next = existing.withServiceTypes(types);
+    } else if (kw === 'state') {
+      next = args[2] === 'active' ? existing.enable() : args[2] === 'block' ? existing.disable() : existing;
+    } else if (kw === 'ftp-directory' && args[2]) {
+      next = existing.withFtpDirectory(args[2]);
+    } else if (kw === 'idle-timeout' && args[2]) {
+      next = existing.withIdleTimeout(Number(args[2]) * 60);
+    } else if (kw === 'access-limit' && args[2]) {
+      next = existing.withMaxSessions(Number(args[2]));
+    }
+    store.upsert(next);
+    return '';
+  }
+
+  // ─── BFD Sub-Views ──────────────────────────────────────────
+
+  private buildBfdSubmodes(): void {
+    const sess = () => {
+      const name = this.selectedBfdSession;
+      if (!name) return null;
+      return this.r().getHuaweiBfdService().ensureSession(name);
+    };
+    const g = this.bfdGlobalTrie;
+    g.register('commit', 'Commit BFD configuration', () => '');
+    g.register('default-ip-address', 'Set default BFD IP address', () => '');
+    g.registerGreedy('default-ip-address', 'Set default BFD IP address', () => '');
+
+    const s = this.bfdSessionTrie;
+    s.register('commit', 'Commit BFD session', () => '');
+    s.registerGreedy('discriminator', 'Set discriminator', (args) => {
+      const ss = sess(); if (!ss) return '';
+      if (args[0]?.toLowerCase() === 'local' && args[1]) {
+        ss.discriminatorLocal = parseInt(args[1], 10);
+      } else if (args[0]?.toLowerCase() === 'remote' && args[1]) {
+        ss.discriminatorRemote = parseInt(args[1], 10);
+      }
+      return '';
+    });
+    s.registerGreedy('min-tx-interval', 'Set min Tx interval (ms)', (args) => {
+      const ss = sess(); if (!ss) return '';
+      const n = parseInt(args[0] ?? '', 10);
+      if (Number.isFinite(n)) ss.minTxIntervalMs = n;
+      return '';
+    });
+    s.registerGreedy('min-rx-interval', 'Set min Rx interval (ms)', (args) => {
+      const ss = sess(); if (!ss) return '';
+      const n = parseInt(args[0] ?? '', 10);
+      if (Number.isFinite(n)) ss.minRxIntervalMs = n;
+      return '';
+    });
+    s.registerGreedy('detect-multiplier', 'Set detect multiplier', (args) => {
+      const ss = sess(); if (!ss) return '';
+      const n = parseInt(args[0] ?? '', 10);
+      if (Number.isFinite(n)) ss.detectMultiplier = n;
+      return '';
+    });
+    s.register('one-arm-echo', 'Enable one-arm echo', () => {
+      const ss = sess(); if (!ss) return '';
+      ss.oneArmEcho = true;
+      return '';
+    });
+  }
+
+  // ─── AAA Sub-Views ──────────────────────────────────────────
+
+  private buildAaaSubmodes(aaa: () => import('../router/aaa/HuaweiAaaService').HuaweiAaaService): void {
+    const parseServerEndpoint = (args: string[]): { ip: string; port?: number; secondary?: boolean } | null => {
+      let i = 0;
+      let secondary = false;
+      if (args[i]?.toLowerCase() === 'secondary') { secondary = true; i++; }
+      if (!args[i]) return null;
+      const ip = args[i++];
+      let port: number | undefined;
+      if (args[i] && /^\d+$/.test(args[i])) { port = parseInt(args[i++], 10); }
+      if (args[i]?.toLowerCase() === 'secondary') secondary = true;
+      return { ip, port, secondary: secondary || undefined };
+    };
+
+    {
+      const a = this.aaaTrie;
+      a.registerGreedy('authentication-scheme', 'Configure authentication scheme', (args) => {
+        if (!args[0]) return 'Error: Incomplete command.';
+        aaa().ensureAuthenticationScheme(args[0]);
+        this.selectedAaaScheme = args[0];
+        this.setMode('aaa-authen' as any);
+        return '';
+      });
+      a.registerGreedy('authorization-scheme', 'Configure authorization scheme', (args) => {
+        if (!args[0]) return 'Error: Incomplete command.';
+        aaa().ensureAuthorizationScheme(args[0]);
+        this.selectedAaaScheme = args[0];
+        this.setMode('aaa-author' as any);
+        return '';
+      });
+      a.registerGreedy('accounting-scheme', 'Configure accounting scheme', (args) => {
+        if (!args[0]) return 'Error: Incomplete command.';
+        aaa().ensureAccountingScheme(args[0]);
+        this.selectedAaaScheme = args[0];
+        this.setMode('aaa-accounting' as any);
+        return '';
+      });
+      a.registerGreedy('domain', 'Configure AAA domain', (args) => {
+        if (!args[0]) return 'Error: Incomplete command.';
+        aaa().ensureDomain(args[0]);
+        this.selectedAaaScheme = args[0];
+        this.setMode('aaa-domain' as any);
+        return '';
+      });
+      a.registerGreedy('undo authentication-scheme', 'Remove authentication scheme', (args) => {
+        if (args[0]) aaa().authenticationSchemes.delete(args[0]);
+        return '';
+      });
+      a.registerGreedy('undo authorization-scheme', 'Remove authorization scheme', (args) => {
+        if (args[0]) aaa().authorizationSchemes.delete(args[0]);
+        return '';
+      });
+      a.registerGreedy('undo accounting-scheme', 'Remove accounting scheme', (args) => {
+        if (args[0]) aaa().accountingSchemes.delete(args[0]);
+        return '';
+      });
+      a.registerGreedy('undo domain', 'Remove AAA domain', (args) => {
+        if (args[0]) aaa().domains.delete(args[0]);
+        return '';
+      });
+      a.registerGreedy('local-user', 'Configure a local user', (args) => this.handleLocalUserCommand(args));
+      a.registerGreedy('undo local-user', 'Remove a local user', (args) => {
+        if (args[0]) this.r()._removeLocalUser(args[0]);
+        return '';
+      });
+    }
+
+    {
+      const a = this.aaaAuthenTrie;
+      a.registerGreedy('authentication-mode', 'Set authentication mode list', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const s = aaa().ensureAuthenticationScheme(name);
+        s.mode = args.map(x => x.toLowerCase());
+        return '';
+      });
+      a.register('undo authentication-mode', 'Reset authentication mode', () => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const s = aaa().ensureAuthenticationScheme(name);
+        delete s.mode;
+        return '';
+      });
+    }
+
+    {
+      const a = this.aaaAuthorTrie;
+      a.registerGreedy('authorization-mode', 'Set authorization mode list', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const s = aaa().ensureAuthorizationScheme(name);
+        s.mode = args.map(x => x.toLowerCase());
+        return '';
+      });
+      a.register('undo authorization-mode', 'Reset authorization mode', () => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const s = aaa().ensureAuthorizationScheme(name);
+        delete s.mode;
+        return '';
+      });
+    }
+
+    {
+      const a = this.aaaAccountingTrie;
+      a.registerGreedy('accounting-mode', 'Set accounting mode', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        const s = aaa().ensureAccountingScheme(name);
+        s.mode = args[0].toLowerCase();
+        return '';
+      });
+      a.registerGreedy('accounting realtime', 'Set realtime accounting interval', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        const n = parseInt(args[0], 10);
+        if (!Number.isFinite(n)) return '';
+        aaa().ensureAccountingScheme(name).realtime = n;
+        return '';
+      });
+      a.registerGreedy('accounting start-fail', 'Set start-fail policy', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const v = args[0]?.toLowerCase();
+        if (v === 'online' || v === 'offline') {
+          aaa().ensureAccountingScheme(name).startFail = v;
+        }
+        return '';
+      });
+    }
+
+    {
+      const a = this.aaaDomainTrie;
+      a.registerGreedy('authentication-scheme', 'Bind authentication scheme to domain', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        aaa().ensureDomain(name).authenticationScheme = args[0];
+        return '';
+      });
+      a.registerGreedy('authorization-scheme', 'Bind authorization scheme to domain', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        aaa().ensureDomain(name).authorizationScheme = args[0];
+        return '';
+      });
+      a.registerGreedy('accounting-scheme', 'Bind accounting scheme to domain', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        aaa().ensureDomain(name).accountingScheme = args[0];
+        return '';
+      });
+      a.registerGreedy('radius-server', 'Bind RADIUS server to domain', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        if (args[0]?.toLowerCase() === 'group' && args[1]) {
+          aaa().ensureDomain(name).radiusServerGroup = args[1];
+        } else if (args[0]) {
+          aaa().ensureDomain(name).radiusServerGroup = args[0];
+        }
+        return '';
+      });
+      a.registerGreedy('hwtacacs-server', 'Bind HWTACACS server to domain', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name || !args[0]) return '';
+        aaa().ensureDomain(name).hwtacacsServerTemplate = args[0];
+        return '';
+      });
+    }
+
+    {
+      const a = this.radiusTemplateTrie;
+      a.registerGreedy('radius-server', 'Configure RADIUS server parameters', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const t = aaa().ensureRadiusTemplate(name);
+        const sub = args[0]?.toLowerCase();
+        const rest = args.slice(1);
+        if (sub === 'authentication') {
+          const ep = parseServerEndpoint(rest);
+          if (ep) t.authentication = ep;
+        } else if (sub === 'accounting') {
+          const ep = parseServerEndpoint(rest);
+          if (ep) t.accounting = ep;
+        } else if (sub === 'shared-key') {
+          if (rest[0]?.toLowerCase() === 'cipher' || rest[0]?.toLowerCase() === 'simple') {
+            t.sharedKeyHidden = rest[0].toLowerCase() as 'cipher' | 'simple';
+            t.sharedKey = rest.slice(1).join(' ');
+          } else {
+            t.sharedKey = rest.join(' ');
+          }
+        } else if (sub === 'retransmit') {
+          const n = parseInt(rest[0] ?? '', 10);
+          if (Number.isFinite(n)) t.retransmit = n;
+        } else if (sub === 'timeout') {
+          const n = parseInt(rest[0] ?? '', 10);
+          if (Number.isFinite(n)) t.timeout = n;
+        }
+        return '';
+      });
+    }
+
+    {
+      const a = this.hwtacacsTemplateTrie;
+      a.registerGreedy('hwtacacs-server', 'Configure HWTACACS server parameters', (args) => {
+        const name = this.selectedAaaScheme;
+        if (!name) return '';
+        const t = aaa().ensureHwtacacsTemplate(name);
+        const sub = args[0]?.toLowerCase();
+        const rest = args.slice(1);
+        if (sub === 'authentication') {
+          const ep = parseServerEndpoint(rest);
+          if (ep) t.authentication = ep;
+        } else if (sub === 'authorization') {
+          const ep = parseServerEndpoint(rest);
+          if (ep) t.authorization = ep;
+        } else if (sub === 'accounting') {
+          const ep = parseServerEndpoint(rest);
+          if (ep) t.accounting = ep;
+        } else if (sub === 'shared-key') {
+          if (rest[0]?.toLowerCase() === 'cipher' || rest[0]?.toLowerCase() === 'simple') {
+            t.sharedKeyHidden = rest[0].toLowerCase() as 'cipher' | 'simple';
+            t.sharedKey = rest.slice(1).join(' ');
+          } else {
+            t.sharedKey = rest.join(' ');
+          }
+        }
+        return '';
+      });
+    }
   }
 
   // ─── OSPF Area View ([hostname-ospf-1-area-X]) ────────────────

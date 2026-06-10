@@ -15,6 +15,15 @@ export interface ConnectedNetwork {
   readonly iface: string;
   /** The interface's own IP (used as next-hop by a learning peer). */
   readonly localIp: IPAddress;
+  /**
+   * Effective interface bandwidth in kbps (the `bandwidth` override or
+   * the negotiated link speed). Feeds metric computation (EIGRP
+   * composite metric, OSPF cost). Optional: engines fall back to
+   * protocol defaults when the seam carries no hardware data.
+   */
+  readonly bandwidthKbps?: number;
+  /** Interface delay in microseconds (IOS `delay`, EIGRP metric). */
+  readonly delayUsec?: number;
 }
 
 /**

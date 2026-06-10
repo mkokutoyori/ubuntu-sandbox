@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -233,6 +234,137 @@ describe('STP — running-config & show', () => {
       .then(() => loser.executeCommand('show spanning-tree'));
     expect(out).toMatch(/Priority\s+4097/);
     expect(out).toMatch(/Fa0\/0.*Root.*FWD/);
+  });
+});
+
+describe('STP — 802.1D listening/learning transitions', () => {
+  let vts: VirtualTimeScheduler;
+
+  beforeEach(() => {
+    vts = new VirtualTimeScheduler();
+    __setDefaultScheduler(vts);
+  });
+
+  afterEach(() => {
+    __setDefaultScheduler(null);
+  });
+
+  /**
+   * Redundant pair: two cables between a forced root and another switch.
+   * The non-root switch ends up with one root port (forwarding) and one
+   * alternate port (blocking).
+   */
+  async function buildRedundantPair() {
+    const root = new CiscoSwitch('switch-cisco', 'SW-ROOT', 4);
+    const other = new CiscoSwitch('switch-cisco', 'SW-OTHER', 4);
+    await root.executeCommand('enable');
+    await root.executeCommand('configure terminal');
+    await root.executeCommand('spanning-tree vlan 1 priority 4096');
+    await root.executeCommand('end');
+    new Cable('a').connect(root.getPort('FastEthernet0/0')!,
+                            other.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/1')!,
+                            other.getPort('FastEthernet0/1')!);
+    const stp = other.getStpAgent();
+    const role0 = stp.getPortRole('FastEthernet0/0');
+    const blockedPort = role0 === 'alternate' ? 'FastEthernet0/0' : 'FastEthernet0/1';
+    const rootPort = role0 === 'root' ? 'FastEthernet0/0' : 'FastEthernet0/1';
+    return { root, other, blockedPort, rootPort };
+  }
+
+  it('an unblocked port spends forward-delay in listening then learning before forwarding', async () => {
+    const { other, blockedPort, rootPort } = await buildRedundantPair();
+    expect(other.getSTPState(blockedPort)).toBe('blocking');
+
+    other.getPort(rootPort)!.setUp(false);
+
+    expect(other.getSTPState(blockedPort)).toBe('listening');
+    vts.advance(15_000);
+    expect(other.getSTPState(blockedPort)).toBe('learning');
+    vts.advance(15_000);
+    expect(other.getSTPState(blockedPort)).toBe('forwarding');
+  });
+
+  it('honors a non-default forward-time during reconvergence', async () => {
+    const { other, blockedPort, rootPort } = await buildRedundantPair();
+    await other.executeCommand('enable');
+    await other.executeCommand('configure terminal');
+    await other.executeCommand('spanning-tree vlan 1 forward-time 4');
+    await other.executeCommand('end');
+
+    other.getPort(rootPort)!.setUp(false);
+
+    expect(other.getSTPState(blockedPort)).toBe('listening');
+    vts.advance(4_000);
+    expect(other.getSTPState(blockedPort)).toBe('learning');
+    vts.advance(4_000);
+    expect(other.getSTPState(blockedPort)).toBe('forwarding');
+  });
+
+  it('publishes stp.port-state.changed for each transition', async () => {
+    const bus = new EventBus();
+    const root = new CiscoSwitch('switch-cisco', 'SW-ROOT', 4);
+    const other = new CiscoSwitch('switch-cisco', 'SW-OTHER', 4);
+    root.setEventBus(bus);
+    other.setEventBus(bus);
+    await root.executeCommand('enable');
+    await root.executeCommand('configure terminal');
+    await root.executeCommand('spanning-tree vlan 1 priority 4096');
+    await root.executeCommand('end');
+    new Cable('a').connect(root.getPort('FastEthernet0/0')!,
+                            other.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/1')!,
+                            other.getPort('FastEthernet0/1')!);
+    const stp = other.getStpAgent();
+    const blockedPort = stp.getPortRole('FastEthernet0/0') === 'alternate'
+      ? 'FastEthernet0/0' : 'FastEthernet0/1';
+    const rootPort = blockedPort === 'FastEthernet0/0'
+      ? 'FastEthernet0/1' : 'FastEthernet0/0';
+
+    const seen: string[] = [];
+    bus.subscribe('stp.port-state.changed', (e) => {
+      if (e.payload.deviceId === other.id && e.payload.port === blockedPort) {
+        seen.push(e.payload.newState);
+      }
+    });
+
+    other.getPort(rootPort)!.setUp(false);
+    vts.advance(30_000);
+
+    expect(seen).toEqual(['listening', 'learning', 'forwarding']);
+  });
+
+  it('portfast lets a previously blocked port skip straight to forwarding', async () => {
+    const { other, blockedPort, rootPort } = await buildRedundantPair();
+    other.getStpAgent().setPortFast(blockedPort, true);
+
+    other.getPort(rootPort)!.setUp(false);
+
+    expect(other.getSTPState(blockedPort)).toBe('forwarding');
+  });
+
+  it('a port re-blocked while listening cancels the pending transition', async () => {
+    const { other, blockedPort, rootPort } = await buildRedundantPair();
+
+    other.getPort(rootPort)!.setUp(false);
+    expect(other.getSTPState(blockedPort)).toBe('listening');
+
+    // Once the root path is restored and the next hello BPDU re-asserts the
+    // better path, the port returns to blocking and the pending
+    // listening→learning timer must be cancelled.
+    other.getPort(rootPort)!.setUp(true);
+    vts.advance(2_000);
+    expect(other.getSTPState(blockedPort)).toBe('blocking');
+
+    vts.advance(60_000);
+    expect(other.getSTPState(blockedPort)).toBe('blocking');
+  });
+
+  it('frames are not forwarded out of a listening port', async () => {
+    const { other, blockedPort, rootPort } = await buildRedundantPair();
+    other.getPort(rootPort)!.setUp(false);
+    expect(other.getSTPState(blockedPort)).toBe('listening');
+    expect(other.getStpAgent().getForwardState(blockedPort)).toBe('listening');
   });
 });
 
