@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type SnoopingConfig, type SnoopingVlanState, type SnoopingGroup,
   createDefaultSnoopingConfig, defaultVlanState,
@@ -23,32 +24,15 @@ export interface IgmpSnoopingHost {
   isTrunkPort(portName: string): boolean;
 }
 
-export class IgmpSnoopingAgent {
+export class IgmpSnoopingAgent extends ReactiveAgentBase {
   private config: SnoopingConfig = createDefaultSnoopingConfig();
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: IgmpSnoopingHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
+    getBus: () => IEventBus,
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    super(host, getBus, getScheduler);
   }
 
   getConfig(): Readonly<SnoopingConfig> { return this.config; }
@@ -56,7 +40,7 @@ export class IgmpSnoopingAgent {
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
-    if (on) this.startTimers();
+    if (on) this.armTimers();
     else this.stopTimers();
   }
 
@@ -215,17 +199,10 @@ export class IgmpSnoopingAgent {
     return v;
   }
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
-    }
-  }
+  protected isEnabled(): boolean { return this.config.enabled; }
 
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+  protected armTimers(): void {
+    this.scheduleInterval('expiry', () => this.expireDue(), 1000);
   }
 
   private expireDue(): void {
@@ -253,16 +230,7 @@ export class IgmpSnoopingAgent {
     }
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkDown(portName: string): void {
+  protected override onPortLinkDown(portName: string): void {
     for (const v of this.config.vlans.values()) {
       if (v.routerPorts.delete(portName)) {
         this.emitRouterPort(v.vlan, portName, false);

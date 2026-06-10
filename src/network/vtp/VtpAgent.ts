@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type VtpConfig, type VtpFrame, type VtpMode, type VtpVersion, type VtpVlanEntry,
   createDefaultVtpConfig, hashPassword,
@@ -20,36 +21,18 @@ export interface VtpHost {
   vtpIsTrunkPort(portName: string): boolean;
 }
 
-export class VtpAgent {
+export class VtpAgent extends ReactiveAgentBase {
   private config: VtpConfig;
   private readonly advertising = new Set<string>();
-  private summaryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: VtpHost,
-    private readonly getBus: () => IEventBus,
+    getBus: () => IEventBus,
     systemMac: string,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {
+    super(host, getBus, getScheduler);
     this.config = createDefaultVtpConfig(systemMac);
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimer();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimer();
   }
 
   getConfig(): Readonly<VtpConfig> { return this.config; }
@@ -242,33 +225,20 @@ export class VtpAgent {
     }
   }
 
-  private startTimer(): void {
-    if (this.summaryTimer !== null) return;
-    const s = this.getScheduler();
-    this.scheduler = s;
-    this.summaryTimer = s.setInterval(() => {
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('summary', () => {
       if (this.config.mode === 'server' && this.config.domain) {
         this.advertiseAllTrunks('periodic');
       }
     }, 300_000);
   }
 
-  private stopTimer(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.summaryTimer !== null) { s.clear(this.summaryTimer); this.summaryTimer = null; }
-  }
-
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => {
-        if (this.config.mode === 'server' && this.config.domain
-            && this.host.vtpIsTrunkPort(e.payload.portName)) {
-          this.sendSummaryAndSubset(e.payload.portName, 'link-up');
-        }
-      },
-    ));
+  protected override onPortLinkUp(portName: string): void {
+    if (this.config.mode === 'server' && this.config.domain
+        && this.host.vtpIsTrunkPort(portName)) {
+      this.sendSummaryAndSubset(portName, 'link-up');
+    }
   }
 }

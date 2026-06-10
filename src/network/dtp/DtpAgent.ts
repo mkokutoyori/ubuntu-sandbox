@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type DtpAdminMode, type DtpConfig, type DtpFrame, type DtpOperationalMode,
   type DtpPortState,
@@ -19,33 +20,16 @@ export interface DtpHost {
   onOperationalModeChanged(portName: string, mode: DtpOperationalMode): void;
 }
 
-export class DtpAgent {
+export class DtpAgent extends ReactiveAgentBase {
   private config: DtpConfig = createDefaultDtpConfig();
   private readonly advertising = new Set<string>();
-  private helloTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: DtpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startHelloTimer();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopHelloTimer();
+    getBus: () => IEventBus,
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    super(host, getBus, getScheduler);
   }
 
   getConfig(): Readonly<DtpConfig> { return this.config; }
@@ -54,10 +38,10 @@ export class DtpAgent {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
     if (on) {
-      this.startHelloTimer();
+      this.armTimers();
       this.advertiseAll();
     } else {
-      this.stopHelloTimer();
+      this.stopTimers();
     }
   }
 
@@ -65,8 +49,8 @@ export class DtpAgent {
     if (sec < 5 || sec > 300) return;
     this.config.helloSec = sec;
     if (this.config.enabled) {
-      this.stopHelloTimer();
-      this.startHelloTimer();
+      this.stopTimers();
+      this.armTimers();
     }
   }
 
@@ -199,31 +183,19 @@ export class DtpAgent {
     this.advertise(portName);
   }
 
-  private startHelloTimer(): void {
-    if (this.helloTimer !== null) return;
-    const s = this.getScheduler();
-    this.scheduler = s;
-    this.helloTimer = s.setInterval(() => this.advertiseAll(),
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('hello', () => this.advertiseAll(),
       this.config.helloSec * 1000);
   }
 
-  private stopHelloTimer(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
+  protected override onPortLinkUp(portName: string): void {
+    this.advertise(portName);
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.advertise(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.handleLinkDown(e.payload.portName),
-    ));
+  protected override onPortLinkDown(portName: string): void {
+    this.handleLinkDown(portName);
   }
 
   private handleLinkDown(portName: string): void {

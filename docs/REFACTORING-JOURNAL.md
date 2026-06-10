@@ -377,3 +377,49 @@
   (Router logue et jette) — chantier dédié si besoin.
 - TCP : checksum jamais calculé, pas de RST ni TIME_WAIT — chantier
   potentiel de plus grande ampleur.
+
+---
+
+## Lot 7 — Agents L2 : base réactive commune (CDP/LLDP/DTP/VTP/UDLD/LACP/STP/IGMP-snooping)
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Boilerplate dupliqué ×8** (~270 lignes au total) : chaque agent L2
+   recopiait le même appareillage — drapeau `running`, start/stop,
+   tableau d'`unsubscribers`, abonnements `port.link.up/down` filtrés
+   par deviceId, champs de timers (`adTimer`/`helloTimer`/
+   `expiryTimer`/`summaryTimer`/`slowTimer`/`fastTimer`…), cache de
+   scheduler pour garantir que `clear()` atterrit sur le scheduler
+   d'armement — alors que `TimerSet` (src/events) résolvait déjà ce
+   dernier problème et n'était pas utilisé.
+
+### Corrections livrées
+
+- **`src/network/core/ReactiveAgentBase.ts`** (nouveau, Template
+  Method) : lifecycle start/stop, registre d'abonnements
+  (`addSubscription` + teardown automatique), câblage
+  link-up/link-down vers les hooks `onPortLinkUp`/`onPortLinkDown`
+  (défauts no-op), `installExtraSubscribers()` pour les abonnements
+  spécifiques, et **timers nommés idempotents** construits sur le
+  `TimerSet` existant (`scheduleInterval('hello', …)`,
+  `clearInterval`, `restartTimers`, `startTimersIfRunning`).
+- **8 agents migrés** sans changement de comportement (logique
+  protocolaire, payloads d'événements et messages de log intacts) :
+  2 866 → 2 593 lignes (−273). Cas particuliers préservés : burst de
+  probes UDLD à l'armement, `recomputeOnTopologyChange` au start STP,
+  fast-timer LACP conditionnel à `fastRate`, abonnement
+  unidirectionnel VTP (link-up) et IGMP-snooping (link-down).
+
+### Tests
+
+- Typecheck + ESLint propres ; suite network-v2 complète :
+  254 fichiers / 6611 tests OK (0 échec).
+
+### Limites restantes (suivi)
+
+- `FhrpAgentBase` (lot 5) pourrait à terme s'appuyer sur
+  `ReactiveAgentBase` (deux mécanismes de timers cohabitent) —
+  unification possible dans un lot ultérieur.
+- Dot1xAgent n'a pas de timers ni d'abonnements lien : hors périmètre.
