@@ -39,8 +39,9 @@ describe('SYS.USER$ password verifiers', () => {
   it('SPARE4 holds the 11g S: and 12c T: verifiers', () => {
     const sh = newSession('ov-2');
     const out = run(sh, "SELECT SPARE4 FROM SYS.USER$ WHERE NAME='SCOTT';");
-    expect(out).toMatch(/S:[0-9A-F]{60}/);
-    expect(out).toMatch(/T:[0-9A-F]{160}/);
+    const unwrapped = out.split('\n').map(l => l.trimEnd()).join('').replace(/-{5,}/g, ' ');
+    expect(unwrapped).toMatch(/S:[0-9A-F]{60}/);
+    expect(unwrapped).toMatch(/T:[0-9A-F]{160}/);
     sh.dispose();
   });
 

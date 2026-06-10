@@ -41,6 +41,7 @@ import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
 import { runAnonymousBlock, PlsqlInterpreter } from './plsql';
 import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
+import { compileStoredUnit } from './plsql/unitSource';
 import { SchedulerManager } from './scheduler/SchedulerManager';
 import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
 import { InMemorySegment } from './resultcache/InMemoryManager';
@@ -91,6 +92,8 @@ export class OracleDatabase implements SqlCommandHost {
   private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
+  /** Last unit compiled in this session — what SHOW ERRORS reports on. */
+  private lastCompiledUnit: { schema: string; name: string; type: string } | null = null;
   /** Per-block partial line buffer for DBMS_OUTPUT.PUT (no implicit
    *  newline until PUT_LINE / NEW_LINE / DISABLE). Keyed by the
    *  `output: string[]` array the PL/SQL executor passes through. */
@@ -961,7 +964,7 @@ export class OracleDatabase implements SqlCommandHost {
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
 
-    this.storedUnits.set(key, {
+    return this.storeCompiledUnit(key, {
       schema,
       name,
       type: 'PROCEDURE',
@@ -971,8 +974,30 @@ export class OracleDatabase implements SqlCommandHost {
       created: new Date(),
       status: 'VALID',
     });
+  }
 
-    return emptyResult('Procedure created.');
+  /**
+   * Store a parsed PROCEDURE/FUNCTION after a real compilation pass: the
+   * unit's PL/SQL source is parsed and ORA-24344/USER_ERRORS rows are
+   * produced on failure, like real Oracle (SHOW ERRORS reads them back).
+   */
+  private storeCompiledUnit(key: string, unit: StoredPLSQLUnit): ResultSet {
+    const compilation = compileStoredUnit(unit);
+    unit.status = compilation.ok ? 'VALID' : 'INVALID';
+    this.storedUnits.set(key, unit);
+    this.lastCompiledUnit = { schema: unit.schema, name: unit.name, type: unit.type };
+    if (compilation.ok) {
+      this.catalog.clearCompilationErrors(unit.schema, unit.name);
+      const label = unit.type === 'FUNCTION' ? 'Function' : 'Procedure';
+      return emptyResult(`${label} created.`);
+    }
+    this.catalog.setCompilationErrors(unit.schema, unit.name, unit.type, compilation.errors);
+    const label = unit.type === 'FUNCTION' ? 'Function' : 'Procedure';
+    return emptyResult(`Warning: ${label} created with compilation errors.`);
+  }
+
+  getLastCompiledUnit(): { schema: string; name: string; type: string } | null {
+    return this.lastCompiledUnit;
   }
 
   /** Parse and store a CREATE [OR REPLACE] FUNCTION */
@@ -990,7 +1015,7 @@ export class OracleDatabase implements SqlCommandHost {
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
 
-    this.storedUnits.set(key, {
+    return this.storeCompiledUnit(key, {
       schema,
       name,
       type: 'FUNCTION',
@@ -1001,8 +1026,6 @@ export class OracleDatabase implements SqlCommandHost {
       created: new Date(),
       status: 'VALID',
     });
-
-    return emptyResult('Function created.');
   }
 
   /** Parse parameter list like "p_id IN NUMBER, p_name IN VARCHAR2 DEFAULT 'X'" */

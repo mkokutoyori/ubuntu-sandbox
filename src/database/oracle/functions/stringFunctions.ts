@@ -1,44 +1,47 @@
-/**
- * Oracle built-in string functions (UPPER, SUBSTR, INSTR, TRIM, REGEXP_*…).
- *
- * Faithful Oracle quirks preserved: SUBSTR's negative/zero start positions,
- * INSTR's backwards search with negative positions, TRIM's
- * LEADING/TRAILING/BOTH specs.
- */
+import type { CellValue } from '../../engine/storage/BaseStorage';
+import type { SqlFunctionBundle } from './types';
 
-import type { SqlFunction } from './types';
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const escapeForCharClass = (chars: string): string =>
-  chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const withText = (value: CellValue, fn: (text: string) => CellValue): CellValue =>
+  value == null ? null : fn(String(value));
 
-export const stringFunctions: Record<string, SqlFunction> = {
-  UPPER: ({ args }) => (args[0] != null ? String(args[0]).toUpperCase() : null),
-  LOWER: ({ args }) => (args[0] != null ? String(args[0]).toLowerCase() : null),
-  INITCAP: ({ args }) => (args[0] != null ? String(args[0]).replace(/\b\w/g, c => c.toUpperCase()) : null),
-  LENGTH: ({ args }) => (args[0] != null ? String(args[0]).length : null),
+const padTo = (str: string, targetLength: number, padText: string, left: boolean): CellValue => {
+  if (!Number.isFinite(targetLength) || targetLength <= 0) return null;
+  if (str.length >= targetLength) return str.substring(0, targetLength);
+  if (padText.length === 0) return str;
+  let fill = '';
+  while (fill.length < targetLength - str.length) fill += padText;
+  fill = fill.substring(0, targetLength - str.length);
+  return left ? fill + str : str + fill;
+};
 
-  SUBSTR: ({ args }) => {
-    if (args[0] == null) return null;
-    const str = String(args[0]);
-    let start = Number(args[1]);
-    const len = args[2] != null ? Number(args[2]) : undefined;
-    // Oracle: negative start means count from end
-    if (start < 0) {
-      start = str.length + start + 1;
-    }
-    // Oracle: 0 is treated as 1
+export const stringFunctions: SqlFunctionBundle = {
+  UPPER: ([v]) => withText(v, t => t.toUpperCase()),
+
+  LOWER: ([v]) => withText(v, t => t.toLowerCase()),
+
+  INITCAP: ([v]) => withText(v, t =>
+    t.toLowerCase().replace(/[a-z0-9]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))),
+
+  LENGTH: ([v]) => withText(v, t => t.length),
+
+  SUBSTR: ([v, startArg, lenArg]) => withText(v, str => {
+    let start = Number(startArg);
+    const len = lenArg != null ? Number(lenArg) : undefined;
+    if (start < 0) start = str.length + start + 1;
     if (start === 0) start = 1;
-    const jsStart = start - 1; // convert to 0-based
+    const jsStart = start - 1;
     if (jsStart < 0) return len !== undefined ? str.substring(0, len + jsStart) : '';
     return str.substring(jsStart, len !== undefined ? jsStart + len : undefined);
-  },
+  }),
 
-  INSTR: ({ args }) => {
-    if (args[0] == null || args[1] == null) return null;
-    const str = String(args[0]);
-    const search = String(args[1]);
-    const startPos = args[2] != null ? Number(args[2]) : 1;
-    const occurrence = args[3] != null ? Number(args[3]) : 1;
+  INSTR: ([source, searchArg, startArg, occurrenceArg]) => {
+    if (source == null || searchArg == null) return null;
+    const str = String(source);
+    const search = String(searchArg);
+    const startPos = startArg != null ? Number(startArg) : 1;
+    const occurrence = occurrenceArg != null ? Number(occurrenceArg) : 1;
     if (startPos > 0) {
       let found = 0;
       let pos = startPos - 1;
@@ -51,7 +54,6 @@ export const stringFunctions: Record<string, SqlFunction> = {
       }
       return 0;
     }
-    // Negative startPos: search backwards from the end
     let found = 0;
     let pos = str.length + startPos;
     while (pos >= 0) {
@@ -64,79 +66,71 @@ export const stringFunctions: Record<string, SqlFunction> = {
     return 0;
   },
 
-  TRIM: ({ args }) => {
+  TRIM: (args) => {
     if (args[0] == null) return null;
     const trimStr = String(args[0]);
-    // Enhanced TRIM: args = [source, chars, spec] where spec is LEADING/TRAILING/BOTH
     if (args.length >= 3 && args[2] != null) {
-      const charClass = `[${escapeForCharClass(String(args[1] ?? ' '))}]`;
+      const trimChars = String(args[1] ?? ' ');
       const spec = String(args[2]).toUpperCase();
+      const charClass = `[${escapeRegExp(trimChars)}]`;
       if (spec === 'LEADING') return trimStr.replace(new RegExp(`^${charClass}+`), '');
       if (spec === 'TRAILING') return trimStr.replace(new RegExp(`${charClass}+$`), '');
-      return trimStr.replace(new RegExp(`^${charClass}+`), '').replace(new RegExp(`${charClass}+$`), '');
+      return trimStr
+        .replace(new RegExp(`^${charClass}+`), '')
+        .replace(new RegExp(`${charClass}+$`), '');
     }
     return trimStr.trim();
   },
 
-  LTRIM: ({ args }) => {
-    if (args[0] == null) return null;
-    const escaped = escapeForCharClass(args[1] != null ? String(args[1]) : ' ');
-    return String(args[0]).replace(new RegExp(`^[${escaped}]+`), '');
-  },
+  LTRIM: ([v, charsArg]) => withText(v, str => {
+    const chars = charsArg != null ? String(charsArg) : ' ';
+    return str.replace(new RegExp(`^[${escapeRegExp(chars)}]+`), '');
+  }),
 
-  RTRIM: ({ args }) => {
-    if (args[0] == null) return null;
-    const escaped = escapeForCharClass(args[1] != null ? String(args[1]) : ' ');
-    return String(args[0]).replace(new RegExp(`[${escaped}]+$`), '');
-  },
+  RTRIM: ([v, charsArg]) => withText(v, str => {
+    const chars = charsArg != null ? String(charsArg) : ' ';
+    return str.replace(new RegExp(`[${escapeRegExp(chars)}]+$`), '');
+  }),
 
-  LPAD: ({ args }) => {
-    if (args[0] == null) return null;
-    return String(args[0]).padStart(Number(args[1]), args[2] != null ? String(args[2]) : ' ');
-  },
+  LPAD: ([v, lenArg, padArg]) => withText(v, str =>
+    padTo(str, Number(lenArg), padArg != null ? String(padArg) : ' ', true)),
 
-  RPAD: ({ args }) => {
-    if (args[0] == null) return null;
-    return String(args[0]).padEnd(Number(args[1]), args[2] != null ? String(args[2]) : ' ');
-  },
+  RPAD: ([v, lenArg, padArg]) => withText(v, str =>
+    padTo(str, Number(lenArg), padArg != null ? String(padArg) : ' ', false)),
 
-  REPLACE: ({ args }) => {
-    if (args[0] == null) return null;
-    return String(args[0]).replaceAll(String(args[1] ?? ''), String(args[2] ?? ''));
-  },
+  REPLACE: ([v, search, replacement]) => withText(v, str =>
+    str.replaceAll(String(search ?? ''), String(replacement ?? ''))),
 
-  CONCAT: ({ args }) =>
-    (args[0] != null ? String(args[0]) : '') + (args[1] != null ? String(args[1]) : ''),
+  CONCAT: ([a, b]) => (a != null ? String(a) : '') + (b != null ? String(b) : ''),
 
-  CHR: ({ args }) => (args[0] != null ? String.fromCharCode(Number(args[0])) : null),
-  ASCII: ({ args }) => (args[0] != null ? String(args[0]).charCodeAt(0) : null),
+  CHR: ([v]) => (v != null ? String.fromCharCode(Number(v)) : null),
 
-  REGEXP_REPLACE: ({ args }) => {
-    if (args[0] == null) return null;
-    const src = String(args[0]);
-    const pat = String(args[1] ?? '');
-    const rep = args[2] != null ? String(args[2]) : '';
+  ASCII: ([v]) => withText(v, t => (t.length ? t.charCodeAt(0) : null)),
+
+  REGEXP_REPLACE: ([v, patArg, repArg]) => withText(v, src => {
+    const pat = String(patArg ?? '');
+    const rep = repArg != null ? String(repArg) : '';
     try { return src.replace(new RegExp(pat, 'g'), rep); } catch { return src; }
-  },
+  }),
 
-  REGEXP_SUBSTR: ({ args }) => {
-    if (args[0] == null) return null;
-    try { const m = String(args[0]).match(new RegExp(String(args[1] ?? ''))); return m ? m[0] : null; } catch { return null; }
-  },
-
-  REGEXP_INSTR: ({ args }) => {
-    if (args[0] == null) return null;
+  REGEXP_SUBSTR: ([v, patArg]) => withText(v, src => {
     try {
-      const m = String(args[0]).match(new RegExp(String(args[1] ?? '')));
+      const m = src.match(new RegExp(String(patArg ?? '')));
+      return m ? m[0] : null;
+    } catch { return null; }
+  }),
+
+  REGEXP_INSTR: ([v, patArg]) => withText(v, src => {
+    try {
+      const m = src.match(new RegExp(String(patArg ?? '')));
       return m && m.index !== undefined ? m.index + 1 : 0;
     } catch { return 0; }
-  },
+  }),
 
-  REGEXP_COUNT: ({ args }) => {
-    if (args[0] == null) return null;
+  REGEXP_COUNT: ([v, patArg]) => withText(v, src => {
     try {
-      const matches = String(args[0]).match(new RegExp(String(args[1] ?? ''), 'g'));
+      const matches = src.match(new RegExp(String(patArg ?? ''), 'g'));
       return matches ? matches.length : 0;
     } catch { return 0; }
-  },
+  }),
 };

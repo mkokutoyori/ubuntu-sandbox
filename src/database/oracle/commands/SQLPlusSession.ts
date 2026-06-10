@@ -22,12 +22,8 @@ import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
 import type { HostCommandRunner } from './HostCommandRunner';
 
-export interface ColumnFormat {
-  name: string;
-  format?: string;
-  heading?: string;
-  width?: number;
-}
+import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
+export type { ColumnFormat } from './QueryResultRenderer';
 
 export interface SQLPlusSettings {
   linesize: number;
@@ -48,6 +44,14 @@ export interface SQLPlusSettings {
   wrap: boolean;
   underline: string;
   null_display: string;
+}
+
+type CommandMatcher = (upper: string, trimmed: string) => boolean;
+
+interface SqlPlusCommand {
+  name: string;
+  matches: CommandMatcher;
+  run(trimmed: string, upper: string): SQLPlusResult;
 }
 
 export interface SQLPlusResult {
@@ -80,9 +84,12 @@ export class SQLPlusSession {
   /** Optional host-shell executor for HOST / `!` commands. */
   private hostRunner: HostCommandRunner | null = null;
 
+  private readonly commands: SqlPlusCommand[];
+
   constructor(db: OracleDatabase) {
     this.db = db;
     this.settings = this.defaultSettings();
+    this.commands = this.buildCommands();
   }
 
   private defaultSettings(): SQLPlusSettings {
@@ -248,201 +255,210 @@ export class SQLPlusSession {
       return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // SQL*Plus commands (case-insensitive)
     const upper = trimmed.toUpperCase();
 
-    // EXIT / QUIT — accept trailing ';' which real SQL*Plus tolerates too.
-    if (upper === 'EXIT' || upper === 'QUIT'
-        || upper === 'EXIT;' || upper === 'QUIT;'
-        || upper.startsWith('EXIT ') || upper.startsWith('QUIT ')) {
-      this.disconnect();
-      return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: true, needsMoreInput: false, prompt: '' };
-    }
-
-    // / — re-execute last statement
-    if (trimmed === '/') {
-      if (this.lastStatement) {
-        return this.executeSql(this.lastStatement);
+    for (const command of this.commands) {
+      if (command.matches(upper, trimmed)) {
+        return command.run(trimmed, upper);
       }
-      return { output: ['SP2-0103: Nothing in SQL buffer to run.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // SET commands. Most are SQL*Plus settings (SET LINESIZE …), but
-    // a handful are real SQL statements: SET TRANSACTION, SET ROLE,
-    // SET CONSTRAINT[S]. Route those to the SQL engine.
-    if (upper.startsWith('SET ')) {
-      const sqlSet = /^SET\s+(TRANSACTION|ROLE|CONSTRAINTS?)\b/i.exec(trimmed);
-      if (sqlSet) {
-        if (trimmed.endsWith(';')) return this.executeSql(trimmed.slice(0, -1));
-        this.sqlBuffer = trimmed;
-        this.lineNumber = 2;
-        return { output: [], exit: false, needsMoreInput: true, prompt: '  2  ' };
-      }
-      return this.handleSet(trimmed.substring(4).trim());
-    }
-
-    // SHOW commands
-    if (upper.startsWith('SHOW ') || upper === 'SHOW') {
-      return this.handleShow(trimmed.substring(4).trim());
-    }
-
-    // DESC / DESCRIBE
-    if (upper.startsWith('DESC ') || upper.startsWith('DESCRIBE ')) {
-      const obj = upper.startsWith('DESC ') ? trimmed.substring(5).trim() : trimmed.substring(9).trim();
-      return this.handleDescribe(obj);
-    }
-
-    // DISCONNECT / DISC
-    if (upper === 'DISCONNECT' || upper === 'DISC') {
-      if (!this.connected) {
-        return { output: ['Not connected.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-      }
-      this.disconnect();
-      return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // CONNECT
-    if (upper.startsWith('CONN ') || upper.startsWith('CONNECT ')) {
-      const args = upper.startsWith('CONN ') ? trimmed.substring(5).trim() : trimmed.substring(8).trim();
-      return this.handleConnect(args);
-    }
-
-    // HELP
-    if (upper === 'HELP' || upper === 'HELP INDEX') {
-      return this.handleHelp();
-    }
-
-    // CLEAR
-    if (upper.startsWith('CLEAR ')) {
-      return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // SPOOL
-    if (upper.startsWith('SPOOL ')) {
-      return this.handleSpool(trimmed.substring(6).trim());
-    }
-
-    // PROMPT
-    if (upper.startsWith('PROMPT ') || upper === 'PROMPT') {
-      const text = trimmed.length > 7 ? trimmed.substring(7) : '';
-      return { output: [text], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // HOST / ! — delegate to host shell when a runner is wired.
-    if (upper.startsWith('HOST ') || upper === 'HOST' || upper.startsWith('!')) {
-      return this.handleHost(trimmed);
-    }
-
-    // ORADEBUG — internal diagnostic shell. The simulator emits a
-    // canned acknowledgement and returns a stub trace file name so
-    // DBA scripts that probe with `ORADEBUG SETMYPID; ORADEBUG DUMP …`
-    // don't drown in SP2-0734 noise.
-    if (upper.startsWith('ORADEBUG ') || upper === 'ORADEBUG' || upper === 'ORADEBUG;') {
-      return this.handleOradebug(trimmed);
-    }
-
-    // DDL — surface for DBMS_METADATA.GET_DDL. Accepts
-    //   DDL <objType> <owner>.<name>
-    //   DDL <owner>.<name>            (assumes TABLE)
-    // exactly the way DBAs use the SQL*Plus shortcut on Toad / SQL
-    // Developer.
-    if (upper === 'DDL' || upper.startsWith('DDL ')) {
-      return this.handleDdlCommand(trimmed);
-    }
-
-    // USERACT — inspect the user-activity ledger maintained by
-    // UserActivityTracker. Forms:
-    //   USERACT                  → ledger summary for every user
-    //   USERACT <username>       → ledger for one user
-    if (upper === 'USERACT' || upper === 'USERACT;' || upper.startsWith('USERACT ')) {
-      return this.handleUserAct(trimmed);
-    }
-
-    // PMON — trigger PMON-style sweeps. Currently:
-    //   PMON SWEEP               → IdleSessionMonitor.sweep()
-    if (upper === 'PMON SWEEP' || upper === 'PMON SWEEP;') {
-      const n = this.db.idleMonitor.sweep();
-      return { output: [`PMON sweep complete — ${n.length} session(s) sniped.`],
-               exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // SECDEMO — simulator-specific entry point that drives the
-    // FraudScenarioSimulator. `SECDEMO RUN` runs every canonical
-    // scenario; `SECDEMO SCAN SOD` and `SECDEMO SCAN DORMANT` run only
-    // the corresponding analyzer. Output is plain text so it
-    // composes with SPOOL etc.
-    if (upper === 'SECDEMO' || upper === 'SECDEMO;' || upper.startsWith('SECDEMO ')) {
-      return this.handleSecDemo(trimmed);
-    }
-
-    // ARCHIVE LOG LIST — SQL*Plus status report on log mode + sequence.
-    if (upper === 'ARCHIVE LOG LIST' || upper === 'ARCHIVE LOG LIST;' || upper.startsWith('ARCHIVE LOG LIST ')) {
-      return this.handleArchiveLogList();
-    }
-
-    if (upper.startsWith('EXEC ') || upper === 'EXEC' || upper === 'EXEC;'
-        || upper.startsWith('EXECUTE ') || upper === 'EXECUTE' || upper === 'EXECUTE;') {
-      return this.executeSql(trimmed.replace(/;\s*$/, ''));
-    }
-
-    // @ / START — execute script (simulated)
-    if (trimmed.startsWith('@') || upper.startsWith('START ')) {
-      const scriptName = trimmed.startsWith('@') ? trimmed.substring(1).trim() : trimmed.substring(6).trim();
-      return { output: [`SP2-0310: unable to open file "${scriptName}"`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // COLUMN — column formatting
-    if (upper.startsWith('COLUMN ') || upper === 'COLUMN') {
-      return this.handleColumn(trimmed.substring(6).trim());
-    }
-    if (upper.startsWith('COL ')) {
-      return this.handleColumn(trimmed.substring(4).trim());
-    }
-
-    // DEFINE — substitution variables
-    if (upper.startsWith('DEFINE ') || upper === 'DEFINE') {
-      return this.handleDefine(trimmed.substring(6).trim());
-    }
-
-    // VARIABLE — bind variable declaration
-    if (upper.startsWith('VARIABLE ') || upper === 'VARIABLE' || upper.startsWith('VAR ')) {
-      const offset = upper.startsWith('VAR ') ? 4 : upper.startsWith('VARIABLE') ? (upper === 'VARIABLE' ? 8 : 9) : 9;
-      return this.handleVariable(trimmed.substring(offset).trim());
-    }
-
-    // PRINT — display bind variable
-    if (upper.startsWith('PRINT ') || upper === 'PRINT') {
-      return this.handlePrint(trimmed.substring(5).trim());
-    }
-
-    // EDIT — open editor (not supported in simulator)
-    if (upper === 'EDIT' || upper.startsWith('EDIT ')) {
-      return { output: ['SP2-0107: Nothing to save.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
-
-    // SQL statements — check if ends with ;
     if (this.isSqlStart(upper)) {
       if (trimmed.endsWith(';')) {
         return this.executeSql(trimmed.slice(0, -1));
       }
-      // Start multi-line accumulation
       this.sqlBuffer = trimmed;
       this.lineNumber = 2;
       return { output: [], exit: false, needsMoreInput: true, prompt: `  2  ` };
     }
 
-    // Admin commands (STARTUP, SHUTDOWN) — execute immediately (no ; needed)
     if (upper.startsWith('STARTUP') || upper.startsWith('SHUTDOWN')) {
       return this.executeSql(trimmed);
     }
 
-    // PL/SQL blocks: BEGIN or DECLARE start a multi-line block terminated by END; followed by /
-    if (upper === 'BEGIN' || upper.startsWith('BEGIN') || upper === 'DECLARE' || upper.startsWith('DECLARE')) {
+    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
       return this.startPLSQLBlock(trimmed);
     }
 
     // Unknown command
     return { output: [`SP2-0734: unknown command beginning "${trimmed.substring(0, 20)}..." - rest of line ignored.`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+
+  private ok(output: string[] = []): SQLPlusResult {
+    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  private buildCommands(): SqlPlusCommand[] {
+    const exact = (...names: string[]): CommandMatcher =>
+      (u) => names.some(n => u === n || u === `${n};`);
+    const wordOrPrefix = (...names: string[]): CommandMatcher =>
+      (u) => names.some(n => u === n || u === `${n};` || u.startsWith(`${n} `));
+    const prefixOnly = (...names: string[]): CommandMatcher =>
+      (u) => names.some(n => u.startsWith(`${n} `));
+
+    return [
+      {
+        name: 'EXIT',
+        matches: wordOrPrefix('EXIT', 'QUIT'),
+        run: () => {
+          this.disconnect();
+          return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: true, needsMoreInput: false, prompt: '' };
+        },
+      },
+      {
+        name: '/',
+        matches: (_u, t) => t === '/',
+        run: () => {
+          if (this.lastStatement) return this.executeSql(this.lastStatement);
+          return this.ok(['SP2-0103: Nothing in SQL buffer to run.']);
+        },
+      },
+      {
+        name: 'SET',
+        matches: prefixOnly('SET'),
+        run: (trimmed) => {
+          const sqlSet = /^SET\s+(TRANSACTION|ROLE|CONSTRAINTS?)\b/i.exec(trimmed);
+          if (sqlSet) {
+            if (trimmed.endsWith(';')) return this.executeSql(trimmed.slice(0, -1));
+            this.sqlBuffer = trimmed;
+            this.lineNumber = 2;
+            return { output: [], exit: false, needsMoreInput: true, prompt: '  2  ' };
+          }
+          return this.handleSet(trimmed.substring(4).trim());
+        },
+      },
+      {
+        name: 'SHOW',
+        matches: (u) => u === 'SHOW' || u.startsWith('SHOW '),
+        run: (trimmed) => this.handleShow(trimmed.substring(4).trim()),
+      },
+      {
+        name: 'DESCRIBE',
+        matches: prefixOnly('DESC', 'DESCRIBE'),
+        run: (trimmed, upper) => {
+          const obj = upper.startsWith('DESC ') ? trimmed.substring(5).trim() : trimmed.substring(9).trim();
+          return this.handleDescribe(obj);
+        },
+      },
+      {
+        name: 'DISCONNECT',
+        matches: (u) => u === 'DISCONNECT' || u === 'DISC',
+        run: () => {
+          if (!this.connected) return this.ok(['Not connected.']);
+          this.disconnect();
+          return this.ok(['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production']);
+        },
+      },
+      {
+        name: 'CONNECT',
+        matches: prefixOnly('CONN', 'CONNECT'),
+        run: (trimmed, upper) => {
+          const args = upper.startsWith('CONN ') ? trimmed.substring(5).trim() : trimmed.substring(8).trim();
+          return this.handleConnect(args);
+        },
+      },
+      {
+        name: 'HELP',
+        matches: (u) => u === 'HELP' || u === 'HELP INDEX',
+        run: () => this.handleHelp(),
+      },
+      {
+        name: 'CLEAR',
+        matches: prefixOnly('CLEAR'),
+        run: () => this.ok(),
+      },
+      {
+        name: 'SPOOL',
+        matches: prefixOnly('SPOOL'),
+        run: (trimmed) => this.handleSpool(trimmed.substring(6).trim()),
+      },
+      {
+        name: 'PROMPT',
+        matches: (u) => u === 'PROMPT' || u.startsWith('PROMPT '),
+        run: (trimmed) => this.ok([trimmed.length > 7 ? trimmed.substring(7) : '']),
+      },
+      {
+        name: 'HOST',
+        matches: (u) => u === 'HOST' || u.startsWith('HOST ') || u.startsWith('!'),
+        run: (trimmed) => this.handleHost(trimmed),
+      },
+      {
+        name: 'ORADEBUG',
+        matches: wordOrPrefix('ORADEBUG'),
+        run: (trimmed) => this.handleOradebug(trimmed),
+      },
+      {
+        name: 'DDL',
+        matches: (u) => u === 'DDL' || u.startsWith('DDL '),
+        run: (trimmed) => this.handleDdlCommand(trimmed),
+      },
+      {
+        name: 'USERACT',
+        matches: wordOrPrefix('USERACT'),
+        run: (trimmed) => this.handleUserAct(trimmed),
+      },
+      {
+        name: 'PMON',
+        matches: exact('PMON SWEEP'),
+        run: () => {
+          const n = this.db.idleMonitor.sweep();
+          return this.ok([`PMON sweep complete — ${n.length} session(s) sniped.`]);
+        },
+      },
+      {
+        name: 'SECDEMO',
+        matches: wordOrPrefix('SECDEMO'),
+        run: (trimmed) => this.handleSecDemo(trimmed),
+      },
+      {
+        name: 'ARCHIVE LOG LIST',
+        matches: wordOrPrefix('ARCHIVE LOG LIST'),
+        run: () => this.handleArchiveLogList(),
+      },
+      {
+        name: 'EXECUTE',
+        matches: wordOrPrefix('EXEC', 'EXECUTE'),
+        run: (trimmed) => this.executeSql(trimmed.replace(/;\s*$/, '')),
+      },
+      {
+        name: 'START',
+        matches: (u, t) => t.startsWith('@') || u.startsWith('START '),
+        run: (trimmed) => {
+          const scriptName = trimmed.startsWith('@') ? trimmed.substring(1).trim() : trimmed.substring(6).trim();
+          return this.ok([`SP2-0310: unable to open file "${scriptName}"`]);
+        },
+      },
+      {
+        name: 'COLUMN',
+        matches: (u) => u === 'COLUMN' || u.startsWith('COLUMN ') || u.startsWith('COL '),
+        run: (trimmed, upper) =>
+          this.handleColumn(trimmed.substring(upper.startsWith('COL ') ? 4 : 6).trim()),
+      },
+      {
+        name: 'DEFINE',
+        matches: (u) => u === 'DEFINE' || u.startsWith('DEFINE '),
+        run: (trimmed) => this.handleDefine(trimmed.substring(6).trim()),
+      },
+      {
+        name: 'VARIABLE',
+        matches: (u) => u === 'VARIABLE' || u.startsWith('VARIABLE ') || u.startsWith('VAR '),
+        run: (trimmed, upper) => {
+          const offset = upper.startsWith('VAR ') ? 4 : upper === 'VARIABLE' ? 8 : 9;
+          return this.handleVariable(trimmed.substring(offset).trim());
+        },
+      },
+      {
+        name: 'PRINT',
+        matches: (u) => u === 'PRINT' || u.startsWith('PRINT '),
+        run: (trimmed) => this.handlePrint(trimmed.substring(5).trim()),
+      },
+      {
+        name: 'EDIT',
+        matches: (u) => u === 'EDIT' || u.startsWith('EDIT '),
+        run: () => this.ok(['SP2-0107: Nothing to save.']),
+      },
+    ];
   }
 
   private startPLSQLBlock(line: string): SQLPlusResult {
@@ -594,83 +610,55 @@ export class SQLPlusSession {
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
-  /**
-   * Format a query result as a text table (SQL*Plus style).
-   */
   private formatQueryResult(result: ResultSet): string[] {
-    const output: string[] = [];
-    const { columns, rows } = result;
-
-    // Calculate column widths
-    const widths = columns.map((col, i) => {
-      const headerWidth = (col.alias || col.name).length;
-      let maxData = 0;
-      for (const row of rows) {
-        const val = this.formatCell(row[i]);
-        if (val.length > maxData) maxData = val.length;
-      }
-      return Math.max(headerWidth, maxData);
-    });
-
-    // Cap widths at linesize
-    const totalWidth = widths.reduce((a, b) => a + b, 0) + (widths.length - 1) * this.settings.colsep.length;
-    if (totalWidth > this.settings.linesize && !this.settings.wrap) {
-      // Simple truncation for now
-    }
-
-    output.push('');
-
-    if (this.settings.heading) {
-      // Header row
-      const headerParts = columns.map((col, i) => {
-        const name = (col.alias || col.name).toUpperCase();
-        return name.padEnd(widths[i]);
-      });
-      output.push(headerParts.join(this.settings.colsep));
-
-      // Separator
-      const sepParts = widths.map(w => this.settings.underline.repeat(w));
-      output.push(sepParts.join(this.settings.colsep));
-    }
-
-    // Data rows
-    let rowCount = 0;
-    for (const row of rows) {
-      const parts = columns.map((_, i) => {
-        const val = this.formatCell(row[i]);
-        return val.padEnd(widths[i]);
-      });
-      output.push(parts.join(this.settings.colsep));
-      rowCount++;
-      // Page break
-      if (this.settings.pagesize > 0 && rowCount % this.settings.pagesize === 0 && rowCount < rows.length) {
-        output.push('');
-        if (this.settings.heading) {
-          const headerParts = columns.map((col, i) => {
-            const name = (col.alias || col.name).toUpperCase();
-            return name.padEnd(widths[i]);
-          });
-          output.push(headerParts.join(this.settings.colsep));
-          const sepParts = widths.map(w => this.settings.underline.repeat(w));
-          output.push(sepParts.join(this.settings.colsep));
-        }
-      }
-    }
-
-    return output;
+    const renderer = new QueryResultRenderer(
+      {
+        heading: this.settings.heading,
+        pagesize: this.settings.pagesize,
+        linesize: this.settings.linesize,
+        colsep: this.settings.colsep,
+        underline: this.settings.underline,
+        nullDisplay: this.settings.null_display,
+        wrap: this.settings.wrap,
+      },
+      this.columnFormats,
+    );
+    return renderer.render(result);
   }
 
-  private formatCell(value: unknown): string {
-    if (value === null || value === undefined) return this.settings.null_display;
-    if (value instanceof Date) {
-      // Oracle default date format: DD-MON-YY
-      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-      const d = value.getDate().toString().padStart(2, '0');
-      const m = months[value.getMonth()];
-      const y = (value.getFullYear() % 100).toString().padStart(2, '0');
-      return `${d}-${m}-${y}`;
+
+  private renderShowErrors(target: string | null): string[] {
+    let owner: string | null = null;
+    let name: string | null = null;
+    let type: string | null = null;
+
+    if (target) {
+      const parts = target.trim().split(/\s+/);
+      type = parts.length > 1 ? parts[0].toUpperCase() : null;
+      const qualified = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase();
+      const dotted = qualified.split('.');
+      owner = dotted.length > 1 ? dotted[0] : this.currentUser.toUpperCase();
+      name = dotted.length > 1 ? dotted[1] : dotted[0];
+    } else {
+      const last = this.db.getLastCompiledUnit();
+      if (!last) return ['No errors.'];
+      owner = last.schema;
+      name = last.name;
+      type = last.type;
     }
-    return String(value);
+
+    const entry = this.db.catalog.getCompilationErrors(owner, name);
+    if (!entry || entry.errors.length === 0) return ['No errors.'];
+
+    const lines: string[] = [];
+    lines.push(`Errors for ${type ?? entry.type} ${entry.owner}.${entry.name}:`);
+    lines.push('');
+    lines.push('LINE/COL ERROR');
+    lines.push('-------- ' + '-'.repeat(65));
+    for (const err of entry.errors) {
+      lines.push(`${`${err.line}/${err.position}`.padEnd(8)} ${err.text}`);
+    }
+    return lines;
   }
 
   // ── SET command ──────────────────────────────────────────────────
@@ -828,7 +816,7 @@ export class SQLPlusSession {
         output.push(`wrap ${this.settings.wrap ? 'ON' : 'OFF'}`);
         break;
       case 'ERRORS':
-        output.push('No errors.');
+        output.push(...this.renderShowErrors(null));
         break;
       case 'RELEASE':
         output.push('release 1903000000');
@@ -837,6 +825,10 @@ export class SQLPlusSession {
         output.push(`sqlprompt "${this.settings.sqlprompt}"`);
         break;
       default: {
+        if (option.startsWith('ERRORS ') || option.startsWith('ERR ')) {
+          output.push(...this.renderShowErrors(option.replace(/^ERR(ORS)?\s+/, '')));
+          break;
+        }
         // SHOW PARAMETER <name> — show matching parameters with TYPE column
         if (option.startsWith('PARAMETER ') || option.startsWith('PARAMETERS ') || option === 'PARAMETER' || option === 'PARAMETERS') {
           const search = option.replace(/^PARAMETERS?\s*/, '').toLowerCase();
@@ -1295,10 +1287,16 @@ export class SQLPlusSession {
     const headMatch = args.match(/HEADING\s+'([^']+)'/i) || args.match(/HEADING\s+"([^"]+)"/i) || args.match(/HEADING\s+(\S+)/i);
     if (headMatch) fmt.heading = headMatch[1];
 
-    // Parse width from format (e.g., A30 = 30 chars, 9999 = 4 digits)
+    if (/(^|\s)NOPRINT(\s|$)/i.test(args)) fmt.noprint = true;
+    if (/(^|\s)PRINT(\s|$)/i.test(args)) fmt.noprint = false;
+
     if (fmt.format) {
       const aMatch = fmt.format.match(/^A(\d+)$/i);
-      if (aMatch) fmt.width = parseInt(aMatch[1]);
+      if (aMatch) {
+        fmt.width = parseInt(aMatch[1]);
+      } else if (/^[$]?[09,.]+$/.test(fmt.format)) {
+        fmt.width = fmt.format.length;
+      }
     }
 
     this.columnFormats.set(colName, fmt);

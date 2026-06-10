@@ -57,7 +57,7 @@ export class PlsqlParser {
     this.advance();
   }
   private err(msg: string): never {
-    throw new PlsqlLexParseError(`PLS-00103: ${msg}`);
+    throw new PlsqlLexParseError(`PLS-00103: ${msg}`, this.cur().line);
   }
 
   parseProgram(): Block {

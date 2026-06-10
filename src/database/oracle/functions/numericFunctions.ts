@@ -1,39 +1,68 @@
-/**
- * Oracle built-in numeric and NULL-handling functions.
- */
-
 import type { CellValue } from '../../engine/storage/BaseStorage';
-import type { SqlFunction } from './types';
-import { compareValues } from './valueUtils';
+import type { SqlFunctionBundle, SqlFunctionContext } from './types';
 
-export const numericFunctions: Record<string, SqlFunction> = {
-  ABS: ({ args }) => (args[0] != null ? Math.abs(Number(args[0])) : null),
-  CEIL: ({ args }) => (args[0] != null ? Math.ceil(Number(args[0])) : null),
-  FLOOR: ({ args }) => (args[0] != null ? Math.floor(Number(args[0])) : null),
-  ROUND: ({ args }) => (args[0] != null
-    ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0])))
-    : null),
-  MOD: ({ args }) => (args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null),
-  POWER: ({ args }) => (args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null),
-  SQRT: ({ args }) => (args[0] != null ? Math.sqrt(Number(args[0])) : null),
-  SIGN: ({ args }) => (args[0] != null ? Math.sign(Number(args[0])) : null),
-  GREATEST: ({ args }) =>
-    args.filter(a => a != null).reduce<CellValue>((a, b) => (compareValues(a, b) >= 0 ? a : b), args[0]),
-  LEAST: ({ args }) =>
-    args.filter(a => a != null).reduce<CellValue>((a, b) => (compareValues(a, b) <= 0 ? a : b), args[0]),
+const withNumber = (value: CellValue, fn: (n: number) => CellValue): CellValue =>
+  value == null ? null : fn(Number(value));
 
-  // Null handling
-  NVL: ({ args }) => args[0] ?? args[1] ?? null,
-  NVL2: ({ args }) => (args[0] != null ? (args[1] ?? null) : (args[2] ?? null)),
-  COALESCE: ({ args }) => args.find(a => a != null) ?? null,
-  NULLIF: ({ args }) => (compareValues(args[0], args[1]) === 0 ? null : args[0]),
-  DECODE: ({ args }) => {
-    if (args.length < 3) return null;
-    const expr = args[0];
-    for (let i = 1; i + 1 < args.length; i += 2) {
-      if (compareValues(expr, args[i]) === 0) return args[i + 1];
-    }
-    // Default (odd number of remaining args)
-    return args.length % 2 === 0 ? args[args.length - 1] : null;
+const truncDate = (d: Date, fmtArg: CellValue, ctx: SqlFunctionContext): string => {
+  const fmt = fmtArg != null ? String(fmtArg).toUpperCase() : 'DD';
+  if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
+    return ctx.formatDate(new Date(d.getFullYear(), 0, 1));
+  }
+  if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
+    return ctx.formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
+  }
+  if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
+    return ctx.formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
+  }
+  const copy = new Date(d.getTime());
+  copy.setHours(0, 0, 0, 0);
+  return ctx.formatDate(copy);
+};
+
+export const numericFunctions: SqlFunctionBundle = {
+  ABS: ([v]) => withNumber(v, Math.abs),
+
+  CEIL: ([v]) => withNumber(v, Math.ceil),
+
+  FLOOR: ([v]) => withNumber(v, Math.floor),
+
+  ROUND: ([v, digits]) => withNumber(v, n =>
+    digits != null ? Number(n.toFixed(Number(digits))) : Math.round(n)),
+
+  TRUNC: ([v, fmtArg], ctx) => {
+    if (v == null) return null;
+    const asDate = ctx.coerceDate(v);
+    if (asDate != null) return truncDate(asDate, fmtArg, ctx);
+    return Math.trunc(Number(v));
+  },
+
+  MOD: ([a, b]) => {
+    if (a == null || b == null) return null;
+    const divisor = Number(b);
+    return divisor === 0 ? Number(a) : Number(a) % divisor;
+  },
+
+  REMAINDER: ([a, b]) => {
+    if (a == null || b == null) return null;
+    const n = Number(a);
+    const divisor = Number(b);
+    return divisor === 0 ? null : n - Math.round(n / divisor) * divisor;
+  },
+
+  POWER: ([a, b]) => (a != null && b != null ? Math.pow(Number(a), Number(b)) : null),
+
+  SQRT: ([v]) => withNumber(v, Math.sqrt),
+
+  SIGN: ([v]) => withNumber(v, Math.sign),
+
+  GREATEST: (args, ctx) => {
+    if (args.length === 0 || args.some(a => a == null)) return null;
+    return args.reduce<CellValue>((a, b) => (ctx.compare(a, b) >= 0 ? a : b), args[0]);
+  },
+
+  LEAST: (args, ctx) => {
+    if (args.length === 0 || args.some(a => a == null)) return null;
+    return args.reduce<CellValue>((a, b) => (ctx.compare(a, b) <= 0 ? a : b), args[0]);
   },
 };

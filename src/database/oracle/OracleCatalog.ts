@@ -16,7 +16,8 @@ import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
 import { provisionClassicRoles, seedCatalogRoleObjectGrants } from './security/classicRoles';
-import { deriveStoredVerifiers } from './security/storedVerifier';
+import type { PlsqlCompilationError } from './plsql/unitSource';
+import { deriveStoredVerifiers, type OracleStoredVerifiers } from './security/storedVerifier';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
@@ -28,6 +29,13 @@ export interface StoredUnit {
   parameters: Array<{ name: string; mode: string; dataType: string }>;
   returnType?: string; body: string; sourceLines: string[];
   created: Date; status: string;
+}
+
+export interface StoredUnitErrors {
+  owner: string;
+  name: string;
+  type: string;
+  errors: PlsqlCompilationError[];
 }
 
 /** A single row produced by `enumerateObjects` (DBA_OBJECTS source). */
@@ -193,6 +201,34 @@ export class OracleCatalog extends BaseCatalog {
   /** Maximum size of the audit trail before FIFO eviction. */
   private static readonly MAX_AUDIT_ENTRIES = 5000;
 
+  private compilationErrors: Map<string, StoredUnitErrors> = new Map();
+
+  setCompilationErrors(owner: string, name: string, type: string, errors: PlsqlCompilationError[]): void {
+    const key = `${owner.toUpperCase()}.${name.toUpperCase()}`;
+    if (errors.length === 0) {
+      this.compilationErrors.delete(key);
+      return;
+    }
+    this.compilationErrors.set(key, {
+      owner: owner.toUpperCase(),
+      name: name.toUpperCase(),
+      type: type.toUpperCase(),
+      errors,
+    });
+  }
+
+  clearCompilationErrors(owner: string, name: string): void {
+    this.compilationErrors.delete(`${owner.toUpperCase()}.${name.toUpperCase()}`);
+  }
+
+  getCompilationErrors(owner: string, name: string): StoredUnitErrors | undefined {
+    return this.compilationErrors.get(`${owner.toUpperCase()}.${name.toUpperCase()}`);
+  }
+
+  getAllCompilationErrors(): StoredUnitErrors[] {
+    return [...this.compilationErrors.values()];
+  }
+
   /**
    * Object-level audit options keyed by `${schema}.${object}`, then by
    * action (SELECT, UPDATE, …). Each action records the success/failure
@@ -305,6 +341,8 @@ export class OracleCatalog extends BaseCatalog {
     return stored === password;
   }
 
+  private storedVerifiers: Map<string, OracleStoredVerifiers> = new Map();
+
   getStoredPassword(username: string): string | undefined {
     return this.passwords.get(username.toUpperCase());
   }
@@ -312,10 +350,18 @@ export class OracleCatalog extends BaseCatalog {
   setPassword(username: string, password: string): void {
     const upper = username.toUpperCase();
     this.passwords.set(upper, password);
-    // Real Oracle computes the password verifiers at SET time and stores
-    // them in SYS.USER$ — warm the (memoized) derivation here so dictionary
-    // queries read precomputed values instead of paying PBKDF2 per row.
-    deriveStoredVerifiers(upper, password);
+    this.storedVerifiers.set(upper, deriveStoredVerifiers(upper, password));
+  }
+
+  getStoredVerifiers(username: string): OracleStoredVerifiers | undefined {
+    const upper = username.toUpperCase();
+    const stored = this.storedVerifiers.get(upper);
+    if (stored) return stored;
+    const password = this.passwords.get(upper);
+    if (password === undefined) return undefined;
+    const derived = deriveStoredVerifiers(upper, password);
+    this.storedVerifiers.set(upper, derived);
+    return derived;
   }
 
   /** Distinguished name registered for IDENTIFIED GLOBALLY users. */

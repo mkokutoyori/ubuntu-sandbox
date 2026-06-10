@@ -35,7 +35,6 @@ import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
-import { findSqlFunction } from './functions/registry';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 
@@ -615,6 +614,15 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeSelectInner(stmt: SelectStatement): ResultSet {
+    const outerRowNum = this._currentRowNum;
+    try {
+      return this.executeSelectBlock(stmt);
+    } finally {
+      this._currentRowNum = outerRowNum;
+    }
+  }
+
+  private executeSelectBlock(stmt: SelectStatement): ResultSet {
     // Handle WITH (CTE) clause — materialize CTEs as temporary tables, execute inner SELECT, then clean up
     if (stmt.withClause) {
       return this.executeWithCTE(stmt);
@@ -853,10 +861,9 @@ export class OracleExecutor extends BaseExecutor {
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
-      this._currentRowNum = 0;
       const filtered: StorageRow[] = [];
       for (const row of rows) {
-        this._currentRowNum++;
+        this._currentRowNum = filtered.length + 1;
         if (this.evaluateCondition(stmt.where!, row, columns)) {
           filtered.push(row);
         }
@@ -900,7 +907,8 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    let resultRows: Row[] = rows.map(row => {
+    let resultRows: Row[] = rows.map((row, rowIndex) => {
+      this._currentRowNum = rowIndex + 1;
       return selectCols.map(col => {
         if (col.colIndex >= 0) return row[col.colIndex];
         if (col.expr) {
