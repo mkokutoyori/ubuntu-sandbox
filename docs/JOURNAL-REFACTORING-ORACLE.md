@@ -198,3 +198,32 @@ table du SELECT, + les 15 sites de repli de schéma restants.
 - Comportement inchangé par construction (mêmes erreurs ORA, même ordre
   de contrôles) ; le gain est la maintenabilité (une seule source pour
   chaque règle de résolution).
+
+---
+
+## Itération 6 — Extraction des fonctions SQL scalaires hors de la god class (2026-06-10)
+
+### Défaillance constatée (GAP.md §10.15)
+`OracleExecutor.evaluateFunction` : ~400 lignes, 98 fonctions SQL dans un
+switch enfoui au milieu de la god class de 5100+ lignes. Ajouter une
+fonction SQL imposait de toucher l'exécuteur entier.
+
+### Corrections
+- Nouveau module `src/database/oracle/functions/ScalarFunctionEvaluator.ts` :
+  toute l'évaluation scalaire (UPPER/SUBSTR/NVL/TO_DATE/SYS_CONTEXT/…,
+  DECODE inclus) + les utilitaires `coerceDate`/`formatDate` (anciens
+  statics d'OracleExecutor, utilisés nulle part ailleurs).
+- Couplage inversé : l'évaluateur dépend d'une interface étroite
+  `ScalarFunctionHost` (récursion d'expressions, comparaison, formats de
+  dates, contexte de session) — pas de l'exécuteur concret. L'exécuteur
+  fournit l'hôte par fermetures, ce qui garde ses helpers privés.
+- `OracleExecutor.evaluateFunction` devient un délégué d'une ligne ;
+  le fichier passe de 5181 à 4773 lignes.
+
+### Preuves
+- 2532 tests `unit/database` verts ; lint/typecheck propres.
+- Une régression de migration (références aux statics
+  `OracleExecutor.coerceDate/formatDate` devenues invisibles depuis le
+  module) a été attrapée par la suite (§24 SYSDATE arithmetic) et
+  corrigée en déplaçant les utilitaires dans le module — preuve que le
+  filet de tests joue son rôle.
