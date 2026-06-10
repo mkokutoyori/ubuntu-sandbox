@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { AgentRegistry } from './AgentRegistry';
 import type { IRouterShell } from './shells/IRouterShell';
 import { HuaweiVRPShell } from './shells/HuaweiVRPShell';
 import {
@@ -57,6 +58,7 @@ export class HuaweiRouter extends Router {
   private readonly pimAgent: PimAgent;
   private readonly syslogAgent: SyslogAgent;
   private readonly radiusClient: RadiusClientAgent;
+  private readonly agents = new AgentRegistry();
   private readonly radiusServer: RadiusServerAgent;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
@@ -93,40 +95,21 @@ export class HuaweiRouter extends Router {
     this.tacacsClient = new TacacsClientAgent(hostBase, () => this.getBus(), () => this.tcpv2);
     this.tacacsServer = new TacacsServerAgent(hostBase, () => this.getBus(), () => this.tcpv2);
     this.vxlanAgent = new VxlanAgent(hostBase, () => this.getBus());
-    this.lldpAgent.start();
-    this.vrrpAgent.start();
-    this.ntpAgent.start();
-    this.bfdAgent.start();
-    this.igmpAgent.start();
-    this.pimAgent.start();
-    this.syslogAgent.start();
-    this.radiusClient.start();
-    this.radiusServer.start();
-    this.greAgent.start();
-    this.snmpAgent.start();
-    this.netflowAgent.start();
-    this.tacacsClient.start();
-    this.tacacsServer.start();
-    this.vxlanAgent.start();
+    this.agents.registerAll(
+      this.lldpAgent, this.vrrpAgent, this.ntpAgent, this.bfdAgent,
+      this.igmpAgent, this.pimAgent, this.syslogAgent, this.radiusClient,
+      this.radiusServer, this.greAgent, this.snmpAgent, this.netflowAgent,
+      this.tacacsClient, this.tacacsServer, this.vxlanAgent,
+    );
+    this.agents.startAll();
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
-    if (this.vrrpAgent) { this.vrrpAgent.stop(); this.vrrpAgent.start(); }
-    if (this.ntpAgent) { this.ntpAgent.stop(); this.ntpAgent.start(); }
-    if (this.bfdAgent) { this.bfdAgent.stop(); this.bfdAgent.start(); }
-    if (this.igmpAgent) { this.igmpAgent.stop(); this.igmpAgent.start(); }
-    if (this.pimAgent) { this.pimAgent.stop(); this.pimAgent.start(); }
-    if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
-    if (this.radiusClient) { this.radiusClient.stop(); this.radiusClient.start(); }
-    if (this.radiusServer) { this.radiusServer.stop(); this.radiusServer.start(); }
-    if (this.greAgent) { this.greAgent.stop(); this.greAgent.start(); }
-    if (this.snmpAgent) { this.snmpAgent.stop(); this.snmpAgent.start(); }
-    if (this.netflowAgent) { this.netflowAgent.stop(); this.netflowAgent.start(); }
-    if (this.vxlanAgent) { this.vxlanAgent.stop(); this.vxlanAgent.start(); }
-    if (this.tacacsClient) { this.tacacsClient.stop(); this.tacacsClient.start(); }
-    if (this.tacacsServer) { this.tacacsServer.stop(); this.tacacsServer.start(); }
+    // Re-bind every agent's subscriptions to the newly injected bus.
+    // (setEventBus can fire from the base constructor, before the registry
+    // field initializer ran — hence the optional chain.)
+    this.agents?.restartAll();
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {

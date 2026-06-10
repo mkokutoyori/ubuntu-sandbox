@@ -12,6 +12,7 @@
  */
 
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
+import { AgentRegistry } from './AgentRegistry';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -37,6 +38,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoSwitch extends Switch {
+  private readonly agents = new AgentRegistry();
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
   private readonly dtpAgent: DtpAgent;
@@ -95,16 +97,12 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
     }, () => this.getBus());
-    this.cdpAgent.start();
-    this.lldpAgent.start();
-    this.dtpAgent.start();
-    this.stpAgent.start();
-    this.lacpAgent.start();
-    this.vtpAgent.start();
-    this.udldAgent.start();
-    this.igmpSnoopingAgent.start();
-    this.syslogAgent.start();
-    this.dot1xAgent.start();
+    this.agents.registerAll(
+      this.cdpAgent, this.lldpAgent, this.dtpAgent, this.stpAgent,
+      this.lacpAgent, this.vtpAgent, this.udldAgent,
+      this.igmpSnoopingAgent, this.syslogAgent, this.dot1xAgent,
+    );
+    this.agents.startAll();
   }
 
   private applyDot1xAuth(_portName: string, _authorized: boolean): void {
@@ -145,16 +143,10 @@ export class CiscoSwitch extends Switch {
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
-    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
-    if (this.dtpAgent) { this.dtpAgent.stop(); this.dtpAgent.start(); }
-    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
-    if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
-    if (this.vtpAgent) { this.vtpAgent.stop(); this.vtpAgent.start(); }
-    if (this.udldAgent) { this.udldAgent.stop(); this.udldAgent.start(); }
-    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
-    if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
-    if (this.dot1xAgent) { this.dot1xAgent.stop(); this.dot1xAgent.start(); }
+    // Re-bind every agent's subscriptions to the newly injected bus.
+    // (setEventBus can fire from the base constructor, before the registry
+    // field initializer ran — hence the optional chain.)
+    this.agents?.restartAll();
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {

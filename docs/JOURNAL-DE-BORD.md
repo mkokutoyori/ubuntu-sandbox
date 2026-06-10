@@ -18,7 +18,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 3 | HSRP : plages de groupes non bornées (MAC malformée hors plage), fonction MAC dupliquée, rétrogradation v2→v1 silencieuse | RFC 2281 / réalité IOS | Moyenne | ✅ Corrigé |
 | 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Factory | Haute | ✅ Corrigé |
 | 5 | Helpers IP réimplémentés 6× (OSPF ×2, EIGRP, BGP, PIM, CLI OSPF) | DRY | Moyenne | ✅ Corrigé |
-| 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | À faire |
+| 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | ✅ Corrigé |
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | À faire |
 | 8 | Dispatch par `constructor.name` dans ShellFactory / sshLauncher / WindowsTerminalSession (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | À faire |
 | 9 | BGP : FSM incomplète (états Connect/OpenConfirm absents), pas de détection de boucle AS-path | RFC 4271 | Haute | À faire |
@@ -250,6 +250,40 @@ dupliquée).
 octets > 127 / non-signé, /0, /32, préfixes hors plage clampés, quads
 malformés rejetés, wildcard 0.0.0.0 = host exact, 255.255.255.255 = tout).
 Non-régression : network-v2 + events = 279 fichiers / 6836 tests verts.
+
+---
+
+## Entrée 6 — Devices : `AgentRegistry` (cycle de vie des agents)
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+CiscoRouter (18 agents), HuaweiRouter (15), CiscoSwitch (10), HuaweiSwitch
+(4) répétaient : une ligne `.start()` par agent dans le constructeur, et dans
+`setEventBus()` une litanie `if (this.xAgent) { this.xAgent.stop();
+this.xAgent.start(); }` (~70 lignes au total, ordres de redémarrage
+incohérents entre fichiers). Ajouter un agent = 3 modifications par device
+(Shotgun Surgery).
+
+### Correction
+
+Nouveau `src/network/devices/AgentRegistry.ts` (pattern Registry) :
+`register()`/`registerAll()` (enregistrent sans démarrer, préservant la
+sémantique « tout construire puis tout démarrer »), `startAll()`,
+`stopAll()`, `restartAll()`. Les 4 devices listent leurs agents une seule
+fois ; `setEventBus()` se réduit à `super.setEventBus(bus);
+this.agents?.restartAll();` (optional chaining car le constructeur de base
+peut déclencher `setEventBus` avant l'initialisation des champs — c'est la
+raison d'être des anciens `if (this.xAgent)`). Les getters publics
+(`getStpAgent()`, …) sont inchangés — aucune rupture d'API. ~60 lignes de
+boilerplate supprimées.
+
+### Tests
+
+5 tests `agent-registry.test.ts` (ordre de démarrage, registre vide,
+restart stop→start par agent, retour inline de `register`). Suite complète
+network-v2 verte : 254 fichiers / 6602 tests.
 
 ---
 

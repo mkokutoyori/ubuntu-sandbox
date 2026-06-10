@@ -1,4 +1,5 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
+import { AgentRegistry } from './AgentRegistry';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
@@ -13,6 +14,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiSwitch extends Switch {
+  private readonly agents = new AgentRegistry();
   private readonly lldpAgent: LldpAgent;
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
@@ -41,10 +43,10 @@ export class HuaweiSwitch extends Switch {
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
     }, () => this.getBus());
-    this.lldpAgent.start();
-    this.stpAgent.start();
-    this.lacpAgent.start();
-    this.igmpSnoopingAgent.start();
+    this.agents.registerAll(
+      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent,
+    );
+    this.agents.startAll();
   }
 
   private resolveSnoopingVlan(portName: string): number | undefined {
@@ -63,10 +65,10 @@ export class HuaweiSwitch extends Switch {
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
-    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
-    if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
-    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
+    // Re-bind every agent's subscriptions to the newly injected bus.
+    // (setEventBus can fire from the base constructor, before the registry
+    // field initializer ran — hence the optional chain.)
+    this.agents?.restartAll();
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
