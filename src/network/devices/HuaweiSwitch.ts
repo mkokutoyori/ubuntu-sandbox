@@ -1,4 +1,4 @@
-import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
+import { DeviceType, EthernetFrame } from '../core/types';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
@@ -86,16 +86,8 @@ export class HuaweiSwitch extends Switch {
     super.handleFrame(portName, frame);
   }
 
-  protected override resolveSnoopedMulticastEgressPorts(ingressPort: string, frame: EthernetFrame, vlan: number): string[] | null {
-    if (frame.etherType !== ETHERTYPE_IPV4) return null;
-    const ipPkt = frame.payload as IPv4Packet | undefined;
-    if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
-    const firstOctet = ipPkt.destinationIP.getOctets()[0];
-    if (firstOctet < 224 || firstOctet > 239) return null;
-    const vlanState = this.igmpSnoopingAgent.getVlanState(vlan);
-    if (!vlanState || !vlanState.enabled) return null;
-    const ports = this.igmpSnoopingAgent.computeEgressPorts(ingressPort, ipPkt.destinationIP.toString());
-    return ports.length > 0 ? ports : null;
+  protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
+    return this.igmpSnoopingAgent;
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }

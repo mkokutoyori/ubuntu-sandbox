@@ -81,6 +81,17 @@ export interface SwitchportConfig {
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
 }
 
+// ─── IGMP snooping seam ─────────────────────────────────────────────
+
+/**
+ * Minimal surface the base Switch needs from a vendor's IGMP-snooping
+ * agent (Interface Segregation: the base never sees the full agent).
+ */
+export interface IgmpSnoopingAgentLike {
+  getVlanState(vlan: number): { enabled: boolean } | undefined;
+  computeEgressPorts(ingressPort: string, groupAddress: string): string[];
+}
+
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
 export interface MACTableEntry {
@@ -924,9 +935,13 @@ export abstract class Switch extends Equipment {
 
     const dstMAC = frame.dstMAC.toString().toLowerCase();
 
+    // IEEE 802.3 §3.2.3 — the I/G bit (LSB of the first octet) marks
+    // ANY group address: IPv4 multicast 01:00:5e, IPv6 33:33, protocol
+    // MACs 01:80:c2/01:00:0c, … Group frames are never unicast-matched
+    // against the MAC table; they are snooped or flooded.
     const dstOctets = frame.dstMAC.getOctets();
     const isMulticast = frame.dstMAC.isBroadcast() ||
-                        (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
+                        (dstOctets[0] & 0x01) === 0x01;
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
       const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;
@@ -958,12 +973,29 @@ export abstract class Switch extends Equipment {
     }
   }
 
-  protected resolveSnoopedMulticastEgressPorts(_ingressPort: string, frame: EthernetFrame, _vlan: number): string[] | null {
+  /**
+   * IGMP-snooping constrained forwarding (RFC 4541 §2.1.2): when a
+   * snooping agent is present and enabled on the VLAN, an IPv4
+   * multicast frame egresses only the member/router ports. Vendors
+   * supply their agent via {@link getIgmpSnoopingAgentOrNull}; the
+   * pipeline itself is vendor-neutral and lives here once.
+   */
+  protected resolveSnoopedMulticastEgressPorts(ingressPort: string, frame: EthernetFrame, vlan: number): string[] | null {
     if (frame.etherType !== ETHERTYPE_IPV4) return null;
     const ipPkt = frame.payload as IPv4Packet | undefined;
     if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
     const firstOctet = ipPkt.destinationIP.getOctets()[0];
     if (firstOctet < 224 || firstOctet > 239) return null;
+    const agent = this.getIgmpSnoopingAgentOrNull();
+    if (!agent) return null;
+    const vlanState = agent.getVlanState(vlan);
+    if (!vlanState || !vlanState.enabled) return null;
+    const ports = agent.computeEgressPorts(ingressPort, ipPkt.destinationIP.toString());
+    return ports.length > 0 ? ports : null;
+  }
+
+  /** Vendor hook: the IGMP-snooping agent, when the platform has one. */
+  protected getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgentLike | null {
     return null;
   }
 

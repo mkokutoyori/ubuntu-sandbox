@@ -213,3 +213,53 @@
   par messages OPEN/KEEPALIVE serait un chantier dédié.
 - MED toujours fixe à 0 (pas de `default-metric`/route-map).
 - Multi-saut : AS_PATH limité à un saut (modèle 1-hop du moteur).
+
+---
+
+## Lot 4 — Commutation L2 : adresses de groupe IEEE et IGMP snooping unifié
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Détection multicast incomplète dans `Switch.handleFrame`** : seuls
+   le broadcast et le multicast IPv6 (`33:33:…`) étaient reconnus. Tout
+   MAC multicast IPv4 (`01:00:5e:…`, mapping RFC 1112) ou protocolaire
+   (`01:80:c2`, `01:00:0c`) était traité comme *unicast inconnu*. 
+   Conséquence directe : le chemin IGMP-snooping
+   (`resolveSnoopedMulticastEgressPorts`) n'était **jamais invoqué**
+   pour du trafic multicast IPv4 réel — le forwarding contraint
+   (RFC 4541 §2.1.2) était mort sur le data-path, le trafic inondait
+   tout le VLAN même avec une table snooping correcte.
+2. **Pipeline snooping dupliqué verbatim** (~12 lignes × 2) dans
+   `CiscoSwitch` et `HuaweiSwitch` — même corps, même logique, deux
+   points de maintenance.
+
+### Corrections livrées
+
+- **Détection conforme IEEE 802.3 §3.2.3** : un MAC est une adresse de
+  groupe si son bit I/G (LSB du premier octet) est à 1 — couvre
+  IPv4 (`01:00:5e`), IPv6 (`33:33`), MACs protocolaires, etc. Les
+  trames de groupe ne sont jamais confrontées à la table MAC.
+- **Pipeline snooping hoisted dans la base `Switch`** (Template
+  Method) : la logique vendeur-neutre (etherType IPv4 → destination
+  224/4 → VLAN snooping actif → ports membres/routeur) vit une seule
+  fois ; les vendeurs ne fournissent plus que le hook
+  `getIgmpSnoopingAgentOrNull()` (1 ligne chacun). Nouvelle interface
+  ségrégée `IgmpSnoopingAgentLike` : la base ne voit que les deux
+  méthodes dont elle a besoin (ISP).
+
+### Tests
+
+- `igmp-snooping.test.ts` étendu avec 2 tests **data-path** : un groupe
+  enregistré n'égresse que vers le port membre (H2 non-membre ne reçoit
+  rien), un groupe non enregistré inonde classiquement le VLAN.
+  Ces tests échouaient avant le correctif (le multicast IPv4 partait en
+  flood inconditionnel).
+- Suite network-v2 complète : 6604 tests OK.
+
+### Limites restantes (suivi)
+
+- STP reste 802.1D pur (pas de RSTP 802.1w, TCN non émis) — chantier
+  dédié envisagé.
+- VTP pruning déclaré mais non appliqué au flooding.
