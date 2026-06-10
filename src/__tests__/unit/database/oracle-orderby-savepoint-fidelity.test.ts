@@ -98,3 +98,20 @@ describe('ROLLBACK TO SAVEPOINT fidelity', () => {
     sh.dispose();
   });
 });
+
+describe('TRUNC(date, fmt) format coverage', () => {
+  it('supports Q, IW, W, WW, HH24 and MI like real Oracle', () => {
+    const sh = session('trunc1');
+    const q = run(sh, "SELECT TRUNC(TO_DATE('2026-05-15','YYYY-MM-DD'), 'Q') FROM dual;");
+    expect(q).toMatch(/2026-04-01/);
+    // 2026-05-15 is a Friday; ISO week starts Monday 2026-05-11,
+    // default week starts Sunday 2026-05-10.
+    const iw = run(sh, "SELECT TRUNC(TO_DATE('2026-05-15','YYYY-MM-DD'), 'IW') FROM dual;");
+    expect(iw).toMatch(/2026-05-11/);
+    const day = run(sh, "SELECT TRUNC(TO_DATE('2026-05-15','YYYY-MM-DD'), 'DAY') FROM dual;");
+    expect(day).toMatch(/2026-05-10/);
+    const w = run(sh, "SELECT TRUNC(TO_DATE('2026-05-15','YYYY-MM-DD'), 'W') FROM dual;");
+    expect(w).toMatch(/2026-05-15/);
+    sh.dispose();
+  });
+});

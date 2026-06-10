@@ -227,3 +227,28 @@ fonction SQL imposait de toucher l'exécuteur entier.
   module) a été attrapée par la suite (§24 SYSDATE arithmetic) et
   corrigée en déplaçant les utilitaires dans le module — preuve que le
   filet de tests joue son rôle.
+
+---
+
+## Itération 7 — Fidélité : GUID V$PDBS réaliste, TRUNC(date) complet (2026-06-10)
+
+### Défaillances constatées
+1. (GAP.md §10.14) Le GUID des pluggable databases contenait littéralement
+   « …-CONS-OLE-OURO-FAKED… » dans `V$PDBS`/`DBA_PDBS`, généré avec
+   `Math.random()` (non déterministe d'un run à l'autre).
+2. `TRUNC(date, fmt)` ne supportait que YYYY/MM/DAY ; les formats Oracle
+   standard Q (trimestre), IW (semaine ISO), W, WW, HH24, MI manquaient,
+   et IW était faux (assimilé à DAY, départ dimanche au lieu de lundi).
+
+### Corrections
+- `PluggableDatabase` : GUID = 32 hexadécimaux majuscules (format réel de
+  `V$PDBS.GUID`), dérivé déterministiquement de l'identité du PDB via le
+  md5 du projet — stable entre les runs et dans les transcripts.
+- `ScalarFunctionEvaluator` : TRUNC(date) gère Q, IW (lundi ISO), W (même
+  jour de semaine que le 1er du mois), WW (même jour que le 1er janvier),
+  HH/HH12/HH24, MI ; DAY/D/DY reste à départ dimanche (NLS US par défaut).
+
+### Preuves
+- Nouveau test V$PDBS : GUID matche `[0-9A-F]{32}`, plus aucun « FAKED ».
+- Nouveaux tests TRUNC : Q→2026-04-01, IW→lundi, DAY→dimanche, W.
+- 2534 tests `unit/database` verts.

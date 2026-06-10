@@ -1,3 +1,5 @@
+import { md5Hex } from '@/crypto';
+
 export type PdbOpenMode = 'MOUNTED' | 'READ ONLY' | 'READ WRITE' | 'MIGRATE';
 export type PdbStatus = 'NORMAL' | 'NEW' | 'UNUSABLE' | 'UNPLUGGED' | 'CREATING';
 
@@ -24,7 +26,10 @@ export class PluggableDatabase {
     this.conId = init.conId;
     this.name = init.name.toUpperCase();
     this.dbid = init.dbid ?? (1000000000 + init.conId);
-    this.guid = `PDB${init.conId.toString(16).padStart(8, '0').toUpperCase()}-CONS-OLE-OURO-FAKED${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
+    // Real V$PDBS.GUID is 32 uppercase hex characters. Derive it
+    // deterministically from the PDB identity so repeated runs (and the
+    // debug transcripts) render a stable, realistic value.
+    this.guid = md5Hex(`pdb-guid:${this.name}:${this.dbid}`).toUpperCase();
     this.createdAt = init.createdAt ?? new Date();
     this.openMode = init.openMode ?? 'MOUNTED';
     this.status = init.status ?? 'NORMAL';

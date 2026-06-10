@@ -188,15 +188,41 @@ export class ScalarFunctionEvaluator {
         if (asDate != null) {
           const d = new Date(asDate.getTime());
           const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
-          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
+          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY' || fmt === 'Y') {
             return formatDate(new Date(d.getFullYear(), 0, 1));
+          }
+          if (fmt === 'Q') {
+            return formatDate(new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1));
           }
           if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
             return formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
           }
-          if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
-            const day = d.getDay();
-            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day));
+          if (fmt === 'DAY' || fmt === 'D' || fmt === 'DY') {
+            // First day of week — Sunday under the default (US) NLS territory.
+            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()));
+          }
+          if (fmt === 'IW') {
+            // ISO week starts Monday.
+            const isoDay = (d.getDay() + 6) % 7;
+            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - isoDay));
+          }
+          if (fmt === 'W') {
+            // Same weekday as the first day of the month.
+            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDate() - 1) % 7)));
+          }
+          if (fmt === 'WW') {
+            // Same weekday as January 1st.
+            const jan1 = new Date(d.getFullYear(), 0, 1);
+            const days = Math.floor((d.getTime() - jan1.getTime()) / 86_400_000);
+            return formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - (days % 7)));
+          }
+          if (fmt === 'HH' || fmt === 'HH12' || fmt === 'HH24') {
+            d.setMinutes(0, 0, 0);
+            return formatDate(d);
+          }
+          if (fmt === 'MI') {
+            d.setSeconds(0, 0);
+            return formatDate(d);
           }
           d.setHours(0, 0, 0, 0);
           return formatDate(d);
