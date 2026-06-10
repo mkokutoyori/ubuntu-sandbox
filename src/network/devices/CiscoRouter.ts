@@ -9,6 +9,7 @@
 
 import { Router } from './Router';
 import { AgentRegistry } from './AgentRegistry';
+import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
 import { CiscoIOSShell } from './shells/CiscoIOSShell';
 import {
@@ -17,9 +18,9 @@ import {
   showRunningConfig,
   showIpIntBrief,
 } from './shells/cisco/CiscoShowCommands';
-import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
+import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP, CDP_MULTICAST_MAC } from '../cdp/types';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
@@ -375,27 +376,4 @@ export class CiscoRouter extends Router {
       'Press RETURN to get started.',
     ].join('\n');
   }
-}
-
-function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.remoteHost,
-    remotePort: n.remotePort,
-    remoteType: n.remoteType,
-    remotePlatform: n.remotePlatform,
-    remoteCapability: n.remoteCapability,
-  }));
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
 }

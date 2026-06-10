@@ -1,9 +1,10 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
+import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
 import { ETHERTYPE_STP } from '../stp/types';
@@ -147,16 +148,4 @@ export class HuaweiSwitch extends Switch {
       'Press ENTER to get started.',
     ].join('\n');
   }
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
 }

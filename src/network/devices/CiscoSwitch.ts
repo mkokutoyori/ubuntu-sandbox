@@ -13,12 +13,13 @@
 
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
+import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
-import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
+import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { DtpAgent } from '../dtp/DtpAgent';
 import { ETHERTYPE_DTP, type DtpOperationalMode } from '../dtp/types';
@@ -286,25 +287,3 @@ export class CiscoSwitch extends Switch {
 }
 
 /** Map CDP neighbour rows to the inspection DTO `showCdp` consumes. */
-function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.remoteHost,
-    remotePort: n.remotePort,
-    remoteType: n.remoteType,
-    remotePlatform: n.remotePlatform,
-    remoteCapability: n.remoteCapability,
-  }));
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
-}

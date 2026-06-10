@@ -9,6 +9,7 @@
 
 import { Router } from './Router';
 import { AgentRegistry } from './AgentRegistry';
+import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
 import { HuaweiVRPShell } from './shells/HuaweiVRPShell';
 import {
@@ -18,7 +19,7 @@ import {
   displayIpIntBrief,
 } from './shells/huawei/HuaweiDisplayCommands';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP, VRRP_MULTICAST_MAC } from '../vrrp/types';
@@ -336,16 +337,4 @@ export class HuaweiRouter extends Router {
       'Press any key to get started.',
     ].join('\n');
   }
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
 }

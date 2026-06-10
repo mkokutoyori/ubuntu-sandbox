@@ -19,7 +19,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Factory | Haute | ✅ Corrigé |
 | 5 | Helpers IP réimplémentés 6× (OSPF ×2, EIGRP, BGP, PIM, CLI OSPF) | DRY | Moyenne | ✅ Corrigé |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | ✅ Corrigé |
-| 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | À faire |
+| 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | ✅ Corrigé |
 | 8 | Dispatch par `constructor.name` dans ShellFactory / sshLauncher / WindowsTerminalSession (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | À faire |
 | 9 | BGP : FSM incomplète (états Connect/OpenConfirm absents), pas de détection de boucle AS-path | RFC 4271 | Haute | À faire |
 | 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | À faire |
@@ -284,6 +284,33 @@ boilerplate supprimées.
 5 tests `agent-registry.test.ts` (ordre de démarrage, registre vide,
 restart stop→start par agent, retour inline de `register`). Suite complète
 network-v2 verte : 254 fichiers / 6602 tests.
+
+---
+
+## Entrée 7 — Devices : convertisseurs NeighborDTO centralisés
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+`lldpToNeighborDTO()` copié-collé à l'identique dans 4 fichiers
+(CiscoRouter, HuaweiRouter, CiscoSwitch, HuaweiSwitch) et
+`cdpToNeighborDTO()` dans 2 (devices Cisco) — six fonctions module-scope
+identiques. Tout changement du schéma `NeighborDTO` (ou de la règle de
+mapping capacités LLDP → Router/Switch/Host) imposait 6 éditions.
+
+### Correction
+
+Module unique `src/network/devices/inspection/neighborConverters.ts` ;
+les 4 devices importent les fonctions partagées, les copies locales et les
+imports de types devenus inutiles sont supprimés (~60 lignes).
+
+### Tests
+
+5 tests directs des convertisseurs (troncature de plateforme à la première
+virgule, description sans virgule conservée, mapping Router/Bridge/autre →
+Router/Switch/Host, capacités vides, table vide, projection CDP champ à
+champ) + non-régression CDP/LLDP/STP.
 
 ---
 
