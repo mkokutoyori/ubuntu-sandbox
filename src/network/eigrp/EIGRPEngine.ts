@@ -13,7 +13,6 @@
  * 256-scaled composite of min-bandwidth and cumulative delay.
  */
 import { IPAddress, SubnetMask } from '../core/types';
-import { tryIpToUint32, prefixLengthToMaskUint32, wildcardMatches } from '../core/ip';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -26,13 +25,10 @@ import {
 } from './metric';
 
 export interface EigrpNetworkStmt {
+  /** Network address as configured (classful base). */
   network: string;
+  /** Optional wildcard mask (e.g. 0.0.255.255). */
   wildcard?: string;
-}
-
-export interface EigrpIfaceMetrics {
-  bandwidthKbps: number;
-  delayTensOfUs: number;
 }
 
 export interface EIGRPConfig {
@@ -85,19 +81,23 @@ function classfulMaskBits(ip: string): number {
   return 24;
 }
 
+/** True if `localIp` is covered by a `network [wildcard]` statement. */
 function statementCovers(stmt: EigrpNetworkStmt, localIp: string): boolean {
   const netNum = toNum(stmt.network);
   const ipNum = toNum(localIp);
   if (netNum < 0 || ipNum < 0) return false;
   if (stmt.wildcard) {
-    return wildcardMatches(localIp, stmt.network, stmt.wildcard);
+    const w = toNum(stmt.wildcard);
+    const mask = (~w) >>> 0;
+    return (ipNum & mask) === (netNum & mask);
   }
   const bits = classfulMaskBits(stmt.network);
   const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
   return (ipNum & mask) === (netNum & mask);
 }
 
-interface TopoEntry {
+/** Topology-table entry surfaced by `show ip eigrp topology`. */
+export interface EigrpTopoEntry {
   fd: number;
   successorNextHop: IPAddress | null;
   successorIface: string;
@@ -111,7 +111,11 @@ interface TopoEntry {
 
 export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   readonly protocol = 'eigrp';
-  private topo: Map<string, TopoEntry> = new Map();
+  private topo: Map<string, EigrpTopoEntry> = new Map();
+
+  getTopologyTable(): ReadonlyMap<string, EigrpTopoEntry> {
+    return this.topo;
+  }
 
   protected defaultConfig(): EIGRPConfig {
     return {
@@ -138,10 +142,6 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       }
     }
     return out;
-  }
-
-  getTopologyTable(): ReadonlyMap<string, TopoEntry> {
-    return this.topo;
   }
 
   protected computeNeighbors(peers: RoutingPeer[]): void {
@@ -249,9 +249,21 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     const variance = Math.max(1, this.config.variance);
     const maxPaths = Math.max(1, this.config.maximumPaths);
     const routes: RibRoute[] = [];
-    for (const group of candidatesByPrefix.values()) {
+    const newTopo = new Map<string, EigrpTopoEntry>();
+    for (const [key, group] of candidatesByPrefix) {
       group.sort((a, b) => a.fd - b.fd);
       const successor = group[0];
+      newTopo.set(key, {
+        fd: successor.fd,
+        successorNextHop: successor.route.nextHop,
+        successorIface: successor.route.iface,
+        feasibleSuccessors: group.slice(1)
+          .filter((p) => p.rd < successor.fd)
+          .map((p) => ({
+            nextHop: p.route.nextHop, iface: p.route.iface,
+            rd: p.rd, metric: p.fd,
+          })),
+      });
       routes.push(successor.route);
       let installed = 1;
       for (const alt of group.slice(1)) {
@@ -264,48 +276,6 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         }
       }
     }
-
-    const newTopo = new Map<string, TopoEntry>();
-    const routes: RibRoute[] = [];
-
-    for (const [key, paths] of candidates) {
-      paths.sort((a, b) => a.metric - b.metric);
-      const best = paths[0];
-      const fd = best.metric;
-
-      const feasibleSuccessors = paths.slice(1).filter(p => p.rd < fd);
-
-      newTopo.set(key, {
-        fd,
-        successorNextHop: best.nextHop,
-        successorIface: best.iface,
-        feasibleSuccessors: feasibleSuccessors.map(p => ({
-          nextHop: p.nextHop,
-          iface: p.iface,
-          rd: p.rd,
-          metric: p.metric,
-        })),
-      });
-
-      const threshold = fd * this.config.variance;
-      let count = 0;
-      const pm = prefixMasks.get(key)!;
-      for (const path of paths) {
-        if (count >= this.config.maximumPaths) break;
-        if (path.metric > threshold) break;
-        routes.push({
-          network: pm.network,
-          mask: pm.mask,
-          nextHop: path.nextHop,
-          iface: path.iface,
-          protocol: 'eigrp',
-          adminDistance: EIGRP_INTERNAL_AD,
-          metric: path.metric,
-        });
-        count++;
-      }
-    }
-
     this.topo = newTopo;
     return routes;
   }
