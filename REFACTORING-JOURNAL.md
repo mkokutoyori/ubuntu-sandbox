@@ -365,4 +365,50 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 
 - Suites hosts-file/hosts/dns-over-wire/traceroute-conformance/
   windows-netsh-dhcp-dns/nslookup : 153 tests verts ; `tsc --noEmit` propre ;
-  régression complète `network-v2` relancée.
+  régression complète `network-v2` : 255 fichiers, 6610 tests verts.
+
+---
+
+## Entrée n°8 — 2026-06-10 — UI : divulgation des équipements partiellement simulés
+
+### Défaillances constatées
+
+1. **Stubs présentés comme des équipements réels** — la palette propose un
+   « Mac » (macOS workstation), trois firewalls (Cisco ASA, FortiGate,
+   Palo Alto) et un point d'accès WiFi avec descriptions professionnelles et
+   icônes vendeur convaincantes… alors que `DeviceFactory` les instancie
+   comme `LinuxPC` (Ubuntu !) ou `Hub`. L'utilisateur ne le découvrait
+   qu'après avoir câblé son lab (avertissement uniquement dans le panneau de
+   propriétés, après sélection).
+2. **Classification erronée** — `isFullyImplemented('mac-pc')` retournait
+   `true` alors que la machine exécute un Ubuntu complet sous une icône
+   macOS (terminal bash, identité Linux, `uname` → Linux). Vérifié sans
+   impact sur l'ouverture du terminal (l'OS mappé est `linux`, le garde du
+   `TerminalManager` ne concerne que les OS inconnus).
+
+### Correction
+
+- `isFullyImplemented()` reclassifie `mac-pc` comme simulation partielle et
+  documente le contrat de la fonction (JSDoc).
+- `DevicePalette` : badge **« Limited »** (ambre, tooltip explicatif) sur
+  chaque type non fidèlement simulé, dès la palette — avant le drag, pas
+  après. Réutilisation de la fonction backend existante (pas de duplication
+  de la liste).
+
+### Défaut préexistant relevé (à corriger en entrée suivante)
+
+- `duplicate-display-fixes.test.ts` (« sudo prompt is not duplicated »)
+  échoue **déjà sur `main`** : l'écho du prompt sudo n'apparaît plus dans le
+  scrollback. Sans lien avec les entrées de ce journal (vérifié sur worktree
+  `main` propre).
+
+### Fichiers
+
+- `src/network/devices/DeviceFactory.ts`
+- `src/components/network/DevicePalette.tsx`
+- `src/__tests__/unit/gui/device-palette.test.tsx` (nouveau, 5 tests)
+
+### Validation
+
+- 5 nouveaux tests (badges palette + classification) ; suites `unit/gui` +
+  `unit/react` : 12 fichiers, 99 tests verts.

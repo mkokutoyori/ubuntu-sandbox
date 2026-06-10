@@ -4,9 +4,13 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
-import { DEVICE_CATEGORIES } from '@/network';
+import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network';
 import { DeviceIcon } from './DeviceIcon';
 import { cn } from '@/lib/utils';
+
+const LIMITED_SIMULATION_HINT =
+  'Limited simulation: this device currently behaves as a generic substitute ' +
+  '(vendor-specific features are not implemented yet).';
 
 export function DevicePalette() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
@@ -74,6 +78,18 @@ export function DevicePalette() {
                         {device.description}
                       </p>
                     </div>
+                    {!isFullyImplemented(device.type) && (
+                      <span
+                        title={LIMITED_SIMULATION_HINT}
+                        className={cn(
+                          'shrink-0 text-[9px] font-semibold uppercase tracking-wide',
+                          'px-1.5 py-0.5 rounded border',
+                          'bg-amber-500/15 text-amber-400 border-amber-500/30',
+                        )}
+                      >
+                        Limited
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

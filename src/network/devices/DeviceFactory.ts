@@ -94,11 +94,17 @@ export function hasTerminalSupport(type: DeviceType): boolean {
   }
 }
 
+/**
+ * True when the device type behaves like the real equipment it depicts.
+ * Types stubbed onto another implementation (mac-pc → Ubuntu Linux,
+ * firewall-* → Linux PC, access-point → Hub, cloud → Linux PC) return
+ * false so the UI can disclose the limitation instead of advertising a
+ * vendor behaviour that is not simulated.
+ */
 export function isFullyImplemented(type: DeviceType): boolean {
   switch (type) {
     case 'linux-pc':
     case 'windows-pc':
-    case 'mac-pc':
     case 'linux-server':
     case 'windows-server':
     case 'switch-cisco':
