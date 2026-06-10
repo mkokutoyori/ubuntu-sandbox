@@ -175,3 +175,26 @@ suggérait l'analyse initiale — pas de modification.)
   (défauts ASC/DESC, overrides NULLS FIRST/LAST, ORA-01086, rollback vers
   savepoint valide inchangé).
 - 2532 tests `unit/database` verts ; lint et typecheck propres.
+
+---
+
+## Itération 5 — Déduplication des résolutions schéma/table/colonne dans OracleExecutor (2026-06-10)
+
+### Défaillance constatée (GAP.md §10.15 — god class, duplication)
+Chaque handler DML/DDL réinventait les trois mêmes motifs :
+- repli de schéma : `(stmt.schema || this.context.currentSchema).toUpperCase()` — 18 occurrences ;
+- contrôle d'existence + `ORA-00942` (7 occurrences inline) ;
+- résolution de colonne + `ORA-00904` via `findIndex(...toUpperCase())` (7 occurrences).
+
+### Corrections
+Quatre helpers privés uniques dans `OracleExecutor` :
+`resolveSchema`, `requireTableMeta` (ORA-00942), `requireColumnIndex`
+(ORA-00904), `findColumnIndex`. Handlers convertis : INSERT (y compris
+INSERT…SELECT et buildInsertRow), UPDATE, DELETE, MERGE, chargement de
+table du SELECT, + les 15 sites de repli de schéma restants.
+
+### Preuves
+- 2532 tests `unit/database` verts, lint/typecheck propres.
+- Comportement inchangé par construction (mêmes erreurs ORA, même ordre
+  de contrôles) ; le gain est la maintenabilité (une seule source pour
+  chaque règle de résolution).

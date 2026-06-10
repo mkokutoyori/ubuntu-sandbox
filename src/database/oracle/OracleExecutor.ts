@@ -26,7 +26,7 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
 import { ORACLE_SYSTEM_PRIVILEGES } from './security/systemPrivileges';
 import type { OracleInstance } from './OracleInstance';
-import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
+import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
@@ -506,7 +506,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
       case 'AnalyzeStatement': {
         const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
-        const schema = (s.schema || this.context.currentSchema).toUpperCase();
+        const schema = this.resolveSchema(s.schema);
         const name = s.name.toUpperCase();
         if (s.target === 'TABLE') {
           if (!this.storage.tableExists(schema, name)) {
@@ -530,7 +530,7 @@ export class OracleExecutor extends BaseExecutor {
         // are accepted but logical no-ops — the simulator has no
         // undo/redo time machine.
         if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
-          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(s.schema);
           const name = s.name!.toUpperCase();
           const catalog = this.catalog as OracleCatalog;
           const entry = catalog.recyclebinFindLatest(owner, name);
@@ -558,7 +558,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (s.target === 'TABLE' && s.name) {
           // PURGE TABLE name → remove the (most recent) recyclebin
           // entry with that original name.
-          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(s.schema);
           const entry = catalog.recyclebinFindLatest(owner, s.name.toUpperCase());
           if (entry) catalog.recyclebinRemove(entry.objectName);
         }
@@ -815,7 +815,7 @@ export class OracleExecutor extends BaseExecutor {
     const visit = (s: SelectStatement): void => {
       for (const f of s.from ?? []) {
         if (f.type === 'TableRef') {
-          const owner = (f.schema ?? this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(f.schema);
           const name = f.name.toUpperCase();
           if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
         } else if (f.type === 'SubqueryTableRef') {
@@ -824,7 +824,7 @@ export class OracleExecutor extends BaseExecutor {
       }
       for (const j of s.joins ?? []) {
         if (j.table.type === 'TableRef') {
-          const owner = (j.table.schema ?? this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(j.table.schema);
           const name = j.table.name.toUpperCase();
           if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
         }
@@ -1135,7 +1135,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private loadTable(ref: import('../engine/parser/ASTNode').TableRef): { rows: StorageRow[]; columns: StorageColMeta[] } {
-    const schema = (ref.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(ref.schema);
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
 
@@ -1164,14 +1164,9 @@ export class OracleExecutor extends BaseExecutor {
       return { rows, columns };
     }
 
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.requireObjectAccess(schema, tableName, 'SELECT');
-
-    const meta = this.storage.getTableMeta(schema, tableName)!;
     const storageRows = this.storage.getRows(schema, tableName);
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
@@ -2041,14 +2036,10 @@ export class OracleExecutor extends BaseExecutor {
   // ── MERGE ──────────────────────────────────────────────────────────
 
   private executeMerge(stmt: MergeStatement): ResultSet {
-    const targetSchema = (stmt.target.schema || this.context.currentSchema).toUpperCase();
+    const targetSchema = this.resolveSchema(stmt.target.schema);
     const targetName = stmt.target.name.toUpperCase();
 
-    if (!this.storage.tableExists(targetSchema, targetName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
-    const targetMeta = this.storage.getTableMeta(targetSchema, targetName)!;
+    const targetMeta = this.requireTableMeta(targetSchema, targetName);
 
     // Load source data
     let sourceRows: StorageRow[];
@@ -2224,20 +2215,44 @@ export class OracleExecutor extends BaseExecutor {
     return { ...result, columns: resultCols, rows };
   }
 
+  // ── Shared object-resolution helpers ─────────────────────────────
+  // Deduplicated from the statement handlers: every DML/DDL handler used
+  // to inline the same schema fallback, ORA-00942 table check and
+  // ORA-00904 column lookup.
+
+  /** Resolve an optional schema qualifier against the session schema. */
+  private resolveSchema(explicit?: string | null): string {
+    return (explicit || this.context.currentSchema).toUpperCase();
+  }
+
+  /** Look up a table's metadata or raise ORA-00942 like real Oracle. */
+  private requireTableMeta(schema: string, tableName: string): TableMeta {
+    const meta = this.storage.getTableMeta(schema, tableName);
+    if (!meta) throw new OracleError(942, 'table or view does not exist');
+    return meta;
+  }
+
+  /** Resolve a column name to its ordinal or raise ORA-00904. */
+  private requireColumnIndex(tableMeta: TableMeta, colName: string): number {
+    const idx = this.findColumnIndex(tableMeta, colName);
+    if (idx < 0) throw new OracleError(904, `"${colName.toUpperCase()}": invalid identifier`);
+    return idx;
+  }
+
+  /** Case-insensitive column lookup; -1 when absent. */
+  private findColumnIndex(tableMeta: TableMeta, colName: string): number {
+    const up = colName.toUpperCase();
+    return tableMeta.columns.findIndex(c => c.name.toUpperCase() === up);
+  }
+
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'INSERT');
-
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
     let insertedCount = 0;
 
     if (stmt.values) {
@@ -2262,7 +2277,7 @@ export class OracleExecutor extends BaseExecutor {
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
         if (stmt.columns) {
           for (let i = 0; i < stmt.columns.length; i++) {
-            const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === stmt.columns![i].toUpperCase());
+            const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
             if (colIdx >= 0) row[colIdx] = subRow[i] as CellValue;
           }
         } else {
@@ -2285,18 +2300,11 @@ export class OracleExecutor extends BaseExecutor {
     const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
 
     if (columns) {
-      // Validate column names exist
-      for (const colName of columns) {
-        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === colName.toUpperCase());
-        if (colIdx < 0) throw new OracleError(904, `"${colName.toUpperCase()}": invalid identifier`);
-      }
+      for (const colName of columns) this.requireColumnIndex(tableMeta, colName);
       if (values.length > columns.length) throw new OracleError(913, 'too many values');
       if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
-        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === columns[i].toUpperCase());
-        if (colIdx >= 0) {
-          row[colIdx] = this.evaluateExpression(values[i], [], []);
-        }
+        row[this.requireColumnIndex(tableMeta, columns[i])] = this.evaluateExpression(values[i], [], []);
       }
     } else {
       if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
@@ -2320,22 +2328,12 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'UPDATE');
 
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
-
-    // Validate assignment column names exist
-    for (const assign of stmt.assignments) {
-      const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
-      if (colIdx < 0) throw new OracleError(904, `"${assign.column.toUpperCase()}": invalid identifier`);
-    }
+    for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
 
     const count = this.storage.updateRows(
       schema, tableName,
@@ -2343,7 +2341,7 @@ export class OracleExecutor extends BaseExecutor {
       (row) => {
         const newRow = [...row];
         for (const assign of stmt.assignments) {
-          const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
+          const colIdx = this.findColumnIndex(tableMeta, assign.column);
           if (colIdx >= 0) {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
@@ -2365,16 +2363,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'DELETE');
-
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
 
     // Validate FK constraints on rows to be deleted
     const rowsToDelete = this.storage.getRows(schema, tableName)
@@ -2397,7 +2389,7 @@ export class OracleExecutor extends BaseExecutor {
     // DDL auto-commits any open transaction (Oracle behavior)
     if (this._inTransaction) this.executeCommit();
 
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
     // Creating in own schema needs CREATE TABLE; creating in another schema needs CREATE ANY TABLE.
@@ -2516,7 +2508,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
     if (this._inTransaction) this.executeCommit();
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
     // Cross-schema drop requires DROP ANY TABLE; own-schema needs no extra priv.
@@ -2547,7 +2539,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
     if (this._inTransaction) {
       this.executeCommit();
@@ -2557,7 +2549,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeAlterTable(stmt: AlterTableStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
     if (!this.storage.tableExists(schema, tableName)) {
       throw new OracleError(942, `table or view does not exist`);
@@ -2682,7 +2674,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
     const hasExpressions = expressions.some(e => e !== null);
     this.storage.createIndex(schema, {
@@ -2697,13 +2689,13 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropIndex(stmt: DropIndexStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropIndex(schema, stmt.name.toUpperCase());
     return emptyResult('Index dropped.');
   }
 
   private executeCreateSequence(stmt: CreateSequenceStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.createSequence(schema, {
       name: stmt.name.toUpperCase(),
       currentValue: (stmt.startWith ?? 1) - (stmt.incrementBy ?? 1),
@@ -2717,7 +2709,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropSequence(schema, stmt.name.toUpperCase());
     return emptyResult('Sequence dropped.');
   }
@@ -2725,7 +2717,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── View DDL ─────────────────────────────────────────────────────
 
   private executeCreateView(stmt: CreateViewStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const name = stmt.name.toUpperCase();
     // For OR REPLACE, drop existing view first
     if (stmt.orReplace && this.storage.viewExists(schema, name)) {
@@ -2746,7 +2738,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropView(schema, stmt.name.toUpperCase());
     return emptyResult('View dropped.');
   }
@@ -2871,9 +2863,9 @@ export class OracleExecutor extends BaseExecutor {
   // ── Triggers ─────────────────────────────────────────────────────
 
   private executeCreateTrigger(stmt: CreateTriggerStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const name = stmt.name.toUpperCase();
-    const tableSchema = (stmt.tableSchema || this.context.currentSchema).toUpperCase();
+    const tableSchema = this.resolveSchema(stmt.tableSchema);
 
     if (stmt.orReplace) {
       try { this.storage.dropTrigger(schema, name); } catch { /* ignore if not exists */ }
@@ -2895,7 +2887,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropTrigger(schema, stmt.name.toUpperCase());
     return emptyResult('Trigger dropped.');
   }
@@ -2914,8 +2906,8 @@ export class OracleExecutor extends BaseExecutor {
   // ── SYNONYM ────────────────────────────────────────────────────────
 
   private executeCreateSynonym(stmt: CreateSynonymStatement): ResultSet {
-    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
-    const targetSchema = (stmt.targetSchema || this.context.currentSchema).toUpperCase();
+    const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
+    const targetSchema = this.resolveSchema(stmt.targetSchema);
     this.storage.createSynonym({
       owner,
       name: stmt.name.toUpperCase(),
@@ -2927,7 +2919,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
-    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
+    const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
     this.storage.dropSynonym(owner, stmt.name.toUpperCase());
     return emptyResult('Synonym dropped.');
   }
@@ -2935,7 +2927,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── ALTER SEQUENCE ────────────────────────────────────────────────
 
   private executeAlterSequence(stmt: AlterSequenceStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const seq = this.storage.getSequence(schema, stmt.name.toUpperCase());
     if (!seq) throw new OracleError(2289, `sequence ${stmt.name} does not exist`);
     if (stmt.incrementBy !== undefined) seq.incrementBy = stmt.incrementBy;
@@ -2949,7 +2941,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── ALTER INDEX ───────────────────────────────────────────────────
 
   private executeAlterIndex(stmt: AlterIndexStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     if (stmt.action === 'REBUILD') {
       // In a simulator, REBUILD is a no-op (the index is already in memory)
       const indexes = this.storage.getIndexes(schema);
@@ -2990,7 +2982,7 @@ export class OracleExecutor extends BaseExecutor {
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
       const user = this.context.currentUser;
-      const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
+      const schema = this.resolveSchema(stmt.objectSchema);
       const objName = stmt.objectName.toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
@@ -3109,7 +3101,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const priv of stmt.privileges) {
           const p = priv.toUpperCase();
           if (stmt.objectName) {
-            const schema = (stmt.objectSchema ?? this.context.currentSchema).toUpperCase();
+            const schema = this.resolveSchema(stmt.objectSchema);
             const objName = stmt.objectName.toUpperCase();
             const row = tabPrivs.find(x => x.grantee === g && x.privilege === p && x.objectSchema === schema && x.objectName === objName);
             if (row) row.grantable = false;
@@ -5154,7 +5146,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeComment(stmt: import('../engine/parser/ASTNode').CommentStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    const schema = (stmt.schema ?? this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     // Commenting on a foreign schema requires COMMENT ANY TABLE.
     if (schema !== this.context.currentUser && this.context.currentUser !== 'SYS') {
       this.requireSystemPrivilege('COMMENT ANY TABLE');
