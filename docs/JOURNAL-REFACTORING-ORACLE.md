@@ -123,6 +123,41 @@ désormais 20 lignes.
 sys.user$`, 5,17 s pour un seuil de 5 s ; passait à l'étape 2, échouait sur le code de
 base ; toujours sur la liste à investiguer).
 
+### 2026-06-10 — `SYS.USER$` : 1011 ms → 3,5 ms (vérificateurs de mots de passe)
+**Défaillance :** la requête `SELECT * FROM sys.user$` prenait ~1 s pour 12 utilisateurs
+(et >5 s dans la grande suite — source du timeout flaky §12). Cause racine en trois
+couches :
+1. **Écart avec le vrai Oracle** : les vérificateurs 10g/11g/12c étaient *re-dérivés à
+   chaque requête* du dictionnaire, alors qu'Oracle les calcule une seule fois au
+   `CREATE USER`/`ALTER USER` et les stocke dans `USER$`.
+2. Le vérificateur 12c (`T:`) coûte un PBKDF2-HMAC-SHA512 à 4096 itérations en pur
+   TypeScript (~144 ms) — par utilisateur, par requête.
+3. PBKDF2 recompressait les deux blocs de clé HMAC (ipad/opad) à chaque itération,
+   faute d'API de hachage incrémentale : 4 compressions SHA-512 par itération au lieu
+   de 2.
+**Correction :**
+- `crypto/hash/HashAlgorithm.ts` : capacité optionnelle `ResumableHashAlgorithm`
+  (état de chaînage Merkle–Damgård exposé : `initState`/`compressBlocks`/
+  `finalizeState`) — extension pure, l'interface `HashAlgorithm` est inchangée.
+- `crypto/hash/sha512.ts` : restructuré autour de `compressBlocks(state, blocks)` +
+  `finalizeState` (le one-shot `sha512()` est désormais une composition) ; buffers de
+  message-schedule partagés au niveau module.
+- `crypto/kdf/pbkdf2.ts` : PRF avec états ipad/opad précalculés quand le hash est
+  résumable (fallback inchangé sinon) → **144 ms → 65 ms** pour 4096 itérations.
+- `security/storedVerifier.ts` : mémoïsation process-wide bornée (la dérivation est
+  déterministe par construction — sel dérivé des credentials).
+- `OracleCatalog.setPassword` : réchauffe la dérivation au moment du mot de passe —
+  sémantique du vrai Oracle (vérificateurs stockés à l'écriture, lus par les requêtes).
+  Les utilisateurs par défaut passent désormais par `setPassword` (memo → coût payé
+  une fois par processus, pas par instance de base).
+- `views/sys_user.ts` : suppression d'un duck-cast inutile (`getStoredPassword` est
+  public sur `OracleCatalog`).
+**Résultat mesuré :** `SELECT * FROM sys.user$` : 1011 ms → **3,5 ms**. Le timeout
+flaky §12 est éliminé à la racine.
+**Validation :** `npx tsc --noEmit` propre ; 181 tests vectoriels crypto (openssl/
+hashcat) verts ; `unit/database/` + `crypto/` + `ipsec-algorithms` + `wan-vpn` :
+2861/2861.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

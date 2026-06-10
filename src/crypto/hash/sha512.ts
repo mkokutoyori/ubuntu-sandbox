@@ -5,7 +5,7 @@
  */
 
 import { utf8ToBytes, bytesToHex } from '../encoding';
-import type { HashAlgorithm } from './HashAlgorithm';
+import type { ResumableHashAlgorithm } from './HashAlgorithm';
 
 const BLOCK_SIZE = 128; // 1024 bits
 const DIGEST_SIZE = 64; // 512 bits
@@ -37,23 +37,29 @@ const K_LO = new Uint32Array([
   0x23047d84, 0x40c72493, 0x15c9bebc, 0x9c100d4c, 0xcb3e42b6, 0xfc657e2a, 0x3ad6faec, 0x4a475817,
 ]);
 
-/** Compute the raw 64-byte SHA-512 digest of `input` (input is not mutated). */
-export function sha512(input: Uint8Array): Uint8Array {
-  // Initial hash values (fractional parts of the square roots of the first 8 primes).
-  const h = new Uint32Array([
+/** Initial hash values (fractional parts of the square roots of the first 8 primes). */
+function initState(): Uint32Array {
+  return new Uint32Array([
     0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b, 0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
     0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f, 0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
   ]);
+}
 
-  const padded = padMessage(input);
-  const wh = new Uint32Array(80);
-  const wl = new Uint32Array(80);
+// Message-schedule scratch buffers, shared across calls (single-threaded JS;
+// compressBlocks never re-enters itself).
+const SCRATCH_WH = new Uint32Array(80);
+const SCRATCH_WL = new Uint32Array(80);
 
-  for (let off = 0; off < padded.length; off += BLOCK_SIZE) {
+/** Absorb full 128-byte blocks into the chaining state `h`. */
+function compressBlocks(h: Uint32Array, data: Uint8Array): void {
+  const wh = SCRATCH_WH;
+  const wl = SCRATCH_WL;
+
+  for (let off = 0; off < data.length; off += BLOCK_SIZE) {
     for (let i = 0; i < 16; i++) {
       const j = off + i * 8;
-      wh[i] = (padded[j] << 24) | (padded[j + 1] << 16) | (padded[j + 2] << 8) | padded[j + 3];
-      wl[i] = (padded[j + 4] << 24) | (padded[j + 5] << 16) | (padded[j + 6] << 8) | padded[j + 7];
+      wh[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | data[j + 3];
+      wl[i] = (data[j + 4] << 24) | (data[j + 5] << 16) | (data[j + 6] << 8) | data[j + 7];
     }
     for (let i = 16; i < 80; i++) {
       // s0 = rotr(w[i-15],1) ^ rotr(w[i-15],8) ^ shr(w[i-15],7)
@@ -111,7 +117,10 @@ export function sha512(input: Uint8Array): Uint8Array {
     addInto(h, 12, gh, gl);
     addInto(h, 14, hh, hl);
   }
+}
 
+/** Serialize the chaining state into the 64-byte big-endian digest. */
+function serializeState(h: Uint32Array): Uint8Array {
   const out = new Uint8Array(DIGEST_SIZE);
   for (let i = 0; i < 16; i++) {
     out[i * 4] = (h[i] >>> 24) & 0xff;
@@ -122,15 +131,32 @@ export function sha512(input: Uint8Array): Uint8Array {
   return out;
 }
 
+/**
+ * Pad and absorb the final `tail`, given the total number of message bytes
+ * absorbed overall (already-compressed prefix + tail), then serialize.
+ */
+function finalizeState(h: Uint32Array, tail: Uint8Array, totalLen: number): Uint8Array {
+  compressBlocks(h, padTail(tail, totalLen));
+  return serializeState(h);
+}
+
+/** Compute the raw 64-byte SHA-512 digest of `input` (input is not mutated). */
+export function sha512(input: Uint8Array): Uint8Array {
+  return finalizeState(initState(), input, input.length);
+}
+
 /** Hex digest of a UTF-8 string. */
 export function sha512Hex(text: string): string {
   return bytesToHex(sha512(utf8ToBytes(text)));
 }
 
-export const SHA512: HashAlgorithm = {
+export const SHA512: ResumableHashAlgorithm = {
   blockSize: BLOCK_SIZE,
   digestSize: DIGEST_SIZE,
   digest: sha512,
+  initState,
+  compressBlocks,
+  finalizeState,
 };
 
 // ─── 64-bit helpers operating on hi/lo 32-bit halves ─────────────────────
@@ -160,13 +186,16 @@ function addInto(h: Uint32Array, i: number, vh: number, vl: number): void {
   h[i + 1] = lo >>> 0;
 }
 
-function padMessage(input: Uint8Array): Uint8Array {
-  // 0x80, then zeros, then 128-bit big-endian length, total ≡ 0 (mod 128).
-  const paddedLen = (((input.length + 16) >> 7) + 1) * 128;
+/**
+ * Pad the final chunk: 0x80, zeros, then the 128-bit big-endian *total*
+ * message bit length, so the result is a whole number of 128-byte blocks.
+ */
+function padTail(tail: Uint8Array, totalLen: number): Uint8Array {
+  const paddedLen = (((tail.length + 16) >> 7) + 1) * 128;
   const padded = new Uint8Array(paddedLen);
-  padded.set(input);
-  padded[input.length] = 0x80;
-  const bitLen = input.length * 8;
+  padded.set(tail);
+  padded[tail.length] = 0x80;
+  const bitLen = totalLen * 8;
   const dv = new DataView(padded.buffer);
   // High 64 bits of the length are always 0 for our message sizes.
   dv.setUint32(paddedLen - 8, Math.floor(bitLen / 0x100000000));

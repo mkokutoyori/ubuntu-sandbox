@@ -11,7 +11,6 @@ registerView({
   name: 'SYS.USER$',
   comment: 'Base user table',
   query({ catalog }) {
-    const getPwd = (catalog as unknown as { getStoredPassword?: (u: string) => string | undefined }).getStoredPassword;
     return queryResult(
       [
         { name: 'USER#', dataType: oracleNumber(10) },
@@ -23,7 +22,9 @@ registerView({
         { name: 'SPARE4', dataType: oracleVarchar2(4000) },
       ],
       catalog.getAllUsers().map((u, i) => {
-        const pwd = getPwd ? getPwd.call(catalog, u.username) : undefined;
+        const pwd = catalog.getStoredPassword(u.username);
+        // Memoized — computed once when the password was set, the way real
+        // Oracle stores verifiers in USER$ instead of re-deriving per query.
         const v = pwd ? deriveStoredVerifiers(u.username, pwd) : null;
         return [i + 1, u.username, 1, v?.password ?? '', u.created.toISOString(), v?.spare4 ?? ''];
       })
