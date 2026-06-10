@@ -47,7 +47,7 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
     const suffix = isStatic
       ? `ARPA   ${entry.iface}\n                                                       static`
       : `ARPA   ${entry.iface}`;
-    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toString().padEnd(16)}${suffix}`);
+    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toString().padEnd(18)}${suffix}`);
   }
   return lines.join('\n');
 }

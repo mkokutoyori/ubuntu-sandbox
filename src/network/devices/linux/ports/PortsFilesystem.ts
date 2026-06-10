@@ -21,6 +21,7 @@ export const PORT_PATHS = {
   services: '/etc/services',
   procNetTcp: '/proc/net/tcp',
   procNetUdp: '/proc/net/udp',
+  procNetSnmp: '/proc/net/snmp',
   procNetDir: '/proc/net',
 } as const;
 
@@ -64,7 +65,31 @@ export class PortsFilesystem {
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdp, () =>
       renderProcNet(socketTable.getAll().filter((s) => s.protocol === 'udp')),
     );
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
+      renderProcNetSnmp(socketTable),
+    );
   }
+}
+
+/** Render `/proc/net/snmp` — the per-protocol counter blocks (header/value pairs). */
+function renderProcNetSnmp(socketTable: SocketTable): string {
+  const currEstab = socketTable.getAll()
+    .filter((s) => s.protocol === 'tcp' && s.state === 'ESTABLISHED').length;
+  return [
+    'Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates',
+    'Ip: 1 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0',
+    'Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps',
+    'Icmp: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0',
+    'IcmpMsg: InType8 OutType0',
+    'IcmpMsg: 0 0',
+    'Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors',
+    `Tcp: 1 200 120000 -1 0 0 0 0 ${currEstab} 0 0 0 0 0 0`,
+    'Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
+    'Udp: 0 0 0 0 0 0 0 0',
+    'UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti',
+    'UdpLite: 0 0 0 0 0 0 0 0',
+    '',
+  ].join('\n');
 }
 
 // ─── /proc/net rendering ──────────────────────────────────────────────────

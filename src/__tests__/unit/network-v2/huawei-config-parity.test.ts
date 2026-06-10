@@ -403,6 +403,17 @@ describe('Batch 13: display debugging status', () => {
     const result = await r.executeCommand('display debugging');
     expect(result).toContain('DHCP');
   });
+
+  it('should reflect generic "debugging ip icmp" and clear on undo', async () => {
+    const r = new HuaweiRouter('R1');
+    expect(await r.executeCommand('display debugging')).toContain('No debugging');
+    await r.executeCommand('debugging ip icmp');
+    const on = await r.executeCommand('display debugging');
+    expect(on).toContain('ip icmp');
+    expect(on).toContain('is on');
+    await r.executeCommand('undo debugging ip icmp');
+    expect(await r.executeCommand('display debugging')).toContain('No debugging');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

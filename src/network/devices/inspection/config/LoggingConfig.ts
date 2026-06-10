@@ -772,9 +772,10 @@ export class LoggingConfig {
       lines.push('');
       for (const m of this.messages) {
         const sevNum = this.SEVERITY_ORDER[m.severity];
-        const date = new Date(m.ts);
-        const stamp = `${date.toISOString().slice(5, 19).replace('T', ' ')}`;
-        lines.push(`${stamp}: %${m.tag.toUpperCase()}-${sevNum}-${m.severity.toUpperCase()}: ${m.text}`);
+        const prefix = this.timestamps
+          ? `${new Date(m.ts).toISOString().slice(5, 19).replace('T', ' ')}: `
+          : '';
+        lines.push(`${prefix}%${m.tag.toUpperCase()}-${sevNum}-${m.severity.toUpperCase()}: ${m.text}`);
       }
     }
     return lines.join('\n');

@@ -614,6 +614,23 @@ export abstract class LinuxMachine extends EndHost {
     this.syncHostnameFiles(hostname);
   }
 
+  protected override onDhcpLeaseConfigured(iface: string): void {
+    const lease = this.dhcpClient.getState(iface)?.lease;
+    const dns = lease?.dnsServers ?? [];
+    if (dns.length === 0) return;
+    const lines: string[] = [];
+    if (lease?.domainName) lines.push(`search ${lease.domainName}`);
+    for (const ip of dns) lines.push(`nameserver ${ip}`);
+    this.executor.vfs.writeFile('/etc/resolv.conf', lines.join('\n') + '\n', 0, 0, 0o022);
+    if (dns[0]) this.dnsResolverIP = dns[0];
+  }
+
+  protected override onDhcpLeaseReleased(iface: string): void {
+    void iface;
+    this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
+    this.dnsResolverIP = '';
+  }
+
   private syncHostnameFiles(hostname: string): void {
     const vfs = this.executor.vfs;
     vfs.writeFile('/etc/hostname', hostname + '\n', 0, 0, 0o022);

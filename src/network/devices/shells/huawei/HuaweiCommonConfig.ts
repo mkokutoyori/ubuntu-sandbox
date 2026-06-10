@@ -54,7 +54,13 @@ export function setHeader(): string {
  * Called by BOTH HuaweiSwitchShell and HuaweiVRPShell so the wiring
  * itself isn't duplicated (DRY).
  */
-export function registerHuaweiCommonMgmt(trie: CommandTrie): void {
+export function registerHuaweiCommonMgmt(trie: CommandTrie, debugFlags?: Set<string>): void {
+  const onDebug = (label: string) => { debugFlags?.add(label); };
+  const offDebug = (label?: string) => {
+    if (!debugFlags) return;
+    if (!label) { debugFlags.clear(); return; }
+    debugFlags.delete(label);
+  };
   trie.registerGreedy('save', 'Save current configuration', () => saveConfiguration());
   trie.register('reboot', 'Reboot the device', () => rebootDevice());
   trie.register('reset saved-configuration', 'Erase startup configuration', () =>
@@ -62,4 +68,39 @@ export function registerHuaweiCommonMgmt(trie: CommandTrie): void {
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
   trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());
+  trie.register('terminal monitor', 'Enable terminal monitoring', () => 'Info: Current terminal monitor is on.');
+  trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
+  trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');
+  trie.register('undo terminal debugging', 'Disable terminal debugging', () => 'Info: Current terminal debugging is off.');
+  trie.registerGreedy('debugging ip icmp', 'Enable ICMP debugging', (args) => {
+    const what = `ip icmp${args.length ? ' ' + args.join(' ') : ''}`;
+    onDebug(`${what} debugging is on`);
+    return `Info: ${what} debugging is on.`;
+  });
+  trie.registerGreedy('debugging ip packet', 'Enable IP packet debugging', (args) => {
+    const what = `ip packet${args.length ? ' ' + args.join(' ') : ''}`;
+    onDebug(`${what} debugging is on`);
+    return `Info: ${what} debugging is on.`;
+  });
+  trie.registerGreedy('undo debugging ip icmp', 'Disable ICMP debugging', () => {
+    offDebug('ip icmp debugging is on');
+    return 'Info: ip icmp debugging is off.';
+  });
+  trie.registerGreedy('undo debugging ip packet', 'Disable IP packet debugging', () => {
+    offDebug('ip packet debugging is on');
+    return 'Info: ip packet debugging is off.';
+  });
+  trie.registerGreedy('debugging', 'Enable debugging', (args) => {
+    const what = args.join(' ') || 'all';
+    onDebug(`${what} debugging is on`);
+    return `Info: ${what} debugging is on.`;
+  });
+  trie.registerGreedy('undo debugging', 'Disable debugging', (args) => {
+    if (args.join(' ').toLowerCase().startsWith('all')) {
+      offDebug();
+      return 'Info: All possible debugging functions are off.';
+    }
+    offDebug(`${args.join(' ')} debugging is on`);
+    return `Info: ${args.join(' ')} debugging is off.`;
+  });
 }

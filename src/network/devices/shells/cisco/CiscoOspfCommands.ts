@@ -309,6 +309,46 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
+  trie.registerGreedy('no default-information originate', 'Stop distributing default route', () => {
+    ctx.r()._getOSPFEngineInternal()?.setDefaultInformationOriginate(false);
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.defaultInfoMetricType = undefined;
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no redistribute', 'Stop redistributing routes', (args) => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const protocol = (args[0] ?? '').toLowerCase();
+    if (protocol === 'static') extra.redistributeStatic = undefined;
+    else if (protocol === 'connected') extra.redistributeConnected = undefined;
+    else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no distribute-list', 'Remove distribute-list filter', () => {
+    ctx.r()._getOSPFExtraConfig().distributeList = undefined;
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
+  trie.registerGreedy('no area', 'Remove OSPF area parameter', (args) => {
+    const areaId = args[0];
+    const subCmd = (args[1] ?? '').toLowerCase();
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (!ospf || areaId === undefined) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    if (subCmd === 'range') {
+      const ranges = extra.areaRanges.get(areaId);
+      if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[2] && r.mask === args[3])));
+    } else if (subCmd === 'stub' || subCmd === 'nssa') {
+      ospf.setAreaType?.(areaId, 'normal');
+    }
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
+
   trie.registerGreedy('timers throttle spf', 'Set OSPF SPF throttle timers', (args) => {
     if (args.length < 3) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
@@ -736,6 +776,26 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
+  const noOspfIfDefaults: Record<string, Record<string, unknown>> = {
+    'no ip ospf cost': { cost: 1 },
+    'no ip ospf priority': { priority: 1 },
+    'no ip ospf hello-interval': { helloInterval: 10 },
+    'no ip ospf dead-interval': { deadInterval: 40 },
+    'no ip ospf network': { networkType: 'broadcast' },
+    'no ip ospf authentication': { authType: 0 },
+    'no ip ospf authentication-key': { authKey: '' },
+    'no ip ospf message-digest-key': { authType: 0, authKey: '' },
+  };
+  for (const [cmd, defaults] of Object.entries(noOspfIfDefaults)) {
+    configIfTrie.registerGreedy(cmd, 'Reset OSPF interface setting', () => {
+      const ifName = ctx.getSelectedInterface();
+      if (!ifName) return '% No interface selected';
+      setPendingOspfIf(ifName, defaults);
+      ctx.r()._ospfAutoConverge?.();
+      return '';
+    });
+  }
+
   configIfTrie.registerGreedy('ip ospf demand-circuit', 'Configure demand circuit', (_args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
@@ -1033,6 +1093,16 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('show ip ospf neighbor', 'Display OSPF neighbor table', () => showIpOspfNeighbor(getRouter()));
+  trie.registerGreedy('show ip ospf neighbor', 'Display OSPF neighbor table (filtered)', (args) => {
+    if (!args.length || args[0].toLowerCase() === 'detail') return showIpOspfNeighbor(getRouter());
+    const full = showIpOspfNeighbor(getRouter());
+    const lines = full.split('\n');
+    const header = lines.filter(l => /Neighbor ID|^$/.test(l));
+    const key = args[0];
+    const matched = lines.filter(l => l.includes(key));
+    if (matched.length === 0) return header.join('\n');
+    return [lines[0], ...matched].join('\n');
+  });
   trie.register('show ip ospf summary-address', 'Display OSPF summary addresses', () => showIpOspfSummaryAddress(getRouter()));
   trie.register('show ip ospf rib', 'Display OSPF local RIB', () => showIpOspfRib(getRouter()));
   trie.register('show ip ospf events', 'Display OSPF event log', () => showIpOspfEvents(getRouter()));
@@ -1112,6 +1182,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (_args) => showIpOspfNeighborDetail(getRouter()));
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
+  trie.register('show ip ospf database database-summary', 'Display LSDB counts', () => showIpOspfDatabaseSummaryCounts(getRouter()));
   trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail'));
   trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail'));
   trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
@@ -1262,6 +1333,48 @@ function showIpOspfNeighbor(router: Router): string {
     );
   }
 
+  return lines.join('\n');
+}
+
+function showIpOspfDatabaseSummaryCounts(router: Router): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return '% OSPF is not configured';
+  router._ospfAutoConverge();
+  const lsdb = ospf.getLSDB();
+  const lines = [
+    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    '',
+  ];
+  const totals: Record<number, number> = {};
+  for (const [areaId, areaDB] of lsdb.areas) {
+    const byType: Record<number, number> = {};
+    for (const lsa of areaDB.values()) {
+      byType[lsa.lsType] = (byType[lsa.lsType] ?? 0) + 1;
+      totals[lsa.lsType] = (totals[lsa.lsType] ?? 0) + 1;
+    }
+    const sub = Object.values(byType).reduce((a, b) => a + b, 0);
+    lines.push(`Area ${areaId} database summary`);
+    lines.push('  LSA Type      Count    Delete   Maxage');
+    lines.push(`  Router        ${String(byType[1] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Network       ${String(byType[2] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Summary Net   ${String(byType[3] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Summary ASBR  ${String(byType[4] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Type-7 Ext    ${String(byType[7] ?? 0).padEnd(9)}0        0`);
+    lines.push(`  Subtotal      ${String(sub).padEnd(9)}0        0`);
+    lines.push('');
+  }
+  const extCount = [...lsdb.external.values()].length;
+  totals[5] = extCount;
+  const grand = Object.values(totals).reduce((a, b) => a + b, 0);
+  lines.push(`Process ${ospf.getProcessId()} database summary`);
+  lines.push('  LSA Type      Count    Delete   Maxage');
+  lines.push(`  Router        ${String(totals[1] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Network       ${String(totals[2] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Summary Net   ${String(totals[3] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Summary ASBR  ${String(totals[4] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Type-5 Ext    ${String(totals[5] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Type-7 Ext    ${String(totals[7] ?? 0).padEnd(9)}0        0`);
+  lines.push(`  Total         ${String(grand).padEnd(9)}0        0`);
   return lines.join('\n');
 }
 
@@ -1500,7 +1613,9 @@ function showIpOspfNeighborDetail(router: Router): string {
     lines.push(` Neighbor ${n.routerId}, interface address ${n.ipAddress}`);
     lines.push(`    In the area ${iface?.areaId ?? '0.0.0.0'} via interface ${n.iface}`);
     lines.push(`    Neighbor priority is ${n.priority}, State is ${n.state.toUpperCase()}, ${ospf.getNeighborChangeCount()} state changes`);
-    lines.push(`    DR is ${n.neighborDR} BDR is ${n.neighborBDR}`);
+    const drId = iface?.dr && iface.dr !== '0.0.0.0' ? iface.dr : n.neighborDR;
+    const bdrId = iface?.bdr && iface.bdr !== '0.0.0.0' ? iface.bdr : n.neighborBDR;
+    lines.push(`    DR is ${drId} BDR is ${bdrId}`);
     lines.push(`    Options is 0x${(n.options ?? 0x02).toString(16).padStart(2, '0')}`);
     lines.push(`    Dead timer due in 00:00:${String(deadInterval).padStart(2, '0')}`);
     lines.push(`    Neighbor is up for 00:00:00`);

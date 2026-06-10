@@ -196,6 +196,14 @@ describe('Linux end-to-end port coherence', () => {
     expect(procNet).toContain(':0016');
   });
 
+  it('exposes protocol counters through /proc/net/snmp', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV1');
+    const snmp = await srv.executeCommand('cat /proc/net/snmp');
+    expect(snmp).toContain('Icmp: InMsgs');
+    expect(snmp).toContain('Ip: Forwarding');
+    expect(snmp).toContain('Tcp: RtoAlgorithm');
+  });
+
   it('resolves a service through getent services', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
     const out = await srv.executeCommand('getent services ssh');
