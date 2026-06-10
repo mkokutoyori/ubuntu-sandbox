@@ -82,3 +82,68 @@
   recalculée par convergence événementielle, pas par keepalive.
 - DUAL multi-sauts non simulé (le moteur n'apprend que les préfixes
   originés par les voisins directs).
+
+---
+
+## Lot 2 — RIP : moteur unique réactif, multicast RIPv2, triggered updates RFC
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Moteur RIP dupliqué (~430 lignes)** : `devices/router/RouterRIPEngine.ts`
+   était une copie quasi-verbatim de `rip/RIPEngine.ts` *sans*
+   l'infrastructure réactive (timers natifs `setTimeout`/`setInterval`
+   non injectables, aucun événement de bus, aucun Signal). Le Router de
+   production utilisait la copie legacy ; le moteur réactif n'était
+   exercé que par un test.
+2. **RIPv2 émettait en broadcast** `255.255.255.255` / MAC broadcast au
+   lieu du groupe multicast `224.0.0.9` / `01:00:5e:00:00:09`
+   (RFC 2453 §4.3). Pire : l'événement `rip.update.sent` publiait
+   `destIp: '224.0.0.9'` alors que le paquet réel partait en broadcast.
+3. **Triggered updates incomplets** (RFC 2453 §3.10.1) : déclenchés
+   uniquement à l'invalidation ; jamais à l'apprentissage d'une route
+   ni au changement de métrique ; envoi immédiat sans le délai
+   aléatoire 1–5 s anti-tempête ; une rafale de changements produisait
+   une rafale de paquets au lieu d'un lot.
+4. **Filtre L2 du Router** : seul le multicast IPv6 (`33:33`) était
+   accepté — toute trame au MAC multicast IPv4 (`01:00:5e:…`) était
+   jetée par le routeur de base (les sous-classes Cisco/Huawei ne la
+   rattrapaient que pour leurs propres protocoles FHRP/IGMP/PIM).
+5. **Livraison locale L3** : seules l'IP d'interface exacte et
+   `255.255.255.255` étaient consommées ; un datagramme multicast
+   passait dans le chemin de forwarding.
+6. **Hack de constructeur** : `new (Object.getPrototypeOf(x).constructor)`
+   pour éviter d'importer `IPAddress`/`SubnetMask`/`MACAddress` — alors
+   qu'aucun cycle d'import n'existe.
+
+### Corrections livrées
+
+- **`RouterRIPEngine` réécrit en Adapter mince** (~110 lignes au lieu de
+  430) : il câble ports/RIB/bus/scheduler du Router sur **l'unique**
+  moteur réactif `rip/RIPEngine`. Une seule source de vérité RFC 2453.
+- **`rip/RIPEngine`** : destination v2 = `224.0.0.9` + MAC RFC 1112,
+  v1 = broadcast (sélection dynamique via `getRipVersion`) ; version
+  reflétée dans les paquets émis ; imports propres ; nouvelle méthode
+  `configure()` pour la fusion de config au ré-enable.
+- **Triggered updates conformes** : coalescence des routes changées dans
+  une fenêtre aléatoire 1–5 s (constantes `RIP_TIMERS.TRIGGERED_*`),
+  flush en un lot par interface avec split-horizon/poison-reverse,
+  déclenchement sur apprentissage, changement de métrique et
+  invalidation ; rafraîchissement sans changement ⇒ aucun trigger.
+- **Router (base)** : filtre L2 accepte `01:00:5e:…` ; le contrôle-plane
+  consomme localement broadcast **et** multicast IPv4 (jamais forwardés).
+
+### Tests
+
+- 6 nouveaux tests dans `RIP.reactive.test.ts` : adressage multicast v2 /
+  broadcast v1, fenêtre 1–5 s (rien avant 1 s, flush à 5 s), coalescence
+  d'une rafale en un seul lot, trigger sur changement de métrique,
+  absence de trigger sur refresh sans changement.
+- Régression complète network-v2 + events : 278 fichiers / 6831 tests OK.
+
+### Limites restantes (suivi)
+
+- Pas d'authentification RIPv2 (MD5/texte, RFC 2453 §4.1).
+- La suppression « pas de triggered si update régulier imminent »
+  (§3.10.1, optionnelle) n'est pas implémentée.

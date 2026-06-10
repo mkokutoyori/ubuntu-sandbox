@@ -274,6 +274,8 @@ export abstract class Router extends Equipment {
       pushRoute: (route) => { this.routingTable.push(route); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
+      getBus: () => this.getBus(),
+      getScheduler: () => this.getRouterScheduler(),
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -794,9 +796,12 @@ export abstract class Router extends Equipment {
     const isForUs = frame.dstMAC.equals(port.getMAC());
     const isBroadcast = frame.dstMAC.isBroadcast();
     const octets = frame.dstMAC.getOctets();
-    const isMulticast = octets[0] === 0x33 && octets[1] === 0x33; // IPv6 multicast MAC
+    const isIpv6Multicast = octets[0] === 0x33 && octets[1] === 0x33;
+    // RFC 1112 §6.4 — IPv4 multicast maps to 01:00:5e:…
+    const isIpv4Multicast =
+      octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
 
-    if (!isForUs && !isBroadcast && !isMulticast) {
+    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast) {
       return;
     }
 
@@ -807,7 +812,7 @@ export abstract class Router extends Equipment {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      if (this.ipv6Engine.isRoutingEnabled() || isMulticast) {
+      if (this.ipv6Engine.isRoutingEnabled() || isIpv6Multicast) {
         this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet);
       }
     }
@@ -922,23 +927,26 @@ export abstract class Router extends Equipment {
 
     // Phase C: Forwarding Decision
 
-    // C.1: Is this packet for us? (any interface IP or broadcast)
+    // C.1: Is this packet for us? (any interface IP, broadcast, or
+    // link-local multicast — 224.0.0.0/24 is consumed by the control
+    // plane and MUST never be forwarded, RFC 1112/4541)
     const destIP = ipPkt.destinationIP;
     const isBroadcast = destIP.toString() === '255.255.255.255';
+    const destFirstOctet = Number(destIP.toString().split('.')[0] ?? 0);
+    const isMulticast = destFirstOctet >= 224 && destFirstOctet <= 239;
 
-    if (!isBroadcast) {
-      for (const [, port] of this.ports) {
-        const myIP = port.getIPAddress();
-        if (myIP && destIP.equals(myIP)) {
-          // Control plane — deliver locally (ACL does not filter router-destined traffic)
-          this.handleLocalDelivery(inPort, ipPkt);
-          return;
-        }
-      }
-    } else {
-      // Broadcast packet — deliver locally
+    if (isBroadcast || isMulticast) {
+      // Broadcast/multicast packet — deliver locally, never forward
       this.handleLocalDelivery(inPort, ipPkt);
       return;
+    }
+    for (const [, port] of this.ports) {
+      const myIP = port.getIPAddress();
+      if (myIP && destIP.equals(myIP)) {
+        // Control plane — deliver locally (ACL does not filter router-destined traffic)
+        this.handleLocalDelivery(inPort, ipPkt);
+        return;
+      }
     }
 
     // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL
