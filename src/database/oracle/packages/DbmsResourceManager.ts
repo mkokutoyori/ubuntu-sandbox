@@ -27,8 +27,7 @@ import { ConsumerGroup, ResourcePlan, PlanDirective } from '../resource/Resource
 import type { ResourceManager } from '../resource/ResourceManager';
 
 function rm(ctx: PackageCallContext): ResourceManager | null {
-  const s = ctx.session as unknown as { _resourceManager?: ResourceManager };
-  return s._resourceManager ?? null;
+  return ctx.services.resourceManager ?? null;
 }
 
 class CreateConsumerGroup implements IPackageRoutine {

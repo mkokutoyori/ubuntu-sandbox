@@ -2,8 +2,7 @@ import { builtinPackageRegistry, type IPackageRoutine, type PackageCallContext }
 import type { SchedulerManager } from '../scheduler/SchedulerManager';
 
 function mgr(ctx: PackageCallContext): SchedulerManager | null {
-  const s = ctx.session as unknown as { _schedulerManager?: SchedulerManager };
-  return s._schedulerManager ?? null;
+  return ctx.services.scheduler ?? null;
 }
 
 function parseOwnerJob(jobName: string, ctx: PackageCallContext): { owner: string; jobName: string } {

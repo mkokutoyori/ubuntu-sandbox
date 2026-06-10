@@ -158,6 +158,23 @@ flaky §12 est éliminé à la racine.
 hashcat) verts ; `unit/database/` + `crypto/` + `ipsec-algorithms` + `wan-vpn` :
 2861/2861.
 
+### 2026-06-10 — Suppression des injections cachées session → paquets DBMS_*
+**Défaillance :** `OracleDatabase.openSession` faisait de la contrebande de managers
+en écrivant des champs invisibles sur chaque `OracleSession` via
+`session as unknown as { _awrManager; _resourceManager; _statisticsManager;
+_statisticsManagerStorage; _schedulerManager }`. Les paquets `DBMS_STATS`,
+`DBMS_WORKLOAD_REPOSITORY`, `DBMS_RESOURCE_MANAGER` et `DBMS_SCHEDULER` les
+relisaient par les mêmes casts. Aucun contrat typé : un renommage silencieusement
+cassant, des dépendances invisibles, et l'objet session pollué par des
+responsabilités qui ne sont pas les siennes.
+**Correction :** `PackageCallContext` (le contrat Strategy existant du
+`PackageRegistry`) gagne un champ `services: PackageServices` typé (awr,
+resourceManager, statistics, scheduler, storage — tous optionnels, imports
+type-only donc pas de cycle). `OracleDatabase` construit le bundle au point
+d'invocation (`packageServices()`), les quatre accesseurs des paquets lisent
+`ctx.services.*`. Plus aucun champ caché sur la session.
+**Validation :** `npx tsc --noEmit` propre ; `unit/database/` : 2520/2520.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

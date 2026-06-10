@@ -18,8 +18,7 @@ import { builtinPackageRegistry, type IPackageRoutine, type PackageCallContext }
 import type { StatisticsManager } from '../statistics/StatisticsManager';
 
 function stats(ctx: PackageCallContext): StatisticsManager | null {
-  const s = ctx.session as unknown as { _statisticsManager?: StatisticsManager };
-  return s._statisticsManager ?? null;
+  return ctx.services.statistics ?? null;
 }
 
 class GatherIndexStats implements IPackageRoutine {
@@ -28,9 +27,7 @@ class GatherIndexStats implements IPackageRoutine {
     const m = stats(ctx); if (!m) return null;
     const owner = (args[0] ?? '').toUpperCase();
     const indexName = (args[1] ?? '').toUpperCase();
-    const storage = (ctx.session as unknown as {
-      _statisticsManagerStorage?: import('../OracleStorage').OracleStorage;
-    })._statisticsManagerStorage;
+    const storage = ctx.services.storage;
     if (!storage) return null;
     const idx = storage.getIndexes(owner).find((x) => x.name.toUpperCase() === indexName);
     if (!idx) return null;
@@ -72,8 +69,7 @@ class GatherDatabaseStats implements IPackageRoutine {
   readonly fullName = 'DBMS_STATS.GATHER_DATABASE_STATS';
   invoke(_args: string[], ctx: PackageCallContext): string | null {
     const m = stats(ctx); if (!m) return null;
-    const storage = (ctx.session as unknown as { _statisticsManagerStorage?: import('../OracleStorage').OracleStorage })
-      ._statisticsManagerStorage;
+    const storage = ctx.services.storage;
     if (!storage) return null;
     const schemas = new Set(storage.getAllTables().map(t => t.schema));
     let total = 0;

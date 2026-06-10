@@ -138,21 +138,22 @@ export class OracleDatabase implements SqlCommandHost {
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
       instance: this.buildInstanceIdentity(),
     });
-    // Hidden injections so built-in package routines can reach the
-    // shared per-instance managers without importing the world.
-    const inj = session as unknown as {
-      _awrManager: typeof this.instance.awrManager;
-      _resourceManager: typeof this.instance.resourceManager;
-      _statisticsManager: typeof this.instance.statistics;
-      _statisticsManagerStorage: typeof this.storage;
-    };
-    inj._awrManager = this.instance.awrManager;
-    inj._resourceManager = this.instance.resourceManager;
-    inj._statisticsManager = this.instance.statistics;
-    inj._statisticsManagerStorage = this.storage;
-    (session as unknown as { _schedulerManager: SchedulerManager })._schedulerManager = this.scheduler;
     this.sessions.set(args.sid, session);
     return session;
+  }
+
+  /**
+   * Typed manager bundle handed to built-in package routines — replaces the
+   * former hidden `_xxxManager` fields smuggled onto each OracleSession.
+   */
+  private packageServices(): import('./packages/PackageRegistry').PackageServices {
+    return {
+      awr: this.instance.awrManager,
+      resourceManager: this.instance.resourceManager,
+      statistics: this.instance.statistics,
+      scheduler: this.scheduler,
+      storage: this.storage,
+    };
   }
 
   /** Close an OracleSession (called on disconnect). */
@@ -2164,7 +2165,7 @@ export class OracleDatabase implements SqlCommandHost {
     const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
     const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
     if (!session) return;
-    const result = routine.invoke(args, { session, rawCall: call });
+    const result = routine.invoke(args, { session, rawCall: call, services: this.packageServices() });
     if (result !== null) output.push(result);
   }
 
