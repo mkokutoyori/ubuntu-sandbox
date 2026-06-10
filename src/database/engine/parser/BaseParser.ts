@@ -314,7 +314,8 @@ export abstract class BaseParser {
 
     if (this.matchKeyword('NATURAL')) {
       joinType = 'NATURAL';
-      this.matchKeyword('INNER') || this.matchKeyword('LEFT') || this.matchKeyword('RIGHT') || this.matchKeyword('FULL');
+      // Consume the optional join-direction keyword, if present.
+      if (!this.matchKeyword('INNER') && !this.matchKeyword('LEFT') && !this.matchKeyword('RIGHT')) this.matchKeyword('FULL');
       this.matchKeyword('OUTER');
       hasJoinKeyword = true;
     } else if (this.matchKeyword('INNER')) {
@@ -373,14 +374,14 @@ export abstract class BaseParser {
     let offset: Expression | undefined;
     if (this.matchKeyword('OFFSET')) {
       offset = this.parseExpression();
-      this.matchKeyword('ROWS') || this.matchKeyword('ROW');
+      if (!this.matchKeyword('ROWS')) this.matchKeyword('ROW');
     }
     // FETCH FIRST/NEXT n ROWS ONLY/WITH TIES
     if (this.matchKeyword('FETCH')) {
-      this.matchKeyword('FIRST') || this.matchKeyword('NEXT');
+      if (!this.matchKeyword('FIRST')) this.matchKeyword('NEXT');
       const count = this.parseExpression();
       const percent = this.matchKeyword('PERCENT');
-      this.matchKeyword('ROWS') || this.matchKeyword('ROW');
+      if (!this.matchKeyword('ROWS')) this.matchKeyword('ROW');
       const withTies = this.matchKeyword('WITH') ? (this.expectKeyword('TIES'), true) : (this.matchKeyword('ONLY'), false);
       return { offset, count, percent: percent || undefined, withTies: withTies || undefined };
     }
@@ -1919,7 +1920,7 @@ export abstract class BaseParser {
       this.advance();
       let val = token.value;
       // Oracle q-quote syntax: q'[text]', q'{text}', q'<text>', q'(text)', q'!text!'
-      const qMatch = val.match(/^[qQ]'([\[\{<(])([\s\S]*?)([\]\}>)])'$/);
+      const qMatch = val.match(/^[qQ]'([[{<(])([\s\S]*?)([\]}>)])'$/);
       if (qMatch) {
         val = qMatch[2];
       } else if (/^[qQ]'(.)[\s\S]*\1'$/.test(val)) {

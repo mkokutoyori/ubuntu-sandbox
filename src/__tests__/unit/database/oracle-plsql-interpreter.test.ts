@@ -629,3 +629,128 @@ describe('DBMS_OUTPUT — PUT / NEW_LINE / ENABLE / DISABLE buffering', () => {
     sh.dispose();
   });
 });
+
+describe('PL/SQL compilation errors (no silent fallback)', () => {
+  it('reports ORA-06550/PLS-00103 for an unparseable block', () => {
+    const sh = session(server('perr1'));
+    const out = block(sh, `
+      BEGIN
+        IF THEN END IF;
+      END;
+    `);
+    expect(out).toMatch(/ORA-06550/);
+    expect(out).toMatch(/PLS-00103/);
+    expect(out).not.toMatch(/successfully completed/);
+    sh.dispose();
+  });
+
+  it('reports ORA-06550/PLS-00103 for an unterminated string literal', () => {
+    const sh = session(server('perr2'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE('oops);
+      END;
+    `);
+    expect(out).toMatch(/ORA-06550/);
+    expect(out).toMatch(/PLS-00103/);
+    sh.dispose();
+  });
+});
+
+describe('PL/SQL constructs formerly only fake-succeeding in the legacy engine', () => {
+  it('evaluates ANSI DATE literals in conditions', () => {
+    const sh = session(server('feat1'));
+    const out = block(sh, `
+      BEGIN
+        IF SYSDATE > DATE '2020-01-01' THEN
+          DBMS_OUTPUT.PUT_LINE('past 2020');
+        ELSE
+          DBMS_OUTPUT.PUT_LINE('not yet');
+        END IF;
+      END;
+    `);
+    expect(out).toMatch(/past 2020/);
+    sh.dispose();
+  });
+
+  it('FORALL executes the DML once per index with collection binds', () => {
+    const sh = session(server('feat2'));
+    run(sh, 'CREATE TABLE accounts (id NUMBER, balance NUMBER);');
+    const out = block(sh, `
+      DECLARE
+        TYPE t IS TABLE OF NUMBER;
+        v_ids t := t(10, 20, 30);
+      BEGIN
+        FORALL i IN 1..v_ids.COUNT
+          INSERT INTO accounts (id, balance) VALUES (v_ids(i), v_ids(i) * 10);
+        COMMIT;
+      END;
+    `);
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT COUNT(*) FROM accounts;')).toMatch(/3/);
+    expect(run(sh, 'SELECT balance FROM accounts WHERE id = 20;')).toMatch(/200/);
+    sh.dispose();
+  });
+
+  it('FORALL ... SAVE EXCEPTIONS parses and runs', () => {
+    const sh = session(server('feat3'));
+    run(sh, 'CREATE TABLE accounts (id NUMBER, balance NUMBER);');
+    run(sh, 'INSERT INTO accounts VALUES (10, 1);');
+    const out = block(sh, `
+      DECLARE
+        TYPE t IS TABLE OF NUMBER;
+        v_ids t := t(10);
+      BEGIN
+        FORALL i IN 1..v_ids.COUNT SAVE EXCEPTIONS
+          UPDATE accounts SET balance = balance + 1 WHERE id = v_ids(i);
+      END;
+    `);
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT balance FROM accounts WHERE id = 10;')).toMatch(/2/);
+    sh.dispose();
+  });
+
+  it('PRAGMA AUTONOMOUS_TRANSACTION procedures execute their DML for real', () => {
+    const sh = session(server('feat4'));
+    run(sh, 'CREATE TABLE log_msg (level VARCHAR2(10), msg VARCHAR2(200));');
+    run(sh, "CREATE OR REPLACE PROCEDURE log_autonomous(p_msg VARCHAR2) IS PRAGMA AUTONOMOUS_TRANSACTION; BEGIN INSERT INTO log_msg (level, msg) VALUES ('AUTO', p_msg); COMMIT; END;");
+    const out = run(sh, "EXEC log_autonomous('hello')");
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT msg FROM log_msg;')).toMatch(/hello/);
+    sh.dispose();
+  });
+});
+
+describe('Stored package functions callable from SQL and PL/SQL', () => {
+  function pkgSession(name: string) {
+    const sh = session(server(name));
+    run(sh, "CREATE OR REPLACE PACKAGE emp_pkg AS PROCEDURE hello(p_name VARCHAR2); FUNCTION double_it(n NUMBER) RETURN NUMBER; END emp_pkg;");
+    run(sh, "CREATE OR REPLACE PACKAGE BODY emp_pkg AS PROCEDURE hello(p_name VARCHAR2) IS BEGIN DBMS_OUTPUT.PUT_LINE('Hello ' || p_name); END; FUNCTION double_it(n NUMBER) RETURN NUMBER IS BEGIN RETURN n * 2; END; END emp_pkg;");
+    return sh;
+  }
+
+  it('SELECT pkg.fn(...) FROM dual evaluates the stored function', () => {
+    const sh = pkgSession('pkgsql1');
+    expect(run(sh, 'SELECT emp_pkg.double_it(21) FROM dual;')).toMatch(/42/);
+    sh.dispose();
+  });
+
+  it('package function returns its value inside PL/SQL expressions', () => {
+    const sh = pkgSession('pkgsql2');
+    const out = block(sh, 'BEGIN DBMS_OUTPUT.PUT_LINE(emp_pkg.double_it(5)); END;');
+    expect(out).toMatch(/\b10\b/);
+    sh.dispose();
+  });
+
+  it('package procedure runs via EXEC with DBMS_OUTPUT', () => {
+    const sh = pkgSession('pkgsql3');
+    expect(run(sh, "EXEC emp_pkg.hello('World')")).toMatch(/Hello World/);
+    sh.dispose();
+  });
+
+  it('unknown function still raises ORA-00904 from SQL', () => {
+    const sh = pkgSession('pkgsql4');
+    expect(run(sh, 'SELECT no_such_fn(1) FROM dual;')).toMatch(/ORA-00904/);
+    sh.dispose();
+  });
+});

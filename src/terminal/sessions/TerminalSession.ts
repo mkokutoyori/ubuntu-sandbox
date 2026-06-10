@@ -669,6 +669,9 @@ export abstract class TerminalSession {
       const value = isPassword ? this._passwordBuf : this._inputBuf;
       const promptText = (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')
         ? this.inputMode.promptText : '';
+      // Echo as a prompt+value pair: the prompt lands in `promptText`
+      // (composed visually by the renderer), the value in `text` —
+      // masked for passwords, in the clear otherwise.
       this.addEchoLine(promptText, isPassword ? '*'.repeat(value.length) : value);
       this._passwordBuf = '';
       this._inputBuf = '';

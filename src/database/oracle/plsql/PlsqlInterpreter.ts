@@ -6,7 +6,7 @@ import {
   CursorRuntime, ExitSignal, ContinueSignal, ReturnSignal, GotoSignal, PlsqlHost,
 } from './PlsqlValue';
 import { PlsqlException, findPredefinedException, matchPredefinedException } from './PlsqlException';
-import { parsePlsql } from './PlsqlParser';
+import { parsePlsql, PlsqlParser } from './PlsqlParser';
 
 const MAX_LOOP = 1_000_000;
 
@@ -118,6 +118,11 @@ export class PlsqlInterpreter {
         break;
       case 'subprogram':
         scope.subprograms.set(d.name, d);
+        break;
+      case 'pragma':
+        // Compile-time directive (AUTONOMOUS_TRANSACTION, …): the simulator
+        // runs every statement in the session's single transaction context,
+        // so these have no runtime effect.
         break;
     }
   }
@@ -605,6 +610,15 @@ export class PlsqlInterpreter {
     return null;
   }
 
+  /**
+   * Bridge for SQL-level scalar calls (SELECT pkg.fn(…) FROM dual):
+   * evaluate a stored FUNCTION with pre-evaluated argument values.
+   */
+  callStoredFunction(unit: import('./PlsqlValue').StoredUnitLike, argValues: Scalar[]): PlsqlValue {
+    const args: CallArg[] = argValues.map(v => ({ name: null, value: scalarToExpr(v) }));
+    return this.callStoredUnit(unit, args, new Scope(null));
+  }
+
   private callStoredUnit(unit: import('./PlsqlValue').StoredUnitLike, args: CallArg[], scope: Scope): PlsqlValue {
     const sub = this.parseUnit(unit);
     if (!sub) return null;
@@ -620,16 +634,26 @@ export class PlsqlInterpreter {
     const cached = this.unitCache.get(unit);
     if (cached !== undefined) return cached;
     const params = unit.parameters.map(p => `${p.name} ${p.mode} ${p.dataType}${p.defaultValue ? ' DEFAULT ' + p.defaultValue : ''}`).join(', ');
+    // Package members are stored as "PKG.MEMBER"; the generated header must
+    // use the bare member name (a dotted name is not a valid subprogram
+    // identifier and would fail the parse below, silently nulling the unit).
+    const unitName = unit.name.split('.').pop()!;
     const header = unit.type === 'FUNCTION'
-      ? `FUNCTION ${unit.name}${params ? '(' + params + ')' : ''} RETURN ${unit.returnType} IS `
-      : `PROCEDURE ${unit.name}${params ? '(' + params + ')' : ''} IS `;
+      ? `FUNCTION ${unitName}${params ? '(' + params + ')' : ''} RETURN ${unit.returnType} IS `
+      : `PROCEDURE ${unitName}${params ? '(' + params + ')' : ''} IS `;
     const body = unit.body.trim();
     const bodyUpper = body.toUpperCase();
+    // The stored body may or may not carry its trailing semicolon; appending
+    // one unconditionally yields "END;;" which fails the parse below.
+    const terminator = /;\s*$/.test(body) ? '' : ';';
     let src: string;
     if (bodyUpper.startsWith('DECLARE')) {
-      src = header.replace(/ IS $/, ' IS ') + body.replace(/^DECLARE/i, '') + ';';
+      src = header + body.replace(/^DECLARE\b/i, '') + terminator;
     } else if (bodyUpper.startsWith('BEGIN')) {
-      src = header + body + ';';
+      src = header + body + terminator;
+    } else if (/\bBEGIN\b/i.test(body)) {
+      // `[local declarations] BEGIN … END` — DECLARE implied by IS/AS.
+      src = header + body + terminator;
     } else {
       src = header + 'BEGIN ' + body + ' END;';
     }
@@ -1107,9 +1131,38 @@ export class PlsqlInterpreter {
         const slot = scope.findSlot(name);
         if (slot && !isQualifier && !isCall && !this.isSqlKeyword(name)) {
           out += this.toSqlLiteral(slot.value);
-        } else {
-          out += name;
+          i = j;
+          continue;
         }
+        // Collection element reference in embedded SQL — `v_ids(i)` inside
+        // a FORALL/FOR body. The subscript is a PL/SQL expression evaluated
+        // here; the resolved element is inlined as a SQL literal.
+        if (slot && isCall && slot.value instanceof PlsqlCollection && !this.isSqlKeyword(name)) {
+          const open = k;
+          let depth = 0; let m = open;
+          while (m < n) {
+            if (sql[m] === '(') depth++;
+            else if (sql[m] === ')') { depth--; if (depth === 0) break; }
+            m++;
+          }
+          if (m < n) {
+            try {
+              const idxExpr = PlsqlParser.parseExpression(sql.substring(open + 1, m));
+              const idx = Number(this.evalExpr(idxExpr, scope));
+              const coll = slot.value;
+              if (!coll.entries.has(idx)) {
+                throw new PlsqlException('SUBSCRIPT_BEYOND_COUNT', 6533, 'ORA-06533: Subscript beyond count');
+              }
+              out += this.toSqlLiteral(coll.entries.get(idx) ?? null);
+              i = m + 1;
+              continue;
+            } catch (e) {
+              if (e instanceof PlsqlException) throw e;
+              // Unparseable subscript: leave the text for the SQL engine.
+            }
+          }
+        }
+        out += name;
         i = j;
         continue;
       }
@@ -1122,6 +1175,15 @@ export class PlsqlInterpreter {
   private isSqlKeyword(w: string): boolean {
     return SQL_KEYWORDS.has(w.toUpperCase());
   }
+}
+
+/** Wrap a pre-evaluated scalar as a literal expression node. */
+function scalarToExpr(v: Scalar): Expr {
+  if (v === null || v === undefined) return { kind: 'null' };
+  if (typeof v === 'number') return { kind: 'num', value: v };
+  if (typeof v === 'boolean') return { kind: 'bool', value: v };
+  if (v instanceof Date) return { kind: 'str', value: v.toISOString().slice(0, 19).replace('T', ' ') };
+  return { kind: 'str', value: String(v) };
 }
 
 export { cloneValue };

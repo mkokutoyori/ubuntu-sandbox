@@ -217,12 +217,6 @@ export class OracleCatalog extends BaseCatalog {
   getStoredUnits(): StoredUnit[] { return this.storedUnitsProvider?.() ?? []; }
   /** Custom profile overrides (legacy DBA_PROFILES fallback). */
   getProfiles(): ReadonlyMap<string, Map<string, string>> { return this.profiles; }
-  /** Role grants (DBA_ROLE_PRIVS). */
-  getRoleGrants(): ReadonlyArray<{ grantee: string; role: string; adminOption: boolean }> {
-    return this.roleGrants;
-  }
-  /** System privilege grants (DBA_SYS_PRIVS). */
-  getSysPrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.sysPrivileges; }
   /** Object privilege grants (DBA_TAB_PRIVS). */
   getTablePrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.tabPrivileges; }
   /** Rows backing DBA_VIEWS / ALL_VIEWS / USER_VIEWS. */

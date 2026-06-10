@@ -107,7 +107,8 @@ export interface ViewMeta {
   name: string;
   columns?: string[];
   queryText: string;
-  queryAST?: any;
+  /** Parsed SELECT behind the view; typed loosely to avoid a parser->storage dependency. */
+  queryAST?: object;
   withCheckOption?: boolean;
   withReadOnly?: boolean;
 }

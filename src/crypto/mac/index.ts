@@ -1,2 +1,2 @@
 /** Message authentication codes. */
-export { hmac, hmacHex } from './hmac';
+export { hmac, hmacHex, PrecomputedHmac } from './hmac';

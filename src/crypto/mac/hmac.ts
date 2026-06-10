@@ -6,7 +6,7 @@
  * known_hosts token and IKE/IPSec integrity transforms.
  */
 
-import type { HashAlgorithm } from '../hash';
+import type { HashAlgorithm, IncrementalHash } from '../hash';
 import { utf8ToBytes, bytesToHex } from '../encoding';
 
 const IPAD = 0x36;
@@ -46,4 +46,45 @@ function normalizeKey(hash: HashAlgorithm, key: Uint8Array): Uint8Array {
   const condensed = key.length > hash.blockSize ? hash.digest(key) : key;
   blockKey.set(condensed);
   return blockKey;
+}
+
+/**
+ * Keyed HMAC engine with precomputed key-pad midstates.
+ *
+ * One-shot {@link hmac} re-hashes the padded key blocks on every call, which
+ * is wasteful when the same key signs thousands of messages (PBKDF2 runs one
+ * HMAC per round). When the hash exposes an incremental state, the ipad and
+ * opad blocks are compressed once here, and each digest only hashes the
+ * message itself — two compressions per call instead of four-plus.
+ */
+export class PrecomputedHmac {
+  private readonly inner: IncrementalHash;
+  private readonly outer: IncrementalHash;
+
+  private constructor(inner: IncrementalHash, outer: IncrementalHash) {
+    this.inner = inner;
+    this.outer = outer;
+  }
+
+  /** Build an engine for `key`, or null when the hash is one-shot only. */
+  static create(hash: HashAlgorithm, key: Uint8Array): PrecomputedHmac | null {
+    if (!hash.createState) return null;
+    const blockKey = normalizeKey(hash, key);
+    const ipadBlock = new Uint8Array(hash.blockSize);
+    const opadBlock = new Uint8Array(hash.blockSize);
+    for (let i = 0; i < hash.blockSize; i++) {
+      ipadBlock[i] = blockKey[i] ^ IPAD;
+      opadBlock[i] = blockKey[i] ^ OPAD;
+    }
+    return new PrecomputedHmac(
+      hash.createState().update(ipadBlock),
+      hash.createState().update(opadBlock),
+    );
+  }
+
+  /** HMAC(key, message) using the precomputed midstates. */
+  digest(message: Uint8Array): Uint8Array {
+    const innerDigest = this.inner.clone().update(message).digest();
+    return this.outer.clone().update(innerDigest).digest();
+  }
 }

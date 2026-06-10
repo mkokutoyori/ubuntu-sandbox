@@ -92,6 +92,14 @@ describe('Multitenant (CDB / PDB)', () => {
     sh.dispose();
   });
 
+  it('V$PDBS GUID is a realistic 32-hex identifier (no FAKED artifact)', () => {
+    const { sh } = newSession('mt-guid');
+    const out = run(sh, 'SELECT NAME, GUID FROM V$PDBS;');
+    expect(out).not.toMatch(/FAKED/);
+    expect(out).toMatch(/\b[0-9A-F]{32}\b/);
+    sh.dispose();
+  });
+
   it('CREATE PLUGGABLE DATABASE adds a new PDB to DBA_PDBS', () => {
     const { sh } = newSession('mt-2');
     sh.processLine('CREATE PLUGGABLE DATABASE TESTPDB FROM PDB$SEED;');

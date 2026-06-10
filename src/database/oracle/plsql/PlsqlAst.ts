@@ -54,6 +54,17 @@ export interface PragmaExceptionInit {
   code: number;
 }
 
+/**
+ * Compile-time directive with no runtime semantics in the simulator
+ * (AUTONOMOUS_TRANSACTION, SERIALLY_REUSABLE, UDF, INLINE, …).
+ * EXCEPTION_INIT is the exception: it binds an error code and has its
+ * own node above.
+ */
+export interface PragmaDecl {
+  kind: 'pragma';
+  name: string;
+}
+
 export interface TypeDecl {
   kind: 'type';
   name: string;
@@ -80,7 +91,7 @@ export interface SubprogramDecl {
 }
 
 export type Declaration =
-  | VarDecl | CursorDecl | ExceptionDecl | PragmaExceptionInit | TypeDecl | SubprogramDecl;
+  | VarDecl | CursorDecl | ExceptionDecl | PragmaExceptionInit | PragmaDecl | TypeDecl | SubprogramDecl;
 
 export interface Block {
   kind: 'block';

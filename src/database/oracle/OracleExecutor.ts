@@ -5,6 +5,7 @@
  */
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
+import { ScalarFunctionEvaluator } from './functions/ScalarFunctionEvaluator';
 import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } from '../engine/executor/ResultSet';
 import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
   CreateTableStatement, DropTableStatement, TruncateTableStatement, AlterTableStatement,
@@ -19,13 +20,14 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
   CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
-  AuditStatement, NoauditStatement,
+  AuditStatement, NoauditStatement, OrderByItem,
+  CreateSynonymStatement, DropSynonymStatement, AlterSequenceStatement, AlterIndexStatement,
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
 import { ORACLE_SYSTEM_PRIVILEGES } from './security/systemPrivileges';
 import type { OracleInstance } from './OracleInstance';
-import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
+import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
@@ -41,6 +43,18 @@ interface TransactionSnapshot {
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
+  /** Scalar SQL function evaluation, extracted to its own module (SRP).
+   *  The host closures keep the executor's helpers private. */
+  private readonly scalarFunctions = new ScalarFunctionEvaluator({
+    evaluateExpression: (e, r, c) => this.evaluateExpression(e, r, c),
+    compareValues: (a, b) => this.compareValues(a, b),
+    formatOracleDate: (d, f) => this.formatOracleDate(d, f),
+    parseOracleDate: (s, f) => this.parseOracleDate(s, f),
+    getMetadataDDL: (a) => this.getMetadataDDL(a),
+    getContext: () => this.context,
+    callStoredFunction: (n, a) =>
+      this.commandHost ? this.commandHost.execScalarFunctionCall(this, n, a) : { handled: false, value: null },
+  });
   private _currentRowNum: number = 0;
   /** Undo log: snapshot taken at transaction start (first DML) */
   private _txnSnapshot: TransactionSnapshot | null = null;
@@ -505,7 +519,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
       case 'AnalyzeStatement': {
         const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
-        const schema = (s.schema || this.context.currentSchema).toUpperCase();
+        const schema = this.resolveSchema(s.schema);
         const name = s.name.toUpperCase();
         if (s.target === 'TABLE') {
           if (!this.storage.tableExists(schema, name)) {
@@ -529,7 +543,7 @@ export class OracleExecutor extends BaseExecutor {
         // are accepted but logical no-ops — the simulator has no
         // undo/redo time machine.
         if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
-          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(s.schema);
           const name = s.name!.toUpperCase();
           const catalog = this.catalog as OracleCatalog;
           const entry = catalog.recyclebinFindLatest(owner, name);
@@ -557,7 +571,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (s.target === 'TABLE' && s.name) {
           // PURGE TABLE name → remove the (most recent) recyclebin
           // entry with that original name.
-          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(s.schema);
           const entry = catalog.recyclebinFindLatest(owner, s.name.toUpperCase());
           if (entry) catalog.recyclebinRemove(entry.objectName);
         }
@@ -707,7 +721,7 @@ export class OracleExecutor extends BaseExecutor {
         }
         return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
       }
-      return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
+      throw new OracleError(1086, `savepoint '${sp}' never established in this session or is invalid`);
     }
     if (this._txnSnapshot) {
       this.restoreSnapshot(this._txnSnapshot);
@@ -766,7 +780,7 @@ export class OracleExecutor extends BaseExecutor {
     return this.executeSelectFromTable(stmt);
   }
 
-  /** Detect /*+ RESULT_CACHE *​/ hint in the original source SQL. */
+  /** Detect the RESULT_CACHE optimizer hint in the original source SQL. */
   private hasResultCacheHint(stmt: SelectStatement): boolean {
     const src = (stmt as unknown as { sourceText?: string }).sourceText ?? '';
     return /\/\*\+[^*]*\bRESULT_CACHE\b/i.test(src);
@@ -814,7 +828,7 @@ export class OracleExecutor extends BaseExecutor {
     const visit = (s: SelectStatement): void => {
       for (const f of s.from ?? []) {
         if (f.type === 'TableRef') {
-          const owner = (f.schema ?? this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(f.schema);
           const name = f.name.toUpperCase();
           if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
         } else if (f.type === 'SubqueryTableRef') {
@@ -823,7 +837,7 @@ export class OracleExecutor extends BaseExecutor {
       }
       for (const j of s.joins ?? []) {
         if (j.table.type === 'TableRef') {
-          const owner = (j.table.schema ?? this.context.currentSchema).toUpperCase();
+          const owner = this.resolveSchema(j.table.schema);
           const name = j.table.name.toUpperCase();
           if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
         }
@@ -969,7 +983,9 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
-    let { rows, columns } = this.resolveFromClause(stmt);
+    const fromResult = this.resolveFromClause(stmt);
+    let rows = fromResult.rows;
+    const columns = fromResult.columns;
 
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
@@ -1062,10 +1078,9 @@ export class OracleExecutor extends BaseExecutor {
       resultRows.sort((a, b) => {
         for (const ob of stmt.orderBy!) {
           // Try to resolve by column alias or position in result set
-          let idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
+          const idx = this.resolveOrderByIndex(ob.expr, selectCols, columns);
           if (idx < 0) continue;
-          let cmp = this.compareValues(a[idx], b[idx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -1133,7 +1148,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private loadTable(ref: import('../engine/parser/ASTNode').TableRef): { rows: StorageRow[]; columns: StorageColMeta[] } {
-    const schema = (ref.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(ref.schema);
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
 
@@ -1162,14 +1177,9 @@ export class OracleExecutor extends BaseExecutor {
       return { rows, columns };
     }
 
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.requireObjectAccess(schema, tableName, 'SELECT');
-
-    const meta = this.storage.getTableMeta(schema, tableName)!;
     const storageRows = this.storage.getRows(schema, tableName);
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
@@ -1247,7 +1257,7 @@ export class OracleExecutor extends BaseExecutor {
     const nullLeft = new Array(leftCols.length).fill(null);
 
     // Build effective ON condition for USING/NATURAL
-    let onCondition = join.on;
+    const onCondition = join.on;
     if (usingCols && usingCols.length > 0 && !onCondition) {
       // Build ON condition: left.col = right.col AND ...
       // We match by column name in the combined row
@@ -1453,8 +1463,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const ob of stmt.orderBy!) {
           const idx = this.resolveOrderByIndexGrouped(ob.expr, stmt.columns, columns);
           if (idx < 0) continue;
-          let cmp = this.compareValues(a[idx], b[idx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[idx], b[idx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -1500,8 +1509,7 @@ export class OracleExecutor extends BaseExecutor {
             for (const ob of windowSpec.orderBy!) {
               const va = this.evaluateExpression(ob.expr, sourceRows[a], sourceColumns);
               const vb = this.evaluateExpression(ob.expr, sourceRows[b], sourceColumns);
-              let cmp = this.compareValues(va, vb);
-              if (ob.direction === 'DESC') cmp = -cmp;
+              const cmp = this.compareWithOrderSpec(va, vb, ob);
               if (cmp !== 0) return cmp;
             }
             return 0;
@@ -2041,14 +2049,10 @@ export class OracleExecutor extends BaseExecutor {
   // ── MERGE ──────────────────────────────────────────────────────────
 
   private executeMerge(stmt: MergeStatement): ResultSet {
-    const targetSchema = (stmt.target.schema || this.context.currentSchema).toUpperCase();
+    const targetSchema = this.resolveSchema(stmt.target.schema);
     const targetName = stmt.target.name.toUpperCase();
 
-    if (!this.storage.tableExists(targetSchema, targetName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
-    const targetMeta = this.storage.getTableMeta(targetSchema, targetName)!;
+    const targetMeta = this.requireTableMeta(targetSchema, targetName);
 
     // Load source data
     let sourceRows: StorageRow[];
@@ -2155,8 +2159,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const ob of stmt.orderBy!) {
           const colIdx = this.resolveColumnIndex(ob.expr, colMetas);
           if (colIdx < 0) continue;
-          let cmp = this.compareValues(a[colIdx], b[colIdx]);
-          if (ob.direction === 'DESC') cmp = -cmp;
+          const cmp = this.compareWithOrderSpec(a[colIdx], b[colIdx], ob);
           if (cmp !== 0) return cmp;
         }
         return 0;
@@ -2188,7 +2191,7 @@ export class OracleExecutor extends BaseExecutor {
         } else {
           // Expression (function call, etc.) — evaluate at runtime
           colIndices.push(-2);
-          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as any).name.toUpperCase() : 'EXPR');
+          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as IdentifierExpr).name.toUpperCase() : 'EXPR');
           projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
         }
       }
@@ -2225,20 +2228,44 @@ export class OracleExecutor extends BaseExecutor {
     return { ...result, columns: resultCols, rows };
   }
 
+  // ── Shared object-resolution helpers ─────────────────────────────
+  // Deduplicated from the statement handlers: every DML/DDL handler used
+  // to inline the same schema fallback, ORA-00942 table check and
+  // ORA-00904 column lookup.
+
+  /** Resolve an optional schema qualifier against the session schema. */
+  private resolveSchema(explicit?: string | null): string {
+    return (explicit || this.context.currentSchema).toUpperCase();
+  }
+
+  /** Look up a table's metadata or raise ORA-00942 like real Oracle. */
+  private requireTableMeta(schema: string, tableName: string): TableMeta {
+    const meta = this.storage.getTableMeta(schema, tableName);
+    if (!meta) throw new OracleError(942, 'table or view does not exist');
+    return meta;
+  }
+
+  /** Resolve a column name to its ordinal or raise ORA-00904. */
+  private requireColumnIndex(tableMeta: TableMeta, colName: string): number {
+    const idx = this.findColumnIndex(tableMeta, colName);
+    if (idx < 0) throw new OracleError(904, `"${colName.toUpperCase()}": invalid identifier`);
+    return idx;
+  }
+
+  /** Case-insensitive column lookup; -1 when absent. */
+  private findColumnIndex(tableMeta: TableMeta, colName: string): number {
+    const up = colName.toUpperCase();
+    return tableMeta.columns.findIndex(c => c.name.toUpperCase() === up);
+  }
+
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'INSERT');
-
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
     let insertedCount = 0;
 
     if (stmt.values) {
@@ -2263,7 +2290,7 @@ export class OracleExecutor extends BaseExecutor {
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
         if (stmt.columns) {
           for (let i = 0; i < stmt.columns.length; i++) {
-            const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === stmt.columns![i].toUpperCase());
+            const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
             if (colIdx >= 0) row[colIdx] = subRow[i] as CellValue;
           }
         } else {
@@ -2286,18 +2313,11 @@ export class OracleExecutor extends BaseExecutor {
     const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
 
     if (columns) {
-      // Validate column names exist
-      for (const colName of columns) {
-        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === colName.toUpperCase());
-        if (colIdx < 0) throw new OracleError(904, `"${colName.toUpperCase()}": invalid identifier`);
-      }
+      for (const colName of columns) this.requireColumnIndex(tableMeta, colName);
       if (values.length > columns.length) throw new OracleError(913, 'too many values');
       if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
-        const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === columns[i].toUpperCase());
-        if (colIdx >= 0) {
-          row[colIdx] = this.evaluateExpression(values[i], [], []);
-        }
+        row[this.requireColumnIndex(tableMeta, columns[i])] = this.evaluateExpression(values[i], [], []);
       }
     } else {
       if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
@@ -2321,22 +2341,12 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'UPDATE');
 
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
-
-    // Validate assignment column names exist
-    for (const assign of stmt.assignments) {
-      const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
-      if (colIdx < 0) throw new OracleError(904, `"${assign.column.toUpperCase()}": invalid identifier`);
-    }
+    for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
 
     const count = this.storage.updateRows(
       schema, tableName,
@@ -2344,7 +2354,7 @@ export class OracleExecutor extends BaseExecutor {
       (row) => {
         const newRow = [...row];
         for (const assign of stmt.assignments) {
-          const colIdx = tableMeta.columns.findIndex(c => c.name.toUpperCase() === assign.column.toUpperCase());
+          const colIdx = this.findColumnIndex(tableMeta, assign.column);
           if (colIdx >= 0) {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
@@ -2366,16 +2376,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
     this.ensureTransaction();
-    const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
-
-    if (!this.storage.tableExists(schema, tableName)) {
-      throw new OracleError(942, `table or view does not exist`);
-    }
-
+    const tableMeta = this.requireTableMeta(schema, tableName);
     this.requireObjectAccess(schema, tableName, 'DELETE');
-
-    const tableMeta = this.storage.getTableMeta(schema, tableName)!;
 
     // Validate FK constraints on rows to be deleted
     const rowsToDelete = this.storage.getRows(schema, tableName)
@@ -2398,7 +2402,7 @@ export class OracleExecutor extends BaseExecutor {
     // DDL auto-commits any open transaction (Oracle behavior)
     if (this._inTransaction) this.executeCommit();
 
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
     // Creating in own schema needs CREATE TABLE; creating in another schema needs CREATE ANY TABLE.
@@ -2517,7 +2521,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
     if (this._inTransaction) this.executeCommit();
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
     // Cross-schema drop requires DROP ANY TABLE; own-schema needs no extra priv.
@@ -2548,7 +2552,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
     if (this._inTransaction) {
       this.executeCommit();
@@ -2558,7 +2562,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeAlterTable(stmt: AlterTableStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
     if (!this.storage.tableExists(schema, tableName)) {
       throw new OracleError(942, `table or view does not exist`);
@@ -2683,7 +2687,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
     const hasExpressions = expressions.some(e => e !== null);
     this.storage.createIndex(schema, {
@@ -2698,13 +2702,13 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropIndex(stmt: DropIndexStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropIndex(schema, stmt.name.toUpperCase());
     return emptyResult('Index dropped.');
   }
 
   private executeCreateSequence(stmt: CreateSequenceStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.createSequence(schema, {
       name: stmt.name.toUpperCase(),
       currentValue: (stmt.startWith ?? 1) - (stmt.incrementBy ?? 1),
@@ -2718,7 +2722,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropSequence(schema, stmt.name.toUpperCase());
     return emptyResult('Sequence dropped.');
   }
@@ -2726,7 +2730,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── View DDL ─────────────────────────────────────────────────────
 
   private executeCreateView(stmt: CreateViewStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const name = stmt.name.toUpperCase();
     // For OR REPLACE, drop existing view first
     if (stmt.orReplace && this.storage.viewExists(schema, name)) {
@@ -2747,7 +2751,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropView(schema, stmt.name.toUpperCase());
     return emptyResult('View dropped.');
   }
@@ -2872,9 +2876,9 @@ export class OracleExecutor extends BaseExecutor {
   // ── Triggers ─────────────────────────────────────────────────────
 
   private executeCreateTrigger(stmt: CreateTriggerStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     const name = stmt.name.toUpperCase();
-    const tableSchema = (stmt.tableSchema || this.context.currentSchema).toUpperCase();
+    const tableSchema = this.resolveSchema(stmt.tableSchema);
 
     if (stmt.orReplace) {
       try { this.storage.dropTrigger(schema, name); } catch { /* ignore if not exists */ }
@@ -2896,7 +2900,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     this.storage.dropTrigger(schema, stmt.name.toUpperCase());
     return emptyResult('Trigger dropped.');
   }
@@ -2914,9 +2918,9 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── SYNONYM ────────────────────────────────────────────────────────
 
-  private executeCreateSynonym(stmt: any): ResultSet {
-    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
-    const targetSchema = (stmt.targetSchema || this.context.currentSchema).toUpperCase();
+  private executeCreateSynonym(stmt: CreateSynonymStatement): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
+    const targetSchema = this.resolveSchema(stmt.targetSchema);
     this.storage.createSynonym({
       owner,
       name: stmt.name.toUpperCase(),
@@ -2927,16 +2931,16 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Synonym created.');
   }
 
-  private executeDropSynonym(stmt: any): ResultSet {
-    const owner = stmt.isPublic ? 'PUBLIC' : (stmt.schema || this.context.currentSchema).toUpperCase();
+  private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
     this.storage.dropSynonym(owner, stmt.name.toUpperCase());
     return emptyResult('Synonym dropped.');
   }
 
   // ── ALTER SEQUENCE ────────────────────────────────────────────────
 
-  private executeAlterSequence(stmt: any): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+  private executeAlterSequence(stmt: AlterSequenceStatement): ResultSet {
+    const schema = this.resolveSchema(stmt.schema);
     const seq = this.storage.getSequence(schema, stmt.name.toUpperCase());
     if (!seq) throw new OracleError(2289, `sequence ${stmt.name} does not exist`);
     if (stmt.incrementBy !== undefined) seq.incrementBy = stmt.incrementBy;
@@ -2949,8 +2953,8 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── ALTER INDEX ───────────────────────────────────────────────────
 
-  private executeAlterIndex(stmt: any): ResultSet {
-    const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
+  private executeAlterIndex(stmt: AlterIndexStatement): ResultSet {
+    const schema = this.resolveSchema(stmt.schema);
     if (stmt.action === 'REBUILD') {
       // In a simulator, REBUILD is a no-op (the index is already in memory)
       const indexes = this.storage.getIndexes(schema);
@@ -2991,7 +2995,7 @@ export class OracleExecutor extends BaseExecutor {
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
       const user = this.context.currentUser;
-      const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
+      const schema = this.resolveSchema(stmt.objectSchema);
       const objName = stmt.objectName.toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
@@ -3110,7 +3114,7 @@ export class OracleExecutor extends BaseExecutor {
         for (const priv of stmt.privileges) {
           const p = priv.toUpperCase();
           if (stmt.objectName) {
-            const schema = (stmt.objectSchema ?? this.context.currentSchema).toUpperCase();
+            const schema = this.resolveSchema(stmt.objectSchema);
             const objName = stmt.objectName.toUpperCase();
             const row = tabPrivs.find(x => x.grantee === g && x.privilege === p && x.objectSchema === schema && x.objectName === objName);
             if (row) row.grantable = false;
@@ -4004,402 +4008,9 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  /** Scalar SQL functions are evaluated by the dedicated module (SRP). */
   private evaluateFunction(expr: FunctionCallExpr, row: StorageRow, columns: StorageColMeta[]): CellValue {
-    const name = expr.name.toUpperCase();
-    const args = expr.args.map(a => this.evaluateExpression(a, row, columns));
-
-    switch (name) {
-      // String functions
-      case 'UPPER': return args[0] != null ? String(args[0]).toUpperCase() : null;
-      case 'LOWER': return args[0] != null ? String(args[0]).toLowerCase() : null;
-      case 'INITCAP': return args[0] != null ? String(args[0]).replace(/\b\w/g, c => c.toUpperCase()) : null;
-      case 'LENGTH': return args[0] != null ? String(args[0]).length : null;
-      case 'SUBSTR': {
-        if (args[0] == null) return null;
-        const str = String(args[0]);
-        let start = Number(args[1]);
-        const len = args[2] != null ? Number(args[2]) : undefined;
-        // Oracle: negative start means count from end
-        if (start < 0) {
-          start = str.length + start + 1;
-        }
-        // Oracle: 0 is treated as 1
-        if (start === 0) start = 1;
-        const jsStart = start - 1; // convert to 0-based
-        if (jsStart < 0) return len !== undefined ? str.substring(0, len + jsStart) : '';
-        return str.substring(jsStart, len !== undefined ? jsStart + len : undefined);
-      }
-      case 'INSTR': {
-        if (args[0] == null || args[1] == null) return null;
-        const str = String(args[0]);
-        const search = String(args[1]);
-        const startPos = args[2] != null ? Number(args[2]) : 1;
-        const occurrence = args[3] != null ? Number(args[3]) : 1;
-        if (startPos > 0) {
-          let found = 0;
-          let pos = startPos - 1;
-          while (pos < str.length) {
-            const idx = str.indexOf(search, pos);
-            if (idx < 0) return 0;
-            found++;
-            if (found === occurrence) return idx + 1;
-            pos = idx + 1;
-          }
-          return 0;
-        } else {
-          // Negative startPos: search backwards from the end
-          let found = 0;
-          let pos = str.length + startPos;
-          while (pos >= 0) {
-            const idx = str.lastIndexOf(search, pos);
-            if (idx < 0) return 0;
-            found++;
-            if (found === occurrence) return idx + 1;
-            pos = idx - 1;
-          }
-          return 0;
-        }
-      }
-      case 'TRIM': {
-        if (args[0] == null) return null;
-        const trimStr = String(args[0]);
-        // Enhanced TRIM: args = [source, chars, spec] where spec is LEADING/TRAILING/BOTH
-        if (args.length >= 3 && args[2] != null) {
-          const trimChars = String(args[1] ?? ' ');
-          const spec = String(args[2]).toUpperCase();
-          const escaped = trimChars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const charClass = `[${escaped}]`;
-          if (spec === 'LEADING') return trimStr.replace(new RegExp(`^${charClass}+`), '');
-          if (spec === 'TRAILING') return trimStr.replace(new RegExp(`${charClass}+$`), '');
-          return trimStr.replace(new RegExp(`^${charClass}+`), '').replace(new RegExp(`${charClass}+$`), '');
-        }
-        return trimStr.trim();
-      }
-      case 'LTRIM': {
-        if (args[0] == null) return null;
-        const str = String(args[0]);
-        const chars = args[1] != null ? String(args[1]) : ' ';
-        const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return str.replace(new RegExp(`^[${escaped}]+`), '');
-      }
-      case 'RTRIM': {
-        if (args[0] == null) return null;
-        const str = String(args[0]);
-        const chars = args[1] != null ? String(args[1]) : ' ';
-        const escaped = chars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return str.replace(new RegExp(`[${escaped}]+$`), '');
-      }
-      case 'LPAD': {
-        if (args[0] == null) return null;
-        const str = String(args[0]);
-        const len = Number(args[1]);
-        const pad = args[2] != null ? String(args[2]) : ' ';
-        return str.padStart(len, pad);
-      }
-      case 'RPAD': {
-        if (args[0] == null) return null;
-        const str = String(args[0]);
-        const len = Number(args[1]);
-        const pad = args[2] != null ? String(args[2]) : ' ';
-        return str.padEnd(len, pad);
-      }
-      case 'REPLACE': {
-        if (args[0] == null) return null;
-        return String(args[0]).replaceAll(String(args[1] ?? ''), String(args[2] ?? ''));
-      }
-      case 'CONCAT': return (args[0] != null ? String(args[0]) : '') + (args[1] != null ? String(args[1]) : '');
-      case 'CHR': return args[0] != null ? String.fromCharCode(Number(args[0])) : null;
-      case 'ASCII': return args[0] != null ? String(args[0]).charCodeAt(0) : null;
-      case 'REGEXP_REPLACE': {
-        if (args[0] == null) return null;
-        const src = String(args[0]);
-        const pat = String(args[1] ?? '');
-        const rep = args[2] != null ? String(args[2]) : '';
-        try { return src.replace(new RegExp(pat, 'g'), rep); } catch { return src; }
-      }
-      case 'REGEXP_SUBSTR': {
-        if (args[0] == null) return null;
-        const src = String(args[0]);
-        const pat = String(args[1] ?? '');
-        try { const m = src.match(new RegExp(pat)); return m ? m[0] : null; } catch { return null; }
-      }
-      case 'REGEXP_INSTR': {
-        if (args[0] == null) return null;
-        const src = String(args[0]);
-        const pat = String(args[1] ?? '');
-        try { const m = src.match(new RegExp(pat)); return m && m.index !== undefined ? m.index + 1 : 0; } catch { return 0; }
-      }
-      case 'REGEXP_COUNT': {
-        if (args[0] == null) return null;
-        const src = String(args[0]);
-        const pat = String(args[1] ?? '');
-        try { const matches = src.match(new RegExp(pat, 'g')); return matches ? matches.length : 0; } catch { return 0; }
-      }
-
-      // Numeric functions
-      case 'ABS': return args[0] != null ? Math.abs(Number(args[0])) : null;
-      case 'CEIL': return args[0] != null ? Math.ceil(Number(args[0])) : null;
-      case 'FLOOR': return args[0] != null ? Math.floor(Number(args[0])) : null;
-      case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
-      case 'TRUNC': {
-        if (args[0] == null) return null;
-        const asDate = OracleExecutor.coerceDate(args[0]);
-        if (asDate != null) {
-          const d = new Date(asDate.getTime());
-          const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
-          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
-            return OracleExecutor.formatDate(new Date(d.getFullYear(), 0, 1));
-          }
-          if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
-            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
-          }
-          if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
-            const day = d.getDay();
-            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day));
-          }
-          d.setHours(0, 0, 0, 0);
-          return OracleExecutor.formatDate(d);
-        }
-        return Math.trunc(Number(args[0]));
-      }
-      case 'ADD_MONTHS': {
-        if (args[0] == null || args[1] == null) return null;
-        const base = OracleExecutor.coerceDate(args[0]);
-        if (base == null) return null;
-        const month = base.getMonth() + Number(args[1]);
-        const day = base.getDate();
-        base.setDate(1);
-        base.setMonth(month);
-        const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-        base.setDate(Math.min(day, last));
-        return OracleExecutor.formatDate(base);
-      }
-      case 'MONTHS_BETWEEN': {
-        if (args[0] == null || args[1] == null) return null;
-        const a = OracleExecutor.coerceDate(args[0]);
-        const b = OracleExecutor.coerceDate(args[1]);
-        if (!a || !b) return null;
-        const months = (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
-        return months + (a.getDate() - b.getDate()) / 31;
-      }
-      case 'NEXT_DAY': {
-        if (args[0] == null || args[1] == null) return null;
-        const base = OracleExecutor.coerceDate(args[0]);
-        if (!base) return null;
-        const dayMap: Record<string, number> = {
-          SUNDAY: 0, SUN: 0, MONDAY: 1, MON: 1, TUESDAY: 2, TUE: 2,
-          WEDNESDAY: 3, WED: 3, THURSDAY: 4, THU: 4, FRIDAY: 5, FRI: 5,
-          SATURDAY: 6, SAT: 6,
-        };
-        const target = dayMap[String(args[1]).toUpperCase().trim()];
-        if (target === undefined) return null;
-        const delta = ((target - base.getDay() + 7) % 7) || 7;
-        base.setDate(base.getDate() + delta);
-        return OracleExecutor.formatDate(base);
-      }
-      case 'LAST_DAY': {
-        if (args[0] == null) return null;
-        const base = OracleExecutor.coerceDate(args[0]);
-        if (!base) return null;
-        return OracleExecutor.formatDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
-      }
-      case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
-      case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
-      case 'SQRT': return args[0] != null ? Math.sqrt(Number(args[0])) : null;
-      case 'SIGN': return args[0] != null ? Math.sign(Number(args[0])) : null;
-      case 'GREATEST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.compareValues(a, b) >= 0 ? a : b), args[0]);
-      case 'LEAST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.compareValues(a, b) <= 0 ? a : b), args[0]);
-
-      // Null handling
-      case 'NVL': return args[0] ?? args[1] ?? null;
-      case 'NVL2': return args[0] != null ? (args[1] ?? null) : (args[2] ?? null);
-      case 'COALESCE': return args.find(a => a != null) ?? null;
-      case 'NULLIF': return this.compareValues(args[0], args[1]) === 0 ? null : args[0];
-      case 'DECODE': return this.evaluateDecode(args);
-
-      // EXTRACT(field FROM date) — parsed as EXTRACT(fieldLiteral, sourceExpr)
-      case 'EXTRACT': {
-        if (args.length < 2 || args[1] == null) return null;
-        const field = String(args[0]).toUpperCase();
-        const dateVal = args[1];
-        let d: Date;
-        if (dateVal instanceof Date) {
-          d = dateVal;
-        } else {
-          d = new Date(String(dateVal));
-          if (isNaN(d.getTime())) return null;
-        }
-        switch (field) {
-          case 'YEAR': return d.getFullYear();
-          case 'MONTH': return d.getMonth() + 1;
-          case 'DAY': return d.getDate();
-          case 'HOUR': return d.getHours();
-          case 'MINUTE': return d.getMinutes();
-          case 'SECOND': return d.getSeconds();
-          default: return null;
-        }
-      }
-
-      // Date functions
-      case 'SYSDATE': return new Date().toISOString().slice(0, 19).replace('T', ' ');
-      case 'SYSTIMESTAMP': return new Date().toISOString();
-      case 'TO_CHAR': {
-        if (args[0] == null) return null;
-        const fmt = args[1] != null ? String(args[1]).toUpperCase() : null;
-        if (fmt && (typeof args[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(args[0]))) {
-          const d = new Date(args[0]);
-          if (!isNaN(d.getTime())) {
-            return this.formatOracleDate(d, fmt);
-          }
-        }
-        return String(args[0]);
-      }
-      case 'TO_NUMBER': {
-        if (args[0] == null) return null;
-        const n = Number(args[0]);
-        if (isNaN(n)) throw new OracleError(1722, 'invalid number');
-        return n;
-      }
-      case 'TO_DATE': {
-        if (args[0] == null) return null;
-        const dateStr = String(args[0]);
-        const dateFmt = args[1] != null ? String(args[1]).toUpperCase() : 'YYYY-MM-DD';
-        return this.parseOracleDate(dateStr, dateFmt);
-      }
-
-      // System functions
-      case 'USER': return this.context.currentUser;
-      case 'SYS_GUID': return 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'.replace(/X/g, () => Math.floor(Math.random() * 16).toString(16).toUpperCase());
-      case 'SYS_CONTEXT': {
-        const namespace = args[0] != null ? String(args[0]).toUpperCase() : '';
-        const param = args[1] != null ? String(args[1]).toUpperCase() : '';
-        // USERENV — delegate to the live OracleSession.
-        if (namespace === 'USERENV') {
-          const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
-          if (session?.userenv) {
-            const value = session.userenv(param);
-            return value === undefined ? null : value as string | number | null;
-          }
-          // Fallback when no session has been attached (engine-direct).
-          if (param === 'SESSION_USER' || param === 'CURRENT_USER') return this.context.currentUser;
-          if (param === 'CURRENT_SCHEMA') return this.context.currentSchema;
-          return null;
-        }
-        // SYS_SESSION_ROLES / application contexts → unknown, NULL.
-        return null;
-      }
-      case 'USERENV': {
-        // The legacy USERENV(<keyword>) function is functionally
-        // equivalent to SYS_CONTEXT('USERENV', <keyword>).
-        const param = args[0] != null ? String(args[0]).toUpperCase() : '';
-        const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
-        if (session?.userenv) {
-          const value = session.userenv(param);
-          return value === undefined ? null : value as string | number | null;
-        }
-        return null;
-      }
-
-      // DBMS_RANDOM package
-      case 'VALUE': {
-        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
-          if (args.length === 0) return Math.random();
-          if (args.length >= 2) {
-            const low = Number(args[0]);
-            const high = Number(args[1]);
-            return low + Math.random() * (high - low);
-          }
-          return Math.random();
-        }
-        return null;
-      }
-      case 'STRING': {
-        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
-          const opt = args.length > 0 ? String(args[0]).toUpperCase() : 'U';
-          const len = args.length > 1 ? Number(args[1]) : 20;
-          let chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-          if (opt === 'L') chars = 'abcdefghijklmnopqrstuvwxyz';
-          if (opt === 'A' || opt === 'X') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-          if (opt === 'P') chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-          let result = '';
-          for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * chars.length)];
-          return result;
-        }
-        return null;
-      }
-      case 'NORMAL': {
-        if (expr.schema?.toUpperCase() === 'DBMS_RANDOM') {
-          // Box-Muller transform for normal distribution
-          const u1 = Math.random();
-          const u2 = Math.random();
-          return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-        }
-        return null;
-      }
-
-      // DBMS_LOCK.SLEEP (as function call — returns immediately in simulator)
-      case 'SLEEP': {
-        if (expr.schema?.toUpperCase() === 'DBMS_LOCK') return null;
-        return null;
-      }
-
-      // DBMS_UTILITY functions
-      case 'GET_TIME': {
-        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return Date.now() % 2147483647;
-        return null;
-      }
-      case 'FORMAT_ERROR_BACKTRACE': {
-        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return '';
-        return null;
-      }
-      case 'FORMAT_ERROR_STACK': {
-        if (expr.schema?.toUpperCase() === 'DBMS_UTILITY') return '';
-        return null;
-      }
-
-      // DBMS_METADATA.GET_DDL
-      case 'GET_DDL': {
-        if (expr.schema?.toUpperCase() === 'DBMS_METADATA') {
-          return this.getMetadataDDL(args);
-        }
-        return null;
-      }
-
-      // DBMS_STATS procedures (as stubs)
-      case 'GATHER_TABLE_STATS':
-      case 'GATHER_SCHEMA_STATS': {
-        if (expr.schema?.toUpperCase() === 'DBMS_STATS') return null;
-        return null;
-      }
-
-      // DBMS_LOB functions
-      case 'GETLENGTH': {
-        if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
-          return args[0] != null ? String(args[0]).length : null;
-        }
-        return null;
-      }
-
-      // UTL_FILE stubs
-      case 'FOPEN':
-      case 'FCLOSE':
-      case 'GET_LINE': {
-        if (expr.schema?.toUpperCase() === 'UTL_FILE') return null;
-        return null;
-      }
-
-      // COUNT(*) and other aggregates return a single value for a column evaluation context
-      // Real aggregation is handled at the query level — here we just return the scalar value
-      case 'COUNT': return args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star') ? 1 : (args[0] != null ? 1 : 0);
-      case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
-
-      default: {
-        // ORA-00904: unknown function name
-        const schema = expr.schema?.toUpperCase();
-        const fullName = schema ? `${schema}.${name}` : name;
-        throw new OracleError(904, `"${fullName}": invalid identifier`);
-      }
-    }
+    return this.scalarFunctions.evaluate(expr, row, columns);
   }
 
   private formatOracleDate(d: Date, fmt: string): string {
@@ -4502,15 +4113,6 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
-  private evaluateDecode(args: CellValue[]): CellValue {
-    if (args.length < 3) return null;
-    const expr = args[0];
-    for (let i = 1; i + 1 < args.length; i += 2) {
-      if (this.compareValues(expr, args[i]) === 0) return args[i + 1];
-    }
-    // Default (odd number of remaining args)
-    return args.length % 2 === 0 ? args[args.length - 1] : null;
-  }
 
   private evaluateCase(expr: CaseExpr, row: StorageRow, columns: StorageColMeta[]): CellValue {
     if (expr.operand) {
@@ -4655,24 +4257,7 @@ export class OracleExecutor extends BaseExecutor {
     return Number.isNaN(ms) ? null : ms;
   }
 
-  /** Return a mutable Date copy of the value, or null if not a date. */
-  static coerceDate(value: unknown): Date | null {
-    if (value instanceof Date) return new Date(value.getTime());
-    if (typeof value !== 'string') return null;
-    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
-      // Accept bare YYYY-MM-DD too.
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-    }
-    const ms = Date.parse(value.replace(' ', 'T'));
-    return Number.isNaN(ms) ? null : new Date(ms);
-  }
 
-  /** Format a Date the way SYSDATE / TO_CHAR(DATE) renders in SQL*Plus. */
-  static formatDate(d: Date): string {
-    const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
-      + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {
     if (left === null || right === null) return false;
@@ -4686,6 +4271,29 @@ export class OracleExecutor extends BaseExecutor {
       case '>=': return cmp >= 0;
       default: return false;
     }
+  }
+
+  /**
+   * Comparator for one ORDER BY item. Oracle treats NULL as the largest
+   * value: last in ASC, first in DESC — unless an explicit NULLS
+   * FIRST/LAST overrides the default. The override applies regardless of
+   * direction, so NULL placement is decided here, before the DESC flip.
+   */
+  private compareWithOrderSpec(
+    a: CellValue, b: CellValue,
+    spec: Pick<OrderByItem, 'direction' | 'nullsPosition'>,
+  ): number {
+    const aNull = a === null || a === undefined;
+    const bNull = b === null || b === undefined;
+    if (aNull || bNull) {
+      if (aNull && bNull) return 0;
+      const nullsFirst = spec.nullsPosition
+        ? spec.nullsPosition === 'FIRST'
+        : spec.direction === 'DESC';
+      return aNull === nullsFirst ? -1 : 1;
+    }
+    const cmp = this.compareValues(a, b);
+    return spec.direction === 'DESC' ? -cmp : cmp;
   }
 
   private compareValues(a: CellValue, b: CellValue): number {
@@ -4722,7 +4330,7 @@ export class OracleExecutor extends BaseExecutor {
     if (val == null) return null;
     const s = String(val).trim();
     // Try DD-MON-YYYY or DD-MON-YY (Oracle default NLS_DATE_FORMAT)
-    const oraMatch = s.match(/^(\d{1,2})[\-/]([A-Za-z]{3})[\-/](\d{2,4})(?:\s+(\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?)?$/);
+    const oraMatch = s.match(/^(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{2,4})(?:\s+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?$/);
     if (oraMatch) {
       const months: Record<string, number> = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
       const mon = months[oraMatch[2].toUpperCase()];
@@ -5132,7 +4740,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeComment(stmt: import('../engine/parser/ASTNode').CommentStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    const schema = (stmt.schema ?? this.context.currentSchema).toUpperCase();
+    const schema = this.resolveSchema(stmt.schema);
     // Commenting on a foreign schema requires COMMENT ANY TABLE.
     if (schema !== this.context.currentUser && this.context.currentUser !== 'SYS') {
       this.requireSystemPrivilege('COMMENT ANY TABLE');

@@ -1,4 +1,4 @@
-import { parsePlsql, PlsqlLexParseError } from './PlsqlParser';
+import { parsePlsql } from './PlsqlParser';
 import { PlsqlInterpreter } from './PlsqlInterpreter';
 import { PlsqlException } from './PlsqlException';
 import type { PlsqlHost } from './PlsqlValue';
@@ -11,6 +11,8 @@ export type { PlsqlHost, StoredUnitLike, Scalar } from './PlsqlValue';
 export interface PlsqlRunOutcome {
   ok: boolean;
   parseError: boolean;
+  /** Compiler diagnostic when parseError is true (PLS-00103 style). */
+  parseErrorMessage?: string;
   error: PlsqlException | null;
 }
 
@@ -19,8 +21,8 @@ export function runAnonymousBlock(source: string, host: PlsqlHost): PlsqlRunOutc
   try {
     block = parsePlsql(source);
   } catch (e) {
-    if (e instanceof PlsqlLexParseError) return { ok: false, parseError: true, error: null };
-    return { ok: false, parseError: true, error: null };
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, parseError: true, parseErrorMessage: msg, error: null };
   }
   const interp = new PlsqlInterpreter(host);
   try {

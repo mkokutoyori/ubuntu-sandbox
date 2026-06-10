@@ -1065,6 +1065,36 @@ export interface AlterSessionStatement extends ASTNode {
 
 // ── Top-level statement union ───────────────────────────────────────
 
+// ── Database links / materialized views ─────────────────────────────
+// Parsed for tolerance; execution is a documented stub (no catalog entry).
+
+export interface CreateDbLinkStatement extends ASTNode {
+  type: 'CreateDbLinkStatement';
+  isPublic: boolean;
+  name: string;
+  connectUser?: string;
+  usingAlias?: string;
+}
+
+export interface DropDbLinkStatement extends ASTNode {
+  type: 'DropDbLinkStatement';
+  isPublic: boolean;
+  name: string;
+}
+
+export interface CreateMaterializedViewStatement extends ASTNode {
+  type: 'CreateMaterializedViewStatement';
+  schema?: string;
+  name: string;
+  query: SelectStatement;
+}
+
+export interface DropMaterializedViewStatement extends ASTNode {
+  type: 'DropMaterializedViewStatement';
+  schema?: string;
+  name: string;
+}
+
 export type Statement =
   // DML
   | SelectStatement | InsertStatement | UpdateStatement | DeleteStatement | MergeStatement
@@ -1106,5 +1136,8 @@ export type Statement =
   | CreateTypeStatement
   | AlterSessionStatement | AlterCompileStatement
   | CommentStatement
+  // Database links / materialized views (stubs)
+  | CreateDbLinkStatement | DropDbLinkStatement
+  | CreateMaterializedViewStatement | DropMaterializedViewStatement
   // PL/SQL
   | PLSQLBlock;
