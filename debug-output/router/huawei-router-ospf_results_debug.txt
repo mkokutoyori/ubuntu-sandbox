@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-07T20:23:10.904Z
+Generated: 2026-06-09T09:12:43.012Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -423,53 +423,39 @@ Total steps: 247
 <empty>
 
 [103/247] r1 [R1-ospfv3-1] area 0
-  Error: Incomplete command.
-
-[104/247] r1 [R1-ospfv3-1] quit
 <empty>
 
-[105/247] r1 [R1] quit
+[104/247] r1 [R1-ospfv3-1-area-0] quit
 <empty>
 
-[106/247] r1 <R1> interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/1
-  ^
-
-[107/247] r1 <R1> ipv6 enable
-  % Invalid input detected at '^' marker.
-  ipv6 enable
-  ^
-
-[108/247] r1 <R1> ipv6 address 2001:db8:1::1/64
-  % Invalid input detected at '^' marker.
-  ipv6 address 2001:db8:1::1/64
-  ^
-
-[109/247] r1 <R1> ospfv3 1 area 0
-  % Invalid input detected at '^' marker.
-  ospfv3 1 area 0
-  ^
-
-[110/247] r1 <R1> ospfv3 cost 50
-  % Invalid input detected at '^' marker.
-  ospfv3 cost 50
-  ^
-
-[111/247] r1 <R1> ospfv3 network-type p2p
-  % Invalid input detected at '^' marker.
-  ospfv3 network-type p2p
-  ^
-
-[112/247] r1 <R1> ospfv3 timer hello 5
-  % Invalid input detected at '^' marker.
-  ospfv3 timer hello 5
-  ^
-
-[113/247] r1 <R1> quit
+[105/247] r1 [R1-ospfv3-1] quit
 <empty>
 
-[114/247] r1 <R1> return
+[106/247] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[107/247] r1 [R1-GE0/0/1] ipv6 enable
+<empty>
+
+[108/247] r1 [R1-GE0/0/1] ipv6 address 2001:db8:1::1/64
+<empty>
+
+[109/247] r1 [R1-GE0/0/1] ospfv3 1 area 0
+<empty>
+
+[110/247] r1 [R1-GE0/0/1] ospfv3 cost 50
+<empty>
+
+[111/247] r1 [R1-GE0/0/1] ospfv3 network-type p2p
+<empty>
+
+[112/247] r1 [R1-GE0/0/1] ospfv3 timer hello 5
+  Error: Invalid process ID.
+
+[113/247] r1 [R1-GE0/0/1] quit
+<empty>
+
+[114/247] r1 [R1] return
 <empty>
 
 [115/247] r1 <R1> display ospfv3
@@ -481,7 +467,9 @@ Total steps: 247
   Neighbor ID     Pri   State           Interface
 
 [117/247] r1 <R1> display ospfv3 interface
-<empty>
+   GE0/0/1 is up
+     Network Type: broadcast, Cost: 1, Priority: 1
+  
 
 [118/247] r1 <R1> display ospfv3 routing-table
   OSPFv3 routes: (none)
@@ -694,6 +682,7 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ipv6 enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -736,6 +725,7 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ipv6 enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1023,8 +1013,8 @@ Total steps: 247
   No NTP associations
 
 [178/247] r1 <R1> display clock
-  2026-06-07 20:23:10
-  Sunday
+  2026-06-09 09:12:43
+  Tuesday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1036,13 +1026,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-07 20:23:10
+  CPU Usage Stat. Time : 2026-06-09 09:12:43
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-07 20:23:10
+  Memory utilization statistics at 2026-06-09 09:12:43
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1171,6 +1161,7 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ipv6 enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1257,6 +1248,7 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ipv6 enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1296,6 +1288,7 @@ Total steps: 247
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ipv6 enable
   interface GigabitEthernet0/0/2
    shutdown
   interface GigabitEthernet0/0/3
@@ -1466,9 +1459,10 @@ Total steps: 247
     routing-table  routing-table
 
 [244/247] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1480,6 +1474,7 @@ Total steps: 247
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

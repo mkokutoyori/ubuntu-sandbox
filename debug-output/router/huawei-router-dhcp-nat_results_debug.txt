@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-06-07T20:23:09.230Z
+Generated: 2026-06-09T09:12:47.079Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -577,7 +577,7 @@ Total steps: 288
 <empty>
 
 [149/288] r1 [R1-acl-basic-2000] rule 5 permit source 192.168.1.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [150/288] r1 [R1-acl-basic-2000] quit
 <empty>
@@ -586,7 +586,7 @@ Total steps: 288
 <empty>
 
 [152/288] r1 [R1-acl-basic-2001] rule 5 permit source 192.168.2.0 0.0.0.255
-  Error: Expected permit or deny.
+<empty>
 
 [153/288] r1 [R1-acl-basic-2001] quit
 <empty>
@@ -714,7 +714,7 @@ Total steps: 288
 
 
 --- [184] § regression: display family ---
-[184/288] r1 [R1] display version
+[184/288] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -723,7 +723,7 @@ Total steps: 288
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[185/288] r1 [R1] display version
+[185/288] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -732,7 +732,7 @@ Total steps: 288
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[186/288] r1 [R1] display current-configuration
+[186/288] r1 <R1> display current-configuration
   #
   sysname R1
   #
@@ -807,8 +807,14 @@ Total steps: 288
    shutdown
   #
   #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  #
+  acl number 2001
+   rule 0 permit source 192.168.2.0 0.0.0.255
+  #
 
-[187/288] r1 [R1] display saved-configuration
+[187/288] r1 <R1> display saved-configuration
   #
   sysname R1
   #
@@ -883,8 +889,14 @@ Total steps: 288
    shutdown
   #
   #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  #
+  acl number 2001
+   rule 0 permit source 192.168.2.0 0.0.0.255
+  #
 
-[188/288] r1 [R1] display ip interface brief
+[188/288] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -900,7 +912,7 @@ Total steps: 288
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
 
-[189/288] r1 [R1] display interface
+[189/288] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/255.255.255.0
@@ -926,7 +938,7 @@ Total steps: 288
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[190/288] r1 [R1] display ip routing-table
+[190/288] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -936,56 +948,56 @@ Total steps: 288
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[191/288] r1 [R1] display ip routing-table statistics
+[191/288] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    2
   --------------------
   Total     2
 
-[192/288] r1 [R1] display arp
+[192/288] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[193/288] r1 [R1] display arp all
+[193/288] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[194/288] r1 [R1] display ospf peer
+[194/288] r1 <R1> display ospf peer
   Error: OSPF is not configured.
 
-[195/288] r1 [R1] display ospf interface
+[195/288] r1 <R1> display ospf interface
   Error: OSPF is not configured.
 
-[196/288] r1 [R1] display ospf routing
+[196/288] r1 <R1> display ospf routing
   Info: OSPF is not running.
 
-[197/288] r1 [R1] display ospf lsdb
+[197/288] r1 <R1> display ospf lsdb
   Error: OSPF is not configured.
 
-[198/288] r1 [R1] display ospf brief
+[198/288] r1 <R1> display ospf brief
   Error: OSPF is not configured.
 
-[199/288] r1 [R1] display rip
+[199/288] r1 <R1> display rip
   Info: RIP is not enabled.
 
-[200/288] r1 [R1] display rip 1 route
+[200/288] r1 <R1> display rip 1 route
   Info: RIP is not enabled.
 
-[201/288] r1 [R1] display bgp peer
+[201/288] r1 <R1> display bgp peer
   Info: BGP is not running.
 
-[202/288] r1 [R1] display bgp routing-table
+[202/288] r1 <R1> display bgp routing-table
   Info: BGP is not running.
 
-[203/288] r1 [R1] display nat session all
+[203/288] r1 <R1> display nat session all
   Info: No NAT session is found.
 
-[204/288] r1 [R1] display nat address-group
+[204/288] r1 <R1> display nat address-group
    Index  Pool Name   Start IP         End IP
    0      1           10.0.0.50        10.0.0.60
 
-[205/288] r1 [R1] display ip pool
+[205/288] r1 <R1> display ip pool
   Pool-name      : VLAN10
   Pool-No        : 0
   Position       : Local
@@ -1063,10 +1075,16 @@ Total steps: 288
   Domain-name    : not configured
   Lease          : 1 day(s)
 
-[206/288] r1 [R1] display acl all
-  Total 0 ACL(s)
+[206/288] r1 <R1> display acl all
+  Basic ACL 2000, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  Basic ACL 2001, 1 rule(s)
+  ACL's step is 5
+   rule 0 permit source 192.168.2.0 0.0.0.255
+  Total 2 ACL(s)
 
-[207/288] r1 [R1] display dhcp server statistics
+[207/288] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -1076,70 +1094,70 @@ Total steps: 288
     Inform: 0        Decline: 0
   Pool number: 7
 
-[208/288] r1 [R1] display vrrp
+[208/288] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[209/288] r1 [R1] display vrrp brief
+[209/288] r1 <R1> display vrrp brief
   Total: 0     Master: 0     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
 
-[210/288] r1 [R1] display ike sa
+[210/288] r1 <R1> display ike sa
   Info: No IPSec configuration.
 
-[211/288] r1 [R1] display ipsec sa
+[211/288] r1 <R1> display ipsec sa
   Info: No IPSec configuration.
 
-[212/288] r1 [R1] display ipsec policy
+[212/288] r1 <R1> display ipsec policy
   Info: No IPSec configuration.
 
-[213/288] r1 [R1] display ipsec proposal
+[213/288] r1 <R1> display ipsec proposal
   Info: No IPSec configuration.
 
-[214/288] r1 [R1] display ike proposal
+[214/288] r1 <R1> display ike proposal
   Info: No IPSec configuration.
 
-[215/288] r1 [R1] display ike peer
+[215/288] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[216/288] r1 [R1] display snmp-agent sys-info
+[216/288] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[217/288] r1 [R1] display ntp status
+[217/288] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[218/288] r1 [R1] display ntp session
+[218/288] r1 <R1> display ntp session
   No NTP associations
 
-[219/288] r1 [R1] display clock
-  2026-06-07 20:23:09
-  Sunday
+[219/288] r1 <R1> display clock
+  2026-06-09 09:12:47
+  Tuesday
   Time Zone(UTC) : UTC
 
-[220/288] r1 [R1] display lldp neighbor
+[220/288] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[221/288] r1 [R1] display lldp neighbor brief
+[221/288] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[222/288] r1 [R1] display cpu-usage
+[222/288] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-07 20:23:09
+  CPU Usage Stat. Time : 2026-06-09 09:12:47
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[223/288] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-07 20:23:09
+[223/288] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-06-09 09:12:47
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[224/288] r1 [R1] display device
+[224/288] r1 <R1> display device
   R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
@@ -1150,13 +1168,13 @@ Total steps: 288
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[225/288] r1 [R1] display users
+[225/288] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[226/288] r1 [R1] display history-command
+[226/288] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -1168,7 +1186,7 @@ Total steps: 288
   display users
   display history-command
 
-[227/288] r1 [R1] display logbuffer
+[227/288] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -1177,7 +1195,7 @@ Total steps: 288
   Overwritten messages : 0
   Current messages : 0
 
-[228/288] r1 [R1] display trapbuffer
+[228/288] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -1185,10 +1203,10 @@ Total steps: 288
   Dropped messages : 0
   Current messages : 0
 
-[229/288] r1 [R1] display alarm all
+[229/288] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[230/288] r1 [R1] display startup
+[230/288] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -1200,10 +1218,10 @@ Total steps: 288
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[231/288] r1 [R1] display patch-information
+[231/288] r1 <R1> display patch-information
   Info: No patch exists.
 
-[232/288] r1 [R1] display elabel
+[232/288] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
@@ -1216,12 +1234,12 @@ Total steps: 288
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[233/288] r1 [R1] display license
+[233/288] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[234/288] r1 [R1] display interface brief
+[234/288] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -1229,7 +1247,7 @@ Total steps: 288
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
 
-[235/288] r1 [R1] display ip interface GigabitEthernet0/0/0
+[235/288] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
@@ -1242,7 +1260,7 @@ Total steps: 288
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[236/288] r1 [R1] display interface GigabitEthernet0/0/0
+[236/288] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/255.255.255.0
@@ -1250,7 +1268,7 @@ Total steps: 288
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[237/288] r1 [R1] display this
+[237/288] r1 <R1> display this
   #
   sysname R1
   #
@@ -1325,13 +1343,19 @@ Total steps: 288
    shutdown
   #
   #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  #
+  acl number 2001
+   rule 0 permit source 192.168.2.0 0.0.0.255
+  #
 
-[238/288] r1 [R1] display diagnostic-information
+[238/288] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[239/288] r1 [R1] display aaa configuration
+[239/288] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -1341,13 +1365,13 @@ Total steps: 288
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[240/288] r1 [R1] display aaa online-fail-record
+[240/288] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[241/288] r1 [R1] display ssh server status
+[241/288] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[242/288] r1 [R1] display ssh user-information
+[242/288] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -1355,7 +1379,7 @@ Total steps: 288
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[243/288] r1 [R1] display user-interface
+[243/288] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -1364,16 +1388,16 @@ Total steps: 288
     37     VTY 3           -        -      0      0            N      -
     38     VTY 4           -        -      0      0            N      -
 
-[244/288] r1 [R1] display port-security
+[244/288] r1 <R1> display port-security
   Port-security is enabled on the following interfaces:
    (configuration is recorded per interface; see display this)
 
 
 --- [245] § regression: pipe filters ---
-[245/288] r1 [R1] display current-configuration | include ospf
+[245/288] r1 <R1> display current-configuration | include ospf
 <empty>
 
-[246/288] r1 [R1] display current-configuration | begin interface
+[246/288] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
    dhcp relay server-ip 10.0.0.2
@@ -1389,8 +1413,14 @@ Total steps: 288
    shutdown
   #
   #
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  #
+  acl number 2001
+   rule 0 permit source 192.168.2.0 0.0.0.255
+  #
 
-[247/288] r1 [R1] display current-configuration | exclude #
+[247/288] r1 <R1> display current-configuration | exclude #
   sysname R1
   dhcp enable
   dhcp snooping enable
@@ -1449,12 +1479,16 @@ Total steps: 288
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
+  acl number 2000
+   rule 0 permit source 192.168.1.0 0.0.0.255
+  acl number 2001
+   rule 0 permit source 192.168.2.0 0.0.0.255
 
-[248/288] r1 [R1] display ip routing-table | include Direct
+[248/288] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
-[249/288] r1 [R1] display ip interface brief | include up
+[249/288] r1 <R1> display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
   GE0/0/0                           192.168.1.1/24       UP         UP
@@ -1585,9 +1619,10 @@ Total steps: 288
     routing-table  routing-table
 
 [285/288] r1 [Huawei] undo ?
-    lldp           lldp
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -1599,6 +1634,7 @@ Total steps: 288
     debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

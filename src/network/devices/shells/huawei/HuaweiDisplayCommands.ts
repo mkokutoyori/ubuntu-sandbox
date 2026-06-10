@@ -859,6 +859,12 @@ export function displayRip(router: Router): string {
     if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
   }
 
+  const aaa = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
+  if (aaa) {
+    const al = aaa.asRunningConfigLines();
+    if (al.length > 0) { lines.push('#'); lines.push(...al); }
+  }
+
   return lines.join('\n');
 }
 

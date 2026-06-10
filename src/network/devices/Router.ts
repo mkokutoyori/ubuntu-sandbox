@@ -104,6 +104,7 @@ import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
+import { HuaweiAaaService } from './router/aaa/HuaweiAaaService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1930,6 +1931,12 @@ export abstract class Router extends Equipment {
   getHuaweiBfdService(): HuaweiBfdService {
     if (!this._huaweiBfdService) this._huaweiBfdService = new HuaweiBfdService();
     return this._huaweiBfdService;
+  }
+
+  private _huaweiAaaService: HuaweiAaaService | null = null;
+  getHuaweiAaaService(): HuaweiAaaService {
+    if (!this._huaweiAaaService) this._huaweiAaaService = new HuaweiAaaService();
+    return this._huaweiAaaService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

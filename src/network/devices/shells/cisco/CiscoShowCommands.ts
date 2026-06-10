@@ -399,6 +399,13 @@ export function showRunningConfig(router: Router): string {
     if (ll.length > 0) { lines.push('!'); lines.push(...ll); }
   }
 
+  const shellWithKeyChains = (router as unknown as { getShell?: () => { getKeyChains?: () => { asRunningConfigLines(): string[] } } }).getShell?.();
+  const kcRepo = shellWithKeyChains?.getKeyChains?.();
+  if (kcRepo) {
+    const kl = kcRepo.asRunningConfigLines();
+    if (kl.length > 0) { lines.push('!'); lines.push(...kl); }
+  }
+
   const ntpAgent = (router as unknown as { getNtpAgent?: () => { asRunningConfigLines?: () => string[] } }).getNtpAgent?.();
   if (ntpAgent?.asRunningConfigLines) {
     const nl = ntpAgent.asRunningConfigLines();

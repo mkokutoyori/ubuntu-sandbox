@@ -66,6 +66,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ext-nacl':           '{host}(config-ext-nacl)#',
   'config-ipv6-nacl':          '{host}(config-ipv6-nacl)#',
   'config-isakmp':             '{host}(config-isakmp)#',
+  'config-isakmp-profile':     '{host}(conf-isa-prof)#',
   'config-tfset':              '{host}(cfg-crypto-trans)#',
   'config-crypto-map':         '{host}(config-crypto-map)#',
   'config-ipsec-profile':      '{host}(ipsec-profile)#',
@@ -92,7 +93,10 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-archive':            '{host}(config-archive)#',
   'config-archive-log':        '{host}(config-archive-log-cfg)#',
   'config-dhcp-class':         '{host}(config-dhcp-class)#',
+  'config-dhcp-pool-class':    '{host}(config-dhcp-pool-class)#',
   'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
+  'config-keychain':           '{host}(config-keychain)#',
+  'config-keychain-key':       '{host}(config-keychain-key)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

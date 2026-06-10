@@ -158,7 +158,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     if (args.length < 4) return '% Incomplete command.';
     const network = args[0];
     const wildcard = args[1];
-    if (args[2].toLowerCase() !== 'area') return '% Invalid input. Expected "area" keyword.';
+    if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
     const areaId = args[3];
 
     ospf.addNetwork(network, wildcard, areaId);
