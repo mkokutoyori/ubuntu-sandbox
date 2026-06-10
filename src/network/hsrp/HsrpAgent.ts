@@ -12,9 +12,9 @@ import {
 } from './types';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type UDPPacket,
+  type EthernetFrame, type IPv4Packet, type UDPPacket,
+  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
-import { buildUdpIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
@@ -160,6 +160,10 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       priority: effectivePriority(g), group: g.group,
       authText: g.authText, vip: g.vip ?? '0.0.0.0',
       senderIp: srcIp.toString(),
+    };
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: UDP_PORT_HSRP, destinationPort: UDP_PORT_HSRP,
+      length: 8 + 20, checksum: 0, payload,
     };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
     const ipPkt: IPv4Packet = {

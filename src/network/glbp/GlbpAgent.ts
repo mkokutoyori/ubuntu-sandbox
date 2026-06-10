@@ -14,9 +14,9 @@ import {
 } from './types';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type UDPPacket,
+  type EthernetFrame, type IPv4Packet, type UDPPacket,
+  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
-import { buildUdpIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';

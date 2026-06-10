@@ -250,10 +250,12 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     const maxPaths = Math.max(1, this.config.maximumPaths);
     const routes: RibRoute[] = [];
     const newTopo = new Map<string, EigrpTopoEntry>();
-    for (const [key, group] of candidatesByPrefix) {
+    for (const group of candidatesByPrefix.values()) {
       group.sort((a, b) => a.fd - b.fd);
       const successor = group[0];
-      newTopo.set(key, {
+      const displayKey =
+        `${successor.route.network}/${successor.route.mask.toCIDR()}`;
+      newTopo.set(displayKey, {
         fd: successor.fd,
         successorNextHop: successor.route.nextHop,
         successorIface: successor.route.iface,

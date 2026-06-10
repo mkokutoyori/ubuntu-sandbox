@@ -399,9 +399,22 @@ export function registerRoutingProtoShow(
     const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
     const topo = e.getTopologyTable();
     if (topo.size === 0) {
+      // No learned paths — show what this router really originates
+      // (real IOS lists connected, EIGRP-activated prefixes as P entries).
+      for (const pre of e.originatedPrefixes()) {
+        lines.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is 2816`);
+        lines.push(`        via Connected`);
+      }
       for (const r of e.getContributedRoutes()) {
         lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, FD is ${r.metric}`);
         lines.push(`        via ${r.nextHop} (${r.metric}/${Math.max(0, r.metric - 256)}), ${r.iface}`);
+      }
+      if (lines.length === 1) {
+        // Pure config projection — no live interface matches a network
+        // statement yet, so show the configured statements themselves.
+        for (const stmt of e.getConfig().networks) {
+          lines.push(`P ${stmt.network}, 0 successors, FD is Inaccessible`);
+        }
       }
     } else {
       for (const [prefix, entry] of topo) {
