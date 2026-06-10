@@ -28,15 +28,14 @@ import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
-import { OracleLexer } from './OracleLexer';
 import { makeSqlId } from './views/sqlId';
-import { OracleParser } from './OracleParser';
 import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { findSqlFunction } from './functions/registry';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
+import { ConstraintValidator } from './constraints/ConstraintValidator';
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
@@ -45,6 +44,8 @@ export class OracleExecutor extends BaseExecutor {
   private readonly txn: TransactionManager;
   /** Centralized ORA-01031/00942/01917/01934 privilege decision rules. */
   private readonly privileges: PrivilegeEnforcer;
+  /** Row-level integrity enforcement (NOT NULL, PK/UNIQUE, FK, CHECK, types). */
+  private readonly constraints: ConstraintValidator;
   /** Track sequences that have had NEXTVAL called in this session */
   private _nextvalCalled: Set<string> = new Set();
 
@@ -63,6 +64,8 @@ export class OracleExecutor extends BaseExecutor {
     super(storage, catalog, context);
     this.instance = instance;
     this.privileges = new PrivilegeEnforcer(catalog, context);
+    this.constraints = new ConstraintValidator(storage,
+      (cond, row, columns) => this.evaluateCondition(cond, row, columns));
     this.txn = new TransactionManager(storage, {
       onBegin: txId => this.emitTxnStarted(txId),
       onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
@@ -2105,8 +2108,8 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
-        this.validateConstraints(schema, tableName, tableMeta, row);
-        this.validateDataTypes(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
         insertedCount++;
       }
@@ -2132,8 +2135,8 @@ export class OracleExecutor extends BaseExecutor {
             row[i] = subRow[i] as CellValue;
           }
         }
-        this.validateConstraints(schema, tableName, tableMeta, row);
-        this.validateDataTypes(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
         insertedCount++;
       }
@@ -2214,8 +2217,8 @@ export class OracleExecutor extends BaseExecutor {
         // Pass the pre-update row so uniqueness checks can exclude it
         // from the existing-row set (otherwise an UPDATE that leaves
         // the PK column unchanged would self-conflict).
-        this.validateConstraints(schema, tableName, tableMeta, newRow, row);
-        this.validateDataTypes(schema, tableName, tableMeta, newRow);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row);
+        this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
     );
@@ -2242,7 +2245,7 @@ export class OracleExecutor extends BaseExecutor {
     const rowsToDelete = this.storage.getRows(schema, tableName)
       .filter(row => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
     for (const row of rowsToDelete) {
-      this.validateDeleteForeignKeys(schema, tableName, row);
+      this.constraints.validateDeleteForeignKeys(schema, tableName, row);
     }
 
     const count = this.storage.deleteRows(
@@ -4043,154 +4046,6 @@ export class OracleExecutor extends BaseExecutor {
   /** Oracle 3-way comparison — shared with the SQL function registry. */
   private compareValues(a: CellValue, b: CellValue): number {
     return compareOracleValues(a, b);
-  }
-
-  private validateConstraints(
-    schema: string,
-    tableName: string,
-    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
-    row: StorageRow,
-    /** For UPDATE: the pre-update row excluded from uniqueness checks. */
-    excludeRow?: StorageRow,
-  ): void {
-    for (const constraint of tableMeta.constraints) {
-      if (constraint.type === 'NOT_NULL' || constraint.type === 'PRIMARY_KEY') {
-        for (const colName of constraint.columns) {
-          const colIdx = tableMeta.columns.findIndex(c => c.name === colName);
-          if (colIdx >= 0 && row[colIdx] === null) {
-            throw new OracleError(1400, `cannot insert NULL into ("${schema}"."${tableName}"."${colName}")`);
-          }
-        }
-      }
-      if (constraint.type === 'PRIMARY_KEY' || constraint.type === 'UNIQUE') {
-        const existingRows = this.storage.getRows(schema, tableName);
-        const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
-        const newKey = colIndexes.map(i => row[i]);
-        for (const existing of existingRows) {
-          if (excludeRow && existing === excludeRow) continue;
-          const existingKey = colIndexes.map(i => existing[i]);
-          if (newKey.every((v, i) => this.compareValues(v, existingKey[i]) === 0)) {
-            throw new OracleError(1, `unique constraint (${constraint.name}) violated`);
-          }
-        }
-      }
-      // FOREIGN KEY: check parent key exists
-      if (constraint.type === 'FOREIGN_KEY' && constraint.refTable && constraint.refColumns) {
-        const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
-        const fkValues = colIndexes.map(i => row[i]);
-        // Skip if any FK column is NULL (NULL FK is allowed)
-        if (fkValues.some(v => v === null)) continue;
-        const refSchema = schema; // FK references are within the same schema by default
-        const refTable = constraint.refTable;
-        if (this.storage.tableExists(refSchema, refTable)) {
-          const refMeta = this.storage.getTableMeta(refSchema, refTable)!;
-          const refColIndexes = constraint.refColumns.map(cn => refMeta.columns.findIndex(c => c.name === cn));
-          const parentRows = this.storage.getRows(refSchema, refTable);
-          const found = parentRows.some(pRow => {
-            return refColIndexes.every((ri, i) => ri >= 0 && this.compareValues(pRow[ri], fkValues[i]) === 0);
-          });
-          if (!found) {
-            throw new OracleError(2291, `integrity constraint (${constraint.name}) violated - parent key not found`);
-          }
-        }
-      }
-      // CHECK constraint
-      if (constraint.type === 'CHECK' && constraint.checkExpression) {
-        try {
-          const checkLexer = new OracleLexer();
-          const tokens = checkLexer.tokenize(`SELECT 1 FROM DUAL WHERE ${constraint.checkExpression}`);
-          const checkParser = new OracleParser();
-          const checkStmt = checkParser.parse(tokens) as SelectStatement;
-          if (checkStmt.where) {
-            if (!this.evaluateCondition(checkStmt.where, row, tableMeta.columns)) {
-              throw new OracleError(2290, `check constraint (${constraint.name}) violated`);
-            }
-          }
-        } catch (e) {
-          if (e instanceof OracleError && e.code === 'ORA-02290') throw e;
-          // If we can't parse the check expression, skip validation
-        }
-      }
-    }
-  }
-
-  /** Validate data type constraints (VARCHAR2 length, NUMBER precision/scale) */
-  private validateDataTypes(schema: string, tableName: string, tableMeta: import('../engine/storage/BaseStorage').TableMeta, row: StorageRow): void {
-    for (let i = 0; i < tableMeta.columns.length; i++) {
-      const col = tableMeta.columns[i];
-      const val = row[i];
-      if (val === null) continue;
-
-      const dt = col.dataType;
-      const typeName = (typeof dt === 'string' ? dt : dt.name)?.toUpperCase();
-
-      // VARCHAR2/CHAR length enforcement (ORA-12899)
-      if ((typeName === 'VARCHAR2' || typeName === 'NVARCHAR2' || typeName === 'CHAR' || typeName === 'NCHAR') && typeof dt !== 'string') {
-        const maxLen = dt.precision;
-        if (maxLen != null && maxLen > 0) {
-          const strVal = String(val);
-          if (strVal.length > maxLen) {
-            throw new OracleError(12899, `value too large for column "${schema}"."${tableName}"."${col.name}" (actual: ${strVal.length}, maximum: ${maxLen})`);
-          }
-        }
-      }
-
-      // NUMBER precision/scale enforcement (ORA-01438)
-      if (typeName === 'NUMBER' && typeof dt !== 'string' && typeof val === 'number') {
-        const precision = dt.precision;
-        const scale = dt.scale ?? 0;
-        if (precision != null && precision > 0) {
-          // Oracle NUMBER(p,s): max integer digits = p - s, max decimal digits = s
-          const maxIntDigits = precision - scale;
-          // Get integer part digit count
-          const absVal = Math.abs(val);
-          const intPart = Math.floor(absVal);
-          const intDigits = intPart === 0 ? 0 : String(intPart).length;
-          if (intDigits > maxIntDigits) {
-            throw new OracleError(1438, `value larger than specified precision allowed for this column`);
-          }
-        }
-      }
-    }
-  }
-
-  /** Validate that no child row references the given parent key before DELETE/UPDATE */
-  private validateDeleteForeignKeys(schema: string, tableName: string, row: StorageRow): void {
-    const tableMeta = this.storage.getTableMeta(schema, tableName);
-    if (!tableMeta) return;
-    // Find all tables in the same schema that have FK referencing this table
-    const allTables = this.storage.getTableNames(schema);
-    for (const childTableName of allTables) {
-      if (childTableName === tableName) continue;
-      const childMeta = this.storage.getTableMeta(schema, childTableName);
-      if (!childMeta) continue;
-      for (const constraint of childMeta.constraints) {
-        if (constraint.type === 'FOREIGN_KEY' && constraint.refTable === tableName && constraint.refColumns) {
-          const refColIndexes = constraint.refColumns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
-          const parentKey = refColIndexes.map(i => i >= 0 ? row[i] : null);
-          if (parentKey.some(v => v === null)) continue;
-          const childColIndexes = constraint.columns.map(cn => childMeta.columns.findIndex(c => c.name === cn));
-          const childRows = this.storage.getRows(schema, childTableName);
-          const hasChild = childRows.some(cRow => {
-            return childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0);
-          });
-          if (hasChild) {
-            if (constraint.onDelete === 'CASCADE') {
-              this.storage.deleteRows(schema, childTableName, cRow => {
-                return childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0);
-              });
-            } else if (constraint.onDelete === 'SET_NULL') {
-              this.storage.updateRows(schema, childTableName,
-                cRow => childColIndexes.every((ci, i) => ci >= 0 && this.compareValues(cRow[ci], parentKey[i]) === 0),
-                cRow => { const newRow = [...cRow]; childColIndexes.forEach(ci => { if (ci >= 0) newRow[ci] = null; }); return newRow; }
-              );
-            } else {
-              throw new OracleError(2292, `integrity constraint (${constraint.name}) violated - child record found`);
-            }
-          }
-        }
-      }
-    }
   }
 
   private expandSelectItems(items: SelectItem[], columns: StorageColMeta[]): { name: string; alias?: string; colIndex: number; dataType: import('../engine/catalog/DataType').ColumnDataType; expr?: Expression }[] {

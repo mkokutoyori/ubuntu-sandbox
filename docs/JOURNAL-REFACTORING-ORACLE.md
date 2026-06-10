@@ -175,6 +175,24 @@ d'invocation (`packageServices()`), les quatre accesseurs des paquets lisent
 `ctx.services.*`. Plus aucun champ caché sur la session.
 **Validation :** `npx tsc --noEmit` propre ; `unit/database/` : 2520/2520.
 
+### 2026-06-10 — Extraction de `ConstraintValidator` + cache des expressions CHECK
+**Défaillance :** la validation d'intégrité (NOT NULL/PK → ORA-01400, UNIQUE →
+ORA-00001, FK → ORA-02291/02292 avec actions CASCADE/SET NULL, CHECK → ORA-02290,
+types → ORA-12899/01438) vivait dans l'exécuteur. Pire : l'expression CHECK était
+**re-parsée à chaque ligne** de chaque INSERT/UPDATE — instanciation d'un
+`OracleLexer` + `OracleParser` par ligne, dernier vestige de « parsing en cours
+d'exécution » dans l'exécuteur.
+**Correction :** nouveau `src/database/oracle/constraints/ConstraintValidator.ts` :
+- possède les trois validations (`validateConstraints`, `validateDataTypes`,
+  `validateDeleteForeignKeys`), dépend de `BaseStorage` et d'un délégué
+  `ConditionEvaluator` injecté (l'évaluation d'expressions reste à l'exécuteur) ;
+- les prédicats CHECK sont parsés **une fois par expression distincte** et mis en
+  cache (borné, FIFO) ;
+- comparaisons via le `compareValues` pur de `functions/valueUtils`.
+Les imports `OracleLexer`/`OracleParser` disparaissent de l'exécuteur (4327 lignes,
+−840 depuis le départ).
+**Validation :** `npx tsc --noEmit` propre ; `unit/database/` : 2520/2520.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
