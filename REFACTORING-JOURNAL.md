@@ -216,3 +216,58 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   statiques routeur, pas de duplication des routes connectées, import de
   fichiers legacy sans les nouveaux champs, tolérance aux valeurs malformées.
 - Suites `unit/gui` + `unit/react` : 11 fichiers, 94 tests verts.
+
+---
+
+## Entrée n°5 — 2026-06-10 — La résolution DNS passe désormais par le réseau simulé (UDP/53)
+
+### Défaillances constatées
+
+1. **DNS hors-bande** — la résolution de noms (`ping <hostname>`,
+   `traceroute <hostname>`) localisait le serveur DNS via le **registre
+   d'équipements** (`findDnsServerByIP`) et appelait sa méthode `query()`
+   directement, sans jamais émettre de paquet. Conséquences irréalistes :
+   un serveur DNS **au câble débranché**, **sans route**, ou **protégé par un
+   firewall droppant UDP/53** répondait quand même ; aucun trafic DNS n'était
+   visible dans les logs réseau ni l'animation de paquets ; les règles
+   iptables sur le port 53 étaient sans effet.
+2. **Port 53 fantôme** — chaque machine Linux pré-liait `udp/53`
+   (`systemd-resolved` sur 127.0.0.53) dans la `SocketTable` à des fins
+   d'affichage netstat, sans aucun service réel derrière.
+
+### Correction (structurelle)
+
+- **Messages DNS filaires** (`DnsWire.ts`) : `DnsWireQuery`/`DnsWireResponse`
+  avec id de transaction 16 bits, rcodes RFC 1035 (NOERROR/NXDOMAIN/...),
+  type guards, estimation de taille on-wire.
+- **Côté serveur** : `DnsService` expose des hooks `onStart`/`onStop`
+  (Observer) ; `LinuxMachine` y attache le bind/unbind de l'UDP 53 via la
+  couche socket de l'entrée n°3 (le stub systemd-resolved est supplanté au
+  démarrage de dnsmasq, comme sur un vrai Ubuntu). Les réponses repartent en
+  datagrammes UDP vers le port source du client.
+- **Côté client** : `LinuxMachine.queryDnsServer()` — port éphémère, requête
+  UDP/53 routée (firewall OUTPUT, ARP), corrélation par id de transaction,
+  **timeout réel** si le serveur est injoignable.
+- **`resolveHostname` devient asynchrone** (interface `LinuxNetKernel`) :
+  IP littérale → `/etc/hosts` (lu à chaud) → requête DNS sur le câble.
+  `ping`/`traceroute` mis à jour. Le chemin legacy `findDnsServerByIP` ne
+  subsiste que pour `dig`/`nslookup`/`host` (migration prévue en entrée
+  suivante).
+
+### Fichiers
+
+- `src/network/devices/linux/DnsWire.ts` (nouveau)
+- `src/network/devices/linux/LinuxDnsService.ts` (hooks lifecycle)
+- `src/network/devices/LinuxMachine.ts` (serveur + client + résolution async)
+- `src/network/devices/linux/LinuxNetKernel.ts` (contrat async)
+- `src/network/devices/linux/commands/net/{Ping,Traceroute}.ts`
+- `src/__tests__/unit/network-v2/dns-over-wire.test.ts` (nouveau, 8 tests)
+
+### Validation
+
+- 8 nouveaux tests : résolution nominale sur le câble, bind/libération du
+  port 53 au start/stop de dnsmasq, NOERROR/NXDOMAIN, et **réalisme des
+  pannes** : câble débranché, firewall DROP sur UDP/53, service arrêté,
+  serveur inexistant → « Name or service not known ».
+- Suites hosts/nslookup/DHCP/SFTP : 378 tests verts ; régression complète
+  `network-v2` relancée.

@@ -31,10 +31,29 @@ export class DnsService {
   /** All DNS records served by this instance */
   private records: DnsRecord[] = [];
   private running = false;
+  /** Lifecycle observers — the owning host binds/unbinds UDP 53 on these. */
+  private startListeners: Array<() => void> = [];
+  private stopListeners: Array<() => void> = [];
 
-  start(): void { this.running = true; }
-  stop(): void { this.running = false; }
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    for (const cb of this.startListeners) cb();
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    for (const cb of this.stopListeners) cb();
+  }
+
   isRunning(): boolean { return this.running; }
+
+  /** Register a callback fired when the service transitions to running. */
+  onStart(cb: () => void): void { this.startListeners.push(cb); }
+
+  /** Register a callback fired when the service is stopped. */
+  onStop(cb: () => void): void { this.stopListeners.push(cb); }
 
   addRecord(record: DnsRecord): void {
     this.records.push(record);

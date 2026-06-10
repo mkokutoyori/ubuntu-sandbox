@@ -107,10 +107,11 @@ export interface LinuxNetKernel {
    * Resolution order (mirrors Linux NSS `files dns`):
    *   1. If `name` is already a valid IPv4 address, return it directly.
    *   2. Look up `name` in `/etc/hosts` (VFS).
-   *   3. Query the DNS server from `/etc/resolv.conf` (if configured).
+   *   3. Query the DNS server from `/etc/resolv.conf` over UDP/53 through
+   *      the simulated network (asynchronous: unreachable servers time out).
    *   4. Return `null` if unresolvable.
    */
-  resolveHostname(name: string): IPAddress | null;
+  resolveHostname(name: string): Promise<IPAddress | null>;
 
   /** Read a file from the virtual filesystem (returns null if not found). */
   readFile(path: string): string | null;
