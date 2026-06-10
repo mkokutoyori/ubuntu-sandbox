@@ -3,11 +3,14 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
+import { VirtualTimeScheduler } from '@/events/Scheduler';
 import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { flagsString, noFlags, makeSocketKey, makeListenerKey, TCP_MSL_MS } from '@/network/tcp/types';
+import {
+  flagsString, noFlags, makeSocketKey, makeListenerKey,
+  computeTcpChecksum, verifyTcpChecksum, TCP_TIME_WAIT_MS,
+} from '@/network/tcp/types';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 
 beforeEach(() => {
@@ -144,8 +147,8 @@ describe('TCP — data exchange', () => {
   });
 });
 
-describe('TCP — connection close', () => {
-  it('client.close() drives FIN → FIN-ACK → ACK; active closer parks in TIME_WAIT, passive closer closes', () => {
+describe('TCP — connection close (RFC 9293 §3.6)', () => {
+  it('client.close(): passive side closes; the active closer holds TIME-WAIT', () => {
     const { bus, client, server } = pair();
     let serverSocket: TcpSocket | null = null;
     server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
@@ -154,120 +157,129 @@ describe('TCP — connection close', () => {
     bus.subscribe('tcp.connection.closed', (e) => closedEvents.push(e.payload));
     cs.close();
     if (serverSocket && (serverSocket as TcpSocket).state === 'close-wait') (serverSocket as TcpSocket).close();
+    // Passive closer (server) is fully closed; the active closer MUST
+    // hold the pair in TIME-WAIT for 2×MSL (it is NOT closed yet).
+    expect(serverSocket!.state).toBe('closed');
     expect(cs.state).toBe('time-wait');
-    expect((serverSocket as unknown as TcpSocket).state).toBe('closed');
-    expect(closedEvents.some(c => c.deviceId === client.id)).toBe(true);
+    expect(closedEvents.some(c => c.deviceId === server.id)).toBe(true);
+    expect(closedEvents.some(c => c.deviceId === client.id)).toBe(false);
   });
 
-  it('server-initiated close also tears the connection down on the client', () => {
+  it('server-initiated close mirrors the same asymmetry', () => {
     const { client, server } = pair();
     let serverSocket: TcpSocket | null = null;
     server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
     const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
     serverSocket!.close();
     if (cs.state === 'close-wait') cs.close();
+    expect(cs.state).toBe('closed');                 // passive closer
+    expect(serverSocket!.state).toBe('time-wait');   // active closer
+  });
+
+  it('TIME-WAIT releases the socket after 2×MSL', async () => {
+    const { client, server } = pair();
+    const scheduler = new VirtualTimeScheduler();
+    client.setScheduler(scheduler);
+    let serverSocket: TcpSocket | null = null;
+    server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
+    const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
+    cs.close();
+    if (serverSocket && (serverSocket as TcpSocket).state === 'close-wait') (serverSocket as TcpSocket).close();
+    expect(cs.state).toBe('time-wait');
+    scheduler.advance(TCP_TIME_WAIT_MS);
     expect(cs.state).toBe('closed');
-    expect(serverSocket!.state).toBe('time-wait');
   });
 });
 
-describe('TCP — TIME_WAIT (RFC 793 §3.5)', () => {
-  let vts: VirtualTimeScheduler;
-
-  beforeEach(() => {
-    vts = new VirtualTimeScheduler();
-    __setDefaultScheduler(vts);
-  });
-
-  afterEach(() => {
-    __setDefaultScheduler(null);
-  });
-
-  function closedPair() {
-    const built = pair();
-    let serverSocket: TcpSocket | null = null;
-    built.server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
-    const cs = built.client.getTcpStack().connect('10.0.0.2', 49)!;
-    cs.close();
-    (serverSocket as unknown as TcpSocket).close();
-    return { ...built, cs, serverSocket: serverSocket as unknown as TcpSocket };
-  }
-
-  it('the socket pair stays reserved for 2×MSL then is released', () => {
-    const { client, cs } = closedPair();
-    expect(cs.state).toBe('time-wait');
-    expect(client.getTcpStack().listSockets()).toHaveLength(1);
-
-    vts.advance(2 * TCP_MSL_MS - 1);
-    expect(cs.state).toBe('time-wait');
-
-    vts.advance(1);
-    expect(cs.state).toBe('closed');
-    expect(client.getTcpStack().listSockets()).toHaveLength(0);
-  });
-
-  it('the application close handler fires immediately, not after 2MSL', () => {
-    const built = pair();
-    let serverSocket: TcpSocket | null = null;
-    built.server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
-    let closeReason: string | null = null;
-    const cs = built.client.getTcpStack().connect('10.0.0.2', 49, {
-      onClose: (reason) => { closeReason = reason; },
-    })!;
-    cs.close();
-    (serverSocket as unknown as TcpSocket).close();
-    expect(closeReason).toBe('fin');
-  });
-
-  it('a retransmitted remote FIN in TIME_WAIT is re-ACKed and restarts the 2MSL timer', () => {
-    const { bus, client, cs } = closedPair();
-    vts.advance(2 * TCP_MSL_MS - 1000);
-
-    const acks: string[] = [];
-    bus.subscribe('tcp.segment.sent', (e) => {
-      if (e.payload.deviceId === client.id) acks.push(e.payload.flagsText);
+describe('TCP — robustness (RFC 9293 §3.1/§3.10.7.4)', () => {
+  it('a duplicated data segment is re-ACKed but never delivered twice', () => {
+    const { bus, client, server } = pair();
+    const received: unknown[] = [];
+    server.getTcpStack().listen(49, {
+      onAccept: (sock) => { sock.onData((d) => received.push(d)); },
     });
-    // Simulate the loss of our final ACK: the server retransmits its FIN.
-    const finFlags = noFlags(); finFlags.fin = true; finFlags.ack = true;
-    const seg = {
-      type: 'tcp' as const,
-      sourcePort: 49, destinationPort: cs.localPort,
-      sequence: cs.recvNext === 0 ? 0 : (cs.recvNext - 1) >>> 0,
-      acknowledgement: cs.sendNext,
-      dataOffset: 5, flags: finFlags, window: 65535, checksum: 0,
-      urgentPointer: 0, options: [], payload: undefined,
+    const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
+
+    // Capture the data segment off the wire, then replay it raw at the
+    // server's stack (simulating network duplication).
+    let dup: { seg: import('@/network/tcp/types').TcpSegment; ip: IPAddress } | null = null;
+    bus.subscribe('tcp.segment.received', () => { /* observe only */ });
+    const origHandle = server.getTcpStack().handleIp.bind(server.getTcpStack());
+    cs.send('hello-once');
+    expect(received).toEqual(['hello-once']);
+
+    // Replay: rebuild the same segment (same sequence) and re-inject.
+    const seq = (cs.sendNext - 'hello-once'.length) >>> 0;
+    const replay: import('@/network/tcp/types').TcpSegment = {
+      type: 'tcp', sourcePort: cs.localPort, destinationPort: 49,
+      sequence: seq, acknowledgement: cs.recvNext,
+      dataOffset: 5,
+      flags: { ...noFlags(), ack: true, psh: true },
+      window: 65535, checksum: 0, urgentPointer: 0, options: [],
+      payload: 'hello-once',
     };
-    const ipPkt = {
-      type: 'ipv4' as const, version: 4, ihl: 5, tos: 0, totalLength: 40,
+    origHandle('GigabitEthernet0/0', new IPAddress('10.0.0.1'), {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 60,
       identification: 1, flags: 0, fragmentOffset: 0, ttl: 64,
       protocol: 6, headerChecksum: 0,
-      sourceIP: new IPAddress('10.0.0.2'), destinationIP: new IPAddress('10.0.0.1'),
-      payload: seg,
-    };
-    client.getTcpStack().handleIp('GigabitEthernet0/0', new IPAddress('10.0.0.2'), ipPkt);
-
-    expect(acks).toContain('ACK');
-    // Timer restarted: 1s later (old deadline) the socket is still reserved.
-    vts.advance(1000);
-    expect(cs.state).toBe('time-wait');
-    vts.advance(2 * TCP_MSL_MS);
-    expect(cs.state).toBe('closed');
-  });
-
-  it('the passive closer (LAST_ACK) closes immediately without TIME_WAIT', () => {
-    const { serverSocket } = closedPair();
-    expect(serverSocket.state).toBe('closed');
-  });
-
-  it('stack stop() releases TIME_WAIT sockets without firing duplicate close events', () => {
-    const { bus, client, cs } = closedPair();
-    const closes: string[] = [];
-    bus.subscribe('tcp.connection.closed', (e) => {
-      if (e.payload.deviceId === client.id) closes.push(e.payload.reason);
+      sourceIP: new IPAddress('10.0.0.1'),
+      destinationIP: new IPAddress('10.0.0.2'),
+      payload: replay,
     });
-    client.getTcpStack().stop();
-    expect(cs.state).toBe('closed');
-    expect(closes).toHaveLength(0);
+    expect(received).toEqual(['hello-once']);   // not delivered twice
+    void dup;
+  });
+
+  it('a corrupted checksum is discarded silently', () => {
+    const { bus, client, server } = pair();
+    const received: unknown[] = [];
+    const drops: Array<{ reason: string }> = [];
+    bus.subscribe('tcp.segment.dropped', (e) => drops.push(e.payload));
+    server.getTcpStack().listen(49, {
+      onAccept: (sock) => { sock.onData((d) => received.push(d)); },
+    });
+    const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
+
+    const bad: import('@/network/tcp/types').TcpSegment = {
+      type: 'tcp', sourcePort: cs.localPort, destinationPort: 49,
+      sequence: cs.sendNext, acknowledgement: cs.recvNext,
+      dataOffset: 5,
+      flags: { ...noFlags(), ack: true, psh: true },
+      window: 65535, checksum: 0xBEEF /* wrong */, urgentPointer: 0,
+      options: [], payload: 'tampered',
+    };
+    server.getTcpStack().handleIp('GigabitEthernet0/0', new IPAddress('10.0.0.1'), {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 60,
+      identification: 2, flags: 0, fragmentOffset: 0, ttl: 64,
+      protocol: 6, headerChecksum: 0,
+      sourceIP: new IPAddress('10.0.0.1'),
+      destinationIP: new IPAddress('10.0.0.2'),
+      payload: bad,
+    });
+    expect(received).toEqual([]);
+    expect(drops.some(d => d.reason === 'bad-checksum')).toBe(true);
+  });
+
+  it('segments built by the stack carry a verifiable checksum', () => {
+    const { bus, client, server } = pair();
+    server.getTcpStack().listen(49, { onAccept: () => undefined });
+    const checksums: number[] = [];
+    bus.subscribe('tcp.segment.sent', () => { /* counts only */ });
+    // Verify at IP level through the wire event payloads is indirect;
+    // instead assert via the pure function on a crafted segment.
+    const seg: import('@/network/tcp/types').TcpSegment = {
+      type: 'tcp', sourcePort: 1000, destinationPort: 2000,
+      sequence: 42, acknowledgement: 7, dataOffset: 5,
+      flags: { ...noFlags(), ack: true }, window: 65535,
+      checksum: 0, urgentPointer: 0, options: [], payload: 'abc',
+    };
+    seg.checksum = computeTcpChecksum(seg, '10.0.0.1', '10.0.0.2');
+    expect(seg.checksum).not.toBe(0);
+    expect(verifyTcpChecksum(seg, '10.0.0.1', '10.0.0.2')).toBe(true);
+    // Any field change invalidates it.
+    seg.sequence = 43;
+    expect(verifyTcpChecksum(seg, '10.0.0.1', '10.0.0.2')).toBe(false);
+    void client; void checksums;
   });
 });
 

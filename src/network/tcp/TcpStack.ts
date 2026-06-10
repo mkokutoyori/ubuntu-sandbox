@@ -1,9 +1,14 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import {
+  getDefaultScheduler, type IScheduler,
+} from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
-  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_MSL_MS,
+  computeTcpChecksum, verifyTcpChecksum,
+  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
 import {
   MACAddress, IPAddress,
@@ -64,6 +69,8 @@ export class TcpSocket {
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
   recvBuffer = '';
+  /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
+  timeWaitTimer: symbol | null = null;
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -149,12 +156,14 @@ export class TcpStack {
   private running = false;
   private nextEphemeralPort = 49152;
   private startedAtMs = Date.now();
-  private readonly timeWaitTimers = new Map<string, TimerHandle>();
+
+  private readonly timers = new TimerSet(() => this.getScheduler());
 
   constructor(
     private readonly host: TcpHost,
     private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
+    private readonly getScheduler: () => IScheduler =
+    () => getDefaultScheduler(),
   ) {}
 
   start(): void { if (!this.running) this.running = true; }
@@ -162,11 +171,9 @@ export class TcpStack {
   stop(): void {
     if (!this.running) return;
     this.running = false;
-    const scheduler = this.getScheduler();
-    for (const handle of this.timeWaitTimers.values()) scheduler.clear(handle);
-    this.timeWaitTimers.clear();
+    this.timers.clearAll();
     for (const s of Array.from(this.sockets.values())) {
-      if (s.state === 'time-wait') { this._releaseTimeWait(s); continue; }
+      s.timeWaitTimer = null;
       this._teardown(s, 'shutdown');
     }
     this.sockets.clear();
@@ -230,8 +237,9 @@ export class TcpStack {
     this.sockets.set(socket.key(), socket);
     this._transition(socket, 'syn-sent');
     const flags = noFlags(); flags.syn = true;
-    this.transmit(socket, flags, socket.sendNext, 0, undefined);
+    const synSeq = socket.sendNext;
     socket.sendNext = (socket.sendNext + 1) >>> 0;
+    this.transmit(socket, flags, synSeq, 0, undefined);
     return socket;
   }
 
@@ -262,6 +270,12 @@ export class TcpStack {
     if (!seg || seg.type !== 'tcp') return false;
     const senderIp = srcIp.toString();
     const dstIp = ipPkt.destinationIP.toString();
+
+    // RFC 9293 §3.1 — a corrupted segment is discarded silently.
+    if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
+      this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
+      return true;
+    }
 
     const payloadSize = seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1);
     this.getBus().publish({
@@ -298,8 +312,12 @@ export class TcpStack {
       this._transition(socket, 'syn-received');
       try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
       const flags = noFlags(); flags.syn = true; flags.ack = true;
-      this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+      // Allocate the sequence BEFORE transmitting: Cable delivery is
+      // synchronous, so the peer's reply can re-enter this stack and
+      // consume sendNext before the post-send increment would run.
+      const synAckSeq = socket.sendNext;
       socket.sendNext = (socket.sendNext + 1) >>> 0;
+      this.transmit(socket, flags, synAckSeq, socket.recvNext, undefined);
       return true;
     }
     if (seg.flags.rst) {
@@ -324,14 +342,17 @@ export class TcpStack {
         offset += chunk.length;
         const isLast = offset >= data.length;
         const flags = noFlags(); flags.ack = true; if (isLast) flags.psh = true;
-        this.transmit(socket, flags, socket.sendNext, socket.recvNext, chunk);
-        socket.sendNext = (socket.sendNext + chunk.length) >>> 0;
+        const seq = socket.sendNext;
+        socket.sendNext = (seq + chunk.length) >>> 0;
+        this.transmit(socket, flags, seq, socket.recvNext, chunk);
       }
       return;
     }
     const flags = noFlags(); flags.ack = true; flags.psh = true;
-    this.transmit(socket, flags, socket.sendNext, socket.recvNext, data);
-    socket.sendNext = (socket.sendNext + (typeof data === 'string' ? data.length : 1)) >>> 0;
+    const seq = socket.sendNext;
+    socket.sendNext =
+      (seq + (typeof data === 'string' ? data.length : 1)) >>> 0;
+    this.transmit(socket, flags, seq, socket.recvNext, data);
   }
 
   private flushPendingSends(socket: TcpSocket): void {
@@ -340,8 +361,9 @@ export class TcpStack {
     socket.pendingSendQueue.length = 0;
     for (const data of queued) {
       const flags = noFlags(); flags.ack = true; flags.psh = true;
-      this.transmit(socket, flags, socket.sendNext, socket.recvNext, data);
-      socket.sendNext = (socket.sendNext + 1) >>> 0;
+      const seq = socket.sendNext;
+      socket.sendNext = (seq + 1) >>> 0;
+      this.transmit(socket, flags, seq, socket.recvNext, data);
     }
     if (socket.closeAfterFlush) {
       socket.closeAfterFlush = false;
@@ -358,13 +380,15 @@ export class TcpStack {
     if (socket.state === 'established') {
       this._transition(socket, 'fin-wait-1');
       const flags = noFlags(); flags.fin = true; flags.ack = true;
-      this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
-      socket.sendNext = (socket.sendNext + 1) >>> 0;
+      const seq = socket.sendNext;
+      socket.sendNext = (seq + 1) >>> 0;
+      this.transmit(socket, flags, seq, socket.recvNext, undefined);
     } else if (socket.state === 'close-wait') {
       this._transition(socket, 'last-ack');
       const flags = noFlags(); flags.fin = true; flags.ack = true;
-      this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
-      socket.sendNext = (socket.sendNext + 1) >>> 0;
+      const seq = socket.sendNext;
+      socket.sendNext = (seq + 1) >>> 0;
+      this.transmit(socket, flags, seq, socket.recvNext, undefined);
     } else {
       this._teardown(socket, 'shutdown');
     }
@@ -406,6 +430,7 @@ export class TcpStack {
         break;
       case 'established':
         if (payloadSize > 0) {
+          if (!this.acceptInOrder(socket, seg)) break;
           this.deliverData(socket, seg);
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
@@ -420,7 +445,7 @@ export class TcpStack {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this._enterTimeWait(socket);
+          this.enterTimeWait(socket);
         } else if (seg.flags.fin) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
@@ -435,8 +460,9 @@ export class TcpStack {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this._enterTimeWait(socket);
+          this.enterTimeWait(socket);
         } else if (payloadSize > 0) {
+          if (!this.acceptInOrder(socket, seg)) break;
           this.deliverData(socket, seg);
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
@@ -451,21 +477,42 @@ export class TcpStack {
         break;
       case 'closing':
         if (seg.flags.ack) {
-          this._enterTimeWait(socket);
+          this.enterTimeWait(socket);
         }
         break;
       case 'time-wait':
-        // RFC 793 §3.5: a retransmitted remote FIN (our final ACK was lost)
-        // is re-acknowledged and the 2MSL timer restarts.
+        // RFC 9293 §3.10.7 — re-ACK a retransmitted FIN; ignore the rest.
         if (seg.flags.fin) {
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this.armTimeWaitTimer(socket);
         }
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * In-order acceptance check (RFC 9293 §3.10.7.4): only a segment
+   * starting exactly at RCV.NXT is delivered. Duplicates and
+   * out-of-order segments are answered with a duplicate ACK carrying
+   * the expected sequence, and never delivered twice to the app.
+   */
+  private acceptInOrder(socket: TcpSocket, seg: TcpSegment): boolean {
+    if (seg.sequence === socket.recvNext) return true;
+    const ackFlags = noFlags(); ackFlags.ack = true;
+    this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
+    return false;
+  }
+
+  /** Hold the pair in TIME-WAIT for 2×MSL before releasing it. */
+  private enterTimeWait(socket: TcpSocket): void {
+    if (socket.state === 'time-wait') return;
+    this._transition(socket, 'time-wait');
+    socket.timeWaitTimer = this.timers.setTimeout(() => {
+      socket.timeWaitTimer = null;
+      this._teardown(socket, 'fin');
+    }, TCP_TIME_WAIT_MS);
   }
 
   private deliverData(socket: TcpSocket, seg: TcpSegment): void {
@@ -502,50 +549,13 @@ export class TcpStack {
     });
   }
 
-  /**
-   * RFC 793 §3.5: the active closer parks the socket pair in TIME_WAIT for
-   * 2×MSL instead of releasing it immediately. The application is notified
-   * right away (as a real OS does when close() completes); only the socket
-   * pair stays reserved — it remains visible in listSockets() until the
-   * timer releases it, like a TIME_WAIT line in netstat.
-   */
-  private _enterTimeWait(socket: TcpSocket): void {
-    if (socket.closed) return;
-    socket.closed = true;
-    this._transition(socket, 'time-wait');
-    this.getBus().publish({
-      topic: 'tcp.connection.closed',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp: socket.localIp, localPort: socket.localPort,
-        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
-        reason: 'fin',
-      },
-    });
-    try { socket._fireClose('fin'); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
-    this.armTimeWaitTimer(socket);
-  }
-
-  private armTimeWaitTimer(socket: TcpSocket): void {
-    const scheduler = this.getScheduler();
-    const key = socket.key();
-    const previous = this.timeWaitTimers.get(key);
-    if (previous !== undefined) scheduler.clear(previous);
-    const handle = scheduler.setTimeout(() => {
-      this.timeWaitTimers.delete(key);
-      this._releaseTimeWait(socket);
-    }, 2 * TCP_MSL_MS);
-    this.timeWaitTimers.set(key, handle);
-  }
-
-  private _releaseTimeWait(socket: TcpSocket): void {
-    this._transition(socket, 'closed');
-    this.sockets.delete(socket.key());
-  }
-
   _teardown(socket: TcpSocket, reason: TcpCloseReason): void {
     if (socket.closed) return;
     socket.closed = true;
+    if (socket.timeWaitTimer) {
+      this.timers.clear(socket.timeWaitTimer);
+      socket.timeWaitTimer = null;
+    }
     this._transition(socket, 'closed');
     this.sockets.delete(socket.key());
     this.getBus().publish({
@@ -588,6 +598,7 @@ export class TcpStack {
       dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
       options: [], payload: undefined,
     };
+    seg.checksum = computeTcpChecksum(seg, srcIpAddr.toString(), remoteIp);
     this.shipSegment(egress, srcIpAddr, new IPAddress(remoteIp), seg);
     void localIp;
   }
@@ -605,6 +616,8 @@ export class TcpStack {
       window: socket.windowSize, checksum: 0, urgentPointer: 0,
       options: [], payload,
     };
+    seg.checksum = computeTcpChecksum(
+      seg, srcIpAddr.toString(), socket.remoteIp);
     this.shipSegment(egress, srcIpAddr, new IPAddress(socket.remoteIp), seg);
   }
 
@@ -652,7 +665,7 @@ export class TcpStack {
     return port;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled'): void {
+  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum'): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {

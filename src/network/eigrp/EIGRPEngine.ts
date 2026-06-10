@@ -1,9 +1,29 @@
+/**
+ * EIGRPEngine — a real, lightweight EIGRP engine on the shared
+ * routing foundation. Real config-driven: a neighbour forms only with
+ * a genuinely cabled peer running EIGRP in the SAME autonomous system
+ * AND matching K values (RFC 7868 §5.4); learned routes are the peer's
+ * really-originated connected networks reached via the real link.
+ *
+ * Path selection follows DUAL's feasibility condition: per prefix the
+ * lowest-FD path is the successor; an alternate path is also installed
+ * only when its reported distance is below the successor's FD and its
+ * own FD fits within `variance × FD(successor)` (classic unequal-cost
+ * load sharing), capped by `maximum-paths`. Metrics are the classic
+ * 256-scaled composite of min-bandwidth and cumulative delay.
+ */
 import { IPAddress, SubnetMask } from '../core/types';
 import { tryIpToUint32, prefixLengthToMaskUint32, wildcardMatches } from '../core/ip';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
 import type { RibRoute, RoutingPeer } from '../routing/types';
+import {
+  compositeMetric, kValuesMatch,
+  EIGRP_DEFAULT_K_VALUES,
+  EIGRP_FALLBACK_BANDWIDTH_KBPS, EIGRP_FALLBACK_DELAY_USEC,
+  type EigrpKValues,
+} from './metric';
 
 export interface EigrpNetworkStmt {
   network: string;
@@ -24,17 +44,39 @@ export interface EIGRPConfig {
   variance: number;
   maximumPaths: number;
   redistribute: string[];
-  k1: number;
-  k2: number;
-  k3: number;
-  k4: number;
-  k5: number;
-  ifaceMetrics: Map<string, EigrpIfaceMetrics>;
+  /** Composite-metric coefficients (`metric weights 0 k1 k2 k3 k4 k5`). */
+  kValues: EigrpKValues;
 }
 
-const EIGRP_INTERNAL_AD = 90;
-const DEFAULT_BW_KBPS = 100_000;
-const DEFAULT_DELAY_TENS_US = 10;
+/** A prefix this engine really originates, with its link attributes. */
+export interface EigrpOriginatedPrefix {
+  network: IPAddress;
+  mask: SubnetMask;
+  /** Effective bandwidth (kbps) of the originating interface. */
+  bandwidthKbps?: number;
+  /** Delay (µs) of the originating interface. */
+  delayUsec?: number;
+}
+
+/** EIGRP administrative distances (internal / redistributed-external). */
+export const EIGRP_INTERNAL_AD = 90;
+export const EIGRP_EXTERNAL_AD = 170;
+
+/** One candidate path to a prefix, with DUAL's two distances. */
+interface PathCandidate {
+  route: RibRoute;
+  /** Feasible distance — full metric through this neighbour. */
+  fd: number;
+  /** Reported distance — the neighbour's own metric to the prefix. */
+  rd: number;
+}
+
+function toNum(ip: string): number {
+  const p = ip.split('.').map(Number);
+  return p.length === 4 && p.every((n) => n >= 0 && n <= 255)
+    ? ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0
+    : -1;
+}
 
 function classfulMaskBits(ip: string): number {
   const first = Number(ip.split('.')[0]);
@@ -44,13 +86,14 @@ function classfulMaskBits(ip: string): number {
 }
 
 function statementCovers(stmt: EigrpNetworkStmt, localIp: string): boolean {
-  const netNum = tryIpToUint32(stmt.network);
-  const ipNum = tryIpToUint32(localIp);
-  if (netNum === null || ipNum === null) return false;
+  const netNum = toNum(stmt.network);
+  const ipNum = toNum(localIp);
+  if (netNum < 0 || ipNum < 0) return false;
   if (stmt.wildcard) {
     return wildcardMatches(localIp, stmt.network, stmt.wildcard);
   }
-  const mask = prefixLengthToMaskUint32(classfulMaskBits(stmt.network));
+  const bits = classfulMaskBits(stmt.network);
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
   return (ipNum & mask) === (netNum & mask);
 }
 
@@ -74,48 +117,25 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     return {
       asn: 0, networks: [], passive: new Set(), autoSummary: true,
       variance: 1, maximumPaths: 4, redistribute: [],
-      k1: 1, k2: 0, k3: 1, k4: 0, k5: 0,
-      ifaceMetrics: new Map(),
+      kValues: EIGRP_DEFAULT_K_VALUES,
     };
   }
 
   get asn(): number { return this.config.asn; }
 
-  setInterfaceMetrics(ifName: string, bwKbps: number, delayTensOfUs: number): void {
-    this.config.ifaceMetrics.set(ifName, { bandwidthKbps: bwKbps, delayTensOfUs });
-  }
-
-  private ifaceMetrics(ifName: string): EigrpIfaceMetrics {
-    return this.config.ifaceMetrics.get(ifName) ?? {
-      bandwidthKbps: DEFAULT_BW_KBPS,
-      delayTensOfUs: DEFAULT_DELAY_TENS_US,
-    };
-  }
-
-  private compositeMetric(minBwKbps: number, totalDelayTensOfUs: number): number {
-    const { k1, k2, k3, k4, k5 } = this.config;
-    const bwComp = k1 * Math.round((1e7 / minBwKbps) * 256);
-    const delayComp = k3 * totalDelayTensOfUs * 256;
-    const loadComp = k2 * Math.round((1e7 / minBwKbps) * 256 / (256 - 1));
-    const reliabilityComp = k4 > 0 ? k4 * 0 : 0;
-    const mtuFactor = k5 > 0 ? (k5 / (k4 + 1)) : 0;
-    return bwComp + delayComp + loadComp + reliabilityComp + mtuFactor;
-  }
-
-  private localMetricForIface(ifName: string): { bwKbps: number; delayTensOfUs: number } {
-    const m = this.ifaceMetrics(ifName);
-    return { bwKbps: m.bandwidthKbps, delayTensOfUs: m.delayTensOfUs };
-  }
-
-  originatedPrefixes(): Array<{ network: IPAddress; mask: SubnetMask; bwKbps: number; delayTensOfUs: number }> {
-    const out: Array<{ network: IPAddress; mask: SubnetMask; bwKbps: number; delayTensOfUs: number }> = [];
+  /** Connected networks this device really originates into EIGRP. */
+  originatedPrefixes(): EigrpOriginatedPrefix[] {
+    const out: EigrpOriginatedPrefix[] = [];
     for (const c of this.deviceCtx.connectedNetworks()) {
       if (this.config.passive.has(c.iface)) continue;
       const activated = this.config.networks.some((s) =>
         statementCovers(s, String(c.localIp)));
-      if (!activated) continue;
-      const { bwKbps, delayTensOfUs } = this.localMetricForIface(c.iface);
-      out.push({ network: c.network, mask: c.mask, bwKbps, delayTensOfUs });
+      if (activated) {
+        out.push({
+          network: c.network, mask: c.mask,
+          bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
+        });
+      }
     }
     return out;
   }
@@ -131,13 +151,10 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (this.config.passive.has(p.localIface)) continue;
       const peerEng = p.peerEngineFor('eigrp') as EIGRPEngine | null;
       if (!peerEng || !peerEng.isEnabled()) continue;
-      if (peerEng.asn !== this.config.asn) continue;
-      const kMatch = peerEng.config.k1 === this.config.k1 &&
-        peerEng.config.k2 === this.config.k2 &&
-        peerEng.config.k3 === this.config.k3 &&
-        peerEng.config.k4 === this.config.k4 &&
-        peerEng.config.k5 === this.config.k5;
-      if (!kMatch) continue;
+      if (peerEng.asn !== this.config.asn) continue;   // AS must match
+      // RFC 7868 §5.4 — mismatched K values block the adjacency.
+      if (!kValuesMatch(this.config.kValues,
+        peerEng.getConfig().kValues)) continue;
       keep.add(p.deviceId);
       const isNew = !previousIds.has(p.deviceId);
       this.neighbors.upsert(
@@ -177,32 +194,74 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   }
 
   protected computeRoutes(peers: RoutingPeer[]): RibRoute[] {
-    const candidates: Map<string, Array<{
-      nextHop: IPAddress | null;
-      iface: string;
-      metric: number;
-      rd: number;
-    }>> = new Map();
+    const k = this.config.kValues;
+    // Real IOS never installs a protocol route for its own connected
+    // prefixes — connected (AD 0) always wins.
+    const ownNetworks = new Set(this.deviceCtx.connectedNetworks()
+      .map((c) => `${c.network}/${c.mask}`));
 
-    const prefixMasks = new Map<string, { network: IPAddress; mask: SubnetMask }>();
-
+    const candidatesByPrefix = new Map<string, PathCandidate[]>();
     for (const p of peers) {
       const peerEng = p.peerEngineFor('eigrp') as EIGRPEngine | null;
-      if (!peerEng || !peerEng.isEnabled() || peerEng.asn !== this.config.asn) continue;
-
-      const { bwKbps: localBw, delayTensOfUs: localDelay } = this.localMetricForIface(p.localIface);
-
+      if (!peerEng || !peerEng.isEnabled() || peerEng.asn !== this.config.asn) {
+        continue;
+      }
+      if (!kValuesMatch(k, peerEng.getConfig().kValues)) continue;
+      const linkBw = p.linkBandwidthKbps ?? EIGRP_FALLBACK_BANDWIDTH_KBPS;
+      const linkDelay = p.linkDelayUsec ?? EIGRP_FALLBACK_DELAY_USEC;
       for (const pre of peerEng.originatedPrefixes()) {
-        const cidr = pre.mask.toCIDR();
-        const key = `${pre.network}/${cidr}`;
-        const minBw = Math.min(localBw, pre.bwKbps);
-        const totalDelay = localDelay + pre.delayTensOfUs;
-        const rd = this.compositeMetric(pre.bwKbps, pre.delayTensOfUs);
-        const metric = this.compositeMetric(minBw, totalDelay);
+        const key = `${pre.network}/${pre.mask}`;
+        if (ownNetworks.has(key)) continue;
+        const destBw = pre.bandwidthKbps ?? EIGRP_FALLBACK_BANDWIDTH_KBPS;
+        const destDelay = pre.delayUsec ?? EIGRP_FALLBACK_DELAY_USEC;
+        const rd = compositeMetric(
+          { bandwidthKbps: destBw, delayUsec: destDelay }, k);
+        const fd = compositeMetric({
+          bandwidthKbps: Math.min(linkBw, destBw),
+          delayUsec: linkDelay + destDelay,
+        }, k);
+        const candidate: PathCandidate = {
+          fd, rd,
+          route: {
+            network: pre.network, mask: pre.mask,
+            nextHop: p.remoteIp, iface: p.localIface,
+            protocol: 'eigrp',
+            adminDistance: EIGRP_INTERNAL_AD,
+            metric: fd,
+          },
+        };
+        const group = candidatesByPrefix.get(key);
+        if (group) group.push(candidate);
+        else candidatesByPrefix.set(key, [candidate]);
+      }
+    }
+    return this.selectSuccessors(candidatesByPrefix);
+  }
 
-        if (!candidates.has(key)) candidates.set(key, []);
-        if (!prefixMasks.has(key)) prefixMasks.set(key, { network: pre.network, mask: pre.mask });
-        candidates.get(key)!.push({ nextHop: p.remoteIp, iface: p.localIface, metric, rd });
+  /**
+   * DUAL path selection per prefix: best-FD successor first, then
+   * feasible alternates (RD < FD(successor)) within the variance
+   * multiplier, capped by `maximum-paths`.
+   */
+  private selectSuccessors(
+    candidatesByPrefix: Map<string, PathCandidate[]>,
+  ): RibRoute[] {
+    const variance = Math.max(1, this.config.variance);
+    const maxPaths = Math.max(1, this.config.maximumPaths);
+    const routes: RibRoute[] = [];
+    for (const group of candidatesByPrefix.values()) {
+      group.sort((a, b) => a.fd - b.fd);
+      const successor = group[0];
+      routes.push(successor.route);
+      let installed = 1;
+      for (const alt of group.slice(1)) {
+        if (installed >= maxPaths) break;
+        const feasible = alt.rd < successor.fd;
+        const withinVariance = alt.fd <= successor.fd * variance;
+        if (feasible && withinVariance) {
+          routes.push(alt.route);
+          installed += 1;
+        }
       }
     }
 

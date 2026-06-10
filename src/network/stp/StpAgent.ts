@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
   type StpPortGuards,
@@ -23,7 +24,7 @@ export interface StpHost {
   onStpBpduGuardErrDisable?(portName: string, senderMac: string): void;
 }
 
-export class StpAgent {
+export class StpAgent extends ReactiveAgentBase {
   private config: StpConfig;
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
@@ -34,35 +35,29 @@ export class StpAgent {
   private rootBridge: BridgeId;
   private rootPort: string | null = null;
   private rootPathCost = 0;
-  private helloTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: StpHost,
-    private readonly getBus: () => IEventBus,
+    getBus: () => IEventBus,
     baseMac: string,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {
+    super(host, getBus, getScheduler);
     this.config = createDefaultStpConfig(baseMac);
     this.rootBridge = this.ownBridgeId();
   }
 
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
+  override start(): void {
+    if (this.isRunning()) return;
+    super.start();
     this.recomputeOnTopologyChange();
-    if (this.config.enabled) this.startHelloTimer();
   }
 
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopHelloTimer();
+  override stop(): void {
+    if (!this.isRunning()) return;
+    super.stop();
+    // Cancel pending 802.1D listening/learning transitions — a stopped
+    // agent must not flip port states later.
     for (const portName of [...this.transitionTimers.keys()]) {
       this.cancelTransition(portName);
     }
@@ -98,8 +93,8 @@ export class StpAgent {
     if (sec < 1 || sec > 10) return;
     this.config.helloSec = sec;
     if (this.config.enabled) {
-      this.stopHelloTimer();
-      this.startHelloTimer();
+      this.stopTimers();
+      this.armTimers();
     }
   }
 
@@ -156,9 +151,9 @@ export class StpAgent {
     this.config.enabled = on;
     if (on) {
       this.recomputeOnTopologyChange();
-      this.startHelloTimer();
+      this.armTimers();
     } else {
-      this.stopHelloTimer();
+      this.stopTimers();
       for (const port of this.host.getPorts()) {
         this.applyForwardState(port.getName(), 'forwarding');
       }
@@ -317,34 +312,18 @@ export class StpAgent {
     return (0x80 << 8) | (idx & 0xff);
   }
 
-  private startHelloTimer(): void {
-    if (this.helloTimer !== null) return;
-    const s = this.getScheduler();
-    this.scheduler = s;
-    this.helloTimer = s.setInterval(() => this.emitBpduOnAllPorts(),
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('hello', () => this.emitBpduOnAllPorts(),
       this.config.helloSec * 1000);
   }
 
-  private stopHelloTimer(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
+  protected override onPortLinkUp(_portName: string): void {
+    this.recomputeOnTopologyChange();
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      () => this.recomputeOnTopologyChange(),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkDown(portName: string): void {
+  protected override onPortLinkDown(portName: string): void {
     this.portInfo.delete(portName);
     // Forget the applied forward state so a re-connected link is treated as a
     // fresh edge port (rapid transition), matching the link-up fast path in

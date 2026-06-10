@@ -1,10 +1,13 @@
-import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
-import { TimerSet } from '@/events/TimerSet';
+/**
+ * HsrpAgent — HSRP v1/v2 (RFC 2281 + Cisco extensions) on the shared
+ * FHRP foundation. Protocol-specific here: the active/standby
+ * two-tier election, UDP/1985 wire format, interface tracking with
+ * priority decrement, and the v1/v2 multicast destinations.
+ */
 import {
-  type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket, type HsrpState,
-  createDefaultHsrpConfig, defaultGroupRuntime, makeKey, compareSpeaker,
-  effectivePriority, hsrpMaxGroup,
+  type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket,
+  defaultGroupRuntime, makeKey, compareSpeaker,
+  effectivePriority,
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
@@ -13,115 +16,58 @@ import {
 } from '../core/types';
 import { buildUdpIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
+import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
+import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
 
-export interface HsrpHost {
-  readonly id: string;
-  readonly name: string;
-  getHostname(): string;
-  getPort(name: string): import('../hardware/Port').Port | undefined;
-  getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
-}
+export type HsrpHost = FhrpHost;
 
-export class HsrpAgent {
-  private config: HsrpConfig = createDefaultHsrpConfig();
-  private readonly emitting = new Set<string>();
-  private readonly timers: TimerSet;
-  private helloTimer: symbol | null = null;
-  private expiryTimer: symbol | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
-
-  constructor(
-    private readonly host: HsrpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {
-    this.timers = new TimerSet(this.getScheduler);
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
-  }
-
+export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   getConfig(): Readonly<HsrpConfig> { return this.config; }
 
-  getGroup(iface: string, group: number): HsrpGroupRuntime | undefined {
-    return this.config.groups.get(makeKey(iface, group));
+  // ── FhrpAgentBase hooks ───────────────────────────────────────────
+  protected groupId(g: HsrpGroupRuntime): number { return g.group; }
+
+  protected makeGroup(iface: string, group: number): HsrpGroupRuntime {
+    return defaultGroupRuntime(iface, group);
   }
 
-  listGroups(): HsrpGroupRuntime[] {
-    return Array.from(this.config.groups.values())
-      .sort((a, b) => a.iface === b.iface ? a.group - b.group : a.iface.localeCompare(b.iface));
+  protected isSpeakingState(g: HsrpGroupRuntime): boolean {
+    return g.state === 'active' || g.state === 'standby' || g.state === 'speak';
   }
+
+  protected clearPeerState(g: HsrpGroupRuntime): void {
+    g.activeRouterIp = null;
+    g.standbyRouterIp = null;
+  }
+
+  protected helloIntervalMs(): number { return 3000; }
 
   /**
-   * Look up or create a group runtime. `version` only (re)assigns the HSRP
-   * version when explicitly provided — internal setters that omit it must
-   * not silently downgrade an existing v2 group back to v1.
+   * The standby/version variant: an EXPLICIT version switches the
+   * group; an implicit call (from setters) must never reset it —
+   * the old code defaulted to v1 and silently downgraded v2 groups.
    */
-  ensureGroup(iface: string, group: number, version?: 1 | 2): HsrpGroupRuntime {
-    const k = makeKey(iface, group);
-    let g = this.config.groups.get(k);
-    const effectiveVersion = version ?? g?.version ?? 1;
-    const max = hsrpMaxGroup(effectiveVersion);
-    if (!Number.isInteger(group) || group < 0 || group > max) {
-      throw new RangeError(
-        `HSRP version ${effectiveVersion} group ${group} is out of range (0-${max})`);
-    }
-    if (!g) {
-      g = defaultGroupRuntime(iface, group, effectiveVersion);
-      this.config.groups.set(k, g);
-    } else if (version !== undefined && g.version !== version) {
-      g.version = version;
-    }
+  override ensureGroup(
+    iface: string, group: number, version?: 1 | 2,
+  ): HsrpGroupRuntime {
+    const g = super.ensureGroup(iface, group);
+    if (version !== undefined) g.version = version;
     return g;
   }
 
-  removeGroup(iface: string, group: number): void {
-    this.config.groups.delete(makeKey(iface, group));
-  }
-
-  setVip(iface: string, group: number, vip: string): void {
+  // HSRP (unlike VRRP/GLBP) also advertises right after a preempt
+  // change so the coup is observable immediately.
+  override setPreempt(iface: string, group: number, on: boolean): void {
+    super.setPreempt(iface, group, on);
     const g = this.ensureGroup(iface, group);
-    g.vip = vip;
-    this.recompute(g, 'config');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPriority(iface: string, group: number, priority: number): void {
-    const g = this.ensureGroup(iface, group);
-    g.priority = priority;
-    this.recompute(g, 'priority');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPreempt(iface: string, group: number, on: boolean): void {
-    const g = this.ensureGroup(iface, group);
-    g.preempt = on;
-    this.recompute(g, 'preempt');
-    if (this.shouldEmit(g)) this.advertise(g);
+    this.advertiseIfDue(g);
   }
 
   setTimers(iface: string, group: number, helloSec: number, holdSec: number): void {
     const g = this.ensureGroup(iface, group);
     g.helloSec = helloSec;
     g.holdSec = holdSec;
-    if (this.running) {
-      this.stopTimers();
-      this.startTimers();
-    }
+    this.restartTimers();
   }
 
   setAuth(iface: string, group: number, text: string): void {
@@ -139,17 +85,17 @@ export class HsrpAgent {
       g.tracks.push({ target, decrement, down });
     }
     this.recompute(g, 'priority');
-    if (this.shouldEmit(g)) this.advertise(g);
+    this.advertiseIfDue(g);
   }
 
   removeTrack(iface: string, group: number, target: string): void {
-    const g = this.config.groups.get(makeKey(iface, group));
+    const g = this.getGroup(iface, group);
     if (!g) return;
     const idx = g.tracks.findIndex((t) => t.target === target);
     if (idx < 0) return;
     g.tracks.splice(idx, 1);
     this.recompute(g, 'priority');
-    if (this.shouldEmit(g)) this.advertise(g);
+    this.advertiseIfDue(g);
   }
 
   setVersion(iface: string, version: 1 | 2): void {
@@ -158,6 +104,7 @@ export class HsrpAgent {
     }
   }
 
+  // ── Receive path ─────────────────────────────────────────────────
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
     if (udp.destinationPort !== UDP_PORT_HSRP) return;
@@ -171,7 +118,7 @@ export class HsrpAgent {
     this.getBus().publish({
       topic: 'hsrp.packet.received',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: inPort, group: g.group,
         fromIp: payload.senderIp, fromPriority: payload.priority, fromState: payload.state,
       },
@@ -193,33 +140,14 @@ export class HsrpAgent {
       g.activeRouterPriority = 0;
     }
     if (oldActiveIp !== g.activeRouterIp) {
-      this.getBus().publish({
-        topic: 'hsrp.active.changed',
-        payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
-          iface: inPort, group: g.group,
-          activeIp: g.activeRouterIp, activePriority: g.activeRouterPriority,
-        },
-      });
+      this.publishActiveChanged(g);
     }
     this.recompute(g, 'peer');
     this.maybeAdvertiseBack(g);
   }
 
-  private shouldEmit(g: HsrpGroupRuntime): boolean {
-    if (!this.config.enabled) return false;
-    if (!g.vip) return false;
-    const port = this.host.getPort(g.iface);
-    if (!port || !port.getIsUp() || !port.isConnected()) return false;
-    return g.state === 'active' || g.state === 'standby' || g.state === 'speak';
-  }
-
-  private maybeAdvertiseBack(g: HsrpGroupRuntime): void {
-    if (this.emitting.has(makeKey(g.iface, g.group))) return;
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  private advertise(g: HsrpGroupRuntime): void {
+  // ── Wire format (UDP/1985, v1 224.0.0.2 / v2 224.0.0.102) ────────
+  protected advertise(g: HsrpGroupRuntime): void {
     const port = this.host.getPort(g.iface);
     if (!port) return;
     const srcIp = port.getIPAddress();
@@ -234,33 +162,32 @@ export class HsrpAgent {
       senderIp: srcIp.toString(),
     };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
-    const eth = buildUdpIpv4Frame({
-      srcIp, dstIp,
-      srcMac: port.getMAC(), dstMac: multicastMacFor(dstIp),
-      srcPort: UDP_PORT_HSRP, dstPort: UDP_PORT_HSRP,
-      payload, payloadLength: 20,
-      ttl: 1, options: { flags: 0 },
-    });
-    const key = makeKey(g.iface, g.group);
-    if (this.emitting.has(key)) return;
-    this.emitting.add(key);
-    try { this.host.sendFrame(g.iface, eth); }
-    finally { this.emitting.delete(key); }
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + udp.length,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 1, protocol: IP_PROTO_UDP, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const eth: EthernetFrame = {
+      srcMAC: port.getMAC(), dstMAC: multicastMacFor(dstIp),
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    };
+    this.sendGuarded(g, eth);
     this.getBus().publish({
       topic: 'hsrp.packet.sent',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: g.iface, group: g.group, opcode, state: g.state, priority: effectivePriority(g),
       },
     });
   }
 
-  private recompute(g: HsrpGroupRuntime, reason: 'config' | 'peer' | 'timeout' | 'priority' | 'preempt'): void {
+  // ── State machine (RFC 2281 §5; simplified Learn/Listen tiers) ───
+  protected recompute(g: HsrpGroupRuntime, reason: FhrpRecomputeReason): void {
     const oldState = g.state;
     const oldActiveIp = g.activeRouterIp;
-    const port = this.host.getPort(g.iface);
-    const myIp = port?.getIPAddress()?.toString() ?? `0.0.0.0`;
-    const linkUp = !!port && port.getIsUp() && port.isConnected();
+    const { myIp, linkUp } = this.linkContext(g);
 
     if (!linkUp || !g.vip) {
       g.state = 'init';
@@ -301,7 +228,7 @@ export class HsrpAgent {
       this.getBus().publish({
         topic: 'hsrp.state.changed',
         payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
+          ...this.deviceRef(),
           iface: g.iface, group: g.group,
           oldState, newState: g.state, reason,
         },
@@ -310,36 +237,23 @@ export class HsrpAgent {
         `${this.host.name}: ${g.iface} grp ${g.group} ${oldState} → ${g.state}`);
     }
     if (oldActiveIp !== g.activeRouterIp) {
-      this.getBus().publish({
-        topic: 'hsrp.active.changed',
-        payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
-          iface: g.iface, group: g.group,
-          activeIp: g.activeRouterIp, activePriority: g.activeRouterPriority,
-        },
-      });
+      this.publishActiveChanged(g);
     }
   }
 
-  private startTimers(): void {
-    if (this.helloTimer === null) {
-      this.helloTimer = this.timers.setInterval(() => {
-        for (const g of this.config.groups.values()) {
-          if (this.shouldEmit(g)) this.advertise(g);
-        }
-      }, 3000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = this.timers.setInterval(() => this.expireDue(), 1000);
-    }
+  private publishActiveChanged(g: HsrpGroupRuntime): void {
+    this.getBus().publish({
+      topic: 'hsrp.active.changed',
+      payload: {
+        ...this.deviceRef(),
+        iface: g.iface, group: g.group,
+        activeIp: g.activeRouterIp, activePriority: g.activeRouterPriority,
+      },
+    });
   }
 
-  private stopTimers(): void {
-    this.timers.clear(this.helloTimer); this.helloTimer = null;
-    this.timers.clear(this.expiryTimer); this.expiryTimer = null;
-  }
-
-  private expireDue(): void {
+  // ── Hold-timer expiry ────────────────────────────────────────────
+  protected expireDue(): void {
     const now = Date.now();
     for (const g of this.config.groups.values()) {
       if (g.activeRouterIp && now - g.lastHeardActiveMs > g.holdSec * 1000) {
@@ -355,21 +269,8 @@ export class HsrpAgent {
     }
   }
 
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkUp(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkUp(portName: string): void {
+  // ── Link reactions with interface tracking ───────────────────────
+  protected override onLinkUp(portName: string): void {
     for (const g of this.config.groups.values()) {
       let touched = false;
       for (const t of g.tracks) {
@@ -381,25 +282,24 @@ export class HsrpAgent {
       } else if (touched) {
         this.recompute(g, 'priority');
       }
-      if (touched && this.shouldEmit(g)) this.advertise(g);
+      if (touched) this.advertiseIfDue(g);
     }
   }
 
-  private onLinkDown(portName: string): void {
+  protected override onLinkDown(portName: string): void {
     for (const g of this.config.groups.values()) {
       let touched = false;
       for (const t of g.tracks) {
         if (t.target === portName && !t.down) { t.down = true; touched = true; }
       }
       if (g.iface === portName) {
-        g.activeRouterIp = null;
-        g.standbyRouterIp = null;
+        this.clearPeerState(g);
         this.recompute(g, 'timeout');
         touched = true;
       } else if (touched) {
         this.recompute(g, 'priority');
       }
-      if (touched && this.shouldEmit(g)) this.advertise(g);
+      if (touched) this.advertiseIfDue(g);
     }
   }
 }

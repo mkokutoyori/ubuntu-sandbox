@@ -257,3 +257,74 @@ describe('IGMP Snooping — Direct query injection from host port', () => {
     expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/2')).toBe(true);
   });
 });
+
+describe('IGMP Snooping — constrained data-path forwarding (RFC 4541 §2.1.2)', () => {
+  function dataFrame(srcPort: import('@/network/hardware/Port').Port, group: string): EthernetFrame {
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0,
+      totalLength: 28,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 16, protocol: 17, headerChecksum: 0,
+      sourceIP: new IPAddress('10.0.0.30'),
+      destinationIP: new IPAddress(group),
+      payload: { type: 'udp', sourcePort: 5000, destinationPort: 5000, length: 8, checksum: 0, payload: null },
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    return {
+      srcMAC: srcPort.getMAC(),
+      dstMAC: new MACAddress(ipv4MulticastToMac(group)),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    };
+  }
+
+  function threeHostSetup() {
+    const bus = new EventBus();
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
+    const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
+    const h2 = new CiscoSwitch('switch-cisco', 'H2', 4);
+    const h3 = new CiscoSwitch('switch-cisco', 'H3', 4);
+    for (const d of [sw, h1, h2, h3]) d.setEventBus(bus);
+    new Cable('c1').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
+    new Cable('c2').connect(sw.getPort('FastEthernet0/2')!, h2.getPort('FastEthernet0/0')!);
+    new Cable('c3').connect(sw.getPort('FastEthernet0/3')!, h3.getPort('FastEthernet0/0')!);
+    const nameById = new Map<string, string>([
+      [h1.getPort('FastEthernet0/0')!.getEquipmentId(), 'H1'],
+      [h2.getPort('FastEthernet0/0')!.getEquipmentId(), 'H2'],
+      [h3.getPort('FastEthernet0/0')!.getEquipmentId(), 'H3'],
+    ]);
+    const received: string[] = [];
+    bus.subscribe('port.frame.received', (e) => {
+      const p = e.payload as { deviceId: string; portName: string; frame: EthernetFrame };
+      const ip = p.frame.payload as IPv4Packet | undefined;
+      if (ip?.type === 'ipv4' && ip.protocol === 17) {
+        const name = nameById.get(p.deviceId);
+        if (name) received.push(name);
+      }
+    });
+    return { sw, h1, h2, h3, received };
+  }
+
+  it('a registered group egresses ONLY member ports (01:00:5e MAC is snooped, not flooded)', () => {
+    const { sw, h1, h3, received } = threeHostSetup();
+    // H1 joins 239.1.2.3 — snooping learns (vlan 1, group, Fa0/1).
+    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.1.2.3');
+    expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
+
+    // H3 sends multicast data to the group.
+    h3.getPort('FastEthernet0/0')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/0')!, '239.1.2.3'));
+
+    expect(received).toContain('H1');       // member
+    expect(received).not.toContain('H2');    // non-member
+  });
+
+  it('an unregistered group still floods within the VLAN', () => {
+    const { h1, h3, received } = threeHostSetup();
+    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.1.2.3');
+
+    h3.getPort('FastEthernet0/0')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/0')!, '239.9.9.9'));
+
+    expect(received).toContain('H1');
+    expect(received).toContain('H2'); // unknown group ⇒ classic flood
+  });
+});

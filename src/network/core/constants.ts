@@ -51,7 +51,18 @@ export const RIP_TIMERS = {
   ROUTE_TIMEOUT_MS: 180_000,
   /** Garbage collection timer in ms (120 seconds = 4× update interval) */
   GARBAGE_COLLECTION_MS: 120_000,
+  /**
+   * Triggered-update coalescing window (RFC 2453 §3.10.1): changed
+   * routes are batched and flushed after a random 1–5 s delay to
+   * avoid update storms on cascading topology changes.
+   */
+  TRIGGERED_DELAY_MIN_MS: 1_000,
+  TRIGGERED_DELAY_MAX_MS: 5_000,
 } as const;
+
+/** RIPv2 multicast group (RFC 2453 §4.3) and its RFC 1112 MAC. */
+export const RIP_V2_MULTICAST_IP = '224.0.0.9';
+export const RIP_V2_MULTICAST_MAC = '01:00:5e:00:00:09';
 
 // ─── ARP/NDP Timers ──────────────────────────────────────────────────
 

@@ -23,8 +23,9 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import {
-  getDefaultScheduler, type IScheduler, type TimerHandle,
+  getDefaultScheduler, type IScheduler,
 } from '@/events/Scheduler';
+import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type CdpConfig, type CdpFrame, type CdpNeighborEntry, type CdpCapability,
   createDefaultCdpConfig, neighborKey, ETHERTYPE_CDP, CDP_MULTICAST_MAC,
@@ -49,45 +50,19 @@ export interface CdpHost {
 /** Read-only view of a learned CDP neighbour (used by `show cdp`). */
 export type CdpNeighbor = Readonly<CdpNeighborEntry>;
 
-export class CdpAgent {
+export class CdpAgent extends ReactiveAgentBase {
   private config: CdpConfig = createDefaultCdpConfig();
   private readonly neighbors = new Map<string, CdpNeighborEntry>();
   /** Re-entrance guard so a peer's synchronous reply doesn't bounce
    *  back through us mid-advertisement (Cable.transmit is sync). */
   private readonly advertising = new Set<string>();
-  private adTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
 
   constructor(
     private readonly host: CdpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
-
-  // ── lifecycle ──────────────────────────────────────────────────────
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  /**
-   * Detach subscribers + stop timers — used to rebind the agent onto a
-   * fresh bus. The neighbour table is preserved so a transient restart
-   * (e.g. `setEventBus`) does not erase observable protocol state.
-   * Use `setEnabled(false)` to flush the table.
-   */
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
+    getBus: () => IEventBus,
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    super(host, getBus, getScheduler);
   }
 
   // ── configuration ──────────────────────────────────────────────────
@@ -116,7 +91,7 @@ export class CdpAgent {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
     if (on) {
-      this.startTimers();
+      this.armTimers();
       this.advertiseAll('config-change');
     } else {
       this.stopTimers();
@@ -131,7 +106,7 @@ export class CdpAgent {
     this.config.holdtimeSec = Math.max(this.config.holdtimeSec, sec);
     if (this.config.enabled) {
       this.stopTimers();
-      this.startTimers();
+      this.armTimers();
     }
     this.publishConfigChange();
   }
@@ -313,22 +288,20 @@ export class CdpAgent {
 
   // ── timers ────────────────────────────────────────────────────────
 
-  private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    if (this.adTimer === null) {
-      this.adTimer = s.setInterval(() => this.advertiseAll('periodic'),
-        this.config.timerSec * 1000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
-    }
+  protected isEnabled(): boolean { return this.config.enabled; }
+
+  protected armTimers(): void {
+    this.scheduleInterval('advertise',
+      () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
+    this.scheduleInterval('expiry', () => this.expireDue(), 1000);
   }
 
-  private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.adTimer !== null) { s.clear(this.adTimer); this.adTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+  protected override onPortLinkUp(portName: string): void {
+    this.advertise(portName, 'link-up');
+  }
+
+  protected override onPortLinkDown(portName: string): void {
+    this.flushPort(portName, 'link-down');
   }
 
   private expireDue(): void {
@@ -339,20 +312,6 @@ export class CdpAgent {
         this.publishExpiry(n, 'holdtime');
       }
     }
-  }
-
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.advertise(e.payload.portName, 'link-up'),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.flushPort(e.payload.portName, 'link-down'),
-    ));
   }
 
   private flushPort(portName: string, cause: 'link-down' | 'admin-disabled'): void {

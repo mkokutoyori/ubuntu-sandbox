@@ -198,3 +198,122 @@ describe('RIPEngine — counter feedback into stats signal', () => {
     expect(after).toBe(before + 1);
   });
 });
+
+// ─── RFC 2453 conformance — multicast destination & triggered updates ──
+
+import type { EthernetFrame, IPv4Packet, RIPPacket } from '@/network/core/types';
+
+function makeCapturingCallbacks(frames: EthernetFrame[], version: 1 | 2 = 2): RIPCallbacks {
+  return {
+    ...makeCallbacks(),
+    sendFrame: (_port, frame) => { frames.push(frame); return true; },
+    getRipVersion: () => version,
+  };
+}
+
+function buildCapturingEngine(version: 1 | 2 = 2) {
+  const bus = new EventBus();
+  const scheduler = new VirtualTimeScheduler();
+  const trace: DomainEvent[] = [];
+  bus.subscribeAll((e) => trace.push(e));
+  const frames: EthernetFrame[] = [];
+  const engine = new RIPEngine('R1', 'R1-host', makeCapturingCallbacks(frames, version));
+  engine.setEventBus(bus);
+  engine.setScheduler(scheduler);
+  engine.advertiseNetwork(new IPAddress('10.0.1.0'), SubnetMask.fromCIDR(24));
+  return { engine, scheduler, trace, frames };
+}
+
+function ripResponse(network: string, metric: number): RIPPacket {
+  return {
+    type: 'rip', command: 2, version: 2,
+    entries: [{
+      afi: 2, routeTag: 0,
+      ipAddress: new IPAddress(network),
+      subnetMask: SubnetMask.fromCIDR(24),
+      nextHop: new IPAddress('0.0.0.0'),
+      metric,
+    }],
+  };
+}
+
+describe('RIPEngine — RFC 2453 §4.3 destination addressing', () => {
+  it('RIPv2 sends to multicast 224.0.0.9 / 01:00:5e:00:00:09', () => {
+    const { engine, frames } = buildCapturingEngine(2);
+    engine.start();
+    expect(frames.length).toBeGreaterThan(0);
+    const ipPkt = frames[0].payload as IPv4Packet;
+    expect(ipPkt.destinationIP.toString()).toBe('224.0.0.9');
+    expect(frames[0].dstMAC.toString().toLowerCase()).toBe('01:00:5e:00:00:09');
+  });
+
+  it('RIPv1 falls back to limited broadcast (RFC 1058)', () => {
+    const { engine, frames } = buildCapturingEngine(1);
+    engine.start();
+    expect(frames.length).toBeGreaterThan(0);
+    const ipPkt = frames[0].payload as IPv4Packet;
+    expect(ipPkt.destinationIP.toString()).toBe('255.255.255.255');
+    expect(frames[0].dstMAC.isBroadcast()).toBe(true);
+  });
+});
+
+describe('RIPEngine — RFC 2453 §3.10.1 triggered updates', () => {
+  it('a newly learned route triggers a coalesced update within 1–5 s', () => {
+    const { engine, scheduler, trace } = buildCapturingEngine(2);
+    engine.start();
+    trace.length = 0;
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 1));
+
+    // Nothing flushed before the minimum 1 s window…
+    scheduler.advance(999);
+    expect(trace.some((e) => e.topic === 'rip.update.sent'
+      && (e.payload as { triggered?: boolean }).triggered)).toBe(false);
+
+    // …but the batch goes out by the 5 s maximum.
+    scheduler.advance(4001);
+    const triggered = trace.filter((e) => e.topic === 'rip.update.sent'
+      && (e.payload as { triggered?: boolean }).triggered);
+    expect(triggered).toHaveLength(1);
+  });
+
+  it('a burst of changes coalesces into a single triggered batch', () => {
+    const { engine, scheduler, trace } = buildCapturingEngine(2);
+    engine.start();
+    trace.length = 0;
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 1));
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.6.0', 2));
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.7.0', 3));
+
+    scheduler.advance(5000);
+    const triggered = trace.filter((e) => e.topic === 'rip.update.sent'
+      && (e.payload as { triggered?: boolean }).triggered);
+    expect(triggered).toHaveLength(1); // one storm-proof batch, not three
+  });
+
+  it('a metric change on an existing route also triggers an update', () => {
+    const { engine, scheduler, trace } = buildCapturingEngine(2);
+    engine.start();
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 1));
+    scheduler.advance(5000); // drain the install-time trigger
+    trace.length = 0;
+
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 4));
+    scheduler.advance(5000);
+    const triggered = trace.filter((e) => e.topic === 'rip.update.sent'
+      && (e.payload as { triggered?: boolean }).triggered);
+    expect(triggered).toHaveLength(1);
+  });
+
+  it('an unchanged refresh does NOT trigger an update', () => {
+    const { engine, scheduler, trace } = buildCapturingEngine(2);
+    engine.start();
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 1));
+    scheduler.advance(5000);
+    trace.length = 0;
+
+    engine.processPacket('eth0', new IPAddress('10.0.1.2'), ripResponse('192.168.5.0', 1));
+    scheduler.advance(5000);
+    expect(trace.some((e) => e.topic === 'rip.update.sent'
+      && (e.payload as { triggered?: boolean }).triggered)).toBe(false);
+  });
+});

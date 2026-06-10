@@ -16,12 +16,18 @@ import {
 import type {
   NeighborFsmState, RibRoute, RoutingPeer,
 } from '../routing/types';
+import {
+  selectBestPath, BGP_DEFAULT_LOCAL_PREF,
+  type BgpPathCandidate,
+} from './bestPath';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpNeighborCfg {
   ip: string;
   remoteAs?: number;
   activated: boolean;
+  /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
+  weight?: number;
 }
 export interface BGPConfig {
   asn: number;
@@ -29,6 +35,8 @@ export interface BGPConfig {
   networks: BgpNetworkStmt[];
   neighbors: Map<string, BgpNeighborCfg>;
   redistribute: string[];
+  /** `bgp default local-preference <n>` (RFC 4271 LOCAL_PREF seed). */
+  defaultLocalPref: number;
 }
 
 const EBGP_AD = 20;
@@ -46,7 +54,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   readonly protocol = 'bgp';
 
   protected defaultConfig(): BGPConfig {
-    return { asn: 0, networks: [], neighbors: new Map(), redistribute: [] };
+    return {
+      asn: 0, networks: [], neighbors: new Map(), redistribute: [],
+      defaultLocalPref: BGP_DEFAULT_LOCAL_PREF,
+    };
   }
 
   get asn(): number { return this.config.asn; }
@@ -117,23 +128,54 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   }
 
   protected computeRoutes(peers: RoutingPeer[]): RibRoute[] {
-    const routes: RibRoute[] = [];
-    const seen = new Set<string>();
+    // Real BGP never installs a learned path for a prefix it already
+    // has connected (the local route always wins in the RIB).
+    const ownNetworks = new Set(this.deviceCtx.connectedNetworks()
+      .map((c) => `${c.network}/${c.mask}`));
+
+    const candidatesByPrefix = new Map<string, BgpPathCandidate[]>();
     for (const [ip, cfg] of this.config.neighbors) {
       const { state, peer, peerEng } = this.sessionState(ip, peers);
       if (state !== 'Established' || !peer || !peerEng) continue;
-      const ad = (cfg.remoteAs ?? peerEng.asn) === this.config.asn
-        ? IBGP_AD : EBGP_AD;
+      const isEbgp = (cfg.remoteAs ?? peerEng.asn) !== this.config.asn;
+      const ad = isEbgp ? EBGP_AD : IBGP_AD;
+      // 1-hop model: an eBGP peer prepends its own AS when advertising
+      // (RFC 4271 §5.1.2); iBGP re-advertises with an empty path.
+      const asPath = isEbgp ? [peerEng.asn] : [];
+      const peerCfg = peerEng.getConfig();
       for (const pre of peerEng.originatedPrefixes()) {
         const key = `${pre.network}/${pre.mask}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        routes.push({
-          network: pre.network, mask: pre.mask,
-          nextHop: peer.remoteIp, iface: peer.localIface,
-          protocol: 'bgp', adminDistance: ad, metric: 0,
-        });
+        if (ownNetworks.has(key)) continue;
+        const candidate: BgpPathCandidate = {
+          route: {
+            network: pre.network, mask: pre.mask,
+            nextHop: peer.remoteIp, iface: peer.localIface,
+            protocol: 'bgp', adminDistance: ad, metric: 0,
+          },
+          weight: cfg.weight ?? 0,
+          // LOCAL_PREF only travels inside the AS (RFC 4271 §5.1.5);
+          // eBGP paths compete with the local default.
+          localPref: isEbgp
+            ? this.config.defaultLocalPref
+            : peerCfg.defaultLocalPref,
+          locallyOriginated: false,
+          asPath,
+          origin: 'igp',                 // `network` statements are IGP
+          med: 0,
+          isEbgp,
+          peerRouterId: peerCfg.routerId ?? ip,
+          peerIp: ip,
+        };
+        const group = candidatesByPrefix.get(key);
+        if (group) group.push(candidate);
+        else candidatesByPrefix.set(key, [candidate]);
       }
+    }
+
+    const routes: RibRoute[] = [];
+    for (const group of candidatesByPrefix.values()) {
+      const best = selectBestPath(group);
+      if (best) routes.push(best.route);
     }
     return routes;
   }

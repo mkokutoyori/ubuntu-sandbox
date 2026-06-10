@@ -105,6 +105,15 @@ export function showIpIntBrief(router: Router): string {
   return lines.join('\n');
 }
 
+/** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
+function formatArpTimeout(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
 export function showInterface(router: Router, ifName: string): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
@@ -137,7 +146,6 @@ export function showInterface(router: Router, ifName: string): string {
   } else if (isLoopback) {
     lines.push(`  Hardware is Loopback`);
   } else {
-    const speed = ifName.startsWith('Gig') ? '1000Mbps' : '100Mbps';
     lines.push(`  Hardware is ${ifName.startsWith('Gig') ? 'iGbE' : 'Fast Ethernet'}, address is ${mac} (bia ${mac})`);
   }
 
@@ -163,13 +171,18 @@ export function showInterface(router: Router, ifName: string): string {
     }
     lines.push(`  Tunnel protocol/transport GRE/IP`);
   } else if (!isLoopback) {
-    const speed = ifName.startsWith('Gig') ? '1000Mbps' : '100Mbps';
-    lines.push(`  MTU 1500 bytes, BW ${ifName.startsWith('Gig') ? '1000000' : '100000'} Kbit/sec, DLY 10 usec,`);
+    // Real port state: MTU, the `bandwidth`/`delay` overrides (or the
+    // negotiated-speed defaults), duplex and ARP timeout all reflect
+    // the live hardware model — not the interface name.
+    const speedMbps = port.getNegotiatedSpeed();
+    const duplex = port.getNegotiatedDuplex() === 'half'
+      ? 'Half-duplex' : 'Full-duplex';
+    lines.push(`  MTU ${port.getMTU()} bytes, BW ${port.getEffectiveBandwidthKbps()} Kbit/sec, DLY ${port.getDelayUs()} usec,`);
     lines.push(`     reliability 255/255, txload 1/255, rxload 1/255`);
     lines.push(`  Encapsulation ARPA, loopback not set`);
-    lines.push(`  Full-duplex, ${speed}, media type is RJ45`);
+    lines.push(`  ${duplex}, ${speedMbps}Mbps, media type is RJ45`);
     lines.push(`  output flow-control is unsupported, input flow-control is unsupported`);
-    lines.push(`  ARP type: ARPA, ARP Timeout 04:00:00`);
+    lines.push(`  ARP type: ARPA, ARP Timeout ${formatArpTimeout(port.getArpTimeoutSec())}`);
   }
 
   return lines.join('\n');

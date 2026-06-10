@@ -55,16 +55,8 @@ export function vrrpVirtualMac(vrid: number): string {
   return `00:00:5e:00:01:${vrid.toString(16).padStart(2, '0')}`;
 }
 
-export function compareCandidate(
-  a: { priority: number; ip: string },
-  b: { priority: number; ip: string },
-): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
-  const ai = a.ip.split('.').map(Number);
-  const bi = b.ip.split('.').map(Number);
-  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
-  return 0;
-}
+// Election comparison is shared across the FHRP family.
+export { compareFhrpCandidates as compareCandidate } from '../fhrp/types';
 
 export function masterDownIntervalMs(advertiseSec: number, priority: number): number {
   const skewSec = (256 - priority) / 256;

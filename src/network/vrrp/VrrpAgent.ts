@@ -1,9 +1,12 @@
-import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
-import { TimerSet } from '@/events/TimerSet';
+/**
+ * VrrpAgent — VRRPv2 (RFC 3768/5798) on the shared FHRP foundation.
+ * Only the protocol-specific pieces live here: the 3-state machine
+ * (init/backup/master), the IP-protocol-112 wire format, and the
+ * master-down-interval expiry (3×advert + skew).
+ */
 import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
-  createDefaultVrrpConfig, defaultGroupRuntime, makeKey,
+  defaultGroupRuntime, makeKey,
   compareCandidate, masterDownIntervalMs,
   IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
 } from './types';
@@ -13,102 +16,40 @@ import {
 } from '../core/types';
 import { buildIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
+import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
+import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
 
-export interface VrrpHost {
-  readonly id: string;
-  readonly name: string;
-  getHostname(): string;
-  getPort(name: string): import('../hardware/Port').Port | undefined;
-  getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
-}
+export type VrrpHost = FhrpHost;
 
-export class VrrpAgent {
-  private config: VrrpConfig = createDefaultVrrpConfig();
-  private readonly emitting = new Set<string>();
-  private readonly timers: TimerSet;
-  private adTimer: symbol | null = null;
-  private expiryTimer: symbol | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private running = false;
-
-  constructor(
-    private readonly host: VrrpHost,
-    private readonly getBus: () => IEventBus,
-    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {
-    this.timers = new TimerSet(this.getScheduler);
-  }
-
-  start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.installSubscribers();
-    if (this.config.enabled) this.startTimers();
-  }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const u of this.unsubscribers) u();
-    this.unsubscribers = [];
-    this.stopTimers();
-  }
-
+export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
   getConfig(): Readonly<VrrpConfig> { return this.config; }
 
-  getGroup(iface: string, vrid: number): VrrpGroupRuntime | undefined {
-    return this.config.groups.get(makeKey(iface, vrid));
+  // ── FhrpAgentBase hooks ───────────────────────────────────────────
+  protected groupId(g: VrrpGroupRuntime): number { return g.vrid; }
+
+  protected makeGroup(iface: string, vrid: number): VrrpGroupRuntime {
+    return defaultGroupRuntime(iface, vrid);
   }
 
-  listGroups(): VrrpGroupRuntime[] {
-    return Array.from(this.config.groups.values())
-      .sort((a, b) => a.iface === b.iface ? a.vrid - b.vrid : a.iface.localeCompare(b.iface));
+  protected isSpeakingState(g: VrrpGroupRuntime): boolean {
+    return g.state === 'master';
   }
 
-  ensureGroup(iface: string, vrid: number): VrrpGroupRuntime {
-    const k = makeKey(iface, vrid);
-    let g = this.config.groups.get(k);
-    if (!g) {
-      g = defaultGroupRuntime(iface, vrid);
-      this.config.groups.set(k, g);
-    }
-    return g;
+  protected clearPeerState(g: VrrpGroupRuntime): void {
+    g.masterIp = null;
   }
 
-  removeGroup(iface: string, vrid: number): void {
-    this.config.groups.delete(makeKey(iface, vrid));
-  }
+  protected helloIntervalMs(): number { return 1000; }
+  protected override expiryProbeMs(): number { return 250; }
 
-  setVip(iface: string, vrid: number, vip: string): void {
-    const g = this.ensureGroup(iface, vrid);
-    g.vip = vip;
-    this.recompute(g, 'config');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPriority(iface: string, vrid: number, priority: number): void {
-    const g = this.ensureGroup(iface, vrid);
-    g.priority = priority;
-    this.recompute(g, 'priority');
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  setPreempt(iface: string, vrid: number, on: boolean): void {
-    const g = this.ensureGroup(iface, vrid);
-    g.preempt = on;
-    this.recompute(g, 'preempt');
-  }
-
+  // ── Protocol-specific config ─────────────────────────────────────
   setAdvertiseSec(iface: string, vrid: number, sec: number): void {
     const g = this.ensureGroup(iface, vrid);
     g.advertiseSec = sec;
-    if (this.running) {
-      this.stopTimers();
-      this.startTimers();
-    }
+    this.restartTimers();
   }
 
+  // ── Receive path ─────────────────────────────────────────────────
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): void {
     if (!this.config.enabled) return;
     if (ipPkt.protocol !== IP_PROTO_VRRP) return;
@@ -121,7 +62,7 @@ export class VrrpAgent {
     this.getBus().publish({
       topic: 'vrrp.packet.received',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: inPort, vrid: g.vrid,
         fromIp: payload.senderIp, fromPriority: payload.priority,
       },
@@ -136,7 +77,7 @@ export class VrrpAgent {
       this.getBus().publish({
         topic: 'vrrp.master.changed',
         payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
+          ...this.deviceRef(),
           iface: inPort, vrid: g.vrid,
           masterIp: g.masterIp, masterPriority: g.masterPriority,
         },
@@ -146,20 +87,8 @@ export class VrrpAgent {
     this.maybeAdvertiseBack(g);
   }
 
-  private shouldEmit(g: VrrpGroupRuntime): boolean {
-    if (!this.config.enabled) return false;
-    if (!g.vip) return false;
-    const port = this.host.getPort(g.iface);
-    if (!port || !port.getIsUp() || !port.isConnected()) return false;
-    return g.state === 'master';
-  }
-
-  private maybeAdvertiseBack(g: VrrpGroupRuntime): void {
-    if (this.emitting.has(makeKey(g.iface, g.vrid))) return;
-    if (this.shouldEmit(g)) this.advertise(g);
-  }
-
-  private advertise(g: VrrpGroupRuntime): void {
+  // ── Wire format ──────────────────────────────────────────────────
+  protected advertise(g: VrrpGroupRuntime): void {
     const port = this.host.getPort(g.iface);
     if (!port) return;
     const srcIp = port.getIPAddress();
@@ -170,32 +99,32 @@ export class VrrpAgent {
       vips: g.vip ? [g.vip] : [],
       senderIp: srcIp.toString(),
     };
-    const eth = buildIpv4Frame({
-      srcIp, dstIp: new IPAddress(VRRP_MULTICAST_IP),
-      srcMac: port.getMAC(), dstMac: new MACAddress(VRRP_MULTICAST_MAC),
-      protocol: IP_PROTO_VRRP, ttl: 255,
-      payload, payloadLength: 8 + (g.vip ? 4 : 0),
-      options: { tos: 0xc0, flags: 0 },
-    });
-    const key = makeKey(g.iface, g.vrid);
-    if (this.emitting.has(key)) return;
-    this.emitting.add(key);
-    try { this.host.sendFrame(g.iface, eth); }
-    finally { this.emitting.delete(key); }
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + (g.vip ? 4 : 0),
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 255, protocol: IP_PROTO_VRRP, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: new IPAddress(VRRP_MULTICAST_IP),
+      payload,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const eth: EthernetFrame = {
+      srcMAC: port.getMAC(), dstMAC: new MACAddress(VRRP_MULTICAST_MAC),
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    };
+    this.sendGuarded(g, eth);
     this.getBus().publish({
       topic: 'vrrp.packet.sent',
       payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
+        ...this.deviceRef(),
         iface: g.iface, vrid: g.vrid, state: g.state, priority: g.priority,
       },
     });
   }
 
-  private recompute(g: VrrpGroupRuntime, reason: 'config' | 'peer' | 'timeout' | 'priority' | 'preempt'): void {
+  // ── State machine (RFC 3768 §6) ──────────────────────────────────
+  protected recompute(g: VrrpGroupRuntime, reason: FhrpRecomputeReason): void {
     const oldState = g.state;
-    const port = this.host.getPort(g.iface);
-    const myIp = port?.getIPAddress()?.toString() ?? '0.0.0.0';
-    const linkUp = !!port && port.getIsUp() && port.isConnected();
+    const { myIp, linkUp } = this.linkContext(g);
     const newState: VrrpState = (() => {
       if (!linkUp || !g.vip) return 'init';
       if (!g.masterIp || g.masterIp === myIp) return 'master';
@@ -217,7 +146,7 @@ export class VrrpAgent {
       this.getBus().publish({
         topic: 'vrrp.state.changed',
         payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
+          ...this.deviceRef(),
           iface: g.iface, vrid: g.vrid,
           oldState, newState: g.state, reason,
         },
@@ -227,25 +156,8 @@ export class VrrpAgent {
     }
   }
 
-  private startTimers(): void {
-    if (this.adTimer === null) {
-      this.adTimer = this.timers.setInterval(() => {
-        for (const g of this.config.groups.values()) {
-          if (this.shouldEmit(g)) this.advertise(g);
-        }
-      }, 1000);
-    }
-    if (this.expiryTimer === null) {
-      this.expiryTimer = this.timers.setInterval(() => this.expireDue(), 250);
-    }
-  }
-
-  private stopTimers(): void {
-    this.timers.clear(this.adTimer); this.adTimer = null;
-    this.timers.clear(this.expiryTimer); this.expiryTimer = null;
-  }
-
-  private expireDue(): void {
+  // ── Master-down expiry (RFC 5798 §6.1) ───────────────────────────
+  protected expireDue(): void {
     const now = Date.now();
     for (const g of this.config.groups.values()) {
       if (g.state !== 'backup') continue;
@@ -256,36 +168,6 @@ export class VrrpAgent {
         g.masterPriority = 0;
         this.recompute(g, 'timeout');
       }
-    }
-  }
-
-  private installSubscribers(): void {
-    const bus = this.getBus();
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.up',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkUp(e.payload.portName),
-    ));
-    this.unsubscribers.push(bus.subscribeWhere(
-      'port.link.down',
-      (p) => p.deviceId === this.host.id,
-      (e) => this.onLinkDown(e.payload.portName),
-    ));
-  }
-
-  private onLinkUp(portName: string): void {
-    for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      this.recompute(g, 'config');
-      if (this.shouldEmit(g)) this.advertise(g);
-    }
-  }
-
-  private onLinkDown(portName: string): void {
-    for (const g of this.config.groups.values()) {
-      if (g.iface !== portName) continue;
-      g.masterIp = null;
-      this.recompute(g, 'timeout');
     }
   }
 }
