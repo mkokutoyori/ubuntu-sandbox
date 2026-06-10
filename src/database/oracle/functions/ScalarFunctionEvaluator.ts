@@ -44,6 +44,23 @@ export function formatDate(d: Date): string {
     + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/** Oracle LPAD/RPAD: non-positive length is NULL; truncate to the target. */
+function padOracle(str: string, targetLength: number, padText: string, left: boolean): CellValue {
+  if (!Number.isFinite(targetLength) || targetLength <= 0) return null;
+  if (str.length >= targetLength) return str.substring(0, targetLength);
+  if (padText.length === 0) return str;
+  let fill = '';
+  while (fill.length < targetLength - str.length) fill += padText;
+  fill = fill.substring(0, targetLength - str.length);
+  return left ? fill + str : str + fill;
+}
+
+/** Built-in packages whose members this evaluator implements inline. */
+const BUILTIN_PACKAGES = new Set([
+  'DBMS_RANDOM', 'DBMS_LOCK', 'DBMS_UTILITY', 'DBMS_METADATA',
+  'DBMS_STATS', 'DBMS_LOB', 'UTL_FILE',
+]);
+
 export class ScalarFunctionEvaluator {
   constructor(private readonly host: ScalarFunctionHost) {}
 
@@ -51,11 +68,20 @@ export class ScalarFunctionEvaluator {
     const name = expr.name.toUpperCase();
     const args = expr.args.map(a => this.host.evaluateExpression(a, row, columns));
 
+    // A qualified name (PKG.FN) only matches built-in package members; plain
+    // scalar builtins must not shadow it (SELECT NO_PKG.UPPER(...) is 904).
+    const qualifier = expr.schema?.toUpperCase();
+    if (qualifier && !BUILTIN_PACKAGES.has(qualifier)) {
+      return this.resolveNonBuiltin(`${qualifier}.${name}`, args);
+    }
+
     switch (name) {
       // String functions
       case 'UPPER': return args[0] != null ? String(args[0]).toUpperCase() : null;
       case 'LOWER': return args[0] != null ? String(args[0]).toLowerCase() : null;
-      case 'INITCAP': return args[0] != null ? String(args[0]).replace(/\b\w/g, c => c.toUpperCase()) : null;
+      case 'INITCAP': return args[0] != null
+        ? String(args[0]).toLowerCase().replace(/[a-z0-9]+/g, w => w.charAt(0).toUpperCase() + w.slice(1))
+        : null;
       case 'LENGTH': return args[0] != null ? String(args[0]).length : null;
       case 'SUBSTR': {
         if (args[0] == null) return null;
@@ -134,17 +160,11 @@ export class ScalarFunctionEvaluator {
       }
       case 'LPAD': {
         if (args[0] == null) return null;
-        const str = String(args[0]);
-        const len = Number(args[1]);
-        const pad = args[2] != null ? String(args[2]) : ' ';
-        return str.padStart(len, pad);
+        return padOracle(String(args[0]), Number(args[1]), args[2] != null ? String(args[2]) : ' ', true);
       }
       case 'RPAD': {
         if (args[0] == null) return null;
-        const str = String(args[0]);
-        const len = Number(args[1]);
-        const pad = args[2] != null ? String(args[2]) : ' ';
-        return str.padEnd(len, pad);
+        return padOracle(String(args[0]), Number(args[1]), args[2] != null ? String(args[2]) : ' ', false);
       }
       case 'REPLACE': {
         if (args[0] == null) return null;
@@ -272,12 +292,28 @@ export class ScalarFunctionEvaluator {
         if (!base) return null;
         return formatDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
       }
-      case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
+      // Oracle: MOD(n, 0) returns n (not NaN); REMAINDER(n, 0) is NULL.
+      case 'MOD': {
+        if (args[0] == null || args[1] == null) return null;
+        const divisor = Number(args[1]);
+        return divisor === 0 ? Number(args[0]) : Number(args[0]) % divisor;
+      }
+      case 'REMAINDER': {
+        if (args[0] == null || args[1] == null) return null;
+        const n = Number(args[0]);
+        const divisor = Number(args[1]);
+        return divisor === 0 ? null : n - Math.round(n / divisor) * divisor;
+      }
       case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
       case 'SQRT': return args[0] != null ? Math.sqrt(Number(args[0])) : null;
       case 'SIGN': return args[0] != null ? Math.sign(Number(args[0])) : null;
-      case 'GREATEST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.host.compareValues(a, b) >= 0 ? a : b), args[0]);
-      case 'LEAST': return args.filter(a => a != null).reduce<CellValue>((a, b) => (this.host.compareValues(a, b) <= 0 ? a : b), args[0]);
+      // Oracle: GREATEST/LEAST return NULL when ANY argument is NULL.
+      case 'GREATEST':
+        if (args.length === 0 || args.some(a => a == null)) return null;
+        return args.reduce<CellValue>((a, b) => (this.host.compareValues(a, b) >= 0 ? a : b), args[0]);
+      case 'LEAST':
+        if (args.length === 0 || args.some(a => a == null)) return null;
+        return args.reduce<CellValue>((a, b) => (this.host.compareValues(a, b) <= 0 ? a : b), args[0]);
 
       // Null handling
       case 'NVL': return args[0] ?? args[1] ?? null;
@@ -438,7 +474,7 @@ export class ScalarFunctionEvaluator {
       case 'GATHER_TABLE_STATS':
       case 'GATHER_SCHEMA_STATS': {
         if (expr.schema?.toUpperCase() === 'DBMS_STATS') return null;
-        return null;
+        return this.resolveNonBuiltin(name, args);
       }
 
       // DBMS_LOB functions
@@ -462,16 +498,19 @@ export class ScalarFunctionEvaluator {
       case 'COUNT': return args.length === 0 || (expr.args[0] && expr.args[0].type === 'Star') ? 1 : (args[0] != null ? 1 : 0);
       case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
 
-      default: {
-        const schema = expr.schema?.toUpperCase();
-        const fullName = schema ? `${schema}.${name}` : name;
-        // Not a builtin: try user-defined stored functions (incl. package
-        // members) before concluding ORA-00904 like real Oracle.
-        const bridged = this.host.callStoredFunction?.(fullName, args);
-        if (bridged?.handled) return bridged.value;
-        throw new OracleError(904, `"${fullName}": invalid identifier`);
-      }
+      default:
+        return this.resolveNonBuiltin(qualifier ? `${qualifier}.${name}` : name, args);
     }
+  }
+
+  /**
+   * Not a builtin: try user-defined stored functions (incl. package
+   * members) before concluding ORA-00904 like real Oracle.
+   */
+  private resolveNonBuiltin(fullName: string, args: CellValue[]): CellValue {
+    const bridged = this.host.callStoredFunction?.(fullName, args);
+    if (bridged?.handled) return bridged.value;
+    throw new OracleError(904, `"${fullName}": invalid identifier`);
   }
 
   private evaluateDecode(args: CellValue[]): CellValue {
