@@ -97,6 +97,15 @@ implements IRoutingProtocolEngine<TConfig> {
   /** Wire the reactive event bus (optional; observables work without). */
   setBus(bus: IEventBus | null): void { this.bus = bus; }
 
+  /**
+   * Locate the engine's current peers on demand. Exposed to subclasses so
+   * recursive computations (e.g. BGP transitive advertisement) can query a
+   * peer engine's own adjacencies outside its converge() cycle.
+   */
+  protected locatePeers(): RoutingPeer[] {
+    return this.locator.locatePeers();
+  }
+
   converge(): void {
     if (!this.enabled) { this.reproject(); return; }
     const peers = this.locator.locatePeers();
