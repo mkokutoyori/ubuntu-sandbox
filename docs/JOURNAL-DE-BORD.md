@@ -409,6 +409,19 @@ préexistant déjà documenté en entrée 2).
 
 ---
 
+## Validation finale de la série
+
+- `npm run build` : ✅ build de production OK.
+- Suite unitaire complète (`src/__tests__/unit/`) : **13 216 tests verts**,
+  13 échecs **tous préexistants** (vérifié en rejouant les 4 fichiers
+  concernés sur le commit de base `ac13a7e` via un worktree : mêmes 13
+  échecs — Oracle access-management ×3, PowerShell DateTime/pushd ×9,
+  terminal sudo-prompt ×1). Zéro régression introduite.
+- ESLint : les fichiers touchés par la série sont propres ; les ~780
+  erreurs restantes sont le baseline préexistant du repo (hors périmètre).
+
+---
+
 ## Limites connues / dette restante
 
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
