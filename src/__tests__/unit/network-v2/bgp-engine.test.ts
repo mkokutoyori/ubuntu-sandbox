@@ -104,3 +104,125 @@ describe('BGPEngine — real config-driven', () => {
     expect(routes[0].adminDistance).toBe(200);
   });
 });
+
+describe('BGPEngine — RFC 4271 §9.1.1 best-path selection', () => {
+  /** Two peers (B, C) both originating 172.16.0.0/24 toward `self`. */
+  function dualHomedSetup(opts: {
+    selfAsn: number; bAsn: number; cAsn: number;
+    bRouterId?: string; cRouterId?: string;
+    bWeight?: number; cWeight?: number;
+    bLocalPref?: number; cLocalPref?: number;
+  }) {
+    const self = new BGPEngine('SELF');
+    const b = new BGPEngine('B');
+    const c = new BGPEngine('C');
+    self.setDeviceContext(ctx('192.168.1.0'));
+    for (const e of [b, c]) {
+      e.setDeviceContext({
+        connectedNetworks: () => [{
+          network: new IPAddress('172.16.0.0'),
+          mask: new SubnetMask('255.255.255.0'),
+          iface: 'Gi0/1',
+          localIp: new IPAddress('172.16.0.1'),
+        }],
+      });
+    }
+    self.enable({ asn: opts.selfAsn });
+    b.enable({ asn: opts.bAsn, routerId: opts.bRouterId,
+      defaultLocalPref: opts.bLocalPref ?? 100 });
+    c.enable({ asn: opts.cAsn, routerId: opts.cRouterId,
+      defaultLocalPref: opts.cLocalPref ?? 100 });
+    b.getConfig().networks.push({ network: '172.16.0.0', mask: '255.255.255.0' });
+    c.getConfig().networks.push({ network: '172.16.0.0', mask: '255.255.255.0' });
+
+    self.getConfig().neighbors.set('10.0.0.2',
+      { ip: '10.0.0.2', remoteAs: opts.bAsn, activated: true, weight: opts.bWeight });
+    self.getConfig().neighbors.set('10.0.1.2',
+      { ip: '10.0.1.2', remoteAs: opts.cAsn, activated: true, weight: opts.cWeight });
+    b.getConfig().neighbors.set('10.0.0.1',
+      { ip: '10.0.0.1', remoteAs: opts.selfAsn, activated: true });
+    c.getConfig().neighbors.set('10.0.1.1',
+      { ip: '10.0.1.1', remoteAs: opts.selfAsn, activated: true });
+
+    const mk = (eng: BGPEngine, localIp: string, remoteIp: string,
+      iface: string): RoutingPeer => ({
+      deviceId: remoteIp, hostname: remoteIp,
+      localIface: iface, localIp: new IPAddress(localIp),
+      remoteIface: 'Gi0/0', remoteIp: new IPAddress(remoteIp),
+      peerEngineFor: (p) => (p === 'bgp' ? eng : null),
+    });
+    self.setPeerLocator({ locatePeers: () => [
+      mk(b, '10.0.0.1', '10.0.0.2', 'Gi0/0'),
+      mk(c, '10.0.1.1', '10.0.1.2', 'Gi0/1'),
+    ] });
+    b.setPeerLocator({ locatePeers: () => [mk(self, '10.0.0.2', '10.0.0.1', 'Gi0/0')] });
+    c.setPeerLocator({ locatePeers: () => [mk(self, '10.0.1.2', '10.0.1.1', 'Gi0/0')] });
+    self.converge();
+    return self;
+  }
+
+  it('installs exactly ONE best path per prefix (not first-seen)', () => {
+    const self = dualHomedSetup({
+      selfAsn: 65001, bAsn: 65002, cAsn: 65003,
+      bRouterId: '2.2.2.2', cRouterId: '3.3.3.3',
+    });
+    const routes = self.getContributedRoutes();
+    expect(routes).toHaveLength(1);
+  });
+
+  it('highest weight wins first (Cisco step 1)', () => {
+    const self = dualHomedSetup({
+      selfAsn: 65001, bAsn: 65002, cAsn: 65003,
+      bRouterId: '2.2.2.2', cRouterId: '3.3.3.3',
+      cWeight: 200,                       // C must win despite higher RID
+    });
+    expect(String(self.getContributedRoutes()[0].nextHop)).toBe('10.0.1.2');
+  });
+
+  it('a prefix originated inside the AS (iBGP, empty AS_PATH) beats an ' +
+     'external path with a longer AS_PATH (step 4)', () => {
+    const self = dualHomedSetup({
+      selfAsn: 65001, bAsn: 65001 /* iBGP */, cAsn: 65003 /* eBGP */,
+      bRouterId: '2.2.2.2', cRouterId: '3.3.3.3',
+    });
+    const routes = self.getContributedRoutes();
+    // iBGP path: AS_PATH [] (locally originated in our AS) — shorter
+    // than the eBGP path's [65003] — so step 4 decides before the
+    // eBGP-over-iBGP step ever applies. RFC-faithful behaviour.
+    expect(String(routes[0].nextHop)).toBe('10.0.0.2');
+    expect(routes[0].adminDistance).toBe(200);
+  });
+
+  it('higher LOCAL_PREF wins among iBGP paths (step 2)', () => {
+    const self = dualHomedSetup({
+      selfAsn: 65001, bAsn: 65001, cAsn: 65001,   // both iBGP
+      bRouterId: '2.2.2.2', cRouterId: '3.3.3.3',
+      cLocalPref: 200,
+    });
+    expect(String(self.getContributedRoutes()[0].nextHop)).toBe('10.0.1.2');
+  });
+
+  it('lowest router-id breaks remaining ties (step 9)', () => {
+    const self = dualHomedSetup({
+      selfAsn: 65001, bAsn: 65002, cAsn: 65003,
+      bRouterId: '9.9.9.9', cRouterId: '1.1.1.1',
+    });
+    expect(String(self.getContributedRoutes()[0].nextHop)).toBe('10.0.1.2');
+  });
+
+  it('never installs a BGP route for its own connected prefix', () => {
+    const self = new BGPEngine('SELF');
+    const b = new BGPEngine('B');
+    self.setDeviceContext(ctx('192.168.1.0'));
+    b.setDeviceContext(ctx('192.168.1.0'));     // same prefix as self
+    self.enable({ asn: 65001 });
+    b.enable({ asn: 65002 });
+    self.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    b.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    b.getConfig().networks.push({ network: '192.168.1.0', mask: '255.255.255.0' });
+    link(self, '10.0.0.1', b, '10.0.0.2');
+    self.converge();
+    expect(self.getNeighbors()[0].state).toBe('Established');
+    expect(self.getContributedRoutes()).toHaveLength(0);
+  });
+});

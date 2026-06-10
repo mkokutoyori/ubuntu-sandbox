@@ -147,3 +147,69 @@
 - Pas d'authentification RIPv2 (MD5/texte, RFC 2453 §4.1).
 - La suppression « pas de triggered si update régulier imminent »
   (§3.10.1, optionnelle) n'est pas implémentée.
+
+---
+
+## Lot 3 — BGP : sélection de chemin RFC 4271 §9.1.1
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Aucune sélection de chemin** : `computeRoutes` installait le
+   *premier* chemin rencontré par préfixe (`Set` de dédup), ignorant
+   totalement l'ordre de décision RFC 4271 §9.1.1 (weight, LOCAL_PREF,
+   AS_PATH, origin, MED, eBGP/iBGP, router-id). Avec deux pairs
+   annonçant le même préfixe, le résultat dépendait de l'ordre
+   d'itération de la Map de voisins.
+2. **Aucun attribut de chemin** : pas d'AS_PATH (donc pas de
+   comparaison de longueur), pas de LOCAL_PREF, pas de weight Cisco,
+   pas d'origin, pas de MED, pas de tie-break par router-id.
+3. **Routes vers ses propres préfixes connectés** installées (même
+   défaut que EIGRP avant le lot 1).
+4. **CLI** : `neighbor … weight` et `bgp default local-preference`
+   inexistants ou non câblés au moteur.
+5. **Conflit de trie CLI découvert au passage** : la boucle "catch-all"
+   des options de routage ré-enregistrait `metric` APRÈS le handler
+   dédié du lot 1 (le dernier `registerGreedy` gagne dans
+   `CommandTrie`), rendant `metric weights` muet. Corrigé en fusionnant
+   les sémantiques RIP/EIGRP dans un seul handler et en retirant
+   `metric` du catch-all.
+
+### Corrections livrées
+
+- **`src/network/bgp/bestPath.ts`** (nouveau, pur) : comparateur
+  RFC 4271 complet — weight → LOCAL_PREF → origination locale →
+  longueur d'AS_PATH → origin (IGP<EGP<incomplete) → MED (comparé
+  uniquement entre chemins du même AS voisin, §9.1.2.2) → eBGP>iBGP →
+  router-id → IP du pair. `selectBestPath` n'installe qu'UN best path
+  par préfixe, sans muter l'entrée.
+- **`BGPEngine`** : construit de vrais candidats par préfixe —
+  AS_PATH `[asn-du-pair]` pour eBGP (le pair prépende son AS,
+  §5.1.2), `[]` pour iBGP ; LOCAL_PREF du pair propagé en iBGP
+  seulement (§5.1.5, ne traverse pas les frontières d'AS) ; weight par
+  voisin ; filtrage des préfixes localement connectés. Config :
+  `defaultLocalPref` (défaut 100) et `weight` par voisin.
+- **CLI Cisco** : `neighbor <ip> weight <0-65535>` (validé) et
+  `bgp default local-preference <n>` alimentent le moteur et
+  convergent.
+
+### Tests
+
+- Nouveau `bgp-bestpath.test.ts` : chaque étape de l'ordre de décision
+  isolément (poids dominant, LOCAL_PREF, origination locale, AS_PATH,
+  origin, MED comparable/non-comparable, eBGP>iBGP, router-id, IP),
+  ensemble vide, non-mutation de l'entrée.
+- `bgp-engine.test.ts` étendu (double-homing vers le même préfixe) :
+  un seul best path installé, weight prioritaire, LOCAL_PREF entre
+  pairs iBGP, AS_PATH vide (originé dans l'AS) bat un chemin externe
+  plus long — comportement RFC fidèle —, tie-break router-id,
+  filtrage des préfixes connectés.
+
+### Limites restantes (suivi)
+
+- Pas de FSM temporisée (keepalive 60 s / hold 180 s, §6.4) : l'état de
+  session est recalculé par convergence événementielle. Un vrai FSM
+  par messages OPEN/KEEPALIVE serait un chantier dédié.
+- MED toujours fixe à 0 (pas de `default-metric`/route-map).
+- Multi-saut : AS_PATH limité à un saut (modèle 1-hop du moteur).
