@@ -325,4 +325,44 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - 14 tests dns-over-wire (dont dig +short/full, timeout dig câble débranché,
   nslookup timeout service arrêté, host NXDOMAIN, nslookup Windows filaire).
 - Suites nslookup/hosts/windows-netsh-dhcp-dns : 113 tests verts ;
+  régression complète `network-v2` : 255 fichiers, 6610 tests verts.
+
+---
+
+## Entrée n°7 — 2026-06-10 — Résolveur Windows sur le câble ; suppression du dernier chemin DNS hors-bande
+
+### Défaillances constatées
+
+1. **Résolveur Windows hors-bande** — `WindowsPC.resolveHostname()` (utilisé
+   par `ping` et `tracert` par nom d'hôte) interrogeait encore les serveurs
+   DNS configurés via `findDnsServerByIP` (recherche dans le registre
+   d'équipements + appel direct), donc insensible aux pannes réseau —
+   asymétrique avec Linux depuis l'entrée n°5.
+2. **Code mort en devenir** — après les entrées n°5 et 6, `findDnsServerByIP`
+   n'avait plus que ce seul consommateur ; l'en-tête de `LinuxDnsService`
+   documentait encore l'ancien contournement.
+
+### Correction (structurelle)
+
+- `WindowsPC.resolveHostname()` devient asynchrone : IP littérale → fichier
+  hosts → nom de la machine → requêtes UDP/53 réelles via le client partagé
+  `EndHost.queryDnsServer()` (entrée n°6), serveur par serveur.
+- Contrat `WinCommandContext.resolveHostname` asynchrone ; `ping`/`tracert`
+  Windows mis à jour (`await`).
+- **Suppression de `findDnsServerByIP`** et de l'import `Equipment` :
+  plus aucun chemin DNS ne contourne le réseau simulé, sur aucun OS.
+- Tests HF-04/05/06 adaptés au contrat asynchrone (comportement inchangé).
+
+### Fichiers
+
+- `src/network/devices/WindowsPC.ts`
+- `src/network/devices/windows/WinCommandExecutor.ts` (contrat)
+- `src/network/devices/windows/{WinPing,WinTracert}.ts`
+- `src/network/devices/linux/LinuxDnsService.ts` (code mort supprimé)
+- `src/__tests__/unit/network-v2/hosts-file.test.ts` (adaptation async)
+
+### Validation
+
+- Suites hosts-file/hosts/dns-over-wire/traceroute-conformance/
+  windows-netsh-dhcp-dns/nslookup : 153 tests verts ; `tsc --noEmit` propre ;
   régression complète `network-v2` relancée.

@@ -41,7 +41,7 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
 
   if (!targetStr) return TRACERT_HELP;
 
-  const targetIP = ctx.resolveHostname(targetStr);
+  const targetIP = await ctx.resolveHostname(targetStr);
   if (!targetIP) {
     return `Unable to resolve target system name ${targetStr}.`;
   }

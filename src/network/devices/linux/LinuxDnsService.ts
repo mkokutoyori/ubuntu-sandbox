@@ -7,13 +7,12 @@
  *   - nslookup command (cross-platform DNS lookup)
  *   - host command (simple DNS lookup)
  *
- * DNS resolution is simulated by directly looking up records on the target DNS
- * server device (found via the Equipment registry), bypassing actual packet-level
- * DNS protocol — just like the existing ping implementation that calls
- * executePingSequence() synchronously.
+ * Queries travel over the simulated network as UDP/53 datagrams (see
+ * `src/network/dns/DnsWire`): the client tools receive an injected async
+ * `DnsQueryFn` transport, and the server side answers through the host's
+ * UDP socket layer when the service is running.
  */
 
-import { Equipment } from '../../equipment/Equipment';
 import type { DnsRecord, DnsQueryFn } from '../../dns/DnsWire';
 
 // ─── DNS Record Types ──────────────────────────────────────────────
@@ -160,25 +159,6 @@ export class DnsService {
   }
 
   getAllRecords(): DnsRecord[] { return [...this.records]; }
-}
-
-// ─── Find DNS server device by IP ────────────────────────────────
-
-export function findDnsServerByIP(serverIP: string): DnsService | null {
-  for (const eq of Equipment.getAllEquipment()) {
-    // Check if this equipment has a matching IP and a DNS service
-    const ports = (eq as any).ports as Map<string, any> | undefined;
-    if (!ports) continue;
-    for (const [, port] of ports) {
-      const ip = port.getIPAddress?.();
-      if (ip && ip.toString() === serverIP) {
-        // Found the device, check if it has a DNS service
-        const dns = (eq as any).dnsService as DnsService | undefined;
-        if (dns && dns.isRunning()) return dns;
-      }
-    }
-  }
-  return null;
 }
 
 // ─── dig command implementation ──────────────────────────────────

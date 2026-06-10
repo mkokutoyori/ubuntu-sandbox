@@ -77,7 +77,7 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
       return `Ping request could not find host ${targetStr}. ${gate.error}`;
     }
   }
-  const targetIP = ctx.resolveHostname(targetStr);
+  const targetIP = await ctx.resolveHostname(targetStr);
   if (!targetIP) {
     return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
   }

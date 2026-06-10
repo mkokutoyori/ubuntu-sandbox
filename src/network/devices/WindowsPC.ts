@@ -30,7 +30,6 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
-import { findDnsServerByIP } from './linux/LinuxDnsService';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -624,8 +623,10 @@ export class WindowsPC extends EndHost {
   /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.
+   * The DNS step queries each configured server over UDP/53 through the
+   * simulated network, so unreachable servers time out like real ones.
    */
-  resolveHostname(name: string): IPAddress | null {
+  async resolveHostname(name: string): Promise<IPAddress | null> {
     // 1. Already a literal IP address.
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
@@ -643,11 +644,11 @@ export class WindowsPC extends EndHost {
     // 4. DNS fallback — query every statically/DHCP-configured server.
     for (const cfg of this.dnsConfig.values()) {
       for (const server of cfg.servers) {
-        const dns = findDnsServerByIP(server);
-        if (!dns) continue;
-        const records = dns.query(name, 'A');
-        if (records.length > 0) {
-          try { return new IPAddress(records[0].value); } catch { /* skip */ }
+        let serverIP: IPAddress;
+        try { serverIP = new IPAddress(server); } catch { continue; }
+        const response = await this.queryDnsServer(serverIP, name, 'A');
+        if (response && response.answers.length > 0) {
+          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
         }
       }
     }
