@@ -48,6 +48,14 @@ import {
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import {
+  buildICMPError,
+  mayGenerateICMPError,
+  ICMP_UNREACH_NET,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+  ICMP_TTL_EXPIRED_IN_TRANSIT,
+  type ICMPErrorType,
+} from '../core/IcmpErrors';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -1086,10 +1094,22 @@ export abstract class EndHost extends Equipment {
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
     const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) return; // TTL expired — drop silently
+    if (newTTL <= 0) {
+      // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
+      // back to the source — this is what makes this hop visible to traceroute.
+      Logger.info(this.id, 'ipv4:ttl-expired',
+        `${this.name}: TTL expired for ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+      this.sendICMPError(inPort, ipPkt, 'time-exceeded', ICMP_TTL_EXPIRED_IN_TRANSIT);
+      return;
+    }
 
     const route = this.resolveRoute(ipPkt.destinationIP);
-    if (!route) return; // no route — drop
+    if (!route) {
+      Logger.info(this.id, 'ipv4:no-route',
+        `${this.name}: no route to ${ipPkt.destinationIP}`);
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_NET);
+      return;
+    }
 
     const outPortName = route.port.getName();
     if (outPortName === inPort) return; // avoid looping back on same interface
@@ -1319,39 +1339,52 @@ export abstract class EndHost extends Equipment {
    * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
    */
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
-    const port = this.ports.get(portName);
-    if (!port) return;
-    const myIP = port.getIPAddress();
-    if (!myIP) return;
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', ICMP_UNREACH_ADMIN_PROHIBITED);
+  }
 
-    const icmpError: ICMPPacket = {
-      type: 'icmp',
-      icmpType: 'destination-unreachable',
-      code: 13, // Communication administratively prohibited
-      id: 0,
-      sequence: 0,
-      dataSize: 0,
-      originalPacket: offendingPkt,
-    };
+  /**
+   * Send an ICMP error message (Time Exceeded / Destination Unreachable)
+   * back to the source of the offending packet.
+   *
+   * RFC 1122 §3.2.2 guards apply (no error about an error, a broadcast, …).
+   * RFC 1812 §4.3.2.7: the error is routed like any other packet — looked up
+   * in the routing table rather than blindly reflected on the ingress port.
+   * Sourced from the ingress interface IP when it has one (the address the
+   * sender was actually talking to), otherwise from the egress interface.
+   */
+  protected sendICMPError(
+    inPort: string,
+    offendingPkt: IPv4Packet,
+    icmpType: ICMPErrorType,
+    code: number,
+  ): void {
+    if (!mayGenerateICMPError(offendingPkt)) return;
 
-    const errorIP = createIPv4Packet(
-      myIP,
-      offendingPkt.sourceIP,
-      IP_PROTO_ICMP,
-      this.defaultTTL,
-      icmpError,
-      8,
-    );
+    const route = this.resolveRoute(offendingPkt.sourceIP);
+    if (!route) return; // no route back to source — silently drop
 
-    const targetMAC = this.arpTable.get(offendingPkt.sourceIP.toString());
-    if (!targetMAC) return;
+    const srcIP = this.ports.get(inPort)?.getIPAddress() ?? route.port.getIPAddress();
+    if (!srcIP) return;
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: targetMAC.mac,
-      etherType: ETHERTYPE_IPV4,
-      payload: errorIP,
-    });
+    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL);
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, errorIP, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: errorIP,
+      });
+    } else {
+      // Next-hop MAC unknown — queue the error and resolve via ARP instead
+      // of dropping it on a cold cache.
+      this.fwdQueueAndResolve(errorIP, outPortName, route.nextHopIP, route.port);
+    }
   }
 
   // ─── TCP Transport (RFC 793) ───────────────────────────────────
