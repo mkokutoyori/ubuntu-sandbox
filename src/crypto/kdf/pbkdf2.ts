@@ -6,14 +6,8 @@
  * slowness is the point, and Cisco type-8 relies on it (20 000 rounds).
  */
 
-<<<<<<< HEAD
 import type { HashAlgorithm } from '../hash';
 import { hmac, PrecomputedHmac } from '../mac';
-=======
-import type { HashAlgorithm, ResumableHashAlgorithm } from '../hash';
-import { isResumable } from '../hash';
-import { hmac } from '../mac';
->>>>>>> origin/claude/happy-volta-51l0hy
 import { utf8ToBytes, bytesToHex } from '../encoding';
 
 const IPAD = 0x36;
@@ -69,7 +63,6 @@ export function pbkdf2(
   const blocks = Math.ceil(dkLen / hLen);
   const dk = new Uint8Array(blocks * hLen);
 
-<<<<<<< HEAD
   // The password keys every PRF call; precompute its HMAC pad midstates
   // once when the hash supports incremental hashing (4096+ rounds otherwise
   // re-hash the padded key on every round).
@@ -77,11 +70,6 @@ export function pbkdf2(
   const prf = engine
     ? (message: Uint8Array) => engine.digest(message)
     : (message: Uint8Array) => hmac(hash, password, message);
-=======
-  const prf: (message: Uint8Array) => Uint8Array = isResumable(hash)
-    ? makeResumablePrf(hash, password)
-    : message => hmac(hash, password, message);
->>>>>>> origin/claude/happy-volta-51l0hy
 
   // INT_32_BE(i) appended to the salt for each block (RFC 2898 §5.2).
   const block = new Uint8Array(salt.length + 4);

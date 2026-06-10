@@ -1,6 +1,5 @@
 # Journal de bord — Refactoring du simulateur Oracle DBMS
 
-<<<<<<< HEAD
 Chaque entrée documente une défaillance ou limite identifiée, son diagnostic,
 la correction structurelle appliquée et la preuve de non-régression. Les
 entrées sont ordonnées chronologiquement ; une entrée = un commit.
@@ -350,7 +349,11 @@ SessionInputHost) sont désormais cohérentes et vertes.
 
 ### Preuves
 - `unit/terminal` + `unit/shell` : 896/896 verts (1 échec préexistant résolu).
-=======
+
+---
+
+# Journal (série parallèle — branche happy-volta-51l0hy)
+
 Ce journal documente chaque défaillance structurelle, duplication ou écart avec le
 comportement du vrai Oracle Database identifié dans `src/database/`, et la correction
 apportée. Une entrée par push.
@@ -550,4 +553,3 @@ Les imports `OracleLexer`/`OracleParser` disparaissent de l'exécuteur (4327 lig
 **Correction :** ce qui a été fait, pattern appliqué.
 **Validation :** tests exécutés.
 -->
->>>>>>> origin/claude/happy-volta-51l0hy
