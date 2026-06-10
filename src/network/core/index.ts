@@ -42,3 +42,12 @@ export {
   wrapIpv4InEthernet,
 } from './packetBuilders';
 export type { Ipv4FrameArgs, UdpIpv4FrameArgs } from './packetBuilders';
+export {
+  ipToUint32,
+  tryIpToUint32,
+  uint32ToIp,
+  prefixLengthToMaskUint32,
+  networkAddress,
+  inSameSubnet,
+  wildcardMatches,
+} from './ip';

@@ -10,6 +10,7 @@
  */
 
 import type { Router } from '../../Router';
+import { inSameSubnet } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 
@@ -2394,14 +2395,6 @@ function maskToCIDR(mask: string): number {
   return bits;
 }
 
-function ipToNumber(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
-}
-
 function ipInSubnet(ip: string, network: string, mask: string): boolean {
-  const ipNum = ipToNumber(ip);
-  const netNum = ipToNumber(network);
-  const maskNum = ipToNumber(mask);
-  return (ipNum & maskNum) === (netNum & maskNum);
+  return inSameSubnet(ip, network, mask);
 }

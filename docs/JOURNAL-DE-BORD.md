@@ -17,7 +17,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 2 | TCP : état TIME_WAIT déclaré mais jamais utilisé (pas de 2MSL) | RFC 793 §3.5 | Haute | ✅ Corrigé |
 | 3 | HSRP : plages de groupes non bornées (MAC malformée hors plage), fonction MAC dupliquée, rétrogradation v2→v1 silencieuse | RFC 2281 / réalité IOS | Moyenne | ✅ Corrigé |
 | 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Factory | Haute | ✅ Corrigé |
-| 5 | Helpers IP réimplémentés localement dans OSPF / EIGRP / BGP (`ipToNumber`, `toNum`) au lieu de `core/types.ts` | DRY | Moyenne | À faire |
+| 5 | Helpers IP réimplémentés 6× (OSPF ×2, EIGRP, BGP, PIM, CLI OSPF) | DRY | Moyenne | ✅ Corrigé |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | À faire |
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | À faire |
 | 8 | Dispatch par `constructor.name` dans ShellFactory / sshLauncher / WindowsTerminalSession (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | À faire |
@@ -208,6 +208,48 @@ vertes + `tsc --noEmit` propre.
 8 tests dédiés `packet-builders.test.ts` (checksum valide, tos/flags,
 longueurs UDP, payload vide, non-mutation) ; suites HSRP/VRRP/GLBP vertes ;
 suite complète network-v2 : 252 fichiers / 6586 tests verts ; `tsc` propre.
+
+---
+
+## Entrée 5 — Arithmétique IPv4 canonique (`core/ip.ts`)
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+Six implémentations indépendantes de la conversion IP↔uint32 et des calculs
+de sous-réseau, avec des sémantiques de validation divergentes :
+
+| Lieu | Forme | Validation |
+|------|-------|------------|
+| `OSPFEngine.ipToNumber` + `numberToIP` | méthode privée | aucune |
+| `OSPFEngine` (élection DR, l.1582) | arrow inline `reduce` | aucune |
+| `EIGRPEngine.toNum` | fonction module | retourne -1 |
+| `BGPEngine.sameNet` | arrow inline | retourne -1 |
+| `pim/types.ipToUint32` | export public | aucune |
+| `CiscoOspfCommands.ipToNumber` | fonction module | aucune |
+
+Risque concret : corriger un bug d'arrondi/signe dans une copie sans toucher
+les cinq autres (les opérateurs `<<` signés exigent le `>>> 0` final — facile
+à oublier dans une nouvelle copie).
+
+### Correction
+
+Nouveau module `src/network/core/ip.ts`, exporté via `core/index.ts` :
+`ipToUint32` (fast path), `tryIpToUint32` (validant, null si malformé),
+`uint32ToIp`, `prefixLengthToMaskUint32` (bornes clampées),
+`networkAddress`, `inSameSubnet`, `wildcardMatches` (sémantique wildcard
+Cisco documentée). Les six sites migrent dessus ; `pim/types.ts` ré-exporte
+la fonction canonique pour ses appelants existants ; les méthodes privées
+d'OSPF deviennent de simples délégations (diff minimal, zéro logique
+dupliquée).
+
+### Tests
+
+`core-ip-helpers.test.ts` : 11 tests de bornes (0.0.0.0, 255.255.255.255,
+octets > 127 / non-signé, /0, /32, préfixes hors plage clampés, quads
+malformés rejetés, wildcard 0.0.0.0 = host exact, 255.255.255.255 = tout).
+Non-régression : network-v2 + events = 279 fichiers / 6836 tests verts.
 
 ---
 

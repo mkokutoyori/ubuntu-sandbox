@@ -7,6 +7,7 @@
  * no neighbour and contributes nothing — the true state.
  */
 import { IPAddress, SubnetMask } from '../core/types';
+import { tryIpToUint32, prefixLengthToMaskUint32, wildcardMatches } from '../core/ip';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -33,13 +34,6 @@ export interface EIGRPConfig {
 /** EIGRP administrative distance for internal routes. */
 const EIGRP_INTERNAL_AD = 90;
 
-function toNum(ip: string): number {
-  const p = ip.split('.').map(Number);
-  return p.length === 4 && p.every((n) => n >= 0 && n <= 255)
-    ? ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0
-    : -1;
-}
-
 function classfulMaskBits(ip: string): number {
   const first = Number(ip.split('.')[0]);
   if (first < 128) return 8;
@@ -49,17 +43,13 @@ function classfulMaskBits(ip: string): number {
 
 /** True if `localIp` is covered by a `network [wildcard]` statement. */
 function statementCovers(stmt: EigrpNetworkStmt, localIp: string): boolean {
-  const netNum = toNum(stmt.network);
-  const ipNum = toNum(localIp);
-  if (netNum < 0 || ipNum < 0) return false;
-  let bits: number;
+  const netNum = tryIpToUint32(stmt.network);
+  const ipNum = tryIpToUint32(localIp);
+  if (netNum === null || ipNum === null) return false;
   if (stmt.wildcard) {
-    const w = toNum(stmt.wildcard);
-    const mask = (~w) >>> 0;
-    return (ipNum & mask) === (netNum & mask);
+    return wildcardMatches(localIp, stmt.network, stmt.wildcard);
   }
-  bits = classfulMaskBits(stmt.network);
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  const mask = prefixLengthToMaskUint32(classfulMaskBits(stmt.network));
   return (ipNum & mask) === (netNum & mask);
 }
 
