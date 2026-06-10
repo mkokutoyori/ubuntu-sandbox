@@ -325,3 +325,55 @@
 - États HSRP Learn/Speak simplifiés (pas de temporisation de
   transition dédiée) ; coup/resign partiellement modélisés.
 - Pas d'authentification MD5 HSRP/VRRP.
+
+---
+
+## Lot 6 — Pile cœur : Time-Exceeded sur passerelle Linux, ARP gratuit IOS, promesses ping
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Drop TTL silencieux sur hôte forwardeur** : un Linux avec
+   `net.ipv4.ip_forward=1` jetait les paquets à TTL expiré sans émettre
+   d'ICMP Time Exceeded (RFC 1812 §5.3.1) — un traceroute traversant
+   une passerelle Linux affichait `* * *` au lieu du saut.
+2. **Pas d'ARP gratuit côté routeur** : `ip address` sur un routeur ne
+   produisait aucune annonce GARP (RFC 5227) — les caches voisins
+   gardaient des entrées périmées après renumérotation. (Côté hôte
+   Linux, le GARP existait déjà — constat d'audit corrigé.)
+3. **2 rejets de promesses non gérés** dans chaque run complet de la
+   suite : `_sendPing` créait ses deux `waitForEvent` (echo-reply /
+   echo-failed) **avant** d'évaluer le verdict pare-feu ; en cas de
+   `throw 'blocked by firewall'`, les promesses orphelines rejetaient
+   à l'expiration de leur timeout sans aucun handler.
+4. Duplication interne EndHost : construction d'erreur ICMP en dur
+   dans `sendICMPReject` non réutilisable pour d'autres types.
+
+### Corrections livrées
+
+- **`EndHost.sendICMPError(type, code)`** factorisé (le reject
+  pare-feu devient un appel code 13) ; le chemin de forwarding émet
+  désormais `time-exceeded` code 0 quand le TTL tombe à 0.
+- **`Router.configureInterface`** : émission d'un ARP gratuit
+  (requête broadcast sender=target=IP) quand le port est up/câblé,
+  comme un vrai IOS.
+- **`_sendPing`** : verdict pare-feu évalué avant l'armement des
+  `waitForEvent` — plus aucune promesse orpheline ; la suite complète
+  ne rapporte plus « 2 unhandled errors ».
+
+### Tests
+
+- Nouveau `linux-gateway-forwarding.test.ts` (4 tests) : forwarding
+  bout-en-bout avec `sysctl ip_forward=1`, **Time Exceeded identifié
+  par la passerelle à TTL=1**, traceroute listant la passerelle comme
+  saut, et non-forwarding quand `ip_forward=0`.
+- Régression complète network-v2 + events : 280 fichiers / 6856 tests
+  OK, zéro erreur non gérée (contre 2 dans la base de référence).
+
+### Limites restantes (suivi)
+
+- Fragmentation IPv4 et ICMP « Fragmentation Needed » toujours absents
+  (Router logue et jette) — chantier dédié si besoin.
+- TCP : checksum jamais calculé, pas de RST ni TIME_WAIT — chantier
+  potentiel de plus grande ampleur.

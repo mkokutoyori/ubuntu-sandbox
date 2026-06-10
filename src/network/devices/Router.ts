@@ -543,6 +543,21 @@ export abstract class Router extends Equipment {
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
 
+    // Gratuitous ARP (RFC 5227): announce the address so neighbours
+    // refresh stale cache entries — real IOS does this on `ip address`.
+    if (port.isConnected() && port.getIsUp()) {
+      this.sendFrame(ifName, {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP,
+        payload: {
+          type: 'arp', operation: 'request',
+          senderMAC: port.getMAC(), senderIP: ip,
+          targetMAC: MACAddress.broadcast(), targetIP: ip,
+        },
+      });
+    }
+
     // Trigger OSPF convergence if OSPF is enabled (needed for Loopback, etc.)
     if (this.ospfIntegration.isOSPFEnabled()) {
       this._ospfAutoConverge();

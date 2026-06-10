@@ -1086,7 +1086,12 @@ export abstract class EndHost extends Equipment {
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
     const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) return; // TTL expired — drop silently
+    if (newTTL <= 0) {
+      // RFC 1812 §5.3.1 — a forwarding node MUST signal TTL expiry so
+      // traceroute through a Linux gateway sees this hop.
+      this.sendICMPError(inPort, ipPkt, 'time-exceeded', 0);
+      return;
+    }
 
     const route = this.resolveRoute(ipPkt.destinationIP);
     if (!route) return; // no route — drop
@@ -1319,6 +1324,21 @@ export abstract class EndHost extends Equipment {
    * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
    */
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
+    // Code 13: communication administratively prohibited.
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', 13);
+  }
+
+  /**
+   * Send an ICMP error referencing the offending packet back to its
+   * sender (RFC 792). Used for firewall rejects and, when forwarding,
+   * TTL expiry (RFC 1812 §5.3.1).
+   */
+  private sendICMPError(
+    portName: string,
+    offendingPkt: IPv4Packet,
+    icmpType: 'destination-unreachable' | 'time-exceeded',
+    code: number,
+  ): void {
     const port = this.ports.get(portName);
     if (!port) return;
     const myIP = port.getIPAddress();
@@ -1326,8 +1346,8 @@ export abstract class EndHost extends Equipment {
 
     const icmpError: ICMPPacket = {
       type: 'icmp',
-      icmpType: 'destination-unreachable',
-      code: 13, // Communication administratively prohibited
+      icmpType,
+      code,
       id: 0,
       sequence: 0,
       dataSize: 0,
@@ -1448,6 +1468,20 @@ export abstract class EndHost extends Equipment {
     const sentAt = performance.now();
     const useTtl = ttl ?? this.defaultTTL;
 
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id, sequence: seq, dataSize: 56,
+    };
+    const icmpSize = 8 + 56;
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize);
+
+    // Firewall verdict BEFORE arming the wait promises: an early throw
+    // must not leave them to reject unhandled when their timeout fires.
+    const verdict = this.firewallFilter(portName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') {
+      throw new Error('blocked by firewall');
+    }
+
     // Phase 5.6: settle through the bus instead of a pendingPings Map.
     const replyPromise = waitForEvent(
       this.getBus(),
@@ -1464,22 +1498,10 @@ export abstract class EndHost extends Equipment {
       { timeoutMs, scheduler: this.getScheduler() },
     );
 
-    const icmp: ICMPPacket = {
-      type: 'icmp', icmpType: 'echo-request', code: 0,
-      id, sequence: seq, dataSize: 56,
-    };
-    const icmpSize = 8 + 56;
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize);
-
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
       id, seq, ttl: useTtl, size: icmpSize,
     });
-
-    const verdict = this.firewallFilter(portName, ipPkt, 'out');
-    if (verdict === 'drop' || verdict === 'reject') {
-      throw new Error('blocked by firewall');
-    }
 
     this.sendFrame(portName, {
       srcMAC: port.getMAC(), dstMAC: targetMAC,
