@@ -33,27 +33,16 @@ import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
 import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
-
-/** Snapshot of table rows for transaction undo */
-interface TransactionSnapshot {
-  tables: Map<string, Map<string, StorageRow[]>>; // schema -> table -> rows copy
-}
+import { TransactionManager } from './transaction/TransactionManager';
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
   private _currentRowNum: number = 0;
-  /** Undo log: snapshot taken at transaction start (first DML) */
-  private _txnSnapshot: TransactionSnapshot | null = null;
-  /** Savepoints: name -> snapshot at savepoint creation time */
-  private _savepoints: Map<string, TransactionSnapshot> = new Map();
-  private _inTransaction: boolean = false;
+  /** Implicit-transaction lifecycle (undo snapshots, savepoints, tx ids). */
+  private readonly txn: TransactionManager;
   /** Track sequences that have had NEXTVAL called in this session */
   private _nextvalCalled: Set<string> = new Set();
 
-  /** Numeric transaction id (monotonic per executor; bumped on first DML). */
-  private _txIdCounter: number = 0;
-  /** Active tx id, valid only while _inTransaction === true. */
-  private _activeTxId: number = 0;
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
   /** Delegate for SQL commands whose effect lives in OracleDatabase
@@ -68,6 +57,11 @@ export class OracleExecutor extends BaseExecutor {
   ) {
     super(storage, catalog, context);
     this.instance = instance;
+    this.txn = new TransactionManager(storage, {
+      onBegin: txId => this.emitTxnStarted(txId),
+      onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
+      onRollback: txId => this.emitTxnRolledBack(txId),
+    });
   }
 
   /** Bind this executor to a session id for the oracle.session.* / tx events. */
@@ -111,24 +105,24 @@ export class OracleExecutor extends BaseExecutor {
     });
   }
 
-  private emitTxnStarted(): void {
+  private emitTxnStarted(txId: number): void {
     this.bus.publish({
       topic: 'oracle.transaction.started',
-      payload: { ...this.ref(), txId: this._activeTxId },
+      payload: { ...this.ref(), txId },
     });
   }
 
-  private emitTxnCommitted(durationMs: number): void {
+  private emitTxnCommitted(txId: number, durationMs: number): void {
     this.bus.publish({
       topic: 'oracle.transaction.committed',
-      payload: { ...this.ref(), txId: this._activeTxId, durationMs },
+      payload: { ...this.ref(), txId, durationMs },
     });
   }
 
-  private emitTxnRolledBack(): void {
+  private emitTxnRolledBack(txId: number): void {
     this.bus.publish({
       topic: 'oracle.transaction.rolled-back',
-      payload: { ...this.ref(), txId: this._activeTxId },
+      payload: { ...this.ref(), txId },
     });
   }
 
@@ -138,46 +132,6 @@ export class OracleExecutor extends BaseExecutor {
       payload: { ...this.ref(), code, message },
     });
   }
-
-  /** Capture current row state of all tables for rollback */
-  private captureSnapshot(): TransactionSnapshot {
-    const snap: TransactionSnapshot = { tables: new Map() };
-    for (const schema of this.storage.getSchemas()) {
-      const tableMap = new Map<string, StorageRow[]>();
-      for (const tableName of this.storage.getTableNames(schema)) {
-        const rows = this.storage.getRows(schema, tableName);
-        tableMap.set(tableName, rows.map(r => [...r]));
-      }
-      snap.tables.set(schema, tableMap);
-    }
-    return snap;
-  }
-
-  /** Restore row state from snapshot */
-  private restoreSnapshot(snap: TransactionSnapshot): void {
-    for (const [schema, tableMap] of snap.tables) {
-      for (const [tableName, rows] of tableMap) {
-        if (this.storage.tableExists(schema, tableName)) {
-          this.storage.truncateTable(schema, tableName);
-          for (const row of rows) {
-            this.storage.insertRow(schema, tableName, [...row]);
-          }
-        }
-      }
-    }
-  }
-
-  /** Begin implicit transaction on first DML */
-  private ensureTransaction(): void {
-    if (!this._inTransaction) {
-      this._txnSnapshot = this.captureSnapshot();
-      this._inTransaction = true;
-      this._activeTxId = ++this._txIdCounter;
-      this._txnStartedAt = performance.now();
-      this.emitTxnStarted();
-    }
-  }
-  private _txnStartedAt: number = 0;
 
   execute(statement: Statement): ResultSet {
     const parseStart = performance.now();
@@ -682,47 +636,22 @@ export class OracleExecutor extends BaseExecutor {
   // ── Transaction control ──────────────────────────────────────────
 
   private executeCommit(): ResultSet {
-    const wasInTxn = this._inTransaction;
-    const startedAt = this._txnStartedAt;
-    this._txnSnapshot = null;
-    this._savepoints.clear();
-    this._inTransaction = false;
-    if (wasInTxn) {
-      this.emitTxnCommitted(performance.now() - startedAt);
-    }
+    this.txn.commit();
     return emptyResult('Commit complete.');
   }
 
   private executeRollback(savepoint?: string): ResultSet {
     if (savepoint) {
-      const sp = savepoint.toUpperCase();
-      const snap = this._savepoints.get(sp);
-      if (snap) {
-        this.restoreSnapshot(snap);
-        // Remove savepoints created after this one
-        const names = Array.from(this._savepoints.keys());
-        const idx = names.indexOf(sp);
-        for (let i = idx + 1; i < names.length; i++) {
-          this._savepoints.delete(names[i]);
-        }
-        return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
-      }
-      return emptyResult(`Rollback to savepoint ${savepoint} complete.`);
+      // Throws ORA-01086 when never established; transaction stays active.
+      this.txn.rollbackToSavepoint(savepoint);
+      return emptyResult('Rollback complete.');
     }
-    if (this._txnSnapshot) {
-      this.restoreSnapshot(this._txnSnapshot);
-    }
-    const wasInTxn = this._inTransaction;
-    this._txnSnapshot = null;
-    this._savepoints.clear();
-    this._inTransaction = false;
-    if (wasInTxn) this.emitTxnRolledBack();
+    this.txn.rollback();
     return emptyResult('Rollback complete.');
   }
 
   private executeSavepoint(name: string): ResultSet {
-    this.ensureTransaction();
-    this._savepoints.set(name.toUpperCase(), this.captureSnapshot());
+    this.txn.createSavepoint(name);
     return emptyResult('Savepoint created.');
   }
 
@@ -2228,7 +2157,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
-    this.ensureTransaction();
+    this.txn.begin();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -2320,7 +2249,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
-    this.ensureTransaction();
+    this.txn.begin();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -2365,7 +2294,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── DELETE ────────────────────────────────────────────────────────
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
-    this.ensureTransaction();
+    this.txn.begin();
     const schema = (stmt.table.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.table.name.toUpperCase();
 
@@ -2396,7 +2325,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeCreateTable(stmt: CreateTableStatement): ResultSet {
     // DDL auto-commits any open transaction (Oracle behavior)
-    if (this._inTransaction) this.executeCommit();
+    if (this.txn.isActive) this.executeCommit();
 
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
@@ -2516,7 +2445,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
-    if (this._inTransaction) this.executeCommit();
+    if (this.txn.isActive) this.executeCommit();
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
 
@@ -2550,7 +2479,7 @@ export class OracleExecutor extends BaseExecutor {
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
-    if (this._inTransaction) {
+    if (this.txn.isActive) {
       this.executeCommit();
     }
     this.storage.truncateTable(schema, stmt.name.toUpperCase());
