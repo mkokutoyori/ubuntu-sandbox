@@ -423,3 +423,60 @@
   `ReactiveAgentBase` (deux mécanismes de timers cohabitent) —
   unification possible dans un lot ultérieur.
 - Dot1xAgent n'a pas de timers ni d'abonnements lien : hors périmètre.
+
+---
+
+## Lot 8 — TCP : TIME-WAIT 2MSL, validation de séquence, checksum réel
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **Pas d'état TIME-WAIT** : le fermeur actif détruisait le socket dès
+   l'échange FIN terminé — la paire (IP,port) était libérée
+   immédiatement, contrairement à RFC 9293 §3.4.1 (2×MSL).
+2. **Aucune validation de numéro de séquence à la réception** : un
+   segment dupliqué (re-livraison réseau) était **livré deux fois** à
+   l'application ; un segment hors-séquence était accepté tel quel.
+3. **Checksum TCP jamais calculé** : tous les segments partaient avec
+   `checksum: 0` ; aucune vérification à la réception (RFC 9293 §3.1).
+4. **Bug latent de ré-entrance découvert par la validation** : la
+   livraison synchrone des câbles fait que la réponse du pair re-rentre
+   dans la pile *avant* l'incrément post-émission de `sendNext`. Le
+   serveur émettait ses données avec `seq = ISN` au lieu de `ISN+1`
+   (le flush des envois en attente s'exécutait pendant le traitement du
+   SYN, avant l'incrément du SYN-ACK). L'absence de validation côté
+   client masquait l'erreur depuis toujours.
+5. La pile n'avait **aucun timer** (pas de scheduler injecté).
+
+### Corrections livrées
+
+- **`tcp/types.ts`** : `computeTcpChecksum`/`verifyTcpChecksum`
+  (complément à un sur pseudo-en-tête IPv4 + en-tête + charge utile,
+  checksum 0 = « offload » accepté pour compat), `seqLt` (espace de
+  séquence modulo 2³²), constantes `TCP_MSL_MS`/`TCP_TIME_WAIT_MS`.
+- **`TcpStack`** : scheduler injectable + `TimerSet` (câblés depuis
+  Router/EndHost) ; état **TIME-WAIT** tenu 2×MSL par le fermeur actif
+  (fin-wait-1 + FIN/ACK, fin-wait-2 + FIN, closing + ACK), avec re-ACK
+  des FIN retransmis (§3.10.7) et libération temporisée ;
+  `acceptInOrder` : seul un segment commençant à RCV.NXT est livré,
+  duplicatas/hors-séquence reçoivent un ACK dupliqué sans
+  double-livraison (§3.10.7.4) ; checksum calculé sur chaque segment
+  émis, segments corrompus jetés avec événement `bad-checksum` ;
+  **allocation du numéro de séquence avant émission** sur tous les
+  chemins (SYN, SYN-ACK, données, FIN) — corrige le bug de ré-entrance.
+
+### Tests
+
+- `tcp-stack.test.ts` réécrit/étendu : asymétrie de fermeture RFC
+  (fermeur passif `closed`, fermeur actif `time-wait`), libération
+  après 2×MSL (VirtualTimeScheduler), duplicata re-ACKé jamais livré
+  deux fois, checksum corrompu jeté avec raison `bad-checksum`,
+  checksum vérifiable et sensible à toute mutation.
+- Régression large (network-v2 + shell/SSH + events) :
+  301 fichiers / 7376 tests OK.
+
+### Limites restantes (suivi)
+
+- Pas de retransmission sur timer (le médium simulé ne perd pas de
+  trames) ni de fenêtrage glissant réel.

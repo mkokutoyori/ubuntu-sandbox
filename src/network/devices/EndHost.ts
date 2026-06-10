@@ -473,7 +473,8 @@ export abstract class EndHost extends Equipment {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
     };
-    this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
+    this.tcpv2 = new TcpStack(hostBase, () => this.getBus(),
+      () => this.getScheduler());
     this.tcpv2.start();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',

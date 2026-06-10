@@ -326,7 +326,8 @@ export abstract class Router extends Equipment {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
     };
-    this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
+    this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
+      () => this.getRouterScheduler());
     this.tcpv2.start();
     this.getEemEngine();
     this.getCredentialStore();
