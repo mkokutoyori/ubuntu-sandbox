@@ -126,26 +126,12 @@ export function sha512(input: Uint8Array): Uint8Array {
   return new Sha512State().update(input).digest();
 }
 
-/**
- * Pad and absorb the final `tail`, given the total number of message bytes
- * absorbed overall (already-compressed prefix + tail), then serialize.
- */
-function finalizeState(h: Uint32Array, tail: Uint8Array, totalLen: number): Uint8Array {
-  compressBlocks(h, padTail(tail, totalLen));
-  return serializeState(h);
-}
-
-/** Compute the raw 64-byte SHA-512 digest of `input` (input is not mutated). */
-export function sha512(input: Uint8Array): Uint8Array {
-  return finalizeState(initState(), input, input.length);
-}
-
 /** Hex digest of a UTF-8 string. */
 export function sha512Hex(text: string): string {
   return bytesToHex(sha512(utf8ToBytes(text)));
 }
 
-export const SHA512: ResumableHashAlgorithm = {
+export const SHA512: HashAlgorithm = {
   blockSize: BLOCK_SIZE,
   digestSize: DIGEST_SIZE,
   digest: sha512,
