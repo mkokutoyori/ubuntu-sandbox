@@ -1067,20 +1067,20 @@ export class OracleDatabase implements SqlCommandHost {
       const argValue = args[i] ?? p.defaultValue ?? 'NULL';
       block += `  ${p.name} ${p.dataType} := ${argValue};\n`;
     }
-    // If the body already has DECLARE/BEGIN, unwrap it
+    // A stored body is `[local declarations] BEGIN … END` (the DECLARE
+    // keyword is implied by IS/AS in the unit header). Local declarations —
+    // variables, cursors, PRAGMA AUTONOMOUS_TRANSACTION — must stay in the
+    // declarative section of the wrapper block, never be wrapped as
+    // executable statements.
     const upperBody = body.toUpperCase().trim();
-    if (upperBody.startsWith('BEGIN')) {
+    if (upperBody.startsWith('DECLARE')) {
+      // Tolerated legacy form: merge into our open DECLARE section.
+      block += body.replace(/^\s*DECLARE\b/i, '');
+    } else if (upperBody.startsWith('BEGIN') || /\bBEGIN\b/i.test(body)) {
       block += body;
-    } else if (upperBody.startsWith('DECLARE')) {
-      // Merge declarations
-      const declareMatch = body.match(/^DECLARE\s+([\s\S]*?)\s*BEGIN\s+([\s\S]*)$/i);
-      if (declareMatch) {
-        block += declareMatch[1] + '\n';
-        block += 'BEGIN\n' + declareMatch[2];
-      } else {
-        block += 'BEGIN\n' + body + '\nEND;';
-      }
     } else {
+      // Bare statement list without BEGIN…END (not valid Oracle, but
+      // tolerated for units captured from loose sources).
       block += 'BEGIN\n' + body + '\nEND;';
     }
 

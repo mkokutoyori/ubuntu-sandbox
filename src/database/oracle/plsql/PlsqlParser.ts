@@ -24,6 +24,17 @@ export class PlsqlParser {
     return new PlsqlParser(source).parseProgram();
   }
 
+  /**
+   * Parse a standalone PL/SQL expression (e.g. a collection subscript
+   * appearing inside embedded SQL). Throws PlsqlLexParseError on garbage.
+   */
+  static parseExpression(source: string): Expr {
+    const p = new PlsqlParser(source);
+    const e = p.parseExpr();
+    if (!p.atEof()) p.err(`unexpected '${p.cur().value}' after expression`);
+    return e;
+  }
+
   private peek(o = 0): PlsqlToken { return this.toks[Math.min(this.i + o, this.toks.length - 1)]; }
   private cur(): PlsqlToken { return this.toks[this.i]; }
   private atEof(): boolean { return this.cur().type === 'eof'; }
@@ -83,16 +94,24 @@ export class PlsqlParser {
   private parseDeclaration(): Declaration {
     if (this.isKw('PRAGMA')) {
       this.advance();
-      this.eatKw('EXCEPTION_INIT');
-      this.eatOp('(');
-      const name = this.advance().upper;
-      this.eatOp(',');
-      let sign = 1;
-      if (this.isOp('-')) { this.advance(); sign = -1; }
-      const code = sign * parseInt(this.advance().value, 10);
-      this.eatOp(')');
+      const pragmaName = this.advance().upper;
+      if (pragmaName === 'EXCEPTION_INIT') {
+        this.eatOp('(');
+        const name = this.advance().upper;
+        this.eatOp(',');
+        let sign = 1;
+        if (this.isOp('-')) { this.advance(); sign = -1; }
+        const code = sign * parseInt(this.advance().value, 10);
+        this.eatOp(')');
+        this.eatOp(';');
+        return { kind: 'pragma_exception_init', exceptionName: name, code };
+      }
+      // AUTONOMOUS_TRANSACTION, SERIALLY_REUSABLE, UDF, INLINE(...),
+      // RESTRICT_REFERENCES(...) — compile-time directives with no runtime
+      // effect here; consume any argument list through the terminator.
+      while (!this.isOp(';') && !this.atEof()) this.advance();
       this.eatOp(';');
-      return { kind: 'pragma_exception_init', exceptionName: name, code };
+      return { kind: 'pragma', name: pragmaName };
     }
 
     if (this.isKw('CURSOR')) return this.parseCursorDecl();
@@ -326,6 +345,7 @@ export class PlsqlParser {
         case 'LOOP': return this.parseLoopWithLabel(null)!;
         case 'WHILE': return this.parseWhile(null);
         case 'FOR': return this.parseFor(null);
+        case 'FORALL': return this.parseForall();
         case 'EXIT': return this.parseExit();
         case 'CONTINUE': return this.parseContinue();
         case 'GOTO': { this.advance(); const l = this.advance().upper; this.eatOp(';'); return { kind: 'goto', label: l }; }
@@ -419,6 +439,26 @@ export class PlsqlParser {
     if (this.cur().type === 'ident') this.advance();
     this.eatOp(';');
     return { kind: 'forCursor', label, varName, cursorName, args, query: null, body };
+  }
+
+  /**
+   * FORALL index IN low..high [SAVE EXCEPTIONS] dml_statement
+   *
+   * Real Oracle batches the binds into one engine round-trip; the
+   * simulator has no bulk-bind engine, so FORALL desugars to a numeric
+   * FOR over the single DML statement — row-level semantics, and thus
+   * results, are identical.
+   */
+  private parseForall(): Stmt {
+    this.eatKw('FORALL');
+    const varName = this.advance().upper;
+    this.eatKw('IN');
+    const low = this.parseExpr();
+    this.eatOp('..');
+    const high = this.parseExpr();
+    if (this.isKw('SAVE')) { this.advance(); this.eatKw('EXCEPTIONS'); }
+    const dml = this.parseStatement();
+    return { kind: 'forNum', label: null, varName, reverse: false, low, high, body: dml ? [dml] : [] };
   }
 
   private tryDetectRange(): boolean {
@@ -829,6 +869,24 @@ export class PlsqlParser {
         case 'TRUE': this.advance(); return { kind: 'bool', value: true };
         case 'FALSE': this.advance(); return { kind: 'bool', value: false };
         case 'CASE': return this.parseCaseExpr();
+        case 'DATE': case 'TIMESTAMP': {
+          // ANSI literal: DATE '2020-01-01' / TIMESTAMP '2020-01-01 12:00:00'.
+          // Desugared to TO_DATE so evaluation flows through the SQL engine's
+          // date machinery. A bare DATE/TIMESTAMP identifier stays an ident.
+          if (this.toks[this.i + 1]?.type === 'string') {
+            this.advance();
+            const lit = this.advance().value;
+            const fmt = lit.includes(' ') ? 'YYYY-MM-DD HH24:MI:SS' : 'YYYY-MM-DD';
+            return {
+              kind: 'call', name: 'TO_DATE',
+              args: [
+                { name: null, value: { kind: 'str', value: lit } },
+                { name: null, value: { kind: 'str', value: fmt } },
+              ],
+            };
+          }
+          break;
+        }
       }
       this.advance();
       return { kind: 'ident', name: t.upper };

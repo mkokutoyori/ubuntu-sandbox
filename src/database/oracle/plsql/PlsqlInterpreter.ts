@@ -6,7 +6,7 @@ import {
   CursorRuntime, ExitSignal, ContinueSignal, ReturnSignal, GotoSignal, PlsqlHost,
 } from './PlsqlValue';
 import { PlsqlException, findPredefinedException, matchPredefinedException } from './PlsqlException';
-import { parsePlsql } from './PlsqlParser';
+import { parsePlsql, PlsqlParser } from './PlsqlParser';
 
 const MAX_LOOP = 1_000_000;
 
@@ -118,6 +118,11 @@ export class PlsqlInterpreter {
         break;
       case 'subprogram':
         scope.subprograms.set(d.name, d);
+        break;
+      case 'pragma':
+        // Compile-time directive (AUTONOMOUS_TRANSACTION, …): the simulator
+        // runs every statement in the session's single transaction context,
+        // so these have no runtime effect.
         break;
     }
   }
@@ -1107,9 +1112,38 @@ export class PlsqlInterpreter {
         const slot = scope.findSlot(name);
         if (slot && !isQualifier && !isCall && !this.isSqlKeyword(name)) {
           out += this.toSqlLiteral(slot.value);
-        } else {
-          out += name;
+          i = j;
+          continue;
         }
+        // Collection element reference in embedded SQL — `v_ids(i)` inside
+        // a FORALL/FOR body. The subscript is a PL/SQL expression evaluated
+        // here; the resolved element is inlined as a SQL literal.
+        if (slot && isCall && slot.value instanceof PlsqlCollection && !this.isSqlKeyword(name)) {
+          const open = k;
+          let depth = 0; let m = open;
+          while (m < n) {
+            if (sql[m] === '(') depth++;
+            else if (sql[m] === ')') { depth--; if (depth === 0) break; }
+            m++;
+          }
+          if (m < n) {
+            try {
+              const idxExpr = PlsqlParser.parseExpression(sql.substring(open + 1, m));
+              const idx = Number(this.evalExpr(idxExpr, scope));
+              const coll = slot.value;
+              if (!coll.entries.has(idx)) {
+                throw new PlsqlException('SUBSCRIPT_BEYOND_COUNT', 6533, 'ORA-06533: Subscript beyond count');
+              }
+              out += this.toSqlLiteral(coll.entries.get(idx) ?? null);
+              i = m + 1;
+              continue;
+            } catch (e) {
+              if (e instanceof PlsqlException) throw e;
+              // Unparseable subscript: leave the text for the SQL engine.
+            }
+          }
+        }
+        out += name;
         i = j;
         continue;
       }

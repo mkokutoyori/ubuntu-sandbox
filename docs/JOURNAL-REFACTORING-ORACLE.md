@@ -97,3 +97,45 @@ code mort en pratique — l'interpréteur AST couvre tous les usages réels.
 - 2 nouveaux tests de régression dans `oracle-plsql-interpreter.test.ts` :
   un bloc imparsable produit `ORA-06550`/`PLS-00103`, jamais un faux
   « PL/SQL procedure successfully completed. ».
+
+---
+
+## Itération 3 — PRAGMA, FORALL et littéraux DATE dans l'interpréteur PL/SQL (2026-06-10)
+
+### Défaillance constatée
+Les transcripts debug régénérés après l'itération 2 ont révélé 8 blocs que
+le legacy « réussissait » en réalité **en faux** (il ignorait ce qu'il ne
+comprenait pas — ex. un FORALL qui n'insérait aucune ligne tout en
+affichant « successfully completed ») :
+- `PRAGMA AUTONOMOUS_TRANSACTION` dans les procédures stockées (5 cas) ;
+- `FORALL i IN 1..n [SAVE EXCEPTIONS] <dml>` (2 cas) ;
+- littéraux ANSI `DATE '2020-01-01'` dans les expressions (1 cas).
+
+### Corrections
+- `PlsqlParser.parseDeclaration` : branche PRAGMA généralisée —
+  `EXCEPTION_INIT` garde sa sémantique, les autres pragmas
+  (AUTONOMOUS_TRANSACTION, SERIALLY_REUSABLE, UDF, INLINE,
+  RESTRICT_REFERENCES) deviennent un nœud AST `pragma` (directive de
+  compilation, no-op à l'exécution — documenté).
+- `PlsqlParser.parseForall` : `FORALL` désucré en boucle `forNum` sur
+  l'unique ordre DML — sans moteur de bulk-bind, la sémantique ligne à
+  ligne est identique à Oracle.
+- Littéraux `DATE '...'` / `TIMESTAMP '...'` désucrés en `TO_DATE(...)`
+  → évalués par la machinerie de dates du moteur SQL.
+- `PlsqlInterpreter.interpolateBinds` : résolution des accès éléments de
+  collection (`v_ids(i)`) dans le SQL embarqué — l'indice est parsé via le
+  nouveau point d'entrée `PlsqlParser.parseExpression` et évalué dans la
+  portée PL/SQL ; `ORA-06533` si hors bornes (fidèle à Oracle).
+- `OracleDatabase.callStoredUnit` : le corps d'une unité stockée est
+  `[déclarations] BEGIN … END` (le DECLARE est implicite après IS/AS) —
+  les déclarations locales (variables, curseurs, pragmas) restent
+  désormais dans la section déclarative du bloc wrapper au lieu d'être
+  enveloppées comme des instructions exécutables.
+
+### Preuves
+- 4 nouveaux tests dans `oracle-plsql-interpreter.test.ts` : FORALL insère
+  réellement (COUNT=3, valeurs vérifiées), SAVE EXCEPTIONS, DATE literal,
+  procédure autonome qui insère réellement.
+- 2545 tests verts (unit/database + debug/oracle + debug/rman).
+- Transcripts debug : les 8 `ORA-06550/PLS-00103` introduits par
+  l'itération 2 disparaissent, remplacés par de vraies exécutions.

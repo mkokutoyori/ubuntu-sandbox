@@ -656,3 +656,67 @@ describe('PL/SQL compilation errors (no silent fallback)', () => {
     sh.dispose();
   });
 });
+
+describe('PL/SQL constructs formerly only fake-succeeding in the legacy engine', () => {
+  it('evaluates ANSI DATE literals in conditions', () => {
+    const sh = session(server('feat1'));
+    const out = block(sh, `
+      BEGIN
+        IF SYSDATE > DATE '2020-01-01' THEN
+          DBMS_OUTPUT.PUT_LINE('past 2020');
+        ELSE
+          DBMS_OUTPUT.PUT_LINE('not yet');
+        END IF;
+      END;
+    `);
+    expect(out).toMatch(/past 2020/);
+    sh.dispose();
+  });
+
+  it('FORALL executes the DML once per index with collection binds', () => {
+    const sh = session(server('feat2'));
+    run(sh, 'CREATE TABLE accounts (id NUMBER, balance NUMBER);');
+    const out = block(sh, `
+      DECLARE
+        TYPE t IS TABLE OF NUMBER;
+        v_ids t := t(10, 20, 30);
+      BEGIN
+        FORALL i IN 1..v_ids.COUNT
+          INSERT INTO accounts (id, balance) VALUES (v_ids(i), v_ids(i) * 10);
+        COMMIT;
+      END;
+    `);
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT COUNT(*) FROM accounts;')).toMatch(/3/);
+    expect(run(sh, 'SELECT balance FROM accounts WHERE id = 20;')).toMatch(/200/);
+    sh.dispose();
+  });
+
+  it('FORALL ... SAVE EXCEPTIONS parses and runs', () => {
+    const sh = session(server('feat3'));
+    run(sh, 'CREATE TABLE accounts (id NUMBER, balance NUMBER);');
+    run(sh, 'INSERT INTO accounts VALUES (10, 1);');
+    const out = block(sh, `
+      DECLARE
+        TYPE t IS TABLE OF NUMBER;
+        v_ids t := t(10);
+      BEGIN
+        FORALL i IN 1..v_ids.COUNT SAVE EXCEPTIONS
+          UPDATE accounts SET balance = balance + 1 WHERE id = v_ids(i);
+      END;
+    `);
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT balance FROM accounts WHERE id = 10;')).toMatch(/2/);
+    sh.dispose();
+  });
+
+  it('PRAGMA AUTONOMOUS_TRANSACTION procedures execute their DML for real', () => {
+    const sh = session(server('feat4'));
+    run(sh, 'CREATE TABLE log_msg (level VARCHAR2(10), msg VARCHAR2(200));');
+    run(sh, "CREATE OR REPLACE PROCEDURE log_autonomous(p_msg VARCHAR2) IS PRAGMA AUTONOMOUS_TRANSACTION; BEGIN INSERT INTO log_msg (level, msg) VALUES ('AUTO', p_msg); COMMIT; END;");
+    const out = run(sh, "EXEC log_autonomous('hello')");
+    expect(out).toMatch(/successfully completed/);
+    expect(run(sh, 'SELECT msg FROM log_msg;')).toMatch(/hello/);
+    sh.dispose();
+  });
+});
