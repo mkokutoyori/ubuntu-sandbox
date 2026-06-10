@@ -86,13 +86,5 @@ export function hsrpVirtualMac(group: number, version: 1 | 2): string {
   return `0000.0c07.ac${group.toString(16).padStart(2, '0')}`;
 }
 
-export function compareSpeaker(
-  a: { priority: number; ip: string },
-  b: { priority: number; ip: string },
-): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
-  const ai = a.ip.split('.').map(Number);
-  const bi = b.ip.split('.').map(Number);
-  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
-  return 0;
-}
+// Election comparison is shared across the FHRP family.
+export { compareFhrpCandidates as compareSpeaker } from '../fhrp/types';

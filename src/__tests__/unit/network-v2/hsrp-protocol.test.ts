@@ -228,3 +228,18 @@ describe('HSRP — show standby reports peer info', () => {
     expect(out).toMatch(/10\.0\.0\.1/);
   });
 });
+
+describe('HSRP — group version stability (regression)', () => {
+  it('an implicit ensureGroup (setter path) never downgrades a v2 group to v1', async () => {
+    const r = new CiscoRouter('R1');
+    const agent = r.getHsrpAgent();
+    // Explicit v2 group…
+    agent.ensureGroup('GigabitEthernet0/0', 1, 2);
+    expect(agent.getGroup('GigabitEthernet0/0', 1)!.version).toBe(2);
+    // …then a setter that re-ensures the group WITHOUT a version:
+    agent.setPriority('GigabitEthernet0/0', 1, 150);
+    // The old implementation defaulted version to 1 here and silently
+    // downgraded the group.
+    expect(agent.getGroup('GigabitEthernet0/0', 1)!.version).toBe(2);
+  });
+});

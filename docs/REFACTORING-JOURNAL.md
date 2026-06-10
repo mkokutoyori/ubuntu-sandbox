@@ -263,3 +263,65 @@
 - STP reste 802.1D pur (pas de RSTP 802.1w, TCN non émis) — chantier
   dédié envisagé.
 - VTP pruning déclaré mais non appliqué au flooding.
+
+---
+
+## Lot 5 — FHRP : fondation commune HSRP/VRRP/GLBP (Template Method)
+
+**Date :** 2026-06-10
+
+### Défaillances constatées (audit)
+
+1. **~600 lignes near-identiques** entre `HsrpAgent` (408 l.),
+   `VrrpAgent` (296 l.) et `GlbpAgent` (504 l.) : cycle de vie
+   start/stop, abonnements `port.link.up/down`, gestion des timers
+   hello/expiry avec cache de scheduler, registre de groupes
+   (ensure/get/list/remove), setters vip/priority/preempt, garde de
+   ré-entrance d'émission (`emitting` Set), `maybeAdvertiseBack`,
+   contexte lien/IP — recopiés trois fois avec des divergences
+   accidentelles de détail.
+2. **Comparateur d'élection dupliqué verbatim ×3** (`compareSpeaker`
+   HSRP / `compareCandidate` VRRP / `compareCandidate` GLBP — même
+   corps exactement, trois noms).
+3. **Interface hôte dupliquée ×3** (`HsrpHost`/`VrrpHost`/`GlbpHost`
+   identiques).
+4. **Bug HSRP découvert au passage** : `ensureGroup(iface, group,
+   version = 1)` — tout appel implicite (depuis `setPriority`,
+   `setVip`, …) réinitialisait silencieusement la version d'un groupe
+   v2 vers v1, car le défaut `1` était appliqué même sans intention
+   de changer la version.
+
+### Corrections livrées
+
+- **`src/network/fhrp/`** (nouveau) :
+  - `types.ts` — `FhrpHost` (seam DIP unique), `FhrpGroupBase`,
+    `FhrpConfigBase`, `FhrpRecomputeReason`, et
+    `compareFhrpCandidates` (un seul comparateur d'élection ; les
+    trois protocoles ré-exportent un alias rétro-compatible).
+  - `FhrpAgentBase.ts` — Template Method : possède une seule fois le
+    lifecycle, les timers (avec `helloIntervalMs`/`expiryProbeMs`
+    par protocole), le registre de groupes, les setters communs, la
+    garde d'émission `sendGuarded`, `shouldEmit` (préconditions
+    communes + `isSpeakingState` par protocole), `deviceRef`,
+    `linkContext`, et les réactions lien par défaut (VRRP/GLBP) —
+    surchargées par HSRP pour l'object tracking.
+- **Agents réduits à leur substance protocolaire** : machine à états,
+  format de paquet, expiry spécifique. VRRP 296→181 l., HSRP
+  408→300 l. (tracking inclus), GLBP 504→389 l. — toute la mécanique
+  générique vit dans la base (~230 l. uniques).
+- **Bug version HSRP corrigé** : `ensureGroup` ne touche la version
+  que si elle est passée explicitement.
+
+### Tests
+
+- Les 39 tests FHRP existants + 10 tests CLI (cisco-hsrp,
+  cisco-vrrp-glbp, track-sla) passent inchangés — les APIs publiques
+  sont préservées.
+- Nouveau test de régression : un setter implicite ne rétrograde plus
+  un groupe HSRP v2 vers v1.
+
+### Limites restantes (suivi)
+
+- États HSRP Learn/Speak simplifiés (pas de temporisation de
+  transition dédiée) ; coup/resign partiellement modélisés.
+- Pas d'authentification MD5 HSRP/VRRP.

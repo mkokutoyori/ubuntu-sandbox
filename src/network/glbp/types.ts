@@ -102,13 +102,5 @@ export function glbpVirtualMac(group: number, forwarder: number): string {
   return `00:07:b4:00:${g}:${f}`;
 }
 
-export function compareCandidate(
-  a: { priority: number; ip: string },
-  b: { priority: number; ip: string },
-): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
-  const ai = a.ip.split('.').map(Number);
-  const bi = b.ip.split('.').map(Number);
-  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
-  return 0;
-}
+// Election comparison is shared across the FHRP family.
+export { compareFhrpCandidates as compareCandidate } from '../fhrp/types';
