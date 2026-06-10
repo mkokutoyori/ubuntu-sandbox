@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_VTP = 0x2003;
 export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
@@ -12,7 +13,7 @@ export interface VtpVlanEntry {
   type: 'ethernet';
 }
 
-export interface VtpFrame {
+export interface VtpFrame extends NetworkPdu {
   type: 'vtp';
   version: VtpVersion;
   messageType: VtpMessageType;

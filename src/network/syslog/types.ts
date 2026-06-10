@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_SYSLOG = 514;
 
 export type SyslogSeverityName =
@@ -34,7 +35,7 @@ export const SYSLOG_FACILITY: Record<SyslogFacilityName, number> = {
   local4: 20, local5: 21, local6: 22, local7: 23,
 };
 
-export interface SyslogPacket {
+export interface SyslogPacket extends NetworkPdu {
   type: 'syslog';
   facility: number;
   severity: number;

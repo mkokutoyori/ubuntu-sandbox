@@ -12,6 +12,7 @@
  */
 
 import type { DHCPMessageType } from './types';
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 /** DHCP Option codes (RFC 2132) */
 const DHCP_OPTION = {
@@ -58,7 +59,10 @@ interface OfferOptions {
   domainName?: string;
 }
 
-export class DHCPPacket {
+export class DHCPPacket implements NetworkPdu {
+  /** PDU discriminator (NetworkPdu). */
+  readonly type = 'dhcp';
+
   // ─── Fixed Header Fields ──────────────────────────────────────
 
   /** Message op code: 1 = BOOTREQUEST, 2 = BOOTREPLY */

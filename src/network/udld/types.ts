@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const ETHERTYPE_UDLD = 0x0111;
 export const UDLD_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 export const UDLD_LLC_OUI = '00:00:0c';
@@ -22,7 +23,7 @@ export interface UdldEchoEntry {
   portId: string;
 }
 
-export interface UdldPacket {
+export interface UdldPacket extends NetworkPdu {
   type: 'udld';
   version: 1;
   opcode: UdldOpcode;

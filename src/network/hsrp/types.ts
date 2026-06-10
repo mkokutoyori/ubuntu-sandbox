@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_HSRP = 1985;
 export const HSRP_MULTICAST_V1 = '224.0.0.2';
 export const HSRP_MULTICAST_V2 = '224.0.0.102';
@@ -6,7 +7,7 @@ export type HsrpOpcode = 'hello' | 'coup' | 'resign';
 export type HsrpState =
   | 'init' | 'listen' | 'learn' | 'speak' | 'standby' | 'active';
 
-export interface HsrpPacket {
+export interface HsrpPacket extends NetworkPdu {
   type: 'hsrp';
   version: 1 | 2;
   opcode: HsrpOpcode;

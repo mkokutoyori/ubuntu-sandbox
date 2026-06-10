@@ -34,10 +34,7 @@ const EBGP_AD = 20;
 const IBGP_AD = 200;
 
 function sameNet(a: string, am: string, b: string): boolean {
-  const num = (s: string) => {
-    const p = s.split('.').map(Number);
-    return p.length === 4 ? ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0 : -1;
-  };
+  const num = (s: string) => IPAddress.tryParse(s)?.toUint32() ?? -1;
   const bits = new SubnetMask(am).toCIDR();
   const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
   return (num(a) & mask) === (num(b) & mask);

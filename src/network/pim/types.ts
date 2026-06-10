@@ -1,3 +1,5 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { IPAddress } from '@/network/core/types';
 export const IP_PROTO_PIM = 103;
 export const PIM_ALL_ROUTERS = '224.0.0.13';
 export const PIM_ALL_ROUTERS_MAC = '01:00:5e:00:00:0d';
@@ -25,7 +27,7 @@ export interface PimJoinPruneBody {
   groups: PimJoinPruneGroup[];
 }
 
-export interface PimPacket {
+export interface PimPacket extends NetworkPdu {
   type: 'pim';
   version: 2;
   messageType: PimMessageType;
@@ -113,8 +115,7 @@ export function createDefaultPimConfig(): PimConfig {
 }
 
 export function ipToUint32(ip: string): number {
-  const p = ip.split('.').map(Number);
-  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+  return new IPAddress(ip).toUint32();
 }
 
 export function matchesGroupRange(group: string, rangeIp: string, maskBits: number): boolean {

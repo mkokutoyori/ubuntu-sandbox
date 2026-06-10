@@ -1,11 +1,12 @@
 import type { DeviceType, IPAddress } from '../core/types';
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 export const ETHERTYPE_LLDP = 0x88cc;
 export const LLDP_MULTICAST_MAC = '01:80:c2:00:00:0e';
 
 export type LldpCapability = 'Router' | 'Bridge' | 'Telephone' | 'Repeater' | 'Station' | 'Other';
 
-export interface LldpFrame {
+export interface LldpFrame extends NetworkPdu {
   type: 'lldp';
   chassisId: string;
   portId: string;

@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_BFD_CONTROL = 3784;
 export const UDP_PORT_BFD_ECHO = 3785;
 
@@ -14,7 +15,7 @@ export type BfdDiagnostic =
   | 'admin-down'
   | 'reverse-concatenated-path-down';
 
-export interface BfdPacket {
+export interface BfdPacket extends NetworkPdu {
   type: 'bfd';
   version: 1;
   diagnostic: BfdDiagnostic;

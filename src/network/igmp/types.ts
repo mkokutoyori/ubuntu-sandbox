@@ -1,3 +1,4 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const IP_PROTO_IGMP = 2;
 export const IGMP_ALL_SYSTEMS = '224.0.0.1';
 export const IGMP_ALL_ROUTERS = '224.0.0.2';
@@ -10,7 +11,7 @@ export type IgmpMessageType =
 
 export type IgmpQueryType = 'general' | 'group-specific';
 
-export interface IgmpPacket {
+export interface IgmpPacket extends NetworkPdu {
   type: 'igmp';
   version: 2;
   messageType: IgmpMessageType;

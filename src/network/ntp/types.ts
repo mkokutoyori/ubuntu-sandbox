@@ -1,9 +1,10 @@
+import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_NTP = 123;
 
 export type NtpMode = 'client' | 'server' | 'symmetric-active' | 'symmetric-passive';
 export type NtpLeapIndicator = 0 | 1 | 2 | 3;
 
-export interface NtpPacket {
+export interface NtpPacket extends NetworkPdu {
   type: 'ntp';
   leapIndicator: NtpLeapIndicator;
   version: 4;

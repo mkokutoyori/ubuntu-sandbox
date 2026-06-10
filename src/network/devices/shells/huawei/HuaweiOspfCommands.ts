@@ -18,6 +18,7 @@
 
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
 
 export type HuaweiOSPFShellMode = 'ospf' | 'ospf-area' | 'ospfv3';
@@ -1102,11 +1103,5 @@ function displayOspfv3Interface(router: Router): string {
 }
 
 function maskToCIDR(mask: string): number {
-  const parts = mask.split('.').map(Number);
-  let bits = 0;
-  for (const p of parts) {
-    let n = p;
-    while (n) { bits += n & 1; n >>>= 1; }
-  }
-  return bits;
+  return new SubnetMask(mask).toCIDR();
 }
