@@ -55,3 +55,45 @@ sont conservées ; les vecteurs canoniques (openssl 10g, hashcat -m 112 /
 - `src/__tests__/unit/crypto/` : 181/181 verts (vecteurs canoniques).
 - `src/__tests__/unit/database/` + suites IPSec/SSH crypto : 2691/2691 verts,
   dont les **3 tests précédemment en échec** sur la baseline.
+
+---
+
+## Itération 2 — Suppression de l'interpréteur PL/SQL legacy en doublon (2026-06-10)
+
+### Défaillance constatée (GAP.md §10.5, sévérité majeure)
+Deux interpréteurs PL/SQL coexistaient :
+- l'interpréteur moderne à AST (`src/database/oracle/plsql/` — lexer, parser,
+  interpréteur, exceptions, curseurs) ;
+- un interpréteur legacy à base de regex (~750 lignes dans
+  `OracleDatabase.ts` : `executePLSQLLegacy`, `parsePLSQLBlock`,
+  `executePLSQLStatement(s)`, `executePLSQLIf/For/While`,
+  `evaluatePLSQLExpression*`, `evaluatePLSQLCondition`, …).
+
+Le legacy s'activait **silencieusement** quand le parser moderne échouait :
+même source, sémantique différente, aucun signal. Duplication pure et
+maintenance double.
+
+### Diagnostic
+Instrumentation du fallback (`console.error` temporaire) puis exécution de
+l'intégralité des suites (`unit/database` 2520 tests, `debug/oracle`,
+`debug/rman`, `unit/terminal`) : **zéro déclenchement**. Le legacy était du
+code mort en pratique — l'interpréteur AST couvre tous les usages réels.
+
+### Corrections
+- `OracleDatabase.executePLSQL` : plus de fallback. Un échec de compilation
+  renvoie désormais `ORA-06550: line 1, column 1:` suivi du diagnostic
+  `PLS-00103` — c'est le comportement du vrai Oracle (avant : exécution
+  silencieuse par un moteur différent, ou pire, un faux succès).
+- `plsql/index.ts` : `runAnonymousBlock` propage le message d'erreur du
+  parser (`parseErrorMessage`) au lieu de le jeter.
+- Suppression des ~750 lignes legacy ; `OracleDatabase.ts` passe de 2332 à
+  ~1590 lignes. `invokeBuiltinPackage` et `callStoredUnit` (chemins vivants,
+  partagés) conservés.
+- Correction au passage des 6 erreurs ESLint préexistantes du fichier
+  (`no-explicit-any`, `prefer-const`).
+
+### Preuves
+- 2539 tests verts (`unit/database` + `debug/oracle` + `debug/rman`).
+- 2 nouveaux tests de régression dans `oracle-plsql-interpreter.test.ts` :
+  un bloc imparsable produit `ORA-06550`/`PLS-00103`, jamais un faux
+  « PL/SQL procedure successfully completed. ».

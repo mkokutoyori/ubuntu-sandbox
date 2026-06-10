@@ -629,3 +629,30 @@ describe('DBMS_OUTPUT — PUT / NEW_LINE / ENABLE / DISABLE buffering', () => {
     sh.dispose();
   });
 });
+
+describe('PL/SQL compilation errors (no silent fallback)', () => {
+  it('reports ORA-06550/PLS-00103 for an unparseable block', () => {
+    const sh = session(server('perr1'));
+    const out = block(sh, `
+      BEGIN
+        IF THEN END IF;
+      END;
+    `);
+    expect(out).toMatch(/ORA-06550/);
+    expect(out).toMatch(/PLS-00103/);
+    expect(out).not.toMatch(/successfully completed/);
+    sh.dispose();
+  });
+
+  it('reports ORA-06550/PLS-00103 for an unterminated string literal', () => {
+    const sh = session(server('perr2'));
+    const out = block(sh, `
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE('oops);
+      END;
+    `);
+    expect(out).toMatch(/ORA-06550/);
+    expect(out).toMatch(/PLS-00103/);
+    sh.dispose();
+  });
+});
