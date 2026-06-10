@@ -124,3 +124,51 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   deux OS, self-ping.
 - Suite complète `network-v2` : 253 fichiers, 6587 tests verts.
 - Les 2 « unhandled errors » de `linux-iptables.test.ts` ont disparu.
+
+---
+
+## Entrée n°3 — 2026-06-10 — Couche transport UDP des PCs (RFC 768 / 1122)
+
+### Défaillances constatées
+
+1. **Aucune couche UDP sur les hôtes** — `EndHost.handleIPv4()` ne délivrait que
+   l'ICMP et le TCP. Tout datagramme UDP adressé à un PC était jeté en silence :
+   pas de remise à un service local, pas d'ICMP Port Unreachable (Type 3, Code 3)
+   pour les ports fermés — alors que la RFC 1122 §4.1.3.1 l'exige et que c'est le
+   mécanisme sur lequel repose le traceroute UDP de Linux.
+2. **Plans de contrôle hors-bande** — conséquence directe : DNS et DHCP « trichent »
+   en appelant directement les objets serveurs via le registre d'équipements
+   (`findDnsServerByIP`, `autoDiscoverDHCPServers`) au lieu d'échanger des paquets.
+   Un serveur DNS injoignable (câble débranché, firewall UDP/53) répond quand même.
+   La couche UDP introduite ici est le prérequis pour migrer ces protocoles sur
+   le réseau simulé (entrées suivantes).
+3. **Asymétrie avec les routeurs** — les routeurs disposent d'agents UDP réels
+   (SNMP, NTP, RADIUS, syslog, RIP…) mais leur dispatch est une chaîne de `if`
+   dupliquée entre `CiscoRouter` et `HuaweiRouter` ; les PCs n'avaient rien.
+
+### Correction (structurelle)
+
+- API socket UDP sur `EndHost` (héritée par tous les PCs/serveurs) :
+  `udpBind(port, listener)` / `udpClose(port)` / `sendUdpDatagram(...)` + types
+  publics `UdpDelivery`/`UdpListener`.
+- **Intégration `SocketTable`** : chaque bind est enregistré (visible dans
+  `netstat -uln`/`ss`), EADDRINUSE levé sur double bind (Fail Fast), libération
+  sur `udpClose`.
+- **Délivrance** : dispatch vers le listener lié ; sinon ICMP Port Unreachable
+  via l'infrastructure de l'entrée n°1 (garde-fous RFC 1122 inclus, jamais pour
+  un broadcast).
+- **Émission** : routage via la table de l'hôte, chaîne OUTPUT du firewall,
+  résolution ARP asynchrone à froid, délivrance locale immédiate pour 127/8 et
+  les adresses possédées (comme un vrai kernel, sans toucher le câble).
+
+### Fichiers
+
+- `src/network/devices/EndHost.ts`
+- `src/__tests__/unit/network-v2/udp-transport-endhost.test.ts` (nouveau, 9 tests)
+
+### Validation
+
+- 9 nouveaux tests : délivrance, échange requête/réponse (echo RFC 862),
+  loopback local, absence de route, Port Unreachable sur port fermé, silence
+  une fois le port lié, EADDRINUSE, re-bind après close, visibilité netstat.
+- Suite complète `network-v2` relancée (voir résultat ci-dessous).

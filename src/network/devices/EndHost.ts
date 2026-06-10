@@ -52,6 +52,7 @@ import {
   buildICMPError,
   mayGenerateICMPError,
   ICMP_UNREACH_NET,
+  ICMP_UNREACH_PORT,
   ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
@@ -95,6 +96,20 @@ export interface PingResult {
   bytes: number;
   fromIP: string;
 }
+
+// ─── UDP socket layer (RFC 768) ──────────────────────────────────────
+
+/** A UDP datagram as delivered to a bound listener. */
+export interface UdpDelivery {
+  /** Interface the datagram arrived on ('lo' for local delivery). */
+  inPort: string;
+  sourceIP: IPAddress;
+  destinationIP: IPAddress;
+  udp: UDPPacket;
+}
+
+/** Callback invoked for every datagram delivered to a bound UDP port. */
+export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
@@ -153,6 +168,9 @@ export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
   protected readonly socketTable: SocketTable = new SocketTable();
+
+  /** Bound UDP ports → datagram listeners (RFC 768 socket layer). */
+  private readonly udpListeners: Map<number, UdpListener> = new Map();
 
   // ─── Hardware inventory ─────────────────────────────────────────
   /**
@@ -1113,6 +1131,8 @@ export abstract class EndHost extends Equipment {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
+      } else if (ipPkt.protocol === IP_PROTO_UDP) {
+        this.deliverUDP(portName, ipPkt, !!isBroadcast);
       }
       return;
     }
@@ -1442,6 +1462,113 @@ export abstract class EndHost extends Equipment {
     return socket;
   }
 
+  // ─── UDP Transport (RFC 768) ───────────────────────────────────
+
+  /**
+   * Bind a UDP port and register a datagram listener (socket-style API).
+   * The binding is recorded in the socket table so `netstat`/`ss` show it.
+   * Throws EADDRINUSE when the port is already bound (Fail Fast).
+   */
+  public udpBind(port: number, listener: UdpListener, processName?: string): void {
+    this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
+    this.udpListeners.set(port, listener);
+  }
+
+  /** Close a UDP port: remove the listener and the socket-table entry. */
+  public udpClose(port: number): void {
+    this.udpListeners.delete(port);
+    this.socketTable.unbind('udp', '0.0.0.0', port);
+  }
+
+  /**
+   * Send a UDP datagram, routed through the host routing table like any
+   * locally-originated traffic (firewall OUTPUT chain included). Datagrams
+   * for loopback or an address we own are delivered locally without
+   * touching the wire. Returns false when there is no route or no source
+   * address (caller maps that to ENETUNREACH-style errors).
+   */
+  public sendUdpDatagram(
+    destinationIP: IPAddress,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort,
+      destinationPort,
+      length: 8 + payloadBytes,
+      checksum: 0,
+      payload,
+    };
+
+    // Local delivery (loopback or own address) — like a real kernel, this
+    // never reaches the wire.
+    if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
+      const localPkt = createIPv4Packet(
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+      );
+      this.deliverUDP('lo', localPkt, false);
+      return true;
+    }
+
+    const route = this.resolveRoute(destinationIP);
+    if (!route) return false;
+    const srcIP = route.port.getIPAddress();
+    if (!srcIP) return false;
+
+    const ipPkt = createIPv4Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+    );
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return false;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: ipPkt,
+      });
+    } else {
+      // Cold ARP cache: queue the datagram and resolve asynchronously.
+      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
+    }
+    return true;
+  }
+
+  /**
+   * Deliver a locally-addressed UDP datagram to its bound listener.
+   * RFC 1122 §4.1.3.1: a datagram for a port with no listener elicits
+   * ICMP Destination Unreachable Code 3 (port unreachable) — never for
+   * broadcast-directed datagrams.
+   */
+  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean): void {
+    const udp = ipPkt.payload as UDPPacket;
+    if (!udp || udp.type !== 'udp') return;
+
+    const listener = this.udpListeners.get(udp.destinationPort);
+    if (listener) {
+      listener({
+        inPort: portName,
+        sourceIP: ipPkt.sourceIP,
+        destinationIP: ipPkt.destinationIP,
+        udp,
+      });
+      return;
+    }
+
+    if (!wasBroadcast) {
+      Logger.info(this.id, 'udp:port-unreachable',
+        `${this.name}: no listener on UDP ${udp.destinationPort}, ` +
+        `replying port unreachable to ${ipPkt.sourceIP}`);
+      this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
+    }
+  }
 
   // ─── ARP Resolution ────────────────────────────────────────────
 
