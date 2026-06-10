@@ -20,7 +20,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 5 | Helpers IP réimplémentés 6× (OSPF ×2, EIGRP, BGP, PIM, CLI OSPF) | DRY | Moyenne | ✅ Corrigé |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | ✅ Corrigé |
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | ✅ Corrigé |
-| 8 | Dispatch par `constructor.name` dans ShellFactory / sshLauncher / WindowsTerminalSession (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | À faire |
+| 8 | Dispatch par `constructor.name` dans 5 sites shell/terminal (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | ✅ Corrigé |
 | 9 | BGP : pas de propagation transitive, pas d'AS_PATH, pas de détection de boucle, table `show ip bgp` fabriquée | RFC 4271 | Haute | ✅ Corrigé |
 | 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | À faire |
 
@@ -369,6 +369,43 @@ deux fois rejeté (A—B—A'). 1 test CLI mis à jour (il assertait l'affichage
 fabriqué : statement `network` non couvert visible) — remplacé par le
 comportement IOS réel avec assertions complémentaires. Suite complète :
 255 fichiers / 6614 tests verts.
+
+---
+
+## Entrée 9 — Shell/terminal : dispatch polymorphique au lieu de `constructor.name`
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+Cinq sites comparaient `dev.constructor.name` à des littéraux
+(`'WindowsPC'`, `'CiscoRouter'`, …) pour choisir le shell, le cwd SSH ou la
+stratégie de prompt distant : `sshLauncher.pickPrimaryShellKind`,
+`ShellFactory.defaultCwdFor`, `WindowsTerminalSession.pickRemoteStrategy` +
+`pickPrimaryShellKind`, `LinuxTerminalSession.pickVendorPromptStrategy`.
+Conséquences : danger de minification (d'où le `keepNames: true` forcé dans
+`vite.config.ts`), et ajout d'un vendor = 5 dispatchers à modifier. Or le
+hook polymorphique existait déjà : `Equipment.getOSType()` est surchargé
+par toutes les classes devices ('cisco-ios', 'huawei-vrp', 'windows',
+'linux', 'generic') — le sniffing de nom de classe était redondant.
+
+### Correction
+
+- Nouveau `src/shell/shellKind.ts` : `primaryShellKindFor(dev)` — unique
+  mapping `getOSType()` → `'bash' | 'cmd' | 'cisco-ios' | 'huawei-vrp'`.
+- `strategyForShellKind()` dans `RemoteDeviceSubShell.ts` (à côté des
+  stratégies) : unique mapping kind → stratégie de prompt.
+- Les 5 sites délèguent ; comportements identiques (vérifié cas par cas :
+  GenericSwitch → bash, WindowsServer → cmd, mac-pc → bash).
+- Commentaire `keepNames` de `vite.config.ts` mis à jour : ce n'est plus
+  qu'une garde défensive (suppression possible après une vérification du
+  build minifié — non faite ici, notée en dette).
+
+### Tests
+
+Non-régression : shell + terminal + terminal-core + suites SSH LAN =
+2029 tests verts (l'unique échec `duplicate-display-fixes` est le
+préexistant déjà documenté en entrée 2).
 
 ---
 

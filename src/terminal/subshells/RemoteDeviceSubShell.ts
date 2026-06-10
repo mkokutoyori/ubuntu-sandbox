@@ -18,6 +18,7 @@
  */
 
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
+import type { PrimaryShellKind } from '@/shell/shellKind';
 import type { Equipment } from '@/network';
 import type { ISubShell, SubShellResult } from './ISubShell';
 
@@ -111,3 +112,13 @@ export const WindowsPromptStrategy: RemotePromptStrategy = {
   prompt: (d, u) => `C:\\Users\\${u}>`,
   exitWords: ['exit', 'logout'],
 };
+
+/** Prompt strategy for a device's primary shell kind (single dispatch). */
+export function strategyForShellKind(kind: PrimaryShellKind): RemotePromptStrategy {
+  switch (kind) {
+    case 'cisco-ios': return CiscoPromptStrategy;
+    case 'huawei-vrp': return HuaweiPromptStrategy;
+    case 'cmd': return WindowsPromptStrategy;
+    default: return LinuxPromptStrategy;
+  }
+}

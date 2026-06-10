@@ -12,6 +12,7 @@
  */
 
 import { Equipment } from '@/network';
+import { primaryShellKindFor } from '@/shell/shellKind';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -25,7 +26,7 @@ import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import {
   RemoteDeviceSubShell,
   LinuxPromptStrategy,
-  CiscoPromptStrategy,
+  CiscoPromptStrategy, strategyForShellKind,
   HuaweiPromptStrategy,
   WindowsPromptStrategy,
   type RemotePromptStrategy,
@@ -479,12 +480,8 @@ export class WindowsTerminalSession extends TerminalSession {
    * name — the same dispatch the Linux session uses, kept in sync so a
    * Cisco IOS peer always gets `Router#` regardless of the client side.
    */
-  private pickRemoteStrategy(eq: { constructor: { name: string } }): RemotePromptStrategy {
-    const n = eq.constructor.name;
-    if (n === 'CiscoRouter' || n === 'CiscoSwitch') return CiscoPromptStrategy;
-    if (n === 'HuaweiRouter' || n === 'HuaweiSwitch') return HuaweiPromptStrategy;
-    if (n === 'WindowsPC') return WindowsPromptStrategy;
-    return LinuxPromptStrategy;
+  private pickRemoteStrategy(eq: { getOSType?: () => string }): RemotePromptStrategy {
+    return strategyForShellKind(primaryShellKindFor(eq));
   }
 
   /** First configured IPv4 on the local Windows machine, or null. */
@@ -810,11 +807,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   private pickPrimaryShellKind(eq: Equipment): string {
-    const name = (eq.constructor as { name: string }).name;
-    if (name === 'WindowsPC') return 'cmd';
-    if (name === 'CiscoRouter' || name === 'CiscoSwitch') return 'cisco-ios';
-    if (name === 'HuaweiRouter' || name === 'HuaweiSwitch') return 'huawei-vrp';
-    return 'bash';
+    return primaryShellKindFor(eq);
   }
 
   // ── Sub-shell management ───────────────────────────────────────

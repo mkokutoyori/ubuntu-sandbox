@@ -22,12 +22,12 @@ export default defineConfig(({ mode }) => ({
   define: {
     global: 'globalThis',
   },
-  // Preserve class/function names through minification. The simulator
-  // dispatches on `instance.constructor.name === 'WindowsPC'` (and a
-  // few siblings) to pick the vendor-specific SSH push path — under
-  // default esbuild minification those names become `W4`, `Jd`, … and
-  // the dispatch silently falls back to a generic shell, producing a
-  // Linux-format prompt on Windows hosts in production builds.
+  // Preserve class/function names through minification. The vendor
+  // dispatch that used to rely on `instance.constructor.name` has been
+  // replaced by the polymorphic `Equipment.getOSType()` hook (see
+  // src/shell/shellKind.ts), so this is now only a defensive guard for
+  // debugging/log readability — kept until a minified production build
+  // has been regression-checked without it.
   esbuild: {
     keepNames: true,
   },
