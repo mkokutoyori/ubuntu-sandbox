@@ -52,6 +52,8 @@ export class OracleExecutor extends BaseExecutor {
     parseOracleDate: (s, f) => this.parseOracleDate(s, f),
     getMetadataDDL: (a) => this.getMetadataDDL(a),
     getContext: () => this.context,
+    callStoredFunction: (n, a) =>
+      this.commandHost ? this.commandHost.execScalarFunctionCall(this, n, a) : { handled: false, value: null },
   });
   private _currentRowNum: number = 0;
   /** Undo log: snapshot taken at transaction start (first DML) */

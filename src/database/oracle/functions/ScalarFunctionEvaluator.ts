@@ -21,6 +21,8 @@ export interface ScalarFunctionHost {
   parseOracleDate(dateStr: string, fmt: string): string;
   getMetadataDDL(args: CellValue[]): CellValue;
   getContext(): ExecutionContext;
+  /** Optional SQL→PL/SQL bridge for stored functions (SELECT pkg.fn(…)). */
+  callStoredFunction?(qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
 }
 
 /** Return a mutable Date copy of the value, or null if not a date. */
@@ -461,9 +463,12 @@ export class ScalarFunctionEvaluator {
       case 'SUM': case 'AVG': case 'MIN': case 'MAX': return args[0] ?? null;
 
       default: {
-        // ORA-00904: unknown function name
         const schema = expr.schema?.toUpperCase();
         const fullName = schema ? `${schema}.${name}` : name;
+        // Not a builtin: try user-defined stored functions (incl. package
+        // members) before concluding ORA-00904 like real Oracle.
+        const bridged = this.host.callStoredFunction?.(fullName, args);
+        if (bridged?.handled) return bridged.value;
         throw new OracleError(904, `"${fullName}": invalid identifier`);
       }
     }

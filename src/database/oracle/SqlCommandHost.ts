@@ -1,4 +1,6 @@
 import type { ResultSet } from '../engine/executor/ResultSet';
+import type { BaseExecutor } from '../engine/executor/BaseExecutor';
+import type { CellValue } from '../engine/storage/BaseStorage';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type {
   LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
@@ -17,4 +19,6 @@ export interface SqlCommandHost {
   execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet;
   execAlterTableStorage(schema: string, table: string, action: AlterTableStorageAction): ResultSet;
   execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet;
+  /** SQL→PL/SQL bridge: evaluate a stored FUNCTION used in a SQL expression. */
+  execScalarFunctionCall(executor: BaseExecutor, qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
 }

@@ -720,3 +720,37 @@ describe('PL/SQL constructs formerly only fake-succeeding in the legacy engine',
     sh.dispose();
   });
 });
+
+describe('Stored package functions callable from SQL and PL/SQL', () => {
+  function pkgSession(name: string) {
+    const sh = session(server(name));
+    run(sh, "CREATE OR REPLACE PACKAGE emp_pkg AS PROCEDURE hello(p_name VARCHAR2); FUNCTION double_it(n NUMBER) RETURN NUMBER; END emp_pkg;");
+    run(sh, "CREATE OR REPLACE PACKAGE BODY emp_pkg AS PROCEDURE hello(p_name VARCHAR2) IS BEGIN DBMS_OUTPUT.PUT_LINE('Hello ' || p_name); END; FUNCTION double_it(n NUMBER) RETURN NUMBER IS BEGIN RETURN n * 2; END; END emp_pkg;");
+    return sh;
+  }
+
+  it('SELECT pkg.fn(...) FROM dual evaluates the stored function', () => {
+    const sh = pkgSession('pkgsql1');
+    expect(run(sh, 'SELECT emp_pkg.double_it(21) FROM dual;')).toMatch(/42/);
+    sh.dispose();
+  });
+
+  it('package function returns its value inside PL/SQL expressions', () => {
+    const sh = pkgSession('pkgsql2');
+    const out = block(sh, 'BEGIN DBMS_OUTPUT.PUT_LINE(emp_pkg.double_it(5)); END;');
+    expect(out).toMatch(/\b10\b/);
+    sh.dispose();
+  });
+
+  it('package procedure runs via EXEC with DBMS_OUTPUT', () => {
+    const sh = pkgSession('pkgsql3');
+    expect(run(sh, "EXEC emp_pkg.hello('World')")).toMatch(/Hello World/);
+    sh.dispose();
+  });
+
+  it('unknown function still raises ORA-00904 from SQL', () => {
+    const sh = pkgSession('pkgsql4');
+    expect(run(sh, 'SELECT no_such_fn(1) FROM dual;')).toMatch(/ORA-00904/);
+    sh.dispose();
+  });
+});

@@ -39,7 +39,7 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
-import { runAnonymousBlock } from './plsql';
+import { runAnonymousBlock, PlsqlInterpreter } from './plsql';
 import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
 import { SchedulerManager } from './scheduler/SchedulerManager';
 import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
@@ -711,8 +711,36 @@ export class OracleDatabase implements SqlCommandHost {
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
     const ctx = (executor as { context: ExecutionContext }).context;
     const output: string[] = [];
-    let putBuffer = '';
+    const { host, flush } = this.buildPlsqlHost(executor, output);
 
+    const outcome = runAnonymousBlock(sql, host);
+    if (outcome.parseError) {
+      // Real Oracle reports compilation problems as ORA-06550 followed by
+      // the PLS- diagnostic. There is deliberately no fallback interpreter:
+      // the legacy regex-based engine was removed (it silently produced
+      // different semantics from the AST interpreter on the same source).
+      const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
+      return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
+    }
+
+    flush();
+    if (!outcome.ok && outcome.error) {
+      return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+    }
+    if (ctx.serverOutput && output.length > 0) {
+      return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+    }
+    return emptyResult('PL/SQL procedure successfully completed.');
+  }
+
+  /**
+   * Build the PlsqlHost bridging the AST interpreter to this database:
+   * SQL execution, DBMS_OUTPUT buffering, stored-unit lookup and builtin
+   * package routing. `flush` pushes any pending DBMS_OUTPUT.PUT tail.
+   */
+  private buildPlsqlHost(executor: OracleExecutor, output: string[]): { host: PlsqlHost; flush: () => void } {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    const buf = { pending: '' };
     const host: PlsqlHost = {
       runSql: (s: string) => {
         const r = this.executeSql(executor, s);
@@ -727,33 +755,46 @@ export class OracleDatabase implements SqlCommandHost {
           message: r.message,
         };
       },
-      putLine: (t: string) => { output.push(putBuffer + t); putBuffer = ''; },
-      put: (t: string) => { putBuffer += t; },
+      putLine: (t: string) => { output.push(buf.pending + t); buf.pending = ''; },
+      put: (t: string) => { buf.pending += t; },
       isServerOutput: () => !!ctx.serverOutput,
       currentSchema: () => ctx.currentSchema ?? 'SYS',
       lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
     };
+    return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
+  }
 
-    const outcome = runAnonymousBlock(sql, host);
-    if (outcome.parseError) {
-      // Real Oracle reports compilation problems as ORA-06550 followed by
-      // the PLS- diagnostic. There is deliberately no fallback interpreter:
-      // the legacy regex-based engine was removed (it silently produced
-      // different semantics from the AST interpreter on the same source).
-      const detail = outcome.parseErrorMessage ?? 'PLS-00103: Encountered the symbol "end-of-file"';
-      return emptyResult(`ORA-06550: line 1, column 1:\n${detail}`);
-    }
+  /**
+   * SQL→PL/SQL bridge: evaluate a stored FUNCTION referenced from a SQL
+   * expression (SELECT pkg.fn(…) FROM dual, WHERE fn(col) = …). Returns
+   * handled=false when the name does not resolve to a stored function so
+   * the SQL engine can raise its own ORA-00904.
+   */
+  execScalarFunctionCall(
+    executor: import('../engine/executor/BaseExecutor').BaseExecutor,
+    qualifiedName: string,
+    args: import('../engine/storage/BaseStorage').CellValue[],
+  ): { handled: boolean; value: import('../engine/storage/BaseStorage').CellValue } {
+    const oraExecutor = executor as OracleExecutor;
+    const schema = ((oraExecutor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS').toUpperCase();
+    const unit = this.resolveStoredUnit(schema, qualifiedName);
+    if (!unit || unit.type !== 'FUNCTION') return { handled: false, value: null };
 
-    if (putBuffer) { output.push(putBuffer); putBuffer = ''; }
-    if (!outcome.ok && outcome.error) {
-      return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+    // DBMS_OUTPUT produced by SQL-invoked functions is collected but not
+    // surfaced — matching SQL*Plus, which only flushes the buffer after
+    // top-level PL/SQL blocks.
+    const output: string[] = [];
+    const { host } = this.buildPlsqlHost(oraExecutor, output);
+    const interp = new PlsqlInterpreter(host);
+    const value = interp.callStoredFunction(unit as StoredUnitLike, args as Scalar[]);
+    if (value === null || value === undefined) return { handled: true, value: null };
+    if (typeof value === 'number' || typeof value === 'string' || value instanceof Date) {
+      return { handled: true, value };
     }
-    if (ctx.serverOutput && output.length > 0) {
-      return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
-    }
-    return emptyResult('PL/SQL procedure successfully completed.');
+    if (typeof value === 'boolean') return { handled: true, value: value ? 'TRUE' : 'FALSE' };
+    return { handled: true, value: String(value) };
   }
 
   private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {

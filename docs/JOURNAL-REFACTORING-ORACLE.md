@@ -252,3 +252,39 @@ fonction SQL imposait de toucher l'exécuteur entier.
 - Nouveau test V$PDBS : GUID matche `[0-9A-F]{32}`, plus aucun « FAKED ».
 - Nouveaux tests TRUNC : Q→2026-04-01, IW→lundi, DAY→dimanche, W.
 - 2534 tests `unit/database` verts.
+
+---
+
+## Itération 8 — Fonctions de packages appelables depuis SQL et PL/SQL (2026-06-10)
+
+### Défaillances constatées (suite du GAP.md §10.6)
+Le cycle de vie des packages (spec/body/membres/DBA_OBJECTS/drop)
+fonctionnait, mais :
+1. `SELECT emp_pkg.double_it(21) FROM dual` → `ORA-00904` : aucune
+   passerelle SQL → fonctions stockées ; le moteur SQL ne connaissait que
+   ses builtins.
+2. `emp_pkg.double_it(5)` appelé depuis PL/SQL renvoyait NULL :
+   `PlsqlInterpreter.parseUnit` générait `FUNCTION EMP_PKG.DOUBLE_IT(...)`
+   (nom pointé invalide comme identifiant de sous-programme) puis
+   ajoutait un `;` aveugle produisant `END;;` — le parse échouait et
+   l'unité était silencieusement mise en cache comme nulle.
+
+### Corrections
+- `PlsqlInterpreter.parseUnit` : en-tête généré avec le nom de membre nu ;
+  terminateur ajouté seulement si absent ; les corps
+  `[déclarations] BEGIN … END` (DECLARE implicite après IS/AS) sont
+  acceptés.
+- Nouvelle méthode publique `PlsqlInterpreter.callStoredFunction(unit,
+  args)` : pont d'évaluation avec arguments scalaires pré-évalués.
+- `SqlCommandHost.execScalarFunctionCall` + implémentation
+  `OracleDatabase` (résolution via `resolveStoredUnit`, donc schémas et
+  membres de packages) ; la construction du `PlsqlHost` est extraite en
+  `buildPlsqlHost` (dédupliquée avec `executePLSQL`).
+- `ScalarFunctionHost.callStoredFunction?` optionnel : le case `default`
+  de l'évaluateur scalaire tente les fonctions stockées avant de lever
+  `ORA-00904` — exactement la précédence du vrai Oracle.
+
+### Preuves
+- 4 nouveaux tests : SELECT pkg.fn FROM dual → 42 ; PUT_LINE(pkg.fn) → 10 ;
+  EXEC pkg.proc avec DBMS_OUTPUT ; fonction inconnue → ORA-00904 conservé.
+- 2552 tests verts (unit/database + debug/oracle).

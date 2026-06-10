@@ -610,6 +610,15 @@ export class PlsqlInterpreter {
     return null;
   }
 
+  /**
+   * Bridge for SQL-level scalar calls (SELECT pkg.fn(…) FROM dual):
+   * evaluate a stored FUNCTION with pre-evaluated argument values.
+   */
+  callStoredFunction(unit: import('./PlsqlValue').StoredUnitLike, argValues: Scalar[]): PlsqlValue {
+    const args: CallArg[] = argValues.map(v => ({ name: null, value: scalarToExpr(v) }));
+    return this.callStoredUnit(unit, args, new Scope(null));
+  }
+
   private callStoredUnit(unit: import('./PlsqlValue').StoredUnitLike, args: CallArg[], scope: Scope): PlsqlValue {
     const sub = this.parseUnit(unit);
     if (!sub) return null;
@@ -625,16 +634,26 @@ export class PlsqlInterpreter {
     const cached = this.unitCache.get(unit);
     if (cached !== undefined) return cached;
     const params = unit.parameters.map(p => `${p.name} ${p.mode} ${p.dataType}${p.defaultValue ? ' DEFAULT ' + p.defaultValue : ''}`).join(', ');
+    // Package members are stored as "PKG.MEMBER"; the generated header must
+    // use the bare member name (a dotted name is not a valid subprogram
+    // identifier and would fail the parse below, silently nulling the unit).
+    const unitName = unit.name.split('.').pop()!;
     const header = unit.type === 'FUNCTION'
-      ? `FUNCTION ${unit.name}${params ? '(' + params + ')' : ''} RETURN ${unit.returnType} IS `
-      : `PROCEDURE ${unit.name}${params ? '(' + params + ')' : ''} IS `;
+      ? `FUNCTION ${unitName}${params ? '(' + params + ')' : ''} RETURN ${unit.returnType} IS `
+      : `PROCEDURE ${unitName}${params ? '(' + params + ')' : ''} IS `;
     const body = unit.body.trim();
     const bodyUpper = body.toUpperCase();
+    // The stored body may or may not carry its trailing semicolon; appending
+    // one unconditionally yields "END;;" which fails the parse below.
+    const terminator = /;\s*$/.test(body) ? '' : ';';
     let src: string;
     if (bodyUpper.startsWith('DECLARE')) {
-      src = header.replace(/ IS $/, ' IS ') + body.replace(/^DECLARE/i, '') + ';';
+      src = header + body.replace(/^DECLARE\b/i, '') + terminator;
     } else if (bodyUpper.startsWith('BEGIN')) {
-      src = header + body + ';';
+      src = header + body + terminator;
+    } else if (/\bBEGIN\b/i.test(body)) {
+      // `[local declarations] BEGIN … END` — DECLARE implied by IS/AS.
+      src = header + body + terminator;
     } else {
       src = header + 'BEGIN ' + body + ' END;';
     }
@@ -1156,6 +1175,15 @@ export class PlsqlInterpreter {
   private isSqlKeyword(w: string): boolean {
     return SQL_KEYWORDS.has(w.toUpperCase());
   }
+}
+
+/** Wrap a pre-evaluated scalar as a literal expression node. */
+function scalarToExpr(v: Scalar): Expr {
+  if (v === null || v === undefined) return { kind: 'null' };
+  if (typeof v === 'number') return { kind: 'num', value: v };
+  if (typeof v === 'boolean') return { kind: 'bool', value: v };
+  if (v instanceof Date) return { kind: 'str', value: v.toISOString().slice(0, 19).replace('T', ' ') };
+  return { kind: 'str', value: String(v) };
 }
 
 export { cloneValue };
