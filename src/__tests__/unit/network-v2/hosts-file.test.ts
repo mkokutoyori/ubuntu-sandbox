@@ -111,10 +111,10 @@ describe('HF-03 — Windows hosts file seeded with the machine name', () => {
 });
 
 describe('HF-04 — Windows setHostname re-syncs the hosts file', () => {
-  it('the new computer name resolves after a rename', () => {
+  it('the new computer name resolves after a rename', async () => {
     const win = new WindowsPC('windows-pc', 'OLD');
     win.setHostname('NEWNAME');
-    expect(win.resolveHostname('NEWNAME')?.toString()).toBe('127.0.0.1');
+    expect((await win.resolveHostname('NEWNAME'))?.toString()).toBe('127.0.0.1');
   });
 });
 
@@ -123,25 +123,25 @@ describe('HF-04 — Windows setHostname re-syncs the hosts file', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('HF-05 — Windows resolveHostname', () => {
-  it('resolves localhost from the seeded hosts file', () => {
+  it('resolves localhost from the seeded hosts file', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
-    expect(win.resolveHostname('localhost')?.toString()).toBe('127.0.0.1');
+    expect((await win.resolveHostname('localhost'))?.toString()).toBe('127.0.0.1');
   });
 
-  it('resolves the machine\'s own name to loopback', () => {
+  it('resolves the machine\'s own name to loopback', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
-    expect(win.resolveHostname('WIN')?.toString()).toBe('127.0.0.1');
+    expect((await win.resolveHostname('WIN'))?.toString()).toBe('127.0.0.1');
   });
 
-  it('resolves a custom hosts entry', () => {
+  it('resolves a custom hosts entry', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
     win.addHostsEntry('10.0.1.42', 'fileserver');
-    expect(win.resolveHostname('fileserver')?.toString()).toBe('10.0.1.42');
+    expect((await win.resolveHostname('fileserver'))?.toString()).toBe('10.0.1.42');
   });
 
-  it('returns null for an unknown name with no DNS', () => {
+  it('returns null for an unknown name with no DNS', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
-    expect(win.resolveHostname('nope.invalid')).toBeNull();
+    expect(await win.resolveHostname('nope.invalid')).toBeNull();
   });
 });
 
@@ -164,14 +164,14 @@ describe('HF-06 — Windows DNS fallback', () => {
   it('falls back to the configured DNS server for an unknown name', async () => {
     const { win } = buildDnsTopology();
     await win.executeCommand('netsh interface ip set dns "eth0" static 10.0.1.10');
-    expect(win.resolveHostname('intranet')?.toString()).toBe('10.0.1.77');
+    expect((await win.resolveHostname('intranet'))?.toString()).toBe('10.0.1.77');
   });
 
   it('the hosts file still wins over DNS', async () => {
     const { win } = buildDnsTopology();
     await win.executeCommand('netsh interface ip set dns "eth0" static 10.0.1.10');
     win.addHostsEntry('10.0.1.99', 'intranet');
-    expect(win.resolveHostname('intranet')?.toString()).toBe('10.0.1.99');
+    expect((await win.resolveHostname('intranet'))?.toString()).toBe('10.0.1.99');
   });
 });
 

@@ -68,6 +68,7 @@ import {
   IPv6Address, IPv6Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
@@ -1332,27 +1333,22 @@ export abstract class Router extends Equipment {
   private sendICMPError(
     inPort: string,
     offendingPkt: IPv4Packet,
-    icmpType: 'time-exceeded' | 'destination-unreachable',
+    icmpType: ICMPErrorType,
     code: number,
     nextHopMTU?: number,
   ): void {
+    // RFC 1122 §3.2.2: never generate an error about an ICMP error,
+    // a fragment, or a broadcast/multicast packet (prevents error storms).
+    if (!mayGenerateICMPError(offendingPkt)) return;
+
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;
     const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
-    const icmpError: ICMPPacket = {
-      type: 'icmp', icmpType, code,
-      id: 0, sequence: 0, dataSize: 0,
-      // RFC 1191 §4: include Next-Hop MTU for Fragmentation Needed (Type 3, Code 4)
-      mtu: (icmpType === 'destination-unreachable' && code === 4) ? (nextHopMTU ?? this.interfaceMTU) : undefined,
-      // Include reference to the offending packet so receivers can identify the SA
-      originalPacket: offendingPkt,
-    };
-
-    const errorIP = createIPv4Packet(
-      myIP, offendingPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
-      icmpError, 8,
+    const errorIP = buildICMPError(
+      myIP, offendingPkt, icmpType, code, this.defaultTTL,
+      { nextHopMTU: nextHopMTU ?? this.interfaceMTU },
     );
 
     // Update counters
@@ -2211,20 +2207,23 @@ export abstract class Router extends Equipment {
           payload: ipPkt,
         });
 
-        const probe = await Promise.race([
-          replyP.then((pl) => ({
-            ip: pl.fromIp,
-            rttMs: performance.now() - sentAt,
-            timeout: false, reached: true,
-            unreachable: undefined as boolean | undefined,
-          })),
-          failP.then((pl) => ({
-            ip: pl.fromIp,
-            rttMs: performance.now() - sentAt,
-            timeout: false, reached: false,
-            unreachable: pl.reason.includes('Destination unreachable'),
-          })),
-        ]).catch((err) => {
+        const replyOutcome = replyP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: true,
+          unreachable: undefined as boolean | undefined,
+        }));
+        const failOutcome = failP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: false,
+          unreachable: pl.reason.includes('Destination unreachable'),
+        }));
+        // Observe the race loser's eventual timeout rejection.
+        replyOutcome.catch(() => {});
+        failOutcome.catch(() => {});
+
+        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -2366,11 +2365,14 @@ export abstract class Router extends Equipment {
       });
     }
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // Observe the race loser's eventual timeout rejection.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {

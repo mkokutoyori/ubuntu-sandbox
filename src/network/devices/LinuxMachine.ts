@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -46,7 +46,13 @@ import type {
   IpNeighborEntry,
   IpXfrmContext,
 } from './linux/LinuxIpCommand';
-import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
+import { DnsService } from './linux/LinuxDnsService';
+import {
+  UDP_PORT_DNS,
+  isDnsWireQuery,
+  estimateDnsMessageSize,
+  type DnsWireResponse,
+} from '../dns/DnsWire';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -170,6 +176,52 @@ export abstract class LinuxMachine extends EndHost {
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
     this.startCronTicker();
+
+    // 8. DNS daemon transport: when dnsmasq starts, listen on UDP 53 so
+    //    resolution travels through the simulated network (cables, routing,
+    //    firewalls) instead of bypassing it via the Equipment registry.
+    this.dnsService.onStart(() => this.bindDnsServerPort());
+    this.dnsService.onStop(() => this.udpClose(UDP_PORT_DNS));
+  }
+
+  // ─── DNS over the wire (server side) ─────────────────────────────────
+
+  private bindDnsServerPort(): void {
+    // Like on real Ubuntu, dnsmasq cannot share port 53 with the
+    // systemd-resolved stub listener: taking over the port supersedes it.
+    this.socketTable.unbind('udp', '127.0.0.53', UDP_PORT_DNS);
+    try {
+      this.udpBind(UDP_PORT_DNS, (delivery) => this.handleDnsWireQuery(delivery), 'dnsmasq');
+    } catch { /* port already bound (e.g. service restarted) */ }
+  }
+
+  private handleDnsWireQuery({ sourceIP, udp }: UdpDelivery): void {
+    const query = udp.payload;
+    if (!isDnsWireQuery(query)) return;
+
+    const answers = query.qtype.toUpperCase() === 'PTR'
+      ? this.dnsService.reverseQuery(query.name)
+      : this.dnsService.query(query.name, query.qtype);
+
+    // NXDOMAIN only when the whole domain is unknown; a known domain with
+    // no record of the requested type answers NOERROR with zero answers,
+    // like a real authoritative server.
+    const rcode = answers.length > 0 || this.dnsService.hasDomain(query.name)
+      ? 'NOERROR'
+      : 'NXDOMAIN';
+
+    const response: DnsWireResponse = {
+      kind: 'dns-response',
+      id: query.id,
+      rcode,
+      name: query.name,
+      qtype: query.qtype,
+      answers,
+    };
+    this.sendUdpDatagram(
+      sourceIP, udp.sourcePort, UDP_PORT_DNS, response,
+      estimateDnsMessageSize(query.name, answers),
+    );
   }
 
   private cronTimer: symbol | null = null;
@@ -923,15 +975,17 @@ export abstract class LinuxMachine extends EndHost {
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
 
-  private static resolveHostnameImpl(
-    name: string,
-    executor: LinuxCommandExecutor,
-  ): IPAddress | null {
+  /**
+   * NSS-style resolution: literal IP → /etc/hosts → DNS via /etc/resolv.conf.
+   * The DNS step sends a real UDP/53 query through the simulated network,
+   * so unreachable servers time out instead of magically answering.
+   */
+  private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
     // 1. Already a valid IPv4 address → pass through
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
     // 2. /etc/hosts lookup (IPv4 only — the netkernel speaks IPv4).
-    const hostsContent = executor.readFile('/etc/hosts');
+    const hostsContent = this.executor.readFile('/etc/hosts');
     if (hostsContent) {
       const ip = HostsFile.parse(hostsContent).resolve(name, 4);
       if (ip) {
@@ -939,17 +993,17 @@ export abstract class LinuxMachine extends EndHost {
       }
     }
 
-    // 3. DNS fallback via /etc/resolv.conf
-    const resolvConf = executor.readFile('/etc/resolv.conf');
-    if (resolvConf) {
-      const match = resolvConf.match(/nameserver\s+(\S+)/);
-      if (match) {
-        const dnsServer = findDnsServerByIP(match[1]);
-        if (dnsServer) {
-          const records = dnsServer.query(name, 'A');
-          if (records.length > 0) {
-            try { return new IPAddress(records[0].value); } catch { /* skip */ }
-          }
+    // 3. DNS fallback via /etc/resolv.conf (read at query time, so edits
+    //    to the file are honoured immediately, like glibc's resolver).
+    const resolvConf = this.executor.readFile('/etc/resolv.conf');
+    const match = resolvConf?.match(/nameserver\s+(\S+)/);
+    if (match) {
+      let server: IPAddress | null = null;
+      try { server = new IPAddress(match[1]); } catch { /* malformed nameserver */ }
+      if (server) {
+        const response = await this.queryDnsServer(server, name, 'A');
+        if (response && response.rcode === 'NOERROR' && response.answers.length > 0) {
+          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
         }
       }
     }
@@ -1197,8 +1251,13 @@ export abstract class LinuxMachine extends EndHost {
       extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number } {
         return self.extractPorts(pkt);
       },
-      resolveHostname(name: string): IPAddress | null {
-        return LinuxMachine.resolveHostnameImpl(name, self.executor);
+      resolveHostname(name: string): Promise<IPAddress | null> {
+        return self.resolveHostnameOverWire(name);
+      },
+      async queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number) {
+        let server: IPAddress;
+        try { server = new IPAddress(serverIP); } catch { return null; }
+        return self.queryDnsServer(server, name, qtype, timeoutMs);
       },
       readFile(path: string): string | null {
         return self.executor.readFile(path);

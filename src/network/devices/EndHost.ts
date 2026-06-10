@@ -48,6 +48,23 @@ import {
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import {
+  buildICMPError,
+  mayGenerateICMPError,
+  ICMP_UNREACH_NET,
+  ICMP_UNREACH_PORT,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+  ICMP_TTL_EXPIRED_IN_TRANSIT,
+  type ICMPErrorType,
+} from '../core/IcmpErrors';
+import {
+  UDP_PORT_DNS,
+  isDnsWireResponse,
+  nextDnsTransactionId,
+  estimateDnsMessageSize,
+  type DnsWireQuery,
+  type DnsWireResponse,
+} from '../dns/DnsWire';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -87,6 +104,20 @@ export interface PingResult {
   bytes: number;
   fromIP: string;
 }
+
+// ─── UDP socket layer (RFC 768) ──────────────────────────────────────
+
+/** A UDP datagram as delivered to a bound listener. */
+export interface UdpDelivery {
+  /** Interface the datagram arrived on ('lo' for local delivery). */
+  inPort: string;
+  sourceIP: IPAddress;
+  destinationIP: IPAddress;
+  udp: UDPPacket;
+}
+
+/** Callback invoked for every datagram delivered to a bound UDP port. */
+export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
@@ -146,6 +177,9 @@ export abstract class EndHost extends Equipment {
   /** Per-device socket table — tracks listening and established sockets */
   protected readonly socketTable: SocketTable = new SocketTable();
 
+  /** Bound UDP ports → datagram listeners (RFC 768 socket layer). */
+  private readonly udpListeners: Map<number, UdpListener> = new Map();
+
   // ─── Hardware inventory ─────────────────────────────────────────
   /**
    * Faithful model of the host's physical hardware — CPU, memory, storage,
@@ -204,6 +238,15 @@ export abstract class EndHost extends Equipment {
   // ─── IP Forwarding / NAT (for NAT-T topologies) ──────────────────
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
+
+  /**
+   * IPv4 host model (RFC 1122 §3.3.4.2).
+   * - 'weak': accept packets destined to ANY local address, whatever the
+   *   ingress interface — the Linux default behaviour.
+   * - 'strong': only accept packets destined to the address of the ingress
+   *   interface — the Windows (Vista+) default behaviour.
+   */
+  protected hostModel: 'weak' | 'strong' = 'weak';
   /** Interfaces on which MASQUERADE is applied (iptables POSTROUTING MASQUERADE) */
   protected masqueradeOnInterfaces: Set<string> = new Set();
 
@@ -1019,6 +1062,30 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
+  /** Return the port that owns the given unicast IPv4 address, if any. */
+  protected getPortOwningIP(ip: IPAddress): Port | null {
+    for (const [, port] of this.ports) {
+      const portIP = port.getIPAddress();
+      if (portIP && portIP.equals(ip)) return port;
+    }
+    return null;
+  }
+
+  /**
+   * Decide whether a destination address is "ours" for local delivery,
+   * honouring the configured host model (RFC 1122 §3.3.4.2): the weak model
+   * (Linux) accepts packets for any local address on any interface, the
+   * strong model (Windows) only for the ingress interface address.
+   * Loopback destinations are always local.
+   */
+  protected isLocalDestination(inPort: string, destination: IPAddress): boolean {
+    if (destination.isLoopback()) return true;
+    const inIP = this.ports.get(inPort)?.getIPAddress();
+    if (inIP && inIP.equals(destination)) return true;
+    if (this.hostModel === 'weak') return this.getPortOwningIP(destination) !== null;
+    return false;
+  }
+
   private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
@@ -1050,7 +1117,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return;
     const myIP = port.getIPAddress();
 
-    const isForUs = myIP && ipPkt.destinationIP.equals(myIP);
+    const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
     // Also accept if destination is the broadcast for our subnet
     const mask = port.getSubnetMask();
     const isBroadcast = myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask);
@@ -1072,6 +1139,8 @@ export abstract class EndHost extends Equipment {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
+      } else if (ipPkt.protocol === IP_PROTO_UDP) {
+        this.deliverUDP(portName, ipPkt, !!isBroadcast);
       }
       return;
     }
@@ -1086,10 +1155,22 @@ export abstract class EndHost extends Equipment {
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
     const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) return; // TTL expired — drop silently
+    if (newTTL <= 0) {
+      // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
+      // back to the source — this is what makes this hop visible to traceroute.
+      Logger.info(this.id, 'ipv4:ttl-expired',
+        `${this.name}: TTL expired for ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+      this.sendICMPError(inPort, ipPkt, 'time-exceeded', ICMP_TTL_EXPIRED_IN_TRANSIT);
+      return;
+    }
 
     const route = this.resolveRoute(ipPkt.destinationIP);
-    if (!route) return; // no route — drop
+    if (!route) {
+      Logger.info(this.id, 'ipv4:no-route',
+        `${this.name}: no route to ${ipPkt.destinationIP}`);
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_NET);
+      return;
+    }
 
     const outPortName = route.port.getName();
     if (outPortName === inPort) return; // avoid looping back on same interface
@@ -1267,7 +1348,13 @@ export abstract class EndHost extends Equipment {
   private sendEchoReply(portName: string, requestIP: IPv4Packet, requestICMP: ICMPPacket): void {
     const port = this.ports.get(portName);
     if (!port) return;
-    const myIP = port.getIPAddress();
+    // RFC 1122 §3.2.2.6: the reply is sourced from the address the request
+    // was sent to when it is one of ours (weak host model: possibly another
+    // interface). For broadcast-directed echoes, fall back to the address
+    // of the receiving interface.
+    const myIP = this.getPortOwningIP(requestIP.destinationIP)
+      ? requestIP.destinationIP
+      : port.getIPAddress();
     if (!myIP) return;
 
     // Build ICMP echo reply
@@ -1319,39 +1406,52 @@ export abstract class EndHost extends Equipment {
    * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
    */
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
-    const port = this.ports.get(portName);
-    if (!port) return;
-    const myIP = port.getIPAddress();
-    if (!myIP) return;
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', ICMP_UNREACH_ADMIN_PROHIBITED);
+  }
 
-    const icmpError: ICMPPacket = {
-      type: 'icmp',
-      icmpType: 'destination-unreachable',
-      code: 13, // Communication administratively prohibited
-      id: 0,
-      sequence: 0,
-      dataSize: 0,
-      originalPacket: offendingPkt,
-    };
+  /**
+   * Send an ICMP error message (Time Exceeded / Destination Unreachable)
+   * back to the source of the offending packet.
+   *
+   * RFC 1122 §3.2.2 guards apply (no error about an error, a broadcast, …).
+   * RFC 1812 §4.3.2.7: the error is routed like any other packet — looked up
+   * in the routing table rather than blindly reflected on the ingress port.
+   * Sourced from the ingress interface IP when it has one (the address the
+   * sender was actually talking to), otherwise from the egress interface.
+   */
+  protected sendICMPError(
+    inPort: string,
+    offendingPkt: IPv4Packet,
+    icmpType: ICMPErrorType,
+    code: number,
+  ): void {
+    if (!mayGenerateICMPError(offendingPkt)) return;
 
-    const errorIP = createIPv4Packet(
-      myIP,
-      offendingPkt.sourceIP,
-      IP_PROTO_ICMP,
-      this.defaultTTL,
-      icmpError,
-      8,
-    );
+    const route = this.resolveRoute(offendingPkt.sourceIP);
+    if (!route) return; // no route back to source — silently drop
 
-    const targetMAC = this.arpTable.get(offendingPkt.sourceIP.toString());
-    if (!targetMAC) return;
+    const srcIP = this.ports.get(inPort)?.getIPAddress() ?? route.port.getIPAddress();
+    if (!srcIP) return;
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: targetMAC.mac,
-      etherType: ETHERTYPE_IPV4,
-      payload: errorIP,
-    });
+    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL);
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, errorIP, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: errorIP,
+      });
+    } else {
+      // Next-hop MAC unknown — queue the error and resolve via ARP instead
+      // of dropping it on a cold cache.
+      this.fwdQueueAndResolve(errorIP, outPortName, route.nextHopIP, route.port);
+    }
   }
 
   // ─── TCP Transport (RFC 793) ───────────────────────────────────
@@ -1370,6 +1470,170 @@ export abstract class EndHost extends Equipment {
     return socket;
   }
 
+  // ─── UDP Transport (RFC 768) ───────────────────────────────────
+
+  /**
+   * Bind a UDP port and register a datagram listener (socket-style API).
+   * The binding is recorded in the socket table so `netstat`/`ss` show it.
+   * Throws EADDRINUSE when the port is already bound (Fail Fast).
+   */
+  public udpBind(port: number, listener: UdpListener, processName?: string): void {
+    this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
+    this.udpListeners.set(port, listener);
+  }
+
+  /** Close a UDP port: remove the listener and the socket-table entry. */
+  public udpClose(port: number): void {
+    this.udpListeners.delete(port);
+    this.socketTable.unbind('udp', '0.0.0.0', port);
+  }
+
+  /**
+   * Send a UDP datagram, routed through the host routing table like any
+   * locally-originated traffic (firewall OUTPUT chain included). Datagrams
+   * for loopback or an address we own are delivered locally without
+   * touching the wire. Returns false when there is no route or no source
+   * address (caller maps that to ENETUNREACH-style errors).
+   */
+  public sendUdpDatagram(
+    destinationIP: IPAddress,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort,
+      destinationPort,
+      length: 8 + payloadBytes,
+      checksum: 0,
+      payload,
+    };
+
+    // Local delivery (loopback or own address) — like a real kernel, this
+    // never reaches the wire.
+    if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
+      const localPkt = createIPv4Packet(
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+      );
+      this.deliverUDP('lo', localPkt, false);
+      return true;
+    }
+
+    const route = this.resolveRoute(destinationIP);
+    if (!route) return false;
+    const srcIP = route.port.getIPAddress();
+    if (!srcIP) return false;
+
+    const ipPkt = createIPv4Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+    );
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return false;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(),
+        dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4,
+        payload: ipPkt,
+      });
+    } else {
+      // Cold ARP cache: queue the datagram and resolve asynchronously.
+      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
+    }
+    return true;
+  }
+
+  /**
+   * Deliver a locally-addressed UDP datagram to its bound listener.
+   * RFC 1122 §4.1.3.1: a datagram for a port with no listener elicits
+   * ICMP Destination Unreachable Code 3 (port unreachable) — never for
+   * broadcast-directed datagrams.
+   */
+  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean): void {
+    const udp = ipPkt.payload as UDPPacket;
+    if (!udp || udp.type !== 'udp') return;
+
+    const listener = this.udpListeners.get(udp.destinationPort);
+    if (listener) {
+      listener({
+        inPort: portName,
+        sourceIP: ipPkt.sourceIP,
+        destinationIP: ipPkt.destinationIP,
+        udp,
+      });
+      return;
+    }
+
+    if (!wasBroadcast) {
+      Logger.info(this.id, 'udp:port-unreachable',
+        `${this.name}: no listener on UDP ${udp.destinationPort}, ` +
+        `replying port unreachable to ${ipPkt.sourceIP}`);
+      this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
+    }
+  }
+
+  // ─── DNS client (RFC 1035 over the UDP socket layer) ────────────
+
+  /**
+   * Send a DNS query to `serverIP` over UDP 53 and await the response.
+   * Resolves to null on timeout — which genuinely happens when the server
+   * is unreachable (unplugged cable, no route, firewall on UDP 53),
+   * exactly like a real stub resolver. Shared by Linux and Windows hosts.
+   */
+  public async queryDnsServer(
+    serverIP: IPAddress,
+    name: string,
+    qtype: string,
+    timeoutMs: number = 2000,
+  ): Promise<DnsWireResponse | null> {
+    const id = nextDnsTransactionId();
+    let sourcePort: number;
+    try {
+      sourcePort = this.socketTable.allocateEphemeralPort();
+    } catch {
+      return null;
+    }
+
+    return new Promise<DnsWireResponse | null>((resolve) => {
+      let timer: symbol | null = null;
+      let settled = false;
+      const finish = (result: DnsWireResponse | null) => {
+        if (settled) return;
+        settled = true;
+        this.hostTimers.clear(timer);
+        this.udpClose(sourcePort);
+        resolve(result);
+      };
+
+      try {
+        this.udpBind(sourcePort, ({ udp }) => {
+          const msg = udp.payload;
+          if (isDnsWireResponse(msg) && msg.id === id) finish(msg);
+        }, 'resolver');
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      const query: DnsWireQuery = {
+        kind: 'dns-query', id, name, qtype, recursionDesired: true,
+      };
+      const sent = this.sendUdpDatagram(
+        serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+      );
+      if (!sent) {
+        finish(null);
+        return;
+      }
+      timer = this.hostTimers.setTimeout(() => finish(null), timeoutMs);
+    });
+  }
 
   // ─── ARP Resolution ────────────────────────────────────────────
 
@@ -1463,6 +1727,11 @@ export abstract class EndHost extends Equipment {
         && (p.toIp === targetIpStr || p.toIp === ''),
       { timeoutMs, scheduler: this.getScheduler() },
     );
+    // The ping can abort before both waiters settle (firewall verdict below,
+    // race loser timing out later); observe rejections so abandoned waiters
+    // never surface as unhandled errors.
+    replyPromise.catch(() => {});
+    failedPromise.catch(() => {});
 
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
@@ -1486,11 +1755,15 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // The race loser keeps waiting until its own timeout fires; observe its
+    // rejection so it never surfaces as an unhandled error.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {
@@ -1615,29 +1888,32 @@ export abstract class EndHost extends Equipment {
    * Execute a full ping sequence: route lookup → ARP → ICMP echo × count.
    * Returns an array of PingResult (one per ping attempt).
    */
+  /** Fabricate successful echo results for traffic that never leaves the host. */
+  private localEchoResults(targetIP: IPAddress, count: number): PingResult[] {
+    const results: PingResult[] = [];
+    for (let seq = 1; seq <= count; seq++) {
+      results.push({
+        success: true,
+        rttMs: 0.01,
+        ttl: this.defaultTTL,
+        seq,
+        bytes: 64,
+        fromIP: targetIP.toString(),
+      });
+    }
+    return results;
+  }
+
   protected async executePingSequence(
     targetIP: IPAddress,
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
   ): Promise<PingResult[]> {
-    // Self-ping (loopback)
-    for (const [, port] of this.ports) {
-      const myIP = port.getIPAddress();
-      if (myIP && myIP.equals(targetIP)) {
-        const results: PingResult[] = [];
-        for (let seq = 1; seq <= count; seq++) {
-          results.push({
-            success: true,
-            rttMs: 0.01,
-            ttl: this.defaultTTL,
-            seq,
-            bytes: 64,
-            fromIP: targetIP.toString(),
-          });
-        }
-        return results;
-      }
+    // Local delivery without touching the wire: loopback (127/8) and any
+    // address owned by one of our interfaces (self-ping), like a real kernel.
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+      return this.localEchoResults(targetIP, count);
     }
 
     // Route resolution
@@ -1748,26 +2024,29 @@ export abstract class EndHost extends Equipment {
           payload: ipPkt,
         });
 
-        const probe = await Promise.race([
-          replyP.then((pl) => ({
+        const replyOutcome = replyP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: true,
+          unreachable: undefined as boolean | undefined,
+          icmpCode: undefined as number | undefined,
+        }));
+        const failOutcome = failP.then((pl) => {
+          const codeMatch = pl.reason.match(/code (\d+)/);
+          const isUnreachable = pl.reason.includes('Destination unreachable');
+          return {
             ip: pl.fromIp,
             rttMs: performance.now() - sentAt,
-            timeout: false, reached: true,
-            unreachable: undefined as boolean | undefined,
-            icmpCode: undefined as number | undefined,
-          })),
-          failP.then((pl) => {
-            const codeMatch = pl.reason.match(/code (\d+)/);
-            const isUnreachable = pl.reason.includes('Destination unreachable');
-            return {
-              ip: pl.fromIp,
-              rttMs: performance.now() - sentAt,
-              timeout: false, reached: false,
-              unreachable: isUnreachable,
-              icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
-            };
-          }),
-        ]).catch((err) => {
+            timeout: false, reached: false,
+            unreachable: isUnreachable,
+            icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
+          };
+        });
+        // Observe the race loser's eventual timeout rejection.
+        replyOutcome.catch(() => {});
+        failOutcome.catch(() => {});
+
+        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -2338,11 +2617,15 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // The race loser keeps waiting until its own timeout fires; observe its
+    // rejection so it never surfaces as an unhandled error.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {

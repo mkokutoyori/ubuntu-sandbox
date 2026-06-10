@@ -24,7 +24,7 @@ export const hostCommand: LinuxCommand = {
     '  name          The domain name or IP address to look up.\n' +
     '  server        The DNS server to query.',
 
-  run(ctx: LinuxCommandContext, args: string[]): string {
-    return executeHost(args, readResolverIP(ctx.executor));
+  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return executeHost(args, (s, n, t, ms) => ctx.net.queryDns(s, n, t, ms), readResolverIP(ctx.executor));
   },
 };

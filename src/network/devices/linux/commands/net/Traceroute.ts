@@ -50,7 +50,7 @@ export const tracerouteCommand: LinuxCommand = {
 
     if (!targetStr) return 'Usage: traceroute [-InU] [-m maxhops] [-q nqueries] [-f first_ttl] <destination>';
 
-    const targetIP = ctx.net.resolveHostname(targetStr);
+    const targetIP = await ctx.net.resolveHostname(targetStr);
     if (!targetIP) {
       return `traceroute: unknown host ${targetStr}`;
     }

@@ -30,7 +30,6 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
-import { findDnsServerByIP } from './linux/LinuxDnsService';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -195,6 +194,9 @@ export class WindowsPC extends EndHost {
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
+    // Windows (Vista+) uses the strong host model on IPv4: packets are only
+    // accepted when addressed to the ingress interface (RFC 1122 §3.3.4.2).
+    this.hostModel = 'strong';
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     // Materialise the event logs as .evtx files under winevt\Logs.
@@ -621,8 +623,10 @@ export class WindowsPC extends EndHost {
   /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.
+   * The DNS step queries each configured server over UDP/53 through the
+   * simulated network, so unreachable servers time out like real ones.
    */
-  resolveHostname(name: string): IPAddress | null {
+  async resolveHostname(name: string): Promise<IPAddress | null> {
     // 1. Already a literal IP address.
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
@@ -640,11 +644,11 @@ export class WindowsPC extends EndHost {
     // 4. DNS fallback — query every statically/DHCP-configured server.
     for (const cfg of this.dnsConfig.values()) {
       for (const server of cfg.servers) {
-        const dns = findDnsServerByIP(server);
-        if (!dns) continue;
-        const records = dns.query(name, 'A');
-        if (records.length > 0) {
-          try { return new IPAddress(records[0].value); } catch { /* skip */ }
+        let serverIP: IPAddress;
+        try { serverIP = new IPAddress(server); } catch { continue; }
+        const response = await this.queryDnsServer(serverIP, name, 'A');
+        if (response && response.answers.length > 0) {
+          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
         }
       }
     }
@@ -1314,8 +1318,7 @@ export class WindowsPC extends EndHost {
       case 'arp':      return cmdArp(netCtx, args);
       case 'getmac':   return cmdGetmac(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
-      case 'nslookup': return this.cmdNslookup(args);
-      // ping / tracert are async — no sync path.
+      // ping / tracert / nslookup are async (they touch the wire) — no sync path.
       default: return null;
     }
   }
@@ -1662,7 +1665,7 @@ export class WindowsPC extends EndHost {
   }
 
   /** nslookup command implementation for Windows */
-  private cmdNslookup(args: string[]): string {
+  private cmdNslookup(args: string[]): Promise<string> | string {
     const host = args.find(a => !a.startsWith('-')) ?? '';
     // The static hosts table (including the machine's own name) is
     // answered locally, ahead of any DNS query — same order as the
@@ -1685,8 +1688,14 @@ export class WindowsPC extends EndHost {
       const servers = this.getDnsServers(ifName);
       if (servers.length > 0) { resolverIP = servers[0]; break; }
     }
-    // Allow specifying server as second argument: nslookup domain server
-    return executeNslookup(args, resolverIP);
+    // Allow specifying server as second argument: nslookup domain server.
+    // Queries travel over UDP/53 through the simulated network (EndHost
+    // socket layer) — an unreachable server now times out for real.
+    return executeNslookup(args, async (s, n, t, ms) => {
+      let server: IPAddress;
+      try { server = new IPAddress(s); } catch { return null; }
+      return this.queryDnsServer(server, n, t, ms);
+    }, resolverIP);
   }
 
   // ─── User / Access Control ──────────────────────────────────────
