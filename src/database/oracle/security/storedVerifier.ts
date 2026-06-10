@@ -18,12 +18,27 @@ export interface OracleStoredVerifiers {
   readonly spare4: string;
 }
 
+// The 12c verifier costs a real PBKDF2-SHA512 run (4096 iterations in pure
+// TS). The derivation is deterministic per (username, password), so results
+// are memoised — otherwise every SELECT on SYS.USER$ re-derives verifiers
+// for every account and a 6-row query takes seconds.
+const verifierCache = new Map<string, OracleStoredVerifiers>();
+const VERIFIER_CACHE_MAX = 1024;
+
 /** Compute the 10g/11g/12c verifiers for a username + plaintext password. */
 export function deriveStoredVerifiers(username: string, password: string): OracleStoredVerifiers {
+  const cacheKey = `${username}\u0000${password}`;
+  const cached = verifierCache.get(cacheKey);
+  if (cached) return cached;
+
   const salt11 = sha1(utf8ToBytes(`ora11g:${username}:${password}`)).subarray(0, 10);
   const salt12 = sha256(utf8ToBytes(`ora12c:${username}:${password}`)).subarray(0, 16);
-  return {
+  const verifiers: OracleStoredVerifiers = {
     password: oracle10gHash(username, password),
     spare4: `${oracle11gVerifier(password, salt11)};${oracle12cVerifier(password, salt12)}`,
   };
+
+  if (verifierCache.size >= VERIFIER_CACHE_MAX) verifierCache.clear();
+  verifierCache.set(cacheKey, verifiers);
+  return verifiers;
 }

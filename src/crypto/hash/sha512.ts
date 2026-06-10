@@ -1,11 +1,13 @@
 /**
  * SHA-512 (FIPS 180-4) — dependency-free implementation using 32-bit hi/lo
- * word pairs (JavaScript has no native 64-bit bitwise ops). Fast enough to
- * back PBKDF2-HMAC-SHA512 (Oracle 12c verifier, 4096 rounds).
+ * word pairs (JavaScript has no native 64-bit bitwise ops). Exposes both a
+ * one-shot digest and an incremental state; the latter lets PBKDF2-HMAC-SHA512
+ * (Oracle 12c verifier, 4096 rounds) reuse precomputed key-pad midstates
+ * instead of re-hashing the padded key on every round.
  */
 
 import { utf8ToBytes, bytesToHex } from '../encoding';
-import type { HashAlgorithm } from './HashAlgorithm';
+import type { HashAlgorithm, IncrementalHash } from './HashAlgorithm';
 
 const BLOCK_SIZE = 128; // 1024 bits
 const DIGEST_SIZE = 64; // 512 bits
@@ -37,89 +39,91 @@ const K_LO = new Uint32Array([
   0x23047d84, 0x40c72493, 0x15c9bebc, 0x9c100d4c, 0xcb3e42b6, 0xfc657e2a, 0x3ad6faec, 0x4a475817,
 ]);
 
+// Initial hash values (fractional parts of the square roots of the first 8 primes).
+const H_INIT = new Uint32Array([
+  0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b, 0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
+  0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f, 0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
+]);
+
+// Message-schedule scratch shared by all states. Safe because JS is
+// single-threaded and compressBlock never re-enters; sharing avoids two
+// 80-word allocations per state clone (PBKDF2 clones twice per round).
+const SCRATCH_WH = new Uint32Array(80);
+const SCRATCH_WL = new Uint32Array(80);
+
+/** Incremental SHA-512: absorb bytes, snapshot midstates, finalize copies. */
+export class Sha512State implements IncrementalHash {
+  private readonly h: Uint32Array;
+  private readonly buf: Uint8Array;
+  private bufLen: number;
+  private totalBytes: number;
+
+  constructor(src?: Sha512State) {
+    this.h = src ? Uint32Array.from(src.h) : Uint32Array.from(H_INIT);
+    this.buf = src ? Uint8Array.from(src.buf) : new Uint8Array(BLOCK_SIZE);
+    this.bufLen = src ? src.bufLen : 0;
+    this.totalBytes = src ? src.totalBytes : 0;
+  }
+
+  update(data: Uint8Array): this {
+    this.totalBytes += data.length;
+    let off = 0;
+    if (this.bufLen > 0) {
+      const take = Math.min(BLOCK_SIZE - this.bufLen, data.length);
+      this.buf.set(data.subarray(0, take), this.bufLen);
+      this.bufLen += take;
+      off = take;
+      if (this.bufLen === BLOCK_SIZE) {
+        compressBlock(this.h, this.buf, 0);
+        this.bufLen = 0;
+      }
+    }
+    while (off + BLOCK_SIZE <= data.length) {
+      compressBlock(this.h, data, off);
+      off += BLOCK_SIZE;
+    }
+    if (off < data.length) {
+      this.buf.set(data.subarray(off), this.bufLen);
+      this.bufLen += data.length - off;
+    }
+    return this;
+  }
+
+  clone(): Sha512State {
+    return new Sha512State(this);
+  }
+
+  /** Finalize a copy of the state; the receiver stays usable for more input. */
+  digest(): Uint8Array {
+    const h = Uint32Array.from(this.h);
+    // Padding: 0x80, zeros, then the 128-bit big-endian bit length, sized so
+    // the final material is a whole number of blocks.
+    const tailBlocks = this.bufLen + 17 <= BLOCK_SIZE ? 1 : 2;
+    const tail = new Uint8Array(tailBlocks * BLOCK_SIZE);
+    tail.set(this.buf.subarray(0, this.bufLen));
+    tail[this.bufLen] = 0x80;
+    const bitLen = this.totalBytes * 8;
+    const dv = new DataView(tail.buffer);
+    // High 64 bits of the length are always 0 for our message sizes.
+    dv.setUint32(tail.length - 8, Math.floor(bitLen / 0x100000000));
+    dv.setUint32(tail.length - 4, bitLen >>> 0);
+    for (let off = 0; off < tail.length; off += BLOCK_SIZE) {
+      compressBlock(h, tail, off);
+    }
+    const out = new Uint8Array(DIGEST_SIZE);
+    for (let i = 0; i < 16; i++) {
+      out[i * 4] = (h[i] >>> 24) & 0xff;
+      out[i * 4 + 1] = (h[i] >>> 16) & 0xff;
+      out[i * 4 + 2] = (h[i] >>> 8) & 0xff;
+      out[i * 4 + 3] = h[i] & 0xff;
+    }
+    return out;
+  }
+}
+
 /** Compute the raw 64-byte SHA-512 digest of `input` (input is not mutated). */
 export function sha512(input: Uint8Array): Uint8Array {
-  // Initial hash values (fractional parts of the square roots of the first 8 primes).
-  const h = new Uint32Array([
-    0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b, 0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
-    0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f, 0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
-  ]);
-
-  const padded = padMessage(input);
-  const wh = new Uint32Array(80);
-  const wl = new Uint32Array(80);
-
-  for (let off = 0; off < padded.length; off += BLOCK_SIZE) {
-    for (let i = 0; i < 16; i++) {
-      const j = off + i * 8;
-      wh[i] = (padded[j] << 24) | (padded[j + 1] << 16) | (padded[j + 2] << 8) | padded[j + 3];
-      wl[i] = (padded[j + 4] << 24) | (padded[j + 5] << 16) | (padded[j + 6] << 8) | padded[j + 7];
-    }
-    for (let i = 16; i < 80; i++) {
-      // s0 = rotr(w[i-15],1) ^ rotr(w[i-15],8) ^ shr(w[i-15],7)
-      const x15h = wh[i - 15], x15l = wl[i - 15];
-      const s0h = (rotrH(x15h, x15l, 1) ^ rotrH(x15h, x15l, 8) ^ shrH(x15h, 7)) >>> 0;
-      const s0l = (rotrL(x15h, x15l, 1) ^ rotrL(x15h, x15l, 8) ^ shrL(x15h, x15l, 7)) >>> 0;
-      // s1 = rotr(w[i-2],19) ^ rotr(w[i-2],61) ^ shr(w[i-2],6)
-      const x2h = wh[i - 2], x2l = wl[i - 2];
-      const s1h = (rotrH(x2h, x2l, 19) ^ rotrH(x2h, x2l, 61) ^ shrH(x2h, 6)) >>> 0;
-      const s1l = (rotrL(x2h, x2l, 19) ^ rotrL(x2h, x2l, 61) ^ shrL(x2h, x2l, 6)) >>> 0;
-
-      const lo = (wl[i - 16] >>> 0) + s0l + (wl[i - 7] >>> 0) + s1l;
-      const hi = (wh[i - 16] >>> 0) + s0h + (wh[i - 7] >>> 0) + s1h + Math.floor(lo / 0x100000000);
-      wl[i] = lo >>> 0;
-      wh[i] = hi >>> 0;
-    }
-
-    let ah = h[0], al = h[1], bh = h[2], bl = h[3], ch = h[4], cl = h[5], dh = h[6], dl = h[7];
-    let eh = h[8], el = h[9], fh = h[10], fl = h[11], gh = h[12], gl = h[13], hh = h[14], hl = h[15];
-
-    for (let i = 0; i < 80; i++) {
-      const S1h = (rotrH(eh, el, 14) ^ rotrH(eh, el, 18) ^ rotrH(eh, el, 41)) >>> 0;
-      const S1l = (rotrL(eh, el, 14) ^ rotrL(eh, el, 18) ^ rotrL(eh, el, 41)) >>> 0;
-      const chh = ((eh & fh) ^ (~eh & gh)) >>> 0;
-      const chl = ((el & fl) ^ (~el & gl)) >>> 0;
-
-      const t1l = (hl >>> 0) + S1l + chl + (K_LO[i] >>> 0) + (wl[i] >>> 0);
-      const t1h = (hh >>> 0) + S1h + chh + (K_HI[i] >>> 0) + (wh[i] >>> 0) + Math.floor(t1l / 0x100000000);
-
-      const S0h = (rotrH(ah, al, 28) ^ rotrH(ah, al, 34) ^ rotrH(ah, al, 39)) >>> 0;
-      const S0l = (rotrL(ah, al, 28) ^ rotrL(ah, al, 34) ^ rotrL(ah, al, 39)) >>> 0;
-      const majh = ((ah & bh) ^ (ah & ch) ^ (bh & ch)) >>> 0;
-      const majl = ((al & bl) ^ (al & cl) ^ (bl & cl)) >>> 0;
-
-      const t2l = S0l + majl;
-      const t2h = S0h + majh + Math.floor(t2l / 0x100000000);
-
-      hh = gh; hl = gl; gh = fh; gl = fl; fh = eh; fl = el;
-      const newEl = (dl >>> 0) + (t1l >>> 0);
-      const newEh = (dh >>> 0) + (t1h >>> 0) + Math.floor(newEl / 0x100000000);
-      eh = newEh >>> 0; el = newEl >>> 0;
-      dh = ch; dl = cl; ch = bh; cl = bl; bh = ah; bl = al;
-      const newAl = (t1l >>> 0) + (t2l >>> 0);
-      const newAh = (t1h >>> 0) + (t2h >>> 0) + Math.floor(newAl / 0x100000000);
-      ah = newAh >>> 0; al = newAl >>> 0;
-    }
-
-    // Fold working vars back into the hash (with 64-bit carry).
-    addInto(h, 0, ah, al);
-    addInto(h, 2, bh, bl);
-    addInto(h, 4, ch, cl);
-    addInto(h, 6, dh, dl);
-    addInto(h, 8, eh, el);
-    addInto(h, 10, fh, fl);
-    addInto(h, 12, gh, gl);
-    addInto(h, 14, hh, hl);
-  }
-
-  const out = new Uint8Array(DIGEST_SIZE);
-  for (let i = 0; i < 16; i++) {
-    out[i * 4] = (h[i] >>> 24) & 0xff;
-    out[i * 4 + 1] = (h[i] >>> 16) & 0xff;
-    out[i * 4 + 2] = (h[i] >>> 8) & 0xff;
-    out[i * 4 + 3] = h[i] & 0xff;
-  }
-  return out;
+  return new Sha512State().update(input).digest();
 }
 
 /** Hex digest of a UTF-8 string. */
@@ -131,7 +135,75 @@ export const SHA512: HashAlgorithm = {
   blockSize: BLOCK_SIZE,
   digestSize: DIGEST_SIZE,
   digest: sha512,
+  createState: () => new Sha512State(),
 };
+
+// ─── Compression ──────────────────────────────────────────────────────────
+
+/** Run the SHA-512 compression function on one 128-byte block at `off`. */
+function compressBlock(h: Uint32Array, data: Uint8Array, off: number): void {
+  const wh = SCRATCH_WH, wl = SCRATCH_WL;
+  for (let i = 0; i < 16; i++) {
+    const j = off + i * 8;
+    wh[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | data[j + 3];
+    wl[i] = (data[j + 4] << 24) | (data[j + 5] << 16) | (data[j + 6] << 8) | data[j + 7];
+  }
+  for (let i = 16; i < 80; i++) {
+    // s0 = rotr(w[i-15],1) ^ rotr(w[i-15],8) ^ shr(w[i-15],7)
+    const x15h = wh[i - 15], x15l = wl[i - 15];
+    const s0h = (rotrH(x15h, x15l, 1) ^ rotrH(x15h, x15l, 8) ^ shrH(x15h, 7)) >>> 0;
+    const s0l = (rotrL(x15h, x15l, 1) ^ rotrL(x15h, x15l, 8) ^ shrL(x15h, x15l, 7)) >>> 0;
+    // s1 = rotr(w[i-2],19) ^ rotr(w[i-2],61) ^ shr(w[i-2],6)
+    const x2h = wh[i - 2], x2l = wl[i - 2];
+    const s1h = (rotrH(x2h, x2l, 19) ^ rotrH(x2h, x2l, 61) ^ shrH(x2h, 6)) >>> 0;
+    const s1l = (rotrL(x2h, x2l, 19) ^ rotrL(x2h, x2l, 61) ^ shrL(x2h, x2l, 6)) >>> 0;
+
+    const lo = (wl[i - 16] >>> 0) + s0l + (wl[i - 7] >>> 0) + s1l;
+    const hi = (wh[i - 16] >>> 0) + s0h + (wh[i - 7] >>> 0) + s1h + Math.floor(lo / 0x100000000);
+    wl[i] = lo >>> 0;
+    wh[i] = hi >>> 0;
+  }
+
+  let ah = h[0], al = h[1], bh = h[2], bl = h[3], ch = h[4], cl = h[5], dh = h[6], dl = h[7];
+  let eh = h[8], el = h[9], fh = h[10], fl = h[11], gh = h[12], gl = h[13], hh = h[14], hl = h[15];
+
+  for (let i = 0; i < 80; i++) {
+    const S1h = (rotrH(eh, el, 14) ^ rotrH(eh, el, 18) ^ rotrH(eh, el, 41)) >>> 0;
+    const S1l = (rotrL(eh, el, 14) ^ rotrL(eh, el, 18) ^ rotrL(eh, el, 41)) >>> 0;
+    const chh = ((eh & fh) ^ (~eh & gh)) >>> 0;
+    const chl = ((el & fl) ^ (~el & gl)) >>> 0;
+
+    const t1l = (hl >>> 0) + S1l + chl + (K_LO[i] >>> 0) + (wl[i] >>> 0);
+    const t1h = (hh >>> 0) + S1h + chh + (K_HI[i] >>> 0) + (wh[i] >>> 0) + Math.floor(t1l / 0x100000000);
+
+    const S0h = (rotrH(ah, al, 28) ^ rotrH(ah, al, 34) ^ rotrH(ah, al, 39)) >>> 0;
+    const S0l = (rotrL(ah, al, 28) ^ rotrL(ah, al, 34) ^ rotrL(ah, al, 39)) >>> 0;
+    const majh = ((ah & bh) ^ (ah & ch) ^ (bh & ch)) >>> 0;
+    const majl = ((al & bl) ^ (al & cl) ^ (bl & cl)) >>> 0;
+
+    const t2l = S0l + majl;
+    const t2h = S0h + majh + Math.floor(t2l / 0x100000000);
+
+    hh = gh; hl = gl; gh = fh; gl = fl; fh = eh; fl = el;
+    const newEl = (dl >>> 0) + (t1l >>> 0);
+    const newEh = (dh >>> 0) + (t1h >>> 0) + Math.floor(newEl / 0x100000000);
+    eh = newEh >>> 0; el = newEl >>> 0;
+    dh = ch; dl = cl; ch = bh; cl = bl; bh = ah; bl = al;
+    const newAl = (t1l >>> 0) + (t2l >>> 0);
+    const newAh = (t1h >>> 0) + (t2h >>> 0) + Math.floor(newAl / 0x100000000);
+    ah = newAh >>> 0; al = newAl >>> 0;
+  }
+
+  // Fold working vars back into the hash (with 64-bit carry).
+  addInto(h, 0, ah, al);
+  addInto(h, 2, bh, bl);
+  addInto(h, 4, ch, cl);
+  addInto(h, 6, dh, dl);
+  addInto(h, 8, eh, el);
+  addInto(h, 10, fh, fl);
+  addInto(h, 12, gh, gl);
+  addInto(h, 14, hh, hl);
+}
 
 // ─── 64-bit helpers operating on hi/lo 32-bit halves ─────────────────────
 
@@ -158,18 +230,4 @@ function addInto(h: Uint32Array, i: number, vh: number, vl: number): void {
   const hi = (h[i] >>> 0) + (vh >>> 0) + Math.floor(lo / 0x100000000);
   h[i] = hi >>> 0;
   h[i + 1] = lo >>> 0;
-}
-
-function padMessage(input: Uint8Array): Uint8Array {
-  // 0x80, then zeros, then 128-bit big-endian length, total ≡ 0 (mod 128).
-  const paddedLen = (((input.length + 16) >> 7) + 1) * 128;
-  const padded = new Uint8Array(paddedLen);
-  padded.set(input);
-  padded[input.length] = 0x80;
-  const bitLen = input.length * 8;
-  const dv = new DataView(padded.buffer);
-  // High 64 bits of the length are always 0 for our message sizes.
-  dv.setUint32(paddedLen - 8, Math.floor(bitLen / 0x100000000));
-  dv.setUint32(paddedLen - 4, bitLen >>> 0);
-  return padded;
 }

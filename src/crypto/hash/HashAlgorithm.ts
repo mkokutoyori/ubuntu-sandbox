@@ -12,4 +12,23 @@ export interface HashAlgorithm {
   readonly digestSize: number;
   /** Compute the raw digest of `input`. Must not mutate `input`. */
   digest(input: Uint8Array): Uint8Array;
+  /**
+   * Create an incremental hashing state (optional). Iteration-heavy
+   * consumers (PBKDF2) use it to precompute the HMAC key-pad midstates
+   * once and re-hash only the per-round message, which removes most of
+   * the per-round compressions and allocations.
+   */
+  createState?(): IncrementalHash;
+}
+
+/**
+ * Streaming digest state: absorb bytes with {@link update}, snapshot with
+ * {@link clone}, and finalize with {@link digest}. `digest()` must leave the
+ * state usable (finalization happens on an internal copy) so a precomputed
+ * midstate can be reused across many messages.
+ */
+export interface IncrementalHash {
+  update(data: Uint8Array): this;
+  clone(): IncrementalHash;
+  digest(): Uint8Array;
 }

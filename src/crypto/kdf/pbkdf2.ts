@@ -7,7 +7,7 @@
  */
 
 import type { HashAlgorithm } from '../hash';
-import { hmac } from '../mac';
+import { hmac, PrecomputedHmac } from '../mac';
 import { utf8ToBytes, bytesToHex } from '../encoding';
 
 /**
@@ -33,6 +33,14 @@ export function pbkdf2(
   const blocks = Math.ceil(dkLen / hLen);
   const dk = new Uint8Array(blocks * hLen);
 
+  // The password keys every PRF call; precompute its HMAC pad midstates
+  // once when the hash supports incremental hashing (4096+ rounds otherwise
+  // re-hash the padded key on every round).
+  const engine = PrecomputedHmac.create(hash, password);
+  const prf = engine
+    ? (message: Uint8Array) => engine.digest(message)
+    : (message: Uint8Array) => hmac(hash, password, message);
+
   // INT_32_BE(i) appended to the salt for each block (RFC 2898 §5.2).
   const block = new Uint8Array(salt.length + 4);
   block.set(salt);
@@ -44,10 +52,10 @@ export function pbkdf2(
     block[salt.length + 3] = i & 0xff;
 
     // U_1 = PRF(password, salt || INT(i)); T = U_1, then XOR in U_2..U_c.
-    let u = hmac(hash, password, block);
+    let u = prf(block);
     const t = Uint8Array.from(u);
     for (let c = 1; c < iterations; c++) {
-      u = hmac(hash, password, u);
+      u = prf(u);
       for (let k = 0; k < hLen; k++) t[k] ^= u[k];
     }
     dk.set(t, (i - 1) * hLen);
