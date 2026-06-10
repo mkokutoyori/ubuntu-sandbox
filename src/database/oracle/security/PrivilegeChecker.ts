@@ -24,7 +24,7 @@ export class PrivilegeChecker {
   }
 
   private hasSystemPrivilegeDirect(upper: string, priv: string): boolean {
-    return (this.catalog as any).sysPrivileges.some(
+    return this.catalog.getSysPrivilegeGrants().some(
       (p: CatalogPrivilege) => p.grantee === upper && p.privilege === priv
     );
   }
@@ -43,7 +43,7 @@ export class PrivilegeChecker {
     const queue = [username.toUpperCase()];
     while (queue.length > 0) {
       const current = queue.shift()!;
-      for (const rg of (this.catalog as any).roleGrants as Array<{ grantee: string; role: string }>) {
+      for (const rg of this.catalog.getRoleGrants()) {
         if (rg.grantee === current && !visited.has(rg.role)) {
           visited.add(rg.role);
           queue.push(rg.role);

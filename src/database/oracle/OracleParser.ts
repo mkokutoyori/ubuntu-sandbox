@@ -780,19 +780,19 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('DATABASE')) {
         this.expectKeyword('LINK');
         const name = this.expectIdentifier();
-        return { type: 'DropDbLinkStatement', position: pos, isPublic: true, name } as any;
+        return { type: 'DropDbLinkStatement', position: pos, isPublic: true, name };
       }
     }
     if (this.matchKeyword('DATABASE')) {
       this.expectKeyword('LINK');
       const name = this.expectIdentifier();
-      return { type: 'DropDbLinkStatement', position: pos, isPublic: false, name } as any;
+      return { type: 'DropDbLinkStatement', position: pos, isPublic: false, name };
     }
     if (this.matchKeyword('MATERIALIZED')) {
       this.expectKeyword('VIEW');
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();
-      return { type: 'DropMaterializedViewStatement', position: pos, schema, name } as any;
+      return { type: 'DropMaterializedViewStatement', position: pos, schema, name };
     }
     return null;
   }
@@ -886,7 +886,7 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('CHECKPOINT')) {
       // ALTER SYSTEM CHECKPOINT [GLOBAL | LOCAL] — both accepted.
-      this.matchKeyword('GLOBAL') || this.matchKeyword('LOCAL');
+      if (!this.matchKeyword('GLOBAL')) this.matchKeyword('LOCAL');
       return { type: 'AlterSystemStatement', position: pos, action: 'CHECKPOINT' };
     }
     if (this.matchKeyword('KILL')) {
@@ -1270,7 +1270,7 @@ export class OracleParser extends BaseParser {
 
   // ── CREATE DATABASE LINK (stub) ────────────────────────────────────
 
-  private parseCreateDbLink(pos: SourcePosition, isPublic: boolean): any {
+  private parseCreateDbLink(pos: SourcePosition, isPublic: boolean): import('../engine/parser/ASTNode').CreateDbLinkStatement {
     const name = this.expectIdentifier();
     // Consume CONNECT TO user IDENTIFIED BY password USING 'tns_alias'
     let connectUser: string | undefined;
@@ -1290,7 +1290,7 @@ export class OracleParser extends BaseParser {
 
   // ── CREATE MATERIALIZED VIEW (stub) ────────────────────────────────
 
-  private parseCreateMaterializedView(pos: SourcePosition, _orReplace: boolean): any {
+  private parseCreateMaterializedView(pos: SourcePosition, _orReplace: boolean): import('../engine/parser/ASTNode').CreateMaterializedViewStatement {
     const schema = this.parseSchemaPrefix();
     const name = this.expectIdentifier();
     // Skip optional BUILD, REFRESH clauses

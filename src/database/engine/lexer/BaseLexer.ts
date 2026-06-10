@@ -196,7 +196,7 @@ export abstract class BaseLexer {
   /** National string literal: N'text' */
   protected scanNString(): Token {
     const pos = this.currentPosition();
-    let value = this.advance(); // N
+    const value = this.advance(); // N
     const strToken = this.scanString();
     return { type: TokenType.STRING_LITERAL, value: value + strToken.value, position: pos };
   }

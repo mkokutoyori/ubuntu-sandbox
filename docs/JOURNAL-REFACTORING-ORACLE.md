@@ -288,3 +288,34 @@ fonctionnait, mais :
 - 4 nouveaux tests : SELECT pkg.fn FROM dual → 42 ; PUT_LINE(pkg.fn) → 10 ;
   EXEC pkg.proc avec DBMS_OUTPUT ; fonction inconnue → ORA-00904 conservé.
 - 2552 tests verts (unit/database + debug/oracle).
+
+---
+
+## Itération 9 — Typage des statements DB link / vues matérialisées, hygiène engine (2026-06-10)
+
+### Défaillances constatées
+1. Les statements `CREATE/DROP DATABASE LINK` et `CREATE/DROP MATERIALIZED
+   VIEW` étaient dispatchés par chaîne dans l'exécuteur mais **n'existaient
+   pas dans l'AST** : le parser retournait des objets `as any` — aucun
+   contrat de type, exclusion silencieuse de l'union `Statement`.
+2. `PrivilegeChecker` perçait l'encapsulation du catalogue avec
+   `(this.catalog as any).sysPrivileges` / `.roleGrants`.
+3. 9 erreurs ESLint préexistantes dans `engine/` (consommations de tokens
+   en expressions orphelines `a() || b();`, échappements regex inutiles,
+   `any` sur `ViewMeta.queryAST`, prefer-const).
+
+### Corrections
+- 4 nouvelles interfaces AST (`CreateDbLinkStatement`, `DropDbLinkStatement`,
+  `CreateMaterializedViewStatement`, `DropMaterializedViewStatement`)
+  ajoutées à l'union `Statement` ; méthodes du parser typées, `as any`
+  supprimés.
+- Accesseurs en lecture `getRoleGrants()`/`getSysPrivilegeGrants()`
+  **remontés dans `BaseCatalog`** (où vivent les champs protégés) ;
+  doublons supprimés d'`OracleCatalog` ; `PrivilegeChecker` consomme les
+  accesseurs publics au lieu de caster.
+- Hygiène engine : consommations de mots-clés réécrites en `if`,
+  regex q-quote nettoyée, `queryAST` typé `object` (commenté), const.
+
+### Preuves
+- 2538 tests `unit/database` verts ; `npx eslint src/database/` : 0 erreur ;
+  typecheck propre.

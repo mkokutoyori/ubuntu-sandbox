@@ -12,7 +12,7 @@ registerView({
   comment: 'ASM clients',
   query({ instance }) {
     const rows: (string | number)[][] = [];
-    let groupNumber = 1;
+    const groupNumber = 1;
     for (const [instanceName, c] of instance.asm.getClients()) {
       rows.push([groupNumber, instanceName, c.dbName, c.status, c.softwareVersion, c.compatibleVersion]);
     }

@@ -45,6 +45,14 @@ export abstract class BaseCatalog {
   protected tabPrivileges: CatalogPrivilege[] = [];
   protected roleGrants: { grantee: string; role: string; adminOption: boolean }[] = [];
 
+  /** Role grants (DBA_ROLE_PRIVS). */
+  getRoleGrants(): ReadonlyArray<{ grantee: string; role: string; adminOption: boolean }> {
+    return this.roleGrants;
+  }
+
+  /** System privilege grants (DBA_SYS_PRIVS). */
+  getSysPrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.sysPrivileges; }
+
   // ── User management ──────────────────────────────────────────────
 
   createUser(user: CatalogUser): void {
