@@ -14,16 +14,13 @@
  */
 
 import { Equipment } from '../../equipment/Equipment';
+import type { DnsRecord, DnsQueryFn } from '../../dns/DnsWire';
 
 // ─── DNS Record Types ──────────────────────────────────────────────
 
-export interface DnsRecord {
-  name: string;
-  type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
-  value: string;
-  ttl: number;
-  priority?: number; // For MX records
-}
+// The record shape lives with the wire format (`src/network/dns/DnsWire`);
+// re-exported here so existing importers keep working.
+export type { DnsRecord };
 
 // ─── DNS Service (runs on a LinuxPC acting as DNS server) ─────────
 
@@ -186,7 +183,7 @@ export function findDnsServerByIP(serverIP: string): DnsService | null {
 
 // ─── dig command implementation ──────────────────────────────────
 
-export function executeDig(args: string[], resolverIP?: string): string {
+export async function executeDig(args: string[], query: DnsQueryFn, resolverIP?: string): Promise<string> {
   // Parse dig arguments
   let server = resolverIP || '';
   let domain = '';
@@ -239,19 +236,12 @@ export function executeDig(args: string[], resolverIP?: string): string {
     return '; <<>> DiG <<>> @' + server + ' ' + domain + '\n;; connection timed out; no servers could be reached';
   }
 
-  // Find the DNS server
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
+  // Query over the wire (UDP/53 through the simulated network)
+  const response = await query(server, domain, isReverse ? 'PTR' : qtype, timeout * 1000);
+  if (!response) {
     return '; <<>> DiG <<>> ' + domain + '\n;; connection timed out; no servers could be reached';
   }
-
-  // Perform query
-  let records: DnsRecord[];
-  if (isReverse) {
-    records = dns.reverseQuery(domain);
-  } else {
-    records = dns.query(domain, qtype);
-  }
+  const records: DnsRecord[] = response.answers;
 
   // +short format
   if (isShort) {
@@ -275,11 +265,8 @@ export function executeDig(args: string[], resolverIP?: string): string {
   lines.push(`; <<>> DiG <<>> ${domain} ${qtype}`);
   lines.push(';; global options: +cmd');
 
-  // Determine status
-  let status = 'NOERROR';
-  if (records.length === 0 && !dns.hasDomain(domain) && !isReverse) {
-    status = 'NXDOMAIN';
-  }
+  // Status comes straight from the server's response code
+  const status = isReverse && records.length === 0 ? 'NOERROR' : response.rcode;
 
   lines.push(`;; Got answer:`);
   lines.push(`;; ->>HEADER<<- opcode: QUERY, status: ${status}, id: ${Math.floor(Math.random() * 65536)}`);
@@ -330,7 +317,7 @@ function formatDigAnswer(r: DnsRecord): string {
 
 // ─── nslookup command implementation ─────────────────────────────
 
-export function executeNslookup(args: string[], resolverIP?: string): string {
+export async function executeNslookup(args: string[], query: DnsQueryFn, resolverIP?: string): Promise<string> {
   let domain = '';
   let server = resolverIP || '';
   let qtype = 'A';
@@ -355,9 +342,9 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
     return `** server can't find ${domain}: REFUSED`;
   }
 
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
-    return `** server can't find ${domain}: REFUSED`;
+  const response = await query(server, domain, isReverse ? 'PTR' : qtype);
+  if (!response) {
+    return `;; connection timed out; no servers could be reached`;
   }
 
   const lines: string[] = [];
@@ -365,8 +352,9 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
   lines.push(`Address:\t${server}#53`);
   lines.push('');
 
+  const records = response.answers;
+
   if (isReverse) {
-    const records = dns.reverseQuery(domain);
     if (records.length === 0) {
       lines.push(`** server can't find ${domain}: NXDOMAIN`);
     } else {
@@ -379,7 +367,6 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
 
   // Forward lookup
   if (qtype === 'MX') {
-    const records = dns.query(domain, 'MX');
     lines.push(`Non-authoritative answer:`);
     if (records.length === 0) {
       lines.push(`*** Can't find ${domain}: No answer`);
@@ -391,22 +378,7 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
     return lines.join('\n');
   }
 
-  if (qtype === 'AAAA') {
-    const records = dns.query(domain, 'AAAA');
-    lines.push(`Non-authoritative answer:`);
-    if (records.length === 0) {
-      lines.push(`*** Can't find ${domain}: No answer`);
-    } else {
-      lines.push(`Name:\t${domain}`);
-      for (const r of records) {
-        lines.push(`Address: ${r.value}`);
-      }
-    }
-    return lines.join('\n');
-  }
-
-  // Default A record lookup
-  const records = dns.query(domain, 'A');
+  // A / AAAA lookup
   lines.push(`Non-authoritative answer:`);
   if (records.length === 0) {
     lines.push(`*** Can't find ${domain}: No answer`);
@@ -422,7 +394,7 @@ export function executeNslookup(args: string[], resolverIP?: string): string {
 
 // ─── host command implementation ─────────────────────────────────
 
-export function executeHost(args: string[], resolverIP?: string): string {
+export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?: string): Promise<string> {
   const domain = args[0];
   const server = args[1] || resolverIP || '';
 
@@ -432,15 +404,14 @@ export function executeHost(args: string[], resolverIP?: string): string {
     return `Host ${domain} not found: 5(REFUSED)`;
   }
 
-  const dns = findDnsServerByIP(server);
-  if (!dns) {
+  const response = await query(server, domain, 'A');
+  if (!response) {
     return `;; connection timed out; no servers could be reached`;
   }
 
-  const records = dns.query(domain, 'A');
-  if (records.length === 0) {
+  if (response.answers.length === 0) {
     return `Host ${domain} not found: 3(NXDOMAIN)`;
   }
 
-  return records.map(r => `${domain} has address ${r.value}`).join('\n');
+  return response.answers.map(r => `${domain} has address ${r.value}`).join('\n');
 }

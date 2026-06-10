@@ -50,12 +50,9 @@ import { DnsService } from './linux/LinuxDnsService';
 import {
   UDP_PORT_DNS,
   isDnsWireQuery,
-  isDnsWireResponse,
-  nextDnsTransactionId,
   estimateDnsMessageSize,
-  type DnsWireQuery,
   type DnsWireResponse,
-} from './linux/DnsWire';
+} from '../dns/DnsWire';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -206,10 +203,17 @@ export abstract class LinuxMachine extends EndHost {
       ? this.dnsService.reverseQuery(query.name)
       : this.dnsService.query(query.name, query.qtype);
 
+    // NXDOMAIN only when the whole domain is unknown; a known domain with
+    // no record of the requested type answers NOERROR with zero answers,
+    // like a real authoritative server.
+    const rcode = answers.length > 0 || this.dnsService.hasDomain(query.name)
+      ? 'NOERROR'
+      : 'NXDOMAIN';
+
     const response: DnsWireResponse = {
       kind: 'dns-response',
       id: query.id,
-      rcode: answers.length > 0 ? 'NOERROR' : 'NXDOMAIN',
+      rcode,
       name: query.name,
       qtype: query.qtype,
       answers,
@@ -218,63 +222,6 @@ export abstract class LinuxMachine extends EndHost {
       sourceIP, udp.sourcePort, UDP_PORT_DNS, response,
       estimateDnsMessageSize(query.name, answers),
     );
-  }
-
-  // ─── DNS over the wire (client side) ─────────────────────────────────
-
-  /**
-   * Send a DNS query to `serverIP` over UDP 53 and await the response.
-   * Resolves to null on timeout — which now genuinely happens when the
-   * server is unreachable (unplugged cable, no route, firewall on UDP 53),
-   * exactly like a real resolver.
-   */
-  async queryDnsServer(
-    serverIP: IPAddress,
-    name: string,
-    qtype: string,
-    timeoutMs: number = 2000,
-  ): Promise<DnsWireResponse | null> {
-    const id = nextDnsTransactionId();
-    let sourcePort: number;
-    try {
-      sourcePort = this.socketTable.allocateEphemeralPort();
-    } catch {
-      return null;
-    }
-
-    return new Promise<DnsWireResponse | null>((resolve) => {
-      let timer: symbol | null = null;
-      let settled = false;
-      const finish = (result: DnsWireResponse | null) => {
-        if (settled) return;
-        settled = true;
-        this.hostTimers.clear(timer);
-        this.udpClose(sourcePort);
-        resolve(result);
-      };
-
-      try {
-        this.udpBind(sourcePort, ({ udp }) => {
-          const msg = udp.payload;
-          if (isDnsWireResponse(msg) && msg.id === id) finish(msg);
-        }, 'resolver');
-      } catch {
-        resolve(null);
-        return;
-      }
-
-      const query: DnsWireQuery = {
-        kind: 'dns-query', id, name, qtype, recursionDesired: true,
-      };
-      const sent = this.sendUdpDatagram(
-        serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
-      );
-      if (!sent) {
-        finish(null);
-        return;
-      }
-      timer = this.hostTimers.setTimeout(() => finish(null), timeoutMs);
-    });
   }
 
   private cronTimer: symbol | null = null;
@@ -1306,6 +1253,11 @@ export abstract class LinuxMachine extends EndHost {
       },
       resolveHostname(name: string): Promise<IPAddress | null> {
         return self.resolveHostnameOverWire(name);
+      },
+      async queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number) {
+        let server: IPAddress;
+        try { server = new IPAddress(serverIP); } catch { return null; }
+        return self.queryDnsServer(server, name, qtype, timeoutMs);
       },
       readFile(path: string): string | null {
         return self.executor.readFile(path);

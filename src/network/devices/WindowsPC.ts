@@ -1317,8 +1317,7 @@ export class WindowsPC extends EndHost {
       case 'arp':      return cmdArp(netCtx, args);
       case 'getmac':   return cmdGetmac(netCtx, args);
       case 'route':    return cmdRoute(netCtx, args);
-      case 'nslookup': return this.cmdNslookup(args);
-      // ping / tracert are async — no sync path.
+      // ping / tracert / nslookup are async (they touch the wire) — no sync path.
       default: return null;
     }
   }
@@ -1665,7 +1664,7 @@ export class WindowsPC extends EndHost {
   }
 
   /** nslookup command implementation for Windows */
-  private cmdNslookup(args: string[]): string {
+  private cmdNslookup(args: string[]): Promise<string> | string {
     const host = args.find(a => !a.startsWith('-')) ?? '';
     // The static hosts table (including the machine's own name) is
     // answered locally, ahead of any DNS query — same order as the
@@ -1688,8 +1687,14 @@ export class WindowsPC extends EndHost {
       const servers = this.getDnsServers(ifName);
       if (servers.length > 0) { resolverIP = servers[0]; break; }
     }
-    // Allow specifying server as second argument: nslookup domain server
-    return executeNslookup(args, resolverIP);
+    // Allow specifying server as second argument: nslookup domain server.
+    // Queries travel over UDP/53 through the simulated network (EndHost
+    // socket layer) — an unreachable server now times out for real.
+    return executeNslookup(args, async (s, n, t, ms) => {
+      let server: IPAddress;
+      try { server = new IPAddress(s); } catch { return null; }
+      return this.queryDnsServer(server, n, t, ms);
+    }, resolverIP);
   }
 
   // ─── User / Access Control ──────────────────────────────────────

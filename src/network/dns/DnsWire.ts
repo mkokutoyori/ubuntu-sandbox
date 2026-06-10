@@ -10,7 +10,15 @@
  * simulation: transaction id, one question, answer records and an rcode.
  */
 
-import type { DnsRecord } from './LinuxDnsService';
+// ─── DNS records ─────────────────────────────────────────────────────
+
+export interface DnsRecord {
+  name: string;
+  type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
+  value: string;
+  ttl: number;
+  priority?: number; // For MX records
+}
 
 export const UDP_PORT_DNS = 53;
 
@@ -61,3 +69,15 @@ export function estimateDnsMessageSize(name: string, answers: DnsRecord[] = []):
   const answerBytes = answers.reduce((sum, a) => sum + a.name.length + 2 + 10 + a.value.length, 0);
   return HEADER + question + answerBytes;
 }
+
+/**
+ * Async query transport used by DNS client tools (dig, nslookup, host).
+ * Implemented by hosts on top of their UDP socket layer; resolves to null
+ * on timeout (server unreachable / not listening).
+ */
+export type DnsQueryFn = (
+  serverIP: string,
+  name: string,
+  qtype: string,
+  timeoutMs?: number,
+) => Promise<DnsWireResponse | null>;

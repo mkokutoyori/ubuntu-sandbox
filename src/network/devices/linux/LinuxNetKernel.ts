@@ -20,6 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { IPAddress, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
 import type { ARPEntry, HostRouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
+import type { DnsWireResponse } from '../../dns/DnsWire';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -112,6 +113,12 @@ export interface LinuxNetKernel {
    *   4. Return `null` if unresolvable.
    */
   resolveHostname(name: string): Promise<IPAddress | null>;
+
+  /**
+   * Send a raw DNS query to a server over UDP/53 through the simulated
+   * network. Used by dig/nslookup/host. Resolves to null on timeout.
+   */
+  queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number): Promise<DnsWireResponse | null>;
 
   /** Read a file from the virtual filesystem (returns null if not found). */
   readFile(path: string): string | null;

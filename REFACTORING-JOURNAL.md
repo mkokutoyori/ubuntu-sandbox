@@ -270,4 +270,59 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   pannes** : câble débranché, firewall DROP sur UDP/53, service arrêté,
   serveur inexistant → « Name or service not known ».
 - Suites hosts/nslookup/DHCP/SFTP : 378 tests verts ; régression complète
-  `network-v2` relancée.
+  `network-v2` : 255 fichiers, 6604 tests verts, 0 erreur.
+
+---
+
+## Entrée n°6 — 2026-06-10 — dig/nslookup/host sur le câble ; client DNS partagé Linux/Windows
+
+### Défaillances constatées
+
+1. **Dernier chemin DNS hors-bande** — `dig`, `nslookup` et `host`
+   continuaient d'interroger le serveur DNS par appel direct
+   (`findDnsServerByIP` + `query()`), donc insensibles aux pannes réseau —
+   y compris le `nslookup` de Windows qui réutilisait la même fonction.
+2. **Mauvaise localisation du code** — le format de message DNS et le type
+   `DnsRecord` vivaient dans `devices/linux/`, alors que le protocole est
+   agnostique de l'OS (les conventions du projet placent chaque protocole
+   dans son répertoire `src/network/<proto>/`).
+3. **Client DNS dupliqué en puissance** — le client filaire (entrée n°5)
+   était sur `LinuxMachine`, inaccessible à `WindowsPC` qui en aurait eu
+   besoin pour son propre résolveur : la duplication était inévitable à terme.
+
+### Correction (structurelle)
+
+- **`src/network/dns/DnsWire.ts`** (déplacement + extension) : le module
+  protocolaire possède désormais `DnsRecord` (ré-exporté par
+  `LinuxDnsService` pour compatibilité), les messages filaires, et le type
+  `DnsQueryFn` — contrat de transport injecté dans les outils clients
+  (Stratégie/DI : les fonctions `executeDig/Nslookup/Host` restent pures et
+  testables sans équipement).
+- **`EndHost.queryDnsServer()`** — le client DNS asynchrone remonte dans la
+  classe de base : partagé par tous les hôtes (Linux **et** Windows), un
+  seul code de corrélation id/timeout.
+- `dig`/`nslookup`/`host` (Linux) passent par `ctx.net.queryDns(...)`
+  (nouveau membre du contrat `LinuxNetKernel`) ; le `nslookup` de Windows
+  passe par `this.queryDnsServer(...)` — et sort du chemin de dispatch
+  synchrone (comme `ping`/`tracert`), fallback documenté vers
+  `executeCmdCommand`.
+- Le rcode est calculé côté serveur (`NXDOMAIN` seulement si le domaine est
+  totalement inconnu — un domaine connu sans enregistrement du type demandé
+  répond `NOERROR` avec zéro réponse, comme un vrai serveur autoritaire).
+
+### Fichiers
+
+- `src/network/dns/DnsWire.ts` (déplacé depuis `devices/linux/`, + `DnsRecord`, `DnsQueryFn`)
+- `src/network/devices/EndHost.ts` (client DNS partagé)
+- `src/network/devices/LinuxMachine.ts` (serveur + rcode autoritaire, netkernel `queryDns`)
+- `src/network/devices/linux/LinuxDnsService.ts` (outils clients async + transport injecté)
+- `src/network/devices/linux/LinuxNetKernel.ts`, `commands/dns/{Dig,Nslookup,Host}.ts`
+- `src/network/devices/WindowsPC.ts` (nslookup filaire)
+- `src/__tests__/unit/network-v2/dns-over-wire.test.ts` (+6 tests)
+
+### Validation
+
+- 14 tests dns-over-wire (dont dig +short/full, timeout dig câble débranché,
+  nslookup timeout service arrêté, host NXDOMAIN, nslookup Windows filaire).
+- Suites nslookup/hosts/windows-netsh-dhcp-dns : 113 tests verts ;
+  régression complète `network-v2` relancée.

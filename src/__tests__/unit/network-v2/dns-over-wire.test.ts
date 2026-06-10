@@ -125,3 +125,71 @@ describe('DNS over UDP/53 — failure realism', () => {
     expect(out).toContain('Name or service not known');
   }, 15000);
 });
+
+describe('dig / nslookup / host over UDP/53', () => {
+  it('dig resolves through the wire (+short and full output)', async () => {
+    const { pc, srv } = buildDnsTopology();
+    srv.dnsService.addRecord({ name: 'web.example.lan', type: 'A', value: '10.0.1.99', ttl: 3600 });
+
+    const short = await pc.executeCommand('dig @10.0.1.10 web.example.lan +short');
+    expect(short.trim()).toBe('10.0.1.99');
+
+    const full = await pc.executeCommand('dig @10.0.1.10 web.example.lan');
+    expect(full).toContain('status: NOERROR');
+    expect(full).toContain('SERVER: 10.0.1.10#53');
+    expect(full).toContain('10.0.1.99');
+  }, 15000);
+
+  it('dig times out when the server is not cabled', async () => {
+    const { pc } = buildDnsTopology({ cabled: false });
+
+    const out = await pc.executeCommand('dig @10.0.1.10 webserver.example');
+
+    expect(out).toContain('connection timed out; no servers could be reached');
+  }, 15000);
+
+  it('nslookup answers through the wire', async () => {
+    const { pc, srv } = buildDnsTopology();
+    srv.dnsService.addRecord({ name: 'app.lan', type: 'A', value: '10.0.1.77', ttl: 3600 });
+
+    const out = await pc.executeCommand('nslookup app.lan 10.0.1.10');
+
+    expect(out).toContain('10.0.1.77');
+    expect(out).toContain('Server:\t\t10.0.1.10');
+  }, 15000);
+
+  it('nslookup reports a timeout when the DNS service is stopped', async () => {
+    const { pc, srv } = buildDnsTopology();
+    srv.dnsService.stop();
+
+    const out = await pc.executeCommand('nslookup app.lan 10.0.1.10');
+
+    expect(out).toContain('connection timed out');
+  }, 15000);
+
+  it('host resolves through the wire and reports NXDOMAIN', async () => {
+    const { pc, srv } = buildDnsTopology();
+    srv.dnsService.addRecord({ name: 'db.lan', type: 'A', value: '10.0.1.66', ttl: 3600 });
+
+    const found = await pc.executeCommand('host db.lan 10.0.1.10');
+    expect(found).toContain('db.lan has address 10.0.1.66');
+
+    const missing = await pc.executeCommand('host nothere.lan 10.0.1.10');
+    expect(missing).toContain('not found: 3(NXDOMAIN)');
+  }, 15000);
+
+  it('Windows nslookup goes over the wire too', async () => {
+    const { srv } = buildDnsTopology();
+    const { WindowsPC } = await import('@/network/devices/WindowsPC');
+    const win = new WindowsPC('windows-pc', 'WIN1');
+    win.configureInterface('eth0', new IPAddress('10.0.1.30'), new SubnetMask('255.255.255.0'));
+    new Cable('c-win').connect(win.getPort('eth1')!, srv.getPort('eth1')!);
+    // Use the directly-cabled subnet via eth1 addressing
+    win.configureInterface('eth1', new IPAddress('10.0.2.30'), new SubnetMask('255.255.255.0'));
+    srv.configureInterface('eth1', new IPAddress('10.0.2.10'), new SubnetMask('255.255.255.0'));
+
+    const out = await win.executeCommand('nslookup webserver 10.0.2.10');
+
+    expect(out).toContain('10.0.1.88');
+  }, 15000);
+});

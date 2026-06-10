@@ -57,6 +57,14 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
+import {
+  UDP_PORT_DNS,
+  isDnsWireResponse,
+  nextDnsTransactionId,
+  estimateDnsMessageSize,
+  type DnsWireQuery,
+  type DnsWireResponse,
+} from '../dns/DnsWire';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -1568,6 +1576,63 @@ export abstract class EndHost extends Equipment {
         `replying port unreachable to ${ipPkt.sourceIP}`);
       this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
     }
+  }
+
+  // ─── DNS client (RFC 1035 over the UDP socket layer) ────────────
+
+  /**
+   * Send a DNS query to `serverIP` over UDP 53 and await the response.
+   * Resolves to null on timeout — which genuinely happens when the server
+   * is unreachable (unplugged cable, no route, firewall on UDP 53),
+   * exactly like a real stub resolver. Shared by Linux and Windows hosts.
+   */
+  public async queryDnsServer(
+    serverIP: IPAddress,
+    name: string,
+    qtype: string,
+    timeoutMs: number = 2000,
+  ): Promise<DnsWireResponse | null> {
+    const id = nextDnsTransactionId();
+    let sourcePort: number;
+    try {
+      sourcePort = this.socketTable.allocateEphemeralPort();
+    } catch {
+      return null;
+    }
+
+    return new Promise<DnsWireResponse | null>((resolve) => {
+      let timer: symbol | null = null;
+      let settled = false;
+      const finish = (result: DnsWireResponse | null) => {
+        if (settled) return;
+        settled = true;
+        this.hostTimers.clear(timer);
+        this.udpClose(sourcePort);
+        resolve(result);
+      };
+
+      try {
+        this.udpBind(sourcePort, ({ udp }) => {
+          const msg = udp.payload;
+          if (isDnsWireResponse(msg) && msg.id === id) finish(msg);
+        }, 'resolver');
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      const query: DnsWireQuery = {
+        kind: 'dns-query', id, name, qtype, recursionDesired: true,
+      };
+      const sent = this.sendUdpDatagram(
+        serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+      );
+      if (!sent) {
+        finish(null);
+        return;
+      }
+      timer = this.hostTimers.setTimeout(() => finish(null), timeoutMs);
+    });
   }
 
   // ─── ARP Resolution ────────────────────────────────────────────
