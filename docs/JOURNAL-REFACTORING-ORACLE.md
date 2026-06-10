@@ -95,6 +95,34 @@ l'encapsulation, alors que `OracleCatalog` exposait déjà des accesseurs public
 **Validation :** `npx tsc --noEmit` propre ; `vitest run src/__tests__/unit/database/` :
 2520/2520 (y compris les 817 cas de `oracle-access-management-comprehensive.test.ts`).
 
+### 2026-06-10 — Registre de fonctions SQL (suppression du switch de 400 lignes)
+**Défaillance :** `OracleExecutor.evaluateFunction` était un dispatcher monolithique de
+~400 lignes (switch sur ~70 fonctions SQL : chaînes, numériques, dates, conversion,
+système, paquets DBMS_*). Ajouter une fonction exigeait de modifier la God class
+(violation Open/Closed). Les helpers de dates (`formatOracleDate`, `parseOracleDate`,
+`coerceDate`, `formatDate`, `implicitToDate`, `compareValues`) étaient enfouis dans
+l'exécuteur alors qu'ils sont purs.
+**Correction :** nouveau module `src/database/oracle/functions/` sur le modèle du
+`PackageRegistry` existant (pattern Strategy + registre, comme `views/registry.ts`) :
+- `types.ts` — contrat `SqlFunction(call, ctx)` ; le contexte n'expose que le strict
+  nécessaire (utilisateur courant, schéma, provider USERENV, délégué
+  `getMetadataDDL` pour DBMS_METADATA qui a besoin du storage).
+- `valueUtils.ts` — utilitaires purs partagés (comparaison Oracle 3 voies avec règles
+  de conversion implicite et tri des NULL, formats de dates NLS).
+- `stringFunctions.ts`, `numericFunctions.ts`, `dateFunctions.ts`,
+  `systemFunctions.ts` — implémentations groupées par domaine ; les fonctions de
+  paquets (DBMS_RANDOM.VALUE, DBMS_UTILITY.GET_TIME, …) vérifient leur qualificateur
+  via le combinateur `inPackage` (comportement historique préservé : appel non
+  qualifié → NULL).
+- `registry.ts` — résolution par nom ; inconnu → l'exécuteur lève ORA-00904
+  (`invalid identifier`), comme le vrai Oracle.
+`OracleExecutor` passe de 5167 (départ) à 4470 lignes ; `evaluateFunction` fait
+désormais 20 lignes.
+**Validation :** `npx tsc --noEmit` propre ; `vitest run src/__tests__/unit/database/` :
+2519/2520 — l'unique échec est le timeout flaky préexistant §12 (`SELECT * FROM
+sys.user$`, 5,17 s pour un seuil de 5 s ; passait à l'étape 2, échouait sur le code de
+base ; toujours sur la liste à investiguer).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
