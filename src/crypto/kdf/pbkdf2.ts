@@ -6,9 +6,45 @@
  * slowness is the point, and Cisco type-8 relies on it (20 000 rounds).
  */
 
+<<<<<<< HEAD
 import type { HashAlgorithm } from '../hash';
 import { hmac, PrecomputedHmac } from '../mac';
+=======
+import type { HashAlgorithm, ResumableHashAlgorithm } from '../hash';
+import { isResumable } from '../hash';
+import { hmac } from '../mac';
+>>>>>>> origin/claude/happy-volta-51l0hy
 import { utf8ToBytes, bytesToHex } from '../encoding';
+
+const IPAD = 0x36;
+const OPAD = 0x5c;
+
+/**
+ * PRF built on a resumable hash: the (key ⊕ ipad) / (key ⊕ opad) blocks are
+ * absorbed once up front; every HMAC call then resumes from a copy of those
+ * chaining states, halving the per-iteration compression count.
+ */
+function makeResumablePrf(hash: ResumableHashAlgorithm, password: Uint8Array): (message: Uint8Array) => Uint8Array {
+  const { blockSize, digestSize } = hash;
+  const blockKey = new Uint8Array(blockSize);
+  blockKey.set(password.length > blockSize ? hash.digest(password) : password);
+
+  const ipadBlock = new Uint8Array(blockSize);
+  const opadBlock = new Uint8Array(blockSize);
+  for (let i = 0; i < blockSize; i++) {
+    ipadBlock[i] = blockKey[i] ^ IPAD;
+    opadBlock[i] = blockKey[i] ^ OPAD;
+  }
+  const innerBase = hash.initState();
+  hash.compressBlocks(innerBase, ipadBlock);
+  const outerBase = hash.initState();
+  hash.compressBlocks(outerBase, opadBlock);
+
+  return (message: Uint8Array): Uint8Array => {
+    const innerDigest = hash.finalizeState(innerBase.slice(), message, blockSize + message.length);
+    return hash.finalizeState(outerBase.slice(), innerDigest, blockSize + digestSize);
+  };
+}
 
 /**
  * Derive `dkLen` bytes from `password`/`salt` using `iterations` rounds.
@@ -33,6 +69,7 @@ export function pbkdf2(
   const blocks = Math.ceil(dkLen / hLen);
   const dk = new Uint8Array(blocks * hLen);
 
+<<<<<<< HEAD
   // The password keys every PRF call; precompute its HMAC pad midstates
   // once when the hash supports incremental hashing (4096+ rounds otherwise
   // re-hash the padded key on every round).
@@ -40,6 +77,11 @@ export function pbkdf2(
   const prf = engine
     ? (message: Uint8Array) => engine.digest(message)
     : (message: Uint8Array) => hmac(hash, password, message);
+=======
+  const prf: (message: Uint8Array) => Uint8Array = isResumable(hash)
+    ? makeResumablePrf(hash, password)
+    : message => hmac(hash, password, message);
+>>>>>>> origin/claude/happy-volta-51l0hy
 
   // INT_32_BE(i) appended to the salt for each block (RFC 2898 §5.2).
   const block = new Uint8Array(salt.length + 4);

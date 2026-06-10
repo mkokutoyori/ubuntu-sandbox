@@ -16,6 +16,7 @@ import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
 import { provisionClassicRoles, seedCatalogRoleObjectGrants } from './security/classicRoles';
+import { deriveStoredVerifiers } from './security/storedVerifier';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
@@ -251,7 +252,7 @@ export class OracleCatalog extends BaseCatalog {
     for (const u of defaultUsers) {
       const { password, ...user } = u;
       this.createUser(user);
-      this.passwords.set(u.username, password);
+      this.setPassword(u.username, password);
     }
 
     // Classic Oracle 19c roles + their canonical privileges
@@ -309,7 +310,12 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   setPassword(username: string, password: string): void {
-    this.passwords.set(username.toUpperCase(), password);
+    const upper = username.toUpperCase();
+    this.passwords.set(upper, password);
+    // Real Oracle computes the password verifiers at SET time and stores
+    // them in SYS.USER$ — warm the (memoized) derivation here so dictionary
+    // queries read precomputed values instead of paying PBKDF2 per row.
+    deriveStoredVerifiers(upper, password);
   }
 
   /** Distinguished name registered for IDENTIFIED GLOBALLY users. */

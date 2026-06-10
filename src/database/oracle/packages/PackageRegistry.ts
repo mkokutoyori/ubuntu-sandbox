@@ -22,6 +22,25 @@
  */
 
 import type { OracleSession } from '../security/OracleSession';
+import type { AwrSnapshotManager } from '../awr/AwrSnapshotManager';
+import type { ResourceManager } from '../resource/ResourceManager';
+import type { StatisticsManager } from '../statistics/StatisticsManager';
+import type { SchedulerManager } from '../scheduler/SchedulerManager';
+import type { OracleStorage } from '../OracleStorage';
+
+/**
+ * Per-instance managers a routine may dispatch into (DBMS_STATS → the
+ * statistics manager, DBMS_WORKLOAD_REPOSITORY → AWR, …). Supplied by the
+ * invoking OracleDatabase; every member is optional so routines degrade to
+ * a no-op when their backing manager is absent (engine-direct test setups).
+ */
+export interface PackageServices {
+  readonly awr?: AwrSnapshotManager;
+  readonly resourceManager?: ResourceManager;
+  readonly statistics?: StatisticsManager;
+  readonly scheduler?: SchedulerManager;
+  readonly storage?: OracleStorage;
+}
 
 /** Runtime context passed to every routine call. */
 export interface PackageCallContext {
@@ -31,6 +50,9 @@ export interface PackageCallContext {
   /** Original SQL text after the package.proc(...) — used by callers
    *  that need to do extra parsing (rare). */
   readonly rawCall: string;
+  /** Typed access to the instance's managers — replaces the former
+   *  hidden `_xxxManager` fields smuggled onto the session object. */
+  readonly services: PackageServices;
 }
 
 /** Function-style strategy backing one PL/SQL routine. */
