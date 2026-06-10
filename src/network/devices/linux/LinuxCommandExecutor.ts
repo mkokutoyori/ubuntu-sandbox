@@ -66,6 +66,7 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
+import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
@@ -2344,7 +2345,6 @@ export class LinuxCommandExecutor {
         const checkMode = args.includes('-c') || args.includes('--check');
         const targets = args.filter(a => !a.startsWith('-'));
         if (!targets.length) return { output: `${cmd}: missing file operand`, exitCode: 1 };
-        const hashLen = cmd === 'sha256sum' ? 64 : cmd === 'sha1sum' ? 40 : 32;
         if (checkMode) {
           const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
           if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
@@ -2357,7 +2357,7 @@ export class LinuxCommandExecutor {
             const [, expectedHash, filePath] = m;
             const content = this.vfs.readFile(this.vfs.normalizePath(filePath, this.cwd));
             if (content === null) { results.push(`${filePath}: FAILED open or read`); failed++; continue; }
-            const actual = checksumVfs(content, expectedHash.length);
+            const actual = checksumVfs(content, cmd);
             if (actual === expectedHash) results.push(`${filePath}: OK`);
             else { results.push(`${filePath}: FAILED`); failed++; }
           }
@@ -2369,7 +2369,7 @@ export class LinuxCommandExecutor {
           const resolved = this.vfs.normalizePath(target, this.cwd);
           const content = this.vfs.readFile(resolved);
           if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
-          lines.push(`${checksumVfs(content, hashLen)}  ${target}`);
+          lines.push(`${checksumVfs(content, cmd)}  ${target}`);
         }
         return { output: lines.join('\n'), exitCode: 0 };
       }
@@ -3930,19 +3930,10 @@ function simpleTokenize(input: string): string[] {
   return out;
 }
 
-function checksumVfs(content: string, hashLen: number): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < content.length; i++) {
-    h ^= content.charCodeAt(i);
-    h = (Math.imul(h, 0x01000193) >>> 0);
-  }
-  const seed = h >>> 0;
-  const hex: string[] = [];
-  for (let i = 0; i < hashLen; i++) {
-    const nibble = (seed * (i + 1) * 0x9e3779b9 >>> (28 - (i % 28))) & 0xf;
-    hex.push(nibble.toString(16));
-  }
-  return hex.join('');
+function checksumVfs(content: string, cmd: string): string {
+  if (cmd === 'sha256sum') return sha256Hex(content);
+  if (cmd === 'sha1sum') return sha1Hex(content);
+  return md5Hex(content);
 }
 
 function basenameOf(path: string): string {

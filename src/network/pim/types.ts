@@ -2,16 +2,7 @@ export const IP_PROTO_PIM = 103;
 export const PIM_ALL_ROUTERS = '224.0.0.13';
 export const PIM_ALL_ROUTERS_MAC = '01:00:5e:00:00:0d';
 
-export type PimMessageType =
-  | 'hello'
-  | 'register'
-  | 'register-stop'
-  | 'join-prune'
-  | 'bootstrap'
-  | 'assert'
-  | 'graft'
-  | 'graft-ack'
-  | 'candidate-rp-advertisement';
+export type PimMessageType = 'hello' | 'join-prune';
 
 export type PimMode = 'sparse' | 'dense' | 'sparse-dense';
 
@@ -45,7 +36,7 @@ export interface PimPacket {
   joinPrune?: PimJoinPruneBody;
 }
 
-export type PimMroutEntryType = 'star-g' | 's-g';
+export type PimMroutEntryType = 'star-g';
 
 export interface PimMroutEntry {
   groupAddress: string;

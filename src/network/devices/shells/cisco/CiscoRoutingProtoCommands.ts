@@ -218,7 +218,10 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
-    eigrp().variance = parseInt(a[0], 10);
+    const v = parseInt(a[0], 10);
+    eigrp().variance = v;
+    eigrpEng().getConfig().variance = v;
+    converge();
     return '';
   });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
@@ -355,12 +358,21 @@ export function registerRoutingProtoShow(
     if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
     live();
     const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
-    for (const n of repo.allEigrp().flatMap((p) => p.networks)) {
-      lines.push(`P ${n}, 1 successors, FD is 0 (connected)`);
-    }
-    for (const r of e.getContributedRoutes()) {
-      lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, ` +
-        `FD is ${r.metric} via ${r.nextHop} (${r.iface})`);
+    const topo = e.getTopologyTable();
+    if (topo.size === 0) {
+      for (const r of e.getContributedRoutes()) {
+        lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, FD is ${r.metric}`);
+        lines.push(`        via ${r.nextHop} (${r.metric}/${Math.max(0, r.metric - 256)}), ${r.iface}`);
+      }
+    } else {
+      for (const [prefix, entry] of topo) {
+        const totalSuccessors = 1 + entry.feasibleSuccessors.length;
+        lines.push(`P ${prefix}, ${totalSuccessors} successors, FD is ${entry.fd}`);
+        lines.push(`        via ${entry.successorNextHop} (${entry.fd}/${Math.max(0, entry.fd - 256)}), ${entry.successorIface}`);
+        for (const fs of entry.feasibleSuccessors) {
+          lines.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
+        }
+      }
     }
     return lines.join('\n');
   });

@@ -828,6 +828,10 @@ export class OSPFv3Engine implements IProtocolEngine {
     return [...this.ospfRoutes];
   }
 
+  setRoutes(routes: OSPFRouteEntry[]): void {
+    this.ospfRoutes = routes;
+  }
+
   // ─── Event Log ────────────────────────────────────────────────
 
   getEventLog(): string[] {

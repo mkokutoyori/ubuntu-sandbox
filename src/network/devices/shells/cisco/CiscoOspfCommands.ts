@@ -983,8 +983,44 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     }
     else if (sub === 'map' && args[1] && args[2]) {
       svc.addMapping(ifName, args[1], args[2], { static: true });
+      const dmvpn = ctx.r().getDmvpnService();
+      const profile = dmvpn.listProfiles().find(p => p.ifName === ifName);
+      if (profile) {
+        const alreadyHave = dmvpn.listSessions().some(
+          s => s.ifName === ifName && s.peerTunnelAddress === args[1]
+        );
+        if (!alreadyHave) {
+          dmvpn.registerSession({
+            ifName,
+            peerNbmaAddress: args[2],
+            peerTunnelAddress: args[1],
+            role: profile.role,
+            state: 'UP',
+            attribute: 'S',
+          });
+        }
+      }
     }
-    else if (sub === 'nhs' && args[1]) svc.addNhsServer(ifName, args[1]);
+    else if (sub === 'nhs' && args[1]) {
+      svc.addNhsServer(ifName, args[1]);
+      const dmvpn = ctx.r().getDmvpnService();
+      const profile = dmvpn.listProfiles().find(p => p.ifName === ifName);
+      if (profile && profile.role === 'spoke') {
+        const alreadyHave = dmvpn.listSessions().some(
+          s => s.ifName === ifName && s.peerTunnelAddress === args[1]
+        );
+        if (!alreadyHave) {
+          dmvpn.registerSession({
+            ifName,
+            peerNbmaAddress: args[1],
+            peerTunnelAddress: args[1],
+            role: 'spoke',
+            state: 'UP',
+            attribute: 'S',
+          });
+        }
+      }
+    }
     else if (sub === 'shortcut') svc.configure(ifName, { shortcut: true });
     else if (sub === 'redirect') svc.configure(ifName, { redirect: true });
     return '';
