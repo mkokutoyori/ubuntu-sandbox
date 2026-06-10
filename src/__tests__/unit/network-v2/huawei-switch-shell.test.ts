@@ -132,11 +132,11 @@ describe('Group 2: Huawei Switch — Tab Completion', () => {
     expect(result).toBe('display vlan ');
   });
 
-  it('2.5 — Tab complete ambiguous "d" → null (display? others?)', () => {
-    // "d" could match "display" only in user mode, so it should complete
-    // In user mode, if "display" is the only command starting with "d", it should complete
+  it('2.5 — Tab complete ambiguous "d" → null (display? debugging?)', () => {
+    // "d" matches both "display" and "debugging" in user view, so completion
+    // is ambiguous and must return null (the terminal then lists candidates).
     const result = sw.cliTabComplete('d');
-    expect(result).toBe('display ');
+    expect(result).toBeNull();
   });
 
   it('2.6 — Tab complete in system view: "int" → "interface "', async () => {

@@ -940,11 +940,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [...trs.values()].map(tr => ` Name: ${tr.name}, spec: ${tr.spec}`).join('\n');
     });
     t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () => {
-      const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { in?: number | string; out?: number | string }>;
+      const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { inbound?: number | string | null; outbound?: number | string | null }>;
       const rows: string[] = [];
       for (const [iface, dirs] of bindings) {
-        if (dirs.in !== undefined) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.in}`);
-        if (dirs.out !== undefined) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.out}`);
+        if (dirs.inbound != null) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.inbound}`);
+        if (dirs.outbound != null) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.outbound}`);
       }
       if (rows.length === 0) return ' No traffic-filter applied on any interface.';
       return [' Interface          Direction  ACL', ...rows].join('\n');

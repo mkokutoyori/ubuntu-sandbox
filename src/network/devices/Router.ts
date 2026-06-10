@@ -570,7 +570,11 @@ export abstract class Router extends Equipment {
 
     // Gratuitous ARP (RFC 5227): announce the address so neighbours
     // refresh stale cache entries — real IOS does this on `ip address`.
-    if (port.isConnected() && port.getIsUp()) {
+    // A dot1q subinterface is never cabled itself: its reachability is the
+    // parent's (the frame is tagged and sent through the parent by sendFrame).
+    const dotIdx = ifName.indexOf('.');
+    const wirePort = dotIdx > 0 ? this.ports.get(ifName.slice(0, dotIdx)) ?? port : port;
+    if (wirePort.isConnected() && wirePort.getIsUp()) {
       this.sendFrame(ifName, {
         srcMAC: port.getMAC(),
         dstMAC: MACAddress.broadcast(),

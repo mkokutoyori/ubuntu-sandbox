@@ -101,11 +101,6 @@ export function registerHuaweiACLSystemCommands(
   });
 }
 
-function normalizeWildcard(w: string): string {
-  if (w === '0') return '0.0.0.0';
-  return w;
-}
-
 function registerAclCommonExtras(trie: CommandTrie, ctx: HuaweiACLContext): void {
   trie.registerGreedy('step', 'Set ACL rule renumbering step', (args) => {
     const n = parseInt(args[0] ?? '', 10);
