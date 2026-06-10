@@ -136,6 +136,11 @@ export class IPAddress {
     return true;
   }
 
+  /** True for any address in the loopback block 127.0.0.0/8 (RFC 1122 §3.2.1.3). */
+  isLoopback(): boolean {
+    return this.octets[0] === 127;
+  }
+
   /** Convert to 32-bit unsigned integer (for LPM calculations) */
   toUint32(): number {
     return ((this.octets[0] << 24) | (this.octets[1] << 16) |

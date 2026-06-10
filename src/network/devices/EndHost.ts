@@ -212,6 +212,15 @@ export abstract class EndHost extends Equipment {
   // ─── IP Forwarding / NAT (for NAT-T topologies) ──────────────────
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
+
+  /**
+   * IPv4 host model (RFC 1122 §3.3.4.2).
+   * - 'weak': accept packets destined to ANY local address, whatever the
+   *   ingress interface — the Linux default behaviour.
+   * - 'strong': only accept packets destined to the address of the ingress
+   *   interface — the Windows (Vista+) default behaviour.
+   */
+  protected hostModel: 'weak' | 'strong' = 'weak';
   /** Interfaces on which MASQUERADE is applied (iptables POSTROUTING MASQUERADE) */
   protected masqueradeOnInterfaces: Set<string> = new Set();
 
@@ -1027,6 +1036,30 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
+  /** Return the port that owns the given unicast IPv4 address, if any. */
+  protected getPortOwningIP(ip: IPAddress): Port | null {
+    for (const [, port] of this.ports) {
+      const portIP = port.getIPAddress();
+      if (portIP && portIP.equals(ip)) return port;
+    }
+    return null;
+  }
+
+  /**
+   * Decide whether a destination address is "ours" for local delivery,
+   * honouring the configured host model (RFC 1122 §3.3.4.2): the weak model
+   * (Linux) accepts packets for any local address on any interface, the
+   * strong model (Windows) only for the ingress interface address.
+   * Loopback destinations are always local.
+   */
+  protected isLocalDestination(inPort: string, destination: IPAddress): boolean {
+    if (destination.isLoopback()) return true;
+    const inIP = this.ports.get(inPort)?.getIPAddress();
+    if (inIP && inIP.equals(destination)) return true;
+    if (this.hostModel === 'weak') return this.getPortOwningIP(destination) !== null;
+    return false;
+  }
+
   private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
@@ -1058,7 +1091,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return;
     const myIP = port.getIPAddress();
 
-    const isForUs = myIP && ipPkt.destinationIP.equals(myIP);
+    const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
     // Also accept if destination is the broadcast for our subnet
     const mask = port.getSubnetMask();
     const isBroadcast = myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask);
@@ -1287,7 +1320,13 @@ export abstract class EndHost extends Equipment {
   private sendEchoReply(portName: string, requestIP: IPv4Packet, requestICMP: ICMPPacket): void {
     const port = this.ports.get(portName);
     if (!port) return;
-    const myIP = port.getIPAddress();
+    // RFC 1122 §3.2.2.6: the reply is sourced from the address the request
+    // was sent to when it is one of ours (weak host model: possibly another
+    // interface). For broadcast-directed echoes, fall back to the address
+    // of the receiving interface.
+    const myIP = this.getPortOwningIP(requestIP.destinationIP)
+      ? requestIP.destinationIP
+      : port.getIPAddress();
     if (!myIP) return;
 
     // Build ICMP echo reply
@@ -1496,6 +1535,11 @@ export abstract class EndHost extends Equipment {
         && (p.toIp === targetIpStr || p.toIp === ''),
       { timeoutMs, scheduler: this.getScheduler() },
     );
+    // The ping can abort before both waiters settle (firewall verdict below,
+    // race loser timing out later); observe rejections so abandoned waiters
+    // never surface as unhandled errors.
+    replyPromise.catch(() => {});
+    failedPromise.catch(() => {});
 
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
@@ -1519,11 +1563,15 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // The race loser keeps waiting until its own timeout fires; observe its
+    // rejection so it never surfaces as an unhandled error.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {
@@ -1648,29 +1696,32 @@ export abstract class EndHost extends Equipment {
    * Execute a full ping sequence: route lookup → ARP → ICMP echo × count.
    * Returns an array of PingResult (one per ping attempt).
    */
+  /** Fabricate successful echo results for traffic that never leaves the host. */
+  private localEchoResults(targetIP: IPAddress, count: number): PingResult[] {
+    const results: PingResult[] = [];
+    for (let seq = 1; seq <= count; seq++) {
+      results.push({
+        success: true,
+        rttMs: 0.01,
+        ttl: this.defaultTTL,
+        seq,
+        bytes: 64,
+        fromIP: targetIP.toString(),
+      });
+    }
+    return results;
+  }
+
   protected async executePingSequence(
     targetIP: IPAddress,
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
   ): Promise<PingResult[]> {
-    // Self-ping (loopback)
-    for (const [, port] of this.ports) {
-      const myIP = port.getIPAddress();
-      if (myIP && myIP.equals(targetIP)) {
-        const results: PingResult[] = [];
-        for (let seq = 1; seq <= count; seq++) {
-          results.push({
-            success: true,
-            rttMs: 0.01,
-            ttl: this.defaultTTL,
-            seq,
-            bytes: 64,
-            fromIP: targetIP.toString(),
-          });
-        }
-        return results;
-      }
+    // Local delivery without touching the wire: loopback (127/8) and any
+    // address owned by one of our interfaces (self-ping), like a real kernel.
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+      return this.localEchoResults(targetIP, count);
     }
 
     // Route resolution
@@ -1781,26 +1832,29 @@ export abstract class EndHost extends Equipment {
           payload: ipPkt,
         });
 
-        const probe = await Promise.race([
-          replyP.then((pl) => ({
+        const replyOutcome = replyP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: true,
+          unreachable: undefined as boolean | undefined,
+          icmpCode: undefined as number | undefined,
+        }));
+        const failOutcome = failP.then((pl) => {
+          const codeMatch = pl.reason.match(/code (\d+)/);
+          const isUnreachable = pl.reason.includes('Destination unreachable');
+          return {
             ip: pl.fromIp,
             rttMs: performance.now() - sentAt,
-            timeout: false, reached: true,
-            unreachable: undefined as boolean | undefined,
-            icmpCode: undefined as number | undefined,
-          })),
-          failP.then((pl) => {
-            const codeMatch = pl.reason.match(/code (\d+)/);
-            const isUnreachable = pl.reason.includes('Destination unreachable');
-            return {
-              ip: pl.fromIp,
-              rttMs: performance.now() - sentAt,
-              timeout: false, reached: false,
-              unreachable: isUnreachable,
-              icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
-            };
-          }),
-        ]).catch((err) => {
+            timeout: false, reached: false,
+            unreachable: isUnreachable,
+            icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
+          };
+        });
+        // Observe the race loser's eventual timeout rejection.
+        replyOutcome.catch(() => {});
+        failOutcome.catch(() => {});
+
+        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -2371,11 +2425,15 @@ export abstract class EndHost extends Equipment {
       etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // The race loser keeps waiting until its own timeout fires; observe its
+    // rejection so it never surfaces as an unhandled error.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {

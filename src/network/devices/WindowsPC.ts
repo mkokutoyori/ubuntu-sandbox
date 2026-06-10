@@ -195,6 +195,9 @@ export class WindowsPC extends EndHost {
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
+    // Windows (Vista+) uses the strong host model on IPv4: packets are only
+    // accepted when addressed to the ingress interface (RFC 1122 §3.3.4.2).
+    this.hostModel = 'strong';
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     // Materialise the event logs as .evtx files under winevt\Logs.

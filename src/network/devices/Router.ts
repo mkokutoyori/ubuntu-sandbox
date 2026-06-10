@@ -2207,20 +2207,23 @@ export abstract class Router extends Equipment {
           payload: ipPkt,
         });
 
-        const probe = await Promise.race([
-          replyP.then((pl) => ({
-            ip: pl.fromIp,
-            rttMs: performance.now() - sentAt,
-            timeout: false, reached: true,
-            unreachable: undefined as boolean | undefined,
-          })),
-          failP.then((pl) => ({
-            ip: pl.fromIp,
-            rttMs: performance.now() - sentAt,
-            timeout: false, reached: false,
-            unreachable: pl.reason.includes('Destination unreachable'),
-          })),
-        ]).catch((err) => {
+        const replyOutcome = replyP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: true,
+          unreachable: undefined as boolean | undefined,
+        }));
+        const failOutcome = failP.then((pl) => ({
+          ip: pl.fromIp,
+          rttMs: performance.now() - sentAt,
+          timeout: false, reached: false,
+          unreachable: pl.reason.includes('Destination unreachable'),
+        }));
+        // Observe the race loser's eventual timeout rejection.
+        replyOutcome.catch(() => {});
+        failOutcome.catch(() => {});
+
+        const probe = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
           if (err instanceof WaitForEventTimeoutError) {
             return { timeout: true, reached: false } as {
               ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
@@ -2362,11 +2365,14 @@ export abstract class Router extends Equipment {
       });
     }
 
+    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
+    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
+    // Observe the race loser's eventual timeout rejection.
+    replyOutcome.catch(() => {});
+    failedOutcome.catch(() => {});
+
     try {
-      const winner = await Promise.race([
-        replyPromise.then((r) => ({ kind: 'reply' as const, r })),
-        failedPromise.then((r) => ({ kind: 'failed' as const, r })),
-      ]);
+      const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
       const rtt = performance.now() - sentAt;
       return {
