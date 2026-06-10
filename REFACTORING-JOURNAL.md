@@ -171,4 +171,48 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - 9 nouveaux tests : délivrance, échange requête/réponse (echo RFC 862),
   loopback local, absence de route, Port Unreachable sur port fermé, silence
   une fois le port lié, EADDRINUSE, re-bind après close, visibilité netstat.
-- Suite complète `network-v2` relancée (voir résultat ci-dessous).
+- Suite complète `network-v2` : 254 fichiers, 6596 tests verts, 0 erreur.
+
+---
+
+## Entrée n°4 — 2026-06-10 — Sauvegarde/chargement : la config L3 des PCs n'était pas persistée (UI)
+
+### Défaillances constatées
+
+1. **Perte de configuration au round-trip** — `topologySerializer.ts` n'exportait
+   que la position, le nom, l'état d'alimentation et les couples IP/masque des
+   ports. La **passerelle par défaut** et les **routes statiques** (configurées
+   via `ip route add`, la conf routeur, etc.) disparaissaient à chaque
+   sauvegarde/chargement : l'utilisateur rechargeait un lab dont la connectivité
+   inter-subnets était silencieusement cassée.
+2. Aucun test n'existait sur le sérialiseur (zéro filet de sécurité sur la
+   fonctionnalité « Save/Load » de l'UI).
+
+### Correction (structurelle)
+
+- Schéma d'export enrichi de champs **optionnels** (`defaultGateway`,
+  `staticRoutes[{network, mask, nextHop, metric}]`) — compatibilité ascendante
+  totale : les anciens fichiers `.topology.json` se chargent toujours.
+- Export : extraction des routes `type === 'static'` via l'API publique commune
+  d'`EndHost` **et** de `Router` (une seule branche, pas de duplication).
+- Import : restauration **après** l'adressage des interfaces (car
+  `addStaticRoute()` valide la joignabilité du next-hop), avec tolérance aux
+  fichiers corrompus (entrée malformée ignorée, l'import n'échoue pas en bloc).
+
+### Limites connues (à traiter dans de prochaines entrées)
+
+- L'état DHCP client (interfaces en bail), les fichiers du VFS Linux
+  (`/etc/hosts` édités, scripts), les services systemd démarrés et le registre
+  Windows ne sont toujours pas persistés.
+
+### Fichiers
+
+- `src/store/topologySerializer.ts`
+- `src/__tests__/unit/gui/topology-serializer.test.ts` (nouveau, 6 tests)
+
+### Validation
+
+- 6 nouveaux tests : round-trip gateway/routes PC (métrique incluse), routes
+  statiques routeur, pas de duplication des routes connectées, import de
+  fichiers legacy sans les nouveaux champs, tolérance aux valeurs malformées.
+- Suites `unit/gui` + `unit/react` : 11 fichiers, 94 tests verts.

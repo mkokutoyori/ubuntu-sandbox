@@ -14,10 +14,19 @@ import {
   createDevice, resetDeviceCounters,
   generateId, resetCounters,
   Logger,
+  EndHost, Router,
 } from '@/network';
 import type { Connection } from './networkStore';
 
 // ── Export schema ──
+
+/** A static route as configured by the user (`ip route add`, `ip route`). */
+interface TopologyRouteExport {
+  network: string;
+  mask: string;
+  nextHop: string;
+  metric?: number;
+}
 
 interface TopologyDeviceExport {
   id: string;
@@ -32,6 +41,10 @@ interface TopologyDeviceExport {
     ipAddress?: string;
     subnetMask?: string;
   }[];
+  /** End-host default gateway (PCs/servers). Optional for backward compat. */
+  defaultGateway?: string;
+  /** User-configured static routes (hosts and routers). */
+  staticRoutes?: TopologyRouteExport[];
 }
 
 interface TopologyConnectionExport {
@@ -74,7 +87,7 @@ export function exportTopology(
       return entry;
     });
 
-    devices.push({
+    const entry: TopologyDeviceExport = {
       id: device.getId(),
       type: device.getType(),
       name: device.getName(),
@@ -83,7 +96,29 @@ export function exportTopology(
       y: pos.y,
       isPoweredOn: device.getIsPoweredOn(),
       interfaces,
-    });
+    };
+
+    // Network configuration that lives outside the ports: default gateway
+    // and user-configured static routes. Losing them made every save/load
+    // round-trip break host connectivity.
+    if (device instanceof EndHost) {
+      const gw = device.getDefaultGateway();
+      if (gw) entry.defaultGateway = gw.toString();
+    }
+    if (device instanceof EndHost || device instanceof Router) {
+      const statics = device.getRoutingTable()
+        .filter((r) => r.type === 'static' && r.nextHop);
+      if (statics.length > 0) {
+        entry.staticRoutes = statics.map((r) => ({
+          network: r.network.toString(),
+          mask: r.mask.toString(),
+          nextHop: r.nextHop!.toString(),
+          metric: r.metric,
+        }));
+      }
+    }
+
+    devices.push(entry);
   });
 
   const conns: TopologyConnectionExport[] = connections.map((c) => ({
@@ -146,6 +181,26 @@ export function importTopology(json: TopologyExport): ImportResult {
             new SubnetMask(ifConfig.subnetMask),
           );
         }
+      }
+    }
+
+    // Restore L3 configuration after the interfaces are addressed —
+    // addStaticRoute() verifies next-hop reachability against port subnets.
+    if (devData.defaultGateway && device instanceof EndHost) {
+      try {
+        device.setDefaultGateway(new IPAddress(devData.defaultGateway));
+      } catch { /* malformed address in file — skip */ }
+    }
+    if (devData.staticRoutes && (device instanceof EndHost || device instanceof Router)) {
+      for (const route of devData.staticRoutes) {
+        try {
+          device.addStaticRoute(
+            new IPAddress(route.network),
+            new SubnetMask(route.mask),
+            new IPAddress(route.nextHop),
+            route.metric,
+          );
+        } catch { /* malformed route in file — skip */ }
       }
     }
 
