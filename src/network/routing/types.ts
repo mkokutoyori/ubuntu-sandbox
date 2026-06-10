@@ -53,6 +53,13 @@ export interface RoutingPeer {
   readonly localIp: IPAddress | null;
   readonly remoteIface: string;
   readonly remoteIp: IPAddress | null;
+  /**
+   * Effective bandwidth (kbps) of the local egress interface toward
+   * this peer — feeds path metrics (EIGRP min-bandwidth term).
+   */
+  readonly linkBandwidthKbps?: number;
+  /** Delay (µs) of the local egress interface toward this peer. */
+  readonly linkDelayUsec?: number;
   /** The peer device's engine for `protocol`, if it runs one. */
   peerEngineFor(protocol: string): unknown | null;
 }

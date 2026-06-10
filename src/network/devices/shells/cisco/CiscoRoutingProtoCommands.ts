@@ -171,7 +171,11 @@ export function buildRoutingProtoConfig(
     const n = parseInt(a[0], 10);
     const p = curProto(ctx).proto;
     if (p === 'rip') repo.rip.maximumPaths = n;
-    else if (p === 'eigrp') eigrp().maximumPaths = n;
+    else if (p === 'eigrp' && !Number.isNaN(n) && n >= 1) {
+      eigrp().maximumPaths = n;
+      eigrpEng().getConfig().maximumPaths = n;
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
@@ -218,7 +222,26 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
-    eigrp().variance = parseInt(a[0], 10);
+    const v = parseInt(a[0], 10);
+    if (Number.isNaN(v) || v < 1 || v > 128) {
+      return '% Invalid variance value (1-128)';
+    }
+    eigrp().variance = v;
+    eigrpEng().getConfig().variance = v;
+    converge();
+    return '';
+  });
+  routerTrie.registerGreedy('metric', 'EIGRP metric options', (a) => {
+    // `metric weights <tos> k1 k2 k3 k4 k5` — feeds the composite metric.
+    if (a[0] !== 'weights') return '% Invalid input detected.';
+    const ks = a.slice(2, 7).map((n) => parseInt(n, 10));
+    if (ks.length < 5 || ks.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+      return '% Invalid metric weights';
+    }
+    eigrpEng().getConfig().kValues = {
+      k1: ks[0], k2: ks[1], k3: ks[2], k4: ks[3], k5: ks[4],
+    };
+    converge();
     return '';
   });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
