@@ -164,6 +164,27 @@ export abstract class BaseCatalog {
     );
   }
 
+  // ── REVOKE {GRANT|ADMIN} OPTION FOR — keep the grant, clear the option ──
+
+  stripSystemGrantOption(grantee: string, privilege: string): void {
+    const row = this.sysPrivileges.find(
+      p => p.grantee === grantee.toUpperCase() && p.privilege === privilege.toUpperCase());
+    if (row) row.grantable = false;
+  }
+
+  stripTableGrantOption(grantee: string, privilege: string, objectSchema: string, objectName: string): void {
+    const row = this.tabPrivileges.find(
+      p => p.grantee === grantee.toUpperCase() && p.privilege === privilege.toUpperCase()
+        && p.objectSchema === objectSchema.toUpperCase() && p.objectName === objectName.toUpperCase());
+    if (row) row.grantable = false;
+  }
+
+  stripRoleAdminOption(grantee: string, role: string): void {
+    const row = this.roleGrants.find(
+      rg => rg.grantee === grantee.toUpperCase() && rg.role === role.toUpperCase());
+    if (row) row.adminOption = false;
+  }
+
   hasSystemPrivilege(username: string, privilege: string): boolean {
     const u = username.toUpperCase();
     const p = privilege.toUpperCase();

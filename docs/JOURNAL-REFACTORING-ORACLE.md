@@ -66,6 +66,35 @@ savepoint (delete + set) ; les messages alignés sur SQL*Plus (`Rollback complet
 2519/2520 (l'unique échec est le timeout préexistant §12 documenté ci-dessus, reproduit
 à l'identique sur le code de base).
 
+### 2026-06-10 — Extraction de `PrivilegeEnforcer` + déduplication GRANT/REVOKE
+**Défaillance :** trois problèmes liés dans `OracleExecutor` :
+(a) les règles de décision des erreurs de privilèges (ORA-01031 / ORA-00942 /
+ORA-01917 / ORA-01934) étaient enfouies dans la God class ;
+(b) code dupliqué à l'identique entre `executeGrant` et `executeRevoke` : validation
+des grantees (ORA-01917), expansion de `ALL PRIVILEGES`, détection de cycles de rôles ;
+(c) accès aux structures **privées** du catalogue par duck-typing
+(`this.catalog as OracleCatalog & { tabPrivileges: ... }`) avec **mutation directe**
+des lignes de privilèges (`row.grantable = false`) — contournement du typage et de
+l'encapsulation, alors que `OracleCatalog` exposait déjà des accesseurs publics
+(`getTablePrivilegeGrants()`, `getRoleGrants()`, `getSysPrivilegeGrants()`,
+`getStoredUnits()`).
+**Correction :**
+- Nouveau `src/database/oracle/security/PrivilegeEnforcer.ts` : possède
+  `requireSystemPrivilege`, `requireSchemaOrAnyPrivilege`, `requireObjectAccess`
+  (règle d'« information hiding » d'Oracle : ORA-00942 préféré à ORA-01031 quand
+  l'utilisateur n'a aucun droit sur l'objet), plus les règles partagées
+  `assertGranteesExist`, `assertNoCircularRoleGrant`,
+  `requireGrantableObjectPrivileges` (WITH GRANT OPTION).
+- `BaseCatalog` : ajout des mutateurs `stripSystemGrantOption`,
+  `stripTableGrantOption`, `stripRoleAdminOption` pour `REVOKE {GRANT|ADMIN} OPTION
+  FOR` — la mutation des lignes de privilèges appartient au catalogue, plus à
+  l'exécuteur.
+- `executeGrant`/`executeRevoke` réécrits : ~90 lignes dupliquées supprimées,
+  plus aucun cast de duck-typing, helpers partagés `granteesOf` /
+  `expandSystemPrivileges` / `assertGrantableObjectExists`.
+**Validation :** `npx tsc --noEmit` propre ; `vitest run src/__tests__/unit/database/` :
+2520/2520 (y compris les 817 cas de `oracle-access-management-comprehensive.test.ts`).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
