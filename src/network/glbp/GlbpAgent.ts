@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   type GlbpConfig, type GlbpGroupRuntime, type GlbpPacket,
   type GlbpAvgState, type GlbpForwarder, type GlbpLoadBalancing,
@@ -10,9 +11,9 @@ import {
 } from './types';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
 } from '../core/types';
+import { buildUdpIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
 
 const MAX_FORWARDERS = 4;
@@ -29,9 +30,9 @@ export interface GlbpHost {
 export class GlbpAgent {
   private config: GlbpConfig = createDefaultGlbpConfig();
   private readonly emitting = new Set<string>();
-  private helloTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
+  private readonly timers: TimerSet;
+  private helloTimer: symbol | null = null;
+  private expiryTimer: symbol | null = null;
   private unsubscribers: Array<() => void> = [];
   private running = false;
 
@@ -39,7 +40,9 @@ export class GlbpAgent {
     private readonly host: GlbpHost,
     private readonly getBus: () => IEventBus,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
+  ) {
+    this.timers = new TimerSet(this.getScheduler);
+  }
 
   start(): void {
     if (this.running) return;
@@ -347,22 +350,13 @@ export class GlbpAgent {
       type: 'glbp', version: 1, group: g.group,
       senderIp: srcIp.toString(), tlvs,
     };
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: UDP_PORT_GLBP, destinationPort: UDP_PORT_GLBP,
-      length: 8 + 16 + tlvs.length * 28, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(GLBP_MULTICAST_IP),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: new MACAddress(GLBP_MULTICAST_MAC),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
+    const eth = buildUdpIpv4Frame({
+      srcIp, dstIp: new IPAddress(GLBP_MULTICAST_IP),
+      srcMac: port.getMAC(), dstMac: new MACAddress(GLBP_MULTICAST_MAC),
+      srcPort: UDP_PORT_GLBP, dstPort: UDP_PORT_GLBP,
+      payload, payloadLength: 16 + tlvs.length * 28,
+      ttl: 255, options: { tos: 0xc0, flags: 0 },
+    });
     const key = makeKey(g.iface, g.group);
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
@@ -424,24 +418,21 @@ export class GlbpAgent {
   }
 
   private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
     if (this.helloTimer === null) {
-      this.helloTimer = s.setInterval(() => {
+      this.helloTimer = this.timers.setInterval(() => {
         for (const g of this.config.groups.values()) {
           if (this.shouldEmit(g)) this.advertise(g);
         }
       }, 3000);
     }
     if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
+      this.expiryTimer = this.timers.setInterval(() => this.expireDue(), 1000);
     }
   }
 
   private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+    this.timers.clear(this.helloTimer); this.helloTimer = null;
+    this.timers.clear(this.expiryTimer); this.expiryTimer = null;
   }
 
   private expireDue(): void {

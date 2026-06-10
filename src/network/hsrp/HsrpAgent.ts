@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket, type HsrpState,
   createDefaultHsrpConfig, defaultGroupRuntime, makeKey, compareSpeaker,
@@ -8,9 +9,9 @@ import {
 } from './types';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
 } from '../core/types';
+import { buildUdpIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
 
 export interface HsrpHost {
@@ -25,9 +26,9 @@ export interface HsrpHost {
 export class HsrpAgent {
   private config: HsrpConfig = createDefaultHsrpConfig();
   private readonly emitting = new Set<string>();
-  private helloTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
+  private readonly timers: TimerSet;
+  private helloTimer: symbol | null = null;
+  private expiryTimer: symbol | null = null;
   private unsubscribers: Array<() => void> = [];
   private running = false;
 
@@ -35,7 +36,9 @@ export class HsrpAgent {
     private readonly host: HsrpHost,
     private readonly getBus: () => IEventBus,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
+  ) {
+    this.timers = new TimerSet(this.getScheduler);
+  }
 
   start(): void {
     if (this.running) return;
@@ -230,23 +233,14 @@ export class HsrpAgent {
       authText: g.authText, vip: g.vip ?? '0.0.0.0',
       senderIp: srcIp.toString(),
     };
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: UDP_PORT_HSRP, destinationPort: UDP_PORT_HSRP,
-      length: 8 + 20, checksum: 0, payload,
-    };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const dstMac = multicastMacFor(dstIp);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: dstMac,
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
+    const eth = buildUdpIpv4Frame({
+      srcIp, dstIp,
+      srcMac: port.getMAC(), dstMac: multicastMacFor(dstIp),
+      srcPort: UDP_PORT_HSRP, dstPort: UDP_PORT_HSRP,
+      payload, payloadLength: 20,
+      ttl: 1, options: { flags: 0 },
+    });
     const key = makeKey(g.iface, g.group);
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
@@ -328,24 +322,21 @@ export class HsrpAgent {
   }
 
   private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
     if (this.helloTimer === null) {
-      this.helloTimer = s.setInterval(() => {
+      this.helloTimer = this.timers.setInterval(() => {
         for (const g of this.config.groups.values()) {
           if (this.shouldEmit(g)) this.advertise(g);
         }
       }, 3000);
     }
     if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
+      this.expiryTimer = this.timers.setInterval(() => this.expireDue(), 1000);
     }
   }
 
   private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+    this.timers.clear(this.helloTimer); this.helloTimer = null;
+    this.timers.clear(this.expiryTimer); this.expiryTimer = null;
   }
 
   private expireDue(): void {

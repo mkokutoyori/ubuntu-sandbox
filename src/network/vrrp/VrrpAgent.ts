@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
   createDefaultVrrpConfig, defaultGroupRuntime, makeKey,
@@ -8,9 +9,9 @@ import {
 } from './types';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame,
 } from '../core/types';
+import { buildIpv4Frame } from '../core/packetBuilders';
 import { Logger } from '../core/Logger';
 
 export interface VrrpHost {
@@ -25,9 +26,9 @@ export interface VrrpHost {
 export class VrrpAgent {
   private config: VrrpConfig = createDefaultVrrpConfig();
   private readonly emitting = new Set<string>();
-  private adTimer: TimerHandle | null = null;
-  private expiryTimer: TimerHandle | null = null;
-  private scheduler: IScheduler | null = null;
+  private readonly timers: TimerSet;
+  private adTimer: symbol | null = null;
+  private expiryTimer: symbol | null = null;
   private unsubscribers: Array<() => void> = [];
   private running = false;
 
@@ -35,7 +36,9 @@ export class VrrpAgent {
     private readonly host: VrrpHost,
     private readonly getBus: () => IEventBus,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
+  ) {
+    this.timers = new TimerSet(this.getScheduler);
+  }
 
   start(): void {
     if (this.running) return;
@@ -167,18 +170,13 @@ export class VrrpAgent {
       vips: g.vip ? [g.vip] : [],
       senderIp: srcIp.toString(),
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + (g.vip ? 4 : 0),
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: IP_PROTO_VRRP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(VRRP_MULTICAST_IP),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: new MACAddress(VRRP_MULTICAST_MAC),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
+    const eth = buildIpv4Frame({
+      srcIp, dstIp: new IPAddress(VRRP_MULTICAST_IP),
+      srcMac: port.getMAC(), dstMac: new MACAddress(VRRP_MULTICAST_MAC),
+      protocol: IP_PROTO_VRRP, ttl: 255,
+      payload, payloadLength: 8 + (g.vip ? 4 : 0),
+      options: { tos: 0xc0, flags: 0 },
+    });
     const key = makeKey(g.iface, g.vrid);
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
@@ -230,24 +228,21 @@ export class VrrpAgent {
   }
 
   private startTimers(): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
     if (this.adTimer === null) {
-      this.adTimer = s.setInterval(() => {
+      this.adTimer = this.timers.setInterval(() => {
         for (const g of this.config.groups.values()) {
           if (this.shouldEmit(g)) this.advertise(g);
         }
       }, 1000);
     }
     if (this.expiryTimer === null) {
-      this.expiryTimer = s.setInterval(() => this.expireDue(), 250);
+      this.expiryTimer = this.timers.setInterval(() => this.expireDue(), 250);
     }
   }
 
   private stopTimers(): void {
-    const s = this.scheduler ?? this.getScheduler();
-    if (this.adTimer !== null) { s.clear(this.adTimer); this.adTimer = null; }
-    if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+    this.timers.clear(this.adTimer); this.adTimer = null;
+    this.timers.clear(this.expiryTimer); this.expiryTimer = null;
   }
 
   private expireDue(): void {

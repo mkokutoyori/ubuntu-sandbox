@@ -16,7 +16,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 1 | STP : états Listening/Learning absents + tie-break d'élection du root port incomplet | IEEE 802.1D | Haute | ✅ Corrigé |
 | 2 | TCP : état TIME_WAIT déclaré mais jamais utilisé (pas de 2MSL) | RFC 793 §3.5 | Haute | ✅ Corrigé |
 | 3 | HSRP : plages de groupes non bornées (MAC malformée hors plage), fonction MAC dupliquée, rétrogradation v2→v1 silencieuse | RFC 2281 / réalité IOS | Moyenne | ✅ Corrigé |
-| 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Template Method | Haute | À faire |
+| 4 | FHRP : ~450 lignes dupliquées entre HsrpAgent / VrrpAgent / GlbpAgent (timers, machine à états, construction de paquets) | DRY / Factory | Haute | ✅ Corrigé |
 | 5 | Helpers IP réimplémentés localement dans OSPF / EIGRP / BGP (`ipToNumber`, `toNum`) au lieu de `core/types.ts` | DRY | Moyenne | À faire |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | À faire |
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | À faire |
@@ -164,6 +164,50 @@ groupes 0-4095. Les vrais problèmes découverts en creusant :
 (`RangeError` : 256/v1, 4096/v2, négatif, non-entier), CLI v1 rejette > 255,
 CLI v2 accepte 300 / rejette 4096, refus de retour en v1. Suites HSRP/GLBP
 vertes + `tsc --noEmit` propre.
+
+---
+
+## Entrée 4 — FHRP : consolidation HSRP / VRRP / GLBP
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+1. **Construction de paquets dupliquée** : les blocs « UDP → IPv4 (+checksum)
+   → Ethernet » étaient copiés-collés dans `HsrpAgent.advertise()`,
+   `VrrpAgent.advertise()` et `GlbpAgent.advertise()` (~25 lignes chacun) —
+   et le même motif existe dans une dizaine d'autres agents (syslog, NTP,
+   BFD, IGMP, PIM, SNMP, RADIUS, NetFlow, VXLAN). Un helper canonique
+   `createIPv4Packet()` existait pourtant déjà dans `core/types.ts` (utilisé
+   par RIP/IPSec) mais ne supportait ni `tos` ni `flags`, d'où les copies.
+2. **Plomberie de timers dupliquée** : chaque agent gérait à la main
+   `helloTimer`/`expiryTimer`/`scheduler` avec le même code start/stop,
+   alors que `src/events/TimerSet.ts` existe précisément pour ça (et
+   garantit que `clear()` atteint le scheduler d'origine).
+3. La machine à états `recompute()` reste **volontairement** par protocole :
+   les règles de préemption HSRP/VRRP/GLBP diffèrent réellement (HSRP a un
+   standby explicite, VRRP a la règle priorité 255 = owner, GLBP gère
+   AVG + AVF). Mutualiser serait une abstraction forcée — décision
+   documentée ici.
+
+### Correction
+
+- `createIPv4Packet()` étendu avec `IPv4HeaderOptions` (`tos`, `flags`) —
+  rétrocompatible.
+- Nouveau `src/network/core/packetBuilders.ts` (pattern Factory) :
+  `buildIpv4Frame()`, `buildUdpIpv4Frame()`, `wrapIpv4InEthernet()`,
+  exportés via `core/index.ts`. Les trois agents FHRP l'utilisent ; les
+  autres agents pourront migrer au fil de l'eau (chemin balisé).
+- Les trois agents FHRP migrés sur `TimerSet` (suppression des champs
+  `scheduler` et de la gestion manuelle des handles).
+- Correction lint préexistante au passage (`no-useless-escape` dans la
+  regex MAC de `core/types.ts`).
+
+### Tests
+
+8 tests dédiés `packet-builders.test.ts` (checksum valide, tos/flags,
+longueurs UDP, payload vide, non-mutation) ; suites HSRP/VRRP/GLBP vertes ;
+suite complète network-v2 : 252 fichiers / 6586 tests verts ; `tsc` propre.
 
 ---
 

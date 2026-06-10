@@ -39,7 +39,7 @@ export class MACAddress {
       return octets;
     }
 
-    const parts = mac.split(/[:\-]/);
+    const parts = mac.split(/[:-]/);
     if (parts.length !== 6) throw new Error(`Invalid MAC address: ${mac}`);
     return parts.map(p => {
       const n = parseInt(p, 16);
@@ -715,6 +715,14 @@ export function verifyIPv4Checksum(pkt: IPv4Packet): boolean {
   return (sum & 0xffff) === 0xffff;
 }
 
+/** Optional IPv4 header knobs for createIPv4Packet. */
+export interface IPv4HeaderOptions {
+  /** Type of Service / DSCP byte (e.g. 0xc0 for network-control FHRP hellos). */
+  tos?: number;
+  /** Header flags; defaults to DF (Don't Fragment). */
+  flags?: number;
+}
+
 /**
  * Build an IPv4 packet with computed checksum.
  */
@@ -725,16 +733,17 @@ export function createIPv4Packet(
   ttl: number,
   payload: ICMPPacket | UDPPacket | unknown,
   payloadSize: number = 0,
+  options: IPv4HeaderOptions = {},
 ): IPv4Packet {
   const headerSize = 20; // IHL = 5, no options
   const pkt: IPv4Packet = {
     type: 'ipv4',
     version: 4,
     ihl: 5,
-    tos: 0,
+    tos: options.tos ?? 0,
     totalLength: headerSize + payloadSize,
     identification: nextIPv4Id(),
-    flags: 0b010, // DF (Don't Fragment) set by default
+    flags: options.flags ?? 0b010, // DF (Don't Fragment) set by default
     fragmentOffset: 0,
     ttl,
     protocol,
