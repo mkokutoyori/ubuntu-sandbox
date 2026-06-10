@@ -153,6 +153,15 @@ export class WindowsSshServerContext implements ISshServerContext {
     const uid = isAdmin ? ADMIN_UID : DEFAULT_USER_UID;
     const gid = isAdmin ? ADMIN_GID : DEFAULT_USER_GID;
     const home = `C:\\Users\\${user.name}`;
+    // Built-in accounts (Administrator) and runtime-added users may not
+    // have had their profile seeded by WindowsFileSystem.init(). Real
+    // Windows materialises the profile on first interactive logon —
+    // mirror that so the SSH'd user lands in a directory that exists.
+    if (!this.wfs.exists(home)) {
+      for (const sub of ['', '\\Desktop', '\\Documents', '\\Downloads']) {
+        this.wfs.mkdirp(home + sub);
+      }
+    }
     return new SshUserContext(user.name, uid, gid, [], home);
   }
 

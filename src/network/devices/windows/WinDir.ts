@@ -104,7 +104,7 @@ function dirWildcard(ctx: WinFileCommandContext, absPath: string, pattern: strin
   if (entries.length === 0) return 'File Not Found';
   const lines: string[] = [];
   lines.push(` Volume in drive ${absPath[0]} has no label.`);
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${absPath}`);
   lines.push('');
@@ -124,7 +124,7 @@ function dirWildcard(ctx: WinFileCommandContext, absPath: string, pattern: strin
     }
   }
   lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  53,687,091,200 bytes free`);
+  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
   return lines.join('\n');
 }
 
@@ -137,7 +137,7 @@ function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
   if (!hit) return 'File Not Found';
   const lines: string[] = [];
   lines.push(` Volume in drive ${absPath[0]} has no label.`);
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${parent}`);
   lines.push('');
@@ -145,7 +145,7 @@ function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
   const sizeStr = hit.entry.size.toLocaleString('en-US').padStart(14, ' ');
   lines.push(`${date} ${sizeStr} ${hit.name}`);
   lines.push(`               1 File(s) ${hit.entry.size.toLocaleString('en-US')} bytes`);
-  lines.push(`               0 Dir(s)  53,687,091,200 bytes free`);
+  lines.push(`               0 Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
   return lines.join('\n');
 }
 
@@ -155,7 +155,7 @@ function dirSingle(ctx: WinFileCommandContext, absPath: string, flags: Set<strin
 
   // Volume header
   lines.push(` Volume in drive ${absPath[0]} has no label.`);
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${absPath}`);
   lines.push('');
@@ -188,7 +188,7 @@ function dirSingle(ctx: WinFileCommandContext, absPath: string, flags: Set<strin
   }
 
   lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace().toLocaleString('en-US')} bytes free`);
+  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
   return lines.join('\n');
 }
 
@@ -217,7 +217,7 @@ function dirWide(
     else { fileCount++; fileBytes += entry.size; }
   }
   lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace().toLocaleString('en-US')} bytes free`);
+  lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
   return lines.join('\n');
 }
 
@@ -227,7 +227,7 @@ function dirRecursive(ctx: WinFileCommandContext, absPath: string, flags: Set<st
 
   // Volume header
   lines.push(` Volume in drive ${absPath[0]} has no label.`);
-  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber()}`);
+  lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
 
   let totalFiles = 0, totalBytes = 0, totalDirs = 0;
@@ -254,7 +254,7 @@ function dirRecursive(ctx: WinFileCommandContext, absPath: string, flags: Set<st
       }
     }
     lines.push(`               ${fileCount} File(s) ${fileBytes.toLocaleString('en-US')} bytes`);
-    lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace().toLocaleString('en-US')} bytes free`);
+    lines.push(`               ${dirCount} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
     lines.push('');
 
     totalFiles += fileCount;
@@ -264,7 +264,7 @@ function dirRecursive(ctx: WinFileCommandContext, absPath: string, flags: Set<st
 
   lines.push(`     Total Files Listed:`);
   lines.push(`               ${totalFiles} File(s) ${totalBytes.toLocaleString('en-US')} bytes`);
-  lines.push(`               ${totalDirs} Dir(s)  ${ctx.fs.getFreeDiskSpace().toLocaleString('en-US')} bytes free`);
+  lines.push(`               ${totalDirs} Dir(s)  ${ctx.fs.getFreeDiskSpace(absPath[0]).toLocaleString('en-US')} bytes free`);
   return lines.join('\n');
 }
 

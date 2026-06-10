@@ -4,28 +4,66 @@
 
 import { ShellContext } from './LinuxFileCommands';
 
+/** Parse a `-size` argument: `2k`, `+10M`, `-100c`, `1G`. */
+function parseSizeSpec(raw: string): { op: '+' | '-' | '='; value: number } | null {
+  const m = /^([+-]?)(\d+)([cwbkMGT]?)$/.exec(raw);
+  if (!m) return null;
+  const [, prefix, numStr, unit] = m;
+  const n = parseInt(numStr, 10);
+  // GNU find unit conventions: c=bytes, w=2B, b=512B blocks (default),
+  // k=1024, M=1024², G=1024³, T=1024⁴. With no unit, the count is in
+  // 512-byte blocks (POSIX), which we treat as the same number of bytes
+  // for simulator scale.
+  const multipliers: Record<string, number> = {
+    '': 512,  c: 1,  w: 2,  b: 512,
+    k: 1024,  M: 1024 ** 2,  G: 1024 ** 3,  T: 1024 ** 4,
+  };
+  return { op: prefix === '+' ? '+' : prefix === '-' ? '-' : '=', value: n * multipliers[unit] };
+}
+
 export function cmdFind(ctx: ShellContext, args: string[]): string {
   let startPath = '.';
   let name: string | undefined;
+  let iname: string | undefined;
+  let pathPat: string | undefined;
+  let ipathPat: string | undefined;
   let type: 'f' | 'd' | 'l' | undefined;
   let empty = false;
   let mtime: number | undefined;
   let user: string | undefined;
   let group: string | undefined;
   let execCmd: string | undefined;
+  let size: { op: '+' | '-' | '='; value: number } | undefined;
+  let maxdepth: number | undefined;
+  let mindepth: number | undefined;
+  let notNext = false;
+  let notFlag = false;
+  let print0 = false;
+  let printFlag = false;
+  let deleteFlag = false;
 
   let i = 0;
 
-  // First non-flag arg is the path
-  if (args.length > 0 && !args[0].startsWith('-')) {
+  // First non-flag arg is the path. Real find accepts multiple starting
+  // points; pick the first to mirror the existing behaviour.
+  if (args.length > 0 && !args[0].startsWith('-') && args[0] !== '!') {
     startPath = args[0];
     i = 1;
   }
 
   while (i < args.length) {
     const a = args[i];
+    // `!` is the POSIX synonym for `-not`. Sticky across the next test.
+    if (a === '!' || a === '-not') {
+      notNext = true;
+      i++;
+      continue;
+    }
     switch (a) {
       case '-name': name = args[++i]; break;
+      case '-iname': iname = args[++i]; break;
+      case '-path': pathPat = args[++i]; break;
+      case '-ipath': ipathPat = args[++i]; break;
       case '-type': {
         const t = args[++i];
         if (t === 'f' || t === 'd' || t === 'l') type = t;
@@ -35,6 +73,16 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
       case '-mtime': mtime = parseInt(args[++i], 10); break;
       case '-user': user = args[++i]; break;
       case '-group': group = args[++i]; break;
+      case '-size': {
+        const spec = parseSizeSpec(args[++i] ?? '');
+        if (spec) size = spec;
+        break;
+      }
+      case '-maxdepth': maxdepth = parseInt(args[++i], 10); break;
+      case '-mindepth': mindepth = parseInt(args[++i], 10); break;
+      case '-print': printFlag = true; break;
+      case '-print0': print0 = true; break;
+      case '-delete': deleteFlag = true; break;
       case '-exec': {
         // Collect until \;
         const execParts: string[] = [];
@@ -48,6 +96,11 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
       }
       default: break;
     }
+    // The not flag, once seen, applies to the *next* predicate only.
+    if (notNext && a !== '!' && a !== '-not') {
+      notFlag = !notFlag;
+      notNext = false;
+    }
     i++;
   }
 
@@ -55,9 +108,16 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
 
   const opts: any = {};
   if (name) opts.name = name;
+  if (iname) opts.iname = iname;
+  if (pathPat) opts.path = pathPat;
+  if (ipathPat) opts.ipath = ipathPat;
   if (type) opts.type = type;
   if (empty) opts.empty = true;
   if (mtime !== undefined) opts.mtime = mtime;
+  if (size) opts.size = size;
+  if (maxdepth !== undefined) opts.maxdepth = maxdepth;
+  if (mindepth !== undefined) opts.mindepth = mindepth;
+  if (notFlag) opts.not = true;
   if (user) {
     const uid = ctx.userMgr.resolveUid(user);
     if (uid >= 0) opts.user = uid;
@@ -68,6 +128,18 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
   }
 
   const results = ctx.vfs.find(absStart, opts);
+
+  // -delete unlinks each match before the formatter runs. Real find
+  // deletes depth-first; our find emits parents before children so we
+  // reverse for the same effect.
+  if (deleteFlag) {
+    for (const r of [...results].reverse()) {
+      const node = ctx.vfs.lstat(r);
+      if (!node) continue;
+      if (node.type === 'directory') ctx.vfs.rmdir(r);
+      else ctx.vfs.deleteFile(r);
+    }
+  }
 
   // Convert to relative paths from startPath
   const displayResults = results.map(r => {
@@ -88,7 +160,13 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
     return outputs.join('\n');
   }
 
-  return displayResults.join('\n');
+  // -print0 emits a NUL between matches instead of a newline. Useful when
+  // piping into xargs -0 to handle filenames with whitespace.
+  if (print0) return displayResults.join('\0');
+  if (printFlag || displayResults.length > 0 || !deleteFlag) {
+    return displayResults.join('\n');
+  }
+  return '';
 }
 
 export function cmdLocate(ctx: ShellContext, args: string[]): string {

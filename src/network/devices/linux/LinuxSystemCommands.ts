@@ -2,14 +2,90 @@ import type { ShellContext } from './LinuxFileCommands';
 import type { MemoryProfile } from '../host/hardware';
 
 
+/**
+ * Simulated capacity of the `/` filesystem. df shows the real used
+ * bytes from the VFS measured against this ceiling — so writing a
+ * 1 GB file shifts Used / Avail / Use% live, rather than reporting
+ * a frozen "25%". Keeps the other rows (/boot, /u01, tmpfs) as
+ * realistic constants because they represent virtual mounts the
+ * simulator doesn't track yet.
+ */
+const ROOT_FS_CAPACITY_KB = 52_428_800; // 50 GB
+
+/** Walk a directory tree and return cumulative file-byte total. */
+function vfsDirectorySize(ctx: ShellContext, absPath: string): number {
+  const node = ctx.vfs.lstat(absPath);
+  if (!node) return 0;
+  if (node.type === 'file') return node.size;
+  if (node.type === 'symlink') return node.size; // link target string length
+  // Directory — recurse.
+  const entries = ctx.vfs.listDirectory(absPath);
+  if (!entries) return 0;
+  let total = 0;
+  for (const { name, inode } of entries) {
+    if (name === '.' || name === '..') continue;
+    const childPath = absPath === '/' ? `/${name}` : `${absPath}/${name}`;
+    if (inode.type === 'directory') {
+      total += vfsDirectorySize(ctx, childPath);
+    } else {
+      total += inode.size;
+    }
+  }
+  return total;
+}
+
+/** Inode count under a directory (recursive). Used by `df -i`. */
+function vfsInodeCount(ctx: ShellContext, absPath: string): number {
+  const node = ctx.vfs.lstat(absPath);
+  if (!node) return 0;
+  if (node.type !== 'directory') return 1;
+  let count = 1;
+  const entries = ctx.vfs.listDirectory(absPath);
+  if (!entries) return count;
+  for (const { name, inode } of entries) {
+    if (name === '.' || name === '..') continue;
+    const childPath = absPath === '/' ? `/${name}` : `${absPath}/${name}`;
+    count += inode.type === 'directory'
+      ? vfsInodeCount(ctx, childPath)
+      : 1;
+  }
+  return count;
+}
+
+/** Format a kilobyte count as df-style human-readable string. */
+function formatKbHuman(kb: number): string {
+  if (kb < 1024) return `${kb}K`;
+  const mb = kb / 1024;
+  if (mb < 1024) return mb >= 10 ? `${Math.round(mb)}M` : `${mb.toFixed(1)}M`;
+  const gb = mb / 1024;
+  if (gb < 1024) return gb >= 10 ? `${Math.round(gb)}G` : `${gb.toFixed(1)}G`;
+  const tb = gb / 1024;
+  return tb >= 10 ? `${Math.round(tb)}T` : `${tb.toFixed(1)}T`;
+}
+
+/** Format a byte count as du-style human-readable string. */
+function formatBytesHuman(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  return formatKbHuman(Math.max(1, Math.round(bytes / 1024)));
+}
+
 export function cmdDf(ctx: ShellContext, args: string[]): string {
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
 
+  const rootUsedBytes = vfsDirectorySize(ctx, '/');
+  const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
+  const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
+  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / ROOT_FS_CAPACITY_KB) * 100));
+
   if (inodes) {
+    const rootInodes = vfsInodeCount(ctx, '/');
+    const rootInodeCap = 655_360;
+    const rootInodeFree = Math.max(0, rootInodeCap - rootInodes);
+    const rootInodePct = Math.min(100, Math.ceil((rootInodes / rootInodeCap) * 100));
     return [
       'Filesystem      Inodes  IUsed   IFree IUse% Mounted on',
-      '/dev/sda1       655360  52483  602877    8% /',
+      `/dev/sda1       ${String(rootInodeCap).padStart(6)}  ${String(rootInodes).padStart(5)}  ${String(rootInodeFree).padStart(6)}  ${String(rootInodePct).padStart(3)}% /`,
       'tmpfs           127960      1  127959    1% /dev/shm',
       '/dev/sda2       131072   2145  128927    2% /boot',
     ].join('\n');
@@ -18,7 +94,7 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
   if (human) {
     return [
       'Filesystem      Size  Used Avail Use% Mounted on',
-      '/dev/sda1        50G   12G   36G  25% /',
+      `/dev/sda1        ${formatKbHuman(ROOT_FS_CAPACITY_KB).padStart(3)}  ${formatKbHuman(rootUsedKb).padStart(4)}  ${formatKbHuman(rootAvailKb).padStart(4)} ${String(rootUsePct).padStart(3)}% /`,
       'tmpfs           500M     0  500M   0% /dev/shm',
       'tmpfs           5.0M  4.0K  5.0M   1% /run/lock',
       '/dev/sda2       976M  145M  764M  16% /boot',
@@ -28,7 +104,7 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
 
   return [
     'Filesystem     1K-blocks     Used Available Use% Mounted on',
-    '/dev/sda1       52428800 12582912  37748736  25% /',
+    `/dev/sda1       ${String(ROOT_FS_CAPACITY_KB).padStart(8)} ${String(rootUsedKb).padStart(8)}  ${String(rootAvailKb).padStart(8)} ${String(rootUsePct).padStart(3)}% /`,
     'tmpfs             512000        0    512000   0% /dev/shm',
     'tmpfs               5120        4      5116   1% /run/lock',
     '/dev/sda2         999424   148480    782080  16% /boot',
@@ -37,36 +113,70 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
 }
 
 export function cmdDu(ctx: ShellContext, args: string[]): string {
-  const human = args.includes('-h') || args.includes('--human-readable');
-  const summary = args.includes('-s') || args.includes('--summarize');
-  // Find target path (last non-flag argument or '.')
-  const target = args.filter(a => !a.startsWith('-')).pop() || '.';
+  // Real GNU du accepts combined short options (`-sh`, `-sb`, `-bsh`).
+  // Split them so the flag tests below work uniformly.
+  const expand = (a: string): string[] => {
+    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2) return [a];
+    return a.slice(1).split('').map((c) => `-${c}`);
+  };
+  const expanded = args.flatMap(expand);
+  const human = expanded.includes('-h') || expanded.includes('--human-readable');
+  const summary = expanded.includes('-s') || expanded.includes('--summarize');
+  const bytesFlag = expanded.includes('-b') || expanded.includes('--bytes');
+  const targets = expanded.filter(a => !a.startsWith('-'));
+  const target = targets[targets.length - 1] ?? '.';
   const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
 
   if (!ctx.vfs.exists(absPath)) {
     return `du: cannot access '${target}': No such file or directory`;
   }
 
-  if (summary) {
-    const size = human ? '4.2M' : '4300';
-    return `${size}\t${target}`;
+  const fmt = (bytes: number): string => {
+    if (bytesFlag) return String(bytes);
+    if (human) return formatBytesHuman(bytes);
+    // Default: 1024-byte blocks (GNU `du --block-size=1k`).
+    return String(Math.max(1, Math.ceil(bytes / 1024)));
+  };
+
+  const node = ctx.vfs.lstat(absPath);
+  if (!node) return `du: cannot access '${target}': No such file or directory`;
+
+  // File leaf — single line of its size.
+  if (node.type !== 'directory') {
+    return `${fmt(node.size)}\t${target}`;
   }
 
-  // Show a few sub-entries
-  try {
-    const entries = ctx.vfs.list(absPath);
-    const lines: string[] = [];
-    for (const e of entries.slice(0, 15)) {
-      const sz = human ? `${Math.floor(Math.random() * 100) + 4}K` : String(Math.floor(Math.random() * 10000) + 4);
-      lines.push(`${sz}\t${target === '.' ? '' : target + '/'}${e}`);
-    }
-    const total = human ? '4.2M' : '4300';
-    lines.push(`${total}\t${target}`);
-    return lines.join('\n');
-  } catch {
-    const total = human ? '4.0K' : '4';
-    return `${total}\t${target}`;
+  // Summary — total bytes under the directory, one line.
+  if (summary) {
+    return `${fmt(vfsDirectorySize(ctx, absPath))}\t${target}`;
   }
+
+  // Full mode — emit one line per descendant directory (real du does
+  // post-order, deepest first), terminated by the total for `target`.
+  const lines: string[] = [];
+  const visit = (path: string, display: string): number => {
+    const stat = ctx.vfs.lstat(path);
+    if (!stat) return 0;
+    if (stat.type !== 'directory') return stat.size;
+    let subtotal = 0;
+    const entries = ctx.vfs.listDirectory(path);
+    if (entries) {
+      for (const { name, inode } of entries) {
+        if (name === '.' || name === '..') continue;
+        const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
+        const childDisplay = display === '.' ? `./${name}` : `${display}/${name}`;
+        if (inode.type === 'directory') {
+          subtotal += visit(childPath, childDisplay);
+        } else {
+          subtotal += inode.size;
+        }
+      }
+    }
+    lines.push(`${fmt(subtotal)}\t${display}`);
+    return subtotal;
+  };
+  visit(absPath, target);
+  return lines.join('\n');
 }
 
 /**
