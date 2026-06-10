@@ -54,6 +54,15 @@ export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 export const TCP_DEFAULT_MSS = 1460;
 export const TCP_DEFAULT_WINDOW = 65535;
 
+/**
+ * Maximum Segment Lifetime (RFC 793 §3.3). The active closer must hold the
+ * connection in TIME_WAIT for 2×MSL before releasing the socket pair, so
+ * delayed segments from the old incarnation cannot corrupt a new one and a
+ * retransmitted remote FIN can still be acknowledged. 30 s matches Linux
+ * (TCP_TIMEWAIT_LEN = 60 s = 2×MSL).
+ */
+export const TCP_MSL_MS = 30_000;
+
 export function flagsString(f: TcpFlags): string {
   const parts: string[] = [];
   if (f.cwr) parts.push('CWR');

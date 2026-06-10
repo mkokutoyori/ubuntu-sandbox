@@ -38,6 +38,7 @@ import {
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPAddress } from '../core/types';
 import { OSPF_CONSTANTS } from '../core/constants';
+import { ipToUint32, networkAddress, inSameSubnet, wildcardMatches } from '../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
@@ -1580,7 +1581,7 @@ export class OSPFEngine implements IProtocolEngine {
       return;
     }
 
-    const ipToNum = (ip: string) => ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
+    const ipToNum = ipToUint32;
     const sortCandidates = (pool: typeof candidates) =>
       pool.sort((a, b) => b.priority - a.priority || (ipToNum(b.routerId) - ipToNum(a.routerId)));
 
@@ -3733,36 +3734,17 @@ export class OSPFEngine implements IProtocolEngine {
   private computeLSAChecksum(lsa: LSA): number {
     // Simplified checksum (not the real Fletcher-16)
     let sum = lsa.lsType + lsa.lsSequenceNumber;
-    sum += this.ipToNumber(lsa.linkStateId);
-    sum += this.ipToNumber(lsa.advertisingRouter);
+    sum += ipToUint32(lsa.linkStateId);
+    sum += ipToUint32(lsa.advertisingRouter);
     return (sum & 0xFFFF) ^ ((sum >> 16) & 0xFFFF);
   }
 
   private computeNetwork(ip: string, mask: string): string {
-    const ipNum = this.ipToNumber(ip);
-    const maskNum = this.ipToNumber(mask);
-    return this.numberToIP(ipNum & maskNum);
+    return networkAddress(ip, mask);
   }
 
   private isInSameSubnet(ip1: string, ip2: string, mask: string): boolean {
-    const ip1Num = this.ipToNumber(ip1);
-    const ip2Num = this.ipToNumber(ip2);
-    const maskNum = this.ipToNumber(mask);
-    return (ip1Num & maskNum) === (ip2Num & maskNum);
-  }
-
-  private ipToNumber(ip: string): number {
-    // Invalid input historically yielded NaN, which masks to 0; preserve that.
-    return IPAddress.tryParse(ip)?.toUint32() ?? 0;
-  }
-
-  private numberToIP(num: number): string {
-    return [
-      (num >>> 24) & 0xFF,
-      (num >>> 16) & 0xFF,
-      (num >>> 8) & 0xFF,
-      num & 0xFF,
-    ].join('.');
+    return inSameSubnet(ip1, ip2, mask);
   }
 
   /**
@@ -3811,10 +3793,6 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   private wildcardMatch(ip: string, network: string, wildcard: string): boolean {
-    const ipNum = this.ipToNumber(ip);
-    const netNum = this.ipToNumber(network);
-    const wcNum = this.ipToNumber(wildcard);
-    // Wildcard: 0 = must match, 1 = don't care (inverse of subnet mask)
-    return (ipNum & ~wcNum) === (netNum & ~wcNum);
+    return wildcardMatches(ip, network, wildcard);
   }
 }

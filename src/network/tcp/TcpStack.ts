@@ -1,8 +1,9 @@
 import type { IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
-  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW,
+  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_MSL_MS,
 } from './types';
 import {
   MACAddress, IPAddress,
@@ -148,10 +149,12 @@ export class TcpStack {
   private running = false;
   private nextEphemeralPort = 49152;
   private startedAtMs = Date.now();
+  private readonly timeWaitTimers = new Map<string, TimerHandle>();
 
   constructor(
     private readonly host: TcpHost,
     private readonly getBus: () => IEventBus,
+    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 
   start(): void { if (!this.running) this.running = true; }
@@ -159,7 +162,11 @@ export class TcpStack {
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    const scheduler = this.getScheduler();
+    for (const handle of this.timeWaitTimers.values()) scheduler.clear(handle);
+    this.timeWaitTimers.clear();
     for (const s of Array.from(this.sockets.values())) {
+      if (s.state === 'time-wait') { this._releaseTimeWait(s); continue; }
       this._teardown(s, 'shutdown');
     }
     this.sockets.clear();
@@ -413,7 +420,7 @@ export class TcpStack {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this._teardown(socket, 'fin');
+          this._enterTimeWait(socket);
         } else if (seg.flags.fin) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
@@ -428,7 +435,7 @@ export class TcpStack {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this._teardown(socket, 'fin');
+          this._enterTimeWait(socket);
         } else if (payloadSize > 0) {
           this.deliverData(socket, seg);
           const ackFlags = noFlags(); ackFlags.ack = true;
@@ -444,7 +451,16 @@ export class TcpStack {
         break;
       case 'closing':
         if (seg.flags.ack) {
-          this._teardown(socket, 'fin');
+          this._enterTimeWait(socket);
+        }
+        break;
+      case 'time-wait':
+        // RFC 793 §3.5: a retransmitted remote FIN (our final ACK was lost)
+        // is re-acknowledged and the 2MSL timer restarts.
+        if (seg.flags.fin) {
+          const ackFlags = noFlags(); ackFlags.ack = true;
+          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
+          this.armTimeWaitTimer(socket);
         }
         break;
       default:
@@ -484,6 +500,47 @@ export class TcpStack {
         passive: socket.passive,
       },
     });
+  }
+
+  /**
+   * RFC 793 §3.5: the active closer parks the socket pair in TIME_WAIT for
+   * 2×MSL instead of releasing it immediately. The application is notified
+   * right away (as a real OS does when close() completes); only the socket
+   * pair stays reserved — it remains visible in listSockets() until the
+   * timer releases it, like a TIME_WAIT line in netstat.
+   */
+  private _enterTimeWait(socket: TcpSocket): void {
+    if (socket.closed) return;
+    socket.closed = true;
+    this._transition(socket, 'time-wait');
+    this.getBus().publish({
+      topic: 'tcp.connection.closed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        localIp: socket.localIp, localPort: socket.localPort,
+        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
+        reason: 'fin',
+      },
+    });
+    try { socket._fireClose('fin'); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
+    this.armTimeWaitTimer(socket);
+  }
+
+  private armTimeWaitTimer(socket: TcpSocket): void {
+    const scheduler = this.getScheduler();
+    const key = socket.key();
+    const previous = this.timeWaitTimers.get(key);
+    if (previous !== undefined) scheduler.clear(previous);
+    const handle = scheduler.setTimeout(() => {
+      this.timeWaitTimers.delete(key);
+      this._releaseTimeWait(socket);
+    }, 2 * TCP_MSL_MS);
+    this.timeWaitTimers.set(key, handle);
+  }
+
+  private _releaseTimeWait(socket: TcpSocket): void {
+    this._transition(socket, 'closed');
+    this.sockets.delete(socket.key());
   }
 
   _teardown(socket: TcpSocket, reason: TcpCloseReason): void {

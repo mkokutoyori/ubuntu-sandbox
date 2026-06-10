@@ -9,6 +9,7 @@
  * networks via the real link (eBGP AD 20 / iBGP AD 200).
  */
 import { IPAddress, SubnetMask } from '../core/types';
+import { tryIpToUint32, prefixLengthToMaskUint32 } from '../core/ip';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -34,10 +35,11 @@ const EBGP_AD = 20;
 const IBGP_AD = 200;
 
 function sameNet(a: string, am: string, b: string): boolean {
-  const num = (s: string) => IPAddress.tryParse(s)?.toUint32() ?? -1;
-  const bits = new SubnetMask(am).toCIDR();
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return (num(a) & mask) === (num(b) & mask);
+  const aNum = tryIpToUint32(a);
+  const bNum = tryIpToUint32(b);
+  if (aNum === null || bNum === null) return false;
+  const mask = prefixLengthToMaskUint32(new SubnetMask(am).toCIDR());
+  return (aNum & mask) === (bNum & mask);
 }
 
 export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {

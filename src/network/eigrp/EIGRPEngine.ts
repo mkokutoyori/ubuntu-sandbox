@@ -1,4 +1,5 @@
 import { IPAddress, SubnetMask } from '../core/types';
+import { tryIpToUint32, prefixLengthToMaskUint32, wildcardMatches } from '../core/ip';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -35,10 +36,6 @@ const EIGRP_INTERNAL_AD = 90;
 const DEFAULT_BW_KBPS = 100_000;
 const DEFAULT_DELAY_TENS_US = 10;
 
-function toNum(ip: string): number {
-  return IPAddress.tryParse(ip)?.toUint32() ?? -1;
-}
-
 function classfulMaskBits(ip: string): number {
   const first = Number(ip.split('.')[0]);
   if (first < 128) return 8;
@@ -47,17 +44,13 @@ function classfulMaskBits(ip: string): number {
 }
 
 function statementCovers(stmt: EigrpNetworkStmt, localIp: string): boolean {
-  const netNum = toNum(stmt.network);
-  const ipNum = toNum(localIp);
-  if (netNum < 0 || ipNum < 0) return false;
-  let bits: number;
+  const netNum = tryIpToUint32(stmt.network);
+  const ipNum = tryIpToUint32(localIp);
+  if (netNum === null || ipNum === null) return false;
   if (stmt.wildcard) {
-    const w = toNum(stmt.wildcard);
-    const mask = (~w) >>> 0;
-    return (ipNum & mask) === (netNum & mask);
+    return wildcardMatches(localIp, stmt.network, stmt.wildcard);
   }
-  bits = classfulMaskBits(stmt.network);
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  const mask = prefixLengthToMaskUint32(classfulMaskBits(stmt.network));
   return (ipNum & mask) === (netNum & mask);
 }
 

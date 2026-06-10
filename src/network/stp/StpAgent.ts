@@ -10,7 +10,7 @@ import {
 import { MACAddress, type EthernetFrame } from '../core/types';
 import { Logger } from '../core/Logger';
 
-export type StpForwardState = 'blocking' | 'forwarding' | 'disabled';
+export type StpForwardState = 'blocking' | 'listening' | 'learning' | 'forwarding' | 'disabled';
 
 export interface StpHost {
   readonly id: string;
@@ -29,6 +29,8 @@ export class StpAgent {
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
   private readonly advertising = new Set<string>();
+  private readonly forwardStates = new Map<string, StpForwardState>();
+  private readonly transitionTimers = new Map<string, TimerHandle>();
   private rootBridge: BridgeId;
   private rootPort: string | null = null;
   private rootPathCost = 0;
@@ -61,6 +63,9 @@ export class StpAgent {
     for (const u of this.unsubscribers) u();
     this.unsubscribers = [];
     this.stopHelloTimer();
+    for (const portName of [...this.transitionTimers.keys()]) {
+      this.cancelTransition(portName);
+    }
   }
 
   getConfig(): Readonly<StpConfig> { return this.config; }
@@ -74,6 +79,10 @@ export class StpAgent {
 
   getPortRole(portName: string): StpPortRole {
     return this.portInfo.get(portName)?.role ?? 'disabled';
+  }
+
+  getForwardState(portName: string): StpForwardState {
+    return this.forwardStates.get(portName) ?? 'disabled';
   }
 
   setBridgePriority(priority: number): void {
@@ -151,7 +160,7 @@ export class StpAgent {
     } else {
       this.stopHelloTimer();
       for (const port of this.host.getPorts()) {
-        this.host.onForwardStateChanged(port.getName(), 'forwarding');
+        this.applyForwardState(port.getName(), 'forwarding');
       }
     }
   }
@@ -337,6 +346,11 @@ export class StpAgent {
 
   private onLinkDown(portName: string): void {
     this.portInfo.delete(portName);
+    // Forget the applied forward state so a re-connected link is treated as a
+    // fresh edge port (rapid transition), matching the link-up fast path in
+    // the Switch base class.
+    this.cancelTransition(portName);
+    this.forwardStates.delete(portName);
     this.runElection();
   }
 
@@ -350,6 +364,7 @@ export class StpAgent {
     let bestRoot: BridgeId = own;
     let bestCost = 0;
     let bestPort: string | null = null;
+    let bestInfo: StpPortInfo | null = null;
 
     for (const [portName, info] of this.portInfo) {
       const port = this.host.getPort(portName);
@@ -361,10 +376,13 @@ export class StpAgent {
         bestRoot = r;
         bestCost = candidateCost;
         bestPort = portName;
+        bestInfo = info;
       } else if (bridgeEquals(r, bestRoot)) {
-        if (bestPort === null || candidateCost < bestCost) {
+        if (bestPort === null || bestInfo === null
+            || this.rootPathPreference(info, candidateCost, portName, bestInfo, bestCost, bestPort) < 0) {
           bestCost = candidateCost;
           bestPort = portName;
+          bestInfo = info;
         }
       }
     }
@@ -422,6 +440,23 @@ export class StpAgent {
     }
   }
 
+  /**
+   * Root-port tie-break, IEEE 802.1D-1998 §8.6.8: when two ports reach the
+   * same root at the same path cost, prefer the lowest sender bridge ID,
+   * then the lowest sender port ID, then the lowest local port ID.
+   * Returns < 0 when candidate `a` beats the current best `b`.
+   */
+  private rootPathPreference(
+    a: StpPortInfo, aCost: number, aPort: string,
+    b: StpPortInfo, bCost: number, bPort: string,
+  ): number {
+    if (aCost !== bCost) return aCost - bCost;
+    const sender = compareBridge(a.designatedBridge, b.designatedBridge);
+    if (sender !== 0) return sender;
+    if (a.designatedPort !== b.designatedPort) return a.designatedPort - b.designatedPort;
+    return this.portIdFor(aPort) - this.portIdFor(bPort);
+  }
+
   private bpduSuperiority(
     a: { root: BridgeId; cost: number; bridge: BridgeId; port: number },
     b: { root: BridgeId; cost: number; bridge: BridgeId; port: number },
@@ -460,11 +495,71 @@ export class StpAgent {
         },
       });
     }
-    const desiredForward: StpForwardState =
-      role === 'disabled' ? 'disabled'
-      : role === 'alternate' ? 'blocking'
-      : 'forwarding';
-    this.host.onForwardStateChanged(portName, desiredForward);
+    if (role === 'disabled') {
+      this.applyForwardState(portName, 'disabled');
+    } else if (role === 'alternate') {
+      this.applyForwardState(portName, 'blocking');
+    } else {
+      this.requestForwarding(portName);
+    }
+  }
+
+  /**
+   * Move a root/designated port toward forwarding.
+   *
+   * IEEE 802.1D-1998 §8.4: a port leaving the blocking state must spend
+   * `forwardDelaySec` in Listening (no learning, no forwarding) and another
+   * `forwardDelaySec` in Learning (MAC learning only) before it forwards.
+   * Two fast paths skip the transitional states:
+   *  - PortFast (edge port, 802.1D-2004 §17.13.1 operEdge),
+   *  - a port this agent has never managed yet — initial bring-up is treated
+   *    as an RSTP-style rapid transition, mirroring the link-up fast path in
+   *    the Switch base class so freshly cabled topologies stay usable.
+   */
+  private requestForwarding(portName: string): void {
+    const current = this.forwardStates.get(portName);
+    if (current === 'forwarding' || current === 'listening' || current === 'learning') return;
+    const portFast = this.guards.get(portName)?.portFast === true;
+    if (portFast || current === undefined) {
+      this.applyForwardState(portName, 'forwarding');
+      return;
+    }
+    this.applyForwardState(portName, 'listening');
+    this.scheduleTransition(portName, 'learning');
+  }
+
+  private scheduleTransition(portName: string, next: 'learning' | 'forwarding'): void {
+    this.cancelTransition(portName);
+    const s = this.getScheduler();
+    this.scheduler = s;
+    const handle = s.setTimeout(() => {
+      this.transitionTimers.delete(portName);
+      this.applyForwardState(portName, next);
+      if (next === 'learning') this.scheduleTransition(portName, 'forwarding');
+    }, this.config.forwardDelaySec * 1000);
+    this.transitionTimers.set(portName, handle);
+  }
+
+  private cancelTransition(portName: string): void {
+    const handle = this.transitionTimers.get(portName);
+    if (handle === undefined) return;
+    (this.scheduler ?? this.getScheduler()).clear(handle);
+    this.transitionTimers.delete(portName);
+  }
+
+  private applyForwardState(portName: string, state: StpForwardState): void {
+    if (state !== 'listening' && state !== 'learning') this.cancelTransition(portName);
+    const previous = this.forwardStates.get(portName);
+    if (previous === state) return;
+    this.forwardStates.set(portName, state);
+    this.host.onForwardStateChanged(portName, state);
+    this.getBus().publish({
+      topic: 'stp.port-state.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: portName, oldState: previous ?? null, newState: state,
+      },
+    });
   }
 
   private publishConfigChange(): void {

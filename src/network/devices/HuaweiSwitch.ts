@@ -1,8 +1,10 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
+import { AgentRegistry } from './AgentRegistry';
+import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
-import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
 import { ETHERTYPE_STP } from '../stp/types';
@@ -13,6 +15,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiSwitch extends Switch {
+  private readonly agents = new AgentRegistry();
   private readonly lldpAgent: LldpAgent;
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
@@ -41,10 +44,10 @@ export class HuaweiSwitch extends Switch {
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
     }, () => this.getBus());
-    this.lldpAgent.start();
-    this.stpAgent.start();
-    this.lacpAgent.start();
-    this.igmpSnoopingAgent.start();
+    this.agents.registerAll(
+      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent,
+    );
+    this.agents.startAll();
   }
 
   private resolveSnoopingVlan(portName: string): number | undefined {
@@ -56,17 +59,17 @@ export class HuaweiSwitch extends Switch {
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState): void {
-    if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
-    else if (state === 'blocking') this.setSTPState(portName, 'blocking');
-    else this.setSTPState(portName, 'disabled');
+    // StpForwardState is a subset of STPPortState — apply verbatim so the
+    // data plane honors the 802.1D listening/learning transitions.
+    this.setSTPState(portName, state);
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
-    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
-    if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
-    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
+    // Re-bind every agent's subscriptions to the newly injected bus.
+    // (setEventBus can fire from the base constructor, before the registry
+    // field initializer ran — hence the optional chain.)
+    this.agents?.restartAll();
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -145,16 +148,4 @@ export class HuaweiSwitch extends Switch {
       'Press ENTER to get started.',
     ].join('\n');
   }
-}
-
-function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
-  return rows.map(n => ({
-    localPort: n.localPort,
-    remoteHost: n.systemName,
-    remotePort: n.portId,
-    remoteType: n.remoteType,
-    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
-    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
-      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
-  }));
 }

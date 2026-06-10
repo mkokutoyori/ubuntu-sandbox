@@ -1,12 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { flagsString, noFlags, makeSocketKey, makeListenerKey } from '@/network/tcp/types';
+import { flagsString, noFlags, makeSocketKey, makeListenerKey, TCP_MSL_MS } from '@/network/tcp/types';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 
 beforeEach(() => {
@@ -144,7 +145,7 @@ describe('TCP — data exchange', () => {
 });
 
 describe('TCP — connection close', () => {
-  it('client.close() drives FIN → FIN-ACK → ACK and both sides reach closed', () => {
+  it('client.close() drives FIN → FIN-ACK → ACK; active closer parks in TIME_WAIT, passive closer closes', () => {
     const { bus, client, server } = pair();
     let serverSocket: TcpSocket | null = null;
     server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
@@ -153,7 +154,8 @@ describe('TCP — connection close', () => {
     bus.subscribe('tcp.connection.closed', (e) => closedEvents.push(e.payload));
     cs.close();
     if (serverSocket && (serverSocket as TcpSocket).state === 'close-wait') (serverSocket as TcpSocket).close();
-    expect(cs.state).toBe('closed');
+    expect(cs.state).toBe('time-wait');
+    expect((serverSocket as unknown as TcpSocket).state).toBe('closed');
     expect(closedEvents.some(c => c.deviceId === client.id)).toBe(true);
   });
 
@@ -165,7 +167,107 @@ describe('TCP — connection close', () => {
     serverSocket!.close();
     if (cs.state === 'close-wait') cs.close();
     expect(cs.state).toBe('closed');
-    expect(serverSocket!.state).toBe('closed');
+    expect(serverSocket!.state).toBe('time-wait');
+  });
+});
+
+describe('TCP — TIME_WAIT (RFC 793 §3.5)', () => {
+  let vts: VirtualTimeScheduler;
+
+  beforeEach(() => {
+    vts = new VirtualTimeScheduler();
+    __setDefaultScheduler(vts);
+  });
+
+  afterEach(() => {
+    __setDefaultScheduler(null);
+  });
+
+  function closedPair() {
+    const built = pair();
+    let serverSocket: TcpSocket | null = null;
+    built.server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
+    const cs = built.client.getTcpStack().connect('10.0.0.2', 49)!;
+    cs.close();
+    (serverSocket as unknown as TcpSocket).close();
+    return { ...built, cs, serverSocket: serverSocket as unknown as TcpSocket };
+  }
+
+  it('the socket pair stays reserved for 2×MSL then is released', () => {
+    const { client, cs } = closedPair();
+    expect(cs.state).toBe('time-wait');
+    expect(client.getTcpStack().listSockets()).toHaveLength(1);
+
+    vts.advance(2 * TCP_MSL_MS - 1);
+    expect(cs.state).toBe('time-wait');
+
+    vts.advance(1);
+    expect(cs.state).toBe('closed');
+    expect(client.getTcpStack().listSockets()).toHaveLength(0);
+  });
+
+  it('the application close handler fires immediately, not after 2MSL', () => {
+    const built = pair();
+    let serverSocket: TcpSocket | null = null;
+    built.server.getTcpStack().listen(49, { onAccept: (s) => { serverSocket = s; } });
+    let closeReason: string | null = null;
+    const cs = built.client.getTcpStack().connect('10.0.0.2', 49, {
+      onClose: (reason) => { closeReason = reason; },
+    })!;
+    cs.close();
+    (serverSocket as unknown as TcpSocket).close();
+    expect(closeReason).toBe('fin');
+  });
+
+  it('a retransmitted remote FIN in TIME_WAIT is re-ACKed and restarts the 2MSL timer', () => {
+    const { bus, client, cs } = closedPair();
+    vts.advance(2 * TCP_MSL_MS - 1000);
+
+    const acks: string[] = [];
+    bus.subscribe('tcp.segment.sent', (e) => {
+      if (e.payload.deviceId === client.id) acks.push(e.payload.flagsText);
+    });
+    // Simulate the loss of our final ACK: the server retransmits its FIN.
+    const finFlags = noFlags(); finFlags.fin = true; finFlags.ack = true;
+    const seg = {
+      type: 'tcp' as const,
+      sourcePort: 49, destinationPort: cs.localPort,
+      sequence: cs.recvNext === 0 ? 0 : (cs.recvNext - 1) >>> 0,
+      acknowledgement: cs.sendNext,
+      dataOffset: 5, flags: finFlags, window: 65535, checksum: 0,
+      urgentPointer: 0, options: [], payload: undefined,
+    };
+    const ipPkt = {
+      type: 'ipv4' as const, version: 4, ihl: 5, tos: 0, totalLength: 40,
+      identification: 1, flags: 0, fragmentOffset: 0, ttl: 64,
+      protocol: 6, headerChecksum: 0,
+      sourceIP: new IPAddress('10.0.0.2'), destinationIP: new IPAddress('10.0.0.1'),
+      payload: seg,
+    };
+    client.getTcpStack().handleIp('GigabitEthernet0/0', new IPAddress('10.0.0.2'), ipPkt);
+
+    expect(acks).toContain('ACK');
+    // Timer restarted: 1s later (old deadline) the socket is still reserved.
+    vts.advance(1000);
+    expect(cs.state).toBe('time-wait');
+    vts.advance(2 * TCP_MSL_MS);
+    expect(cs.state).toBe('closed');
+  });
+
+  it('the passive closer (LAST_ACK) closes immediately without TIME_WAIT', () => {
+    const { serverSocket } = closedPair();
+    expect(serverSocket.state).toBe('closed');
+  });
+
+  it('stack stop() releases TIME_WAIT sockets without firing duplicate close events', () => {
+    const { bus, client, cs } = closedPair();
+    const closes: string[] = [];
+    bus.subscribe('tcp.connection.closed', (e) => {
+      if (e.payload.deviceId === client.id) closes.push(e.payload.reason);
+    });
+    client.getTcpStack().stop();
+    expect(cs.state).toBe('closed');
+    expect(closes).toHaveLength(0);
   });
 });
 
