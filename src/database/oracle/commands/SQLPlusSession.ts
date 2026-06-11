@@ -70,6 +70,9 @@ export class SQLPlusSession {
   private lineNumber: number = 0;
   private lastStatement: string = '';
   private plsqlMode: boolean = false;
+  /** Collecting PL/SQL unit DDL (CREATE PACKAGE/PROCEDURE/…): only the
+   *  terminating slash executes — END; lines belong to the unit. */
+  private plsqlUnitMode: boolean = false;
   private plsqlDepth: number = 0;
   private connected: boolean = false;
   private asSysdba: boolean = false;
@@ -261,6 +264,22 @@ export class SQLPlusSession {
       if (command.matches(upper, trimmed)) {
         return command.run(trimmed, upper);
       }
+    }
+
+    // PL/SQL unit DDL comes before the generic SQL path: its body
+    // contains semicolons, so SQL*Plus collects source lines until the
+    // terminating slash instead of executing on the first `;`.
+    if (this.isPlsqlUnitStart(upper)) {
+      // A complete one-line unit (`… END;` / `… END name;`) runs now.
+      if (/\bEND(\s+\w+)?\s*;$/i.test(trimmed)) {
+        return this.executeSql(trimmed.replace(/;\s*$/, ''));
+      }
+      this.plsqlMode = true;
+      this.plsqlUnitMode = true;
+      this.plsqlDepth = 0;
+      this.sqlBuffer = trimmed;
+      this.lineNumber = 2;
+      return { output: [], exit: false, needsMoreInput: true, prompt: `  ${this.lineNumber}  ` };
     }
 
     if (this.isSqlStart(upper)) {
@@ -495,9 +514,13 @@ export class SQLPlusSession {
 
     // Check for END; at depth 0 — PL/SQL block complete, but SQL*Plus
     // traditionally requires / on the next line.  However, if the line
-    // ends with END; and the depth is back to 0, auto-execute (common in simulators).
+    // ends with END; and the depth is back to 0, auto-execute (common in
+    // simulators). Unit DDL (CREATE PACKAGE/PROCEDURE/…) never
+    // auto-executes: a member's `END;` is indistinguishable from the
+    // unit's, so only the terminating slash runs it — real SQL*Plus
+    // behaviour.
     const upper = trimmed.toUpperCase().replace(/\s+/g, ' ').trim();
-    if ((upper === 'END;' || upper.match(/^END\s+\w+\s*;$/i)) && this.plsqlDepth <= 0) {
+    if (!this.plsqlUnitMode && (upper === 'END;' || upper.match(/^END\s+\w+\s*;$/i)) && this.plsqlDepth <= 0) {
       return this.executePLSQLBuffer();
     }
 
@@ -523,6 +546,7 @@ export class SQLPlusSession {
     this.sqlBuffer = '';
     this.lineNumber = 0;
     this.plsqlMode = false;
+    this.plsqlUnitMode = false;
     this.plsqlDepth = 0;
 
     if (!sql) {
@@ -532,6 +556,17 @@ export class SQLPlusSession {
     // Remove trailing ; from the whole block if present
     const cleanSql = sql.replace(/;\s*$/, '');
     return this.executeSql(cleanSql);
+  }
+
+  /**
+   * CREATE statements that introduce a PL/SQL unit. Their source embeds
+   * semicolons, so they are collected until the terminating slash rather
+   * than executed at the first `;` like plain SQL. CREATE TYPE is left
+   * to the SQL path: its spec form (AS OBJECT/TABLE OF/VARRAY) carries
+   * no PL/SQL body and executes as a single statement here.
+   */
+  private isPlsqlUnitStart(upper: string): boolean {
+    return /^CREATE\s+(OR\s+REPLACE\s+)?(EDITIONABLE\s+|NONEDITIONABLE\s+)?(PROCEDURE|FUNCTION|PACKAGE(\s+BODY)?|TRIGGER)\b/.test(upper);
   }
 
   private isSqlStart(upper: string): boolean {
@@ -932,6 +967,10 @@ export class SQLPlusSession {
     // 3. Stored PL/SQL unit — procedure, function, or package spec.
     const unit = this.db.getStoredUnit(schema, name) ?? this.db.getStoredUnit('SYS', name);
     if (unit) {
+      if (unit.type === 'PACKAGE') {
+        const members = this.db.describePackage(unit.schema, unit.name);
+        if (members) return this.formatPackageDescribe(members);
+      }
       return this.formatStoredUnitDescribe(unit);
     }
 
@@ -947,6 +986,29 @@ export class SQLPlusSession {
       output: [`ERROR:`, `${ORACLE_ERRORS.ORA_04043}: ${upper}`],
       exit: false, needsMoreInput: false, prompt: this.getPrompt(),
     };
+  }
+
+  /**
+   * Render a package's public subprograms in SQL*Plus DESC format: one
+   * header per member followed by its argument table, like real Oracle.
+   */
+  private formatPackageDescribe(
+    members: NonNullable<ReturnType<import('../OracleDatabase').OracleDatabase['describePackage']>>,
+  ): SQLPlusResult {
+    const output: string[] = [];
+    for (const m of members) {
+      output.push(m.kind === 'FUNCTION'
+        ? `FUNCTION ${m.name} RETURNS ${m.returnType ?? 'VARCHAR2'}`
+        : `PROCEDURE ${m.name}`);
+      if (m.parameters.length > 0) {
+        output.push(' Argument Name                  Type                    In/Out Default?');
+        output.push(' ------------------------------ ----------------------- ------ --------');
+        for (const p of m.parameters) {
+          output.push(` ${p.name.padEnd(31)}${p.dataType.padEnd(24)}${p.mode.padEnd(7)}${p.hasDefault ? 'DEFAULT' : ''}`);
+        }
+      }
+    }
+    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   /** Render the procedure/function/package spec in SQL*Plus DESC format. */

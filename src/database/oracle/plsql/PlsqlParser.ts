@@ -35,6 +35,43 @@ export class PlsqlParser {
     return e;
   }
 
+  /**
+   * Parse the content of a CREATE PACKAGE [BODY] unit — everything after
+   * IS/AS, including the closing `END [name];`. Grammar:
+   *
+   *   declarations [BEGIN init_statements [EXCEPTION handlers]] END [name][;]
+   *
+   * A spec carries forward subprogram declarations (no block); a body
+   * carries the implementations, private declarations, and the optional
+   * one-shot initialization block Oracle runs at package instantiation.
+   */
+  static parsePackageSection(source: string): {
+    declarations: Declaration[];
+    initBody: Stmt[];
+    initHandlers: ExceptionHandler[];
+  } {
+    const p = new PlsqlParser(source);
+    const declarations: Declaration[] = [];
+    while (!p.isKw('BEGIN') && !p.isKw('END') && !p.atEof()) {
+      declarations.push(p.parseDeclaration());
+    }
+    let initBody: Stmt[] = [];
+    const initHandlers: ExceptionHandler[] = [];
+    if (p.isKw('BEGIN')) {
+      p.advance();
+      initBody = p.parseStatementsUntil(['END', 'EXCEPTION']);
+      if (p.isKw('EXCEPTION')) {
+        p.advance();
+        p.parseHandlers(initHandlers);
+      }
+    }
+    p.eatKw('END');
+    if (p.cur().type === 'ident') p.advance();
+    if (p.isOp(';')) p.advance();
+    if (!p.atEof()) p.err(`unexpected trailing input '${p.cur().value}' after END`);
+    return { declarations, initBody, initHandlers };
+  }
+
   private peek(o = 0): PlsqlToken { return this.toks[Math.min(this.i + o, this.toks.length - 1)]; }
   private cur(): PlsqlToken { return this.toks[this.i]; }
   private atEof(): boolean { return this.cur().type === 'eof'; }

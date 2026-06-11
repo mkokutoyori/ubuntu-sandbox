@@ -8,6 +8,7 @@ import {
 import { PlsqlException, findPredefinedException, matchPredefinedException } from './PlsqlException';
 import { parsePlsql, PlsqlParser } from './PlsqlParser';
 import { buildSubprogramSource } from './unitSource';
+import type { PackageRuntimeHandle } from './PackageUnit';
 import { createDefaultSqlFunctionRegistry, type SqlFunctionContext } from '../functions';
 import { coerceDateValue, formatDateValue, formatDateWithPattern, parseDateWithPattern } from '../functions/dateSupport';
 import type { CellValue } from '../../engine/storage/BaseStorage';
@@ -357,6 +358,16 @@ export class PlsqlInterpreter {
       return;
     }
     if (target.kind === 'member') {
+      // `pkg.var := …` from outside the package: assign the slot in the
+      // package's session scope (public members only).
+      const prefix = this.targetStaticName(target.object);
+      if (prefix && !scope.findSlot(prefix.split('.')[0])) {
+        const pkgMember = this.resolvePackageMember(`${prefix}.${target.name}`);
+        if (pkgMember) {
+          this.assignPackageMember(pkgMember.handle, pkgMember.member, value, scope);
+          return;
+        }
+      }
       const obj = this.resolveTarget(target.object, scope);
       if (obj instanceof PlsqlRecord) {
         const f = obj.fields.get(target.name) ?? { type: { name: 'ANY', args: [] }, value: null, constant: false };
@@ -373,6 +384,29 @@ export class PlsqlInterpreter {
       return;
     }
     throw new PlsqlException('USER_DEFINED', 6550, 'PLS-00382: expression is of wrong type');
+  }
+
+  /** Static dotted name of an assignment-target chain, or null. */
+  private targetStaticName(target: AssignTarget): string | null {
+    if (target.kind === 'ident') return target.name.toUpperCase();
+    if (target.kind === 'member') {
+      const base = this.targetStaticName(target.object);
+      return base ? `${base}.${target.name.toUpperCase()}` : null;
+    }
+    return null;
+  }
+
+  private assignPackageMember(handle: PackageRuntimeHandle, member: string, value: PlsqlValue, scope: Scope): void {
+    this.requirePublicMember(handle, member);
+    const pkgScope = this.packageInstanceScope(handle);
+    const slot = pkgScope.findSlot(member);
+    if (!slot) {
+      throw new PlsqlException('USER_DEFINED', 6550, `PLS-00302: component '${member}' must be declared`);
+    }
+    if (slot.constant) {
+      throw new PlsqlException('USER_DEFINED', 6550, `PLS-00363: expression '${handle.qualifiedName}.${member}' cannot be used as an assignment target`);
+    }
+    slot.value = this.coerceToType(value, slot.type, scope);
   }
 
   private resolveTarget(target: AssignTarget, scope: Scope): PlsqlValue {
@@ -575,10 +609,144 @@ export class PlsqlInterpreter {
       return;
     }
 
+    const pkgMember = this.resolvePackageMember(up);
+    if (pkgMember) {
+      this.callPackageSubprogram(pkgMember.handle, pkgMember.member, args, scope);
+      return;
+    }
+
     const evaluated = args.map(a => this.safeEval(a.value, scope));
     if (this.host.callBuiltin(up, rawArgs, evaluated)) return;
 
     throw new PlsqlException('USER_DEFINED', 6550, `PLS-00201: identifier '${up}' must be declared`);
+  }
+
+  // ── User-defined packages ─────────────────────────────────────────
+
+  /** Candidate (package, member) splits for a dotted reference. */
+  private packageCandidates(name: string): { pkg: string; member: string }[] {
+    const parts = name.toUpperCase().split('.');
+    if (parts.length === 2) return [{ pkg: parts[0], member: parts[1] }];
+    if (parts.length === 3) return [{ pkg: `${parts[0]}.${parts[1]}`, member: parts[2] }];
+    return [];
+  }
+
+  private resolvePackageMember(name: string): { handle: PackageRuntimeHandle; member: string } | null {
+    if (!this.host.resolvePackage) return null;
+    for (const c of this.packageCandidates(name)) {
+      const handle = this.host.resolvePackage(c.pkg);
+      if (handle) return { handle, member: c.member };
+    }
+    return null;
+  }
+
+  /**
+   * The package's session instance scope, built lazily on first
+   * reference: declarations run in order (spec first, then body — the
+   * body's implementations shadow the spec's forward declarations),
+   * then the body's one-shot initialization block. A recompiled package
+   * discards existing state, exactly like real Oracle.
+   */
+  private packageInstanceScope(handle: PackageRuntimeHandle): Scope {
+    const st = handle.state;
+    if (st.scope && st.version !== handle.version) {
+      st.scope = null;
+      throw new PlsqlException(
+        'USER_DEFINED', 4068,
+        'ORA-04068: existing state of packages has been discarded\n'
+        + `ORA-04061: existing state of package "${handle.qualifiedName}" has been invalidated`,
+        false,
+      );
+    }
+    if (st.scope) return st.scope as Scope;
+    const scope = new Scope(null);
+    // Registered before the init block runs so members the block calls
+    // can resolve their own package without re-instantiating it.
+    st.scope = scope;
+    st.version = handle.version;
+    try {
+      for (const d of handle.declarations) this.declare(d, scope);
+      if (handle.initBody.length || handle.initHandlers.length) {
+        this.execBlock(
+          { kind: 'block', declarations: [], body: handle.initBody, handlers: handle.initHandlers },
+          scope,
+        );
+      }
+    } catch (e) {
+      st.scope = null; // failed instantiation must leave no state behind
+      throw e;
+    }
+    return scope;
+  }
+
+  private requirePublicMember(handle: PackageRuntimeHandle, member: string): void {
+    if (!handle.publicNames.has(member)) {
+      throw new PlsqlException('USER_DEFINED', 6550, `PLS-00302: component '${member}' must be declared`);
+    }
+  }
+
+  private missingBodyError(handle: PackageRuntimeHandle): PlsqlException {
+    return new PlsqlException(
+      'USER_DEFINED', 4067,
+      `ORA-04067: not executed, package body "${handle.qualifiedName}" does not exist\n`
+      + `ORA-06508: PL/SQL: could not find program unit being called: "${handle.qualifiedName}"`,
+      false,
+    );
+  }
+
+  private callPackageSubprogram(
+    handle: PackageRuntimeHandle, member: string, args: CallArg[], callerScope: Scope,
+  ): PlsqlValue {
+    this.requirePublicMember(handle, member);
+    // A bodiless package cannot deliver any subprogram: fail before
+    // instantiating, so no session state lingers from the failed call
+    // (otherwise creating the body afterwards would raise a spurious
+    // ORA-04068 on the first successful call).
+    if (!handle.hasBody && handle.declarations.some(d => d.kind === 'subprogram' && d.name === member)) {
+      throw this.missingBodyError(handle);
+    }
+    const scope = this.packageInstanceScope(handle);
+    const sub = scope.findSubprogram(member);
+    if (!sub) {
+      throw new PlsqlException('USER_DEFINED', 6550, `PLS-00302: component '${member}' must be declared`);
+    }
+    // Forward declaration without an implementation: the spec promises
+    // the member but no body delivers it.
+    if (!sub.decl.block) throw this.missingBodyError(handle);
+    return this.callLocalSubprogram(sub.decl, sub.scope, args, callerScope);
+  }
+
+  /** Non-call reference `pkg.x`: public variable, constant, or no-arg function. */
+  private readPackageMember(handle: PackageRuntimeHandle, member: string): PlsqlValue {
+    this.requirePublicMember(handle, member);
+    const scope = this.packageInstanceScope(handle);
+    const slot = scope.findSlot(member);
+    if (slot) return slot.value;
+    const sub = scope.findSubprogram(member);
+    if (sub && sub.decl.isFunction) {
+      if (!sub.decl.block) throw this.missingBodyError(handle);
+      return this.callLocalSubprogram(sub.decl, sub.scope, [], scope);
+    }
+    throw new PlsqlException('USER_DEFINED', 6550, `PLS-00302: component '${member}' must be declared`);
+  }
+
+  /** Static dotted name of an expression (`a.b.c`), or null if not one. */
+  private staticName(e: Expr): string | null {
+    if (e.kind === 'ident') return e.name.toUpperCase();
+    if (e.kind === 'member') {
+      const base = this.staticName(e.object);
+      return base ? `${base}.${e.name.toUpperCase()}` : null;
+    }
+    return null;
+  }
+
+  /**
+   * Bridge for SQL-level scalar calls on package functions
+   * (SELECT pkg.fn(…) FROM dual) with pre-evaluated argument values.
+   */
+  callPackageFunction(handle: PackageRuntimeHandle, member: string, argValues: Scalar[]): PlsqlValue {
+    const args: CallArg[] = argValues.map(v => ({ name: null, value: scalarToExpr(v) }));
+    return this.callPackageSubprogram(handle, member, args, new Scope(null));
   }
 
   private safeEval(e: Expr, scope: Scope): PlsqlValue {
@@ -807,6 +975,14 @@ export class PlsqlInterpreter {
   }
 
   private evalMember(objExpr: Expr, name: string, scope: Scope): PlsqlValue {
+    // `pkg.x` / `schema.pkg.x` where the prefix is not a local value:
+    // resolve against user-defined packages before evaluating the prefix
+    // (which would otherwise raise PLS-00201 on the package name).
+    const prefix = this.staticName(objExpr);
+    if (prefix && !scope.findSlot(prefix.split('.')[0]) && !scope.findCursor(prefix.split('.')[0])) {
+      const pkgMember = this.resolvePackageMember(`${prefix}.${name}`);
+      if (pkgMember) return this.readPackageMember(pkgMember.handle, pkgMember.member);
+    }
     const obj = this.evalExpr(objExpr, scope);
     if (obj instanceof PlsqlRecord) return obj.fields.get(name.toUpperCase())?.value ?? null;
     if (obj instanceof PlsqlCollection) {
@@ -852,6 +1028,11 @@ export class PlsqlInterpreter {
     const unit = this.host.lookupUnit(up);
     if (unit && unit.type === 'FUNCTION') {
       return this.callStoredUnit(unit, args, scope);
+    }
+
+    const pkgMember = this.resolvePackageMember(up);
+    if (pkgMember) {
+      return this.callPackageSubprogram(pkgMember.handle, pkgMember.member, args, scope);
     }
 
     const argLits = evaluated().map(v => this.toSqlLiteral(v)).join(', ');

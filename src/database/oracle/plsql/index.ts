@@ -7,6 +7,8 @@ export { PlsqlLexParseError } from './PlsqlLexer';
 export { parsePlsql } from './PlsqlParser';
 export { PlsqlInterpreter } from './PlsqlInterpreter';
 export type { PlsqlHost, StoredUnitLike, Scalar } from './PlsqlValue';
+export { compilePackageSection, declarationNames } from './PackageUnit';
+export type { PackageSection, PackageRuntimeHandle, PackageSessionState } from './PackageUnit';
 
 export interface PlsqlRunOutcome {
   ok: boolean;
