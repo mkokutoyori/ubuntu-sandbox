@@ -113,14 +113,6 @@ export class CiscoSwitch extends Switch {
     void _portName; void _authorized;
   }
 
-  private resolveSnoopingVlan(portName: string): number | undefined {
-    const cfg = this.getSwitchportConfig(portName);
-    if (!cfg) return undefined;
-    if (cfg.mode === 'access') return cfg.accessVlan;
-    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
-    return undefined;
-  }
-
   private applyUdldErrDisable(portName: string): void {
     const p = this.getPort(portName);
     if (p) p.setUp(false);

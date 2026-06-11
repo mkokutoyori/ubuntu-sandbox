@@ -1155,3 +1155,29 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   propagation TC sans aucun TCN avec fast aging bout en bout.
 - Suites STP complètes : 48 tests verts ; suites commutation connexes
   (switch shells, switchport, VTP, LACP, DTP, ping) : 248 tests verts.
+
+---
+
+## Entrée n°23 — 2026-06-11 — Dédup : `resolveSnoopingVlan` remontée dans la base Switch
+
+### Défaillances constatées
+
+1. **Duplication verbatim** — `resolveSnoopingVlan()` (résolution du VLAN
+   d'entrée : access → VLAN d'accès, trunk → VLAN natif) était implémentée
+   à l'identique dans `CiscoSwitch` et `HuaweiSwitch` (constat d'audit L2
+   n°9, jamais traité). Toute évolution de la résolution (sous-interfaces,
+   VLAN voice…) aurait dû être faite deux fois.
+
+### Correction
+
+- Méthode unique sur la base `Switch` (publique — elle sert de hook aux
+  agents IGMP-snooping et CDP des deux vendeurs) ; suppression des deux
+  copies privées.
+
+### Fichiers
+
+- `src/network/devices/Switch.ts`, `CiscoSwitch.ts`, `HuaweiSwitch.ts`
+
+### Validation (ciblée)
+
+- igmp-snooping, cdp-protocol, huawei-switch-shell : 83 tests verts.

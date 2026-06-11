@@ -51,14 +51,6 @@ export class HuaweiSwitch extends Switch {
     this.agents.startAll();
   }
 
-  private resolveSnoopingVlan(portName: string): number | undefined {
-    const cfg = this.getSwitchportConfig(portName);
-    if (!cfg) return undefined;
-    if (cfg.mode === 'access') return cfg.accessVlan;
-    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
-    return undefined;
-  }
-
   private applyStpForwardState(portName: string, state: StpForwardState): void {
     // StpForwardState is a subset of STPPortState — apply verbatim so the
     // data plane honors the 802.1D listening/learning transitions.

@@ -656,6 +656,14 @@ export abstract class Switch extends Equipment {
 
   // ─── Switchport Configuration API ─────────────────────────────────
 
+  resolveSnoopingVlan(portName: string): number | undefined {
+    const cfg = this.getSwitchportConfig(portName);
+    if (!cfg) return undefined;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
+    return undefined;
+  }
+
   getSwitchportConfig(portName: string): SwitchportConfig | undefined {
     return this.switchportConfigs.get(portName);
   }
