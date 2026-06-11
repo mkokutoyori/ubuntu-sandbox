@@ -1057,3 +1057,37 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 
 - Les lignes `redistribute …` d'OSPF ne sont pas projetées dans
   `show running-config` (défaut préexistant, non introduit ici).
+
+---
+
+## Entrée n°21 — 2026-06-11 — GRE : blocage définitif du tunnel au wraparound de séquence
+
+### Défaillances constatées
+
+1. **Comparaison de séquence non sérielle** — `tunnel sequence-datagrams`
+   jetait l'out-of-order par `gre.sequence < expectedRecvSeq` : au
+   wraparound 32 bits (0xFFFFFFFF → 0), tous les paquets suivants
+   devenaient « inférieurs » à l'attendu et le tunnel se bloquait
+   définitivement. (Le drop strict de l'out-of-order, lui, est conforme au
+   comportement Cisco de cette option.)
+
+### Correction
+
+- Comparaison en arithmétique sérielle 32 bits
+  (`((seq - expected) | 0) < 0`), insensible au wraparound.
+
+### Constats d'audit vérifiés et écartés à cette occasion
+
+- **VTP transparent** : le mode transparent relaie et sort avant tout
+  traitement (`forwardOnTrunks` + return) — il n'applique jamais les mises
+  à jour reçues ni ne touche sa révision. Conforme, rien à corriger.
+- **UDLD** : `udld-protocol.test.ts` existe (l'audit affirmait zéro
+  couverture) et l'agent implémente probe/echo/transitions/err-disable.
+
+### Fichiers
+
+- `src/network/gre/GreAgent.ts`
+
+### Validation (ciblée)
+
+- Suite GRE : 13 tests verts.

@@ -185,7 +185,7 @@ export class GreAgent {
       }
     }
     if (tunnel.sequenceEnabled && gre.sequencePresent && gre.sequence !== null) {
-      if (gre.sequence < tunnel.expectedRecvSeq) {
+      if (((gre.sequence - tunnel.expectedRecvSeq) | 0) < 0) {
         tunnel.outOfOrderDrops++;
         this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'out-of-order');
         return null;
