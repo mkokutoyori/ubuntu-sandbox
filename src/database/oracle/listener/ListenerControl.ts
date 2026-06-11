@@ -13,7 +13,7 @@
  *  - the lsnrctl transcript bodies (status / services), which used to be
  *    hand-copied in three places with hardcoded counters and uptime.
  */
-import { ORACLE_CONFIG, TNS_ERRORS } from '../../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG, TNS_ERRORS } from '../OracleConfig';
 import type { InstanceState } from '../OracleInstance';
 
 export type ListenerConnectOutcome = { ok: true } | { ok: false; error: string };

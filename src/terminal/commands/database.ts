@@ -8,7 +8,7 @@
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
-import { ORACLE_CONFIG } from './OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { getDefaultEventBus } from '@/events/EventBus';

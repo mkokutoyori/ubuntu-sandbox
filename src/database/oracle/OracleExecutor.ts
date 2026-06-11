@@ -29,7 +29,7 @@ import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
 import { Equipment } from '../../network/equipment/Equipment';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from './OracleConfig';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';

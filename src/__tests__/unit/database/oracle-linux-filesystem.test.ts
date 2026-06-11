@@ -16,7 +16,7 @@ import {
   syncAlertLogToDevice,
   updateSpfileOnDevice,
 } from '@/terminal/commands/database';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';

@@ -11,7 +11,7 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';

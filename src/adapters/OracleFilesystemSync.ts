@@ -26,7 +26,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */

@@ -19,7 +19,7 @@
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
-import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
+import { ORACLE_ERRORS } from '../OracleConfig';
 import { ParserError } from '../../engine/parser/ParserError';
 import { DatabaseError } from '../../engine/types/DatabaseError';
 import type { HostCommandRunner } from './HostCommandRunner';

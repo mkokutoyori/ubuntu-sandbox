@@ -16,7 +16,7 @@ import {
   syncOracleProcessesToDevice,
   syncAlertLogToDevice,
 } from '@/terminal/commands/database';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { OracleStorage } from '@/database/oracle/OracleStorage';
 import { resetCounters } from '@/network/core/types';

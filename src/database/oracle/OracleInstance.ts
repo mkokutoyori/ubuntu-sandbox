@@ -7,7 +7,7 @@
 
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
-import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
 import { OracleError } from '../engine/types/DatabaseError';
 import { ListenerControl } from './listener/ListenerControl';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
