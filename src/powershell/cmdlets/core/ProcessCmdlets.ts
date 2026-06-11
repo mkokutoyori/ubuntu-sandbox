@@ -24,13 +24,17 @@ function requireProcesses(ctx: CmdletContext): IProcessProvider {
 function toPSObject(p: ProcessInfo): Record<string, PSValue> {
   // Strip `.exe` like real Get-Process — matches the legacy executor output.
   const baseName = p.name.replace(/\.exe$/i, '');
+  // Real PowerShell renders the CPU(s) column with two-decimal precision via
+  // Format.ps1xml. We round here so floating-point artefacts (`0.8999…`) do
+  // not bleed into Format-Table output.
+  const cpuRounded = Math.round(p.cpuSec * 100) / 100;
   return {
     Handles:        p.handles,
     'NPM(K)':       p.npmK,
     'PM(K)':        Math.floor(p.pmK / 1024),
     'WS(K)':        Math.floor(p.wsK),
-    'CPU(s)':       p.cpuSec,
-    CPU:            p.cpuSec,
+    'CPU(s)':       cpuRounded,
+    CPU:            cpuRounded,
     // Real Get-Process exposes WS / PM / NPM / VM as byte aliases —
     // needed so `Select-Object WS` / `Sort-Object WS` aren't blank.
     WS:             Math.floor(p.wsK) * 1024,

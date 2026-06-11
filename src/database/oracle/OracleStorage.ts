@@ -6,7 +6,7 @@
 
 import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from './OracleConfig';
 
 export interface TablespaceMeta {
   name: string;

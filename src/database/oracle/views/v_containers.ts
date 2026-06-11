@@ -7,7 +7,7 @@ registerView({
   comment: 'Containers (CDB$ROOT + PDBs)',
   query({ instance }) {
     const rows: (string | number | null)[][] = [
-      [1, 'CDB$ROOT', String(instance.config.sid), 1234567890, 'READ WRITE', 'NORMAL', null],
+      [1, 'CDB$ROOT', String(instance.config.sid), instance.getDbId(), 'READ WRITE', 'NORMAL', null],
     ];
     for (const p of instance.multitenant.getAll()) {
       rows.push([p.conId, p.name, String(p.dbid), p.dbid, p.openMode, p.status, p.guid]);

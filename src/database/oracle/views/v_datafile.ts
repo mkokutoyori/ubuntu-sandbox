@@ -16,25 +16,31 @@ const DEFAULT_CREATION_TIME = new Date('2026-01-01T00:00:00Z');
 registerView({
   name: 'V$DATAFILE',
   comment: 'Data file information',
-  query({ storage }) {
+  query({ storage, instance }) {
     const rows: (string | number | Date | null)[][] = [];
     let fileNum = 1;
+    let tsNum = 0;
     for (const ts of storage.getAllTablespaces()) {
+      // TS# identifies the tablespace: every datafile of one tablespace
+      // shares it (real Oracle stores it in the control file).
+      const currentTsNum = tsNum++;
       if (ts.type === 'TEMPORARY') continue;
       for (const df of ts.datafiles) {
         const bytes = parseSize(df.size);
         rows.push([
           fileNum,
           df.path,
-          fileNum - 1,            // TS# (zero-based tablespace number)
+          currentTsNum,
           ts.name,
           bytes,
           ts.blockSize || 8192,
           ts.status === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
           'AVAILABLE',
           DEFAULT_CREATION_TIME,
-          1000 + fileNum,         // CHECKPOINT_CHANGE# — deterministic stub
-          DEFAULT_CREATION_TIME,  // CHECKPOINT_TIME
+          // One consistent checkpoint SCN across all headers — agrees
+          // with V$DATAFILE_HEADER and V$DATABASE.CHECKPOINT_CHANGE#.
+          instance.getCheckpointScn(),
+          instance.getCheckpointTime(),
           df.autoextend ? 'YES' : 'NO',
         ]);
         fileNum++;

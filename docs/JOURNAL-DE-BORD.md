@@ -890,6 +890,256 @@ ajoutés à `oracle-null-three-valued-logic.test.ts` (12 au total).
 
 ---
 
+## Série 3 (2026-06-11) — Consolidation finale des branches + démantèlement de la god class OracleExecutor (O7)
+
+### Entrée S3.0 — Base de travail : fusion des 4 branches restantes
+
+**Date** : 2026-06-11
+
+Conformément à la consigne, inventaire des 19 branches distantes après
+`fetch --unshallow` (le clone shallow faisait croire à des historiques
+sans ancêtre commun — diagnostic corrigé par rapport à l'entrée 10 :
+après un unshallow, `fix-powershell-tests-M4mpL` est **entièrement
+contenue** dans main, et `general-session-6Nwqo` n'avait qu'**un seul**
+commit d'avance réel) :
+
+- 15 branches déjà contenues dans la base — rien à faire.
+- `general-session-6Nwqo` (1 commit « Match real PowerShell terminal
+  output formatting ») — **mergée**. Conflits Format-Table/Format-List
+  résolus en **combinant** : projection des propriétés calculées
+  (`resolveColumns`, côté HEAD) + rendu délégué au moteur canonique
+  `formatTable`/`formatList` de PSPipeline (côté branche — vraie largeur
+  de colonnes au contenu, vrais alignements `Clé : Valeur`). La largeur
+  en dur de 15 caractères et le rendu liste à espace unique (les deux
+  copies de logique de rendu) disparaissent. `Get-Process` garde les
+  alias octets WS/PM/NPM/VM **et** gagne l'arrondi 2 décimales du CPU.
+  1 test mis à jour (il assertait l'absence d'alignement des deux-points).
+- `friendly-babbage-plxyqc` (3 commits : signaux EndHost morts + ping6
+  RFC 4861) — **mergée** ; conflit BGPEngine résolu en gardant la version
+  unifiée de l'entrée 10 (plus complète : attributs origin/MED/LOCAL_PREF
+  propagés, §5.1.5) ; journal fusionné par union.
+- `keen-babbage-krj5ab` (8 commits : série Oracle O1–O9) — **mergée** ;
+  même résolution BGPEngine.
+
+Validation : database 2650 verts, BGP 17 verts, ping6/host-signals 26
+verts, PowerShell 1880 verts (10 échecs préexistants documentés).
+
+### Entrée S3.1 — O7 (étape 1/n) : extraction de `UserAdminExecutor`
+
+**Date** : 2026-06-11
+
+#### Défaillance visée
+
+`OracleExecutor` : god class de 4 592 lignes, 50+ cas de dispatch, 11
+groupes sémantiques de handlers entremêlés (backlog O7). Démantèlement
+par étapes, chaque étape compilant et passant la suite complète.
+
+#### Correction (étape 1)
+
+- Nouveau module `src/database/oracle/executor/UserAdminExecutor.ts` :
+  CREATE/ALTER/DROP USER, CREATE/DROP ROLE, CREATE/ALTER/DROP PROFILE et
+  l'émission des événements `oracle.user.activity` (utilisée uniquement
+  par ce cycle de vie — elle déménage avec).
+- Dépendances **injectées** (storage, catalog, instance, context,
+  PrivilegeEnforcer, accesseur de session id) — pas de rétro-pointeur
+  vers la god class ; le module est typé `OracleCatalog` directement, ce
+  qui élimine les 8 casts `this.catalog as OracleCatalog` du groupe.
+- `PROTECTED_SCHEMAS` (ORA-28009) extrait en constante de module.
+- OracleExecutor : −240 lignes (4 592 → 4 362), le dispatch délègue.
+
+#### Validation
+
+Suite database complète : **2650 tests verts**, zéro régression ;
+`tsc` : zéro erreur ajoutée (baseline identique avant/après).
+
+### Entrée S3.2 — O7 (étape 2/n) : extraction de `SecurityDclExecutor`
+
+**Date** : 2026-06-11
+
+#### Correction (étape 2)
+
+- Nouveau module `src/database/oracle/executor/SecurityDclExecutor.ts` :
+  GRANT/REVOKE (privilèges système, rôles, grants objet et colonne),
+  AUDIT/NOAUDIT traditionnels, politiques d'audit unifié, ADMINISTER KEY
+  MANAGEMENT (TDE) et COMMENT ON — avec leurs trois helpers privés
+  (`granteesOf`, `expandSystemPrivileges`, `assertGrantableObjectExists`)
+  qui n'étaient utilisés que par ce groupe.
+- Les imports inline `import('../engine/parser/ASTNode').X` répétés dans
+  les signatures sont remplacés par des imports de types normaux.
+- 9 casts `as OracleCatalog` supprimés (typage direct).
+- OracleExecutor : 4 362 → 4 040 lignes ; imports morts purgés.
+
+#### Validation
+
+Suite database : **2650 tests verts** ; baseline `tsc` inchangée (25
+erreurs préexistantes dans OracleExecutor.ts, toutes antérieures et
+documentées comme bruit de la config `tsconfig.app.json` + TS récent).
+
+### Entrée S3.3 — Deux inversions de couches corrigées + O7 (étape 3/n) : `InstanceAdminExecutor`
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Couche inversée n°1** : `ORACLE_CONFIG` (chemins ORACLE_HOME,
+   ORA-/TNS-errors, bannières) vivait dans `src/terminal/commands/`
+   alors que 9 de ses 12 consommateurs de production sont le moteur
+   database lui-même. Le moteur DB importait depuis la couche terminal.
+2. **Couche inversée n°2** : `OracleExecutor` importait
+   `network/equipment/Equipment` — le moteur SQL connaissait la
+   topologie réseau — uniquement pour lire un fichier pfile sur le VFS
+   du device (`CREATE SPFILE FROM PFILE='…'`).
+
+#### Corrections
+
+- `OracleConfig.ts` déplacé dans `src/database/oracle/` ; les 19 sites
+  d'import réécrits (terminal et adapters importent désormais depuis la
+  couche database — sens de dépendance correct).
+- Injection de dépendance `OracleInstance.setDeviceFileReader()` (même
+  patron que `setEventBus`/`setLiveSessionProvider`) : l'implémentation
+  à base d'`EquipmentRegistry` est fournie par le câblage terminal
+  (`getOracleDatabase`), là où vit déjà `resolveDevice` des adapters.
+  Plus aucun import réseau dans `src/database/`.
+- O7 étape 3 : `executor/InstanceAdminExecutor.ts` — STARTUP/SHUTDOWN,
+  ALTER SYSTEM, ALTER DATABASE (mode archivelog, MOUNT/OPEN, rename/
+  resize/autoextend des datafiles), CREATE/DROP/ALTER TABLESPACE,
+  CREATE PFILE/SPFILE (+ `parseInitParameters` exporté), diskgroups ASM.
+  OracleExecutor : 4 040 → 3 677 lignes.
+
+#### Validation
+
+Database 2650 + terminal 380 verts ; zéro nouvelle erreur tsc.
+
+### Entrée S3.4 — Identité de base réelle : DBID unique + flux SCN unifié + checkpoints effectifs
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées (audit réalisme)
+
+1. **DBID `1234567890` codé en dur dans 6 vues** (V$DATABASE,
+   V$CONTAINERS, DBA_HIST_WR_CONTROL, DBA_HIST_BASELINE,
+   DBA_HIST_DATABASE_INSTANCE, fallback DBA_HIST_SYSSTAT) — toutes les
+   bases du réseau partageaient la même identité, ce qui casse tout
+   scénario multi-instances (Data Guard, clonage RMAN, audits croisés).
+2. **CHECKPOINT_CHANGE# incohérent** : V$DATAFILE répondait
+   `1000 + FILE#`, V$DATAFILE_HEADER répondait `100` fixe — un
+   `SELECT … FROM v$datafile JOIN v$datafile_header USING (FILE#)` ne
+   tombait jamais d'accord, alors que ces deux vues lisent le même SCN
+   de checkpoint dans le vrai Oracle.
+3. **`ALTER SYSTEM CHECKPOINT` no-op** : « System altered. » sans aucun
+   effet observable.
+4. **Trois compteurs SCN divergents** : l'AuditJournal tirait ses SCN
+   d'un compteur privé sans rapport avec l'état de la base ; aucune
+   notion de CURRENT_SCN.
+5. **TS# fabriqué** : `V$DATAFILE.TS# = FILE# − 1` — faux dès qu'un
+   tablespace a deux datafiles (le TS# identifie le tablespace, pas le
+   fichier).
+6. RMAN affichait toujours `DBID=1234567890` quel que soit le device.
+
+#### Corrections
+
+- `OracleInstance` devient **propriétaire de l'identité et du SCN** :
+  `getDbId()` (hash FNV-1a de deviceId:SID, plage 1–4 milliards comme
+  les vrais DBID — unique par device, reproductible), `getCurrentScn()`,
+  `advanceScn()`, `getCheckpointScn()/getCheckpointTime()`,
+  `performCheckpoint()`.
+- Chaque **COMMIT avance le SCN** (callback `onCommit` du
+  TransactionManager) ; l'**AuditJournal partage le flux SCN** de
+  l'instance (source injectée, le compteur privé ne sert plus qu'aux
+  journaux orphelins de tests).
+- **Checkpoints réels** aux mêmes déclencheurs que le vrai Oracle :
+  `ALTER SYSTEM CHECKPOINT`, log switch, OPEN, shutdown propre (ABORT
+  s'en passe, fidèle au comportement crash). Trace alert log
+  `Completed checkpoint up to RBA, SCN: n`.
+- V$DATAFILE et V$DATAFILE_HEADER lisent le **même** SCN/heure de
+  checkpoint ; V$DATABASE expose CURRENT_SCN et CHECKPOINT_CHANGE# et
+  son CONTROLFILE_CHANGE# suit le checkpoint ; TS# corrigé (numéro de
+  tablespace partagé par ses datafiles).
+- RMAN : `LinuxRmanContext` lit le DBID vivant de l'instance
+  (`connected to target database: SID (DBID=…)` réel) ; `DbId.DEFAULT`
+  ne sert plus qu'aux devices sans Oracle.
+
+#### Validation
+
+Database 2650 + RMAN 284 verts ; pas de nouvelle erreur tsc.
+
+### Entrée S3.5 — SQL*Plus : SPOOL réel, @/START réels, ECHO, substitution &var + VERIFY
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées (audit terminal)
+
+1. **SPOOL factice** : `spoolFile` stocké puis **jamais écrit** — aucun
+   fichier créé, `SPOOL OFF` ne faisait que vider la variable. Le
+   workflow DBA le plus banal (spool → requêtes → spool off → cat)
+   était silencieusement cassé.
+2. **`@script` / `START` toujours en échec** : SP2-0310 inconditionnel,
+   alors que la lecture du VFS device existe (S3.3).
+3. **`SET ECHO/VERIFY/TRIMSPOOL` ignorés** : réglages stockés sans
+   aucun effet.
+4. **DEFINE mort** : les variables `DEFINE` étaient stockées mais la
+   substitution `&var` n'était **jamais appliquée** aux statements.
+
+#### Corrections
+
+- Nouvelle surface injectée `SqlPlusFileIO { resolve, read, write }` —
+  câblée par `SqlPlusSubShell` sur le VFS du device
+  (`readFileForEditor`/`writeFileFromEditor`, mêmes surfaces que RMAN) ;
+  les chemins relatifs se résolvent contre le cwd du shell lanceur
+  (`pwd`), comme un vrai process sqlplus.
+- **SPOOL réel** : capture prompt + commande + sortie (fidèle au client
+  réel en interactif), écriture au fil de l'eau, extension `.lst`
+  implicite, modes CREATE/REPLACE/APPEND (SP2-0771 sur CREATE existant),
+  `SPOOL` nu = état courant, `SPOOL OFF` enregistre sa propre ligne en
+  dernière position, TRIMSPOOL effectif, SP2-0606 sans filesystem.
+- **@/START réels** : lecture du script sur le VFS (extension `.sql`
+  implicite, `@@` accepté), exécution ligne à ligne via le processeur
+  normal (imbrication possible), **SET ECHO ON** affiche chaque commande
+  de script derrière son prompt — et uniquement pour les scripts, comme
+  le vrai client.
+- **Substitution `&var`/`&&var`** au moment de l'exécution SQL avec
+  affichage `old N:`/`new N:` sous SET VERIFY ON, `SET DEFINE OFF`/char
+  personnalisé honorés, terminaison `.` gérée. Limite documentée : pas
+  d'invite interactive pour les symboles non définis (laissés verbatim).
+- 3 tests qui figeaient les comportements factices mis en conformité ;
+  +9 tests neufs (spool capture/extension/états, @ + ECHO, VERIFY ON/OFF,
+  DEFINE OFF).
+
+#### Validation
+
+Database + terminal + suite sqlplus-LAN : **3139 tests verts**.
+
+### Entrée S3.6 — SGA dynamique pilotée par `sga_target`
+
+**Date** : 2026-06-11
+
+#### Défaillance constatée
+
+`getSGAInfo()` retournait des constantes (`'256M'`, `'128M'`, …) quel
+que soit `sga_target` ; la bannière STARTUP affichait
+`Total System Global Area 512M bytes` (une string « 512M » à la place
+du compte d'octets) et des tailles composantes câblées en dur.
+`ALTER SYSTEM SET sga_target=…` n'avait aucun effet observable —
+V$SGA/V$SGAINFO et SHOW SGA mentaient.
+
+#### Correction
+
+- `getSGAInfo()` dérive les composantes du **paramètre vivant**
+  `sga_target` : répartition type ASMM 19c (50 % buffer cache, 25 %
+  shared pool, 3 % large/java pools), arrondie au granule réel (4M sous
+  1G de SGA, 16M au-delà), redo buffer 8M/16M selon la taille.
+- Bannière STARTUP : compte d'octets exacts dérivés du même calcul
+  (`Total System Global Area  536870912 bytes`…), plus de chiffres
+  fantaisistes.
+- 4 tests neufs (`oracle-sga-dynamic.test.ts`) : défauts à 512M, reshape
+  par ALTER SYSTEM (1G/2G), bannière en octets, V$SGAINFO suiveur.
+
+#### Validation
+
+Database **2662 tests verts** (2658 + 4).
+
+---
+
 ## Limites connues / dette restante
 
 - **Backlog #10** (ISP sur `Equipment`) : identifié, documenté, non traité.

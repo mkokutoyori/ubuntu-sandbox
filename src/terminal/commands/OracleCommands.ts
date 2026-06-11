@@ -7,7 +7,7 @@
 
 import type { Equipment } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
-import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from './OracleConfig';
+import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from '@/database/oracle/OracleConfig';
 import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
 
 /** Callback to append a line to the terminal. */

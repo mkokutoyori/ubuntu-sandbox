@@ -40,7 +40,9 @@ export class LinuxRmanContext implements IRmanOracleContext {
     private readonly _oracle: OracleDatabase | null,
   ) {
     const sid = _oracle?.instance.config.sid ?? 'ORCL';
-    this.dbId   = DbId.DEFAULT;
+    // Live instances expose their real DBID (same value V$DATABASE
+    // shows); the canonical DEFAULT only covers Oracle-less devices.
+    this.dbId   = _oracle ? DbId.of(_oracle.instance.getDbId(), sid) : DbId.DEFAULT;
     this.dbName = sid;
     this.vfs    = this._buildVfsAdapter();
   }

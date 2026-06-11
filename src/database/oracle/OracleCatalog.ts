@@ -10,7 +10,7 @@ import { type ResultSet, queryResult, emptyResult } from '../engine/executor/Res
 import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/DataType';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from './OracleConfig';
 import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './views/registry';
 import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';

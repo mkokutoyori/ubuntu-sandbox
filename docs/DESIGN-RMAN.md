@@ -1,5 +1,12 @@
 # DESIGN — Architecture Technique RMAN (Recovery Manager)
 
+> **⚠️ OBSOLÈTE** — Ce document décrit l'architecture RMAN initiale
+> (bloquante, `RmanSubShell.ts`) qui n'existe plus. L'implémentation en
+> production est l'architecture réactive décrite dans
+> **DESIGN-RMAN-REACTIVE.md** (`ReactiveRmanSubShell`, dispatcher
+> table-driven, acteurs sur bus d'événements). Conservé pour
+> l'historique uniquement.
+
 **Version** : 1.0  
 **Date** : 2026-05-05  
 **Projet** : Ubuntu Sandbox — Module Oracle RMAN  

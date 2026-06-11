@@ -26,7 +26,7 @@ import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
-import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
+import { ORACLE_ERRORS } from './OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import type { CellValue } from '../engine/storage/BaseStorage';

@@ -7,7 +7,8 @@
 
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
-import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
+import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
 import { ListenerControl } from './listener/ListenerControl';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -84,6 +85,18 @@ export class OracleInstance {
   private _archiveLogMode: boolean;
   private _pidCounter: number = 1000;
 
+  // ── Database identity & SCN ──────────────────────────────────────
+  /** DBID — computed once per database like CREATE DATABASE does (lazy
+   *  so the deviceId injected after construction participates, giving
+   *  every device a distinct, stable identifier). */
+  private _dbid: number | null = null;
+  /** System Change Number — one monotonic stream per database. Every
+   *  commit advances it; checkpoints stamp the current value into the
+   *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
+  private _currentScn = 1_000_000;
+  private _checkpointScn = 1_000_000;
+  private _checkpointTime = new Date();
+
   // ── Reactive (Phase 7) ───────────────────────────────────────────
   /** Bus override; defaults to the global singleton at publish time. */
   private _bus: IEventBus | null = null;
@@ -103,8 +116,10 @@ export class OracleInstance {
   /** Real ASM machinery — empty by default; CREATE DISKGROUP populates it. */
   readonly asm: AsmManager = new AsmManager();
   /** Security audit journal — fed by the SecurityAuditActor on bus events.
-   *  Surfaces forensic data through the DBA_* security views. */
-  private readonly _auditJournal = new AuditJournal();
+   *  Surfaces forensic data through the DBA_* security views. Shares the
+   *  instance SCN stream so DDL/DML history SCNs are coherent with
+   *  V$DATABASE.CURRENT_SCN instead of running a private counter. */
+  private readonly _auditJournal = new AuditJournal(undefined, () => this.advanceScn());
   private _securityAuditActor: SecurityAuditActor | null = null;
   private _userActivity: UserActivityTracker | null = null;
   /** Database-level event-trigger catalogue + executor. */
@@ -201,6 +216,69 @@ export class OracleInstance {
   setDeviceId(deviceId: string): void {
     this._deviceId = deviceId;
     this.reattachRefreshActor();
+  }
+
+  /**
+   * Host-filesystem reader injected by the layer that owns the device
+   * (terminal wiring). Lets SQL like CREATE SPFILE FROM PFILE read
+   * init.ora files from the device VFS without the database layer
+   * importing network/Equipment (dependency inversion).
+   */
+  private _deviceFileReader: ((path: string) => string | null) | null = null;
+  setDeviceFileReader(fn: (path: string) => string | null): void {
+    this._deviceFileReader = fn;
+  }
+  /** Read a file from the host device VFS, or null when unavailable. */
+  readDeviceFile(path: string): string | null {
+    return this._deviceFileReader?.(path) ?? null;
+  }
+
+  // ── DBID / SCN accessors ──────────────────────────────────────────
+
+  /**
+   * Database identifier, as shown by V$DATABASE.DBID and RMAN's
+   * `connected to target database: X (DBID=n)`. Real Oracle derives it
+   * from the database name and creation timestamp at CREATE DATABASE
+   * time; the simulator hashes deviceId+SID so every device gets a
+   * distinct but reproducible DBID.
+   */
+  getDbId(): number {
+    if (this._dbid === null) {
+      // FNV-1a 32-bit over "deviceId:SID".
+      let h = 0x811c9dc5;
+      for (const ch of `${this._deviceId}:${this.config.sid}`) {
+        h ^= ch.charCodeAt(0);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      // Map into the 1.0–4.0 billion range typical of real DBIDs.
+      this._dbid = 1_000_000_000 + (h % 3_000_000_000);
+    }
+    return this._dbid;
+  }
+
+  /** Current SCN (V$DATABASE.CURRENT_SCN). */
+  getCurrentScn(): number { return this._currentScn; }
+
+  /** Advance the SCN (commits, checkpoints) and return the new value. */
+  advanceScn(delta: number = 1): number {
+    this._currentScn += delta;
+    return this._currentScn;
+  }
+
+  /** SCN stamped into every datafile header at the last checkpoint. */
+  getCheckpointScn(): number { return this._checkpointScn; }
+  getCheckpointTime(): Date { return this._checkpointTime; }
+
+  /**
+   * Complete a checkpoint: advance the SCN and stamp it (with the wall
+   * clock) into the shared header state every datafile view reads.
+   * Triggered by ALTER SYSTEM CHECKPOINT, log switches, OPEN and clean
+   * shutdowns — the same events as real Oracle.
+   */
+  performCheckpoint(): void {
+    this._checkpointScn = this.advanceScn();
+    this._checkpointTime = new Date();
+    this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
   }
 
   /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */
@@ -333,11 +411,19 @@ export class OracleInstance {
     // NOMOUNT
     this.transitionTo('NOMOUNT');
     this.startBackgroundProcesses();
-    output.push(`Total System Global Area  ${this.config.sgaTarget} bytes`);
-    output.push(`Fixed Size                  2.0M bytes`);
-    output.push(`Variable Size             256.0M bytes`);
-    output.push(`Database Buffers          128.0M bytes`);
-    output.push(`Redo Buffers               16.0M bytes`);
+    {
+      // Real startup banner prints exact byte counts derived from the
+      // live sga_target, not canned figures.
+      const sga = this.getSGAInfo();
+      const b = (spec: string): number => parseSize(spec);
+      const fixed = 2 * 1024 * 1024;
+      const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
+      output.push(`Total System Global Area ${String(b(sga.totalSize)).padStart(10)} bytes`);
+      output.push(`Fixed Size               ${String(fixed).padStart(10)} bytes`);
+      output.push(`Variable Size            ${String(variable).padStart(10)} bytes`);
+      output.push(`Database Buffers         ${String(b(sga.bufferCache)).padStart(10)} bytes`);
+      output.push(`Redo Buffers             ${String(b(sga.redoLogBuffer)).padStart(10)} bytes`);
+    }
 
     if (mode === 'NOMOUNT') {
       this.logAlert('Instance started in NOMOUNT mode');
@@ -367,6 +453,7 @@ export class OracleInstance {
   private markOpen(): void {
     this.transitionTo('OPEN');
     this._redoLogGroups[0].status = 'CURRENT';
+    this.performCheckpoint();
     this.logAlert('Database opened');
     for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
       this.getBus().publish({
@@ -410,6 +497,9 @@ export class OracleInstance {
     this.logAlert(`Shutting down instance (${effectiveMode.toLowerCase()})`);
 
     if (this._state === 'OPEN') {
+      // Clean shutdowns checkpoint before closing (ABORT skips it, which
+      // is what makes the subsequent startup need instance recovery).
+      if (effectiveMode !== 'ABORT') this.performCheckpoint();
       output.push('Database closed.');
       this.logAlert('Database closed');
     }
@@ -487,6 +577,8 @@ export class OracleInstance {
 
   switchLogfile(): string {
     if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
+    // A log switch triggers a (media-recovery) checkpoint in real Oracle.
+    this.performCheckpoint();
     const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
     if (currentGroup) {
       currentGroup.status = 'ACTIVE';
@@ -663,14 +755,32 @@ export class OracleInstance {
 
   // ── SGA Info ─────────────────────────────────────────────────────
 
+  /**
+   * SGA component sizes derived from the live `sga_target` parameter —
+   * `ALTER SYSTEM SET sga_target=…` immediately reshapes the breakdown,
+   * like ASMM on a real instance. Components are granule-rounded
+   * (4M granules below 1G of SGA, 16M above, like real Oracle).
+   */
   getSGAInfo(): SGAInfo {
+    const ONE_MB = 1024 * 1024;
+    const total = parseSize(this.getParameter('sga_target') ?? this.config.sgaTarget)
+      || parseSize(this.config.sgaTarget);
+    const granule = total > 1024 * ONE_MB ? 16 * ONE_MB : 4 * ONE_MB;
+    const round = (b: number): number => Math.max(granule, Math.round(b / granule) * granule);
+    const asMb = (b: number): string => `${Math.round(b / ONE_MB)}M`;
+    // Typical ASMM steady-state split of a 19c instance.
+    const bufferCache = round(total * 0.50);
+    const sharedPool = round(total * 0.25);
+    const largePool = round(total * 0.03);
+    const javaPool = round(total * 0.03);
+    const redoBuffer = total >= 1024 * ONE_MB ? 16 * ONE_MB : 8 * ONE_MB;
     return {
-      totalSize: this.config.sgaTarget,
-      sharedPool: '256M',
-      bufferCache: '128M',
-      redoLogBuffer: '16M',
-      javaPool: '64M',
-      largePool: '32M',
+      totalSize: asMb(total),
+      sharedPool: asMb(sharedPool),
+      bufferCache: asMb(bufferCache),
+      redoLogBuffer: asMb(redoBuffer),
+      javaPool: asMb(javaPool),
+      largePool: asMb(largePool),
     };
   }
 

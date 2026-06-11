@@ -11,15 +11,15 @@
  *   - HELP
  *   - Column-formatted output with headers and separators
  *   - / (re-execute last statement)
- *   - @ and START (run script — simulated)
- *   - SPOOL (simulated)
+ *   - @ and START (run a script from the device VFS, SET ECHO honored)
+ *   - SPOOL (real capture written through the injected SqlPlusFileIO)
  *   - PROMPT, ACCEPT (simulated)
  */
 
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
-import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
+import { ORACLE_ERRORS } from '../OracleConfig';
 import { ParserError } from '../../engine/parser/ParserError';
 import { DatabaseError } from '../../engine/types/DatabaseError';
 import type { HostCommandRunner } from './HostCommandRunner';
@@ -63,6 +63,18 @@ export interface SQLPlusResult {
   prompt: string;
 }
 
+/**
+ * Filesystem surface for SPOOL / @script — resolution of relative paths
+ * and read/write against the device VFS. Injected by the sub-shell
+ * wiring (SqlPlusSubShell) so this session never touches Equipment.
+ */
+export interface SqlPlusFileIO {
+  /** Resolve a possibly-relative path against the shell's cwd. */
+  resolve(path: string): string;
+  read(path: string): string | null;
+  write(path: string, content: string): boolean;
+}
+
 export class SQLPlusSession {
   private db: OracleDatabase;
   private executor: OracleExecutor | null = null;
@@ -79,7 +91,14 @@ export class SQLPlusSession {
   private connected: boolean = false;
   private asSysdba: boolean = false;
   private currentUser: string = '';
-  private spoolFile: string | null = null;
+  /** Active SPOOL capture (absolute path + everything shown so far). */
+  private spool: { path: string; lines: string[] } | null = null;
+  /** Set by SPOOL OFF so the closing command itself lands in the file. */
+  private spoolClosing = false;
+  /** Device VFS surface for SPOOL/@ — injected by the sub-shell. */
+  private fileIO: SqlPlusFileIO | null = null;
+  /** Prompt displayed before the line being processed (spool echo). */
+  private lastPromptShown: string | null = null;
   /** User-defined substitution variables (DEFINE) */
   private defines: Map<string, string> = new Map();
   /** Bind variables (VARIABLE / PRINT) */
@@ -128,6 +147,11 @@ export class SQLPlusSession {
   /** Wire a HOST executor (typically delegated to the underlying device). */
   setHostCommandRunner(runner: HostCommandRunner | null): void {
     this.hostRunner = runner;
+  }
+
+  /** Wire the device VFS surface used by SPOOL and @script. */
+  setFileIO(io: SqlPlusFileIO | null): void {
+    this.fileIO = io;
   }
 
   /**
@@ -223,8 +247,30 @@ export class SQLPlusSession {
 
   /**
    * Process a line of input. Returns structured result.
+   *
+   * This wrapper owns the SPOOL capture: like the real client, the
+   * spool file records the prompt + command line followed by whatever
+   * the command printed (SET TRIMSPOOL ON strips trailing blanks).
    */
   processLine(line: string): SQLPlusResult {
+    const promptBefore = this.lastPromptShown ?? this.getPrompt();
+    const result = this.processLineInner(line);
+    if (this.spool) {
+      this.spool.lines.push(`${promptBefore}${line}`);
+      for (const out of result.output) {
+        this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+      }
+      this.flushSpool();
+      if (this.spoolClosing) {
+        this.spool = null;
+        this.spoolClosing = false;
+      }
+    }
+    this.lastPromptShown = result.prompt;
+    return result;
+  }
+
+  private processLineInner(line: string): SQLPlusResult {
     const trimmed = line.trim();
 
     // If we're accumulating a PL/SQL block
@@ -391,8 +437,8 @@ export class SQLPlusSession {
       },
       {
         name: 'SPOOL',
-        matches: prefixOnly('SPOOL'),
-        run: (trimmed) => this.handleSpool(trimmed.substring(6).trim()),
+        matches: (u) => u === 'SPOOL' || u.startsWith('SPOOL '),
+        run: (trimmed) => this.handleSpool(trimmed.substring(5).trim()),
       },
       {
         name: 'PROMPT',
@@ -445,10 +491,7 @@ export class SQLPlusSession {
       {
         name: 'START',
         matches: (u, t) => t.startsWith('@') || u.startsWith('START '),
-        run: (trimmed) => {
-          const scriptName = trimmed.startsWith('@') ? trimmed.substring(1).trim() : trimmed.substring(6).trim();
-          return this.ok([`SP2-0310: unable to open file "${scriptName}"`]);
-        },
+        run: (trimmed) => this.runScript(trimmed),
       },
       {
         name: 'COLUMN',
@@ -604,8 +647,13 @@ export class SQLPlusSession {
       return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
+    // &var / &&var substitution (SET DEFINE). SET VERIFY ON prints the
+    // old/new line pair for every line that changed, like the real client.
+    const substituted = this.substituteDefines(sql);
+    sql = substituted.sql;
+
     this.lastStatement = sql;
-    const output: string[] = [];
+    const output: string[] = [...substituted.verifyLines];
 
     try {
       const startTime = Date.now();
@@ -1354,12 +1402,83 @@ export class SQLPlusSession {
 
   private handleSpool(args: string): SQLPlusResult {
     const upper = args.toUpperCase();
-    if (upper === 'OFF') {
-      this.spoolFile = null;
-      return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    if (!args) {
+      // Bare SPOOL reports the current state, like the real client.
+      return this.ok([this.spool
+        ? `currently spooling to ${this.spool.path}`
+        : 'not spooling currently']);
     }
-    this.spoolFile = args;
-    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    if (upper === 'OFF' || upper === 'OUT') {
+      if (!this.spool) return this.ok(['not spooling currently']);
+      // Close after the wrapper captures this very command — the real
+      // spool file ends with the "SQL> spool off" line.
+      this.spoolClosing = true;
+      return this.ok();
+    }
+    const m = /^(\S+)(?:\s+(CREATE|REPLACE|APPEND))?\s*$/i.exec(args);
+    if (!m) {
+      return this.ok(['SP2-0768: Illegal SPOOL command']);
+    }
+    let path = m[1];
+    const mode = (m[2] ?? 'REPLACE').toUpperCase();
+    // SQL*Plus appends .lst when the file name carries no extension.
+    const base = path.split('/').pop() ?? path;
+    if (!base.includes('.')) path += '.lst';
+    if (!this.fileIO) {
+      return this.ok([`SP2-0606: Cannot create SPOOL file "${path}"`]);
+    }
+    const resolved = this.fileIO.resolve(path);
+    const prior = this.fileIO.read(resolved);
+    if (mode === 'CREATE' && prior !== null) {
+      return this.ok([`SP2-0771: File "${path}" already exists. Use another name or "SPOOL filename[.ext] REPLACE"`]);
+    }
+    const lines: string[] = [];
+    if (mode === 'APPEND' && prior) lines.push(...prior.replace(/\n$/, '').split('\n'));
+    if (!this.fileIO.write(resolved, lines.length ? lines.join('\n') + '\n' : '')) {
+      return this.ok([`SP2-0606: Cannot create SPOOL file "${path}"`]);
+    }
+    this.spool = { path: resolved, lines };
+    return this.ok();
+  }
+
+  private flushSpool(): void {
+    if (this.spool && this.fileIO) {
+      this.fileIO.write(this.spool.path, this.spool.lines.join('\n') + '\n');
+    }
+  }
+
+  /**
+   * @name / @@name / START name — read the script from the device VFS
+   * and feed its lines through the normal line processor. SET ECHO ON
+   * prints each script command behind its prompt, exactly like the
+   * real client (ECHO never applies to interactive input).
+   */
+  private runScript(cmd: string): SQLPlusResult {
+    const name = cmd.startsWith('@')
+      ? cmd.replace(/^@@?/, '').trim()
+      : cmd.substring(6).trim();
+    if (!name) return this.ok(['SP2-0310: unable to open file ""']);
+    let path = name;
+    const base = path.split('/').pop() ?? path;
+    if (!base.includes('.')) path += '.sql';
+    const resolved = this.fileIO ? this.fileIO.resolve(path) : path;
+    const content = this.fileIO?.read(resolved)
+      ?? this.db.instance.readDeviceFile(resolved);
+    if (content === null || content === undefined) {
+      return this.ok([`SP2-0310: unable to open file "${path}"`]);
+    }
+    const output: string[] = [];
+    let scriptPrompt = this.getPrompt();
+    for (const raw of content.replace(/\n$/, '').split('\n')) {
+      const inner = this.processLineInner(raw);
+      if (this.settings.echo) output.push(`${scriptPrompt}${raw}`);
+      output.push(...inner.output);
+      scriptPrompt = inner.prompt;
+      if (inner.exit) {
+        return { output, exit: true, needsMoreInput: false, prompt: inner.prompt };
+      }
+    }
+    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   // ── COLUMN ──────────────────────────────────────────────────────
@@ -1417,6 +1536,35 @@ export class SQLPlusSession {
   }
 
   // ── DEFINE ─────────────────────────────────────────────────────
+
+  /**
+   * Apply DEFINE substitution variables to a statement. `&&name` behaves
+   * like `&name` for already-defined symbols (the interactive
+   * prompt-and-define flow is not simulated — undefined symbols are left
+   * verbatim and surface as ORA-/SP2 errors downstream). A trailing `.`
+   * terminates the symbol, as in the real client (`&tab.le`).
+   */
+  private substituteDefines(sql: string): { sql: string; verifyLines: string[] } {
+    const c = this.settings.define;
+    if (!c || this.defines.size === 0 || !sql.includes(c)) {
+      return { sql, verifyLines: [] };
+    }
+    const esc = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`${esc}{1,2}(\\w+)\\.?`, 'g');
+    const verifyLines: string[] = [];
+    const outLines = sql.split('\n').map((line, i) => {
+      const replaced = line.replace(re, (match, symbol: string) => {
+        const value = this.defines.get(symbol.toUpperCase());
+        return value !== undefined ? value : match;
+      });
+      if (replaced !== line && this.settings.verify) {
+        verifyLines.push(`old   ${i + 1}: ${line}`);
+        verifyLines.push(`new   ${i + 1}: ${replaced}`);
+      }
+      return replaced;
+    });
+    return { sql: outLines.join('\n'), verifyLines };
+  }
 
   private handleDefine(args: string): SQLPlusResult {
     if (!args) {
