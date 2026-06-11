@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-09T09:12:43.012Z
+Generated: 2026-06-11T00:25:00.114Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -589,10 +589,14 @@ Total steps: 247
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [128/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 0.0.0.0
-    Routing Tables
+  OSPF Process 1 with Router ID 192.168.1.1
+           Routing Tables
   
-    Routing for Network
+   Routing for Network
+   Destination        Cost  Type       NextHop         AdvRouter       Area
+  
+   Total Nets: 0
+   Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [129/247] r1 <R1> display ospf abr-asbr
   OSPF Process 1 with Router ID 192.168.1.1
@@ -616,7 +620,7 @@ Total steps: 247
 [133/247] r1 <R1> display ospf statistics
   OSPF statistics:
     LSA: 3 total
-    SPF: 15 runs
+    SPF: 16 runs
     Neighbors: 0, Adjacent: 0
   
     Area statistics:
@@ -910,10 +914,14 @@ Total steps: 247
   
 
 [155/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 0.0.0.0
-    Routing Tables
+  OSPF Process 1 with Router ID 192.168.1.1
+           Routing Tables
   
-    Routing for Network
+   Routing for Network
+   Destination        Cost  Type       NextHop         AdvRouter       Area
+  
+   Total Nets: 0
+   Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [156/247] r1 <R1> display ospf lsdb
            OSPF Process 1 with Router ID 192.168.1.1
@@ -921,15 +929,15 @@ Total steps: 247
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x80000035
+   Router    192.168.1.1     192.168.1.1     0     96    0x8000003b
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000036
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000003c
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000037
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000003d
   
 
 [157/247] r1 <R1> display ospf brief
@@ -1013,8 +1021,8 @@ Total steps: 247
   No NTP associations
 
 [178/247] r1 <R1> display clock
-  2026-06-09 09:12:43
-  Tuesday
+  2026-06-11 00:25:00
+  Thursday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1026,13 +1034,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-09 09:12:43
+  CPU Usage Stat. Time : 2026-06-11 00:25:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-09 09:12:43
+  Memory utilization statistics at 2026-06-11 00:25:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1381,10 +1389,10 @@ Total steps: 247
 <empty>
 
 [226/247] r1 [R1] undo terminal monitor
-<empty>
+  Info: Current terminal monitor is off.
 
 [227/247] r1 [R1] undo terminal monitor
-<empty>
+  Info: Current terminal monitor is off.
 
 [228/247] r1 [R1] sysname TEST
 <empty>
@@ -1459,6 +1467,8 @@ Total steps: 247
     routing-table  routing-table
 
 [244/247] r1 [Huawei] undo ?
+    terminal       terminal
+    debugging      Disable debugging
     lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
@@ -1471,7 +1481,6 @@ Total steps: 247
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    debugging      debugging
     ike            ike
     ipsec          ipsec
     ikev2          ikev2

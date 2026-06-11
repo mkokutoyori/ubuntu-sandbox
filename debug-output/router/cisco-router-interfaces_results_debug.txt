@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-09T08:05:33.628Z
+Generated: 2026-06-11T00:25:00.802Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -733,12 +733,12 @@ Total steps: 343
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -907,23 +907,23 @@ Total steps: 343
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
 
 [196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
 
 [197/343] r1 R1# show ipv6 interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1040,7 +1040,7 @@ Total steps: 343
 [206/343] r1 R1# show interfaces GigabitEthernet0/1 accounting
   GigabitEthernet0/1
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           3           0           3           0
+                      IP           3           0           4           0
 
 [207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
   Name: GigabitEthernet0/1
@@ -1049,10 +1049,10 @@ Total steps: 343
 [208/343] r1 R1# show interfaces GigabitEthernet0/1 stats
   GigabitEthernet0/1
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
-                 Processor          3           0           3           0
+                 Processor          3           0           4           0
                Route cache          0           0           0           0
         Distributed cache          0           0           0           0
-                    Total          3           0           3           0
+                    Total          3           0           4           0
 
 [209/343] r1 R1# show controllers GigabitEthernet0/1
   GigabitEthernet0/1 -
@@ -1530,12 +1530,12 @@ Total steps: 343
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1855,7 +1855,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD247CD.ADD2F1A9 (08:05:33.679 UTC Tue Jun 9 2026)
+  reference time is EDD47EDC.D70A3D70 (00:25:00.840 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1864,7 +1864,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *08:05:33.000 UTC Tue Jun 9 2026
+  *00:25:00.000 UTC Thu Jun 11 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1964,12 +1964,12 @@ Total steps: 343
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
 
 [283/343] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -2331,12 +2331,12 @@ Total steps: 343
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    ARP type: ARPA, ARP Timeout 00:10:00
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -2537,7 +2537,8 @@ Total steps: 343
 
 [292/343] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -2990,6 +2991,8 @@ Total steps: 343
     ssh              SSH config
     dhcp             dhcp
     route            Establish static routes
+    default-network  Configure default-network
+    local            local
     pim              pim
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
@@ -3034,6 +3037,7 @@ Total steps: 343
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 

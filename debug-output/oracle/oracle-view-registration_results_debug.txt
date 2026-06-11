@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-06-10T05:49:02.060Z
+Generated: 2026-06-11T00:23:38.593Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Wed Jun 10 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Thu Jun 11 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -15,12 +15,12 @@ Total commands: 31
 
 
 --- [1] § registry vs dictionary ---
--- registry=445 dba_views=445 all_views=445 dict=445
+-- registry=447 dba_views=447 all_views=447 dict=447
 SQL [1/31]> SELECT COUNT(*) AS dba_views FROM DBA_VIEWS;
   
   DBA_VIEWS
   ---------
-  445      
+        447
   
   1 row selected.
 
@@ -28,7 +28,7 @@ SQL [2/31]> SELECT COUNT(*) AS all_views FROM ALL_VIEWS;
   
   ALL_VIEWS
   ---------
-  445      
+        447
   
   1 row selected.
 
@@ -36,7 +36,7 @@ SQL [3/31]> SELECT COUNT(*) AS dict_entries FROM DICTIONARY;
   
   DICT_ENTRIES
   ------------
-  445         
+           447
   
   1 row selected.
 
@@ -81,7 +81,7 @@ SQL [8/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$BH
   
   VIEW_NAME TEXT_LENGTH
   --------- -----------
-  V$BH      40         
+  V$BH               40
   
   1 row selected.
 
@@ -89,7 +89,7 @@ SQL [9/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$BH';
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -97,8 +97,8 @@ SQL [10/31]> SELECT * FROM V$BH WHERE rownum < 3;
   
   FILE# BLOCK# CLASS# STATUS OBJD TS#
   ----- ------ ------ ------ ---- ---
-  1     100    1      xcur   1000 0  
-  1     101    1      xcur   1001 0  
+      1    100      1 xcur   1000   0
+      1    101      1 xcur   1001   0
   
   2 rows selected.
 
@@ -106,7 +106,7 @@ SQL [11/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$W
   
   VIEW_NAME     TEXT_LENGTH
   ------------- -----------
-  V$WAIT_CHAINS 49         
+  V$WAIT_CHAINS          49
   
   1 row selected.
 
@@ -114,7 +114,7 @@ SQL [12/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$WAIT_CHAINS';
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -127,7 +127,7 @@ SQL [14/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$S
   
   VIEW_NAME     TEXT_LENGTH
   ------------- -----------
-  V$SQL_MONITOR 49         
+  V$SQL_MONITOR          49
   
   1 row selected.
 
@@ -135,7 +135,7 @@ SQL [15/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$SQL_MONITOR';
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -143,8 +143,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0 1           2026-06-10T05:49:02.077Z EXECUTING SYS      0            0        0           0          0                  
-  13ipzqna3xqw0 2           2026-06-10T05:49:02.076Z DONE      SYS      967          773      2           0          0                  
+  1rcfn8ma3xqw0           1 2026-06-11T00:23:38.609Z EXECUTING SYS                 0        0           0          0                   0
+  1k9jsq4a3xqw0           2 2026-06-11T00:23:38.608Z DONE      SYS               785      628           2          0                   0
   
   2 rows selected.
 
@@ -152,7 +152,7 @@ SQL [17/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'DBA
   
   VIEW_NAME         TEXT_LENGTH
   ----------------- -----------
-  DBA_HIST_SNAPSHOT 53         
+  DBA_HIST_SNAPSHOT          53
   
   1 row selected.
 
@@ -160,7 +160,7 @@ SQL [18/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'DBA_HIST_SNAPSHOT
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -168,7 +168,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ ----------- ------------- ------
-  1       1    1               1          2026-06-10T04:49:02.082Z 2026-06-10T05:49:02.082Z COMPLETED YES          TYPICAL     1             AUTO  
+        1    1               1          1 2026-06-10T23:23:38.612Z 2026-06-11T00:23:38.612Z COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -176,7 +176,7 @@ SQL [20/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$S
   
   VIEW_NAME         TEXT_LENGTH
   ----------------- -----------
-  V$SESSION_LONGOPS 53         
+  V$SESSION_LONGOPS          53
   
   1 row selected.
 
@@ -184,7 +184,7 @@ SQL [21/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$SESSION_LONGOPS
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -197,7 +197,7 @@ SQL [23/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'DBA
   
   VIEW_NAME              TEXT_LENGTH
   ---------------------- -----------
-  DBA_SCHEDULER_PROGRAMS 58         
+  DBA_SCHEDULER_PROGRAMS          58
   
   1 row selected.
 
@@ -205,7 +205,7 @@ SQL [24/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'DBA_SCHEDULER_PRO
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
@@ -218,7 +218,7 @@ SQL [26/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$P
   
   VIEW_NAME TEXT_LENGTH
   --------- -----------
-  V$PGASTAT 45         
+  V$PGASTAT          45
   
   1 row selected.
 
@@ -226,13 +226,13 @@ SQL [27/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$PGASTAT';
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 
 SQL [28/31]> SELECT * FROM V$PGASTAT WHERE rownum < 3;
   
-  NAME                           VALUE     UNIT 
+  NAME                               VALUE UNIT 
   ------------------------------ --------- -----
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
@@ -243,7 +243,7 @@ SQL [29/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'DBA
   
   VIEW_NAME      TEXT_LENGTH
   -------------- -----------
-  DBA_RECYCLEBIN 50         
+  DBA_RECYCLEBIN          50
   
   1 row selected.
 
@@ -251,7 +251,7 @@ SQL [30/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'DBA_RECYCLEBIN';
   
   COUNT(...)
   ----------
-  1         
+           1
   
   1 row selected.
 

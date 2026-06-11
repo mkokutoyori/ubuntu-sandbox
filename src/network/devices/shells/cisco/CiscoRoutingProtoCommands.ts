@@ -361,13 +361,12 @@ export function registerRoutingProtoShow(
       `BGP table version is 1, local router ID is ${c.routerId ?? '0.0.0.0'}`,
       '     Network          Next Hop            Metric LocPrf Weight Path',
     ];
-    for (const s of c.networks) {
-      rows.push(`*>   ${s.network}/${new SubnetMask(s.mask).toCIDR()}` +
-        `      0.0.0.0               0         32768 i`);
-    }
-    for (const r of e.getContributedRoutes()) {
-      rows.push(`*>   ${r.network}/${r.mask.toCIDR()}` +
-        `      ${String(r.nextHop ?? '0.0.0.0').padEnd(20)}0              0 i`);
+    for (const r of e.getBgpTable()) {
+      const prefix = `${r.network}/${r.mask.toCIDR()}`;
+      const nextHop = String(r.nextHop ?? '0.0.0.0');
+      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
+      rows.push(`*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}` +
+        `0         ${String(r.weight).padStart(5)} ${path}`);
     }
     return rows.join('\n');
   });

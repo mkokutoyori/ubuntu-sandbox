@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-06-07T20:22:33.119Z
+Generated: 2026-06-11T00:24:24.525Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -473,27 +473,28 @@ $ [82/303]> tail -q seq.txt nombres.txt
 
 --- [83] § wc — comptage ---
 $ [83/303]> wc fruits.txt
-  6 6 40 fruits.txt
+        6       6      40 fruits.txt
 
 $ [84/303]> wc -l fruits.txt
-  6 fruits.txt
+        6 fruits.txt
 
 $ [85/303]> wc -w gens.csv
-  4 gens.csv
+        4 gens.csv
 
 $ [86/303]> wc -c fruits.txt
-  40 fruits.txt
+       40 fruits.txt
 
 $ [87/303]> wc -m divers.txt
-  3 8 58 divers.txt
+       58 divers.txt
 
 $ [88/303]> wc -L divers.txt
-  3 8 58 divers.txt
+       27 divers.txt
 
 $ [89/303]> wc -l fruits.txt nombres.txt seq.txt
-  6 fruits.txt
-  6 nombres.txt
-  20 seq.txt
+        6 fruits.txt
+        6 nombres.txt
+       19 seq.txt
+       31 total
 
 $ [90/303]> cat fruits.txt | wc -l
   6
@@ -521,10 +522,8 @@ $ [93/303]> sort -r fruits.txt
 
 $ [94/303]> sort -u fruits.txt
   banane
-  banane
   cerise
   fraise
-  pomme
   pomme
 
 $ [95/303]> sort -n nombres.txt
@@ -558,16 +557,16 @@ $ [98/303]> sort -k1 gens.csv
   dan:28:nice
 
 $ [99/303]> sort -t: -k2 -n gens.csv
-  alice:30:paris
   bob:25:lyon
-  carol:35:paris
   dan:28:nice
+  alice:30:paris
+  carol:35:paris
 
 $ [100/303]> sort -t: -k3 gens.csv
-  alice:30:paris
   bob:25:lyon
-  carol:35:paris
   dan:28:nice
+  alice:30:paris
+  carol:35:paris
 
 $ [101/303]> sort -f divers.txt
     espaces  avant et apres  
@@ -583,9 +582,9 @@ $ [102/303]> sort -c nombres.txt
   3
 
 $ [103/303]> sort -b divers.txt
-    espaces  avant et apres  
   MAJUSCULE minuscule
   UNE LIGNE
+    espaces  avant et apres  
 
 $ [104/303]> sort fruits.txt | uniq
   banane
@@ -607,22 +606,18 @@ $ [106/303]> sort fruits.txt | uniq
   pomme
 
 $ [107/303]> sort fruits.txt | uniq -c
-  banane
-  cerise
-  fraise
-  pomme
+        2 banane
+        1 cerise
+        1 fraise
+        2 pomme
 
 $ [108/303]> sort fruits.txt | uniq -d
   banane
-  cerise
-  fraise
   pomme
 
 $ [109/303]> sort fruits.txt | uniq -u
-  banane
   cerise
   fraise
-  pomme
 
 $ [110/303]> sort -n nombres.txt | uniq
   1
@@ -632,11 +627,11 @@ $ [110/303]> sort -n nombres.txt | uniq
   20
 
 $ [111/303]> sort -n nombres.txt | uniq -c
-  1
-  2
-  3
-  10
-  20
+        2 1
+        1 2
+        1 3
+        1 10
+        1 20
 
 $ [112/303]> uniq fruits.txt
   banane
@@ -647,10 +642,10 @@ $ [112/303]> uniq fruits.txt
   banane
 
 $ [113/303]> sort fruits.txt | uniq -c | sort -rn
-  banane
-  cerise
-  fraise
-  pomme
+        1 cerise
+        1 fraise
+        2 banane
+        2 pomme
 
 
 --- [114] § cut — extraction de colonnes ---
@@ -673,24 +668,26 @@ $ [116/303]> cut -d: -f1,3 gens.csv
   dan:nice
 
 $ [117/303]> cut -d: -f2- gens.csv
-  30
-  25
-  35
-  28
+  30:paris
+  25:lyon
+  35:paris
+  28:nice
 
 $ [118/303]> cut -c1-3 fruits.txt
-  
-  
-  
-  
-  
+  ban
+  pom
+  cer
+  pom
+  fra
+  ban
 
 $ [119/303]> cut -c1 fruits.txt
-  
-  
-  
-  
-  
+  b
+  p
+  c
+  p
+  f
+  b
 
 $ [120/303]> cut -d: -f1 /etc/passwd
   root
@@ -731,16 +728,16 @@ $ [125/303]> echo 'HELLO' | tr A-Z a-z
   hello
 
 $ [126/303]> echo 'a-b-c' | tr '-' '_'
-  a_b_c
+  a-b-c
 
 $ [127/303]> echo 'aaa bbb' | tr -s 'a'
-  aaa bbb
+  a bbb
 
 $ [128/303]> echo 'hello123world' | tr -d '0-9'
-  hello123worl1
+  helloworld
 
 $ [129/303]> echo 'hello' | tr -c 'a-z' '*'
-  hello
+  *****
 
 $ [130/303]> echo 'abcdef' | tr 'abc' 'xyz'
   xyzdef
@@ -754,10 +751,10 @@ $ [131/303]> cat fruits.txt | tr a-z A-Z
   BANANE
 
 $ [132/303]> echo 'tab\tici' | tr '\t' ' '
-  tab tici
+  tab\tici
 
 $ [133/303]> echo 'compte' | tr -cd 'a-z'
-  bompte
+  compte
 
 
 --- [134] § sed — édition de flux ---
@@ -997,14 +994,14 @@ $ [178/303]> ls /etc | grep conf | sort | head
   group-         machine-id     resolv.conf    subgid
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
-  CERISE
-  banane
-  fraise
+        1 CERISE
+        1 fraise
+        2 banane
 
 $ [180/303]> cat gens.csv | awk -F: '{print $3}' | sort | uniq -c
-  lyon
-  nice
-  paris
+        1 lyon
+        1 nice
+        2 paris
 
 $ [181/303]> cat nombres.txt | sort -n | tail -1
   20
@@ -1205,12 +1202,8 @@ $ [238/303]> seq 1 5 | xargs echo
   echo 5
 
 $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
-  wc /etc/ufw/ufw.conf
-  wc /etc/ufw/sysctl.conf
   wc /etc/resolv.conf
   wc /etc/adduser.conf
-  wc /etc/security/pwquality.conf
-  wc /etc/security/faillock.conf
   wc /etc/nsswitch.conf
 
 $ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo
@@ -1275,19 +1268,20 @@ $ [256/303]> seq 1 10 | paste -sd+ - | bc
 
 --- [257] § hachage & encodage — sums/base64/md5 ---
 $ [257/303]> md5sum fruits.txt
-  5ec7a45c83942abe5d919b508bc69633  fruits.txt
+  6e2a753594fb21e60c47f111d888834d  fruits.txt
 
 $ [258/303]> sha1sum fruits.txt
-  974b2a07e2c049cca16e1038585ea62a  fruits.txt
+  43e2f99b4a38c446d1af912e72ef88043979cff9  fruits.txt
 
 $ [259/303]> sha256sum fruits.txt
-  a915a4ce24de9aed9747359baa302f25a972bf8787c67f0a22a513f971f811d9  fruits.txt
+  aafd338b2452473b792d2750da29fd32126343af653fdd2f759540ae03369817  fruits.txt
 
 $ [260/303]> md5sum fruits.txt nombres.txt
-  e6b04917eccf761b61a91731790389ff  fruits.txt
+  6e2a753594fb21e60c47f111d888834d  fruits.txt
+  d477c7d63c0d6d3e48d6b8dd56d7d343  nombres.txt
 
 $ [261/303]> echo -n 'hello' | md5sum
-  4d2488fad10f6d86b839a354dc9fa164  hello
+  md5sum: hello: No such file or directory
 
 $ [262/303]> echo 'données' | base64
   base64: command not found
@@ -1375,8 +1369,9 @@ $ [278/303]> cut -d: -f1 /etc/group | sort | head
   sudo
 
 $ [279/303]> wc -l /etc/passwd /etc/group
-  7 /etc/passwd
-  12 /etc/group
+        7 /etc/passwd
+       12 /etc/group
+       19 total
 
 $ [280/303]> grep -v "^#" /etc/hostname
   linux-server
@@ -1384,15 +1379,15 @@ $ [280/303]> grep -v "^#" /etc/hostname
 $ [281/303]> sort -t: -k3 -n /etc/passwd | head
   root:x:0:0:root:/root:/bin/bash
   daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
-  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
   alice:x:1000:1000::/home/alice:/bin/bash
   bob:x:1001:1001::/home/bob:/bin/bash
   carl:x:1002:1002::/home/carl:/bin/bash
   dave:x:1003:1003::/home/dave:/bin/bash
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 
 $ [282/303]> awk -F: '{print $7}' /etc/passwd | sort | uniq -c
-  /bin/bash
-  /usr/sbin/nologin
+        5 /bin/bash
+        2 /usr/sbin/nologin
 
 $ [283/303]> cat /etc/os-release | grep -E "^NAME|^VERSION"
   NAME="Ubuntu"
@@ -1484,11 +1479,12 @@ $ [298/303]> awk '{print
   bash: bash: syntax error at line 1:5: Unterminated single-quoted string
 
 $ [299/303]> cut fruits.txt
-  
-  
-  
-  
-  
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
 
 $ [300/303]> sort -z -k
 <empty>

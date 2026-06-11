@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-09T09:12:44.250Z
+Generated: 2026-06-11T00:24:57.854Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -303,7 +303,7 @@ Total steps: 355
 <empty>
 
 [80/355] r1 R1(config-router)# metric maximum-hops 50
-<empty>
+  % Invalid input detected.
 
 [81/355] r1 R1(config-router)# variance 4
 <empty>
@@ -377,25 +377,13 @@ Total steps: 355
 
 [103/355] r1 R1# show ip eigrp topology
   EIGRP-IPv4 Topology Table for AS(100)
-  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
-  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
+  P 10.0.0.0/30, 1 successors, FD is 2816
+          via Connected
 
 [104/355] r1 R1# show ip eigrp topology all-links
   EIGRP-IPv4 Topology Table for AS(100)
-  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
-  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
+  P 10.0.0.0/30, 1 successors, FD is 2816
+          via Connected
 
 [105/355] r1 R1# show ip eigrp interfaces
   EIGRP-IPv4 Interfaces for AS(100)
@@ -825,8 +813,8 @@ Total steps: 355
 [224/355] r1 R1# show ip bgp
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [225/355] r1 R1# show ip bgp summary
   BGP router identifier 1.1.1.1, local AS number 65000
@@ -948,32 +936,32 @@ Total steps: 355
 [230/355] r1 R1# show ip bgp 192.168.1.0
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [231/355] r1 R1# show ip bgp paths
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [232/355] r1 R1# show ip bgp community
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [233/355] r1 R1# show ip bgp cidr-only
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [234/355] r1 R1# show ip bgp regexp ^65001
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [235/355] r1 R1# show bgp ipv6 unicast
   BGP local AS 65000, 8 neighbour(s), 0 established
@@ -1050,8 +1038,8 @@ Total steps: 355
 [239/355] r1 R1# show ip bgp vpnv4 all
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [240/355] r1 R1# clear ip bgp *
 <empty>
@@ -1292,21 +1280,14 @@ Total steps: 355
 
 [262/355] r1 R1# show ip eigrp topology
   EIGRP-IPv4 Topology Table for AS(0)
-  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
-  P 10.1.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.2.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.3.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.4.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.5.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 10.6.0.0 0.0.255.255, 1 successors, FD is 0 (connected)
-  P 192.168.1.0 0.0.0.255, 1 successors, FD is 0 (connected)
-  P 10.0.0.0 0.0.0.3, 1 successors, FD is 0 (connected)
+  P 10.0.0.0/30, 1 successors, FD is 2816
+          via Connected
 
 [263/355] r1 R1# show ip bgp
   BGP table version is 1, local router ID is 1.1.1.1
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   192.168.1.0/24      0.0.0.0               0         32768 i
-  *>   10.0.0.0/30      0.0.0.0               0         32768 i
+  *>   10.0.0.0/30      0.0.0.0             0         32768 i
+  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [264/355] r1 R1# show ip bgp summary
   BGP router identifier 1.1.1.1, local AS number 65000
@@ -1421,7 +1402,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD2578C.476C8B43 (09:12:44.279 UTC Tue Jun 9 2026)
+  reference time is EDD47ED9.E51EB851 (00:24:57.895 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1430,7 +1411,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *09:12:44.000 UTC Tue Jun 9 2026
+  *00:24:57.000 UTC Thu Jun 11 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1721,7 +1702,8 @@ Total steps: 355
 
 [304/355] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 

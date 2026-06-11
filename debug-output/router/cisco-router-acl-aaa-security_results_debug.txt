@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-06-09T08:05:33.633Z
+Generated: 2026-06-11T00:24:38.023Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -874,43 +874,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-06-09 08:05:33
+  % Key pair was generated at: 2026-06-11 00:24:38
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   4C193E4FAA5F697B7471783D2FF109DD3D9B70DEDF410456DBA610BAD0B4FA9A
-    D6C4DB0F6B57469B2691B2392E816591174D8ADE8D9FBAEEAB3623F6598E6D7E
-    153B6A4F4D46C0D32E2216B55724AEBD2923875E7208788EEB2451B2729CF78A
-    30C8CC0F701B5B23157885B16449F461CF5D465E10D0C126B47A79EECE81150E
-    4420E04F29E40B1B3EC2154DC698D9ADBB7C33FE76DA43B6E8AF7ECAA58B3F2A
-    B8371F2F1DADADBB4F1D8769B6E1D0E188873C1E4452C3CEEA295626DD35322E
-    D9E1688F75E578939D4ABC05CA43BD2D02083EBEB286010EBE1BE0026896CA5A
-    E6DD9C6F136458E3B8719321E46931711B711BDE678172263701689E042A511E
+   63E3EEE89A6851088CCAC9CA084CE63299C484F9FD1FE575EC1687ED0AFC01B5
+    44A89F683BE280705093390EF176F14E1AAEB039B229F8ED1C95FAE1821CF4F9
+    BF222268241660B027E817C2BE34ACA274E572F989B791CD2E9D4865F116E745
+    505037E878111868684C5C06528100FE883AE339F7A04B3521E47059DC3D3039
+    F77BA9C89A9D34C8999E79BAAF4EA1428F61FED99815DD15B83B10BD85F97F85
+    8FCDEC28B24325D0C75BA4DE153933DE9C6EEFF990C9856DFF6C33915A7ADBC9
+    C062E908E3EB9310F36AA772FE5A30327B6D6099C515E34DDBD198F5E5772715
+    17086068BFA6B7286FBC77960ADDE30E923D66B93C7385D59AD140C9C9A41E49
   
-  % Key pair was generated at: 2026-06-09 08:05:33
+  % Key pair was generated at: 2026-06-11 00:24:38
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   8ED23DA99668A9DDE83F763B858ED2DB88C934B8136A5A38096E51FC81B9A92C
-    F4845E2998EDC04DDE22557F3364E0F73CEACFF814DBFCB0E73234F072175B98
-    A43F5129E8B6205585A5A4331BD8635B8A2D02B8F01BF8907C11F274BC46310C
-    0A02D6A9F82D2385734C58777388F137DF61E2F80FA16218A6C58A6818B15E28
-    1B06EEA9EE1FB19DAACE724B26AF714B8DB0A6D83A97B2B833CDBF0C1374BB5C
-    8CF2F149204FEAEDC577C9AFFF38AE670CB270381E12C030F53EA620E67104C8
-    1120DE6925148E95259328830D1C424B1196E91822F0D3900555FFC4383B0FBC
-    3C02760940158CA5387584E72916372736622778919AC018C25DCBD81293ED18
-    38C1B8294705FC9D224A729B2DBF213B1B3A4938857281785CDEC85C686DBCCC
-    42C8CCA90C28830D4A3E05DF09805F57FDFC5878669FB5303A66DF5042B76578
-    B1BFB3A93EBBB115EC8908937F54E7BBBF65FF3837702DD0B061D0D4A0ED2BEC
-    C2E62D29649BE9458AEE70D750B3FE971789537828AC659882C79CC8ED410048
-    2CB4392904C67CDD06663EAB3D325A2B02EF1F18CC0D1E78E784596CA1FC657C
-    C0DBD789C8573CED7D02720FD5CC77C7B0B570B89E4F6FB01B1F488074CB61A8
-    57BFB8E916513E55393F84E3044DE1AB751CF1581CB60FD03B972A24755CAD9C
-    1FC8EC496DF0A2A53140BD4751E6D4876C18B7F86F8993987474FE38B8DE9F38
+   3DE8BA566BC60B0EAE068814CF39E53CD7C7F6E7443DEBBBD9B7FDF3E9404C3B
+    E319DD16D92BC0369CCE6810F3AB78F088D9D6E73CAEBA53448D923FBD0DAB47
+    0D979D5668EB0386A5F8489CEFD5FFBCE56A8F679D9D3C13D673BBFB97064E1B
+    2FB63B163C33856EA1153398150B8AE0AC7C0A674296A02B94467B4789E658A7
+    6880EC76D831CA8EB25AB524A2584B0C112F4A073967191BDFCA3223EFA136CB
+    6A223D564F5E6556395F9940E19C1A407E4424277601D1332DC7D68F1C69E557
+    C9D243B6F94125869E5115ECDC2C920CF382EEC742B487F3BB79A86BA258112B
+    25173F96922DA50E385235081157A15065DF93E72DF3800BAE2F3B975AEBD057
+    E9FB4ED695AD814E1D7EEAB4A78FA51CFA129167314AABBB3CE41A538E6A3B9B
+    6D921196053E2DB6392A6AB081358BD0AB26116743549953CD794E9F14C256E7
+    A42D71D646D91D06036FEB3C41540FDCFA7069E7ECE72D534E57185B481FF4FB
+    6A21AF96051DA72E9DE0763800E9C300D0F384E73905596BCE5977A7AF204647
+    3A9B94B67722CF4E6F2013449D00136C9EF1B447CE6DA25BE21D1E833305D5AB
+    06C041D6D5CB5F16F1306BE0F3302BA082A42EA7EC68477313B662EF2ACF03F7
+    25CB7BF6F404FE06D008040C4988DD2C7959E907FBA17EF3EC1424CBB960938B
+    843FD41653CC718EE00097A8CC4CB070EB802E67E8764B0B65D157F740CF17F7
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1014,7 +1014,7 @@ Total steps: 388
     Frags: 0 reassembled, 0 timeouts, 0 couldn't reassemble
     Bcast: 0 received, 0 sent
     Mcast: 0 received, 0 sent
-    Sent:  3 generated, 3 forwarded, 0 errors, 0 dropped
+    Sent:  5 generated, 5 forwarded, 0 errors, 0 dropped
 
 [246/388] r1 R1# show ip cef
   Prefix               Next Hop             Interface
@@ -1135,10 +1135,10 @@ Total steps: 388
 
 
 --- [279] § regression: show family ---
-[279/388] r1 R1(config)# enable
-  % Incomplete command.
+[279/388] r1 R1# enable
+<empty>
 
-[280/388] r1 R1(config)# show version
+[280/388] r1 R1# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1155,7 +1155,7 @@ Total steps: 388
   
   Configuration register is 0x2102
 
-[281/388] r1 R1(config)# show running-config
+[281/388] r1 R1# show running-config
   Building configuration...
   
   Current configuration:
@@ -1273,14 +1273,14 @@ Total steps: 388
    permit tcp any any eq 179
   !
   !
-  username admin privilege 15 secret 5 StrongP@ss1
+  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
   line vty 0 4
    exec-timeout 5 0
    access-class MGMT in
    access-class 10 out
    transport input ssh
   !
-  enable secret 5 StrongEn@ble1
+  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
   service password-encryption
   !
   aaa new-model
@@ -1296,7 +1296,6 @@ Total steps: 388
   aaa accounting commands 15 default stop-only group tacacs+
   aaa accounting network default start-stop group radius
   aaa session-id common
-  username admin privilege 15 secret StrongP@ss1
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1349,17 +1348,17 @@ Total steps: 388
   !
   end
 
-[282/388] r1 R1(config)# show startup-config
+[282/388] r1 R1# show startup-config
   % startup-config is not present
 
-[283/388] r1 R1(config)# show ip interface brief
+[283/388] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
 
-[284/388] r1 R1(config)# show interfaces
+[284/388] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1395,14 +1394,14 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[285/388] r1 R1(config)# show ip route
+[285/388] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
 
-[286/388] r1 R1(config)# show ip route summary
+[286/388] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
@@ -1415,46 +1414,46 @@ Total steps: 388
   default         0           0           0           0           0
   Total           2           2           0           304         720
 
-[287/388] r1 R1(config)# show ip protocols
+[287/388] r1 R1# show ip protocols
   No routing protocol is configured.
 
-[288/388] r1 R1(config)# show ip arp
+[288/388] r1 R1# show ip arp
   No ARP entries.
 
-[289/388] r1 R1(config)# show arp
+[289/388] r1 R1# show arp
   No ARP entries.
 
-[290/388] r1 R1(config)# show ip ospf
+[290/388] r1 R1# show ip ospf
   % OSPF is not configured
 
-[291/388] r1 R1(config)# show ip ospf neighbor
+[291/388] r1 R1# show ip ospf neighbor
   % OSPF is not configured
 
-[292/388] r1 R1(config)# show ip ospf database
+[292/388] r1 R1# show ip ospf database
   % OSPF is not configured
 
-[293/388] r1 R1(config)# show ip ospf interface brief
+[293/388] r1 R1# show ip ospf interface brief
   % OSPF is not configured
 
-[294/388] r1 R1(config)# show ip eigrp neighbors
+[294/388] r1 R1# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[295/388] r1 R1(config)# show ip eigrp topology
+[295/388] r1 R1# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[296/388] r1 R1(config)# show ip bgp
+[296/388] r1 R1# show ip bgp
   % BGP not active
 
-[297/388] r1 R1(config)# show ip bgp summary
+[297/388] r1 R1# show ip bgp summary
   % BGP not active
 
-[298/388] r1 R1(config)# show ip rip database
+[298/388] r1 R1# show ip rip database
 <empty>
 
-[299/388] r1 R1(config)# show ip nat translations
+[299/388] r1 R1# show ip nat translations
   No NAT translations.
 
-[300/388] r1 R1(config)# show ip nat statistics
+[300/388] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1464,14 +1463,14 @@ Total steps: 388
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[301/388] r1 R1(config)# show ip dhcp binding
+[301/388] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[302/388] r1 R1(config)# show ip dhcp pool
+[302/388] r1 R1# show ip dhcp pool
 <empty>
 
-[303/388] r1 R1(config)# show access-lists
+[303/388] r1 R1# show access-lists
   Standard IP access list 10
       10 permit 192.168.1.0 0.0.0.255 (0 matches)
       20 permit 192.168.2.0 0.0.0.255 (0 matches)
@@ -1563,7 +1562,7 @@ Total steps: 388
       10 permit ospf any any (0 matches)
       20 permit tcp any any eq 179 (0 matches)
 
-[304/388] r1 R1(config)# show ip access-lists
+[304/388] r1 R1# show ip access-lists
   Standard IP access list 10
       10 permit 192.168.1.0 0.0.0.255 (0 matches)
       20 permit 192.168.2.0 0.0.0.255 (0 matches)
@@ -1655,39 +1654,39 @@ Total steps: 388
       10 permit ospf any any (0 matches)
       20 permit tcp any any eq 179 (0 matches)
 
-[305/388] r1 R1(config)# show crypto isakmp sa
+[305/388] r1 R1# show crypto isakmp sa
   IPSec not configured.
 
-[306/388] r1 R1(config)# show crypto ipsec sa
+[306/388] r1 R1# show crypto ipsec sa
   IPSec not configured.
 
-[307/388] r1 R1(config)# show crypto session
+[307/388] r1 R1# show crypto session
   IPSec not configured.
 
-[308/388] r1 R1(config)# show crypto map
+[308/388] r1 R1# show crypto map
   IPSec not configured.
 
-[309/388] r1 R1(config)# show standby brief
+[309/388] r1 R1# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[310/388] r1 R1(config)# show vrrp brief
+[310/388] r1 R1# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[311/388] r1 R1(config)# show track
+[311/388] r1 R1# show track
   No tracked objects configured.
 
-[312/388] r1 R1(config)# show ip sla statistics
+[312/388] r1 R1# show ip sla statistics
   No IP SLA operations configured.
 
-[313/388] r1 R1(config)# show policy-map interface
+[313/388] r1 R1# show policy-map interface
    GigabitEthernet0/1
     Zone member: OUTSIDE
    GigabitEthernet0/0
     Zone member: INSIDE
 
-[314/388] r1 R1(config)# show logging
+[314/388] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
@@ -1698,26 +1697,26 @@ Total steps: 388
       Sequence numbers: disabled
       No active syslog hosts
 
-[315/388] r1 R1(config)# show snmp
+[315/388] r1 R1# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[316/388] r1 R1(config)# show ntp status
+[316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD247CD.AED91687 (08:05:33.683 UTC Tue Jun 9 2026)
+  reference time is EDD47EC6.11EB851E (00:24:38.070 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
-[317/388] r1 R1(config)# show ntp associations
+[317/388] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   No NTP associations configured.
 
-[318/388] r1 R1(config)# show clock
-  *08:05:33.000 UTC Tue Jun 9 2026
+[318/388] r1 R1# show clock
+  *00:24:38.000 UTC Thu Jun 11 2026
 
-[319/388] r1 R1(config)# show cdp neighbors
+[319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1727,7 +1726,7 @@ Total steps: 388
   
   Total cdp entries displayed : 2
 
-[320/388] r1 R1(config)# show lldp neighbors
+[320/388] r1 R1# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1736,18 +1735,18 @@ Total steps: 388
   
   Total entries displayed: 0
 
-[321/388] r1 R1(config)# show processes cpu
+[321/388] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[322/388] r1 R1(config)# show memory statistics
+[322/388] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
   I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
-[323/388] r1 R1(config)# show flash
+[323/388] r1 R1# show flash
   Directory of flash:/
   
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
@@ -1755,13 +1754,13 @@ Total steps: 388
   
   256016384 bytes total (169782272 bytes free)
 
-[324/388] r1 R1(config)# show users
+[324/388] r1 R1# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[325/388] r1 R1(config)# show history
+[325/388] r1 R1# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1783,13 +1782,13 @@ Total steps: 388
   show users
   show history
 
-[326/388] r1 R1(config)# show ip cef
+[326/388] r1 R1# show ip cef
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
   10.0.0.0/30          attached             GigabitEthernet0/1
 
-[327/388] r1 R1(config)# show interfaces GigabitEthernet0/0
+[327/388] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1800,7 +1799,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[328/388] r1 R1(config)# show interfaces GigabitEthernet0/1
+[328/388] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1811,7 +1810,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[329/388] r1 R1(config)# show ip interface GigabitEthernet0/1
+[329/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1822,7 +1821,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[330/388] r1 R1(config)# show controllers
+[330/388] r1 R1# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1840,7 +1839,7 @@ Total steps: 388
     Administrative state: up
     0 carrier transitions
 
-[331/388] r1 R1(config)# show tech-support
+[331/388] r1 R1# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1976,14 +1975,14 @@ Total steps: 388
    permit tcp any any eq 179
   !
   !
-  username admin privilege 15 secret 5 StrongP@ss1
+  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
   line vty 0 4
    exec-timeout 5 0
    access-class MGMT in
    access-class 10 out
    transport input ssh
   !
-  enable secret 5 StrongEn@ble1
+  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
   service password-encryption
   !
   aaa new-model
@@ -1999,7 +1998,6 @@ Total steps: 388
   aaa accounting commands 15 default stop-only group tacacs+
   aaa accounting network default start-stop group radius
   aaa session-id common
-  username admin privilege 15 secret StrongP@ss1
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2115,37 +2113,38 @@ Total steps: 388
       Sequence numbers: disabled
       No active syslog hosts
 
-[332/388] r1 R1(config)# show inventory
+[332/388] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[333/388] r1 R1(config)# show environment
+[333/388] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[334/388] r1 R1(config)# show redundancy
+[334/388] r1 R1# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[335/388] r1 R1(config)# show ip vrf
+[335/388] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[336/388] r1 R1(config)# show vrf
+[336/388] r1 R1# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[337/388] r1 R1(config)# show hosts
+[337/388] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[338/388] r1 R1(config)# show ip ssh
+[338/388] r1 R1# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[339/388] r1 R1(config)# show line
+[339/388] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -2154,13 +2153,13 @@ Total steps: 388
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[340/388] r1 R1(config)# show terminal
+[340/388] r1 R1# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[341/388] r1 R1(config)# show aliases
+[341/388] r1 R1# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2173,10 +2172,10 @@ Total steps: 388
 
 
 --- [342] § regression: pipe filters ---
-[342/388] r1 R1(config)# show running-config | include router
+[342/388] r1 R1# show running-config | include router
 <empty>
 
-[343/388] r1 R1(config)# show running-config | section interface
+[343/388] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2198,14 +2197,14 @@ Total steps: 388
    no shutdown
   ip ssh source-interface Loopback0
 
-[344/388] r1 R1(config)# show running-config | begin line
+[344/388] r1 R1# show running-config | begin line
   line vty 0 4
    exec-timeout 5 0
    access-class MGMT in
    access-class 10 out
    transport input ssh
   !
-  enable secret 5 StrongEn@ble1
+  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
   service password-encryption
   !
   aaa new-model
@@ -2221,7 +2220,6 @@ Total steps: 388
   aaa accounting commands 15 default stop-only group tacacs+
   aaa accounting network default start-stop group radius
   aaa session-id common
-  username admin privilege 15 secret StrongP@ss1
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2274,7 +2272,7 @@ Total steps: 388
   !
   end
 
-[345/388] r1 R1(config)# show running-config | exclude !
+[345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
   Current configuration:
@@ -2383,13 +2381,13 @@ Total steps: 388
   ip access-list extended COPP-CRITICAL
    permit ospf any any
    permit tcp any any eq 179
-  username admin privilege 15 secret 5 StrongP@ss1
+  username admin privilege 15 secret 5 $1$8ac0aa53$zdJ/LXIrW1qyj0cSCjLZh.
   line vty 0 4
    exec-timeout 5 0
    access-class MGMT in
    access-class 10 out
    transport input ssh
-  enable secret 5 StrongEn@ble1
+  enable secret 5 $1$34620419$.GIKHmVuPVJau7.psQMg//
   service password-encryption
   aaa new-model
   aaa authentication login default local
@@ -2404,7 +2402,6 @@ Total steps: 388
   aaa accounting commands 15 default stop-only group tacacs+
   aaa accounting network default start-stop group radius
   aaa session-id common
-  username admin privilege 15 secret StrongP@ss1
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2456,10 +2453,10 @@ Total steps: 388
    service-policy type inspect PM-IN-OUT
   end
 
-[346/388] r1 R1(config)# show ip route | include via
+[346/388] r1 R1# show ip route | include via
 <empty>
 
-[347/388] r1 R1(config)# show ip interface brief | exclude unassigned
+[347/388] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
@@ -2592,6 +2589,8 @@ Total steps: 388
     ssh              SSH config
     dhcp             dhcp
     route            Establish static routes
+    default-network  Configure default-network
+    local            local
     pim              pim
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
@@ -2636,6 +2635,7 @@ Total steps: 388
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 

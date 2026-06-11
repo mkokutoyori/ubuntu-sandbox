@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-09T09:12:45.632Z
+Generated: 2026-06-11T00:24:51.122Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -381,6 +381,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
@@ -431,8 +432,10 @@ Total steps: 325
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
+  0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.52.0/24      0.0.0.0              Null0
   192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
@@ -483,8 +486,10 @@ Total steps: 325
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
+  0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.52.0/24      0.0.0.0              Null0
   192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
@@ -1158,6 +1163,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
@@ -1208,6 +1214,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
@@ -1286,8 +1293,10 @@ Total steps: 325
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
+  0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.52.0/24      0.0.0.0              Null0
   192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
@@ -1337,8 +1346,10 @@ Total steps: 325
   S    172.22.38.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    172.23.39.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    172.24.40.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    0.0.0.0/0 via 0.0.0.0, GigabitEthernet0/1
   S    192.168.50.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.51.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.52.0/24 via 0.0.0.0, Null0
   S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
@@ -1433,8 +1444,10 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.52.0 255.255.255.0 0.0.0.0
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
@@ -1535,6 +1548,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2
@@ -1544,13 +1558,13 @@ Total steps: 325
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
-  static          45          45          0           6840        16200
+  static          47          47          0           7144        16920
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         1           1           0           152         360
-  Total           48          48          0           7296        17280
+  Total           50          50          0           7600        18000
 
 [224/325] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1682,7 +1696,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD2578D.AAC08312 (09:12:45.667 UTC Tue Jun 9 2026)
+  reference time is EDD47ED3.2B851EB8 (00:24:51.170 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1691,7 +1705,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *09:12:45.000 UTC Tue Jun 9 2026
+  *00:24:51.000 UTC Thu Jun 11 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1805,8 +1819,10 @@ Total steps: 325
   172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
   172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
   0.0.0.0/0            10.0.0.6             
+  0.0.0.0/0            0.0.0.0              GigabitEthernet0/1
   192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
   192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.52.0/24      0.0.0.0              Null0
   192.168.53.0/24      10.0.0.2             GigabitEthernet0/1
   8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
   192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
@@ -1947,8 +1963,10 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.52.0 255.255.255.0 0.0.0.0
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
@@ -2006,8 +2024,10 @@ Total steps: 325
   S    172.22.38.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    172.23.39.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    172.24.40.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    0.0.0.0/0 via 0.0.0.0, GigabitEthernet0/1
   S    192.168.50.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.51.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.52.0/24 via 0.0.0.0, Null0
   S    192.168.53.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
   S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
@@ -2094,7 +2114,8 @@ Total steps: 325
 
 [274/325] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 
@@ -2207,8 +2228,10 @@ Total steps: 325
   ip route 172.23.39.0 255.255.255.0 10.0.0.2
   ip route 172.24.40.0 255.255.255.0 10.0.0.2
   ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 0.0.0.0 0.0.0.0 0.0.0.0
   ip route 192.168.50.0 255.255.255.0 10.0.0.2
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 192.168.52.0 255.255.255.0 0.0.0.0
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
@@ -2258,6 +2281,7 @@ Total steps: 325
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
   S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
   S    192.168.99.0/24 [1/0] via 10.0.0.2

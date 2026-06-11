@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-09T09:12:47.889Z
+Generated: 2026-06-11T00:24:59.317Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -901,20 +901,26 @@ Total steps: 370
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 0, Phase: 3
+  Type: Hub, NHRP Peers: 1, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
+        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
 
 [235/370] r1 R1# show dmvpn detail
   Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 0, Phase: 3
+  Type: Hub, NHRP Peers: 1, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
+        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
+     Type: Hub, NHS Status: E --> 1
+     IKE: established
+     IPSEC: up
+     pkts: snt: 0 rcv: 0  bytes: snt: 0 rcv: 0
 
 
 --- [236] § PKI / trustpoint ---
@@ -1261,10 +1267,10 @@ Total steps: 370
     Tunnel protocol/transport GRE/IP
   Virtual-Template1 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
+    Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
   Tunnel100 is up, line protocol is up
@@ -1457,7 +1463,7 @@ Total steps: 370
 [298/370] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD2578F.EBC6A7EF (09:12:47.921 UTC Tue Jun 9 2026)
+  reference time is EDD47EDB.589374BC (00:24:59.346 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1# show ntp associations
@@ -1466,7 +1472,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1# show clock
-  *09:12:47.000 UTC Tue Jun 9 2026
+  *00:24:59.000 UTC Thu Jun 11 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1863,10 +1869,10 @@ Total steps: 370
     Tunnel protocol/transport GRE/IP
   Virtual-Template1 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
+    Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
   Tunnel100 is up, line protocol is up
@@ -1911,7 +1917,8 @@ Total steps: 370
 
 [319/370] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 

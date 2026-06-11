@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-08T07:09:53.903Z
+Generated: 2026-06-11T00:24:50.562Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD0E941.EC49BA5E (07:09:53.923 UTC Mon Jun 8 2026)
+  reference time is EDD47ED2.974BC6A7 (00:24:50.591 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  08:09:53.000 CET Mon Jun 8 2026
+  01:24:50.000 CET Thu Jun 11 2026
 
 [128/322] r1 R1# show clock detail
-  08:09:53.000 CET Mon Jun 8 2026
+  01:24:50.000 CET Thu Jun 11 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  07:09:53 UTC Mon Jun 8 2026
+  00:24:50 UTC Thu Jun 11 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -921,10 +921,10 @@ Total steps: 322
 
 
 --- [213] § regression: show family ---
-[213/322] r1 R1(config)# enable
-  % Incomplete command.
+[213/322] r1 R1# enable
+<empty>
 
-[214/322] r1 R1(config)# show version
+[214/322] r1 R1# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -941,7 +941,7 @@ Total steps: 322
   
   Configuration register is 0x2102
 
-[215/322] r1 R1(config)# show running-config
+[215/322] r1 R1# show running-config
   Building configuration...
   
   Current configuration:
@@ -1082,10 +1082,10 @@ Total steps: 322
    action 2.0 cli command "copy running-config flash:nightly.cfg"
   end
 
-[216/322] r1 R1(config)# show startup-config
+[216/322] r1 R1# show startup-config
   % startup-config is not present
 
-[217/322] r1 R1(config)# show ip interface brief
+[217/322] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
@@ -1093,7 +1093,7 @@ Total steps: 322
   GigabitEthernet0/3         unassigned      YES manual down                  down
   Loopback0                  1.1.1.1         YES manual up                    up
 
-[218/322] r1 R1(config)# show interfaces
+[218/322] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1131,14 +1131,14 @@ Total steps: 322
     Hardware is Loopback
     Internet address is 1.1.1.1/32
 
-[219/322] r1 R1(config)# show ip route
+[219/322] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   C    1.1.1.1/32 is directly connected, Loopback0
 
-[220/322] r1 R1(config)# show ip route summary
+[220/322] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
@@ -1151,46 +1151,46 @@ Total steps: 322
   default         0           0           0           0           0
   Total           2           2           0           304         720
 
-[221/322] r1 R1(config)# show ip protocols
+[221/322] r1 R1# show ip protocols
   No routing protocol is configured.
 
-[222/322] r1 R1(config)# show ip arp
+[222/322] r1 R1# show ip arp
   No ARP entries.
 
-[223/322] r1 R1(config)# show arp
+[223/322] r1 R1# show arp
   No ARP entries.
 
-[224/322] r1 R1(config)# show ip ospf
+[224/322] r1 R1# show ip ospf
   % OSPF is not configured
 
-[225/322] r1 R1(config)# show ip ospf neighbor
+[225/322] r1 R1# show ip ospf neighbor
   % OSPF is not configured
 
-[226/322] r1 R1(config)# show ip ospf database
+[226/322] r1 R1# show ip ospf database
   % OSPF is not configured
 
-[227/322] r1 R1(config)# show ip ospf interface brief
+[227/322] r1 R1# show ip ospf interface brief
   % OSPF is not configured
 
-[228/322] r1 R1(config)# show ip eigrp neighbors
+[228/322] r1 R1# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[229/322] r1 R1(config)# show ip eigrp topology
+[229/322] r1 R1# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[230/322] r1 R1(config)# show ip bgp
+[230/322] r1 R1# show ip bgp
   % BGP not active
 
-[231/322] r1 R1(config)# show ip bgp summary
+[231/322] r1 R1# show ip bgp summary
   % BGP not active
 
-[232/322] r1 R1(config)# show ip rip database
+[232/322] r1 R1# show ip rip database
 <empty>
 
-[233/322] r1 R1(config)# show ip nat translations
+[233/322] r1 R1# show ip nat translations
   No NAT translations.
 
-[234/322] r1 R1(config)# show ip nat statistics
+[234/322] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1200,51 +1200,51 @@ Total steps: 322
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[235/322] r1 R1(config)# show ip dhcp binding
+[235/322] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[236/322] r1 R1(config)# show ip dhcp pool
+[236/322] r1 R1# show ip dhcp pool
 <empty>
 
-[237/322] r1 R1(config)# show access-lists
+[237/322] r1 R1# show access-lists
   Standard IP access list 10
       10 permit 10.0.0.0 0.0.0.255 (0 matches)
 
-[238/322] r1 R1(config)# show ip access-lists
+[238/322] r1 R1# show ip access-lists
   Standard IP access list 10
       10 permit 10.0.0.0 0.0.0.255 (0 matches)
 
-[239/322] r1 R1(config)# show crypto isakmp sa
+[239/322] r1 R1# show crypto isakmp sa
   IPSec not configured.
 
-[240/322] r1 R1(config)# show crypto ipsec sa
+[240/322] r1 R1# show crypto ipsec sa
   IPSec not configured.
 
-[241/322] r1 R1(config)# show crypto session
+[241/322] r1 R1# show crypto session
   IPSec not configured.
 
-[242/322] r1 R1(config)# show crypto map
+[242/322] r1 R1# show crypto map
   IPSec not configured.
 
-[243/322] r1 R1(config)# show standby brief
+[243/322] r1 R1# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[244/322] r1 R1(config)# show vrrp brief
+[244/322] r1 R1# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[245/322] r1 R1(config)# show track
+[245/322] r1 R1# show track
   No tracked objects configured.
 
-[246/322] r1 R1(config)# show ip sla statistics
+[246/322] r1 R1# show ip sla statistics
   No IP SLA operations configured.
 
-[247/322] r1 R1(config)# show policy-map interface
+[247/322] r1 R1# show policy-map interface
 <empty>
 
-[248/322] r1 R1(config)# show logging
+[248/322] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level warnings
       Monitor logging: level debugging
@@ -1261,7 +1261,7 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[249/322] r1 R1(config)# show snmp
+[249/322] r1 R1# show snmp
   Chassis: R1-CHASSIS
   0 SNMP packets input
       0 Bad SNMP version errors
@@ -1283,13 +1283,13 @@ Total steps: 322
   SNMP server contact: noc@lab.local
   SNMP server location: DC1-Rack5
 
-[250/322] r1 R1(config)# show ntp status
+[250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD0E941.EF9DB22D (07:09:53.936 UTC Mon Jun 8 2026)
+  reference time is EDD47ED2.9BE76C8B (00:24:50.609 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
-[251/322] r1 R1(config)# show ntp associations
+[251/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   +~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
@@ -1298,10 +1298,10 @@ Total steps: 322
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
-[252/322] r1 R1(config)# show clock
-  08:09:53.000 CET Mon Jun 8 2026
+[252/322] r1 R1# show clock
+  01:24:50.000 CET Thu Jun 11 2026
 
-[253/322] r1 R1(config)# show cdp neighbors
+[253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1311,7 +1311,7 @@ Total steps: 322
   
   Total cdp entries displayed : 2
 
-[254/322] r1 R1(config)# show lldp neighbors
+[254/322] r1 R1# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1322,18 +1322,18 @@ Total steps: 322
   
   Total entries displayed: 2
 
-[255/322] r1 R1(config)# show processes cpu
+[255/322] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[256/322] r1 R1(config)# show memory statistics
+[256/322] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
   I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
-[257/322] r1 R1(config)# show flash
+[257/322] r1 R1# show flash
   Directory of flash:/
   
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
@@ -1341,13 +1341,13 @@ Total steps: 322
   
   256016384 bytes total (169782272 bytes free)
 
-[258/322] r1 R1(config)# show users
+[258/322] r1 R1# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[259/322] r1 R1(config)# show history
+[259/322] r1 R1# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1369,13 +1369,13 @@ Total steps: 322
   show users
   show history
 
-[260/322] r1 R1(config)# show ip cef
+[260/322] r1 R1# show ip cef
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
   10.0.0.0/30          attached             GigabitEthernet0/1
   1.1.1.1/32           attached             Loopback0
 
-[261/322] r1 R1(config)# show interfaces GigabitEthernet0/0
+[261/322] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1385,7 +1385,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[262/322] r1 R1(config)# show interfaces GigabitEthernet0/1
+[262/322] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1396,7 +1396,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[263/322] r1 R1(config)# show ip interface GigabitEthernet0/1
+[263/322] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1407,7 +1407,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[264/322] r1 R1(config)# show controllers
+[264/322] r1 R1# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1429,7 +1429,7 @@ Total steps: 322
     Administrative state: up
     0 carrier transitions
 
-[265/322] r1 R1(config)# show tech-support
+[265/322] r1 R1# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1660,37 +1660,38 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[266/322] r1 R1(config)# show inventory
+[266/322] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
   PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[267/322] r1 R1(config)# show environment
+[267/322] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[268/322] r1 R1(config)# show redundancy
+[268/322] r1 R1# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[269/322] r1 R1(config)# show ip vrf
+[269/322] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[270/322] r1 R1(config)# show vrf
+[270/322] r1 R1# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[271/322] r1 R1(config)# show hosts
+[271/322] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[272/322] r1 R1(config)# show ip ssh
+[272/322] r1 R1# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[273/322] r1 R1(config)# show line
+[273/322] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -1699,13 +1700,13 @@ Total steps: 322
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[274/322] r1 R1(config)# show terminal
+[274/322] r1 R1# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[275/322] r1 R1(config)# show aliases
+[275/322] r1 R1# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -1718,10 +1719,10 @@ Total steps: 322
 
 
 --- [276] § regression: pipe filters ---
-[276/322] r1 R1(config)# show running-config | include router
+[276/322] r1 R1# show running-config | include router
 <empty>
 
-[277/322] r1 R1(config)# show running-config | section interface
+[277/322] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    no shutdown
   interface GigabitEthernet0/1
@@ -1739,10 +1740,10 @@ Total steps: 322
    no shutdown
   logging source-interface Loopback0
 
-[278/322] r1 R1(config)# show running-config | begin line
+[278/322] r1 R1# show running-config | begin line
 <empty>
 
-[279/322] r1 R1(config)# show running-config | exclude !
+[279/322] r1 R1# show running-config | exclude !
   Building configuration...
   
   Current configuration:
@@ -1866,10 +1867,10 @@ Total steps: 322
    action 2.0 cli command "copy running-config flash:nightly.cfg"
   end
 
-[280/322] r1 R1(config)# show ip route | include via
+[280/322] r1 R1# show ip route | include via
 <empty>
 
-[281/322] r1 R1(config)# show ip interface brief | exclude unassigned
+[281/322] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   Loopback0                  1.1.1.1         YES manual up                    up
@@ -2003,6 +2004,8 @@ Total steps: 322
     ssh              SSH config
     dhcp             dhcp
     route            Establish static routes
+    default-network  Configure default-network
+    local            local
     pim              pim
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
@@ -2047,6 +2050,7 @@ Total steps: 322
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
+    key          key
     crypto       crypto
     event        event
 
