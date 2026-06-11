@@ -33,6 +33,11 @@ export interface ConnectedNetwork {
  */
 export interface RoutingDeviceContext {
   connectedNetworks(): ConnectedNetwork[];
+  ribRoutes?(): Array<{
+    network: import('../core/types').IPAddress;
+    mask: import('../core/types').SubnetMask;
+    type: string;
+  }>;
 }
 
 /** Device context that exposes nothing (isolated engine default). */

@@ -1181,3 +1181,49 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 ### Validation (ciblée)
 
 - igmp-snooping, cdp-protocol, huawei-switch-shell : 83 tests verts.
+
+---
+
+## Entrée n°24 — 2026-06-11 — EIGRP : `redistribute` stocké mais jamais lu
+
+### Défaillances constatées
+
+1. **`redistribute` EIGRP décoratif** — sous `router eigrp`, la commande
+   poussait une chaîne brute dans le repo de `show running-config` ; le
+   champ `redistribute: string[]` du moteur n'était lu nulle part. Aucun
+   moyen d'injecter des statiques ou des connectées hors `network` dans
+   un AS EIGRP.
+2. **Pas de notion d'externe** — toutes les routes EIGRP étaient
+   installées en AD 90 ; les redistribuées doivent être externes (AD 170,
+   D EX sur un vrai IOS).
+
+### Correction
+
+- **`RoutingDeviceContext`** : seam optionnel `ribRoutes()` (réseau,
+  masque, type) fourni par `RouterDynamicRouting` depuis le RIB réel —
+  les moteurs sur la fondation commune peuvent désormais voir les routes
+  des autres protocoles sans couplage au Router.
+- **`EIGRPEngine`** : `redistributeSources` (Set) + API
+  `setRedistribution`/`removeRedistribution` ; `originatedPrefixes()`
+  ajoute les connectées hors instruction `network` (si
+  `redistribute connected`) et les routes RIB des sources configurées
+  (static/rip/ospf/bgp), marquées `external` ; `computeRoutes` installe
+  les externes en **AD 170** chez les voisins.
+- **CLI** : `redistribute <proto>` et `no redistribute <proto>` sous
+  `router eigrp` câblés au moteur + convergence.
+
+### Fichiers
+
+- `src/network/routing/RoutingPeerLocator.ts`
+- `src/network/eigrp/EIGRPEngine.ts`
+- `src/network/devices/router/RouterDynamicRouting.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/__tests__/unit/network-v2/eigrp-engine.test.ts` (+2 tests)
+
+### Validation (ciblée)
+
+- Moteur : statique non annoncée sans redistribute, annoncée en AD 170
+  avec ; connectée hors `network` idem. Suites connexes : eigrp-engine
+  (14), eigrp-bgp-cli-integration, cisco-routing-proto,
+  routing-engine-consistency, rip (39), redistribution (3) — toutes
+  vertes.

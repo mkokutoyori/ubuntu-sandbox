@@ -54,7 +54,12 @@ export class RouterDynamicRouting {
     this.bgp = new BGPEngine(ctx.id);
     this.rip = new RipEngineAdapter(ctx.getRipEngine());
     this.ospf = new OspfEngineAdapter(() => ctx.getOspfIntegration());
-    const deviceContext = { connectedNetworks: () => this.connected() };
+    const deviceContext = {
+      connectedNetworks: () => this.connected(),
+      ribRoutes: () => this.ctx.getRoutingTable().map((r) => ({
+        network: r.network, mask: r.mask, type: r.type,
+      })),
+    };
     const peerLocator = { locatePeers: () => this.peers() };
     for (const e of [this.eigrp, this.bgp]) {
       e.setDeviceContext(deviceContext);

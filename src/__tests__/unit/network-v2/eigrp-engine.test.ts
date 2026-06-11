@@ -272,3 +272,64 @@ describe('K-value mismatch diagnostics', () => {
     expect(mismatches[0].asn).toBe(100);
   });
 });
+
+describe('Redistribution into EIGRP', () => {
+  function ctxWithRib(net: string, ip: string, rib: Array<{ net: string; mask: string; type: string }>) {
+    return {
+      connectedNetworks: () => [{
+        network: new IPAddress(net),
+        mask: new SubnetMask('255.255.255.0'),
+        iface: 'Gi0/1',
+        localIp: new IPAddress(ip),
+      }],
+      ribRoutes: () => rib.map(r => ({
+        network: new IPAddress(r.net),
+        mask: new SubnetMask(r.mask),
+        type: r.type,
+      })),
+    };
+  }
+
+  it('redistribute static advertises the prefix as external (AD 170)', () => {
+    const r1 = new EIGRPEngine('R1');
+    const r2 = new EIGRPEngine('R2');
+    r1.setDeviceContext(ctx('192.168.1.0', '192.168.1.1'));
+    r2.setDeviceContext(ctxWithRib('192.168.2.0', '192.168.2.1',
+      [{ net: '172.30.0.0', mask: '255.255.0.0', type: 'static' }]));
+    r1.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r2.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    link(r1, 'R1', '10.0.0.1', r2, 'R2', '10.0.0.2');
+
+    r1.converge();
+    expect(r1.getContributedRoutes().find(
+      r => String(r.network) === '172.30.0.0')).toBeUndefined();
+
+    r2.setRedistribution('static');
+    r1.converge();
+    const learned = r1.getContributedRoutes().find(
+      r => String(r.network) === '172.30.0.0');
+    expect(learned).toBeDefined();
+    expect(learned!.adminDistance).toBe(170);
+  });
+
+  it('redistribute connected covers networks outside any network statement', () => {
+    const r1 = new EIGRPEngine('R1');
+    const r2 = new EIGRPEngine('R2');
+    r1.setDeviceContext(ctx('192.168.1.0', '192.168.1.1'));
+    r2.setDeviceContext(ctx('192.168.2.0', '192.168.2.1'));
+    r1.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r2.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    link(r1, 'R1', '10.0.0.1', r2, 'R2', '10.0.0.2');
+
+    r1.converge();
+    expect(r1.getContributedRoutes().find(
+      r => String(r.network) === '192.168.2.0')).toBeUndefined();
+
+    r2.setRedistribution('connected');
+    r1.converge();
+    const learned = r1.getContributedRoutes().find(
+      r => String(r.network) === '192.168.2.0');
+    expect(learned).toBeDefined();
+    expect(learned!.adminDistance).toBe(170);
+  });
+});

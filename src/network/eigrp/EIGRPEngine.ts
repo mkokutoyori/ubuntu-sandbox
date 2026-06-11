@@ -41,6 +41,7 @@ export interface EIGRPConfig {
   variance: number;
   maximumPaths: number;
   redistribute: string[];
+  redistributeSources: Set<'static' | 'connected' | 'rip' | 'ospf' | 'bgp'>;
   /** Composite-metric coefficients (`metric weights 0 k1 k2 k3 k4 k5`). */
   kValues: EigrpKValues;
 }
@@ -53,6 +54,7 @@ export interface EigrpOriginatedPrefix {
   bandwidthKbps?: number;
   /** Delay (µs) of the originating interface. */
   delayUsec?: number;
+  external?: boolean;
 }
 
 /** EIGRP administrative distances (internal / redistributed-external). */
@@ -122,11 +124,20 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     return {
       asn: 0, networks: [], passive: new Set(), autoSummary: true,
       variance: 1, maximumPaths: 4, redistribute: [],
+      redistributeSources: new Set(),
       kValues: EIGRP_DEFAULT_K_VALUES,
     };
   }
 
   get asn(): number { return this.config.asn; }
+
+  setRedistribution(source: 'static' | 'connected' | 'rip' | 'ospf' | 'bgp'): void {
+    this.config.redistributeSources.add(source);
+  }
+
+  removeRedistribution(source: 'static' | 'connected' | 'rip' | 'ospf' | 'bgp'): void {
+    this.config.redistributeSources.delete(source);
+  }
 
   /** Connected networks this device really originates into EIGRP. */
   originatedPrefixes(): EigrpOriginatedPrefix[] {
@@ -140,7 +151,25 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
           network: c.network, mask: c.mask,
           bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
         });
+      } else if (this.config.redistributeSources.has('connected')) {
+        out.push({
+          network: c.network, mask: c.mask,
+          bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
+          external: true,
+        });
       }
+    }
+    const sources = this.config.redistributeSources;
+    const rib = this.deviceCtx.ribRoutes?.() ?? [];
+    const seen = new Set(out.map((o) => `${o.network}/${o.mask}`));
+    for (const r of rib) {
+      const src = r.type === 'default' ? 'static' : r.type;
+      if (src !== 'static' && src !== 'rip' && src !== 'ospf' && src !== 'bgp') continue;
+      if (!sources.has(src)) continue;
+      const key = `${r.network}/${r.mask}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ network: r.network, mask: r.mask, external: true });
     }
     return out;
   }
@@ -246,7 +275,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
             network: pre.network, mask: pre.mask,
             nextHop: p.remoteIp, iface: p.localIface,
             protocol: 'eigrp',
-            adminDistance: EIGRP_INTERNAL_AD,
+            adminDistance: pre.external ? EIGRP_EXTERNAL_AD : EIGRP_INTERNAL_AD,
             metric: fd,
           },
         };
