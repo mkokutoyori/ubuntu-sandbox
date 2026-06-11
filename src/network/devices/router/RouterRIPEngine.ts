@@ -17,11 +17,12 @@ import type { Port } from '../../hardware/Port';
 import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
 import {
-  RIPEngine, type RIPConfig, type RIPRouteEntry_RIB,
+  RIPEngine, type RIPConfig, type RIPRedistSource, type RIPRouteEntry_RIB,
 } from '../../rip/RIPEngine';
 import type { RouteEntry } from '../Router';
 
 export type { RIPConfig } from '../../rip/RIPEngine';
+export type RIPRedistSourceArg = RIPRedistSource;
 
 /** Interface to access router state needed by RIP */
 export interface RIPRouterContext {
@@ -90,6 +91,22 @@ export class RouterRIPEngine {
 
   removePassiveInterface(iface: string): void {
     this.engine.removePassiveInterface(iface);
+  }
+
+  setRedistribution(source: RIPRedistSource, metric?: number): void {
+    this.engine.setRedistribution(source, metric);
+  }
+
+  removeRedistribution(source: RIPRedistSource): void {
+    this.engine.removeRedistribution(source);
+  }
+
+  setDefaultMetric(metric: number | null): void {
+    this.engine.setDefaultMetric(metric);
+  }
+
+  setDefaultInformationOriginate(on: boolean): void {
+    this.engine.setDefaultInformationOriginate(on);
   }
 
   /** Handle an incoming RIP packet (from the Router's local delivery). */

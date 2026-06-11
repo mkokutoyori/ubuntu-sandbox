@@ -2426,10 +2426,44 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       e.gcSec = parseInt(args[2] ?? '', 10);
       return '';
     });
-    t.register('default-route originate', 'Originate default route via RIP', () => { ripExtras().defaultOriginate = true; return ''; });
+    t.register('default-route originate', 'Originate default route via RIP', () => {
+      ripExtras().defaultOriginate = true;
+      getRouter().ripSetDefaultInformationOriginate(true);
+      return '';
+    });
+    t.register('undo default-route originate', 'Stop default route origination', () => {
+      ripExtras().defaultOriginate = false;
+      getRouter().ripSetDefaultInformationOriginate(false);
+      return '';
+    });
     t.registerGreedy('import-route', 'Redistribute routes into RIP', (args) => {
       const e = ripExtras();
       (e.importRoute ??= []).push(args.join(' '));
+      const source = ['static', 'connected', 'ospf', 'bgp']
+        .find((s) => s === (args[0] ?? '').toLowerCase());
+      if (source === 'connected' || source === 'static'
+        || source === 'ospf' || source === 'bgp') {
+        let metric: number | undefined;
+        const cIdx = args.findIndex((tk) => tk.toLowerCase() === 'cost');
+        if (cIdx >= 0 && args[cIdx + 1] !== undefined) {
+          const m = parseInt(args[cIdx + 1], 10);
+          if (!Number.isNaN(m)) metric = m;
+        }
+        getRouter().ripSetRedistribution(source, metric);
+      }
+      return '';
+    });
+    t.registerGreedy('undo import-route', 'Stop redistributing into RIP', (args) => {
+      const e = ripExtras();
+      const source = (args[0] ?? '').toLowerCase();
+      if (Array.isArray(e.importRoute)) {
+        e.importRoute = e.importRoute.filter(
+          (l: string) => !l.toLowerCase().startsWith(source));
+      }
+      if (source === 'connected' || source === 'static'
+        || source === 'ospf' || source === 'bgp') {
+        getRouter().ripRemoveRedistribution(source);
+      }
       return '';
     });
     t.registerGreedy('maximum load-balancing', 'Set ECMP for RIP', (args) => {

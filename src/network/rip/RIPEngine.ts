@@ -62,6 +62,8 @@ export interface RIPRouteState {
   gcTimer: symbol | null;
 }
 
+export type RIPRedistSource = 'static' | 'connected' | 'ospf' | 'eigrp' | 'bgp';
+
 /** RIP configuration */
 export interface RIPConfig {
   networks: Array<{ network: IPAddress; mask: SubnetMask }>;
@@ -76,6 +78,9 @@ export interface RIPConfig {
    * the interface keeps learning routes, it just stays silent.
    */
   passiveInterfaces: Set<string>;
+  redistribute: Map<RIPRedistSource, { metric?: number }>;
+  defaultMetric: number | null;
+  defaultInformationOriginate: boolean;
 }
 
 /**
@@ -120,6 +125,9 @@ function createDefaultConfig(): RIPConfig {
     splitHorizon: true,
     poisonedReverse: true,
     passiveInterfaces: new Set(),
+    redistribute: new Map(),
+    defaultMetric: null,
+    defaultInformationOriginate: false,
   };
 }
 
@@ -273,6 +281,7 @@ export class RIPEngine implements IProtocolEngine {
       ...this.config,
       networks: [...this.config.networks],
       passiveInterfaces: new Set(this.config.passiveInterfaces),
+      redistribute: new Map(this.config.redistribute),
     };
   }
 
@@ -302,6 +311,22 @@ export class RIPEngine implements IProtocolEngine {
 
   isPassiveInterface(iface: string): boolean {
     return this.config.passiveInterfaces.has(iface);
+  }
+
+  setRedistribution(source: RIPRedistSource, metric?: number): void {
+    this.config.redistribute.set(source, { metric });
+  }
+
+  removeRedistribution(source: RIPRedistSource): void {
+    this.config.redistribute.delete(source);
+  }
+
+  setDefaultMetric(metric: number | null): void {
+    this.config.defaultMetric = metric;
+  }
+
+  setDefaultInformationOriginate(on: boolean): void {
+    this.config.defaultInformationOriginate = on;
   }
 
   /** Get route states for debugging/display */
@@ -403,12 +428,56 @@ export class RIPEngine implements IProtocolEngine {
     }
   }
 
+  private coveredByNetworkStatement(network: IPAddress): boolean {
+    const netInt = network.toUint32();
+    for (const stmt of this.config.networks) {
+      const cfgNetInt = stmt.network.toUint32() & stmt.mask.toUint32();
+      if ((netInt & stmt.mask.toUint32()) === cfgNetInt) return true;
+    }
+    return false;
+  }
+
+  private advertisableMetric(
+    route: { network: IPAddress; type: string; metric: number },
+  ): number | null {
+    const isDefaultPrefix = route.network.toUint32() === 0;
+    if (isDefaultPrefix) {
+      return this.config.defaultInformationOriginate ? 1 : null;
+    }
+    switch (route.type) {
+      case 'rip':
+        return route.metric >= RIP_METRIC_INFINITY
+          ? null : Math.min(route.metric + 1, RIP_METRIC_INFINITY);
+      case 'connected': {
+        if (this.coveredByNetworkStatement(route.network)) return 1;
+        const redist = this.config.redistribute.get('connected');
+        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+      }
+      case 'static': {
+        const redist = this.config.redistribute.get('static');
+        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+      }
+      case 'ospf':
+      case 'eigrp':
+      case 'bgp': {
+        const redist = this.config.redistribute.get(route.type);
+        if (!redist) return null;
+        const metric = redist.metric ?? this.config.defaultMetric;
+        return metric === null || metric === undefined
+          ? null : Math.min(metric, RIP_METRIC_INFINITY);
+      }
+      default:
+        return null;
+    }
+  }
+
   private sendUpdate(outIface: string): void {
     const entries: RIPRouteEntry[] = [];
     const routingTable = this.callbacks.getRoutingTable();
 
     for (const route of routingTable) {
-      if (route.type === 'rip' && route.metric >= RIP_METRIC_INFINITY) continue;
+      const metric = this.advertisableMetric(route);
+      if (metric === null) continue;
 
       if (this.config.splitHorizon && route.iface === outIface) {
         if (this.config.poisonedReverse && route.type === 'rip') {
@@ -417,7 +486,6 @@ export class RIPEngine implements IProtocolEngine {
         continue;
       }
 
-      const metric = route.type === 'connected' ? 1 : Math.min(route.metric + 1, RIP_METRIC_INFINITY);
       entries.push(this.routeToRIPEntry(route, metric));
     }
 

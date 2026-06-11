@@ -960,3 +960,54 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   intacte), retour après cycle du lien, et le port démis signale désormais
   les changements de topologie comme un port normal.
 - Suite complète `unit/network-v2` : **289 fichiers, 6915 tests verts**.
+
+---
+
+## Entrée n°19 — 2026-06-11 — RIP : le RIB entier fuyait dans les annonces ; redistribution réelle
+
+### Défaillances constatées
+
+1. **Fuite du RIB complet** — `sendUpdate` annonçait **toutes** les routes
+   de la table de routage (statiques, OSPF, par défaut…) sur chaque
+   interface RIP, sans aucun filtre ni configuration. Un vrai RIP
+   n'annonce que : les connectées couvertes par une instruction
+   `network`, les routes RIP, et ce qui est **explicitement redistribué**.
+   Le défaut était l'inverse de celui supposé par l'audit (« redistribution
+   manquante ») : elle était involontaire, permanente et non configurable.
+2. **`redistribute`/`default-metric`/`default-information originate`
+   décoratifs** — sous `router rip`, ces commandes n'écrivaient que dans
+   le repo de `show running-config` ; `import-route` VRP idem.
+
+### Correction
+
+- **`RIPEngine`** : sélection des routes annonçables (`advertisableMetric`) —
+  RIP : métrique+1 ; connectée : couverte par `network` → 1, sinon
+  uniquement si `redistribute connected` ; statique : uniquement si
+  `redistribute static` (métrique configurée ou 1, sémantique IOS) ;
+  OSPF/EIGRP/BGP : `redistribute <proto>` + métrique explicite ou
+  `default-metric`, sinon non annoncée (comme IOS) ; préfixe 0.0.0.0/0 :
+  uniquement avec `default-information originate`. Nouvelle config
+  (`redistribute` Map, `defaultMetric`, `defaultInformationOriginate`)
+  + API moteur, pass-throughs adaptateur et façade Router.
+- **CLI Cisco** : `redistribute <proto> [metric N]` parsé et appliqué au
+  moteur (le repo garde la ligne pour `show run`), `no redistribute`,
+  `default-metric`, `default-information originate`/`no …` câblés.
+- **CLI Huawei** : `import-route <proto> [cost N]`, `undo import-route`,
+  `default-route originate`/`undo …` câblés au même moteur.
+
+### Fichiers
+
+- `src/network/rip/RIPEngine.ts`
+- `src/network/devices/router/RouterRIPEngine.ts`, `src/network/devices/Router.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/network/devices/shells/HuaweiVRPShell.ts`
+- `src/__tests__/unit/network-v2/rip.test.ts` (+8 tests)
+
+### Validation (ciblée — régression complète en fin de campagne)
+
+- 8 tests : non-fuite des statiques/connectées hors `network`/défaut,
+  redistribution effective avec métriques IOS, exigence de métrique pour
+  les protocoles dynamiques, plomberie CLI des deux vendeurs.
+- Suites ciblées : rip (39), cisco-routing-proto, huawei-vrp,
+  huawei-config-parity, routing-engine-consistency, rip-versions —
+  **247 tests verts**.

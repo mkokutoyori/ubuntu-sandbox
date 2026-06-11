@@ -163,20 +163,59 @@ export function buildRoutingProtoConfig(
     setPassive(p, ifName, false);
     return '';
   });
+  const RIP_REDIST_SOURCES = ['static', 'connected', 'ospf', 'eigrp', 'bgp'] as const;
+  const parseRipRedistSource = (token: string | undefined) =>
+    RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {
     const line = raw ?? `redistribute ${a.join(' ')}`;
     const p = curProto(ctx).proto;
-    if (p === 'rip') repo.rip.redistribute.push(line);
-    else if (p === 'eigrp') eigrp().redistribute.push(line);
+    if (p === 'rip') {
+      const source = parseRipRedistSource(a[0]);
+      if (!source) return '% Invalid input detected.';
+      let metric: number | undefined;
+      const mIdx = a.findIndex((t) => t.toLowerCase() === 'metric');
+      if (mIdx >= 0 && a[mIdx + 1] !== undefined) {
+        const m = parseInt(a[mIdx + 1], 10);
+        if (!Number.isNaN(m)) metric = m;
+      }
+      ctx.r().ripSetRedistribution(source, metric);
+      repo.rip.redistribute.push(line);
+    } else if (p === 'eigrp') eigrp().redistribute.push(line);
     else bgp()?.redistribute.push(line);
     return '';
   });
+  routerTrie.registerGreedy('no redistribute', 'Stop redistributing routes', (a) => {
+    const p = curProto(ctx).proto;
+    if (p === 'rip') {
+      const source = parseRipRedistSource(a[0]);
+      if (!source) return '% Invalid input detected.';
+      ctx.r().ripRemoveRedistribution(source);
+      repo.rip.redistribute = repo.rip.redistribute.filter(
+        (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+    }
+    return '';
+  });
   routerTrie.registerGreedy('default-information', 'Default route control', () => {
-    if (curProto(ctx).proto === 'rip') repo.rip.defaultInfoOriginate = true;
+    if (curProto(ctx).proto === 'rip') {
+      repo.rip.defaultInfoOriginate = true;
+      ctx.r().ripSetDefaultInformationOriginate(true);
+    }
+    return '';
+  });
+  routerTrie.registerGreedy('no default-information', 'Stop default route origination', () => {
+    if (curProto(ctx).proto === 'rip') {
+      repo.rip.defaultInfoOriginate = false;
+      ctx.r().ripSetDefaultInformationOriginate(false);
+    }
     return '';
   });
   routerTrie.registerGreedy('default-metric', 'Set default metric', (a) => {
-    if (curProto(ctx).proto === 'rip') repo.rip.defaultMetric = parseInt(a[0], 10);
+    if (curProto(ctx).proto === 'rip') {
+      const m = parseInt(a[0], 10);
+      if (Number.isNaN(m)) return '% Invalid input detected.';
+      repo.rip.defaultMetric = m;
+      ctx.r().ripSetDefaultMetric(m);
+    }
     return '';
   });
   routerTrie.registerGreedy('distance', 'Administrative distance', (a) => {

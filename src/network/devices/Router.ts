@@ -846,6 +846,10 @@ export abstract class Router extends Equipment {
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
+  ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number) { this.ripEngine.setRedistribution(source, metric); }
+  ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
+  ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
+  ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
   getDynamicRouting() { return this.dynamicRouting; }
