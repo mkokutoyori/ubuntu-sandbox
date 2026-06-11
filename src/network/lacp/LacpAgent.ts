@@ -116,7 +116,9 @@ export class LacpAgent extends ReactiveAgentBase {
   }
 
   handleFrame(portName: string, frame: EthernetFrame): void {
-    if (!this.config.enabled) return;
+    // A stopped agent neither speaks nor processes — otherwise it
+    // keeps answering partner LACPDUs and looks alive forever.
+    if (!this.isRunning() || !this.config.enabled) return;
     const payload = frame.payload as LacpFrame | undefined;
     if (!payload || payload.type !== 'lacp') return;
     const p = this.config.ports.get(portName);
@@ -124,6 +126,9 @@ export class LacpAgent extends ReactiveAgentBase {
     if (p.mode === 'on') return;
     p.partner = { ...payload.actor };
     p.lastRxMs = Date.now();
+    // A fresh LACPDU revives an expired port (802.3ad receive machine:
+    // EXPIRED → CURRENT); selection below re-bundles it.
+    if (p.state === 'expired') p.state = 'standalone';
     this.getBus().publish({
       topic: 'lacp.frame.received',
       payload: {
@@ -195,6 +200,47 @@ export class LacpAgent extends ReactiveAgentBase {
     if (this.config.fastRate) {
       this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
     }
+    this.scheduleInterval('expiry', () => this.expireDue(), 1_000);
+  }
+
+  /** current_while (802.3ad §43.4.12): 3 × the interval we requested. */
+  private rxTimeoutMs(): number {
+    return this.config.fastRate ? 3_000 : 90_000;
+  }
+
+  /** EXPIRED keeps partner info one short interval before defaulting. */
+  private static readonly EXPIRED_GRACE_MS = 3_000;
+
+  /**
+   * Receive machine timeouts. Previously a silent partner kept its
+   * port bundled forever — a unidirectional failure (peer hung, agent
+   * stopped) was never detected as long as the link stayed up.
+   */
+  private expireDue(): void {
+    const now = Date.now();
+    for (const p of this.config.ports.values()) {
+      if (p.mode === 'on' || !p.partner || p.lastRxMs === 0) continue;
+      const port = this.host.getPort(p.portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      const elapsed = now - p.lastRxMs;
+      if (p.state !== 'expired' && elapsed > this.rxTimeoutMs()) {
+        const oldState = p.state;
+        const oldBundled = p.bundled;
+        p.state = 'expired';
+        p.selected = false;
+        p.bundled = false;
+        this.maybeEmitStateChange(p, oldState, oldBundled, 'partner-timeout');
+      } else if (p.state === 'expired'
+        && elapsed > this.rxTimeoutMs() + LacpAgent.EXPIRED_GRACE_MS) {
+        // DEFAULTED: forget the partner entirely.
+        const oldState = p.state;
+        p.partner = null;
+        p.lastRxMs = 0;
+        p.state = 'standalone';
+        this.maybeEmitStateChange(p, oldState, p.bundled);
+        this.recompute();
+      }
+    }
   }
 
   private tick(rate: 'slow' | 'fast'): void {
@@ -254,6 +300,10 @@ export class LacpAgent extends ReactiveAgentBase {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       } else if (p.mode === 'on') {
         p.state = 'bundled'; p.selected = true; p.bundled = true;
+      } else if (p.state === 'expired') {
+        // Stays out of the aggregate until a fresh LACPDU arrives
+        // (handleFrame clears the state) or the partner is defaulted.
+        p.selected = false; p.bundled = false;
       } else if (p.partner && p.partner.key === p.groupId) {
         const sameSystem = compareSystemId(
           { priority: this.config.systemPriority, id: this.config.systemId },
@@ -271,7 +321,10 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
-  private maybeEmitStateChange(p: LacpPortInfo, oldState: LacpPortState, oldBundled: boolean): void {
+  private maybeEmitStateChange(
+    p: LacpPortInfo, oldState: LacpPortState, oldBundled: boolean,
+    unbundleCause = 'partner-loss',
+  ): void {
     if (oldState !== p.state) {
       this.getBus().publish({
         topic: 'lacp.port.state-changed',
@@ -298,7 +351,7 @@ export class LacpAgent extends ReactiveAgentBase {
         topic: 'lacp.port.unbundled',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          port: p.portName, groupId: p.groupId, cause: 'partner-loss',
+          port: p.portName, groupId: p.groupId, cause: unbundleCause,
         },
       });
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
@@ -276,5 +276,40 @@ describe('DTP — running-config + show dtp', () => {
     const out = await sw.executeCommand('show dtp');
     expect(out).toMatch(/Global DTP information/);
     expect(out).toMatch(/DYN-AUTO/);
+  });
+});
+
+describe('DTP — peer aging (silent neighbour)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('a negotiated trunk falls back to access when the peer goes silent past 5×hello', async () => {
+    vi.useFakeTimers();
+    const bus = new EventBus();
+    const s1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const s2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    s1.setEventBus(bus); s2.setEventBus(bus);
+    await s1.executeCommand('enable');
+    await s1.executeCommand('configure terminal');
+    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('switchport mode dynamic desirable');
+    await s1.executeCommand('end');
+    await s2.executeCommand('enable');
+    await s2.executeCommand('configure terminal');
+    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('switchport mode dynamic auto');
+    await s2.executeCommand('end');
+    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
+
+    const reasons: string[] = [];
+    bus.subscribe('dtp.mode.changed', (e) => reasons.push((e.payload as { reason: string }).reason));
+
+    // Peer hangs while the link stays up — previously the stale
+    // peerAdminMode kept the port operationally trunk forever.
+    s2.getDtpAgent().stop();
+    vi.advanceTimersByTime(5 * 30_000 + 6_000);
+
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
+    expect(reasons).toContain('peer-loss');
   });
 });

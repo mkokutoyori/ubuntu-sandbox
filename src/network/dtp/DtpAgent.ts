@@ -108,7 +108,8 @@ export class DtpAgent extends ReactiveAgentBase {
   }
 
   handleFrame(portName: string, frame: EthernetFrame): void {
-    if (!this.config.enabled) return;
+    // A stopped agent neither speaks nor processes (mirrors LacpAgent).
+    if (!this.isRunning() || !this.config.enabled) return;
     const s = this.getPortState(portName);
     if (s.adminMode === 'nonegotiate') return;
     const payload = frame.payload as DtpFrame | undefined;
@@ -188,6 +189,36 @@ export class DtpAgent extends ReactiveAgentBase {
   protected armTimers(): void {
     this.scheduleInterval('hello', () => this.advertiseAll(),
       this.config.helloSec * 1000);
+    this.scheduleInterval('expiry', () => this.expireDue(), 5_000);
+  }
+
+  /** Peer info lifetime: 5 × hello, like IOS' DTP neighbour aging. */
+  private peerTimeoutMs(): number {
+    return this.config.helloSec * 1000 * 5;
+  }
+
+  /**
+   * A vanished neighbour must release the negotiation: the old code
+   * kept the stale peerAdminMode until link-down, so a port stayed
+   * operationally trunk forever after its peer went silent (hung
+   * device, unidirectional failure).
+   */
+  private expireDue(): void {
+    const now = Date.now();
+    for (const [portName, s] of this.config.ports) {
+      if (!s.peerAdminMode || !s.lastHelloMs) continue;
+      if (now - s.lastHelloMs <= this.peerTimeoutMs()) continue;
+      const oldOp = s.operationalMode;
+      s.peerAdminMode = null;
+      s.peerMac = null;
+      s.lastHelloMs = 0;
+      const newOp = resolveOperationalMode(s.adminMode, null);
+      s.operationalMode = newOp;
+      if (newOp !== oldOp) {
+        this.host.onOperationalModeChanged(portName, newOp);
+        this.publishModeChange(portName, s.adminMode, oldOp, newOp, 'peer-loss');
+      }
+    }
   }
 
   protected override onPortLinkUp(portName: string): void {

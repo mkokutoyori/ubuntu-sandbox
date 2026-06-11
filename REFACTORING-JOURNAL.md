@@ -777,3 +777,55 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   le nouvel allocataire reçoit un autre port et la traduction inverse
   de la session originale reste intacte.
 - Suite complète `unit/network-v2` : **289 fichiers, 6893 tests verts**.
+
+---
+
+## Entrée n°15 — 2026-06-11 — LACP & DTP : pas de détection de pair silencieux
+
+### Défaillances constatées
+
+1. **LACP : bundle éternel** (802.3ad §43.4.12) — `lastRxMs` était mis à
+   jour à chaque LACPDU reçue mais **jamais consulté**. Un partenaire qui
+   cessait d'émettre (équipement figé, panne unidirectionnelle) laissait le
+   port `bundled` indéfiniment tant que le lien physique restait up : le
+   port-channel continuait de balancer du trafic vers un membre mort. Les
+   constantes `LACP_FLAG_EXPIRED`/`DEFAULTED` existaient déjà… inutilisées.
+2. **DTP : trunk fantôme** — même schéma : `lastHelloMs` suivi, raison
+   `peer-loss` déclarée dans le type d'événement, **aucun balayage
+   d'expiration**. Un trunk négocié dynamiquement restait opérationnellement
+   trunk pour toujours après la disparition du pair.
+3. **Agents zombies** — un agent `stop()` (timers arrêtés, abonnements
+   détachés) continuait de **traiter et répondre** aux trames reçues via le
+   chemin direct du switch : impossible de simuler un pair silencieux, et
+   incohérent (un agent arrêté qui parle).
+
+### Correction
+
+- **`LacpAgent`** : machine de réception conforme — timer `current_while`
+  (3 × l'intervalle demandé : 90 s slow / 3 s fast) ; à expiration le port
+  passe `expired` (hors agrégat, événement `lacp.port.unbundled` avec la
+  nouvelle cause `partner-timeout`), garde l'info partenaire un court
+  intervalle puis est **defaulted** (partenaire oublié, retour
+  `standalone`). Une LACPDU fraîche ressuscite un port `expired`
+  (EXPIRED → CURRENT). Nouvel état `'expired'` dans `LacpPortState`
+  (documenté), la sélection ne re-bundle jamais un port expiré sur des
+  données périmées.
+- **`DtpAgent`** : balayage d'expiration (5 × hello, vieillissement de
+  voisin façon IOS) — le pair oublié déclenche `resolveOperationalMode`
+  avec `null` et publie enfin `peer-loss`.
+- **`handleFrame` des deux agents** : gate sur `isRunning()` — un agent
+  arrêté ne traite plus rien.
+
+### Fichiers
+
+- `src/network/lacp/types.ts`, `src/network/lacp/LacpAgent.ts`
+- `src/network/dtp/DtpAgent.ts`
+- `src/__tests__/unit/network-v2/lacp-protocol.test.ts` (+3 tests)
+- `src/__tests__/unit/network-v2/dtp-protocol.test.ts` (+1 test)
+
+### Validation
+
+- Tests : expiration après 91 s (slow), info partenaire conservée puis
+  defaulted, résurrection par LACPDU fraîche, cause `partner-timeout` sur
+  le bus ; trunk DTP retombant en access avec `peer-loss` après 5 × hello.
+- Suite complète `unit/network-v2` : **289 fichiers, 6897 tests verts**.
