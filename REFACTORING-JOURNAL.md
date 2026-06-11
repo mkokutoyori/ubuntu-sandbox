@@ -1091,3 +1091,19 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 ### Validation (ciblée)
 
 - Suite GRE : 13 tests verts.
+
+---
+
+## Clôture de campagne — 2026-06-11 — Régression complète à l'échelle du projet
+
+- `npm run test:run` (projet entier) : **649 fichiers, 13 738 tests verts,
+  9 échecs, 93 skipped**.
+- Les 9 échecs sont concentrés dans deux suites PowerShell
+  (`ps-fifth-pass.test.ts` : DateTime/Push-Location/switch-scriptblock ;
+  `format-rendering-fixes.test.ts` : Get-ChildItem) et **préexistent à la
+  campagne** : reproduits à l'identique sur un worktree propre du commit de
+  départ (91fd5b4), avant toute modification de cette campagne. Sans lien
+  avec les protocoles réseau ; probablement sensibles à la date système.
+- Périmètre final de la campagne : entrées n°9 à n°21 — 13 itérations
+  poussées individuellement, chacune validée par ses suites ciblées, et
+  l'ensemble par cette régression globale.

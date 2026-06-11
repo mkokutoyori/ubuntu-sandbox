@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-06-11T00:24:44.449Z
+Generated: 2026-06-11T16:02:01.998Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1734,7 +1734,7 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD47ECC.7DB22D0E (00:24:44.491 UTC Thu Jun 11 2026)
+  reference time is EDD55A7A.0D4FDF3B (16:02:02.052 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
@@ -1743,7 +1743,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *00:24:44.000 UTC Thu Jun 11 2026
+  *16:02:02.000 UTC Thu Jun 11 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

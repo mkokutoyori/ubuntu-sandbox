@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-11T00:24:57.854Z
+Generated: 2026-06-11T16:02:10.211Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -229,7 +229,10 @@ Total steps: 355
     RIP learned routes: 0
     Automatic network summarization is not in effect
     Passive Interface(s):
+      (default)
       GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
     offset-list 1 in 5 GigabitEthernet0/1
     offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
@@ -426,7 +429,10 @@ Total steps: 355
     RIP learned routes: 0
     Automatic network summarization is not in effect
     Passive Interface(s):
+      (default)
       GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
     offset-list 1 in 5 GigabitEthernet0/1
     offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
@@ -991,7 +997,10 @@ Total steps: 355
     RIP learned routes: 0
     Automatic network summarization is not in effect
     Passive Interface(s):
+      (default)
       GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
     offset-list 1 in 5 GigabitEthernet0/1
     offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
@@ -1214,7 +1223,10 @@ Total steps: 355
     RIP learned routes: 0
     Automatic network summarization is not in effect
     Passive Interface(s):
+      (default)
       GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
     offset-list 1 in 5 GigabitEthernet0/1
     offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
@@ -1402,7 +1414,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD47ED9.E51EB851 (00:24:57.895 UTC Thu Jun 11 2026)
+  reference time is EDD55A82.428F5C28 (16:02:10.260 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1411,7 +1423,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *00:24:57.000 UTC Thu Jun 11 2026
+  *16:02:10.000 UTC Thu Jun 11 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1920,7 +1932,10 @@ Total steps: 355
     RIP learned routes: 0
     Automatic network summarization is not in effect
     Passive Interface(s):
+      (default)
       GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
     offset-list 1 in 5 GigabitEthernet0/1
     offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
