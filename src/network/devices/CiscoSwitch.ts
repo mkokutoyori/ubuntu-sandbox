@@ -76,6 +76,7 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
       onStpBpduGuardErrDisable: (p) => this.applyStpBpduGuardErrDisable(p),
+      onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({

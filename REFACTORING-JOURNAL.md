@@ -555,3 +555,64 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - HSRP : l'opcode `resign` est traité en réception mais jamais émis
   (`advertise` n'envoie que des hellos). Un vrai IOS envoie un resign quand
   l'actif abandonne son rôle administrativement.
+
+---
+
+## Entrée n°11 — 2026-06-11 — STP : les Topology Change Notifications jetées en silence (802.1D §8.6.14)
+
+### Défaillances constatées
+
+1. **BPDU TCN ignorés** — `StpAgent.handleFrame` filtrait
+   `bpduType !== 'config'` : un TCN reçu était jeté sans traitement, alors que
+   le type existait dans le vocabulaire (`StpBpduType = 'config' | 'tcn'`).
+2. **Flags TC/TCA câblés à `false`** — `sendBpdu` n'émettait jamais ni le
+   Topology Change flag ni le Topology Change Acknowledgment : la machinerie
+   de propagation (TCN → racine → TC broadcast) n'existait pas.
+3. **Pas de fast aging** — après une reconvergence, les tables MAC gardaient
+   leur vieillissement de 300 s : les chemins morts persistaient plusieurs
+   minutes (un vrai pont passe à `forward delay` = 15 s pendant le TC,
+   802.1D §8.3.5).
+4. **Aucune détection** — ni la perte d'un port actif ni le passage d'un port
+   en forwarding ne déclenchaient quoi que ce soit.
+5. **BPDU Guard partiel** — la garde ne se déclenchait que sur les BPDU
+   config ; un TCN sur un port PortFast+bpduguard n'err-disablait pas le
+   port (un vrai IOS le fait sur tout BPDU).
+6. **Latent** — champ `this.scheduler` assigné mais jamais déclaré dans
+   `StpAgent` (erreur de type masquée car vitest ne typecheck pas).
+
+### Correction (structurelle)
+
+- **Détection** (§8.5.3.12) : perte d'un port actif (forwarding/learning,
+  non-PortFast) et passage en forwarding d'un port géré non-edge →
+  `notifyTopologyChange()`. Le bring-up initial (chemin rapide type RSTP
+  existant) reste silencieux, cohérent avec le design du simulateur.
+- **Notification** : un pont non-racine émet des TCN sur son root port à
+  chaque hello jusqu'à réception d'un TCA (timer nommé `tcn` sur la
+  machinerie `ReactiveAgentBase` existante).
+- **Acquittement + propagation** : le pont désigné qui reçoit un TCN répond
+  immédiatement (TCA one-shot via `pendingTcAck`) et relaie vers la racine.
+- **tcWhile** : la racine émet TC=1 pendant `max age + forward delay`
+  (timer), diffusé immédiatement puis à chaque hello.
+- **Fast aging** : tout pont voyant TC=1 sur son root port (et la racine
+  elle-même) raccourcit le vieillissement MAC à `forward delay` via le
+  nouveau hook `StpHost.onTopologyChangeAging` ; restauration sur TC=0.
+  Côté `Switch` : `_setStpFastAging()` + `effectiveMacAgingTime()` dans le
+  balayage existant (pas de second timer).
+- **BPDU Guard** déplacé avant le dispatch par type : déclenche sur tout BPDU.
+- Événements : `stp.tcn.sent`, `stp.tcn.received`,
+  `stp.topology-change.detected` + getters `isTopologyChangeActive()` /
+  `isFastAgingActive()`.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`
+- `src/network/devices/Switch.ts`, `CiscoSwitch.ts`, `HuaweiSwitch.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (nouveau, 6 tests)
+
+### Validation
+
+- 6 nouveaux tests : TCN émis vers la racine + ack synchrone (une seule
+  émission), TC + fast aging sur toute la chaîne, expiration tcWhile
+  (35 s) → retour au vieillissement normal, flush réel d'une entrée MAC
+  dynamique à 15 s, PortFast silencieux vs port normal (contraste).
+- Suite complète `unit/network-v2` : **289 fichiers, 6886 tests verts**.

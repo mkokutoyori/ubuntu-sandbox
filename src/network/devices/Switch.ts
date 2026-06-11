@@ -126,6 +126,12 @@ export abstract class Switch extends Equipment {
 
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macAgingTime: number = 300; // seconds
+  /**
+   * STP topology-change fast aging (802.1D-1998 §8.3.5): while set,
+   * dynamic entries age with this value (forward delay) instead of
+   * `macAgingTime`, so stale paths flush quickly after a reconvergence.
+   */
+  private stpFastAgingTime: number | null = null;
   private macAgingTimer: TimerHandle | null = null;
   private macAgingScheduler: IScheduler | null = null;
   private schedulerOverride: IScheduler | null = null;
@@ -832,6 +838,16 @@ export abstract class Switch extends Equipment {
     this.macAgingTime = seconds;
   }
 
+  /** STP hook: enable fast aging during a topology change, null restores. */
+  _setStpFastAging(agingSec: number | null): void {
+    this.stpFastAgingTime = agingSec;
+  }
+
+  /** Aging limit in effect (fast aging wins while a TC circulates). */
+  private effectiveMacAgingTime(): number {
+    return this.stpFastAgingTime ?? this.macAgingTime;
+  }
+
   addStaticMAC(mac: string, vlan: number, port: string): boolean {
     const key = `${vlan}:${mac.toLowerCase()}`;
     this.macTable.set(key, {
@@ -1103,10 +1119,11 @@ export abstract class Switch extends Equipment {
     this.macAgingScheduler = scheduler;
     this.macAgingTimer = scheduler.setInterval(() => {
       const now = Date.now();
+      const limit = this.effectiveMacAgingTime();
       for (const [key, entry] of this.macTable) {
         if (entry.type === 'dynamic') {
           const elapsed = Math.floor((now - entry.timestamp) / 1000);
-          entry.age = Math.max(0, this.macAgingTime - elapsed);
+          entry.age = Math.max(0, limit - elapsed);
           if (entry.age <= 0) {
             this.macTable.delete(key);
             Logger.debug(this.id, 'switch:mac-age', `${this.name}: aged out ${entry.mac} VLAN ${entry.vlan}`);

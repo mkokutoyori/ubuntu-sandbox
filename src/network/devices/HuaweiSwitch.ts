@@ -37,6 +37,7 @@ export class HuaweiSwitch extends Switch {
     this.stpAgent = new StpAgent({
       ...hostBase,
       onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+      onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
