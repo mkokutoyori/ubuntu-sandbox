@@ -422,6 +422,84 @@ préexistant déjà documenté en entrée 2).
 
 ---
 
+## Série 2 (2026-06-11) — Focus Oracle
+
+Note de base de travail : conformément à la consigne « merger toutes les
+branches », la branche `claude/awesome-shannon-zyqb1r` (4 commits, série
+du 2026-06-10) a été fusionnée sur `main` à jour. Le conflit sur
+`BGPEngine.ts` a été résolu en **unifiant** les deux apports : propagation
+transitive AS_PATH (branche) + sélection best-path RFC 4271 complète
+weight/LOCAL_PREF/MED (main) ; LOCAL_PREF ne voyage que sur les sessions
+iBGP (§5.1.5). Les branches `fix-powershell-tests-M4mpL` et
+`general-session-6Nwqo` (mai 2026) n'ont **aucun ancêtre commun** avec le
+`main` actuel (historique réécrit) : fusion impossible proprement, et leur
+contenu a déjà été réintégré depuis via PRs — écartées, documenté ici.
+
+### Backlog issu de l'audit Oracle (2026-06-11)
+
+Audit complet du sous-système Oracle (`src/database/`, périphérie
+SQL*Plus/RMAN/lsnrctl) contre le comportement réel d'Oracle Database et
+les principes de design :
+
+| # | Sujet | Référence | Sévérité | Statut |
+|---|-------|-----------|----------|--------|
+| O1 | Auto-commit DDL appliqué à 3 statements sur ~45 (CREATE/DROP TABLE, TRUNCATE seulement) | Oracle SQL Ref « Types of SQL Statements » | Haute | ✅ Corrigé |
+| O2 | DROP INDEX/SEQUENCE/VIEW/TRIGGER/SYNONYM silencieux sur objet inexistant ; CREATE INDEX sans aucune validation | ORA-01418/02289/00942/04080/01434/00904/00955/01452 | Haute | ✅ Corrigé |
+| O3 | ROWNUM affecté après filtrage WHERE (à vérifier sur code) | Modèle row-source Oracle | Haute | À faire |
+| O4 | CURRVAL/NEXTVAL : suivi par exécuteur, pas par session | Séquences Oracle | Moyenne | À faire |
+| O5 | STARTUP/SHUTDOWN : transitions d'états non validées, RESTRICT non appliqué | Cycle de vie instance | Moyenne | À faire |
+| O6 | Listener sans état (established/refused figés à 0, jamais BLOCKED) | lsnrctl réel | Moyenne | À faire |
+| O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
+| O8 | NULL coercé en '' dans l'évaluation de LIKE | Sémantique NULL Oracle | Basse | À faire |
+
+### Entrée O1+O2 — DDL : auto-commit centralisé + enforcement des DROP/CREATE INDEX
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Auto-commit DDL incomplet** : Oracle committe implicitement la
+   transaction courante avant **et** après chaque statement DDL (et le
+   pré-commit survit même si le DDL échoue). Le simulateur ne le faisait
+   que pour CREATE TABLE, DROP TABLE et TRUNCATE — trois copies du même
+   `if (this.txn.isActive) this.executeCommit()` dans les handlers. Un
+   `ROLLBACK` après `CREATE INDEX`, `GRANT`, `CREATE SEQUENCE`… annulait
+   à tort les DML précédents.
+2. **DROP silencieux** : `DROP INDEX/SEQUENCE/VIEW/SYNONYM` sur un objet
+   inexistant répondaient « dropped. » — un test validait même ce
+   comportement comme attendu. `DROP TRIGGER` levait une `Error` JS brute
+   (pas un code ORA).
+3. **CREATE INDEX sans validation** : table inexistante, colonne
+   inexistante, nom d'index déjà pris, doublons sous index UNIQUE —
+   tout passait avec « Index created. ».
+
+#### Correction
+
+- `DDL_STATEMENT_TYPES` (ensemble explicite, documenté d'après la
+  classification du SQL Language Reference) + wrapping commit-avant /
+  commit-après **centralisé dans `executeStatement()`** — suppression des
+  trois copies dans les handlers. ALTER SYSTEM / ALTER SESSION /
+  STARTUP / SHUTDOWN / LOCK TABLE / TCL explicitement exclus (ce ne sont
+  pas des DDL : ils ne committent jamais dans le vrai Oracle).
+- Enforcement réel : ORA-00942 (table absente), ORA-00904 (colonne
+  absente), ORA-00955 (nom déjà utilisé), ORA-01452 (doublons sous
+  UNIQUE, clés entièrement NULL exclues comme dans le vrai moteur),
+  ORA-01418 (DROP INDEX), ORA-02289 (DROP SEQUENCE), ORA-00942
+  (DROP VIEW), ORA-04080 (DROP TRIGGER), ORA-01432/01434 (DROP SYNONYM
+  public/privé).
+- Deux tests qui figeaient le comportement défaillant (« drop silencieux »)
+  mis en conformité avec le vrai comportement Oracle.
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-ddl-autocommit.test.ts` (nouveau, 13
+tests), `oracle-object-management.test.ts`.
+
+**Validation** : suite database complète **2609 tests verts** (baseline
+2593 avant la série, zéro échec), terminal 380 verts, ESLint propre sur
+les fichiers touchés.
+
+---
+
 ## Limites connues / dette restante
 
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :

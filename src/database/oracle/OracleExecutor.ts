@@ -38,6 +38,40 @@ import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 
+/**
+ * Statement types Oracle classifies as DDL (SQL Language Reference,
+ * "Types of SQL Statements"): CREATE/ALTER/DROP/TRUNCATE plus GRANT,
+ * REVOKE, AUDIT, NOAUDIT, COMMENT, ANALYZE, FLASHBACK, PURGE. Each one
+ * issues an implicit COMMIT before and after execution. Deliberately
+ * excluded: ALTER SYSTEM (system control), ALTER SESSION (session
+ * control), STARTUP/SHUTDOWN, LOCK TABLE and all TCL — none of those
+ * end the current transaction in real Oracle.
+ */
+const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
+  'CreateTableStatement', 'DropTableStatement', 'AlterTableStatement',
+  'TruncateTableStatement',
+  'CreateIndexStatement', 'DropIndexStatement', 'AlterIndexStatement',
+  'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
+  'CreateViewStatement', 'DropViewStatement',
+  'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'GrantStatement', 'RevokeStatement',
+  'CreateUserStatement', 'AlterUserStatement', 'DropUserStatement',
+  'CreateRoleStatement', 'DropRoleStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateSynonymStatement', 'DropSynonymStatement',
+  'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
+  'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateTypeStatement', 'AlterCompileStatement',
+  'CreateFlashbackArchiveStatement', 'DropFlashbackArchiveStatement',
+  'CreateAuditPolicyStatement', 'DropAuditPolicyStatement', 'AuditPolicyStatement',
+  'AuditStatement', 'NoauditStatement',
+  'CommentStatement', 'AnalyzeStatement',
+  'FlashbackStatement', 'PurgeStatement',
+  'AlterDatabaseStatement', 'PluggableDatabaseStatement',
+]);
+
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
@@ -415,7 +449,15 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeStatement(statement: Statement): ResultSet {
+    // Oracle wraps every DDL statement in implicit COMMITs: one before
+    // execution (it survives even when the DDL itself fails) and one
+    // after success (SQL Language Reference, "Types of SQL Statements").
+    // System/session control statements (ALTER SYSTEM / ALTER SESSION),
+    // STARTUP/SHUTDOWN and TCL never commit.
+    const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
+    if (isDdl && this.txn.isActive) this.txn.commit();
     const out = this.dispatchStatement(statement);
+    if (isDdl && this.txn.isActive) this.txn.commit();
     this.invalidateResultCacheForStatement(statement);
     return out;
   }
@@ -2271,9 +2313,6 @@ export class OracleExecutor extends BaseExecutor {
   // ── DDL ───────────────────────────────────────────────────────────
 
   private executeCreateTable(stmt: CreateTableStatement): ResultSet {
-    // DDL auto-commits any open transaction (Oracle behavior)
-    if (this.txn.isActive) this.executeCommit();
-
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2392,7 +2431,6 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
-    if (this.txn.isActive) this.executeCommit();
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2425,10 +2463,6 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
-    if (this.txn.isActive) {
-      this.executeCommit();
-    }
     this.storage.truncateTable(schema, stmt.name.toUpperCase());
     return emptyResult('Table truncated.');
   }
@@ -2560,11 +2594,42 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
+    const indexName = stmt.name.toUpperCase();
+    const tableName = stmt.table.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    if (this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+    const meta = this.storage.getTableMeta(schema, tableName)!;
+    const tableCols = new Set(meta.columns.map(c => c.name.toUpperCase()));
+    for (const c of stmt.columns) {
+      if (!c.expression && !tableCols.has(c.name.toUpperCase())) {
+        throw new OracleError(904, `"${c.name.toUpperCase()}": invalid identifier`);
+      }
+    }
     const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
     const hasExpressions = expressions.some(e => e !== null);
+    if (stmt.unique && !hasExpressions) {
+      // ORA-01452: a unique index cannot be built over duplicate keys.
+      // Entirely-NULL keys are not indexed by Oracle, so they never collide.
+      const colIdx = stmt.columns.map(c =>
+        meta.columns.findIndex(mc => mc.name.toUpperCase() === c.name.toUpperCase()));
+      const seen = new Set<string>();
+      for (const row of this.storage.getRows(schema, tableName)) {
+        const values = colIdx.map(i => row[i] ?? null);
+        if (values.every(v => v === null)) continue;
+        const key = JSON.stringify(values);
+        if (seen.has(key)) {
+          throw new OracleError(1452, 'cannot CREATE UNIQUE INDEX; duplicate keys found');
+        }
+        seen.add(key);
+      }
+    }
     this.storage.createIndex(schema, {
-      name: stmt.name.toUpperCase(),
-      tableName: stmt.table.toUpperCase(),
+      name: indexName,
+      tableName,
       columns: stmt.columns.map(c => c.name.toUpperCase()),
       unique: !!stmt.unique,
       bitmap: stmt.bitmap,
@@ -2575,7 +2640,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropIndex(stmt: DropIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropIndex(schema, stmt.name.toUpperCase());
+    const indexName = stmt.name.toUpperCase();
+    if (!this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(1418, 'specified index does not exist');
+    }
+    this.storage.dropIndex(schema, indexName);
     return emptyResult('Index dropped.');
   }
 
@@ -2595,7 +2664,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropSequence(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.sequenceExists(schema, name)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    this.storage.dropSequence(schema, name);
     return emptyResult('Sequence dropped.');
   }
 
@@ -2624,7 +2697,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropView(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.viewExists(schema, name)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    this.storage.dropView(schema, name);
     return emptyResult('View dropped.');
   }
 
@@ -2773,7 +2850,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropTrigger(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    const exists = this.storage.getAllTriggers()
+      .some(t => t.schema === schema && t.name === name);
+    if (!exists) {
+      throw new OracleError(4080, `trigger '${name}' does not exist`);
+    }
+    this.storage.dropTrigger(schema, name);
     return emptyResult('Trigger dropped.');
   }
 
@@ -2805,7 +2888,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
     const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
-    this.storage.dropSynonym(owner, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.getSynonym(owner, name)) {
+      throw stmt.isPublic
+        ? new OracleError(1432, 'public synonym to be dropped does not exist')
+        : new OracleError(1434, 'private synonym to be dropped does not exist');
+    }
+    this.storage.dropSynonym(owner, name);
     return emptyResult('Synonym dropped.');
   }
 
