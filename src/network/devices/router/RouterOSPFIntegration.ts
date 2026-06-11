@@ -35,6 +35,7 @@ export interface OSPFExtraConfig {
   bfdAllInterfaces?: boolean;
   redistributeStatic?: { subnets: boolean; metricType: number };
   redistributeConnected?: { subnets: boolean };
+  redistributeRip?: { subnets: boolean; metric?: number; metricType: number };
   areaRanges: Map<string, Array<{ network: string; mask: string }>>;
   virtualLinks: Map<string, string>;
   areaDefaultCost: Map<string, number>;
@@ -1405,6 +1406,25 @@ export class RouterOSPFIntegration {
           if (nh) {
             const metricType = rExtra.redistributeStatic.metricType ?? 2;
             const cost = metricType === 1 ? 20 + (nh.cost || 0) : 20;
+            routes.push({
+              network: rt.network.toString(), mask: rt.mask.toString(),
+              nextHop: nh.nextHop, iface: nh.iface,
+              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
+              areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
+              _metricType: metricType,
+            });
+          }
+        }
+      }
+
+      if (rExtra.redistributeRip) {
+        for (const rt of peer.ctx.getRoutingTable()) {
+          if (rt.type !== 'rip') continue;
+          const nh = this.findNextHopTo(peer);
+          if (nh) {
+            const metricType = rExtra.redistributeRip.metricType ?? 2;
+            const base = rExtra.redistributeRip.metric ?? 20;
+            const cost = metricType === 1 ? base + (nh.cost || 0) : base;
             routes.push({
               network: rt.network.toString(), mask: rt.mask.toString(),
               nextHop: nh.nextHop, iface: nh.iface,

@@ -1011,3 +1011,49 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - Suites ciblées : rip (39), cisco-routing-proto, huawei-vrp,
   huawei-config-parity, routing-engine-consistency, rip-versions —
   **247 tests verts**.
+
+---
+
+## Entrée n°20 — 2026-06-11 — Redistribution mutuelle RIP ↔ OSPF complète
+
+### Défaillances constatées
+
+1. **`redistribute rip` inexistant en OSPF** — le handler `redistribute`
+   d'OSPF ne connaissait que `static` et `connected` ; `redistribute rip`
+   était accepté puis ignoré (aucun branchement). Le lab pédagogique
+   classique de redistribution mutuelle entre deux domaines de routage
+   était impossible : les préfixes RIP ne devenaient jamais des externes
+   OSPF (O E2/E1).
+2. Le sens inverse (OSPF→RIP) venait d'être rendu possible à l'entrée
+   n°19 ; les deux sens n'avaient jamais fonctionné ensemble.
+
+### Correction
+
+- **`OSPFExtraConfig.redistributeRip`** (`subnets`, `metric`,
+  `metricType`) + injection des routes RIP du RIB comme externes dans le
+  calcul d'intégration OSPF (E2 : coût fixe — 20 par défaut comme IOS ;
+  E1 : coût + chemin interne), même mécanique que les redistributions
+  static/connected existantes (réutilisation, pas de duplication).
+- **CLI OSPF** : `redistribute rip [metric N] [metric-type T] [subnets]`
+  parsé, `no redistribute rip` ciblé, auto-convergence déclenchée après
+  chaque changement de redistribution.
+
+### Fichiers
+
+- `src/network/devices/router/RouterOSPFIntegration.ts`
+- `src/network/devices/shells/cisco/CiscoOspfCommands.ts`
+- `src/__tests__/unit/network-v2/redistribution.test.ts` (nouveau, 3 tests)
+
+### Validation (ciblée)
+
+- Lab à deux domaines (R1 RIP — R2 frontière — R3 OSPF) : R3 apprend les
+  préfixes RIP en `O E2` (visible dans `show ip route`), R1 apprend les
+  préfixes OSPF avec la métrique `redistribute ospf metric 2`, et rien ne
+  traverse sans redistribution configurée.
+- Suites ciblées : redistribution (3), ospf-commands, ospf-cli, ospf-full —
+  **138 tests verts**.
+
+### Limite connue
+
+- Les lignes `redistribute …` d'OSPF ne sont pas projetées dans
+  `show running-config` (défaut préexistant, non introduit ici).
