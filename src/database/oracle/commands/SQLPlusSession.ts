@@ -20,6 +20,8 @@ import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
+import { ParserError } from '../../engine/parser/ParserError';
+import { DatabaseError } from '../../engine/types/DatabaseError';
 import type { HostCommandRunner } from './HostCommandRunner';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
@@ -611,7 +613,16 @@ export class SQLPlusSession {
       const elapsed = Date.now() - startTime;
 
       if (result.isQuery && result.columns.length > 0) {
-        output.push(...this.formatQueryResult(result));
+        if (result.rows.length === 0) {
+          // Real SQL*Plus prints no header for an empty result — just
+          // "no rows selected" (suppressed under SET FEEDBACK OFF).
+          if (this.settings.feedback) {
+            output.push('');
+            output.push('no rows selected');
+          }
+        } else {
+          output.push(...this.formatQueryResult(result));
+        }
       } else if (result.message) {
         output.push('');
         output.push(result.message);
@@ -632,17 +643,45 @@ export class SQLPlusSession {
         output.push(`Elapsed: 00:00:0${elapsed / 1000 < 10 ? '0' : ''}${(elapsed / 1000).toFixed(2)}`);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      output.push(`ERROR:`);
-      // Check if it's an ORA- error
-      if (msg.startsWith('ORA-')) {
-        output.push(msg);
-      } else {
-        output.push(`${ORACLE_ERRORS.ORA_00900}: ${msg}`);
-      }
+      output.push(...this.renderSqlError(sql, err));
     }
 
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  /**
+   * Real SQL*Plus error report for a failed statement: echo the offending
+   * source line, point at the error column with an asterisk, then
+   * `ERROR at line N:` followed by the ORA-/PLS- message. Errors without
+   * position information (typical of execution-time ORA- errors) point at
+   * column 1 of line 1, exactly like the real client.
+   */
+  private renderSqlError(sql: string, err: unknown): string[] {
+    const srcLines = sql.replace(/;\s*$/, '').split('\n');
+    let line = 1;
+    let column = 1;
+    if (err instanceof ParserError) {
+      line = Math.min(Math.max(err.position.line, 1), srcLines.length);
+      column = Math.max(err.position.column, 1);
+    } else if (err instanceof DatabaseError && typeof err.position === 'number') {
+      // DatabaseError.position is a character offset into the statement.
+      let remaining = err.position;
+      for (let i = 0; i < srcLines.length; i++) {
+        if (remaining <= srcLines[i].length) { line = i + 1; column = remaining + 1; break; }
+        remaining -= srcLines[i].length + 1;
+      }
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    const message = msg.startsWith('ORA-') || msg.startsWith('PLS-')
+      ? msg
+      : `${ORACLE_ERRORS.ORA_00900}: ${msg}`;
+    const echoed = srcLines[line - 1] ?? '';
+    return [
+      echoed,
+      `${' '.repeat(Math.min(column - 1, echoed.length))}*`,
+      `ERROR at line ${line}:`,
+      message,
+    ];
   }
 
   private formatQueryResult(result: ResultSet): string[] {
@@ -1086,8 +1125,20 @@ export class SQLPlusSession {
       return { output: ['ERROR:', `SP2-0306: Invalid option.`, `Usage: CONNECT username/password[@connect_identifier] [AS SYSDBA]`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // Strip @tns_alias from password
-    password = password.replace(/@.*$/, '');
+    // user/password@connect_identifier goes through the TNS listener;
+    // a plain user/password is a local bequeath connection and does not.
+    const atIdx = password.indexOf('@');
+    if (atIdx >= 0) {
+      const alias = password.slice(atIdx + 1).trim();
+      password = password.slice(0, atIdx);
+      const outcome = this.db.instance.listener.attemptConnect(alias);
+      if (!outcome.ok) {
+        return {
+          output: ['ERROR:', outcome.error],
+          exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+        };
+      }
+    }
 
     const loginOutput = this.login(username, password, sysdba);
     return { output: loginOutput, exit: false, needsMoreInput: false, prompt: this.getPrompt() };

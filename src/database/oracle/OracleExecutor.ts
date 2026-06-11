@@ -39,6 +39,40 @@ import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 
+/**
+ * Statement types Oracle classifies as DDL (SQL Language Reference,
+ * "Types of SQL Statements"): CREATE/ALTER/DROP/TRUNCATE plus GRANT,
+ * REVOKE, AUDIT, NOAUDIT, COMMENT, ANALYZE, FLASHBACK, PURGE. Each one
+ * issues an implicit COMMIT before and after execution. Deliberately
+ * excluded: ALTER SYSTEM (system control), ALTER SESSION (session
+ * control), STARTUP/SHUTDOWN, LOCK TABLE and all TCL — none of those
+ * end the current transaction in real Oracle.
+ */
+const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
+  'CreateTableStatement', 'DropTableStatement', 'AlterTableStatement',
+  'TruncateTableStatement',
+  'CreateIndexStatement', 'DropIndexStatement', 'AlterIndexStatement',
+  'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
+  'CreateViewStatement', 'DropViewStatement',
+  'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'GrantStatement', 'RevokeStatement',
+  'CreateUserStatement', 'AlterUserStatement', 'DropUserStatement',
+  'CreateRoleStatement', 'DropRoleStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateSynonymStatement', 'DropSynonymStatement',
+  'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
+  'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateTypeStatement', 'AlterCompileStatement',
+  'CreateFlashbackArchiveStatement', 'DropFlashbackArchiveStatement',
+  'CreateAuditPolicyStatement', 'DropAuditPolicyStatement', 'AuditPolicyStatement',
+  'AuditStatement', 'NoauditStatement',
+  'CommentStatement', 'AnalyzeStatement',
+  'FlashbackStatement', 'PurgeStatement',
+  'AlterDatabaseStatement', 'PluggableDatabaseStatement',
+]);
+
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
@@ -60,8 +94,10 @@ export class OracleExecutor extends BaseExecutor {
   private readonly privileges: PrivilegeEnforcer;
   /** Row-level integrity enforcement (NOT NULL, PK/UNIQUE, FK, CHECK, types). */
   private readonly constraints: ConstraintValidator;
-  /** Track sequences that have had NEXTVAL called in this session */
-  private _nextvalCalled: Set<string> = new Set();
+  /** Last NEXTVAL obtained per sequence IN THIS SESSION. CURRVAL is a
+   *  session-scoped value in Oracle: another session's NEXTVAL must not
+   *  change what this session sees. */
+  private _sessionCurrval: Map<string, number> = new Map();
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
@@ -79,7 +115,9 @@ export class OracleExecutor extends BaseExecutor {
     this.instance = instance;
     this.privileges = new PrivilegeEnforcer(catalog, context);
     this.constraints = new ConstraintValidator(storage,
-      (cond, row, columns) => this.evaluateCondition(cond, row, columns));
+      // CHECK semantics: a row violates only when the predicate is FALSE
+      // — UNKNOWN (NULL operands) passes, per the SQL standard / Oracle.
+      (cond, row, columns) => this.evaluateCondition3VL(cond, row, columns) !== false);
     this.txn = new TransactionManager(storage, {
       onBegin: txId => this.emitTxnStarted(txId),
       onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
@@ -416,7 +454,19 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeStatement(statement: Statement): ResultSet {
+    // Oracle wraps every DDL statement in implicit COMMITs: one before
+    // execution (it survives even when the DDL itself fails) and one
+    // after success (SQL Language Reference, "Types of SQL Statements").
+    // System/session control statements (ALTER SYSTEM / ALTER SESSION),
+    // STARTUP/SHUTDOWN and TCL never commit.
+    const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
+    if (isDdl && this.txn.isActive) this.txn.commit();
     const out = this.dispatchStatement(statement);
+    if (isDdl && this.txn.isActive) this.txn.commit();
+    // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
+    const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
+      || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
+    if (isDml && this.context.autoCommit && this.txn.isActive) this.txn.commit();
     this.invalidateResultCacheForStatement(statement);
     return out;
   }
@@ -2148,9 +2198,6 @@ export class OracleExecutor extends BaseExecutor {
   // ── DDL ───────────────────────────────────────────────────────────
 
   private executeCreateTable(stmt: CreateTableStatement): ResultSet {
-    // DDL auto-commits any open transaction (Oracle behavior)
-    if (this.txn.isActive) this.executeCommit();
-
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2198,8 +2245,14 @@ export class OracleExecutor extends BaseExecutor {
     // Column-level constraints
     for (const col of stmt.columns) {
       for (const cc of col.constraints) {
-        const name = cc.constraintName || nextSysC();
-        if (cc.constraintType === 'NOT_NULL') {
+        // Unquoted identifiers are uppercase in the dictionary.
+        const name = (cc.constraintName || nextSysC()).toUpperCase();
+        if (cc.constraintType === 'CHECK' && cc.checkExpr) {
+          constraints.push({
+            name, type: 'CHECK', columns: [col.name.toUpperCase()],
+            checkExpression: this.serializeExpr(cc.checkExpr),
+          });
+        } else if (cc.constraintType === 'NOT_NULL') {
           constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
           const colMeta = columns.find(c => c.name === col.name.toUpperCase());
           if (colMeta) colMeta.dataType = { ...colMeta.dataType, nullable: false };
@@ -2217,7 +2270,7 @@ export class OracleExecutor extends BaseExecutor {
 
     // Table-level constraints
     for (const tc of stmt.constraints) {
-      const name = tc.constraintName || nextSysC();
+      const name = (tc.constraintName || nextSysC()).toUpperCase();
       constraints.push({
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
@@ -2225,6 +2278,7 @@ export class OracleExecutor extends BaseExecutor {
         refTable: tc.refTable?.toUpperCase(),
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
+        checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
       });
     }
 
@@ -2269,7 +2323,6 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
-    if (this.txn.isActive) this.executeCommit();
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2302,10 +2355,6 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
-    if (this.txn.isActive) {
-      this.executeCommit();
-    }
     this.storage.truncateTable(schema, stmt.name.toUpperCase());
     return emptyResult('Table truncated.');
   }
@@ -2437,11 +2486,42 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
+    const indexName = stmt.name.toUpperCase();
+    const tableName = stmt.table.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    if (this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+    const meta = this.storage.getTableMeta(schema, tableName)!;
+    const tableCols = new Set(meta.columns.map(c => c.name.toUpperCase()));
+    for (const c of stmt.columns) {
+      if (!c.expression && !tableCols.has(c.name.toUpperCase())) {
+        throw new OracleError(904, `"${c.name.toUpperCase()}": invalid identifier`);
+      }
+    }
     const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
     const hasExpressions = expressions.some(e => e !== null);
+    if (stmt.unique && !hasExpressions) {
+      // ORA-01452: a unique index cannot be built over duplicate keys.
+      // Entirely-NULL keys are not indexed by Oracle, so they never collide.
+      const colIdx = stmt.columns.map(c =>
+        meta.columns.findIndex(mc => mc.name.toUpperCase() === c.name.toUpperCase()));
+      const seen = new Set<string>();
+      for (const row of this.storage.getRows(schema, tableName)) {
+        const values = colIdx.map(i => row[i] ?? null);
+        if (values.every(v => v === null)) continue;
+        const key = JSON.stringify(values);
+        if (seen.has(key)) {
+          throw new OracleError(1452, 'cannot CREATE UNIQUE INDEX; duplicate keys found');
+        }
+        seen.add(key);
+      }
+    }
     this.storage.createIndex(schema, {
-      name: stmt.name.toUpperCase(),
-      tableName: stmt.table.toUpperCase(),
+      name: indexName,
+      tableName,
       columns: stmt.columns.map(c => c.name.toUpperCase()),
       unique: !!stmt.unique,
       bitmap: stmt.bitmap,
@@ -2452,7 +2532,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropIndex(stmt: DropIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropIndex(schema, stmt.name.toUpperCase());
+    const indexName = stmt.name.toUpperCase();
+    if (!this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(1418, 'specified index does not exist');
+    }
+    this.storage.dropIndex(schema, indexName);
     return emptyResult('Index dropped.');
   }
 
@@ -2472,7 +2556,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropSequence(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.sequenceExists(schema, name)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    this.storage.dropSequence(schema, name);
     return emptyResult('Sequence dropped.');
   }
 
@@ -2501,7 +2589,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropView(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.viewExists(schema, name)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    this.storage.dropView(schema, name);
     return emptyResult('View dropped.');
   }
 
@@ -2545,6 +2637,25 @@ export class OracleExecutor extends BaseExecutor {
         const fn = expr as FunctionCallExpr;
         return `${fn.name}(${fn.args.map(a => this.serializeExpr(a)).join(', ')})`;
       }
+      case 'ParenExpr':
+        return `(${this.serializeExpr(expr.expr)})`;
+      case 'UnaryExpr':
+        return expr.operator === 'NOT'
+          ? `NOT (${this.serializeExpr(expr.operand)})`
+          : `${expr.operator}${this.serializeExpr(expr.operand)}`;
+      case 'IsNullExpr':
+        return `${this.serializeExpr(expr.expr)} IS${expr.negated ? ' NOT' : ''} NULL`;
+      case 'InExpr': {
+        if (!Array.isArray(expr.values)) return '?';
+        const list = expr.values.map(v => this.serializeExpr(v)).join(', ');
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} IN (${list})`;
+      }
+      case 'BetweenExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} BETWEEN `
+          + `${this.serializeExpr(expr.low)} AND ${this.serializeExpr(expr.high)}`;
+      case 'LikeExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} LIKE `
+          + this.serializeExpr(expr.pattern);
       default: return '?';
     }
   }
@@ -2650,7 +2761,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropTrigger(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    const exists = this.storage.getAllTriggers()
+      .some(t => t.schema === schema && t.name === name);
+    if (!exists) {
+      throw new OracleError(4080, `trigger '${name}' does not exist`);
+    }
+    this.storage.dropTrigger(schema, name);
     return emptyResult('Trigger dropped.');
   }
 
@@ -2682,7 +2799,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
     const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
-    this.storage.dropSynonym(owner, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.getSynonym(owner, name)) {
+      throw stmt.isPublic
+        ? new OracleError(1432, 'public synonym to be dropped does not exist')
+        : new OracleError(1434, 'private synonym to be dropped does not exist');
+    }
+    this.storage.dropSynonym(owner, name);
     return emptyResult('Synonym dropped.');
   }
 
@@ -3135,6 +3258,7 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Statement processed.');
     }
     if (stmt.action === 'ENABLE RESTRICTED SESSION' || stmt.action === 'DISABLE RESTRICTED SESSION') {
+      this.instance.setRestrictedSession(stmt.action === 'ENABLE RESTRICTED SESSION');
       return emptyResult('System altered.');
     }
     if (stmt.action === 'RESET') {
@@ -3151,6 +3275,11 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult(this.instance.setArchiveLogMode(false));
     }
     if (stmt.action === 'OPEN') {
+      this.instance.openDatabase();
+      return emptyResult('Database altered.');
+    }
+    if (stmt.action === 'MOUNT') {
+      this.instance.mountDatabase();
       return emptyResult('Database altered.');
     }
     // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
@@ -3465,16 +3594,9 @@ export class OracleExecutor extends BaseExecutor {
         const idSchema = (expr as IdentifierExpr).schema?.toUpperCase();
         if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
           const seqSchema = idSchema || this.context.currentSchema;
-          const seqKey = `${seqSchema.toUpperCase()}.${idTable}`;
-          if (idName === 'NEXTVAL') {
-            const val = this.storage.nextVal(seqSchema, idTable);
-            this._nextvalCalled.add(seqKey);
-            return val;
-          }
-          if (!this._nextvalCalled.has(seqKey)) {
-            throw new OracleError(8002, `sequence ${idTable}.CURRVAL is not yet defined in this session`);
-          }
-          return this.storage.currVal(seqSchema, idTable);
+          return idName === 'NEXTVAL'
+            ? this.sequenceNextVal(seqSchema, idTable)
+            : this.sequenceCurrVal(seqSchema, idTable);
         }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
         const pkgName = idTable;
@@ -3554,17 +3676,9 @@ export class OracleExecutor extends BaseExecutor {
 
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
-        const seqKey = `${seqSchema.toUpperCase()}.${expr.sequenceName.toUpperCase()}`;
-        if (expr.operation === 'NEXTVAL') {
-          const val = this.storage.nextVal(seqSchema, expr.sequenceName);
-          this._nextvalCalled.add(seqKey);
-          return val;
-        }
-        // CURRVAL requires NEXTVAL to have been called first in this session
-        if (!this._nextvalCalled.has(seqKey)) {
-          throw new OracleError(8002, `sequence ${expr.sequenceName.toUpperCase()}.CURRVAL is not yet defined in this session`);
-        }
-        return this.storage.currVal(seqSchema, expr.sequenceName);
+        return expr.operation === 'NEXTVAL'
+          ? this.sequenceNextVal(seqSchema, expr.sequenceName)
+          : this.sequenceCurrVal(seqSchema, expr.sequenceName);
       }
 
       default:
@@ -3572,21 +3686,74 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  /** NEXTVAL: advance the global counter, remember the value per session. */
+  private sequenceNextVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this.storage.nextVal(s, n) as number;
+    this._sessionCurrval.set(`${s}.${n}`, val);
+    return val;
+  }
+
+  /** CURRVAL: the last NEXTVAL of THIS session — never the global counter
+   *  (ORA-08002 before the first NEXTVAL, ORA-02289 if dropped). */
+  private sequenceCurrVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this._sessionCurrval.get(`${s}.${n}`);
+    if (val === undefined) {
+      throw new OracleError(8002, `sequence ${n}.CURRVAL is not yet defined in this session`);
+    }
+    return val;
+  }
+
+  /** WHERE / JOIN-ON boundary: only a TRUE predicate passes — UNKNOWN
+   *  filters the row out exactly like FALSE (SQL three-valued logic). */
   private evaluateCondition(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean {
+    return this.evaluateCondition3VL(expr, row, columns) === true;
+  }
+
+  /**
+   * SQL three-valued logic (Kleene): a condition is TRUE, FALSE or
+   * UNKNOWN (represented as null). NULL operands make comparisons,
+   * LIKE, BETWEEN and IN evaluate to UNKNOWN; AND/OR combine per the
+   * standard truth tables and NOT UNKNOWN stays UNKNOWN. CHECK
+   * constraints accept TRUE *and* UNKNOWN (see ConstraintValidator
+   * wiring), while WHERE keeps only TRUE.
+   */
+  private evaluateCondition3VL(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean | null {
+    const not3 = (v: boolean | null): boolean | null => (v === null ? null : !v);
     switch (expr.type) {
       case 'BinaryExpr': {
         if (expr.operator === 'AND') {
-          return this.evaluateCondition(expr.left, row, columns) && this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === false) return false;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === false) return false;
+          return l === null || r === null ? null : true;
         }
         if (expr.operator === 'OR') {
-          return this.evaluateCondition(expr.left, row, columns) || this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === true) return true;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === true) return true;
+          return l === null || r === null ? null : false;
         }
         const left = this.evaluateExpression(expr.left, row, columns);
         const right = this.evaluateExpression(expr.right, row, columns);
+        if (left === null || right === null) return null;
         return this.applyComparison(expr.operator, left, right);
       }
       case 'UnaryExpr':
-        if (expr.operator === 'NOT') return !this.evaluateCondition(expr.operand, row, columns);
+        if (expr.operator === 'NOT') {
+          return not3(this.evaluateCondition3VL(expr.operand, row, columns));
+        }
         if (expr.operator === 'EXISTS') {
           if (expr.operand.type === 'SubqueryExpr') {
             const subResult = this.executeSubquery((expr.operand as SubqueryExpr).query, row, columns);
@@ -3607,31 +3774,50 @@ export class OracleExecutor extends BaseExecutor {
         return expr.negated ? val !== null : val === null;
       }
       case 'BetweenExpr': {
+        // val BETWEEN low AND high == val >= low AND val <= high, in 3VL.
         const val = this.evaluateExpression(expr.expr, row, columns);
         const low = this.evaluateExpression(expr.low, row, columns);
         const high = this.evaluateExpression(expr.high, row, columns);
-        const inRange = this.compareValues(val, low) >= 0 && this.compareValues(val, high) <= 0;
-        return expr.negated ? !inRange : inRange;
+        const geLow: boolean | null =
+          val === null || low === null ? null : this.compareValues(val, low) >= 0;
+        const leHigh: boolean | null =
+          val === null || high === null ? null : this.compareValues(val, high) <= 0;
+        const inRange: boolean | null =
+          geLow === false || leHigh === false ? false
+            : geLow === null || leHigh === null ? null : true;
+        return expr.negated ? not3(inRange) : inRange;
       }
       case 'InExpr': {
+        // IN is a chain of OR'd equalities: a NULL on either side makes
+        // that comparison UNKNOWN, so `x NOT IN (1, NULL)` never passes.
         const val = this.evaluateExpression(expr.expr, row, columns);
+        const inList = (values: CellValue[]): boolean | null => {
+          let sawUnknown = false;
+          for (const ev of values) {
+            if (val === null || ev === null) { sawUnknown = true; continue; }
+            if (this.compareValues(val, ev) === 0) return true;
+          }
+          return sawUnknown ? null : false;
+        };
+        let res: boolean | null;
         if (Array.isArray(expr.values)) {
-          const found = expr.values.some(v => {
-            const ev = this.evaluateExpression(v, row, columns);
-            return this.compareValues(val, ev) === 0;
-          });
-          return expr.negated ? !found : found;
+          res = inList(expr.values.map(v => this.evaluateExpression(v, row, columns)));
+        } else {
+          // Subquery IN — values is a SelectStatement
+          const subStmt = expr.values as unknown as SelectStatement;
+          const subResult = this.executeSubquery(subStmt, row, columns);
+          res = inList(subResult.rows.map(r => r[0]));
         }
-        // Subquery IN — values is a SelectStatement
-        const subStmt = expr.values as unknown as SelectStatement;
-        const subResult = this.executeSubquery(subStmt, row, columns);
-        const found = subResult.rows.some(r => this.compareValues(val, r[0]) === 0);
-        return expr.negated ? !found : found;
+        return expr.negated ? not3(res) : res;
       }
       case 'LikeExpr': {
-        const val = String(this.evaluateExpression(expr.expr, row, columns) ?? '');
-        const pattern = String(this.evaluateExpression(expr.pattern, row, columns) ?? '');
-        const escapeChar = expr.escape ? String(this.evaluateExpression(expr.escape, row, columns) ?? '') : null;
+        const valRaw = this.evaluateExpression(expr.expr, row, columns);
+        const patternRaw = this.evaluateExpression(expr.pattern, row, columns);
+        const escapeRaw = expr.escape ? this.evaluateExpression(expr.escape, row, columns) : undefined;
+        if (valRaw === null || patternRaw === null || escapeRaw === null) return null;
+        const val = String(valRaw);
+        const pattern = String(patternRaw);
+        const escapeChar = escapeRaw !== undefined ? String(escapeRaw) : null;
         // Build regex: escape regex-special chars first, then replace SQL wildcards
         let regexStr = '';
         for (let pi = 0; pi < pattern.length; pi++) {
@@ -3648,14 +3834,17 @@ export class OracleExecutor extends BaseExecutor {
             regexStr += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           }
         }
-        const regex = new RegExp('^' + regexStr + '$', 'i');
+        // Oracle LIKE is case-sensitive (no 'i' flag).
+        const regex = new RegExp('^' + regexStr + '$');
         const match = regex.test(val);
         return expr.negated ? !match : match;
       }
       case 'ParenExpr':
-        return this.evaluateCondition(expr.expr, row, columns);
-      default:
-        return !!this.evaluateExpression(expr, row, columns);
+        return this.evaluateCondition3VL(expr.expr, row, columns);
+      default: {
+        const v = this.evaluateExpression(expr, row, columns);
+        return v === null ? null : !!v;
+      }
     }
   }
 
