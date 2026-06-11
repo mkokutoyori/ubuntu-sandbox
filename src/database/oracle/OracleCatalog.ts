@@ -38,6 +38,14 @@ export interface StoredUnitErrors {
   errors: PlsqlCompilationError[];
 }
 
+/** A user-package member row (DBA_PROCEDURES source). */
+export interface PackageMemberRow {
+  schema: string;
+  pkg: string;
+  member: string;
+  kind: 'PROCEDURE' | 'FUNCTION';
+}
+
 /** A single row produced by `enumerateObjects` (DBA_OBJECTS source). */
 export interface EnumeratedObject {
   owner: string; name: string; subobject: string | null;
@@ -241,6 +249,8 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Injected provider for stored PL/SQL units (avoids circular dependency) */
   private storedUnitsProvider: (() => StoredUnit[]) | null = null;
+  /** Injected provider for user-package members (DBA_PROCEDURES). */
+  private packageMembersProvider: (() => PackageMemberRow[]) | null = null;
   /** Injected SecurityEngine (set after construction to avoid circular dep) */
   private securityEngine: SecurityEngine | null = null;
 
@@ -249,9 +259,16 @@ export class OracleCatalog extends BaseCatalog {
     this.storedUnitsProvider = provider;
   }
 
+  /** Set the provider for user-defined package members */
+  setPackageMembersProvider(provider: () => PackageMemberRow[]): void {
+    this.packageMembersProvider = provider;
+  }
+
   // ── Public read accessors for self-registered DBA_ view files ────
   /** Stored PL/SQL units (DBA_SOURCE / DBA_PROCEDURES). */
   getStoredUnits(): StoredUnit[] { return this.storedUnitsProvider?.() ?? []; }
+  /** User-defined package members (DBA_PROCEDURES). */
+  getPackageMembers(): PackageMemberRow[] { return this.packageMembersProvider?.() ?? []; }
   /** Custom profile overrides (legacy DBA_PROFILES fallback). */
   getProfiles(): ReadonlyMap<string, Map<string, string>> { return this.profiles; }
   /** Object privilege grants (DBA_TAB_PRIVS). */

@@ -184,6 +184,12 @@ export interface PlsqlHost {
   isServerOutput(): boolean;
   currentSchema(): string;
   lookupUnit(name: string): StoredUnitLike | undefined;
+  /**
+   * Resolve a user-defined package by name ("PKG" or "SCHEMA.PKG").
+   * Returns undefined when no such package is visible to the caller —
+   * the interpreter then falls back to its other resolution paths.
+   */
+  resolvePackage?(name: string): import('./PackageUnit').PackageRuntimeHandle | undefined;
   callBuiltin(name: string, rawArgsText: string, evaluatedArgs: PlsqlValue[]): boolean;
 }
 

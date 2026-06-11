@@ -547,6 +547,64 @@ Les imports `OracleLexer`/`OracleParser` disparaissent de l'exécuteur (4327 lig
 −840 depuis le départ).
 **Validation :** `npx tsc --noEmit` propre ; `unit/database/` : 2520/2520.
 
+### 2026-06-11 — Packages PL/SQL utilisateur : un vrai runtime (GAP §10.6 clos)
+**Défaillance :** `CREATE PACKAGE [BODY]` était accepté mais les packages étaient
+inutilisables — le dernier gap « Majeur » encore ouvert du GAP §10 :
+1. Les membres étaient extraits du corps par **regex** vers des unités autonomes
+   sans aucune portée commune : les variables de package (`g_counter` du spec,
+   privées du corps) levaient `PLS-00201` au premier appel — l'état de package
+   n'existait tout simplement pas.
+2. Les membres privés du corps étaient soit inaccessibles aux membres publics,
+   soit exposés à l'extérieur (aucune notion de visibilité spec/corps).
+3. `pkg.variable` lu depuis un bloc externe retournait NULL en silence ;
+   l'écriture était impossible ; les constantes étaient assignables.
+4. Corps manquant → `PLS-00201` au lieu d'`ORA-04067` ; recompilation → l'état
+   périmé survivait au lieu d'`ORA-04068` ; le bloc d'initialisation du corps
+   (`BEGIN … END pkg;`) n'était jamais exécuté.
+5. **SQL*Plus exécutait la 1re ligne** d'un `CREATE PACKAGE` multi-ligne comme
+   un statement complet (le corps contient des `;`), puis crachait `SP2-0734`
+   sur chaque ligne suivante — toute création interactive d'unité PL/SQL
+   multi-ligne était impossible dans le terminal.
+6. `DESCRIBE pkg` n'affichait pas les sous-programmes ; `DBA_PROCEDURES`
+   listait les membres avec `OBJECT_NAME='PKG.MEMBER'` au lieu du couple
+   (`OBJECT_NAME`=package, `PROCEDURE_NAME`=membre) d'Oracle 19c.
+**Correction :** suppression totale de l'extraction regex ; spec et corps sont
+compilés par le **vrai parser PL/SQL** et exécutés dans une **portée d'instance
+de package par session** — le mécanisme existant des sous-programmes locaux
+fait alors naturellement la résolution des variables, des privés et des appels
+croisés (zéro duplication d'interpréteur) :
+- `PlsqlParser.parsePackageSection` — nouvelle production : déclarations +
+  bloc d'initialisation optionnel + `END [name]` (gère les forward
+  declarations du spec, déjà supportées par `parseSubprogram`).
+- Nouveau `plsql/PackageUnit.ts` — compilation (`compilePackageSection`,
+  erreurs → `USER_ERRORS`/`SHOW ERRORS`), contrat `PackageRuntimeHandle`
+  (déclarations fusionnées spec→corps, `publicNames` du spec, version,
+  état de session opaque).
+- `PlsqlHost.resolvePackage` (optionnel) + interpréteur : instanciation
+  paresseuse (déclarations puis bloc init, comme Oracle), appels
+  `pkg.proc`/`pkg.fn` depuis PL/SQL et SQL, lecture/écriture `pkg.var`,
+  `PLS-00302` pour les privés, `PLS-00363` pour les constantes,
+  `ORA-04067`+`ORA-06508` si corps absent (sans instancier l'état),
+  `ORA-04068`+`ORA-04061` une fois après recompilation puis reprise propre.
+- `OracleDatabase` : registre `userPackages` versionné, état par session via
+  `WeakMap<executor>`, visibilité EXECUTE alignée sur les unités stockées
+  (information hiding), `PLS-00304` pour un corps sans spec, `ORA-00955`
+  pour un `CREATE PACKAGE` sans `OR REPLACE` sur un nom existant.
+- `SQLPlusSession` : mode « unité PL/SQL » fidèle — `CREATE [OR REPLACE]
+  PROCEDURE|FUNCTION|PACKAGE [BODY]|TRIGGER` multi-ligne est collecté
+  jusqu'au `/` terminal (jamais d'auto-exécution sur un `END;` de membre,
+  comportement du vrai SQL*Plus) ; les DDL mono-ligne `… END;` restent
+  exécutés immédiatement (compatibilité). `DESCRIBE` liste les
+  sous-programmes publics avec leur table d'arguments.
+- Dictionnaire : `DBA_PROCEDURES` expose les membres au format 19c via un
+  provider dédié (`setPackageMembersProvider`) ; `DBA_OBJECTS`/`DBA_SOURCE`
+  inchangés (les entrées PACKAGE/PACKAGE BODY restent dans `storedUnits`).
+**Validation :** `npx tsc --noEmit` propre ; nouvelle suite
+`oracle-user-packages.test.ts` (26 tests : état par session et par session
+distincte, init block, constantes, privés depuis SQL/PLSQL, 04067/04068,
+DROP spec/corps, DBA_*, DESCRIBE, erreurs de compilation, multi-ligne `/`) ;
+`unit/database/` : **2619/2619** ; `unit/terminal*` : 451/451 ; ESLint propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -31,15 +31,28 @@ registerView({
         { name: 'AUTHID', dataType: oracleVarchar2(12) },
         { name: 'RESULT_CACHE', dataType: oracleVarchar2(3) },
       ],
-      catalog.getStoredUnits()
-        .filter(u => u.type === 'PROCEDURE' || u.type === 'FUNCTION')
-        .map((u, i) => [
-          u.schema, u.name, null,
-          String(1000 + i), u.type,
-          'NO', 'NO', null, null,
-          'NO', 'NO', 'NO',
-          'DEFINER', 'NO',
-        ])
+      [
+        // Standalone units: OBJECT_NAME is the unit, PROCEDURE_NAME null.
+        ...catalog.getStoredUnits()
+          .filter(u => u.type === 'PROCEDURE' || u.type === 'FUNCTION')
+          .map((u, i): (string | null)[] => [
+            u.schema, u.name, null,
+            String(1000 + i), u.type,
+            'NO', 'NO', null, null,
+            'NO', 'NO', 'NO',
+            'DEFINER', 'NO',
+          ]),
+        // Package members: OBJECT_NAME carries the package, PROCEDURE_NAME
+        // the member, OBJECT_TYPE 'PACKAGE' — Oracle 19c semantics.
+        ...catalog.getPackageMembers()
+          .map((m, i): (string | null)[] => [
+            m.schema, m.pkg, m.member,
+            String(5000 + i), 'PACKAGE',
+            'NO', 'NO', null, null,
+            'NO', 'NO', 'NO',
+            'DEFINER', 'NO',
+          ]),
+      ]
     );
   },
 });
