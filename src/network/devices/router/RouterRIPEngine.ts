@@ -84,6 +84,14 @@ export class RouterRIPEngine {
     this.engine.advertiseNetwork(network, mask);
   }
 
+  setPassiveInterface(iface: string): void {
+    this.engine.setPassiveInterface(iface);
+  }
+
+  removePassiveInterface(iface: string): void {
+    this.engine.removePassiveInterface(iface);
+  }
+
   /** Handle an incoming RIP packet (from the Router's local delivery). */
   processPacket(inPort: string, srcIP: IPAddress, ripPkt: RIPPacket): void {
     this.engine.processPacket(inPort, srcIP, ripPkt);

@@ -124,22 +124,43 @@ export function buildRoutingProtoConfig(
     else if (p === 'eigrp') eigrp().autoSummary = false;
     return '';
   });
-  routerTrie.registerGreedy('passive-interface', 'Suppress updates', (a) => {
-    const p = curProto(ctx).proto;
-    const tgt = a.join(' ');
-    if (a[0] === 'default') {
-      if (p === 'rip') repo.rip.passiveDefault = true;
-    } else if (p === 'rip') repo.rip.passive.add(tgt);
-    else if (p === 'eigrp') {
-      eigrp().passive.add(tgt);
-      eigrpEng().getConfig().passive.add(tgt);
+  // passive-interface mirrors IOS: the engine stops transmitting on the
+  // interface but keeps processing received updates. Config is recorded
+  // both in the repo (show running-config) and in the live engine.
+  const setPassive = (p: Proto, ifName: string, passive: boolean) => {
+    if (p === 'rip') {
+      if (passive) { repo.rip.passive.add(ifName); ctx.r().ripSetPassiveInterface(ifName); }
+      else { repo.rip.passive.delete(ifName); ctx.r().ripRemovePassiveInterface(ifName); }
+    } else if (p === 'eigrp') {
+      if (passive) { eigrp().passive.add(ifName); eigrpEng().getConfig().passive.add(ifName); }
+      else { eigrp().passive.delete(ifName); eigrpEng().getConfig().passive.delete(ifName); }
       converge();
     }
+  };
+  routerTrie.registerGreedy('passive-interface', 'Suppress updates', (a) => {
+    if (a.length < 1) return '% Incomplete command.';
+    const p = curProto(ctx).proto;
+    if (a[0].toLowerCase() === 'default') {
+      if (p === 'rip') repo.rip.passiveDefault = true;
+      for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
+      return '';
+    }
+    const ifName = ctx.resolveInterfaceName(a.join(' '));
+    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    setPassive(p, ifName, true);
     return '';
   });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
-    repo.rip.passive.delete(a.join(' '));
-    repo.rip.passiveDefault = false;
+    if (a.length < 1) return '% Incomplete command.';
+    const p = curProto(ctx).proto;
+    if (a[0].toLowerCase() === 'default') {
+      if (p === 'rip') repo.rip.passiveDefault = false;
+      for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, false);
+      return '';
+    }
+    const ifName = ctx.resolveInterfaceName(a.join(' '));
+    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    setPassive(p, ifName, false);
     return '';
   });
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {

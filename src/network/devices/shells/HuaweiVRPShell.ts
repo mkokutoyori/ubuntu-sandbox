@@ -2437,14 +2437,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (!isNaN(n)) ripExtras().maximumPaths = n;
       return '';
     });
+    // VRP accepts "GigabitEthernet0/0/0" and "GigabitEthernet 0/0/0";
+    // the engine keys on the exact port name, so resolve before plumbing.
+    const resolveSilentIface = (args: string[]): string => {
+      const raw = args.join('');
+      for (const name of getRouter()._getPortsInternal().keys()) {
+        if (name.toLowerCase() === raw.toLowerCase()) return name;
+      }
+      return args.join(' ');
+    };
     t.registerGreedy('silent-interface', 'Suppress RIP on an interface', (args) => {
+      const name = resolveSilentIface(args);
       const e = ripExtras();
-      (e.silentInterfaces ??= new Set<string>()).add(args[0] ?? '');
+      (e.silentInterfaces ??= new Set<string>()).add(name);
+      getRouter().ripSetPassiveInterface(name);
       return '';
     });
     t.registerGreedy('undo silent-interface', 'Resume RIP on an interface', (args) => {
+      const name = resolveSilentIface(args);
       const set = ripExtras().silentInterfaces as Set<string> | undefined;
-      set?.delete(args[0] ?? '');
+      set?.delete(name);
+      getRouter().ripRemovePassiveInterface(name);
       return '';
     });
     t.register('checkzero', 'Enable RIP checkzero validation', () => { ripExtras().checkZero = true; return ''; });

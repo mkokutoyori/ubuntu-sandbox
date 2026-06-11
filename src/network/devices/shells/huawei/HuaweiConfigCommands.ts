@@ -411,7 +411,10 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     if (!getRouter().isRIPEnabled()) {
       getRouter().enableRIP();
     }
-    if (args.length >= 1 && !isNaN(parseInt(args[0], 10))) {
+    // Real VRP: `rip [process-id]` enters the RIP view ([hostname-rip-1]),
+    // process 1 being implicit. One-shot forms (`rip network …`) remain
+    // for backward compatibility.
+    if (args.length === 0 || !isNaN(parseInt(args[0], 10))) {
       ctx.setMode('rip' as any);
       return '';
     }

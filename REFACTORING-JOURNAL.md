@@ -412,3 +412,71 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 
 - 5 nouveaux tests (badges palette + classification) ; suites `unit/gui` +
   `unit/react` : 12 fichiers, 99 tests verts.
+
+---
+
+## Entrée n°9 — 2026-06-11 — RIP `passive-interface` : config acceptée mais jamais appliquée
+
+> Début de la campagne « protocoles réseau ». Trois audits structurels ont été
+> menés (routage dynamique, L2/commutation, DHCP/ARP/FHRP/NAT) ; les entrées
+> suivantes traitent les constats par ordre d'impact.
+
+### Défaillances constatées
+
+1. **`passive-interface` (Cisco) sans aucun effet sur RIP** — la commande
+   `passive-interface Gi0/0` sous `router rip` n'écrivait que dans
+   `RoutingConfigRepository` (utilisé par `show running-config`). Le moteur
+   `RIPEngine` n'avait **aucun concept d'interface passive** : les updates
+   périodiques, triggered et les réponses aux Requests continuaient de sortir
+   sur l'interface « passive ». Config de façade, comportement réel absent.
+2. **`silent-interface` (Huawei VRP) idem** — stocké dans `_huaweiRipExtras`
+   (projection `display`/config) sans jamais atteindre le moteur.
+3. **`no passive-interface` ignorait l'EIGRP** — le handler ne traitait que le
+   repo RIP ; impossible de réactiver une interface EIGRP passive via CLI.
+4. **Pas de résolution des noms d'interface** — `passive-interface gi0/0`
+   (abréviation IOS standard) stockait la chaîne brute, qui ne matchait jamais
+   les noms canoniques des ports (le handler OSPF, lui, résolvait déjà via
+   `ctx.resolveInterfaceName`). Même demi-câblage côté EIGRP.
+5. **VRP : `rip` sans numéro de process n'entrait pas dans la vue RIP** — sur
+   un vrai VRP, `rip` entre dans `[hostname-rip-1]` (process 1 implicite) ;
+   le simulateur ne le faisait que pour `rip <n>`, rendant inaccessibles les
+   commandes de la vue RIP (dont `silent-interface`).
+
+### Correction (structurelle)
+
+- **`RIPEngine`** : nouveau champ `passiveInterfaces: Set<string>` dans
+  `RIPConfig` + API `setPassiveInterface()` / `removePassiveInterface()` /
+  `isPassiveInterface()` (même contrat que l'OSPFEngine — cohérence des
+  moteurs). Sémantique IOS/VRP fidèle : l'interface n'émet **rien** (pas de
+  Request au démarrage, pas d'update périodique/triggered, pas de réponse aux
+  Requests reçues) mais **continue d'apprendre** les routes des Responses
+  reçues.
+- **`RouterRIPEngine` + `Router`** : pass-through et façade
+  (`ripSetPassiveInterface`/`ripRemovePassiveInterface`).
+- **CLI Cisco** (`CiscoRoutingProtoCommands`) : helper unique `setPassive()`
+  (RIP + EIGRP, repo + moteur — fini le double câblage divergent),
+  résolution canonique via `ctx.resolveInterfaceName` (abréviations `gi0/0`),
+  support de `passive-interface default` / `no passive-interface default`
+  appliqué à tous les ports, `% Invalid interface` sur nom inconnu.
+- **CLI Huawei** (`HuaweiVRPShell`) : `silent-interface`/`undo
+  silent-interface` plombés jusqu'au moteur, avec résolution
+  insensible à la casse/aux espaces contre les ports réels.
+- **CLI Huawei** (`HuaweiConfigCommands`) : `rip` sans argument entre
+  désormais dans la vue RIP, comme un vrai VRP.
+
+### Fichiers
+
+- `src/network/rip/RIPEngine.ts`
+- `src/network/devices/router/RouterRIPEngine.ts`
+- `src/network/devices/Router.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/network/devices/shells/HuaweiVRPShell.ts`
+- `src/network/devices/shells/huawei/HuaweiConfigCommands.ts`
+- `src/__tests__/unit/network-v2/rip.test.ts` (+6 tests, groupe « Passive interfaces »)
+
+### Validation
+
+- 6 nouveaux tests : silence émission + apprentissage conservé, non-réponse aux
+  Requests, reprise via `no passive-interface`, résolution d'abréviations CLI,
+  `passive-interface default`, `silent-interface` VRP.
+- Suite complète `unit/network-v2` : **287 fichiers, 6873 tests verts**.

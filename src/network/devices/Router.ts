@@ -843,6 +843,8 @@ export abstract class Router extends Equipment {
   getRIPConfig() { return this.ripEngine.getConfig(); }
   getRIPRoutes() { return this.ripEngine.getRoutes(); }
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
+  ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
+  ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
   getDynamicRouting() { return this.dynamicRouting; }

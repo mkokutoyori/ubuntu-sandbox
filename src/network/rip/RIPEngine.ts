@@ -70,6 +70,12 @@ export interface RIPConfig {
   gcTimeout: number;
   splitHorizon: boolean;
   poisonedReverse: boolean;
+  /**
+   * Interfaces on which RIP never transmits (Cisco `passive-interface`,
+   * Huawei `silent-interface`). Received Responses are still processed —
+   * the interface keeps learning routes, it just stays silent.
+   */
+  passiveInterfaces: Set<string>;
 }
 
 /**
@@ -113,6 +119,7 @@ function createDefaultConfig(): RIPConfig {
     gcTimeout: RIP_TIMERS.GARBAGE_COLLECTION_MS,
     splitHorizon: true,
     poisonedReverse: true,
+    passiveInterfaces: new Set(),
   };
 }
 
@@ -262,7 +269,11 @@ export class RIPEngine implements IProtocolEngine {
   // ─── Configuration ────────────────────────────────────────────────
 
   getConfig(): RIPConfig {
-    return { ...this.config, networks: [...this.config.networks] };
+    return {
+      ...this.config,
+      networks: [...this.config.networks],
+      passiveInterfaces: new Set(this.config.passiveInterfaces),
+    };
   }
 
   /** Merge a partial config (used by `router rip` re-entry). */
@@ -272,6 +283,25 @@ export class RIPEngine implements IProtocolEngine {
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
     this.config.networks.push({ network, mask });
+  }
+
+  // ── Passive interfaces (IOS `passive-interface` / VRP `silent-interface`) ──
+  //
+  // RFC 2453 has no passive concept; this models real router behaviour:
+  // the interface sends NO RIP traffic (no Request at startup, no periodic
+  // or triggered Responses, no answer to received Requests) but received
+  // Responses are still processed, so routes keep being learned on it.
+
+  setPassiveInterface(iface: string): void {
+    this.config.passiveInterfaces.add(iface);
+  }
+
+  removePassiveInterface(iface: string): void {
+    this.config.passiveInterfaces.delete(iface);
+  }
+
+  isPassiveInterface(iface: string): boolean {
+    return this.config.passiveInterfaces.has(iface);
   }
 
   /** Get route states for debugging/display */
@@ -296,7 +326,8 @@ export class RIPEngine implements IProtocolEngine {
     if (!this.isRIPInterface(inPort)) return;
 
     if (ripPkt.command === 1) {
-      this.sendUpdate(inPort);
+      // A passive interface never transmits — not even Request replies.
+      if (!this.isPassiveInterface(inPort)) this.sendUpdate(inPort);
       return;
     }
 
@@ -357,6 +388,7 @@ export class RIPEngine implements IProtocolEngine {
 
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       this.sendPacket(portName, request);
     }
   }
@@ -366,6 +398,7 @@ export class RIPEngine implements IProtocolEngine {
 
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       this.sendUpdate(portName);
     }
   }
@@ -438,6 +471,7 @@ export class RIPEngine implements IProtocolEngine {
     let totalEntries = 0;
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       const entries: RIPRouteEntry[] = [];
       for (const route of changed) {
         if (this.config.splitHorizon && route.iface === portName) {
