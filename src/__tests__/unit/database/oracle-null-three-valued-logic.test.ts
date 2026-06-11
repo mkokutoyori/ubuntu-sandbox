@@ -99,3 +99,37 @@ describe('CHECK constraints accept UNKNOWN', () => {
     sh.dispose();
   });
 });
+
+describe('SET AUTOCOMMIT ON (SQL*Plus)', () => {
+  it('commits each DML immediately — ROLLBACK undoes nothing', () => {
+    const sh = session('ac1');
+    run(sh, 'CREATE TABLE a (x NUMBER);');
+    run(sh, 'SET AUTOCOMMIT ON');
+    run(sh, 'INSERT INTO a VALUES (1);');
+    run(sh, 'ROLLBACK;');
+    expect(run(sh, 'SELECT COUNT(*) FROM a;')).toContain('1');
+    sh.dispose();
+  });
+
+  it('OFF restores deferred transactions', () => {
+    const sh = session('ac2');
+    run(sh, 'CREATE TABLE a (x NUMBER);');
+    run(sh, 'SET AUTOCOMMIT OFF');
+    run(sh, 'INSERT INTO a VALUES (1);');
+    run(sh, 'ROLLBACK;');
+    expect(run(sh, 'SELECT COUNT(*) FROM a;')).toContain('0');
+    sh.dispose();
+  });
+});
+
+describe('dictionary SEARCH_CONDITION', () => {
+  it('CHECK predicates and NOT NULL conditions are visible', () => {
+    const sh = session('sc1');
+    run(sh, 'CREATE TABLE s (x NUMBER NOT NULL, y NUMBER, CONSTRAINT s_chk CHECK (y > 0));');
+    const out = run(sh, "SELECT constraint_name, search_condition FROM user_constraints WHERE table_name = 'S';");
+    expect(out).toContain('S_CHK');
+    expect(out).toMatch(/Y > 0/i);
+    expect(out).toMatch(/IS NOT NULL/);
+    sh.dispose();
+  });
+});

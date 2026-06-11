@@ -702,6 +702,32 @@ suites SSH LAN utilisant lsnrctl vertes.
 **Validation** : database **2647 tests verts** + terminal/shell 896,
 zéro échec.
 
+### Entrée O9 — SET AUTOCOMMIT effectif + SEARCH_CONDITION au dictionnaire
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. `SET AUTOCOMMIT ON` : le réglage existait dans SQLPlusSession et était
+   propagé au contexte d'exécution… que l'exécuteur ne lisait jamais.
+   Un ROLLBACK annulait donc des DML censés être déjà committés.
+2. `DBA_/USER_CONSTRAINTS` n'exposait ni `SEARCH_CONDITION` ni
+   `DELETE_RULE` ; les contraintes NOT NULL étaient typées 'O' au lieu de
+   'C' (Oracle les présente comme des CHECK `"COL" IS NOT NULL`).
+
+#### Correction
+
+- Commit immédiat après chaque DML réussi quand `autoCommit` est actif
+  (frontière `executeStatement`, même endroit que l'auto-commit DDL).
+- DBA_CONSTRAINTS : colonnes SEARCH_CONDITION (prédicat CHECK réel issu
+  de la correction O8, condition générée pour NOT NULL) et DELETE_RULE
+  (CASCADE / SET NULL / NO ACTION) ; NOT NULL typé 'C'.
+
+**Fichiers** : `OracleExecutor.ts`, `views/dba_constraints.ts`, tests
+ajoutés à `oracle-null-three-valued-logic.test.ts` (12 au total).
+
+**Validation** : database **2650 tests verts**, zéro échec.
+
 ---
 
 ## Limites connues / dette restante

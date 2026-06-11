@@ -462,6 +462,10 @@ export class OracleExecutor extends BaseExecutor {
     if (isDdl && this.txn.isActive) this.txn.commit();
     const out = this.dispatchStatement(statement);
     if (isDdl && this.txn.isActive) this.txn.commit();
+    // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
+    const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
+      || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
+    if (isDml && this.context.autoCommit && this.txn.isActive) this.txn.commit();
     this.invalidateResultCacheForStatement(statement);
     return out;
   }
