@@ -36,14 +36,17 @@ registerView({
       [[
         1, instance.config.sid, 'localhost', '19.0.0.0.0',
         instance.startupTime?.toISOString() ?? null,
-        instance.state === 'OPEN' ? 'OPEN' : instance.state,
+        // Real V$INSTANCE.STATUS values: STARTED (nomount) / MOUNTED / OPEN.
+        instance.state === 'NOMOUNT' ? 'STARTED'
+          : instance.state === 'MOUNT' ? 'MOUNTED' : instance.state,
         'NO',                                                    // PARALLEL — non-RAC
         1,                                                       // THREAD#
         instance.archiveLogMode ? 'STARTED' : 'STOPPED',         // ARCHIVER
         '',                                                      // LOG_SWITCH_WAIT
         instance.restrictedSession ? 'RESTRICTED' : 'ALLOWED',
         instance.shutdownPending ? 'YES' : 'NO',
-        instance.state === 'OPEN' ? 'ACTIVE' : 'SUSPENDED',
+        // SUSPENDED means ALTER SYSTEM SUSPEND, not "not yet open".
+        'ACTIVE',
         'PRIMARY_INSTANCE',
         'NORMAL',                                                // ACTIVE_STATE
         'NO',

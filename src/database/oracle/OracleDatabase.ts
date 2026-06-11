@@ -306,6 +306,15 @@ export class OracleDatabase implements SqlCommandHost {
       failLogon(1045, 'ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
     }
 
+    // RESTRICTED SESSION mode (STARTUP RESTRICT / ALTER SYSTEM ENABLE
+    // RESTRICTED SESSION): only users holding the RESTRICTED SESSION
+    // privilege may log on. SYSDBA connections bypass this entirely
+    // (they use connectAsSysdba, not this path).
+    if (this.instance.restrictedSession
+        && !this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'RESTRICTED SESSION')) {
+      failLogon(1035, ORACLE_ERRORS.ORA_01035);
+    }
+
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 

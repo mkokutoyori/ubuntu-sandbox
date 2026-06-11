@@ -8,6 +8,7 @@
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { OracleError } from '../engine/types/DatabaseError';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   OracleSignalStore,
@@ -321,7 +322,10 @@ export class OracleInstance {
     }
 
     this._startupTime = now;
-    this.logAlert(`Starting ORACLE instance (normal)`);
+    // STARTUP RESTRICT opens with RESTRICTED SESSION enabled; any other
+    // startup begins unrestricted (ALTER SYSTEM can toggle it later).
+    this._restrictedSession = mode === 'RESTRICT';
+    this.logAlert(`Starting ORACLE instance (${mode === 'RESTRICT' ? 'restrict' : 'normal'})`);
     output.push(`ORACLE instance started.`);
     output.push('');
 
@@ -347,22 +351,8 @@ export class OracleInstance {
     if (mode === 'MOUNT') return output;
 
     // OPEN
-    this.transitionTo('OPEN');
-    this._redoLogGroups[0].status = 'CURRENT';
+    this.markOpen();
     output.push(`Database opened.`);
-    this.logAlert('Database opened');
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$USERS', kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$BACKGROUND', kind: 'started' },
-    });
 
     if (mode === 'RESTRICT') {
       output.push('Database opened in restricted mode.');
@@ -370,6 +360,42 @@ export class OracleInstance {
     }
 
     return output;
+  }
+
+  /** Shared OPEN transition: redo state, alert log, service events. */
+  private markOpen(): void {
+    this.transitionTo('OPEN');
+    this._redoLogGroups[0].status = 'CURRENT';
+    this.logAlert('Database opened');
+    for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
+      this.getBus().publish({
+        topic: 'oracle.service.event',
+        payload: { ...this.ref(), name, kind: 'started' },
+      });
+    }
+  }
+
+  /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
+  mountDatabase(): void {
+    if (this._state === 'MOUNT' || this._state === 'OPEN') {
+      throw new OracleError(1100, 'database already mounted');
+    }
+    if (this._state !== 'NOMOUNT') {
+      throw new OracleError(1034, 'ORACLE not available');
+    }
+    this.transitionTo('MOUNT');
+    this.logAlert('Database mounted');
+  }
+
+  /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
+  openDatabase(): void {
+    if (this._state === 'OPEN') {
+      throw new OracleError(1531, 'a database already open by the instance');
+    }
+    if (this._state !== 'MOUNT') {
+      throw new OracleError(1507, 'database not mounted');
+    }
+    this.markOpen();
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {
@@ -404,6 +430,7 @@ export class OracleInstance {
     }
     this.transitionTo('SHUTDOWN');
     this._startupTime = null;
+    this._restrictedSession = false;
     this._backgroundProcesses = [];
     for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
 

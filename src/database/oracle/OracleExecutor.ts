@@ -3349,6 +3349,7 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Statement processed.');
     }
     if (stmt.action === 'ENABLE RESTRICTED SESSION' || stmt.action === 'DISABLE RESTRICTED SESSION') {
+      this.instance.setRestrictedSession(stmt.action === 'ENABLE RESTRICTED SESSION');
       return emptyResult('System altered.');
     }
     if (stmt.action === 'RESET') {
@@ -3365,6 +3366,11 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult(this.instance.setArchiveLogMode(false));
     }
     if (stmt.action === 'OPEN') {
+      this.instance.openDatabase();
+      return emptyResult('Database altered.');
+    }
+    if (stmt.action === 'MOUNT') {
+      this.instance.mountDatabase();
       return emptyResult('Database altered.');
     }
     // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']

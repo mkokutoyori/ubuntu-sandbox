@@ -448,7 +448,7 @@ les principes de design :
 | O3 | ROWNUM affecté après filtrage WHERE (allégation d'audit) | Modèle row-source Oracle | — | ❎ Réfuté (voir O3) |
 | O3b | Résultat vide : en-tête affiché au lieu de `no rows selected` ; erreurs au format `ERROR:` au lieu de `ERROR at line N:` | SQL*Plus réel | Moyenne | ✅ Corrigé |
 | O4 | CURRVAL lisait le compteur global au lieu de la valeur de session | Séquences Oracle | Moyenne | ✅ Corrigé |
-| O5 | STARTUP/SHUTDOWN : transitions d'états non validées, RESTRICT non appliqué | Cycle de vie instance | Moyenne | À faire |
+| O5 | ALTER DATABASE MOUNT/OPEN no-ops ; RESTRICT jamais appliqué ; V$INSTANCE.STATUS non conforme | Cycle de vie instance | Moyenne | ✅ Corrigé |
 | O6 | Listener sans état (established/refused figés à 0, jamais BLOCKED) | lsnrctl réel | Moyenne | À faire |
 | O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
 | O8 | NULL coercé en '' dans l'évaluation de LIKE | Sémantique NULL Oracle | Basse | À faire |
@@ -568,6 +568,45 @@ d'évaluation délèguent aux helpers (duplication supprimée).
 (nouveau, 4 tests dont un scénario réellement multi-sessions).
 
 **Validation** : suite database **2622 tests verts**, zéro échec.
+
+### Entrée O5 — Cycle de vie de l'instance : machine à états réelle + RESTRICTED SESSION effectif
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. `ALTER DATABASE OPEN` répondait « Database altered. » **sans changer
+   d'état** ; `ALTER DATABASE MOUNT` n'était même pas traité (no-op du
+   fallback). Le passage manuel NOMOUNT → MOUNT → OPEN — le geste DBA le
+   plus fondamental — était impossible.
+2. `ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION` était un no-op : le
+   setter `setRestrictedSession()` existait, la vue V$INSTANCE le lisait…
+   mais personne ne l'appelait jamais. `STARTUP RESTRICT` affichait
+   « restricted mode » sans activer le mode. Aucun enforcement au logon.
+3. `V$INSTANCE.STATUS` exposait les états internes `NOMOUNT`/`MOUNT` au
+   lieu des valeurs réelles `STARTED`/`MOUNTED` ; `DATABASE_STATUS`
+   affichait `SUSPENDED` hors OPEN (SUSPENDED = ALTER SYSTEM SUSPEND,
+   pas « pas encore ouvert »).
+
+#### Correction
+
+- `OracleInstance.mountDatabase()` / `openDatabase()` : transitions
+  validées — ORA-01100 (déjà monté), ORA-01507 (non monté), ORA-01531
+  (déjà ouvert). Le bloc OPEN de `startup()` factorisé dans `markOpen()`
+  (réutilisé par `ALTER DATABASE OPEN`, événements de service compris).
+- RESTRICT effectif : `STARTUP RESTRICT` active le drapeau, `SHUTDOWN` le
+  réinitialise, `ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION` le
+  bascule, et `OracleDatabase.connect()` refuse avec **ORA-01035** tout
+  utilisateur sans le privilège RESTRICTED SESSION (SYSDBA passe par
+  `connectAsSysdba`, non concerné — comme en vrai).
+- V$INSTANCE : mapping STATUS conforme, DATABASE_STATUS=ACTIVE.
+
+**Fichiers** : `src/database/oracle/OracleInstance.ts`,
+`OracleExecutor.ts`, `OracleDatabase.ts`, `views/v_instance.ts`,
+`src/__tests__/unit/database/oracle-instance-state-machine.test.ts`
+(nouveau, 8 tests).
+
+**Validation** : suite database **2630 tests verts**, zéro échec.
 
 ---
 
