@@ -32,76 +32,44 @@ export function handleLsnrctl(
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
 
+  const listener = db.instance.listener;
   switch (subcommand) {
     case 'START': {
-      db.instance.startListener();
-      addLine(`Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`);
-      addLine('');
-      addLine(`TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-      addLine(`Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
-      addLine(`Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('');
-      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('STATUS of the LISTENER');
-      addLine('------------------------');
-      addLine('Alias                     LISTENER');
-      addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-      addLine('Start Date                ' + new Date().toLocaleString());
-      addLine('Uptime                    0 days 0 hr. 0 min. 0 sec');
-      addLine('Trace Level               off');
-      addLine('Security                  ON: Local OS Authentication');
-      addLine('SNMP                      OFF');
-      addLine(`Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
-      addLine('Listening Endpoints Summary...');
-      addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('The command completed successfully');
+      if (!listener.running) {
+        db.instance.startListener();
+        addLine(`Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`);
+        addLine('');
+        addLine(`TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
+        addLine(`Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
+        addLine(`Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
+        addLine('');
+        addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
+        for (const line of listener.statusBody()) addLine(line);
+      } else {
+        addLine(TNS_ERRORS.TNS_01106);
+      }
       break;
     }
     case 'STOP': {
-      db.instance.stopListener();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('The command completed successfully');
+      if (listener.running) {
+        db.instance.stopListener();
+        addLine('The command completed successfully');
+      } else {
+        addLine(TNS_ERRORS.TNS_12541);
+      }
       break;
     }
     case 'STATUS': {
-      const status = db.instance.getListenerStatus();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      if (status.running) {
-        addLine('STATUS of the LISTENER');
-        addLine('------------------------');
-        addLine('Alias                     LISTENER');
-        addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-        addLine('Start Date                ' + (status.startedAt ? new Date(status.startedAt).toLocaleString() : 'N/A'));
-        addLine('Trace Level               off');
-        addLine('Security                  ON: Local OS Authentication');
-        addLine('SNMP                      OFF');
-        addLine('Listening Endpoints Summary...');
-        addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-        addLine('Services Summary...');
-        addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
-        addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
-        addLine('The command completed successfully');
-      } else {
-        addLine(TNS_ERRORS.TNS_12541);
-        addLine(` ${TNS_ERRORS.TNS_12560}`);
-        addLine(`  ${TNS_ERRORS.TNS_00511}`);
-      }
+      const body = listener.running ? listener.statusBody() : listener.notRunningBody();
+      for (const line of body) addLine(line);
       break;
     }
     case 'SERVICES': {
-      const status = db.instance.getListenerStatus();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      if (status.running) {
-        addLine('Services Summary...');
-        addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
-        addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
-        addLine('      Handler(s):');
-        addLine('        "DEDICATED" established:0 refused:0 state:ready');
-        addLine('           LOCAL SERVER');
-        addLine('The command completed successfully');
-      } else {
-        addLine(TNS_ERRORS.TNS_12541);
-      }
+      const body = listener.running ? listener.servicesBody() : [TNS_ERRORS.TNS_12541];
+      for (const line of body) addLine(line);
       break;
     }
     case 'RELOAD': {
@@ -270,11 +238,10 @@ export function handleTnsping(
   }
 
   const upper = serviceName.toUpperCase();
-  const status = db.instance.getListenerStatus();
 
   if (upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase() || upper === 'LOCALHOST') {
     const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = ${ORACLE_CONFIG.PORT})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`;
-    if (status.running) {
+    if (db.instance.listener.running) {
       addLine('Used TNSNAMES adapter to resolve the alias');
       addLine(`Attempting to contact ${connectDesc}`);
       const latency = Math.floor(Math.random() * 5) + 1;

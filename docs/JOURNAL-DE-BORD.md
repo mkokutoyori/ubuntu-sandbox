@@ -449,7 +449,7 @@ les principes de design :
 | O3b | Résultat vide : en-tête affiché au lieu de `no rows selected` ; erreurs au format `ERROR:` au lieu de `ERROR at line N:` | SQL*Plus réel | Moyenne | ✅ Corrigé |
 | O4 | CURRVAL lisait le compteur global au lieu de la valeur de session | Séquences Oracle | Moyenne | ✅ Corrigé |
 | O5 | ALTER DATABASE MOUNT/OPEN no-ops ; RESTRICT jamais appliqué ; V$INSTANCE.STATUS non conforme | Cycle de vie instance | Moyenne | ✅ Corrigé |
-| O6 | Listener sans état (established/refused figés à 0, jamais BLOCKED) | lsnrctl réel | Moyenne | À faire |
+| O6 | Listener sans état + bug `status.running` sur string (lsnrctl/tnsping cassés) + transcripts copiés 3× | lsnrctl réel | Haute | ✅ Corrigé |
 | O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
 | O8 | NULL coercé en '' dans l'évaluation de LIKE | Sémantique NULL Oracle | Basse | À faire |
 
@@ -607,6 +607,56 @@ d'évaluation délèguent aux helpers (duplication supprimée).
 (nouveau, 8 tests).
 
 **Validation** : suite database **2630 tests verts**, zéro échec.
+
+### Entrée O6 — Listener TNS avec état réel (`ListenerControl`)
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Bug fonctionnel pur** : `handleLsnrctl` et `tnsping` testaient
+   `status.running` sur la **string** retournée par
+   `getListenerStatus()` → toujours `undefined` → `lsnrctl status` et
+   `tnsping` répondaient **toujours** TNS-12541, même listener démarré.
+2. **Aucun état réel** : un booléen running/stopped ; `status READY`
+   affiché même instance arrêtée (le vrai listener n'a aucun service
+   enregistré dans ce cas) ; uptime figé « 0 hr. 5 min. » ; Start Date
+   du listener = startup time de l'**instance** ; compteurs
+   `established:0 refused:0` câblés en dur.
+3. **Transcripts copiés 3×** (startListener, getListenerStatus,
+   handleLsnrctl) avec divergences entre les copies.
+4. `CONNECT user/pass@alias` : l'alias était **silencieusement jeté**
+   (« Strip @tns_alias from password ») — aucune différence entre
+   connexion bequeath locale et connexion via listener.
+
+#### Correction
+
+- Nouvelle classe `ListenerControl` (`src/database/oracle/listener/`) —
+  source unique de vérité : cycle de vie (vraie date de démarrage, uptime
+  calculé), **enregistrement dynamique de service dérivé de l'état vivant
+  de l'instance** (down → « The listener supports no services » ;
+  NOMOUNT/MOUNT → BLOCKED ; OPEN → READY), compteurs established/refused
+  réels, et tous les corps de transcripts lsnrctl.
+- `OracleInstance` délègue (API publique conservée, events bus conservés) ;
+  `handleLsnrctl`/`tnsping` consomment `ListenerControl` (bug
+  `status.running` éliminé avec la duplication).
+- `CONNECT user/pass@alias` passe par `listener.attemptConnect()` avec la
+  vraie échelle d'erreurs : ORA-12541 (pas de listener), ORA-12514
+  (service inconnu), ORA-12528 (instance BLOCKED) ; les connexions
+  locales sans @ restent bequeath (pas de listener — comme en vrai).
+- Provisioning : le listener est auto-démarré avec l'instance (équivalent
+  dbstart/systemd) pour préserver l'utilisabilité des labs ;
+  `lsnrctl stop` le coupe réellement. 2 tests qui figeaient l'ancien
+  comportement mis à jour (« strips TNS alias », « listener stopped par
+  défaut »).
+
+**Fichiers** : `src/database/oracle/listener/ListenerControl.ts` (nouveau),
+`OracleInstance.ts`, `OracleCommands.ts`, `SQLPlusSession.ts`,
+`database.ts`, `oracle-listener-state.test.ts` (nouveau, 7 tests),
+`oracle-sqlplus-commands.test.ts`, `oracle-systemd-integration.test.ts`.
+
+**Validation** : database + terminal = **3018 tests verts**, zéro échec ;
+suites SSH LAN utilisant lsnrctl vertes.
 
 ---
 

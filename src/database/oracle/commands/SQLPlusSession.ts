@@ -1063,8 +1063,20 @@ export class SQLPlusSession {
       return { output: ['ERROR:', `SP2-0306: Invalid option.`, `Usage: CONNECT username/password[@connect_identifier] [AS SYSDBA]`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // Strip @tns_alias from password
-    password = password.replace(/@.*$/, '');
+    // user/password@connect_identifier goes through the TNS listener;
+    // a plain user/password is a local bequeath connection and does not.
+    const atIdx = password.indexOf('@');
+    if (atIdx >= 0) {
+      const alias = password.slice(atIdx + 1).trim();
+      password = password.slice(0, atIdx);
+      const outcome = this.db.instance.listener.attemptConnect(alias);
+      if (!outcome.ok) {
+        return {
+          output: ['ERROR:', outcome.error],
+          exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+        };
+      }
+    }
 
     const loginOutput = this.login(username, password, sysdba);
     return { output: loginOutput, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
