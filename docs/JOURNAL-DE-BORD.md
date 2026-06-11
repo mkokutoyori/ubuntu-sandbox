@@ -470,6 +470,103 @@ qui valide que la fusion ne sacrifie aucun comportement.
 Suite complète : 13 648 verts, 9 échecs préexistants (vérifié en rejouant
 les fichiers concernés sur le HEAD pré-merge via worktree).
 
+### Note de réconciliation (merge du 2026-06-11, suite)
+
+Deux sessions parallèles ont produit **chacune** cette unification BGP
+(celle-ci sur `mandeng`, l'autre sur `claude/friendly-babbage-plxyqc`).
+Au merge des deux branches, la variante `mandeng` du moteur a été retenue
+car elle transporte LOCAL_PREF/origin/MED dans `BgpAdvertisedRoute`
+(portée du LOCAL_PREF §5.1.5 réellement implémentée sur le chemin
+transitif), là où la variante parallèle les recodait en dur à la
+réception. Le reste de la branche parallèle (backlog « PC » ci-dessous,
+entrée 11) est intégré tel quel.
+
+---
+
+## Backlog de la série « PC » (audit du 2026-06-11)
+
+Audit en trois axes (pile Linux PC, pile Windows PC, UI/store), constats
+vérifiés sur pièces avant inscription (2 faux positifs d'audit écartés :
+l'espacement `(Preferred)` d'ipconfig est fidèle au vrai Windows ; les
+abonnements TerminalManager/TerminalSession sont correctement nettoyés).
+
+| # | Sujet | Référence | Sévérité | Statut |
+|---|-------|-----------|----------|--------|
+| P1 | EndHost : signaux NDP/routes/stats morts (self-casts `ndpCache` inexistant, schéma routes divergent) + `arp.opcode` inexistant | Typage / observabilité | Haute | ✅ Entrée 11 |
+| P2 | `ping6` listé mais sans handler ; moteur ICMPv6 (`executePing6Sequence`) orphelin ; NS depuis link-local uniquement ; réponse écho silencieusement abandonnée sans entrée NDP | RFC 4861 §7.2.2 | Haute | ✅ Entrée 11 |
+| P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | À faire |
+| P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | À faire |
+| P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | À faire |
+| P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | À faire |
+| P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | À faire |
+| P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
+| P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | À faire |
+| P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | À faire |
+| P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | À faire |
+| P12 | NUD : 5 états déclarés (RFC 4861 §7.3), 2 utilisés, pas de machine à états | RFC 4861 | Moyenne | À faire |
+
+---
+
+## Entrée 11 — EndHost : signaux d'observabilité morts + ping6 orphelin (NDP RFC 4861)
+
+**Date** : 2026-06-11
+
+### Défaillances constatées
+
+1. **Trois signaux UI morts par dérive de schéma masquée**. Les méthodes
+   `_refreshNdpSignal`/`_refreshRoutesSignal`/`_refreshHostStatsSignal`
+   d'`EndHost` accédaient à leurs **propres champs** via
+   `(this as unknown as { ndpCache?: … })` :
+   - le champ s'appelle `neighborCache`, pas `ndpCache` → le signal NDP et
+     `ndpCacheSize` n'ont jamais quitté leur état initial vide ;
+   - `projectHostRoutes` attendait `destination`/`gateway` alors que
+     `HostRouteEntry` porte `network`/`nextHop` → le signal routes projetait
+     littéralement `"undefined"`.
+   Le self-cast court-circuitait précisément la vérification que le
+   compilateur aurait faite. Correction : accès direct aux champs (ils sont
+   déclarés dans la même classe), `HostRouteLike` aligné sur le vrai schéma
+   producteur — toute dérive future est désormais une erreur `tsc`.
+2. **`arp.opcode` inexistant** (`ARPPacket.operation` est une union de
+   chaînes) : l'événement `host.arp.entry-learned` étiquetait toutes les
+   entrées `source: 'reply'`.
+3. **`ping6` annoncé mais mort** : présent dans la liste des commandes
+   connues de `LinuxCommandExecutor` mais sans handler → « command not
+   found ». Le moteur ICMPv6 complet d'`EndHost`
+   (`executePing6Sequence` : résolution NDP + LPM v6 + RTT) n'était
+   **appelé nulle part**.
+4. En le câblant, deux bugs protocolaires sont apparus :
+   - `resolveNDP` émettait la Neighbor Solicitation **toujours depuis la
+     link-local**, contrairement à RFC 4861 §7.2.2 (la source de la NS doit
+     être l'adresse du trafic en attente). Conséquence : le pair n'apprenait
+     que `fe80::…%eth0` et ne savait pas répondre à l'adresse globale.
+   - La réponse écho était **silencieusement abandonnée** si le next-hop
+     n'était pas dans le cache de voisinage (`if (dstMAC)` sans else), au
+     lieu de déclencher une résolution (RFC 4861 : file d'attente pendant
+     la résolution).
+
+### Corrections
+
+- Refresh des signaux par accès direct typé ; `HostRouteLike` documenté
+  comme miroir de `HostRouteEntry`.
+- `ping6` + `ping -6` + auto-détection de famille sur cible littérale v6
+  (comportement iputils, où ping6 est un alias de ping) : nouvelle commande
+  `ping6Command` partageant `runPing` avec `pingCommand` (zéro duplication),
+  `ping6Sequence` ajouté au contrat `LinuxNetKernel`, formateur
+  `formatPing6Output` fidèle à iputils (`PING x(x) 56 data bytes`) avec
+  corps commun `renderPingBody` extrait (DRY avec le formateur v4).
+- `resolveNDP` : sélection de source RFC 4861 §7.2.2 (globale pour cible
+  globale, link-local pour cible link-local).
+- Réponse écho ICMPv6 : résolution NDP asynchrone sur cache miss au lieu
+  du drop silencieux.
+
+### Tests
+
+- `host-observables-signals.test.ts` (4) : ARP/routes/stats/NDP projettent
+  l'état réel (plus de `"undefined"`, cache NDP non vide après ping6).
+- `ping6-command.test.ts` (5) : ping6 on-link via vraie NDP, équivalence
+  `ping -6`/littéral v6, unreachable honnête, nom insoluble, self-ping.
+- Non-régression : suite network-v2 complète + `tsc --noEmit` propre.
+
 ---
 
 ## Validation finale de la série
