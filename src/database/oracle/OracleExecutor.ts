@@ -114,7 +114,9 @@ export class OracleExecutor extends BaseExecutor {
     this.instance = instance;
     this.privileges = new PrivilegeEnforcer(catalog, context);
     this.constraints = new ConstraintValidator(storage,
-      (cond, row, columns) => this.evaluateCondition(cond, row, columns));
+      // CHECK semantics: a row violates only when the predicate is FALSE
+      // — UNKNOWN (NULL operands) passes, per the SQL standard / Oracle.
+      (cond, row, columns) => this.evaluateCondition3VL(cond, row, columns) !== false);
     this.txn = new TransactionManager(storage, {
       onBegin: txId => this.emitTxnStarted(txId),
       onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
@@ -2362,8 +2364,14 @@ export class OracleExecutor extends BaseExecutor {
     // Column-level constraints
     for (const col of stmt.columns) {
       for (const cc of col.constraints) {
-        const name = cc.constraintName || nextSysC();
-        if (cc.constraintType === 'NOT_NULL') {
+        // Unquoted identifiers are uppercase in the dictionary.
+        const name = (cc.constraintName || nextSysC()).toUpperCase();
+        if (cc.constraintType === 'CHECK' && cc.checkExpr) {
+          constraints.push({
+            name, type: 'CHECK', columns: [col.name.toUpperCase()],
+            checkExpression: this.serializeExpr(cc.checkExpr),
+          });
+        } else if (cc.constraintType === 'NOT_NULL') {
           constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
           const colMeta = columns.find(c => c.name === col.name.toUpperCase());
           if (colMeta) colMeta.dataType = { ...colMeta.dataType, nullable: false };
@@ -2381,7 +2389,7 @@ export class OracleExecutor extends BaseExecutor {
 
     // Table-level constraints
     for (const tc of stmt.constraints) {
-      const name = tc.constraintName || nextSysC();
+      const name = (tc.constraintName || nextSysC()).toUpperCase();
       constraints.push({
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
@@ -2389,6 +2397,7 @@ export class OracleExecutor extends BaseExecutor {
         refTable: tc.refTable?.toUpperCase(),
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
+        checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
       });
     }
 
@@ -2747,6 +2756,25 @@ export class OracleExecutor extends BaseExecutor {
         const fn = expr as FunctionCallExpr;
         return `${fn.name}(${fn.args.map(a => this.serializeExpr(a)).join(', ')})`;
       }
+      case 'ParenExpr':
+        return `(${this.serializeExpr(expr.expr)})`;
+      case 'UnaryExpr':
+        return expr.operator === 'NOT'
+          ? `NOT (${this.serializeExpr(expr.operand)})`
+          : `${expr.operator}${this.serializeExpr(expr.operand)}`;
+      case 'IsNullExpr':
+        return `${this.serializeExpr(expr.expr)} IS${expr.negated ? ' NOT' : ''} NULL`;
+      case 'InExpr': {
+        if (!Array.isArray(expr.values)) return '?';
+        const list = expr.values.map(v => this.serializeExpr(v)).join(', ');
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} IN (${list})`;
+      }
+      case 'BetweenExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} BETWEEN `
+          + `${this.serializeExpr(expr.low)} AND ${this.serializeExpr(expr.high)}`;
+      case 'LikeExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} LIKE `
+          + this.serializeExpr(expr.pattern);
       default: return '?';
     }
   }
@@ -3804,21 +3832,47 @@ export class OracleExecutor extends BaseExecutor {
     return val;
   }
 
+  /** WHERE / JOIN-ON boundary: only a TRUE predicate passes — UNKNOWN
+   *  filters the row out exactly like FALSE (SQL three-valued logic). */
   private evaluateCondition(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean {
+    return this.evaluateCondition3VL(expr, row, columns) === true;
+  }
+
+  /**
+   * SQL three-valued logic (Kleene): a condition is TRUE, FALSE or
+   * UNKNOWN (represented as null). NULL operands make comparisons,
+   * LIKE, BETWEEN and IN evaluate to UNKNOWN; AND/OR combine per the
+   * standard truth tables and NOT UNKNOWN stays UNKNOWN. CHECK
+   * constraints accept TRUE *and* UNKNOWN (see ConstraintValidator
+   * wiring), while WHERE keeps only TRUE.
+   */
+  private evaluateCondition3VL(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean | null {
+    const not3 = (v: boolean | null): boolean | null => (v === null ? null : !v);
     switch (expr.type) {
       case 'BinaryExpr': {
         if (expr.operator === 'AND') {
-          return this.evaluateCondition(expr.left, row, columns) && this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === false) return false;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === false) return false;
+          return l === null || r === null ? null : true;
         }
         if (expr.operator === 'OR') {
-          return this.evaluateCondition(expr.left, row, columns) || this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === true) return true;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === true) return true;
+          return l === null || r === null ? null : false;
         }
         const left = this.evaluateExpression(expr.left, row, columns);
         const right = this.evaluateExpression(expr.right, row, columns);
+        if (left === null || right === null) return null;
         return this.applyComparison(expr.operator, left, right);
       }
       case 'UnaryExpr':
-        if (expr.operator === 'NOT') return !this.evaluateCondition(expr.operand, row, columns);
+        if (expr.operator === 'NOT') {
+          return not3(this.evaluateCondition3VL(expr.operand, row, columns));
+        }
         if (expr.operator === 'EXISTS') {
           if (expr.operand.type === 'SubqueryExpr') {
             const subResult = this.executeSubquery((expr.operand as SubqueryExpr).query, row, columns);
@@ -3839,31 +3893,50 @@ export class OracleExecutor extends BaseExecutor {
         return expr.negated ? val !== null : val === null;
       }
       case 'BetweenExpr': {
+        // val BETWEEN low AND high == val >= low AND val <= high, in 3VL.
         const val = this.evaluateExpression(expr.expr, row, columns);
         const low = this.evaluateExpression(expr.low, row, columns);
         const high = this.evaluateExpression(expr.high, row, columns);
-        const inRange = this.compareValues(val, low) >= 0 && this.compareValues(val, high) <= 0;
-        return expr.negated ? !inRange : inRange;
+        const geLow: boolean | null =
+          val === null || low === null ? null : this.compareValues(val, low) >= 0;
+        const leHigh: boolean | null =
+          val === null || high === null ? null : this.compareValues(val, high) <= 0;
+        const inRange: boolean | null =
+          geLow === false || leHigh === false ? false
+            : geLow === null || leHigh === null ? null : true;
+        return expr.negated ? not3(inRange) : inRange;
       }
       case 'InExpr': {
+        // IN is a chain of OR'd equalities: a NULL on either side makes
+        // that comparison UNKNOWN, so `x NOT IN (1, NULL)` never passes.
         const val = this.evaluateExpression(expr.expr, row, columns);
+        const inList = (values: CellValue[]): boolean | null => {
+          let sawUnknown = false;
+          for (const ev of values) {
+            if (val === null || ev === null) { sawUnknown = true; continue; }
+            if (this.compareValues(val, ev) === 0) return true;
+          }
+          return sawUnknown ? null : false;
+        };
+        let res: boolean | null;
         if (Array.isArray(expr.values)) {
-          const found = expr.values.some(v => {
-            const ev = this.evaluateExpression(v, row, columns);
-            return this.compareValues(val, ev) === 0;
-          });
-          return expr.negated ? !found : found;
+          res = inList(expr.values.map(v => this.evaluateExpression(v, row, columns)));
+        } else {
+          // Subquery IN — values is a SelectStatement
+          const subStmt = expr.values as unknown as SelectStatement;
+          const subResult = this.executeSubquery(subStmt, row, columns);
+          res = inList(subResult.rows.map(r => r[0]));
         }
-        // Subquery IN — values is a SelectStatement
-        const subStmt = expr.values as unknown as SelectStatement;
-        const subResult = this.executeSubquery(subStmt, row, columns);
-        const found = subResult.rows.some(r => this.compareValues(val, r[0]) === 0);
-        return expr.negated ? !found : found;
+        return expr.negated ? not3(res) : res;
       }
       case 'LikeExpr': {
-        const val = String(this.evaluateExpression(expr.expr, row, columns) ?? '');
-        const pattern = String(this.evaluateExpression(expr.pattern, row, columns) ?? '');
-        const escapeChar = expr.escape ? String(this.evaluateExpression(expr.escape, row, columns) ?? '') : null;
+        const valRaw = this.evaluateExpression(expr.expr, row, columns);
+        const patternRaw = this.evaluateExpression(expr.pattern, row, columns);
+        const escapeRaw = expr.escape ? this.evaluateExpression(expr.escape, row, columns) : undefined;
+        if (valRaw === null || patternRaw === null || escapeRaw === null) return null;
+        const val = String(valRaw);
+        const pattern = String(patternRaw);
+        const escapeChar = escapeRaw !== undefined ? String(escapeRaw) : null;
         // Build regex: escape regex-special chars first, then replace SQL wildcards
         let regexStr = '';
         for (let pi = 0; pi < pattern.length; pi++) {
@@ -3880,14 +3953,17 @@ export class OracleExecutor extends BaseExecutor {
             regexStr += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           }
         }
-        const regex = new RegExp('^' + regexStr + '$', 'i');
+        // Oracle LIKE is case-sensitive (no 'i' flag).
+        const regex = new RegExp('^' + regexStr + '$');
         const match = regex.test(val);
         return expr.negated ? !match : match;
       }
       case 'ParenExpr':
-        return this.evaluateCondition(expr.expr, row, columns);
-      default:
-        return !!this.evaluateExpression(expr, row, columns);
+        return this.evaluateCondition3VL(expr.expr, row, columns);
+      default: {
+        const v = this.evaluateExpression(expr, row, columns);
+        return v === null ? null : !!v;
+      }
     }
   }
 

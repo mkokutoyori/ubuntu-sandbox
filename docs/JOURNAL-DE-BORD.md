@@ -451,7 +451,7 @@ les principes de design :
 | O5 | ALTER DATABASE MOUNT/OPEN no-ops ; RESTRICT jamais appliqué ; V$INSTANCE.STATUS non conforme | Cycle de vie instance | Moyenne | ✅ Corrigé |
 | O6 | Listener sans état + bug `status.running` sur string (lsnrctl/tnsping cassés) + transcripts copiés 3× | lsnrctl réel | Haute | ✅ Corrigé |
 | O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
-| O8 | NULL coercé en '' dans l'évaluation de LIKE | Sémantique NULL Oracle | Basse | À faire |
+| O8 | Logique booléenne 2 valeurs au lieu de la logique ternaire SQL (LIKE/IN/BETWEEN/NOT) ; LIKE insensible à la casse ; CHECK non appliqués | Sémantique NULL Oracle | Haute | ✅ Corrigé |
 
 ### Entrée O1+O2 — DDL : auto-commit centralisé + enforcement des DROP/CREATE INDEX
 
@@ -657,6 +657,50 @@ d'évaluation délèguent aux helpers (duplication supprimée).
 
 **Validation** : database + terminal = **3018 tests verts**, zéro échec ;
 suites SSH LAN utilisant lsnrctl vertes.
+
+### Entrée O8 — Logique ternaire SQL (3VL) + contraintes CHECK réellement appliquées
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Logique à 2 valeurs** : l'évaluateur de conditions collapsait
+   UNKNOWN→false localement, ce qui casse la composition : `NOT (x = 1)`
+   avec x NULL retournait la ligne (Oracle : UNKNOWN, ligne exclue) ;
+   `x NOT IN (2, NULL)` retournait des lignes (Oracle : jamais) ;
+   `NULL LIKE '%'` était vrai (coercion NULL→'') ; `NOT BETWEEN` sur NULL
+   retournait la ligne.
+2. **LIKE insensible à la casse** (flag regex `'i'`) — Oracle LIKE est
+   strictement sensible à la casse.
+3. **CHECK fantômes** : le parseur produisait bien l'AST du CHECK
+   (`checkExpr`), mais `executeCreateTable` le jetait — contrainte
+   table-level enregistrée **sans** expression (jamais validée),
+   contrainte inline de colonne **pas enregistrée du tout**. Tout INSERT
+   violant un CHECK passait.
+4. Noms de contraintes non uppercasés (`c2_chk` stocké tel quel dans le
+   dictionnaire — Oracle uppercase les identifiants non quotés).
+
+#### Correction
+
+- `evaluateCondition3VL()` : logique de Kleene complète — AND/OR/NOT sur
+  {TRUE, FALSE, UNKNOWN}, propagation de NULL dans comparaisons, LIKE,
+  BETWEEN (composition 3VL des deux comparaisons), IN (un NULL de chaque
+  côté rend la comparaison UNKNOWN → `NOT IN` avec NULL ne passe jamais).
+  `evaluateCondition()` reste la frontière WHERE/ON : seul TRUE passe.
+- CHECK : accepte TRUE **et** UNKNOWN (norme SQL — NULL ne viole pas un
+  CHECK), branché via le câblage du `ConstraintValidator`.
+- `serializeExpr` étendu (ParenExpr, NOT, IS NULL, IN, BETWEEN, LIKE)
+  pour sérialiser fidèlement les prédicats CHECK ; `executeCreateTable`
+  enregistre désormais `checkExpression` aux deux niveaux (table et
+  colonne) ; noms de contraintes uppercasés.
+- LIKE sensible à la casse (suppression du flag `'i'`).
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-null-three-valued-logic.test.ts`
+(nouveau, 9 tests).
+
+**Validation** : database **2647 tests verts** + terminal/shell 896,
+zéro échec.
 
 ---
 
