@@ -247,8 +247,10 @@ describe('Format-Table / Format-List — calculated props, *, headers', () => {
   it('Format-List * expands to all properties (not literal "* :")', async () => {
     const out = await j(shell(),
       '[pscustomobject]@{ Alpha=1; Beta=2 } | Format-List *');
+    // Real PowerShell right-pads property names to the longest key so the
+    // colons line up ("Alpha : 1" / "Beta  : 2").
     expect(out).toMatch(/Alpha : 1/);
-    expect(out).toMatch(/Beta : 2/);
+    expect(out).toMatch(/Beta\s+: 2/);
     expect(out).not.toMatch(/^\* :/m);
   });
   it('Format-List calculated property is evaluated', async () => {
