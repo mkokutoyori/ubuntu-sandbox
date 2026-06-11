@@ -9,12 +9,16 @@ export interface BridgeId {
   mac: string;
 }
 
+export type StpProtocolMode = 'stp' | 'rstp';
+
 export interface StpBpdu {
   type: 'stp';
   bpduType: StpBpduType;
   protocolId: 0x0000;
-  version: 0;
+  version: 0 | 2;
   flags: number;
+  proposal?: boolean;
+  agreement?: boolean;
   rootBridge: BridgeId;
   rootPathCost: number;
   senderBridge: BridgeId;
@@ -39,6 +43,7 @@ export function defaultPortGuards(): StpPortGuards {
 
 export interface StpConfig {
   enabled: boolean;
+  mode: StpProtocolMode;
   bridgePriority: number;
   helloSec: number;
   maxAgeSec: number;
@@ -60,6 +65,7 @@ export interface StpPortInfo {
 export function createDefaultStpConfig(baseMac: string): StpConfig {
   return {
     enabled: true,
+    mode: 'stp',
     bridgePriority: 32768,
     helloSec: 2,
     maxAgeSec: 20,

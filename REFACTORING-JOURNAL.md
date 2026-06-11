@@ -1107,3 +1107,51 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - Périmètre final de la campagne : entrées n°9 à n°21 — 13 itérations
   poussées individuellement, chacune validée par ses suites ciblées, et
   l'ensemble par cette régression globale.
+
+---
+
+## Entrée n°22 — 2026-06-11 — RSTP (802.1w) : le mode rapid-pvst n'était qu'un libellé
+
+### Défaillances constatées
+
+1. **`spanning-tree mode rapid-pvst` purement décoratif** — le shell Cisco
+   mémorisait la chaîne pour l'affichage ; le `stp mode rstp` Huawei
+   validait la syntaxe puis ne faisait rien. L'agent STP n'avait aucun
+   concept de mode : convergence 802.1D à 30 s (2 × forward delay) dans
+   tous les cas.
+
+### Correction (sous-ensemble 802.1w fonctionnel)
+
+- **Mode protocole** dans `StpConfig` (`stp` | `rstp`, défaut `stp` —
+  aucun changement pour l'existant) + API `setMode`/`getMode`, câblée aux
+  deux CLI (`rapid-pvst`/`mst` → rstp côté Cisco ; `rstp`/`mstp` côté VRP).
+- **Proposal/agreement** : BPDU v2 avec flags `proposal`/`agreement` ;
+  un port désigné non-forwarding propose (à l'entrée en listening et à
+  chaque hello) ; le pair dont c'est le root port répond agreement
+  (one-shot) et passe forwarding ; le désigné qui reçoit l'agreement
+  passe forwarding immédiatement. Face à un port alternate (pas
+  d'agreement) ou un voisin 802.1D (BPDU v0), retombée propre sur la
+  marche temporisée — interopérabilité préservée.
+- **Root port immédiat** : en rstp, le nouveau root port passe forwarding
+  sans attendre (failover sub-seconde au lieu de 30 s).
+- **Topology change à la RSTP** : plus de TCN vers la racine — le pont
+  détecteur arme tcWhile lui-même et le flag TC se propage de proche en
+  proche (garde anti-rebond : un TC reçu n'arme tcWhile que s'il n'est
+  pas déjà actif) ; le TC sort aussi par le root port (l'émission
+  legacy ne couvrait que les ports désignés, le TC ne remontait jamais).
+
+### Fichiers
+
+- `src/network/stp/types.ts`, `src/network/stp/StpAgent.ts`
+- `src/network/devices/shells/CiscoSwitchShell.ts`,
+  `src/network/devices/shells/HuaweiSwitchShell.ts`
+- `src/__tests__/unit/network-v2/stp-rstp.test.ts` (nouveau, 6 tests)
+
+### Validation (ciblée)
+
+- 6 tests RSTP : bascule de mode (2 CLI), handshake proposal/agreement
+  (port désigné forwarding sans timers, l'alternate du pair bloque),
+  contraste mode legacy (listening), failover root port immédiat,
+  propagation TC sans aucun TCN avec fast aging bout en bout.
+- Suites STP complètes : 48 tests verts ; suites commutation connexes
+  (switch shells, switchport, VTP, LACP, DTP, ping) : 248 tests verts.

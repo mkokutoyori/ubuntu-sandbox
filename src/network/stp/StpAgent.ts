@@ -52,6 +52,7 @@ export class StpAgent extends ReactiveAgentBase {
   private tcFlagActive = false;
   /** Ports owed a one-shot Topology Change Ack on their next config BPDU. */
   private readonly pendingTcAck = new Set<string>();
+  private readonly pendingAgreement = new Set<string>();
   private tcWhileTimer: TimerHandle | null = null;
   private fastAgingActive = false;
 
@@ -87,6 +88,7 @@ export class StpAgent extends ReactiveAgentBase {
     this.tcnPending = false;
     this.tcFlagActive = false;
     this.pendingTcAck.clear();
+    this.pendingAgreement.clear();
     this.setFastAging(false);
   }
 
@@ -130,6 +132,14 @@ export class StpAgent extends ReactiveAgentBase {
       this.armTimers();
     }
   }
+
+  setMode(mode: import('./types').StpProtocolMode): void {
+    if (this.config.mode === mode) return;
+    this.config.mode = mode;
+    this.recomputeOnTopologyChange();
+  }
+
+  getMode(): import('./types').StpProtocolMode { return this.config.mode; }
 
   setMaxAgeSec(sec: number): void {
     if (sec < 6 || sec > 40) return;
@@ -313,6 +323,25 @@ export class StpAgent extends ReactiveAgentBase {
 
     // ── Topology change processing (802.1D-1998 §8.6.14) ──────────
     // The designated bridge acked our TCNs: stop retransmitting.
+    if (this.config.mode === 'rstp' && payload.version === 2) {
+      if (payload.proposal && portName === this.rootPort) {
+        this.pendingAgreement.add(portName);
+        this.cancelTransition(portName);
+        this.applyForwardState(portName, 'forwarding');
+        this.sendBpdu(portName);
+      }
+      if (payload.agreement && this.portInfo.get(portName)?.role === 'designated') {
+        this.cancelTransition(portName);
+        this.applyForwardState(portName, 'forwarding');
+      }
+      if (payload.topologyChange && !this.tcFlagActive) {
+        this.startTcWhile();
+      }
+      if (!payload.topologyChange && portName === this.rootPort) {
+        this.setFastAging(false);
+      }
+      return;
+    }
     if (payload.topologyChangeAck && portName === this.rootPort) {
       this.stopTcnRetransmission();
     }
@@ -363,7 +392,7 @@ export class StpAgent extends ReactiveAgentBase {
         isRoot: this.isRoot(),
       },
     });
-    if (this.isRoot()) {
+    if (this.config.mode === 'rstp' || this.isRoot()) {
       this.startTcWhile();
     } else {
       this.startTcnRetransmission();
@@ -449,8 +478,9 @@ export class StpAgent extends ReactiveAgentBase {
       if (!port.getIsUp() || !port.isConnected()) continue;
       const role = this.portInfo.get(name)?.role;
       if (role !== 'designated' && !this.isRoot()) {
-        if (name === this.rootPort) continue;
-        if (role === 'alternate') continue;
+        if (name === this.rootPort) {
+          if (!(this.config.mode === 'rstp' && this.tcFlagActive)) continue;
+        } else if (role === 'alternate') continue;
       }
       this.sendBpdu(name);
     }
@@ -462,8 +492,13 @@ export class StpAgent extends ReactiveAgentBase {
     if (this.advertising.has(portName)) return;
     const bpdu: StpBpdu = {
       type: 'stp', bpduType: 'config',
-      protocolId: 0x0000, version: 0,
+      protocolId: 0x0000,
+      version: this.config.mode === 'rstp' ? 2 : 0,
       flags: 0,
+      proposal: this.config.mode === 'rstp'
+        && this.portInfo.get(portName)?.role === 'designated'
+        && this.forwardStates.get(portName) !== 'forwarding',
+      agreement: this.pendingAgreement.delete(portName),
       rootBridge: { ...this.rootBridge },
       rootPathCost: this.rootPathCost,
       senderBridge: this.ownBridgeId(),
@@ -726,8 +761,13 @@ export class StpAgent extends ReactiveAgentBase {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
+    if (this.config.mode === 'rstp' && portName === this.rootPort) {
+      this.applyForwardState(portName, 'forwarding');
+      return;
+    }
     this.applyForwardState(portName, 'listening');
     this.scheduleTransition(portName, 'learning');
+    if (this.config.mode === 'rstp') this.sendBpdu(portName);
   }
 
   private scheduleTransition(portName: string, next: 'learning' | 'forwarding'): void {

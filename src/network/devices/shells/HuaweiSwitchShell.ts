@@ -1202,6 +1202,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
             return 'Error: Wrong parameter found at \'^\' position.';
           }
           this.stp.mode = m;
+          this.applyToStpAgent(ag => ag.setMode(m === 'stp' ? 'stp' : 'rstp'));
           return '';
         }
         case 'priority': {

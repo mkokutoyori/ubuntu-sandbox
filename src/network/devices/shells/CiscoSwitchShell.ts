@@ -869,7 +869,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // Global: every other `spanning-tree …` is accepted (mode/priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
     this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
-      if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      if (args[0]?.toLowerCase() === 'mode' && args[1]) {
+        this.stpMode = args[1];
+        const m = args[1].toLowerCase();
+        this.d().getStpAgent().setMode(
+          m === 'rapid-pvst' || m === 'mst' ? 'rstp' : 'stp');
+      }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
