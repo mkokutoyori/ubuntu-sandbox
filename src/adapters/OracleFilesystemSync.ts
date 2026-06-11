@@ -217,9 +217,10 @@ export class OracleFilesystemSync {
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
+        const dbid = this.ctx.resolveDatabase(e.payload.deviceId)?.instance.getDbId() ?? 0;
         dev.writeFileFromEditor(
           `${ORACLE_CONFIG.BASE}/admin/${e.payload.sid}/adump/${fname}`,
-          renderConnectionAud(e.payload),
+          renderConnectionAud(e.payload, dbid),
         );
       }),
 
@@ -351,26 +352,40 @@ function renderParameterFile(target: 'PFILE' | 'SPFILE', params: Record<string, 
  * it for a logon. Same header banner as audit entries so an `ls` of
  * `adump/` shows a coherent set of files.
  */
-function renderConnectionAud(p: import('@/database/oracle/events').OracleConnectionTracedPayload): string {
-  const lines: string[] = [];
-  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
-  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
-  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
-  lines.push(`System name:    Linux`);
-  lines.push(`Node name:      ${p.userhost}`);
-  lines.push(`Instance name:  ${p.sid}`);
-  lines.push(`Redo thread mounted by this instance: 1`);
-  lines.push(`Oracle process number: ${p.sessionId}`);
-  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
-  lines.push('');
-  lines.push(p.timestamp.toISOString());
+/**
+ * Common `.aud` banner written by `audit_trail=os`: file path, release
+ * banner, host identity, process identity, then the timestamp. Shared by
+ * connection traces and audit entries so the two file families can never
+ * drift apart again.
+ */
+function renderAudHeader(sid: string, sessionId: number | string, userhost: string, timestamp: Date): string[] {
+  return [
+    `Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${sid.toLowerCase()}_ora_${sessionId}.aud`,
+    `Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`,
+    `ORACLE_HOME = ${ORACLE_CONFIG.HOME}`,
+    `System name:    Linux`,
+    `Node name:      ${userhost}`,
+    `Instance name:  ${sid}`,
+    `Redo thread mounted by this instance: 1`,
+    `Oracle process number: ${sessionId}`,
+    `Unix process pid: ${sessionId}, image: oracle@${userhost}`,
+    '',
+    timestamp.toISOString(),
+  ];
+}
+
+function renderConnectionAud(
+  p: import('@/database/oracle/events').OracleConnectionTracedPayload,
+  dbid: number,
+): string {
+  const lines: string[] = renderAudHeader(p.sid, p.sessionId, p.userhost, p.timestamp);
   lines.push(`ACTION : ${p.outcome === 'LOGOFF' ? 'LOGOFF' : 'LOGON'}`);
   lines.push(`DATABASE USER: ${p.username}`);
   lines.push(`PRIVILEGE: ${p.role === 'SYSDBA' ? 'SYSDBA' : p.role === 'SYSOPER' ? 'SYSOPER' : '--'}`);
   lines.push(`CLIENT USER: ${p.osUser}`);
   lines.push(`CLIENT TERMINAL: ${p.terminal}`);
   lines.push(`STATUS: ${p.returncode}`);
-  lines.push(`DBID: 0`);
+  lines.push(`DBID: ${dbid}`);
   lines.push(`SESSIONID: ${p.sessionId}`);
   lines.push(`USERHOST: ${p.userhost}`);
   lines.push(`CLIENT ADDRESS: (ADDRESS=(PROTOCOL=${p.networkProtocol})(HOST=${p.ipAddress || p.userhost}))`);
@@ -379,18 +394,7 @@ function renderConnectionAud(p: import('@/database/oracle/events').OracleConnect
 }
 
 function renderAuditEntry(p: import('@/database/oracle/events').OracleAuditRecordedPayload): string {
-  const lines: string[] = [];
-  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
-  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
-  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
-  lines.push(`System name:    Linux`);
-  lines.push(`Node name:      ${p.userhost}`);
-  lines.push(`Instance name:  ${p.sid}`);
-  lines.push(`Redo thread mounted by this instance: 1`);
-  lines.push(`Oracle process number: ${p.sessionId}`);
-  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
-  lines.push('');
-  lines.push(p.timestamp.toISOString());
+  const lines: string[] = renderAudHeader(p.sid, p.sessionId, p.userhost, p.timestamp);
   lines.push(`LENGTH : '${(p.sqlText ?? '').length}'`);
   lines.push(`ACTION : ${p.actionName}`);
   lines.push(`DATABASE USER: ${p.username}`);
