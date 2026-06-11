@@ -84,6 +84,18 @@ export class OracleInstance {
   private _archiveLogMode: boolean;
   private _pidCounter: number = 1000;
 
+  // ── Database identity & SCN ──────────────────────────────────────
+  /** DBID — computed once per database like CREATE DATABASE does (lazy
+   *  so the deviceId injected after construction participates, giving
+   *  every device a distinct, stable identifier). */
+  private _dbid: number | null = null;
+  /** System Change Number — one monotonic stream per database. Every
+   *  commit advances it; checkpoints stamp the current value into the
+   *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
+  private _currentScn = 1_000_000;
+  private _checkpointScn = 1_000_000;
+  private _checkpointTime = new Date();
+
   // ── Reactive (Phase 7) ───────────────────────────────────────────
   /** Bus override; defaults to the global singleton at publish time. */
   private _bus: IEventBus | null = null;
@@ -103,8 +115,10 @@ export class OracleInstance {
   /** Real ASM machinery — empty by default; CREATE DISKGROUP populates it. */
   readonly asm: AsmManager = new AsmManager();
   /** Security audit journal — fed by the SecurityAuditActor on bus events.
-   *  Surfaces forensic data through the DBA_* security views. */
-  private readonly _auditJournal = new AuditJournal();
+   *  Surfaces forensic data through the DBA_* security views. Shares the
+   *  instance SCN stream so DDL/DML history SCNs are coherent with
+   *  V$DATABASE.CURRENT_SCN instead of running a private counter. */
+  private readonly _auditJournal = new AuditJournal(undefined, () => this.advanceScn());
   private _securityAuditActor: SecurityAuditActor | null = null;
   private _userActivity: UserActivityTracker | null = null;
   /** Database-level event-trigger catalogue + executor. */
@@ -216,6 +230,54 @@ export class OracleInstance {
   /** Read a file from the host device VFS, or null when unavailable. */
   readDeviceFile(path: string): string | null {
     return this._deviceFileReader?.(path) ?? null;
+  }
+
+  // ── DBID / SCN accessors ──────────────────────────────────────────
+
+  /**
+   * Database identifier, as shown by V$DATABASE.DBID and RMAN's
+   * `connected to target database: X (DBID=n)`. Real Oracle derives it
+   * from the database name and creation timestamp at CREATE DATABASE
+   * time; the simulator hashes deviceId+SID so every device gets a
+   * distinct but reproducible DBID.
+   */
+  getDbId(): number {
+    if (this._dbid === null) {
+      // FNV-1a 32-bit over "deviceId:SID".
+      let h = 0x811c9dc5;
+      for (const ch of `${this._deviceId}:${this.config.sid}`) {
+        h ^= ch.charCodeAt(0);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      // Map into the 1.0–4.0 billion range typical of real DBIDs.
+      this._dbid = 1_000_000_000 + (h % 3_000_000_000);
+    }
+    return this._dbid;
+  }
+
+  /** Current SCN (V$DATABASE.CURRENT_SCN). */
+  getCurrentScn(): number { return this._currentScn; }
+
+  /** Advance the SCN (commits, checkpoints) and return the new value. */
+  advanceScn(delta: number = 1): number {
+    this._currentScn += delta;
+    return this._currentScn;
+  }
+
+  /** SCN stamped into every datafile header at the last checkpoint. */
+  getCheckpointScn(): number { return this._checkpointScn; }
+  getCheckpointTime(): Date { return this._checkpointTime; }
+
+  /**
+   * Complete a checkpoint: advance the SCN and stamp it (with the wall
+   * clock) into the shared header state every datafile view reads.
+   * Triggered by ALTER SYSTEM CHECKPOINT, log switches, OPEN and clean
+   * shutdowns — the same events as real Oracle.
+   */
+  performCheckpoint(): void {
+    this._checkpointScn = this.advanceScn();
+    this._checkpointTime = new Date();
+    this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
   }
 
   /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */
@@ -382,6 +444,7 @@ export class OracleInstance {
   private markOpen(): void {
     this.transitionTo('OPEN');
     this._redoLogGroups[0].status = 'CURRENT';
+    this.performCheckpoint();
     this.logAlert('Database opened');
     for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
       this.getBus().publish({
@@ -425,6 +488,9 @@ export class OracleInstance {
     this.logAlert(`Shutting down instance (${effectiveMode.toLowerCase()})`);
 
     if (this._state === 'OPEN') {
+      // Clean shutdowns checkpoint before closing (ABORT skips it, which
+      // is what makes the subsequent startup need instance recovery).
+      if (effectiveMode !== 'ABORT') this.performCheckpoint();
       output.push('Database closed.');
       this.logAlert('Database closed');
     }
@@ -502,6 +568,8 @@ export class OracleInstance {
 
   switchLogfile(): string {
     if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
+    // A log switch triggers a (media-recovery) checkpoint in real Oracle.
+    this.performCheckpoint();
     const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
     if (currentGroup) {
       currentGroup.status = 'ACTIVE';

@@ -78,11 +78,17 @@ export class AuditJournal implements IAuditJournal {
   private nextTrace = 1;
   private scnCounter = 1_000_000;
 
-  constructor(private readonly budget: AuditJournalBudget = DEFAULT_AUDIT_JOURNAL_BUDGET) {
+  constructor(
+    private readonly budget: AuditJournalBudget = DEFAULT_AUDIT_JOURNAL_BUDGET,
+    /** Shared SCN source (the owning instance). When provided, audit
+     *  records carry SCNs from the same stream as V$DATABASE.CURRENT_SCN
+     *  instead of a journal-private counter. */
+    private readonly scnSource?: () => number,
+  ) {
     for (const p of DEFAULT_SOD_POLICIES) this.sodPolicies.set(p.name, p);
   }
 
-  nextScn(): number { return ++this.scnCounter; }
+  nextScn(): number { return this.scnSource ? this.scnSource() : ++this.scnCounter; }
 
   // ── Producers ─────────────────────────────────────────────────────
 

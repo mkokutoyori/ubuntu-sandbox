@@ -23,7 +23,7 @@ registerView({
         col.str('PLATFORM_NAME', 101),
       ],
       [[
-        1234567890, 1,
+        instance.getDbId(), 1,
         instance.startupTime ? instance.startupTime.toISOString() : null as unknown as string,
         0, '19.3.0.0.0', instance.config.sid, instance.config.sid,
         'localhost', 'Linux x86 64-bit',

@@ -999,6 +999,59 @@ documentées comme bruit de la config `tsconfig.app.json` + TS récent).
 
 Database 2650 + terminal 380 verts ; zéro nouvelle erreur tsc.
 
+### Entrée S3.4 — Identité de base réelle : DBID unique + flux SCN unifié + checkpoints effectifs
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées (audit réalisme)
+
+1. **DBID `1234567890` codé en dur dans 6 vues** (V$DATABASE,
+   V$CONTAINERS, DBA_HIST_WR_CONTROL, DBA_HIST_BASELINE,
+   DBA_HIST_DATABASE_INSTANCE, fallback DBA_HIST_SYSSTAT) — toutes les
+   bases du réseau partageaient la même identité, ce qui casse tout
+   scénario multi-instances (Data Guard, clonage RMAN, audits croisés).
+2. **CHECKPOINT_CHANGE# incohérent** : V$DATAFILE répondait
+   `1000 + FILE#`, V$DATAFILE_HEADER répondait `100` fixe — un
+   `SELECT … FROM v$datafile JOIN v$datafile_header USING (FILE#)` ne
+   tombait jamais d'accord, alors que ces deux vues lisent le même SCN
+   de checkpoint dans le vrai Oracle.
+3. **`ALTER SYSTEM CHECKPOINT` no-op** : « System altered. » sans aucun
+   effet observable.
+4. **Trois compteurs SCN divergents** : l'AuditJournal tirait ses SCN
+   d'un compteur privé sans rapport avec l'état de la base ; aucune
+   notion de CURRENT_SCN.
+5. **TS# fabriqué** : `V$DATAFILE.TS# = FILE# − 1` — faux dès qu'un
+   tablespace a deux datafiles (le TS# identifie le tablespace, pas le
+   fichier).
+6. RMAN affichait toujours `DBID=1234567890` quel que soit le device.
+
+#### Corrections
+
+- `OracleInstance` devient **propriétaire de l'identité et du SCN** :
+  `getDbId()` (hash FNV-1a de deviceId:SID, plage 1–4 milliards comme
+  les vrais DBID — unique par device, reproductible), `getCurrentScn()`,
+  `advanceScn()`, `getCheckpointScn()/getCheckpointTime()`,
+  `performCheckpoint()`.
+- Chaque **COMMIT avance le SCN** (callback `onCommit` du
+  TransactionManager) ; l'**AuditJournal partage le flux SCN** de
+  l'instance (source injectée, le compteur privé ne sert plus qu'aux
+  journaux orphelins de tests).
+- **Checkpoints réels** aux mêmes déclencheurs que le vrai Oracle :
+  `ALTER SYSTEM CHECKPOINT`, log switch, OPEN, shutdown propre (ABORT
+  s'en passe, fidèle au comportement crash). Trace alert log
+  `Completed checkpoint up to RBA, SCN: n`.
+- V$DATAFILE et V$DATAFILE_HEADER lisent le **même** SCN/heure de
+  checkpoint ; V$DATABASE expose CURRENT_SCN et CHECKPOINT_CHANGE# et
+  son CONTROLFILE_CHANGE# suit le checkpoint ; TS# corrigé (numéro de
+  tablespace partagé par ses datafiles).
+- RMAN : `LinuxRmanContext` lit le DBID vivant de l'instance
+  (`connected to target database: SID (DBID=…)` réel) ; `DbId.DEFAULT`
+  ne sert plus qu'aux devices sans Oracle.
+
+#### Validation
+
+Database 2650 + RMAN 284 verts ; pas de nouvelle erreur tsc.
+
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
 - **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :

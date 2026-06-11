@@ -65,7 +65,13 @@ export class InstanceAdminExecutor {
     if (stmt.action === 'SWITCH LOGFILE') {
       return emptyResult(this.instance.switchLogfile());
     }
-    if (stmt.action === 'CHECKPOINT' || stmt.action === 'FLUSH') {
+    if (stmt.action === 'CHECKPOINT') {
+      // Real checkpoint: advances the SCN and stamps it into the
+      // datafile headers (V$DATAFILE / V$DATAFILE_HEADER read it back).
+      this.instance.performCheckpoint();
+      return emptyResult('System altered.');
+    }
+    if (stmt.action === 'FLUSH') {
       return emptyResult('System altered.');
     }
     if (stmt.action === 'KILL SESSION' || stmt.action === 'DISCONNECT SESSION') {

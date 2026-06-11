@@ -33,18 +33,21 @@ registerView({
         { name: 'SUPPLEMENTAL_LOG_DATA_ALL', dataType: oracleVarchar2(3) },
         { name: 'FORCE_LOGGING', dataType: oracleVarchar2(3) },
         { name: 'FLASHBACK_ON', dataType: oracleVarchar2(18) },
+        { name: 'CURRENT_SCN', dataType: oracleNumber(20) },
+        { name: 'CHECKPOINT_CHANGE#', dataType: oracleNumber(20) },
       ],
       [[
-        1234567890, instance.config.sid, new Date().toISOString(),
+        instance.getDbId(), instance.config.sid, new Date().toISOString(),
         instance.archiveLogMode ? 'ARCHIVELOG' : 'NOARCHIVELOG',
         instance.state === 'OPEN' ? 'READ WRITE' : 'MOUNTED',
         'PRIMARY', 'Linux x86 64-bit', 'CURRENT',
         new Date('2026-01-01T00:00:00Z'),
-        1, 100, new Date('2026-01-01T00:00:00Z'),
+        1, instance.getCheckpointScn(), instance.getCheckpointTime(),
         supp.min, supp.pk ? 'YES' : 'NO', supp.ui ? 'YES' : 'NO',
         supp.fk ? 'YES' : 'NO', supp.all ? 'YES' : 'NO',
         instance.forceLogging ? 'YES' : 'NO',
         instance.flashbackOn ? 'YES' : 'NO',
+        instance.getCurrentScn(), instance.getCheckpointScn(),
       ]]
     );
   },
