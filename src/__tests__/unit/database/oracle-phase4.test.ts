@@ -235,6 +235,66 @@ describe('Window / Analytic Functions', () => {
     });
   });
 
+  describe('PERCENT_RANK and CUME_DIST', () => {
+    test('PERCENT_RANK is (rank-1)/(rows-1) over the whole result', () => {
+      const result = exec(db, `
+        SELECT id, amount, PERCENT_RANK() OVER (ORDER BY amount) AS pr
+        FROM sales
+        ORDER BY amount
+      `);
+      expect(result.rows.length).toBe(8);
+      expect(result.rows[0][2]).toBe(0);
+      expect(result.rows[7][2]).toBe(1);
+      expect(result.rows[1][2]).toBeCloseTo(1 / 7);
+    });
+
+    test('CUME_DIST counts rows preceding or tied, divided by total', () => {
+      // amounts: 800, 900, 1000, 1100, 1200, 1500, 1800, 2000 — all distinct
+      const result = exec(db, `
+        SELECT id, amount, CUME_DIST() OVER (ORDER BY amount) AS cd
+        FROM sales
+        ORDER BY amount
+      `);
+      expect(result.rows[0][2]).toBeCloseTo(1 / 8);
+      expect(result.rows[7][2]).toBe(1);
+    });
+
+    test('CUME_DIST gives tied rows the same (upper-bound) value', () => {
+      exec(db, `INSERT INTO sales VALUES (9, 'Eve', 'East', 800, DATE '2024-03-05')`);
+      const result = exec(db, `
+        SELECT id, amount, CUME_DIST() OVER (ORDER BY amount) AS cd
+        FROM sales
+        ORDER BY amount, id
+      `);
+      // Two rows tied at 800 out of 9 → both 2/9.
+      expect(result.rows[0][2]).toBeCloseTo(2 / 9);
+      expect(result.rows[1][2]).toBeCloseTo(2 / 9);
+    });
+  });
+
+  describe('MIN/MAX over windows on non-numeric data', () => {
+    test('MIN/MAX OVER work on VARCHAR2 columns via Oracle ordering', () => {
+      const result = exec(db, `
+        SELECT id,
+          MIN(rep) OVER (PARTITION BY region) AS first_rep,
+          MAX(rep) OVER (PARTITION BY region) AS last_rep
+        FROM sales
+        WHERE region = 'East'
+        ORDER BY id
+      `);
+      expect(result.rows[0][1]).toBe('Alice');
+      expect(result.rows[0][2]).toBe('Bob');
+    });
+  });
+
+  describe('unknown analytic functions', () => {
+    test('raise ORA-00904 instead of silently returning NULL', () => {
+      expect(() => exec(db, `
+        SELECT id, NO_SUCH_ANALYTIC() OVER (ORDER BY id) AS x FROM sales
+      `)).toThrow(/ORA-00904/);
+    });
+  });
+
   describe('Window frame specifications', () => {
     test('SUM with ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING', () => {
       const result = exec(db, `

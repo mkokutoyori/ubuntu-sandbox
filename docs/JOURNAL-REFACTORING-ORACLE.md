@@ -605,6 +605,34 @@ distincte, init block, constantes, privés depuis SQL/PLSQL, 04067/04068,
 DROP spec/corps, DBA_*, DESCRIBE, erreurs de compilation, multi-ligne `/`) ;
 `unit/database/` : **2619/2619** ; `unit/terminal*` : 451/451 ; ESLint propre.
 
+### 2026-06-11 — Fonctions analytiques : registre + écarts Oracle corrigés
+**Défaillance :** `computeWindowValue` était un switch monolithique de ~190 lignes
+dans la God class `OracleExecutor` (violation Open/Closed : ajouter une fonction
+analytique = modifier l'exécuteur), avec quatre écarts vis-à-vis du vrai Oracle :
+1. `RANK` recalculait le rang **depuis le début de la partition pour chaque
+   ligne** (O(n²) par partition, O(n³) au pire) ;
+2. `MIN`/`MAX` fenêtrés passaient par `Math.min`/`Math.max` — résultat faux
+   (NaN→NULL) sur VARCHAR2 et DATE, alors qu'Oracle ordonne tout type ;
+3. `PERCENT_RANK` et `CUME_DIST` (analytiques standard) n'existaient pas ;
+4. une fonction analytique **inconnue produisait NULL en silence** au lieu
+   d'`ORA-00904: invalid identifier`.
+**Correction :** nouveau `functions/windowFunctions.ts` sur le pattern registre
+déjà établi (`functions/registry`, `views/registry`, `PackageRegistry`) :
+- contrat `WindowPartition` **vectorisé par partition** (une implémentation
+  reçoit la partition ordonnée et rend une valeur par position) — `RANK`,
+  `DENSE_RANK`, `PERCENT_RANK`, `CUME_DIST` deviennent des balayages cumulés
+  O(n) ; l'exécuteur garde le partitionnement, le tri et la résolution de
+  frame (`resolveFramePositions`, désormais en positions pures) ;
+- 16 fonctions enregistrées : ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK,
+  CUME_DIST, NTILE, LAG/LEAD (factorisés en `lagLead(direction)`),
+  FIRST/LAST/NTH_VALUE, COUNT/SUM/AVG et MIN/MAX via le comparateur Oracle
+  trois voies (chaînes et dates correctes) ;
+- nom inconnu → `ORA-00904`, comme le vrai moteur.
+`OracleExecutor` : −160 lignes, le switch disparaît au profit d'une délégation.
+**Validation :** `npx tsc --noEmit` propre ; `oracle-phase4.test.ts` étendu
+(PERCENT_RANK, CUME_DIST avec et sans ex æquo, MIN/MAX OVER sur VARCHAR2,
+ORA-00904) : 73/73 ; `unit/database/` : **2624/2624**.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
