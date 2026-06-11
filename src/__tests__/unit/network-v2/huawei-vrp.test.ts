@@ -691,7 +691,7 @@ describe('Group 6: STP & Switch Internals', () => {
   // ----------------------------------------------------------------
   describe('6.2 MAC Move Detection', () => {
 
-    it('should detect when a MAC address moves to a different port', async () => {
+    it('should detect when a MAC address flaps between two live ports', async () => {
       const sw = new HuaweiSwitch('switch-huawei', 'SW1');
       const pc1 = new LinuxPC('linux-pc', 'PC1');
       const pc2 = new LinuxPC('linux-pc', 'PC2');
@@ -708,15 +708,25 @@ describe('Group 6: STP & Switch Internals', () => {
       // Ping from PC1 to PC2 — MAC of PC1 learned on port 0
       await pc1.executeCommand('ping -c 1 10.0.1.20');
 
-      // Now move PC1 to port 2 (simulate cable swap)
-      c1.disconnect();
-      const c3 = new Cable('c3'); c3.connect(pc1.getPort('eth0')!, sw.getPort('GigabitEthernet0/0/2')!);
-      sw.setSTPState('GigabitEthernet0/0/2', 'forwarding');
+      // A clean cable swap is NOT a MAC move on real hardware: link-down
+      // flushes the entry and the new port re-learns it from scratch.
+      // What real switches count (MAC flapping alarms) is the same MAC
+      // alternating between two LIVE ports — loop or spoof. Simulate it
+      // by emitting a frame carrying PC1's MAC from PC2's port.
+      const pc1Mac = pc1.getPort('eth0')!.getMAC();
+      pc2.getPort('eth0')!.sendFrame({
+        srcMAC: pc1Mac,
+        dstMAC: MACAddress.broadcast(),
+        etherType: 0x0806,
+        payload: {
+          type: 'arp', operation: 'request',
+          senderMAC: pc1Mac,
+          senderIP: new IPAddress('10.0.1.10'),
+          targetMAC: MACAddress.broadcast(),
+          targetIP: new IPAddress('10.0.1.20'),
+        } as never,
+      });
 
-      // Ping again — MAC should move to port 2
-      await pc1.executeCommand('ping -c 1 10.0.1.20');
-
-      // Switch should have logged the MAC move
       expect(sw.getMACMoveCount()).toBeGreaterThanOrEqual(1);
     });
   });

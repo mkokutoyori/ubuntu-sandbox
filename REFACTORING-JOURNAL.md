@@ -616,3 +616,62 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   (35 s) → retour au vieillissement normal, flush réel d'une entrée MAC
   dynamique à 15 s, PortFast silencieux vs port normal (contraste).
 - Suite complète `unit/network-v2` : **289 fichiers, 6886 tests verts**.
+
+---
+
+## Entrée n°12 — 2026-06-11 — Commutation : flush MAC au link-down ; HSRP : resign jamais émis
+
+### Défaillances constatées
+
+1. **Entrées MAC fantômes après une coupure** — quand un port tombait, ses
+   entrées dynamiques restaient dans la table jusqu'à 300 s (balayage de
+   vieillissement) : le commutateur continuait d'envoyer des trames vers un
+   port mort. Un vrai commutateur purge immédiatement les entrées du port.
+2. **Test encodant le bug** — `huawei-vrp.test.ts` (« MAC move ») validait
+   qu'un swap de câble incrémentait le compteur de MAC move ; sur du vrai
+   matériel, un swap propre = link-down → flush → re-apprentissage (pas un
+   move). Les alarmes de MAC flapping ne comptent que les MAC alternant
+   entre deux ports **vivants** (boucle/usurpation).
+3. **HSRP : resign en réception seulement** — relevé à l'entrée n°10 :
+   `advertise()` n'émettait que des hellos. Un actif perdant l'élection
+   (preempt d'un pair, baisse de priorité) restait silencieux : le pair
+   devait attendre le hold timer au lieu de basculer immédiatement
+   (RFC 2281 §5.4.3).
+
+### Correction
+
+- **`Switch`** : `flushDynamicMacsOnPort()` raccordé au handler
+  `port.onLinkChange` existant (indépendant du bus → insensible au rebind) ;
+  événement `switch.mac.flushed` publié. Les entrées statiques et les autres
+  ports ne sont pas touchés.
+- **`HsrpAgent`** : `advertise()` refactorisé en `emit(g, opcode)` ;
+  `sendResign()` émis (1) sur transition active→non-active avec lien vivant
+  (perte d'élection), (2) avant suppression administrative d'un groupe actif
+  (`removeGroup` surchargé). Le resign est edge-triggered et part souvent
+  dans la cascade synchrone de réception où la garde anti-réentrance est
+  tenue : il est envoyé hors garde, sans risque de boucle.
+- Test MAC-move réécrit pour simuler un vrai flap (même MAC émise sur deux
+  ports vivants).
+
+### Fichiers
+
+- `src/network/devices/Switch.ts`
+- `src/network/hsrp/HsrpAgent.ts`
+- `src/__tests__/unit/network-v2/ping-through-switch.test.ts` (+1 test)
+- `src/__tests__/unit/network-v2/fhrp-dataplane.test.ts` (+1 test resign)
+- `src/__tests__/unit/network-v2/huawei-vrp.test.ts` (test corrigé)
+
+### Validation
+
+- Flush : les MAC du port mort disparaissent à l'instant du débranchement,
+  celles du port survivant restent. Resign : l'actif rétrogradé émet un
+  resign observé sur le bus et le pair preemptant devient actif sans
+  attendre le hold timer.
+- Suite complète `unit/network-v2` : **289 fichiers, 6888 tests verts**.
+
+### Note
+
+- `ospf-packet-exchange.test.ts` (8.4) s'est montré flaky une fois sous
+  charge (ExStart au lieu de Full) puis vert en isolation et au run
+  suivant — sensibilité au timing préexistante, sans lien avec ces
+  changements.

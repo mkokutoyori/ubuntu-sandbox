@@ -55,6 +55,15 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     return g;
   }
 
+  /** Unconfiguring an active group resigns first, like real IOS. */
+  override removeGroup(iface: string, group: number): void {
+    const g = this.getGroup(iface, group);
+    if (g && g.state === 'active' && this.linkContext(g).linkUp) {
+      this.sendResign(g);
+    }
+    super.removeGroup(iface, group);
+  }
+
   // HSRP (unlike VRRP/GLBP) also advertises right after a preempt
   // change so the coup is observable immediately.
   override setPreempt(iface: string, group: number, on: boolean): void {
@@ -148,11 +157,23 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
 
   // ── Wire format (UDP/1985, v1 224.0.0.2 / v2 224.0.0.102) ────────
   protected advertise(g: HsrpGroupRuntime): void {
+    this.emit(g, 'hello');
+  }
+
+  /**
+   * RFC 2281 §5.4.3: an active router relinquishing its role sends a
+   * Resign so the standby takes over immediately instead of waiting
+   * out the hold timer.
+   */
+  private sendResign(g: HsrpGroupRuntime): void {
+    this.emit(g, 'resign');
+  }
+
+  private emit(g: HsrpGroupRuntime, opcode: HsrpPacket['opcode']): void {
     const port = this.host.getPort(g.iface);
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    const opcode: HsrpPacket['opcode'] = 'hello';
     const payload: HsrpPacket = {
       type: 'hsrp', version: g.version,
       opcode, state: g.state,
@@ -177,7 +198,11 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       srcMAC: port.getMAC(), dstMAC: multicastMacFor(dstIp),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
-    this.sendGuarded(g, eth);
+    // A resign is edge-triggered (once per active→non-active transition)
+    // and often fires inside the synchronous receive cascade where the
+    // re-entrancy guard is held — send it directly.
+    if (opcode === 'resign') this.host.sendFrame(g.iface, eth);
+    else this.sendGuarded(g, eth);
     this.getBus().publish({
       topic: 'hsrp.packet.sent',
       payload: {
@@ -243,6 +268,13 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       // switches re-learn it and host traffic shifts over.
       if (g.state === 'active') {
         this.gratuitousVipArp(g, hsrpVirtualMac(g.group, g.version));
+      }
+      // RFC 2281 §5.4.3: relinquishing the active role while the link
+      // is still alive (lost election to a preempting peer, priority
+      // drop) is announced with a Resign — the peer takes over now
+      // instead of waiting out the hold timer.
+      if (oldState === 'active' && g.state !== 'active' && linkUp) {
+        this.sendResign(g);
       }
     }
     if (oldActiveIp !== g.activeRouterIp) {

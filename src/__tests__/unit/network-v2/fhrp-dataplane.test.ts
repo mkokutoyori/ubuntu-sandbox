@@ -17,6 +17,7 @@ import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
+import { EventBus } from '@/events/EventBus';
 import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -131,6 +132,38 @@ describe('HSRP data plane', () => {
     // and the takeover gratuitous ARP re-pointed the switch CAM at R2.
     expect(await h1.executeCommand('ping -c 1 10.0.1.254')).toContain('0% packet loss');
   }, 15_000);
+});
+
+describe('HSRP resign (RFC 2281 §5.4.3)', () => {
+  it('an active router losing the election announces a Resign; the peer takes over at once', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.1.1', 1, '10.0.1.254', 200);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.1.2', 1, '10.0.1.254', 100);
+    expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+
+    const resigns: string[] = [];
+    bus.subscribe('hsrp.packet.sent', (e) => {
+      const p = e.payload as { deviceId: string; opcode: string };
+      if (p.opcode === 'resign') resigns.push(p.deviceId);
+    });
+
+    // Drop R1 below the preempting standby: R1 must resign, R2 take over
+    // immediately — no hold-timer wait.
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('interface GigabitEthernet0/0');
+    await r1.executeCommand('standby 1 priority 50');
+    await r1.executeCommand('end');
+
+    expect(resigns).toContain(r1.id);
+    expect(r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+    expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).not.toBe('active');
+  });
 });
 
 describe('VRRP data plane (Huawei VRP)', () => {

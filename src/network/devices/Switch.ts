@@ -511,6 +511,10 @@ export abstract class Switch extends Equipment {
           if (stp === 'listening' || stp === 'learning') {
             this.stpStates.set(portName, 'forwarding');
           }
+        } else {
+          // Real switches purge dynamic entries the moment a link drops —
+          // frames must not chase a dead port for up to 300 s of aging.
+          this.flushDynamicMacsOnPort(portName, 'link-down');
         }
       });
     }
@@ -828,6 +832,27 @@ export abstract class Switch extends Equipment {
 
   clearMACTable(): void {
     this.macTable.clear();
+  }
+
+  /** Purge dynamic entries learned on a port (link-down, err-disable). */
+  private flushDynamicMacsOnPort(portName: string, reason: string): void {
+    let flushed = 0;
+    for (const [key, entry] of this.macTable) {
+      if (entry.port === portName && entry.type === 'dynamic') {
+        this.macTable.delete(key);
+        flushed++;
+      }
+    }
+    if (flushed === 0) return;
+    Logger.debug(this.id, 'switch:mac-flush',
+      `${this.name}: flushed ${flushed} dynamic MAC(s) on ${portName} (${reason})`);
+    this.getBus().publish({
+      topic: 'switch.mac.flushed',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        port: portName, reason, count: flushed,
+      },
+    });
   }
 
   getMACAgingTime(): number {
