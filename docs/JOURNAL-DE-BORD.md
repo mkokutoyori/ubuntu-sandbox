@@ -879,7 +879,67 @@ ajoutés à `oracle-null-three-valued-logic.test.ts` (12 au total).
 
 ---
 
-## Limites connues / dette restante
+## Série 3 (2026-06-11) — Consolidation finale des branches + démantèlement de la god class OracleExecutor (O7)
+
+### Entrée S3.0 — Base de travail : fusion des 4 branches restantes
+
+**Date** : 2026-06-11
+
+Conformément à la consigne, inventaire des 19 branches distantes après
+`fetch --unshallow` (le clone shallow faisait croire à des historiques
+sans ancêtre commun — diagnostic corrigé par rapport à l'entrée 10 :
+après un unshallow, `fix-powershell-tests-M4mpL` est **entièrement
+contenue** dans main, et `general-session-6Nwqo` n'avait qu'**un seul**
+commit d'avance réel) :
+
+- 15 branches déjà contenues dans la base — rien à faire.
+- `general-session-6Nwqo` (1 commit « Match real PowerShell terminal
+  output formatting ») — **mergée**. Conflits Format-Table/Format-List
+  résolus en **combinant** : projection des propriétés calculées
+  (`resolveColumns`, côté HEAD) + rendu délégué au moteur canonique
+  `formatTable`/`formatList` de PSPipeline (côté branche — vraie largeur
+  de colonnes au contenu, vrais alignements `Clé : Valeur`). La largeur
+  en dur de 15 caractères et le rendu liste à espace unique (les deux
+  copies de logique de rendu) disparaissent. `Get-Process` garde les
+  alias octets WS/PM/NPM/VM **et** gagne l'arrondi 2 décimales du CPU.
+  1 test mis à jour (il assertait l'absence d'alignement des deux-points).
+- `friendly-babbage-plxyqc` (3 commits : signaux EndHost morts + ping6
+  RFC 4861) — **mergée** ; conflit BGPEngine résolu en gardant la version
+  unifiée de l'entrée 10 (plus complète : attributs origin/MED/LOCAL_PREF
+  propagés, §5.1.5) ; journal fusionné par union.
+- `keen-babbage-krj5ab` (8 commits : série Oracle O1–O9) — **mergée** ;
+  même résolution BGPEngine.
+
+Validation : database 2650 verts, BGP 17 verts, ping6/host-signals 26
+verts, PowerShell 1880 verts (10 échecs préexistants documentés).
+
+### Entrée S3.1 — O7 (étape 1/n) : extraction de `UserAdminExecutor`
+
+**Date** : 2026-06-11
+
+#### Défaillance visée
+
+`OracleExecutor` : god class de 4 592 lignes, 50+ cas de dispatch, 11
+groupes sémantiques de handlers entremêlés (backlog O7). Démantèlement
+par étapes, chaque étape compilant et passant la suite complète.
+
+#### Correction (étape 1)
+
+- Nouveau module `src/database/oracle/executor/UserAdminExecutor.ts` :
+  CREATE/ALTER/DROP USER, CREATE/DROP ROLE, CREATE/ALTER/DROP PROFILE et
+  l'émission des événements `oracle.user.activity` (utilisée uniquement
+  par ce cycle de vie — elle déménage avec).
+- Dépendances **injectées** (storage, catalog, instance, context,
+  PrivilegeEnforcer, accesseur de session id) — pas de rétro-pointeur
+  vers la god class ; le module est typé `OracleCatalog` directement, ce
+  qui élimine les 8 casts `this.catalog as OracleCatalog` du groupe.
+- `PROTECTED_SCHEMAS` (ORA-28009) extrait en constante de module.
+- OracleExecutor : −240 lignes (4 592 → 4 362), le dispatch délègue.
+
+#### Validation
+
+Suite database complète : **2650 tests verts**, zéro régression ;
+`tsc` : zéro erreur ajoutée (baseline identique avant/après).
 
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.

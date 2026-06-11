@@ -37,6 +37,7 @@ import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
+import { UserAdminExecutor } from './executor/UserAdminExecutor';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -103,6 +104,8 @@ export class OracleExecutor extends BaseExecutor {
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
   private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
+  /** User/role/profile DCL handlers (extracted from this class — O7). */
+  private readonly userAdmin: UserAdminExecutor;
 
   constructor(
     storage: OracleStorage,
@@ -121,6 +124,11 @@ export class OracleExecutor extends BaseExecutor {
       onBegin: txId => this.emitTxnStarted(txId),
       onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
       onRollback: txId => this.emitTxnRolledBack(txId),
+    });
+    this.userAdmin = new UserAdminExecutor({
+      storage, catalog, instance, context,
+      privileges: this.privileges,
+      getSessionId: () => parseInt(this._sessionId, 10) || 0,
     });
   }
 
@@ -510,11 +518,11 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropViewStatement': return this.executeDropView(statement);
       case 'GrantStatement': return this.executeGrant(statement);
       case 'RevokeStatement': return this.executeRevoke(statement);
-      case 'CreateUserStatement': return this.executeCreateUser(statement);
-      case 'AlterUserStatement': return this.executeAlterUser(statement);
-      case 'DropUserStatement': return this.executeDropUser(statement);
-      case 'CreateRoleStatement': return this.executeCreateRole(statement);
-      case 'DropRoleStatement': return this.executeDropRole(statement);
+      case 'CreateUserStatement': return this.userAdmin.executeCreateUser(statement);
+      case 'AlterUserStatement': return this.userAdmin.executeAlterUser(statement);
+      case 'DropUserStatement': return this.userAdmin.executeDropUser(statement);
+      case 'CreateRoleStatement': return this.userAdmin.executeCreateRole(statement);
+      case 'DropRoleStatement': return this.userAdmin.executeDropRole(statement);
       case 'CommitStatement': return this.executeCommit();
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
@@ -605,9 +613,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
       case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');
       case 'DropMaterializedViewStatement': return emptyResult('Materialized view dropped.');
-      case 'CreateProfileStatement': return this.executeCreateProfile(statement);
-      case 'AlterProfileStatement': return this.executeAlterProfile(statement);
-      case 'DropProfileStatement': return this.executeDropProfile(statement);
+      case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
+      case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
+      case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
       case 'AuditStatement': return this.executeAudit(statement);
       case 'NoauditStatement': return this.executeNoaudit(statement);
       case 'CreateAuditPolicyStatement': return this.executeCreateAuditPolicy(statement);
@@ -3131,214 +3139,6 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── User/Role management ──────────────────────────────────────────
 
-  private executeCreateUser(stmt: CreateUserStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE USER');
-    const catalog = this.catalog as OracleCatalog;
-    if (catalog.userExists(stmt.username)) {
-      throw new OracleError(1920, `user name '${stmt.username.toUpperCase()}' conflicts with another user or role name`);
-    }
-    const profileName = (stmt.profile || 'DEFAULT').toUpperCase();
-    if (stmt.profile && !catalog.profileExists(profileName)) {
-      throw new OracleError(2380, `profile ${profileName} does not exist`);
-    }
-    const username = stmt.username.toUpperCase();
-    const authType = stmt.authenticationKind ?? (stmt.password ? 'PASSWORD' : 'PASSWORD');
-    // Reject weak passwords up-front when the chosen profile carries a
-    // PASSWORD_VERIFY_FUNCTION. Real Oracle calls the verifier before
-    // creating the row, so the user is never persisted.
-    if (authType === 'PASSWORD' && stmt.password) {
-      const verifierError = catalog.getSecurityEngine()?.verifyPasswordForProfile(username, stmt.password, profileName);
-      if (verifierError) throw new OracleError(28003, verifierError.replace(/^ORA-28003:\s*/, ''));
-    }
-    catalog.createUser({
-      username,
-      userId: catalog.allocateUserId(),
-      defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
-      temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
-      accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
-      lockDate: stmt.accountLocked ? new Date() : null,
-      expiryDate: null,
-      created: new Date(),
-      profile: profileName,
-      authenticationType: authType,
-      externalName: stmt.externalName,
-    });
-    if (authType === 'PASSWORD' && stmt.password) {
-      catalog.setPassword(username, stmt.password);
-      catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
-    }
-    if ((authType === 'GLOBAL' || authType === 'EXTERNAL') && stmt.externalName) {
-      catalog.setExternalName(username, stmt.externalName);
-    }
-    if (stmt.passwordExpired) {
-      catalog.getSecurityEngine()?.passwords.expirePassword(username);
-    }
-    // Apply tablespace quotas
-    if (stmt.quota && stmt.quota.length > 0) {
-      catalog.getSecurityEngine()?.applyQuotas(username, stmt.quota);
-    }
-    this.storage.ensureSchema(username);
-    this.emitUserActivity(username, 'CREATED', { profile: profileName, authType });
-    return emptyResult('User created.');
-  }
-
-  /** Publish an `oracle.user.activity` event onto the instance bus. */
-  private emitUserActivity(
-    username: string,
-    kind: import('./events').UserActivityKind,
-    detail: Record<string, string | number | boolean>,
-  ): void {
-    this.bus.publish({
-      topic: 'oracle.user.activity',
-      payload: {
-        deviceId: this.deviceId, sid: this.sid,
-        username: username.toUpperCase(), kind,
-        sessionId: parseInt(this._sessionId, 10) || 0,
-        performedBy: this.context.currentSchema,
-        detail, timestamp: new Date(),
-      },
-    });
-  }
-
-  private executeAlterUser(stmt: AlterUserStatement): ResultSet {
-    const catalog = this.catalog as OracleCatalog;
-    const username = stmt.username.toUpperCase();
-    if (!catalog.userExists(username)) {
-      // ALTER USER on a non-existent user is ORA-01918 (user does not
-      // exist) — distinct from the generic ORA-01917 (user or role).
-      throw new OracleError(1918, `user '${username}' does not exist`);
-    }
-
-    // Users may always alter their own password; any other ALTER USER needs ALTER USER priv.
-    const isSelfPasswordChange =
-      username === this.context.currentUser &&
-      stmt.password !== undefined &&
-      !stmt.accountLock && !stmt.accountUnlock && !stmt.passwordExpire &&
-      !stmt.defaultTablespace && !stmt.temporaryTablespace &&
-      !stmt.profile && (!stmt.quota || stmt.quota.length === 0);
-    if (!isSelfPasswordChange) {
-      this.privileges.requireSystemPrivilege('ALTER USER');
-    }
-
-    const engine = catalog.getSecurityEngine();
-    const user = catalog.getUser(username);
-
-    if (stmt.password) {
-      const profileName = user?.profile ?? 'DEFAULT';
-      // IDENTIFIED BY VALUES '<hash>' bypasses password verification —
-      // the value is an opaque verifier already produced by Oracle.
-      if (engine && !stmt.passwordByHash) {
-        const result = engine.changePassword(username, stmt.password, profileName);
-        if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
-      }
-      catalog.setPassword(username, stmt.password);
-      if (user) {
-        user.authenticationType = 'PASSWORD';
-        user.externalName = undefined;
-      }
-      this.emitUserActivity(username, 'PASSWORD_CHANGED', { profile: profileName });
-    } else if (stmt.authenticationKind && user) {
-      user.authenticationType = stmt.authenticationKind;
-      if (stmt.externalName !== undefined) {
-        user.externalName = stmt.externalName;
-        catalog.setExternalName(username, stmt.externalName);
-      } else if (stmt.authenticationKind === 'EXTERNAL') {
-        // Bare IDENTIFIED EXTERNALLY — clear any prior principal.
-        user.externalName = undefined;
-      }
-    }
-    if (stmt.accountLock) {
-      catalog.lockUser(username);
-      engine?.loginTracker.lockAccount(username);
-      this.emitUserActivity(username, 'LOCKED', { by: 'ALTER USER' });
-    }
-    if (stmt.accountUnlock) {
-      catalog.unlockUser(username);
-      engine?.loginTracker.unlockAccount(username);
-      this.emitUserActivity(username, 'UNLOCKED', { by: 'ALTER USER' });
-    }
-    if (stmt.passwordExpire) {
-      engine?.passwords.expirePassword(username);
-      this.emitUserActivity(username, 'PASSWORD_EXPIRED', {});
-      // Do NOT set accountStatus here — dbaUsers() derives the combined status
-      // from PasswordManager + lock state to handle EXPIRED & LOCKED correctly.
-    }
-    if (stmt.defaultTablespace && user) {
-      user.defaultTablespace = stmt.defaultTablespace.toUpperCase();
-    }
-    if (stmt.temporaryTablespace && user) {
-      user.temporaryTablespace = stmt.temporaryTablespace.toUpperCase();
-    }
-    if (stmt.profile) {
-      const profileName = stmt.profile.toUpperCase();
-      if (!catalog.profileExists(profileName)) {
-        throw new OracleError(2380, `profile ${profileName} does not exist`);
-      }
-      if (user) user.profile = profileName;
-    }
-    if (stmt.quota && stmt.quota.length > 0) {
-      engine?.applyQuotas(username, stmt.quota);
-    }
-    if (stmt.defaultRoleSpec) {
-      catalog.setDefaultRoleSpec(username, stmt.defaultRoleSpec);
-    }
-    if (stmt.proxy) {
-      const proxyName = stmt.proxy.proxy.toUpperCase();
-      if (!catalog.userExists(proxyName)) {
-        throw new OracleError(1917, `user or role '${proxyName}' does not exist`);
-      }
-      if (stmt.proxy.mode === 'GRANT') {
-        catalog.grantProxy(username, proxyName, stmt.proxy.role);
-      } else {
-        catalog.revokeProxy(username, proxyName);
-      }
-    }
-    return emptyResult('User altered.');
-  }
-
-  private executeDropUser(stmt: DropUserStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP USER');
-    const catalog = this.catalog as OracleCatalog;
-    const username = stmt.username.toUpperCase();
-    // SYS-supplied schemas cannot be dropped — ORA-28009 / 1031.
-    const PROTECTED = new Set(['SYS', 'SYSTEM', 'PUBLIC', 'XDB', 'OUTLN', 'AUDSYS', 'DBSNMP', 'CTXSYS', 'MDSYS', 'WMSYS']);
-    if (PROTECTED.has(username)) {
-      throw new OracleError(28009, `cannot drop user '${username}': protected schema`);
-    }
-    if (!catalog.userExists(username)) {
-      throw new OracleError(1918, `user '${username}' does not exist`);
-    }
-    catalog.getSecurityEngine()?.dropUserCleanup(username);
-    catalog.dropUser(username);
-    this.emitUserActivity(username, 'DROPPED', {});
-    return emptyResult('User dropped.');
-  }
-
-  private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE ROLE');
-    const catalog = this.catalog as OracleCatalog;
-    const upper = stmt.name.toUpperCase();
-    if (catalog.roleExists(upper) || catalog.userExists(upper)) {
-      throw new OracleError(1921, `role name '${upper}' conflicts with another user or role name`);
-    }
-    const authKind = stmt.authenticationKind ?? 'NONE';
-    catalog.createRole(stmt.name, authKind);
-    if (authKind === 'PASSWORD' && stmt.password) {
-      catalog.setRolePassword(stmt.name, stmt.password);
-    }
-    return emptyResult('Role created.');
-  }
-
-  private executeDropRole(stmt: DropRoleStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP ANY ROLE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.roleExists(stmt.name)) {
-      throw new OracleError(1919, `role '${stmt.name.toUpperCase()}' does not exist`);
-    }
-    catalog.dropRole(stmt.name);
-    return emptyResult('Role dropped.');
-  }
-
   // ── Instance commands ─────────────────────────────────────────────
 
   private executeStartup(stmt: StartupStatement): ResultSet {
@@ -4376,36 +4176,6 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   // ── Profile management ──────────────────────────────────────────
-
-  private executeCreateProfile(stmt: CreateProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2379, `profile ${stmt.profileName.toUpperCase()} already exists`);
-    }
-    catalog.createProfile(stmt.profileName, stmt.limits);
-    return emptyResult('Profile created.');
-  }
-
-  private executeAlterProfile(stmt: AlterProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('ALTER PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
-    }
-    catalog.alterProfile(stmt.profileName, stmt.limits);
-    return emptyResult('Profile altered.');
-  }
-
-  private executeDropProfile(stmt: DropProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
-    }
-    catalog.dropProfile(stmt.profileName);
-    return emptyResult('Profile dropped.');
-  }
 
   // ── Audit / Noaudit ──────────────────────────────────────────────
 
