@@ -8,6 +8,8 @@
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { OracleError } from '../engine/types/DatabaseError';
+import { ListenerControl } from './listener/ListenerControl';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   OracleSignalStore,
@@ -321,7 +323,10 @@ export class OracleInstance {
     }
 
     this._startupTime = now;
-    this.logAlert(`Starting ORACLE instance (normal)`);
+    // STARTUP RESTRICT opens with RESTRICTED SESSION enabled; any other
+    // startup begins unrestricted (ALTER SYSTEM can toggle it later).
+    this._restrictedSession = mode === 'RESTRICT';
+    this.logAlert(`Starting ORACLE instance (${mode === 'RESTRICT' ? 'restrict' : 'normal'})`);
     output.push(`ORACLE instance started.`);
     output.push('');
 
@@ -347,22 +352,8 @@ export class OracleInstance {
     if (mode === 'MOUNT') return output;
 
     // OPEN
-    this.transitionTo('OPEN');
-    this._redoLogGroups[0].status = 'CURRENT';
+    this.markOpen();
     output.push(`Database opened.`);
-    this.logAlert('Database opened');
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$USERS', kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$BACKGROUND', kind: 'started' },
-    });
 
     if (mode === 'RESTRICT') {
       output.push('Database opened in restricted mode.');
@@ -370,6 +361,42 @@ export class OracleInstance {
     }
 
     return output;
+  }
+
+  /** Shared OPEN transition: redo state, alert log, service events. */
+  private markOpen(): void {
+    this.transitionTo('OPEN');
+    this._redoLogGroups[0].status = 'CURRENT';
+    this.logAlert('Database opened');
+    for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
+      this.getBus().publish({
+        topic: 'oracle.service.event',
+        payload: { ...this.ref(), name, kind: 'started' },
+      });
+    }
+  }
+
+  /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
+  mountDatabase(): void {
+    if (this._state === 'MOUNT' || this._state === 'OPEN') {
+      throw new OracleError(1100, 'database already mounted');
+    }
+    if (this._state !== 'NOMOUNT') {
+      throw new OracleError(1034, 'ORACLE not available');
+    }
+    this.transitionTo('MOUNT');
+    this.logAlert('Database mounted');
+  }
+
+  /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
+  openDatabase(): void {
+    if (this._state === 'OPEN') {
+      throw new OracleError(1531, 'a database already open by the instance');
+    }
+    if (this._state !== 'MOUNT') {
+      throw new OracleError(1507, 'database not mounted');
+    }
+    this.markOpen();
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {
@@ -404,6 +431,7 @@ export class OracleInstance {
     }
     this.transitionTo('SHUTDOWN');
     this._startupTime = null;
+    this._restrictedSession = false;
     this._backgroundProcesses = [];
     for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
 
@@ -714,15 +742,23 @@ export class OracleInstance {
 
   // ── Listener ────────────────────────────────────────────────────
 
-  private _listenerState: 'running' | 'stopped' = 'stopped';
+  /** Stateful listener: lifecycle, LREG service registration derived
+   *  from the live instance state, connection counters, transcripts. */
+  private readonly _listener = new ListenerControl({
+    sid: () => this.config.sid,
+    instanceState: () => this._state,
+  });
 
-  get listenerStatus(): 'running' | 'stopped' { return this._listenerState; }
+  get listener(): ListenerControl { return this._listener; }
+
+  get listenerStatus(): 'running' | 'stopped' {
+    return this._listener.running ? 'running' : 'stopped';
+  }
 
   startListener(): string {
-    if (this._listenerState === 'running') {
+    if (!this._listener.start()) {
       return TNS_ERRORS.TNS_01106;
     }
-    this._listenerState = 'running';
     this.logAlert('Listener LISTENER started successfully');
     const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT}))`;
     this.getBus().publish({
@@ -746,33 +782,16 @@ export class OracleInstance {
       `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
       '',
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      `STATUS of the LISTENER`,
-      `------------------------`,
-      `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version ${ver}`,
-      `Start Date                ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
-      `Uptime                    0 days 0 hr. 0 min. 0 sec`,
-      `Trace Level               off`,
-      `Security                  ON: Local OS Authentication`,
-      `SNMP                      OFF`,
-      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
-      `Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
-      `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
-      `Services Summary...`,
-      `Service "${sid}" has 1 instance(s).`,
-      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
-      `The command completed successfully`,
+      ...this._listener.statusBody(),
       '',
       'Listener started successfully.',
     ].join('\n');
   }
 
   stopListener(): string {
-    if (this._listenerState === 'stopped') {
+    if (!this._listener.stop()) {
       return TNS_ERRORS.TNS_12541;
     }
-    this._listenerState = 'stopped';
     this.logAlert('Listener LISTENER stopped');
     this.getBus().publish({
       topic: 'oracle.listener.event',
@@ -796,37 +815,14 @@ export class OracleInstance {
   getListenerStatus(): string {
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
     const port = ORACLE_CONFIG.PORT;
-    const sid = this.config.sid;
-
-    if (this._listenerState === 'stopped') {
-      return [
-        `LSNRCTL for Linux: Version ${ver} - Production`,
-        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-        TNS_ERRORS.TNS_12541,
-        ` ${TNS_ERRORS.TNS_12560}`,
-        `  ${TNS_ERRORS.TNS_00511}`,
-      ].join('\n');
-    }
-    return [
+    const header = [
       `LSNRCTL for Linux: Version ${ver} - Production`,
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      `STATUS of the LISTENER`,
-      `------------------------`,
-      `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version ${ver}`,
-      `Start Date                ${(this._startupTime || new Date()).toISOString().slice(0, 19).replace('T', ' ')}`,
-      `Uptime                    0 days 0 hr. 5 min. 0 sec`,
-      `Trace Level               off`,
-      `Security                  ON: Local OS Authentication`,
-      `SNMP                      OFF`,
-      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
-      `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
-      `Services Summary...`,
-      `Service "${sid}" has 1 instance(s).`,
-      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
-      `The command completed successfully`,
-    ].join('\n');
+    ];
+    const body = this._listener.running
+      ? this._listener.statusBody()
+      : this._listener.notRunningBody();
+    return [...header, ...body].join('\n');
   }
 
   // ── Configuration file content ─────────────────────────────────

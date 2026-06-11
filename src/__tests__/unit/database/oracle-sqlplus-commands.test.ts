@@ -74,13 +74,23 @@ describe('sqlplus user/password — standard connection', () => {
 });
 
 describe('sqlplus user/password@tns_alias — TNS connection', () => {
-  test('CONNECT user/pass@ORCL strips TNS alias and connects', () => {
+  test('CONNECT user/pass@ORCL routes through the running listener', () => {
     cmd('CREATE USER TNSUSER IDENTIFIED BY tns123;');
     cmd('GRANT CREATE SESSION TO TNSUSER;');
+    db.instance.startListener();
 
     const result = cmd('CONNECT TNSUSER/tns123@ORCL');
     expect(result.output).toContain('Connected.');
     expect(session.getCurrentUser()).toBe('TNSUSER');
+    expect(db.instance.listener.established).toBe(1);
+  });
+
+  test('CONNECT @alias without a listener fails with ORA-12541', () => {
+    cmd('CREATE USER TNSUSER2 IDENTIFIED BY tns123;');
+    cmd('GRANT CREATE SESSION TO TNSUSER2;');
+
+    const result = cmd('CONNECT TNSUSER2/tns123@ORCL');
+    expect(result.output.join('\n')).toContain('ORA-12541');
   });
 });
 

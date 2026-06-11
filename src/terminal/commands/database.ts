@@ -51,6 +51,10 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     oracleSystemdSyncs.set(deviceId, systemd);
 
     db.instance.startup('OPEN');
+    // A freshly provisioned server boots with the listener running
+    // (dbstart/systemd would have started it); `lsnrctl stop` still
+    // takes it down realistically (ORA-12541 on @connects).
+    db.instance.startListener();
     installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
   }

@@ -571,6 +571,314 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 
 ---
 
+## Série 2 (2026-06-11) — Focus Oracle
+
+Note de base de travail : conformément à la consigne « merger toutes les
+branches », la branche `claude/awesome-shannon-zyqb1r` (4 commits, série
+du 2026-06-10) a été fusionnée sur `main` à jour. Le conflit sur
+`BGPEngine.ts` a été résolu en **unifiant** les deux apports : propagation
+transitive AS_PATH (branche) + sélection best-path RFC 4271 complète
+weight/LOCAL_PREF/MED (main) ; LOCAL_PREF ne voyage que sur les sessions
+iBGP (§5.1.5). Les branches `fix-powershell-tests-M4mpL` et
+`general-session-6Nwqo` (mai 2026) n'ont **aucun ancêtre commun** avec le
+`main` actuel (historique réécrit) : fusion impossible proprement, et leur
+contenu a déjà été réintégré depuis via PRs — écartées, documenté ici.
+
+### Backlog issu de l'audit Oracle (2026-06-11)
+
+Audit complet du sous-système Oracle (`src/database/`, périphérie
+SQL*Plus/RMAN/lsnrctl) contre le comportement réel d'Oracle Database et
+les principes de design :
+
+| # | Sujet | Référence | Sévérité | Statut |
+|---|-------|-----------|----------|--------|
+| O1 | Auto-commit DDL appliqué à 3 statements sur ~45 (CREATE/DROP TABLE, TRUNCATE seulement) | Oracle SQL Ref « Types of SQL Statements » | Haute | ✅ Corrigé |
+| O2 | DROP INDEX/SEQUENCE/VIEW/TRIGGER/SYNONYM silencieux sur objet inexistant ; CREATE INDEX sans aucune validation | ORA-01418/02289/00942/04080/01434/00904/00955/01452 | Haute | ✅ Corrigé |
+| O3 | ROWNUM affecté après filtrage WHERE (allégation d'audit) | Modèle row-source Oracle | — | ❎ Réfuté (voir O3) |
+| O3b | Résultat vide : en-tête affiché au lieu de `no rows selected` ; erreurs au format `ERROR:` au lieu de `ERROR at line N:` | SQL*Plus réel | Moyenne | ✅ Corrigé |
+| O4 | CURRVAL lisait le compteur global au lieu de la valeur de session | Séquences Oracle | Moyenne | ✅ Corrigé |
+| O5 | ALTER DATABASE MOUNT/OPEN no-ops ; RESTRICT jamais appliqué ; V$INSTANCE.STATUS non conforme | Cycle de vie instance | Moyenne | ✅ Corrigé |
+| O6 | Listener sans état + bug `status.running` sur string (lsnrctl/tnsping cassés) + transcripts copiés 3× | lsnrctl réel | Haute | ✅ Corrigé |
+| O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
+| O8 | Logique booléenne 2 valeurs au lieu de la logique ternaire SQL (LIKE/IN/BETWEEN/NOT) ; LIKE insensible à la casse ; CHECK non appliqués | Sémantique NULL Oracle | Haute | ✅ Corrigé |
+
+### Entrée O1+O2 — DDL : auto-commit centralisé + enforcement des DROP/CREATE INDEX
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Auto-commit DDL incomplet** : Oracle committe implicitement la
+   transaction courante avant **et** après chaque statement DDL (et le
+   pré-commit survit même si le DDL échoue). Le simulateur ne le faisait
+   que pour CREATE TABLE, DROP TABLE et TRUNCATE — trois copies du même
+   `if (this.txn.isActive) this.executeCommit()` dans les handlers. Un
+   `ROLLBACK` après `CREATE INDEX`, `GRANT`, `CREATE SEQUENCE`… annulait
+   à tort les DML précédents.
+2. **DROP silencieux** : `DROP INDEX/SEQUENCE/VIEW/SYNONYM` sur un objet
+   inexistant répondaient « dropped. » — un test validait même ce
+   comportement comme attendu. `DROP TRIGGER` levait une `Error` JS brute
+   (pas un code ORA).
+3. **CREATE INDEX sans validation** : table inexistante, colonne
+   inexistante, nom d'index déjà pris, doublons sous index UNIQUE —
+   tout passait avec « Index created. ».
+
+#### Correction
+
+- `DDL_STATEMENT_TYPES` (ensemble explicite, documenté d'après la
+  classification du SQL Language Reference) + wrapping commit-avant /
+  commit-après **centralisé dans `executeStatement()`** — suppression des
+  trois copies dans les handlers. ALTER SYSTEM / ALTER SESSION /
+  STARTUP / SHUTDOWN / LOCK TABLE / TCL explicitement exclus (ce ne sont
+  pas des DDL : ils ne committent jamais dans le vrai Oracle).
+- Enforcement réel : ORA-00942 (table absente), ORA-00904 (colonne
+  absente), ORA-00955 (nom déjà utilisé), ORA-01452 (doublons sous
+  UNIQUE, clés entièrement NULL exclues comme dans le vrai moteur),
+  ORA-01418 (DROP INDEX), ORA-02289 (DROP SEQUENCE), ORA-00942
+  (DROP VIEW), ORA-04080 (DROP TRIGGER), ORA-01432/01434 (DROP SYNONYM
+  public/privé).
+- Deux tests qui figeaient le comportement défaillant (« drop silencieux »)
+  mis en conformité avec le vrai comportement Oracle.
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-ddl-autocommit.test.ts` (nouveau, 13
+tests), `oracle-object-management.test.ts`.
+
+**Validation** : suite database complète **2609 tests verts** (baseline
+2593 avant la série, zéro échec), terminal 380 verts, ESLint propre sur
+les fichiers touchés.
+
+### Entrée O3 — ROWNUM : allégation réfutée + fidélité de sortie SQL*Plus
+
+**Date** : 2026-06-11
+
+#### Vérification ROWNUM (réfutation)
+
+L'audit initial suspectait que ROWNUM était affecté *après* le filtrage
+WHERE. **Vérification empirique : faux.** Le simulateur implémente déjà le
+modèle row-source réel (`OracleExecutor.executeSelectFromTable`, étape
+WHERE) : le compteur ne s'incrémente que lorsqu'une ligne est acceptée.
+`WHERE ROWNUM > 1` → 0 ligne, `ROWNUM = 2` → 0 ligne, `ROWNUM <= N` →
+N premières lignes, affectation avant ORDER BY. Ce comportement n'était
+couvert par **aucun test** — il est désormais verrouillé par 5 tests de
+régression.
+
+#### Défaillances réellement constatées (et corrigées)
+
+1. **Résultat vide** : le simulateur affichait l'en-tête de colonnes et
+   rien d'autre. Le vrai SQL*Plus n'affiche *pas* d'en-tête et imprime
+   `no rows selected` (supprimé par `SET FEEDBACK OFF`).
+2. **Format d'erreur** : les erreurs de statement sortaient comme
+   `ERROR:\nORA-…`. Le vrai SQL*Plus écho la ligne source fautive, place
+   un astérisque sous la colonne en faute, puis `ERROR at line N:` et le
+   message ORA-/PLS-. Implémenté dans `renderSqlError()` : position
+   exploitée pour `ParserError` (ligne/colonne) et `DatabaseError.position`
+   (offset caractère) ; repli ligne 1 / colonne 1 sinon — comme le client réel.
+3. 18 cas du test access-management validaient l'ancien comportement
+   (en-tête sur vue vide comme preuve d'existence) ; mis à jour pour
+   accepter `no rows selected` — qui prouve toujours l'existence de la vue
+   et des colonnes (sinon ORA-00942/00904).
+
+**Fichiers** : `src/database/oracle/commands/SQLPlusSession.ts`,
+`src/__tests__/unit/database/oracle-rownum-and-error-format.test.ts`
+(nouveau, 9 tests), `oracle-access-management-comprehensive.test.ts`.
+
+**Validation** : database + terminal = **2998 tests verts**, zéro échec.
+
+### Entrée O4 — Séquences : CURRVAL par session, ORA-02289 réels
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **CURRVAL non conforme** : `storage.currVal()` retournait le compteur
+   **global** de la séquence. Si la session B faisait `NEXTVAL` après la
+   session A, le `CURRVAL` de A renvoyait la valeur de B. Dans Oracle,
+   CURRVAL est strictement « la dernière valeur obtenue par MA session ».
+   (Le garde-fou ORA-08002 était, lui, correctement par session.)
+2. **Logique dupliquée** : l'évaluation NEXTVAL/CURRVAL était copiée dans
+   deux branches de `evaluateExpression` (`Identifier` à trois parties et
+   `SequenceExpr`), avec le même montage de clé et les mêmes erreurs.
+3. **Séquence absente** : NEXTVAL/CURRVAL sur séquence inexistante levait
+   une `Error` JS générique (affichée ORA-00900) au lieu d'ORA-02289 ;
+   `CURRVAL` après `DROP SEQUENCE` renvoyait la valeur périmée.
+
+#### Correction
+
+Helpers uniques `sequenceNextVal()` / `sequenceCurrVal()` :
+`_sessionCurrval: Map<string, number>` mémorise la dernière valeur tirée
+par session (l'exécuteur est par session) ; le compteur global reste dans
+le stockage partagé ; ORA-02289 sur séquence absente ou supprimée,
+ORA-08002 avant le premier NEXTVAL de la session. Les deux branches
+d'évaluation délèguent aux helpers (duplication supprimée).
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-sequence-session-state.test.ts`
+(nouveau, 4 tests dont un scénario réellement multi-sessions).
+
+**Validation** : suite database **2622 tests verts**, zéro échec.
+
+### Entrée O5 — Cycle de vie de l'instance : machine à états réelle + RESTRICTED SESSION effectif
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. `ALTER DATABASE OPEN` répondait « Database altered. » **sans changer
+   d'état** ; `ALTER DATABASE MOUNT` n'était même pas traité (no-op du
+   fallback). Le passage manuel NOMOUNT → MOUNT → OPEN — le geste DBA le
+   plus fondamental — était impossible.
+2. `ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION` était un no-op : le
+   setter `setRestrictedSession()` existait, la vue V$INSTANCE le lisait…
+   mais personne ne l'appelait jamais. `STARTUP RESTRICT` affichait
+   « restricted mode » sans activer le mode. Aucun enforcement au logon.
+3. `V$INSTANCE.STATUS` exposait les états internes `NOMOUNT`/`MOUNT` au
+   lieu des valeurs réelles `STARTED`/`MOUNTED` ; `DATABASE_STATUS`
+   affichait `SUSPENDED` hors OPEN (SUSPENDED = ALTER SYSTEM SUSPEND,
+   pas « pas encore ouvert »).
+
+#### Correction
+
+- `OracleInstance.mountDatabase()` / `openDatabase()` : transitions
+  validées — ORA-01100 (déjà monté), ORA-01507 (non monté), ORA-01531
+  (déjà ouvert). Le bloc OPEN de `startup()` factorisé dans `markOpen()`
+  (réutilisé par `ALTER DATABASE OPEN`, événements de service compris).
+- RESTRICT effectif : `STARTUP RESTRICT` active le drapeau, `SHUTDOWN` le
+  réinitialise, `ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION` le
+  bascule, et `OracleDatabase.connect()` refuse avec **ORA-01035** tout
+  utilisateur sans le privilège RESTRICTED SESSION (SYSDBA passe par
+  `connectAsSysdba`, non concerné — comme en vrai).
+- V$INSTANCE : mapping STATUS conforme, DATABASE_STATUS=ACTIVE.
+
+**Fichiers** : `src/database/oracle/OracleInstance.ts`,
+`OracleExecutor.ts`, `OracleDatabase.ts`, `views/v_instance.ts`,
+`src/__tests__/unit/database/oracle-instance-state-machine.test.ts`
+(nouveau, 8 tests).
+
+**Validation** : suite database **2630 tests verts**, zéro échec.
+
+### Entrée O6 — Listener TNS avec état réel (`ListenerControl`)
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Bug fonctionnel pur** : `handleLsnrctl` et `tnsping` testaient
+   `status.running` sur la **string** retournée par
+   `getListenerStatus()` → toujours `undefined` → `lsnrctl status` et
+   `tnsping` répondaient **toujours** TNS-12541, même listener démarré.
+2. **Aucun état réel** : un booléen running/stopped ; `status READY`
+   affiché même instance arrêtée (le vrai listener n'a aucun service
+   enregistré dans ce cas) ; uptime figé « 0 hr. 5 min. » ; Start Date
+   du listener = startup time de l'**instance** ; compteurs
+   `established:0 refused:0` câblés en dur.
+3. **Transcripts copiés 3×** (startListener, getListenerStatus,
+   handleLsnrctl) avec divergences entre les copies.
+4. `CONNECT user/pass@alias` : l'alias était **silencieusement jeté**
+   (« Strip @tns_alias from password ») — aucune différence entre
+   connexion bequeath locale et connexion via listener.
+
+#### Correction
+
+- Nouvelle classe `ListenerControl` (`src/database/oracle/listener/`) —
+  source unique de vérité : cycle de vie (vraie date de démarrage, uptime
+  calculé), **enregistrement dynamique de service dérivé de l'état vivant
+  de l'instance** (down → « The listener supports no services » ;
+  NOMOUNT/MOUNT → BLOCKED ; OPEN → READY), compteurs established/refused
+  réels, et tous les corps de transcripts lsnrctl.
+- `OracleInstance` délègue (API publique conservée, events bus conservés) ;
+  `handleLsnrctl`/`tnsping` consomment `ListenerControl` (bug
+  `status.running` éliminé avec la duplication).
+- `CONNECT user/pass@alias` passe par `listener.attemptConnect()` avec la
+  vraie échelle d'erreurs : ORA-12541 (pas de listener), ORA-12514
+  (service inconnu), ORA-12528 (instance BLOCKED) ; les connexions
+  locales sans @ restent bequeath (pas de listener — comme en vrai).
+- Provisioning : le listener est auto-démarré avec l'instance (équivalent
+  dbstart/systemd) pour préserver l'utilisabilité des labs ;
+  `lsnrctl stop` le coupe réellement. 2 tests qui figeaient l'ancien
+  comportement mis à jour (« strips TNS alias », « listener stopped par
+  défaut »).
+
+**Fichiers** : `src/database/oracle/listener/ListenerControl.ts` (nouveau),
+`OracleInstance.ts`, `OracleCommands.ts`, `SQLPlusSession.ts`,
+`database.ts`, `oracle-listener-state.test.ts` (nouveau, 7 tests),
+`oracle-sqlplus-commands.test.ts`, `oracle-systemd-integration.test.ts`.
+
+**Validation** : database + terminal = **3018 tests verts**, zéro échec ;
+suites SSH LAN utilisant lsnrctl vertes.
+
+### Entrée O8 — Logique ternaire SQL (3VL) + contraintes CHECK réellement appliquées
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Logique à 2 valeurs** : l'évaluateur de conditions collapsait
+   UNKNOWN→false localement, ce qui casse la composition : `NOT (x = 1)`
+   avec x NULL retournait la ligne (Oracle : UNKNOWN, ligne exclue) ;
+   `x NOT IN (2, NULL)` retournait des lignes (Oracle : jamais) ;
+   `NULL LIKE '%'` était vrai (coercion NULL→'') ; `NOT BETWEEN` sur NULL
+   retournait la ligne.
+2. **LIKE insensible à la casse** (flag regex `'i'`) — Oracle LIKE est
+   strictement sensible à la casse.
+3. **CHECK fantômes** : le parseur produisait bien l'AST du CHECK
+   (`checkExpr`), mais `executeCreateTable` le jetait — contrainte
+   table-level enregistrée **sans** expression (jamais validée),
+   contrainte inline de colonne **pas enregistrée du tout**. Tout INSERT
+   violant un CHECK passait.
+4. Noms de contraintes non uppercasés (`c2_chk` stocké tel quel dans le
+   dictionnaire — Oracle uppercase les identifiants non quotés).
+
+#### Correction
+
+- `evaluateCondition3VL()` : logique de Kleene complète — AND/OR/NOT sur
+  {TRUE, FALSE, UNKNOWN}, propagation de NULL dans comparaisons, LIKE,
+  BETWEEN (composition 3VL des deux comparaisons), IN (un NULL de chaque
+  côté rend la comparaison UNKNOWN → `NOT IN` avec NULL ne passe jamais).
+  `evaluateCondition()` reste la frontière WHERE/ON : seul TRUE passe.
+- CHECK : accepte TRUE **et** UNKNOWN (norme SQL — NULL ne viole pas un
+  CHECK), branché via le câblage du `ConstraintValidator`.
+- `serializeExpr` étendu (ParenExpr, NOT, IS NULL, IN, BETWEEN, LIKE)
+  pour sérialiser fidèlement les prédicats CHECK ; `executeCreateTable`
+  enregistre désormais `checkExpression` aux deux niveaux (table et
+  colonne) ; noms de contraintes uppercasés.
+- LIKE sensible à la casse (suppression du flag `'i'`).
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-null-three-valued-logic.test.ts`
+(nouveau, 9 tests).
+
+**Validation** : database **2647 tests verts** + terminal/shell 896,
+zéro échec.
+
+### Entrée O9 — SET AUTOCOMMIT effectif + SEARCH_CONDITION au dictionnaire
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. `SET AUTOCOMMIT ON` : le réglage existait dans SQLPlusSession et était
+   propagé au contexte d'exécution… que l'exécuteur ne lisait jamais.
+   Un ROLLBACK annulait donc des DML censés être déjà committés.
+2. `DBA_/USER_CONSTRAINTS` n'exposait ni `SEARCH_CONDITION` ni
+   `DELETE_RULE` ; les contraintes NOT NULL étaient typées 'O' au lieu de
+   'C' (Oracle les présente comme des CHECK `"COL" IS NOT NULL`).
+
+#### Correction
+
+- Commit immédiat après chaque DML réussi quand `autoCommit` est actif
+  (frontière `executeStatement`, même endroit que l'auto-commit DDL).
+- DBA_CONSTRAINTS : colonnes SEARCH_CONDITION (prédicat CHECK réel issu
+  de la correction O8, condition générée pour NOT NULL) et DELETE_RULE
+  (CASCADE / SET NULL / NO ACTION) ; NOT NULL typé 'C'.
+
+**Fichiers** : `OracleExecutor.ts`, `views/dba_constraints.ts`, tests
+ajoutés à `oracle-null-three-valued-logic.test.ts` (12 au total).
+
+**Validation** : database **2650 tests verts**, zéro échec.
+
+---
+
 ## Limites connues / dette restante
 
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :

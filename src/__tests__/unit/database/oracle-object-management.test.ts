@@ -604,16 +604,24 @@ describe('Error handling', () => {
     expect(() => exec('DROP TABLE nope')).toThrow(/does not exist/);
   });
 
-  test('drop non-existent index is silent (no error)', () => {
-    // Implementation silently ignores missing indexes
-    const result = exec('DROP INDEX no_idx');
-    expect(result.message).toContain('Index dropped.');
+  test('drop non-existent index raises ORA-01418', () => {
+    expect(() => exec('DROP INDEX no_idx')).toThrow(/specified index does not exist/);
   });
 
-  test('drop non-existent sequence is silent (no error)', () => {
-    // Implementation silently ignores missing sequences
-    const result = exec('DROP SEQUENCE no_seq');
-    expect(result.message).toContain('Sequence dropped.');
+  test('drop non-existent sequence raises ORA-02289', () => {
+    expect(() => exec('DROP SEQUENCE no_seq')).toThrow(/sequence does not exist/);
+  });
+
+  test('drop non-existent view raises ORA-00942', () => {
+    expect(() => exec('DROP VIEW no_view')).toThrow(/does not exist/);
+  });
+
+  test('drop non-existent trigger raises ORA-04080', () => {
+    expect(() => exec('DROP TRIGGER no_trg')).toThrow(/does not exist/);
+  });
+
+  test('drop non-existent synonym raises ORA-01434', () => {
+    expect(() => exec('DROP SYNONYM no_syn')).toThrow(/synonym to be dropped does not exist/);
   });
 
   test('alter non-existent table raises ORA-00942', () => {
