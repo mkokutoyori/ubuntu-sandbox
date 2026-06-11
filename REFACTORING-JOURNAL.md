@@ -1227,3 +1227,74 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   (14), eigrp-bgp-cli-integration, cisco-routing-proto,
   routing-engine-consistency, rip (39), redistribution (3) — toutes
   vertes.
+
+---
+
+## Entrée n°25 — 2026-06-11 — DHCP sur le câble + relais Option 82 (RFC 3046)
+
+### Défaillances constatées
+
+1. **DHCP hors-bande** — le DORA ne traversait jamais le réseau simulé :
+   le client découvrait les serveurs par traversée du graphe de topologie
+   (duck-typing sur les équipements) et appelait `processDiscover()`
+   directement sur l'objet serveur. Le routeur jetait les UDP 67/68
+   (« Other UDP ports silently dropped »), `ip helper-address` ne relayait
+   rien, et l'Option 82 était inimplémentable faute de chemin relais réel.
+2. **Broadcast limité refusé sur interface non configurée** — un EndHost
+   sans IP n'acceptait jamais 255.255.255.255 (le test exigeait
+   `myIP && mask`), en violation de RFC 1122 §3.3.6 — exactement le paquet
+   dont dépend un client DHCP (l'OFFER broadcast). C'était le verrou
+   structurel qui rendait le DHCP sur câble impossible.
+3. **`ip dhcp relay information option` no-op** — la commande existait,
+   posait un flag privé jamais lu.
+
+### Correction
+
+- **Client sur câble** (`EndHost.requestLeaseOnWire`) : DISCOVER broadcast
+  réel (0.0.0.0 → 255.255.255.255, UDP 68→67, flag broadcast RFC 2131),
+  écoute UDP 68, REQUEST sur OFFER (Option 54 écho), application du bail
+  sur ACK (IP/masque/passerelle via le même chemin de configuration que le
+  client historique), gestion NAK. Le câble synchrone fait aboutir le DORA
+  complet dans l'appel.
+- **Routeur** : dispatch UDP 67 dans la livraison locale —
+  (a) **serveur** : DISCOVER/REQUEST → moteur DHCPServer existant
+  (sélection de pool par giaddr déjà supportée) → OFFER/ACK/NAK réels,
+  unicast vers giaddr ou broadcast sur l'interface d'entrée, écho de
+  l'Option 82 (RFC 3046 §2.2) ;
+  (b) **relais** : requête reçue sur une interface à `ip helper-address` →
+  giaddr posé (seulement si 0.0.0.0, conforme RFC), **insertion Option 82**
+  (circuit-id = interface d'entrée, remote-id = hostname) si activée,
+  routage vers chaque helper ;
+  (c) **retour relais** : BOOTREPLY dont le giaddr est une de nos
+  interfaces → **strip de l'Option 82** puis broadcast vers le client.
+  Événements : `dhcp.relay.forwarded`, `dhcp.relay.reply-forwarded`,
+  `dhcp.server.option82-received`.
+- **EndHost** : acceptation inconditionnelle du broadcast limité
+  255.255.255.255 (RFC 1122 §3.3.6).
+- **CLI** : le handler existant `ip dhcp relay information option` câblé au
+  flag du serveur (un doublon que j'avais introduit était écrasé par
+  l'enregistrement existant — supprimé, l'existant enrichi) + variante `no`.
+- `DHCPPacket.removeOption()` ajouté (strip propre côté relais).
+
+### Fichiers
+
+- `src/network/devices/EndHost.ts`, `src/network/devices/Router.ts`
+- `src/network/dhcp/DHCPPacket.ts`, `DHCPServer.ts`, `types.ts`
+- `src/network/devices/shells/cisco/CiscoConfigCommands.ts`
+- `src/__tests__/unit/network-v2/dhcp-relay-wire.test.ts` (nouveau, 5 tests)
+
+### Validation (ciblée)
+
+- 5 tests de bout en bout : DORA broadcast direct (bail + ping passerelle),
+  relais inter-subnets avec sélection de pool par giaddr (bail distant +
+  ping du serveur), Option 82 absente par défaut, circuit-id/remote-id/giaddr
+  reçus par le serveur quand activée, Option 82 strippée avant le client.
+- Suites connexes : dhcp_complete, dhcp_fixes, dhcp_cli_gaps,
+  ping-through-switch, acl-icmp-type, host-model-loopback, fhrp-dataplane —
+  **100 tests verts** (le client hors-bande historique reste intact).
+
+### Limite connue
+
+- Le client câble est exposé via `requestLeaseOnWire()` (nouvelle API) ;
+  le flux `dhclient`/UI historique reste sur le chemin hors-bande — la
+  bascule par défaut demanderait une migration des suites existantes.

@@ -104,6 +104,10 @@ export class DHCPPacket implements NetworkPdu {
     this.options.set(code, value);
   }
 
+  removeOption(code: number): void {
+    this.options.delete(code);
+  }
+
   /** Get DHCP message type name from Option 53 */
   getMessageType(): DHCPMessageType | undefined {
     const code = this.options.get(DHCP_OPTION.MESSAGE_TYPE) as number | undefined;

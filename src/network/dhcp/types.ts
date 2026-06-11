@@ -316,6 +316,8 @@ export interface DHCPRelayConfig {
   helperAddresses: Map<string, string[]>;
   /** Forward protocol UDP ports */
   forwardProtocols: Set<number>;
+  /** RFC 3046: insert Option 82 when relaying (IOS `ip dhcp relay information option`) */
+  informationOption?: boolean;
 }
 
 // ─── DHCP Snooping (Switch) ─────────────────────────────────────────

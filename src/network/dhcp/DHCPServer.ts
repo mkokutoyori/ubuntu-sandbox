@@ -960,6 +960,14 @@ export class DHCPServer implements IProtocolEngine {
     return this.relay.helperAddresses.get(iface) || [];
   }
 
+  setRelayInformationOption(on: boolean): void {
+    this.relay.informationOption = on;
+  }
+
+  isRelayInformationOptionEnabled(): boolean {
+    return this.relay.informationOption === true;
+  }
+
   addForwardProtocol(port: number): void {
     this.relay.forwardProtocols.add(port);
   }

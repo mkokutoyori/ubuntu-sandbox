@@ -72,6 +72,7 @@ import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
@@ -1269,6 +1270,8 @@ export abstract class Router extends Equipment {
         const rip = udp.payload as RIPPacket;
         if (!rip || rip.type !== 'rip') return;
         this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
+      } else if (udp.destinationPort === 67) {
+        this.handleDhcpUdp(inPort, ipPkt, udp);
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
@@ -1790,6 +1793,167 @@ export abstract class Router extends Equipment {
   _getNeighborCacheInternal() { return this.ipv6Engine.getNeighborCacheInternal(); }
   /** @internal Used by CLI shells */
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+
+  private handleDhcpUdp(inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    const pkt = udp.payload as DHCPPacket | undefined;
+    if (!pkt || !(pkt instanceof DHCPPacket)) return;
+    if (pkt.op === 1) {
+      const helpers = this.dhcpServer.getHelperAddresses(inPort);
+      if (helpers.length > 0) {
+        this.relayDhcpToHelpers(inPort, pkt, helpers);
+        return;
+      }
+      if (this.dhcpServer.isEnabled()) this.serveDhcpOnWire(inPort, pkt);
+      return;
+    }
+    if (pkt.op === 2) {
+      for (const [name, port] of this.ports) {
+        const ip = port.getIPAddress();
+        if (ip && pkt.giaddr === ip.toString()) {
+          pkt.removeOption(82);
+          this.sendDhcpFrameOnPort(name, pkt, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+          this.getBus().publish({
+            topic: 'dhcp.relay.reply-forwarded',
+            payload: {
+              deviceId: this.id, hostname: this.getHostname(),
+              iface: name, clientMac: pkt.chaddr, assignedIp: pkt.yiaddr,
+            },
+          });
+          return;
+        }
+      }
+    }
+  }
+
+  private relayDhcpToHelpers(inPort: string, pkt: DHCPPacket, helpers: string[]): void {
+    const inIp = this.ports.get(inPort)?.getIPAddress();
+    if (!inIp) return;
+    if (pkt.giaddr === '0.0.0.0') pkt.giaddr = inIp.toString();
+    let option82: { circuitId: string; remoteId: string } | null = null;
+    if (this.dhcpServer.isRelayInformationOptionEnabled()) {
+      option82 = { circuitId: inPort, remoteId: this.getHostname() };
+      pkt.setOption(82, option82);
+    }
+    for (const helper of helpers) {
+      const dst = new IPAddress(helper);
+      const route = this.lookupRoute(dst);
+      if (!route) continue;
+      const egress = this.ports.get(route.iface);
+      const srcIp = egress?.getIPAddress();
+      if (!egress || !srcIp) continue;
+      const udp: UDPPacket = {
+        type: 'udp', sourcePort: 67, destinationPort: 67,
+        length: 8 + 300, checksum: 0, payload: pkt,
+      };
+      const relayed = createIPv4Packet(new IPAddress(pkt.giaddr), dst, IP_PROTO_UDP, 64, udp, 8 + 300);
+      this.sendFrame(route.iface, {
+        srcMAC: egress.getMAC(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: relayed,
+      });
+    }
+    this.getBus().publish({
+      topic: 'dhcp.relay.forwarded',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        iface: inPort, giaddr: pkt.giaddr, helpers: [...helpers],
+        clientMac: pkt.chaddr,
+        circuitId: option82?.circuitId ?? null,
+        remoteId: option82?.remoteId ?? null,
+      },
+    });
+  }
+
+  private serveDhcpOnWire(inPort: string, pkt: DHCPPacket): void {
+    const giaddr = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
+    const option82 = pkt.getOption(82) as { circuitId: string; remoteId: string } | undefined;
+    const type = pkt.getMessageType();
+    if (option82) {
+      this.getBus().publish({
+        topic: 'dhcp.server.option82-received',
+        payload: {
+          deviceId: this.id, hostname: this.getHostname(),
+          messageType: type, clientMac: pkt.chaddr,
+          giaddr: giaddr ?? null,
+          circuitId: option82.circuitId, remoteId: option82.remoteId,
+        },
+      });
+    }
+    let reply: DHCPPacket | null = null;
+    if (type === 'DHCPDISCOVER') {
+      const offer = this.dhcpServer.processDiscover({
+        clientMAC: pkt.chaddr, xid: pkt.xid,
+        clientIdentifier: pkt.chaddr, parameterRequestList: [],
+        giaddr,
+      });
+      if (!offer) return;
+      reply = DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
+        offer.serverIdentifier, {
+          mask: offer.pool.mask ?? '255.255.255.0',
+          router: offer.pool.defaultRouter ?? '0.0.0.0',
+          dns: offer.pool.dnsServers,
+          domainName: offer.pool.domainName ?? undefined,
+          leaseDuration: offer.pool.leaseDuration ?? 86400,
+          renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
+        });
+    } else if (type === 'DHCPREQUEST') {
+      const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
+      const serverId = String(pkt.getOption(54) ?? '');
+      const result = this.dhcpServer.processRequestWithNak({
+        clientMAC: pkt.chaddr, xid: pkt.xid,
+        requestedIP: requested, clientIdentifier: pkt.chaddr,
+        serverIdentifier: serverId, giaddr,
+      } as never);
+      if (!result) return;
+      if (result.type === 'NAK' || !result.binding) {
+        reply = DHCPPacket.createNak(pkt.chaddr, pkt.xid,
+          result.serverIdentifier, result.message ?? 'requested address not available');
+      } else {
+        const pool = this.dhcpServer.getAllPools().values().next().value;
+        reply = DHCPPacket.createAck(pkt.chaddr, pkt.xid,
+          result.binding.ipAddress, result.serverIdentifier, {
+            mask: pool?.mask ?? '255.255.255.0',
+            router: pool?.defaultRouter ?? '0.0.0.0',
+            dns: pool?.dnsServers ?? [],
+            domainName: pool?.domainName ?? undefined,
+            leaseDuration: pool?.leaseDuration ?? 86400,
+          });
+      }
+    }
+    if (!reply) return;
+    if (option82) reply.setOption(82, option82);
+    reply.giaddr = pkt.giaddr;
+    if (giaddr) {
+      const dst = new IPAddress(giaddr);
+      const route = this.lookupRoute(dst);
+      const egress = route ? this.ports.get(route.iface) : undefined;
+      if (!route || !egress) return;
+      this.sendDhcpFrameOnPort(route.iface, reply, dst, MACAddress.broadcast());
+    } else {
+      this.sendDhcpFrameOnPort(inPort, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+    }
+  }
+
+  private sendDhcpFrameOnPort(
+    portName: string,
+    pkt: DHCPPacket,
+    dstIp: IPAddress,
+    dstMac: MACAddress,
+  ): void {
+    const port = this.ports.get(portName);
+    const srcIp = port?.getIPAddress();
+    if (!port || !srcIp) return;
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort: 67,
+      destinationPort: dstIp.toString() === '255.255.255.255' ? 68 : 67,
+      length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: dstMac,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+  }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
 

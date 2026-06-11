@@ -69,6 +69,7 @@ import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 
@@ -555,6 +556,96 @@ export abstract class EndHost extends Equipment {
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  private wireDhcp = new Map<string, {
+    xid: number;
+    state: 'selecting' | 'requesting' | 'bound' | 'failed';
+    serverIp?: string;
+    boundIp?: string;
+    log: string[];
+  }>();
+
+  requestLeaseOnWire(iface: string): string {
+    const port = this.ports.get(iface);
+    if (!port) return `Interface ${iface} not found`;
+    if (!this.udpListeners.has(68)) {
+      this.udpListeners.set(68, (dgram) => this.handleWireDhcpReply(dgram.inPort, dgram.udp));
+    }
+    const xid = Math.floor(Math.random() * 0xffffffff) >>> 0;
+    const session = { xid, state: 'selecting' as const, log: [] as string[] };
+    this.wireDhcp.set(iface, session);
+    const discover = DHCPPacket.createDiscover(port.getMAC().toString(), xid);
+    discover.flags = 0x8000;
+    session.log.push(`DHCPDISCOVER on ${iface} (xid 0x${xid.toString(16)})`);
+    this.sendWireDhcpFrame(iface, discover);
+    const final = this.wireDhcp.get(iface)!;
+    if (final.state === 'bound') {
+      final.log.push(`bound to ${final.boundIp} via ${final.serverIp}`);
+    } else {
+      final.log.push('no DHCPOFFER received');
+    }
+    return final.log.join('\n');
+  }
+
+  getWireDhcpState(iface: string): { state: string; boundIp?: string; serverIp?: string } | undefined {
+    const s = this.wireDhcp.get(iface);
+    return s ? { state: s.state, boundIp: s.boundIp, serverIp: s.serverIp } : undefined;
+  }
+
+  private handleWireDhcpReply(inPort: string, udp: UDPPacket): void {
+    const pkt = udp.payload as DHCPPacket | undefined;
+    if (!pkt || !(pkt instanceof DHCPPacket)) return;
+    const session = this.wireDhcp.get(inPort);
+    if (!session || pkt.xid !== session.xid) return;
+    const port = this.ports.get(inPort);
+    if (!port) return;
+    if (pkt.chaddr.toLowerCase() !== port.getMAC().toString().toLowerCase()) return;
+    const type = pkt.getMessageType();
+    if (type === 'DHCPOFFER' && session.state === 'selecting') {
+      const serverIp = String(pkt.getOption(54) ?? pkt.siaddr);
+      session.state = 'requesting';
+      session.serverIp = serverIp;
+      session.log.push(`DHCPOFFER of ${pkt.yiaddr} from ${serverIp}`);
+      const request = DHCPPacket.createRequest(
+        port.getMAC().toString(), session.xid, pkt.yiaddr, serverIp);
+      this.sendWireDhcpFrame(inPort, request);
+      return;
+    }
+    if (type === 'DHCPACK' && session.state === 'requesting') {
+      const mask = String(pkt.getOption(1) ?? '255.255.255.0');
+      const router = pkt.getOption(3) ? String(pkt.getOption(3)) : null;
+      session.state = 'bound';
+      session.boundIp = pkt.yiaddr;
+      session.log.push(`DHCPACK of ${pkt.yiaddr}`);
+      this.configureInterface(inPort, new IPAddress(pkt.yiaddr), new SubnetMask(mask));
+      if (router) this.setDefaultGateway(new IPAddress(router));
+      this.dhcpInterfaces.add(inPort);
+      this.onDhcpLeaseConfigured(inPort);
+      return;
+    }
+    if (type === 'DHCPNAK') {
+      session.state = 'failed';
+      session.log.push(`DHCPNAK: ${String(pkt.getOption(56) ?? '')}`);
+    }
+  }
+
+  private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 68, destinationPort: 67,
+      length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv4Packet(
+      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
+      IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+  }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
 
@@ -1124,9 +1215,12 @@ export abstract class EndHost extends Equipment {
     const myIP = port.getIPAddress();
 
     const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
-    // Also accept if destination is the broadcast for our subnet
+    // Also accept if destination is the broadcast for our subnet, or the
+    // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
+    // it even on an unconfigured interface (DHCP clients depend on this).
     const mask = port.getSubnetMask();
-    const isBroadcast = myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask);
+    const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
+      || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
 
     if (isForUs || isBroadcast) {
       // ── Firewall: filter incoming packets ──
