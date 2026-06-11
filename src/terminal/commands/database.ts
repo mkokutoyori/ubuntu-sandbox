@@ -36,6 +36,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
+    // Device VFS reader for CREATE PFILE/SPFILE FROM … — injected here so
+    // the database layer never imports network/Equipment directly.
+    db.instance.setDeviceFileReader((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
+      return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+    });
 
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,

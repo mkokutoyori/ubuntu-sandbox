@@ -203,6 +203,21 @@ export class OracleInstance {
     this.reattachRefreshActor();
   }
 
+  /**
+   * Host-filesystem reader injected by the layer that owns the device
+   * (terminal wiring). Lets SQL like CREATE SPFILE FROM PFILE read
+   * init.ora files from the device VFS without the database layer
+   * importing network/Equipment (dependency inversion).
+   */
+  private _deviceFileReader: ((path: string) => string | null) | null = null;
+  setDeviceFileReader(fn: (path: string) => string | null): void {
+    this._deviceFileReader = fn;
+  }
+  /** Read a file from the host device VFS, or null when unavailable. */
+  readDeviceFile(path: string): string | null {
+    return this._deviceFileReader?.(path) ?? null;
+  }
+
   /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */
   private reattachRefreshActor(): void {
     if (this._refreshActor) {

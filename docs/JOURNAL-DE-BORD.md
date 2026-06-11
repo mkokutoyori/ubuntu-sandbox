@@ -964,6 +964,41 @@ Suite database : **2650 tests verts** ; baseline `tsc` inchangée (25
 erreurs préexistantes dans OracleExecutor.ts, toutes antérieures et
 documentées comme bruit de la config `tsconfig.app.json` + TS récent).
 
+### Entrée S3.3 — Deux inversions de couches corrigées + O7 (étape 3/n) : `InstanceAdminExecutor`
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **Couche inversée n°1** : `ORACLE_CONFIG` (chemins ORACLE_HOME,
+   ORA-/TNS-errors, bannières) vivait dans `src/terminal/commands/`
+   alors que 9 de ses 12 consommateurs de production sont le moteur
+   database lui-même. Le moteur DB importait depuis la couche terminal.
+2. **Couche inversée n°2** : `OracleExecutor` importait
+   `network/equipment/Equipment` — le moteur SQL connaissait la
+   topologie réseau — uniquement pour lire un fichier pfile sur le VFS
+   du device (`CREATE SPFILE FROM PFILE='…'`).
+
+#### Corrections
+
+- `OracleConfig.ts` déplacé dans `src/database/oracle/` ; les 19 sites
+  d'import réécrits (terminal et adapters importent désormais depuis la
+  couche database — sens de dépendance correct).
+- Injection de dépendance `OracleInstance.setDeviceFileReader()` (même
+  patron que `setEventBus`/`setLiveSessionProvider`) : l'implémentation
+  à base d'`EquipmentRegistry` est fournie par le câblage terminal
+  (`getOracleDatabase`), là où vit déjà `resolveDevice` des adapters.
+  Plus aucun import réseau dans `src/database/`.
+- O7 étape 3 : `executor/InstanceAdminExecutor.ts` — STARTUP/SHUTDOWN,
+  ALTER SYSTEM, ALTER DATABASE (mode archivelog, MOUNT/OPEN, rename/
+  resize/autoextend des datafiles), CREATE/DROP/ALTER TABLESPACE,
+  CREATE PFILE/SPFILE (+ `parseInitParameters` exporté), diskgroups ASM.
+  OracleExecutor : 4 040 → 3 677 lignes.
+
+#### Validation
+
+Database 2650 + terminal 380 verts ; zéro nouvelle erreur tsc.
+
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
 - **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :
