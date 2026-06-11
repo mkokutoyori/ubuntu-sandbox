@@ -97,6 +97,9 @@ export interface NatTranslationEntry {
 
 // ─── NATEngine ───────────────────────────────────────────────────────────────
 
+/** Lower bound of the PAT ephemeral range (Cisco IOS overload default). */
+const NAT_EPHEMERAL_MIN = 10240;
+
 export class NATEngine {
   private insideIfaces = new Set<string>();
   private outsideIfaces = new Set<string>();
@@ -116,7 +119,7 @@ export class NATEngine {
   private getInsideIfaceForIPFn?: (ip: string) => string | null;
 
   // PAT port counter (RFC 3022: ephemeral range 1024-65535)
-  private nextPort = 10240;
+  private nextPort = NAT_EPHEMERAL_MIN;
   private readonly maxPort = 65535;
 
   // Per-protocol session timeouts (ms)
@@ -377,7 +380,8 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
-          const globalPort = this.allocatePort();
+          const globalPort = this.allocatePort(proto, globalIP);
+          if (globalPort === null) continue; // ephemeral range exhausted
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
@@ -622,10 +626,28 @@ export class NATEngine {
     return true;
   }
 
-  private allocatePort(): number {
-    const p = this.nextPort;
-    this.nextPort = (this.nextPort >= this.maxPort) ? 10240 : this.nextPort + 1;
-    return p;
+  /**
+   * RFC 4787 REQ-1: pick a port not held by a live session for this
+   * (protocol, global IP). The previous linear cursor wrapped straight
+   * onto busy ports and overwrote their reverse mapping — inbound
+   * traffic of the older session was then delivered to the newer host.
+   * Returns null when the whole ephemeral range is in use.
+   */
+  private allocatePort(proto: number, globalIP: string): number | null {
+    const span = this.maxPort - NAT_EPHEMERAL_MIN + 1;
+    for (let i = 0; i < span; i++) {
+      const candidate = this.nextPort;
+      this.nextPort = (this.nextPort >= this.maxPort)
+        ? NAT_EPHEMERAL_MIN : this.nextPort + 1;
+      if (!this.reverseSessions.has(makeKey(proto, globalIP, candidate))) {
+        return candidate;
+      }
+    }
+    this.getBus().publish({
+      topic: 'nat.port.exhausted',
+      payload: { ...this.deviceRef(), protocol: proto, globalIp: globalIP },
+    });
+    return null;
   }
 }
 

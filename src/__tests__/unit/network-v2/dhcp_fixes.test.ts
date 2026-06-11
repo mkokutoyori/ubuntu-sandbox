@@ -18,6 +18,7 @@ import { Logger } from '@/network/core/Logger';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { DHCPClient } from '@/network/dhcp/DHCPClient';
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { EventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -777,5 +778,29 @@ describe('Group 8: Explicit DHCPNAK', () => {
 
     expect(result).toBeNull();
     expect(server.getStats().requests).toBe(0);
+  });
+});
+
+describe('DHCP pool exhaustion observability', () => {
+  it('publishes dhcp.pool.exhausted when no address is left (real IOS logs/traps it)', () => {
+    const server = new DHCPServer();
+    server.setServerIdentifier('10.0.0.1');
+    server.createPool('TINY');
+    // /30: usable host addresses are 10.0.0.1 (excluded: server id is
+    // implicitly free, the pool just hands out usable hosts) and 10.0.0.2.
+    server.configurePoolNetwork('TINY', '10.0.0.0', '255.255.255.252');
+
+    const bus = new EventBus();
+    server.setEventBus(bus);
+    const exhausted: Array<{ pool: string }> = [];
+    bus.subscribe('dhcp.pool.exhausted', (e) => exhausted.push(e.payload as { pool: string }));
+
+    // Drain the pool with distinct clients.
+    for (let i = 1; i <= 4; i++) {
+      server.processDiscover({ clientMAC: `AA:BB:CC:DD:EE:0${i}`, xid: i });
+    }
+
+    expect(exhausted.length).toBeGreaterThanOrEqual(1);
+    expect(exhausted[0].pool).toBe('TINY');
   });
 });

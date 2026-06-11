@@ -734,3 +734,46 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   l'expiration (hold timer) de son entrée standby périmée avant de se
   ré-élire standby — fidèle au comportement réel, qui prend aussi un
   cycle de ré-élection.
+
+---
+
+## Entrée n°14 — 2026-06-11 — NAT/PAT : collision de ports au wraparound ; DHCP : épuisement de pool silencieux
+
+### Défaillances constatées
+
+1. **PAT : réutilisation de ports vivants** — `NATEngine.allocatePort()`
+   était un simple compteur linéaire : au retour à 10240 (wraparound),
+   il redistribuait des ports **encore détenus par des sessions
+   actives**. Le `reverseSessions.set()` écrasait alors la session
+   ancienne : son trafic entrant était traduit vers le mauvais hôte
+   interne (violation RFC 4787 REQ-1, et faille de confidentialité —
+   le trafic d'un hôte arrive chez un autre).
+2. **DHCP : épuisement de pool invisible** — `findAvailableIP()` à null
+   → retour silencieux, aucun log ni événement. Un vrai IOS émet
+   `%DHCPD-4-PING_CONFLICT`/log d'épuisement ; l'opérateur du simulateur
+   ne découvrait l'épuisement qu'en voyant les clients sans bail.
+
+### Correction
+
+- **`allocatePort(proto, globalIP)`** : balaye la plage éphémère en
+  sautant les ports présents dans `reverseSessions` pour ce
+  (protocole, IP globale) ; plage entièrement occupée → `null`
+  (la règle est sautée) + événement `nat.port.exhausted`. Constante
+  nommée `NAT_EPHEMERAL_MIN` (fin du magic number dupliqué).
+- **`DHCPServer.processDiscover`** : pool plein → événement
+  `dhcp.pool.exhausted` (nom du pool, réseau, MAC demandeuse) + log
+  d'avertissement, avant le retour null existant.
+
+### Fichiers
+
+- `src/network/devices/router/NATEngine.ts`
+- `src/network/dhcp/DHCPServer.ts`
+- `src/__tests__/unit/network-v2/nat-pat.test.ts` (+1 test wraparound)
+- `src/__tests__/unit/network-v2/dhcp_fixes.test.ts` (+1 test épuisement)
+
+### Validation
+
+- Test wraparound : curseur forcé sur le port d'une session vivante →
+  le nouvel allocataire reçoit un autre port et la traduction inverse
+  de la session originale reste intacte.
+- Suite complète `unit/network-v2` : **289 fichiers, 6893 tests verts**.

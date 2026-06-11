@@ -31,6 +31,7 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { DHCP_CONSTANTS } from '../core/constants';
+import { Logger } from '../core/Logger';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   DHCPServerSignalStore,
@@ -470,6 +471,21 @@ export class DHCPServer implements IProtocolEngine {
 
       // Allocate a new IP and create a pending offer
       const ip = this.findAvailableIP(pool, params.clientMAC);
+      if (!ip) {
+        // Real IOS/VRP raise a log/trap on pool exhaustion; a silent
+        // null left operators discovering it from user complaints.
+        this.getBus().publish({
+          topic: 'dhcp.pool.exhausted',
+          payload: {
+            ...this.deviceRef(),
+            pool: pool.name,
+            network: pool.network,
+            clientMac: String(params.clientMAC),
+          },
+        });
+        Logger.warn(this.deviceId, 'dhcp:pool-exhausted',
+          `${this.hostname}: DHCP pool '${pool.name}' exhausted — no free address for ${params.clientMAC}`);
+      }
       if (ip) {
         // Reserve the IP (RFC 2131 §3.1.2)
         this.pendingOffers.set(ip, {
