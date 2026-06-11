@@ -633,6 +633,36 @@ déjà établi (`functions/registry`, `views/registry`, `PackageRegistry`) :
 (PERCENT_RANK, CUME_DIST avec et sans ex æquo, MIN/MAX OVER sur VARCHAR2,
 ORA-00904) : 73/73 ; `unit/database/` : **2624/2624**.
 
+### 2026-06-11 — Data Pump réel (expdp/impdp) + adrci branché sur l'alert log
+**Défaillance :** deux outils Oracle du terminal mentaient sur l'état simulé :
+1. `impdp` affichait « imported … rows » **sans rien restaurer** : le fichier
+   dump écrit par `expdp` était un marqueur cosmétique (`[ORACLE DATA PUMP
+   DUMP - n tables…]`), l'import se contentait de re-parser ce texte pour
+   afficher des compteurs. Le workflow DBA export → drop → import — central
+   dans un lab — était donc factice. `REMAP_SCHEMA` n'était qu'un message,
+   `TABLE_EXISTS_ACTION` n'existait pas.
+2. `adrci SHOW ALERT` répondait « No alert log entries found in simulated
+   environment » alors que l'instance maintient un véritable alert log
+   (`logAlertEvent`/`getAlertLog`), déjà matérialisé sur le VFS par
+   `OracleFilesystemSync`.
+**Correction :**
+- Nouveau `src/database/oracle/datapump/DataPumpEngine.ts` (sous-système
+  conforme à l'arborescence oracle/) : `export()` sérialise métadonnées de
+  tables (colonnes, contraintes, tablespace) et lignes (Dates encodées pour
+  le round-trip JSON) ; `import()` recrée réellement les tables via l'API
+  storage avec la sémantique Oracle : `TABLE_EXISTS_ACTION`
+  SKIP (défaut, `ORA-31684`) / APPEND / TRUNCATE / REPLACE, `REMAP_SCHEMA`
+  effectif, utilisateur cible inexistant → `ORA-39083`+`ORA-01918` par objet
+  (pas de création magique de schéma) ; FULL exclut les schémas dictionnaire.
+- `OracleCommands` : expdp écrit le dump réel sur le VFS (le fichier EST le
+  transport), impdp le relit (`ORA-39000/39143` si contenu étranger), les
+  deux journalisent les lignes par table dans le logfile.
+- `adrci SHOW ALERT [-TAIL n]` lit le vrai alert log de l'instance.
+**Validation :** `linux-commands-and-oracle-tools.test.ts` étendu (round-trip
+export→drop→import avec comptes de lignes, SKIP/APPEND/TRUNCATE, REMAP vers
+user existant/absent, dump étranger rejeté, adrci marqueur + -TAIL) : 66/66 ;
+suites adjacentes (filesystem, ssh-lan) : 77/77 ; `npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

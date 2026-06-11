@@ -417,9 +417,10 @@ describe('Oracle expdp', () => {
     expect(output).toContain('DEPARTMENTS');
     expect(output).toContain('successfully completed');
 
-    // Verify dump file exists on VFS
+    // Verify dump file exists on VFS and carries real table payloads
     const dumpContent = await server.executeCommand('cat /u01/app/oracle/admin/ORCL/dpdump/hr.dmp');
-    expect(dumpContent).toContain('ORACLE DATA PUMP DUMP');
+    expect(dumpContent).toContain('ORACLE-SIM-DATAPUMP');
+    expect(dumpContent).toContain('EMPLOYEES');
 
     // Verify log file exists
     const logContent = await server.executeCommand('cat /u01/app/oracle/admin/ORCL/dpdump/hr_exp.log');
@@ -468,9 +469,9 @@ describe('Oracle impdp', () => {
     const expLines: string[] = [];
     handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=hr.dmp'], (text) => expLines.push(text));
 
-    // Then import
+    // Then import — tables still exist, so REPLACE is needed to reload.
     const impLines: string[] = [];
-    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=hr.dmp', 'LOGFILE=hr_imp.log'], (text) => impLines.push(text));
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=hr.dmp', 'LOGFILE=hr_imp.log', 'TABLE_EXISTS_ACTION=REPLACE'], (text) => impLines.push(text));
     const output = impLines.join('\n');
     expect(output).toContain('successfully completed');
     expect(output).toContain('imported "HR"');
@@ -489,6 +490,127 @@ describe('Oracle impdp', () => {
     handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=remap.dmp', 'REMAP_SCHEMA=HR:HR_COPY'], (text) => impLines.push(text));
     const output = impLines.join('\n');
     expect(output).toContain('Remapping schema "HR" to "HR_COPY"');
+  });
+
+  it('export → drop → import actually restores table data', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    const originalRows = db.storage.getRows('HR', 'EMPLOYEES').length;
+    expect(originalRows).toBeGreaterThan(0);
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=restore.dmp'], () => {});
+    db.storage.dropTable('HR', 'EMPLOYEES');
+    expect(db.storage.tableExists('HR', 'EMPLOYEES')).toBe(false);
+
+    const impLines: string[] = [];
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=restore.dmp'], (text) => impLines.push(text));
+    expect(impLines.join('\n')).toContain('imported "HR"."EMPLOYEES"');
+    expect(db.storage.tableExists('HR', 'EMPLOYEES')).toBe(true);
+    expect(db.storage.getRows('HR', 'EMPLOYEES').length).toBe(originalRows);
+  });
+
+  it('TABLE_EXISTS_ACTION defaults to SKIP with ORA-31684 on existing tables', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    const before = db.storage.getRows('HR', 'EMPLOYEES').length;
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=skip.dmp'], () => {});
+    const impLines: string[] = [];
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=skip.dmp'], (text) => impLines.push(text));
+
+    expect(impLines.join('\n')).toContain('ORA-31684');
+    expect(db.storage.getRows('HR', 'EMPLOYEES').length).toBe(before);
+  });
+
+  it('TABLE_EXISTS_ACTION=APPEND adds the dump rows to existing data', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    const before = db.storage.getRows('HR', 'EMPLOYEES').length;
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=append.dmp'], () => {});
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=append.dmp', 'TABLE_EXISTS_ACTION=APPEND'], () => {});
+
+    expect(db.storage.getRows('HR', 'EMPLOYEES').length).toBe(before * 2);
+  });
+
+  it('TABLE_EXISTS_ACTION=TRUNCATE replaces existing rows with the dump rows', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    const before = db.storage.getRows('HR', 'EMPLOYEES').length;
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=trunc.dmp'], () => {});
+    // Mutate the live table, then import: the dump version must win.
+    db.storage.insertRow('HR', 'EMPLOYEES', db.storage.getRows('HR', 'EMPLOYEES')[0].slice());
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=trunc.dmp', 'TABLE_EXISTS_ACTION=TRUNCATE'], () => {});
+
+    expect(db.storage.getRows('HR', 'EMPLOYEES').length).toBe(before);
+  });
+
+  it('REMAP_SCHEMA into an existing user clones the tables there', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    const { executor } = db.connectAsSysdba();
+    db.executeSql(executor, 'CREATE USER hr_copy IDENTIFIED BY secret');
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=clone.dmp'], () => {});
+    const impLines: string[] = [];
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=clone.dmp', 'REMAP_SCHEMA=HR:HR_COPY'], (text) => impLines.push(text));
+
+    expect(impLines.join('\n')).toContain('imported "HR_COPY"."EMPLOYEES"');
+    expect(db.storage.getRows('HR_COPY', 'EMPLOYEES').length)
+      .toBe(db.storage.getRows('HR', 'EMPLOYEES').length);
+  });
+
+  it('REMAP_SCHEMA into a missing user fails with ORA-01918', async () => {
+    const { handleExpdp, handleImpdp } = await import('@/terminal/commands/OracleCommands');
+
+    handleExpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=miss.dmp'], () => {});
+    const impLines: string[] = [];
+    handleImpdp(server, ['sys/oracle', 'SCHEMAS=HR', 'DUMPFILE=miss.dmp', 'REMAP_SCHEMA=HR:NOBODY'], (text) => impLines.push(text));
+
+    const output = impLines.join('\n');
+    expect(output).toContain('ORA-39083');
+    expect(output).toContain("ORA-01918: user 'NOBODY' does not exist");
+  });
+
+  it('impdp rejects a dump file with foreign content', async () => {
+    const { handleImpdp } = await import('@/terminal/commands/OracleCommands');
+    server.writeFileFromEditor('/u01/app/oracle/admin/ORCL/dpdump/garbage.dmp', 'not a dump');
+
+    const impLines: string[] = [];
+    handleImpdp(server, ['sys/oracle', 'DUMPFILE=garbage.dmp'], (text) => impLines.push(text));
+    expect(impLines.join('\n')).toContain('ORA-39000');
+  });
+});
+
+describe('Oracle adrci', () => {
+  beforeEach(() => {
+    initOracleFilesystem(server);
+  });
+
+  it('SHOW ALERT surfaces the live instance alert log', async () => {
+    const { handleAdrci } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    db.instance.logAlertEvent('Test marker entry for adrci');
+
+    const lines: string[] = [];
+    handleAdrci(server, ['show', 'alert'], (text) => lines.push(text));
+    const output = lines.join('\n');
+    expect(output).toContain('ADR Home');
+    expect(output).toContain('Test marker entry for adrci');
+  });
+
+  it('SHOW ALERT -TAIL n limits the output to the last n entries', async () => {
+    const { handleAdrci } = await import('@/terminal/commands/OracleCommands');
+    const db = getOracleDatabase(server.getId());
+    db.instance.logAlertEvent('older entry');
+    db.instance.logAlertEvent('newest entry');
+
+    const lines: string[] = [];
+    handleAdrci(server, ['show', 'alert', '-tail', '1'], (text) => lines.push(text));
+    const output = lines.join('\n');
+    expect(output).toContain('newest entry');
+    expect(output).not.toContain('older entry');
   });
 });
 
