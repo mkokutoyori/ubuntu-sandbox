@@ -17,7 +17,7 @@ import type {
   NeighborFsmState, RibRoute, RoutingPeer,
 } from '../routing/types';
 import {
-  selectBestPath, BGP_DEFAULT_LOCAL_PREF,
+  selectBestPath, BGP_DEFAULT_LOCAL_PREF, BGP_WEIGHT_LOCAL,
   type BgpPathCandidate,
 } from './bestPath';
 
@@ -132,26 +132,74 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     // has connected (the local route always wins in the RIB).
     const ownNetworks = new Set(this.deviceCtx.connectedNetworks()
       .map((c) => `${c.network}/${c.mask}`));
+    return this.collectRib(peers, new Set())
+      .filter((e) => e.source !== 'originated'
+        && !ownNetworks.has(`${e.route.network}/${e.route.mask}`))
+      .map((e) => e.route);
+  }
 
-    const candidatesByPrefix = new Map<string, BgpPathCandidate[]>();
+  /**
+   * Local BGP RIB (Loc-RIB) — originated prefixes plus routes learned
+   * transitively from Established peers, reduced to the single best
+   * path per prefix.
+   *
+   * RFC 4271 semantics implemented here:
+   *  - §6.3 loop prevention: an advertisement whose AS_PATH already
+   *    contains our own ASN is rejected on receipt.
+   *  - §9.1.1 decision process: candidates for the same prefix compete
+   *    through the full attribute ladder (weight, LOCAL_PREF, local
+   *    origination, AS_PATH length, origin, MED, eBGP>iBGP, router-id,
+   *    peer IP) via `selectBestPath`.
+   *  - iBGP split-horizon (§9.2.1.1): routes learned from an iBGP peer are
+   *    not re-advertised to other iBGP peers (full-mesh assumption).
+   *
+   * `visited` keeps the engine-graph walk linear and guards iBGP cycles,
+   * which empty AS_PATHs cannot break on their own.
+   */
+  private collectRib(peers: RoutingPeer[], visited: Set<BGPEngine>): BgpRibEntry[] {
+    if (visited.has(this)) return [];
+    visited.add(this);
+
+    const byPrefix = new Map<string, BgpRibEntry[]>();
+    const consider = (entry: BgpRibEntry): void => {
+      const key = `${entry.route.network}/${entry.route.mask}`;
+      const group = byPrefix.get(key);
+      if (group) group.push(entry);
+      else byPrefix.set(key, [entry]);
+    };
+
+    for (const pre of this.originatedPrefixes()) {
+      consider({
+        route: {
+          network: pre.network, mask: pre.mask,
+          nextHop: null, iface: '',
+          protocol: 'bgp', adminDistance: EBGP_AD, metric: 0,
+        },
+        source: 'originated',
+        weight: BGP_WEIGHT_LOCAL, localPref: this.config.defaultLocalPref,
+        locallyOriginated: true, asPath: [], origin: 'igp', med: 0,
+        isEbgp: false,
+        peerRouterId: this.config.routerId ?? '0.0.0.0', peerIp: '0.0.0.0',
+      });
+    }
     for (const [ip, cfg] of this.config.neighbors) {
       const { state, peer, peerEng } = this.sessionState(ip, peers);
       if (state !== 'Established' || !peer || !peerEng) continue;
       const isEbgp = (cfg.remoteAs ?? peerEng.asn) !== this.config.asn;
-      const ad = isEbgp ? EBGP_AD : IBGP_AD;
-      // 1-hop model: an eBGP peer prepends its own AS when advertising
-      // (RFC 4271 §5.1.2); iBGP re-advertises with an empty path.
-      const asPath = isEbgp ? [peerEng.asn] : [];
       const peerCfg = peerEng.getConfig();
-      for (const pre of peerEng.originatedPrefixes()) {
-        const key = `${pre.network}/${pre.mask}`;
-        if (ownNetworks.has(key)) continue;
-        const candidate: BgpPathCandidate = {
+      // Each peer branch gets its own copy of the walk: `visited` must
+      // prevent cycles along a single advertisement path, not prune
+      // legitimate alternative paths through sibling neighbors.
+      for (const adv of peerEng.advertisedTo(this.config.asn, new Set(visited))) {
+        if (adv.asPath.includes(this.config.asn)) continue; // §6.3 loop check
+        consider({
           route: {
-            network: pre.network, mask: pre.mask,
+            network: adv.network, mask: adv.mask,
             nextHop: peer.remoteIp, iface: peer.localIface,
-            protocol: 'bgp', adminDistance: ad, metric: 0,
+            protocol: 'bgp',
+            adminDistance: isEbgp ? EBGP_AD : IBGP_AD, metric: 0,
           },
+          source: isEbgp ? 'ebgp' : 'ibgp',
           weight: cfg.weight ?? 0,
           // LOCAL_PREF only travels inside the AS (RFC 4271 §5.1.5);
           // eBGP paths compete with the local default.
@@ -159,24 +207,75 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
             ? this.config.defaultLocalPref
             : peerCfg.defaultLocalPref,
           locallyOriginated: false,
-          asPath,
+          asPath: adv.asPath,
           origin: 'igp',                 // `network` statements are IGP
           med: 0,
           isEbgp,
           peerRouterId: peerCfg.routerId ?? ip,
           peerIp: ip,
-        };
-        const group = candidatesByPrefix.get(key);
-        if (group) group.push(candidate);
-        else candidatesByPrefix.set(key, [candidate]);
+        });
       }
     }
 
-    const routes: RibRoute[] = [];
-    for (const group of candidatesByPrefix.values()) {
-      const best = selectBestPath(group);
-      if (best) routes.push(best.route);
+    const best: BgpRibEntry[] = [];
+    for (const group of byPrefix.values()) {
+      const winner = selectBestPath(group);
+      if (winner) best.push(winner as BgpRibEntry);
     }
-    return routes;
+    return best;
   }
+
+  /**
+   * Routes this router advertises to a peer in `receiverAsn` — only the
+   * best path per prefix (§9.1.3), with the AS_PATH the receiver would
+   * see: prepended with our ASN for eBGP, unchanged for iBGP (§5.1.2).
+   */
+  private advertisedTo(receiverAsn: number, visited: Set<BGPEngine>): BgpAdvertisedRoute[] {
+    const ibgpReceiver = receiverAsn === this.config.asn;
+    const out: BgpAdvertisedRoute[] = [];
+    for (const entry of this.collectRib(this.locatePeers(), visited)) {
+      if (ibgpReceiver && entry.source === 'ibgp') continue; // split-horizon
+      out.push({
+        network: entry.route.network, mask: entry.route.mask,
+        asPath: ibgpReceiver
+          ? [...entry.asPath]
+          : [this.config.asn, ...entry.asPath],
+      });
+    }
+    return out;
+  }
+
+  /** BGP table rows for `show ip bgp` — real paths, no fabrication. */
+  getBgpTable(): BgpTableRow[] {
+    if (!this.isEnabled()) return [];
+    return this.collectRib(this.locatePeers(), new Set()).map((e) => ({
+      network: e.route.network, mask: e.route.mask,
+      nextHop: e.route.nextHop,
+      asPath: [...e.asPath],
+      weight: e.weight,
+      origin: 'i' as const,
+    })).sort((a, b) => String(a.network).localeCompare(String(b.network)));
+  }
+}
+
+/** A route as advertised on the wire to a given receiver. */
+export interface BgpAdvertisedRoute {
+  network: IPAddress;
+  mask: SubnetMask;
+  asPath: number[];
+}
+
+/** One row of the local BGP table (for `show ip bgp`). */
+export interface BgpTableRow {
+  network: IPAddress;
+  mask: SubnetMask;
+  nextHop: IPAddress | null;
+  asPath: number[];
+  weight: number;
+  origin: 'i';
+}
+
+/** A best-path candidate annotated with where it came from. */
+interface BgpRibEntry extends BgpPathCandidate {
+  source: 'originated' | 'ebgp' | 'ibgp';
 }
