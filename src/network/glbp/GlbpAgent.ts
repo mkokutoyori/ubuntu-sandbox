@@ -181,6 +181,22 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       existing.priority = hello.priority;
       existing.weighting = hello.weighting;
       existing.lastHeardMs = Date.now();
+      // A live owner forwards for its virtual MAC: hearing its hello
+      // moves the AVF out of listen/init, so the AVG's load balancing
+      // actually rotates over every forwarder (and revives it after a
+      // hold-time expiry once the peer comes back).
+      if (existing.state === 'listen' || existing.state === 'init') {
+        const oldState = existing.state;
+        existing.state = 'active';
+        this.getBus().publish({
+          topic: 'glbp.avf.state.changed',
+          payload: {
+            ...this.deviceRef(),
+            iface: g.iface, group: g.group,
+            forwarderNumber: existing.forwarderNumber, oldState, newState: 'active',
+          },
+        });
+      }
     }
   }
 
@@ -224,14 +240,16 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     for (; n <= MAX_FORWARDERS; n++) if (!g.forwarders.has(n)) break;
     if (n > MAX_FORWARDERS) return;
     const vmac = glbpVirtualMac(g.group, n);
+    // The AVG only assigns a forwarder to an owner it just heard from
+    // (hello/request receipt), so the owner is alive and forwarding:
+    // start the AVF active so load balancing rotates over it. expireDue
+    // demotes it to init if the owner goes silent past hold time.
     const f: GlbpForwarder = {
       forwarderNumber: n, vmac, ownerIp,
       priority: 100, weighting: 100,
-      state: 'listen', lastHeardMs: Date.now(),
+      state: 'active', lastHeardMs: Date.now(),
     };
     g.forwarders.set(n, f);
-    const myIp = this.myIpFor(g);
-    if (ownerIp === myIp) f.state = 'active';
     this.getBus().publish({
       topic: 'glbp.avf.assigned',
       payload: {
@@ -244,6 +262,26 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
 
   private myIpFor(g: GlbpGroupRuntime): string {
     return this.linkContext(g).myIp;
+  }
+
+  // ── Data-plane hooks (FhrpDataPlane) ─────────────────────────────
+  // The AVG answers ARP for the VIP, handing out AVF virtual MACs per
+  // the group's load-balancing mode; each AVF forwards the frames
+  // addressed to its own virtual MAC.
+  protected vipArpMac(g: GlbpGroupRuntime, requesterIp: string): string | null {
+    if (g.avgState !== 'active') return null;
+    return this.nextForwarderMacForClient(g.iface, g.group, requesterIp);
+  }
+
+  protected ownedVirtualMacs(g: GlbpGroupRuntime): string[] {
+    const myIp = this.myIpFor(g);
+    return [...g.forwarders.values()]
+      .filter(f => f.ownerIp === myIp && f.state === 'active')
+      .map(f => f.vmac);
+  }
+
+  protected isVipOwner(g: GlbpGroupRuntime): boolean {
+    return g.avgState === 'active';
   }
 
   // ── Wire format (UDP/3222, 224.0.0.102) ──────────────────────────

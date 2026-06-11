@@ -22,6 +22,12 @@ export interface StpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   onForwardStateChanged(portName: string, state: StpForwardState): void;
   onStpBpduGuardErrDisable?(portName: string, senderMac: string): void;
+  /**
+   * Topology-change fast aging (802.1D-1998 §8.3.5): while the TC flag
+   * circulates, dynamic MAC entries age with `agingSec` (forward delay)
+   * instead of the configured default; null restores the default.
+   */
+  onTopologyChangeAging?(agingSec: number | null): void;
 }
 
 export class StpAgent extends ReactiveAgentBase {
@@ -29,12 +35,25 @@ export class StpAgent extends ReactiveAgentBase {
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
+  private readonly portFastLost = new Set<string>();
   private readonly advertising = new Set<string>();
   private readonly forwardStates = new Map<string, StpForwardState>();
   private readonly transitionTimers = new Map<string, TimerHandle>();
   private rootBridge: BridgeId;
   private rootPort: string | null = null;
   private rootPathCost = 0;
+  /** Scheduler that armed one-shot timers (clear() must land on it). */
+  private scheduler: IScheduler | null = null;
+
+  // ── Topology change machinery (802.1D-1998 §8.6.14) ──────────────
+  /** TCNs owed toward the root until the designated bridge acks. */
+  private tcnPending = false;
+  /** TC flag carried in our config BPDUs (root: during tcWhile; else mirrored from the root port). */
+  private tcFlagActive = false;
+  /** Ports owed a one-shot Topology Change Ack on their next config BPDU. */
+  private readonly pendingTcAck = new Set<string>();
+  private tcWhileTimer: TimerHandle | null = null;
+  private fastAgingActive = false;
 
   constructor(
     private readonly host: StpHost,
@@ -55,12 +74,20 @@ export class StpAgent extends ReactiveAgentBase {
 
   override stop(): void {
     if (!this.isRunning()) return;
-    super.stop();
+    super.stop(); // also clears the named 'tcn' interval
     // Cancel pending 802.1D listening/learning transitions — a stopped
     // agent must not flip port states later.
     for (const portName of [...this.transitionTimers.keys()]) {
       this.cancelTransition(portName);
     }
+    if (this.tcWhileTimer !== null) {
+      (this.scheduler ?? this.getScheduler()).clear(this.tcWhileTimer);
+      this.tcWhileTimer = null;
+    }
+    this.tcnPending = false;
+    this.tcFlagActive = false;
+    this.pendingTcAck.clear();
+    this.setFastAging(false);
   }
 
   getConfig(): Readonly<StpConfig> { return this.config; }
@@ -75,6 +102,12 @@ export class StpAgent extends ReactiveAgentBase {
   getPortRole(portName: string): StpPortRole {
     return this.portInfo.get(portName)?.role ?? 'disabled';
   }
+
+  /** TC flag currently carried in our config BPDUs (root tcWhile or mirrored). */
+  isTopologyChangeActive(): boolean { return this.tcFlagActive; }
+
+  /** Fast MAC aging in effect (802.1D-1998 §8.3.5). */
+  isFastAgingActive(): boolean { return this.fastAgingActive; }
 
   getForwardState(portName: string): StpForwardState {
     return this.forwardStates.get(portName) ?? 'disabled';
@@ -116,6 +149,12 @@ export class StpAgent extends ReactiveAgentBase {
 
   setPortFast(portName: string, on: boolean): void {
     this.getPortGuards(portName).portFast = on;
+    if (!on) this.portFastLost.delete(portName);
+  }
+
+  isPortFastOperational(portName: string): boolean {
+    return this.guards.get(portName)?.portFast === true
+      && !this.portFastLost.has(portName);
   }
 
   setPortBpduGuard(portName: string, on: boolean): void {
@@ -182,10 +221,10 @@ export class StpAgent extends ReactiveAgentBase {
     if (!this.config.enabled) return;
     const payload = frame.payload as StpBpdu | undefined;
     if (!payload || payload.type !== 'stp') return;
-    if (payload.bpduType !== 'config') return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
 
+    // BPDU Guard fires on ANY BPDU type (config or TCN), like real IOS.
     const g = this.getPortGuards(portName);
     const bpduGuard = g.bpduGuard || (g.portFast && this.config.bpduGuardGlobal);
     if (bpduGuard) {
@@ -201,6 +240,25 @@ export class StpAgent extends ReactiveAgentBase {
       this.host.onStpBpduGuardErrDisable?.(portName, payload.senderBridge.mac);
       return;
     }
+
+    if (g.portFast && !this.portFastLost.has(portName)) {
+      this.portFastLost.add(portName);
+      this.getBus().publish({
+        topic: 'stp.portfast.lost',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName, senderMac: payload.senderBridge.mac,
+        },
+      });
+      Logger.warn(this.host.id, 'stp:portfast-lost',
+        `${this.host.name}: ${portName} received a BPDU — PortFast operational status lost`);
+    }
+
+    if (payload.bpduType === 'tcn') {
+      this.handleTcnBpdu(portName);
+      return;
+    }
+    if (payload.bpduType !== 'config') return;
 
     this.getBus().publish({
       topic: 'stp.bpdu.received',
@@ -252,6 +310,136 @@ export class StpAgent extends ReactiveAgentBase {
     }
 
     this.runElection();
+
+    // ── Topology change processing (802.1D-1998 §8.6.14) ──────────
+    // The designated bridge acked our TCNs: stop retransmitting.
+    if (payload.topologyChangeAck && portName === this.rootPort) {
+      this.stopTcnRetransmission();
+    }
+    // Mirror the TC flag heard on the root port: propagate it on our
+    // designated ports and run fast aging while it is set (§8.3.5).
+    if (portName === this.rootPort && !this.isRoot()) {
+      if (this.tcFlagActive !== payload.topologyChange) {
+        this.tcFlagActive = payload.topologyChange;
+        if (payload.topologyChange) this.emitBpduOnAllPorts();
+      }
+      this.setFastAging(payload.topologyChange);
+    }
+  }
+
+  // ── Topology Change Notification machinery ────────────────────────
+
+  /**
+   * TCN received (802.1D-1998 §8.6.13): only meaningful on a port where
+   * we are the designated bridge. Ack it on the next config BPDU out
+   * that port and pass the notification toward the root.
+   */
+  private handleTcnBpdu(portName: string): void {
+    if (this.portInfo.get(portName)?.role !== 'designated' && !this.isRoot()) return;
+    this.getBus().publish({
+      topic: 'stp.tcn.received',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: portName,
+      },
+    });
+    this.pendingTcAck.add(portName);
+    this.sendBpdu(portName); // immediate ack, like real bridges
+    this.notifyTopologyChange();
+  }
+
+  /**
+   * A topology change was detected locally or relayed from downstream:
+   * the root starts the tcWhile period (TC flag + fast aging for
+   * max age + forward delay, §8.5.3.12); any other bridge sends TCNs
+   * out its root port every hello time until acked.
+   */
+  private notifyTopologyChange(): void {
+    if (!this.config.enabled) return;
+    this.getBus().publish({
+      topic: 'stp.topology-change.detected',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        isRoot: this.isRoot(),
+      },
+    });
+    if (this.isRoot()) {
+      this.startTcWhile();
+    } else {
+      this.startTcnRetransmission();
+    }
+  }
+
+  private startTcWhile(): void {
+    this.tcFlagActive = true;
+    this.setFastAging(true);
+    const s = this.getScheduler();
+    this.scheduler = s;
+    if (this.tcWhileTimer !== null) s.clear(this.tcWhileTimer);
+    this.tcWhileTimer = s.setTimeout(() => {
+      this.tcWhileTimer = null;
+      this.tcFlagActive = false;
+      this.setFastAging(false);
+    }, (this.config.maxAgeSec + this.config.forwardDelaySec) * 1000);
+    // Spread the news immediately instead of waiting for the next hello.
+    this.emitBpduOnAllPorts();
+  }
+
+  private startTcnRetransmission(): void {
+    if (!this.rootPort) return;
+    this.tcnPending = true;
+    this.sendTcn();
+    this.scheduleInterval('tcn', () => {
+      if (this.tcnPending && this.rootPort) this.sendTcn();
+    }, this.config.helloSec * 1000);
+  }
+
+  private stopTcnRetransmission(): void {
+    if (!this.tcnPending) return;
+    this.tcnPending = false;
+    this.clearInterval('tcn');
+  }
+
+  private sendTcn(): void {
+    const portName = this.rootPort;
+    if (!portName) return;
+    const port = this.host.getPort(portName);
+    if (!port || !port.getIsUp() || !port.isConnected()) return;
+    const bpdu: StpBpdu = {
+      type: 'stp', bpduType: 'tcn',
+      protocolId: 0x0000, version: 0, flags: 0,
+      rootBridge: { ...this.rootBridge },
+      rootPathCost: this.rootPathCost,
+      senderBridge: this.ownBridgeId(),
+      portId: this.portIdFor(portName),
+      messageAgeSec: 0,
+      maxAgeSec: this.config.maxAgeSec,
+      helloSec: this.config.helloSec,
+      forwardDelaySec: this.config.forwardDelaySec,
+      topologyChange: false,
+      topologyChangeAck: false,
+    };
+    this.host.sendFrame(portName, {
+      srcMAC: port.getMAC(),
+      dstMAC: new MACAddress(STP_BRIDGE_MAC),
+      etherType: ETHERTYPE_STP,
+      payload: bpdu,
+    });
+    this.getBus().publish({
+      topic: 'stp.tcn.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: portName,
+      },
+    });
+  }
+
+  private setFastAging(on: boolean): void {
+    if (this.fastAgingActive === on) return;
+    this.fastAgingActive = on;
+    this.host.onTopologyChangeAging?.(on ? this.config.forwardDelaySec : null);
+    Logger.info(this.host.id, 'stp:fast-aging',
+      `${this.host.name}: MAC fast aging ${on ? `ON (${this.config.forwardDelaySec}s)` : 'off'}`);
   }
 
   emitBpduOnAllPorts(): void {
@@ -284,8 +472,9 @@ export class StpAgent extends ReactiveAgentBase {
       maxAgeSec: this.config.maxAgeSec,
       helloSec: this.config.helloSec,
       forwardDelaySec: this.config.forwardDelaySec,
-      topologyChange: false,
-      topologyChangeAck: false,
+      topologyChange: this.tcFlagActive,
+      // One-shot ack toward the bridge whose TCN we owe (§8.6.14).
+      topologyChangeAck: this.pendingTcAck.delete(portName),
     };
     const frame: EthernetFrame = {
       srcMAC: port.getMAC(),
@@ -317,6 +506,31 @@ export class StpAgent extends ReactiveAgentBase {
   protected armTimers(): void {
     this.scheduleInterval('hello', () => this.emitBpduOnAllPorts(),
       this.config.helloSec * 1000);
+    this.scheduleInterval('info-age', () => this.expireStaleBpduInfo(), 1_000);
+  }
+
+  private expireStaleBpduInfo(): void {
+    if (!this.config.enabled) return;
+    const now = Date.now();
+    const own = this.ownBridgeId();
+    let expired = false;
+    for (const [portName, info] of this.portInfo) {
+      if (bridgeEquals(info.designatedBridge, own)) continue;
+      if (now - info.ageMs <= this.config.maxAgeSec * 1000) continue;
+      this.portInfo.delete(portName);
+      expired = true;
+      this.getBus().publish({
+        topic: 'stp.bpdu-info.expired',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName,
+          designatedBridge: `${info.designatedBridge.priority}/${info.designatedBridge.mac}`,
+        },
+      });
+      Logger.info(this.host.id, 'stp:info-age',
+        `${this.host.name}: BPDU info on ${portName} aged out (max age ${this.config.maxAgeSec}s)`);
+    }
+    if (expired) this.runElection();
   }
 
   protected override onPortLinkUp(_portName: string): void {
@@ -324,6 +538,12 @@ export class StpAgent extends ReactiveAgentBase {
   }
 
   protected override onPortLinkDown(portName: string): void {
+    // Losing an active (non-edge) port is a topology change
+    // (802.1D-1998 §8.5.3.12) — capture the state before forgetting it.
+    const wasActive = this.forwardStates.get(portName) === 'forwarding'
+      || this.forwardStates.get(portName) === 'learning';
+    const portFast = this.isPortFastOperational(portName);
+    this.portFastLost.delete(portName);
     this.portInfo.delete(portName);
     // Forget the applied forward state so a re-connected link is treated as a
     // fresh edge port (rapid transition), matching the link-up fast path in
@@ -331,6 +551,9 @@ export class StpAgent extends ReactiveAgentBase {
     this.cancelTransition(portName);
     this.forwardStates.delete(portName);
     this.runElection();
+    if (wasActive && !portFast && this.config.enabled) {
+      this.notifyTopologyChange();
+    }
   }
 
   private recomputeOnTopologyChange(): void {
@@ -382,7 +605,7 @@ export class StpAgent extends ReactiveAgentBase {
         continue;
       }
       const guards = this.guards.get(name);
-      if (guards?.portFast && name !== this.rootPort) {
+      if (this.isPortFastOperational(name) && name !== this.rootPort) {
         this.applyRole(name, 'designated');
         continue;
       }
@@ -498,7 +721,7 @@ export class StpAgent extends ReactiveAgentBase {
   private requestForwarding(portName: string): void {
     const current = this.forwardStates.get(portName);
     if (current === 'forwarding' || current === 'listening' || current === 'learning') return;
-    const portFast = this.guards.get(portName)?.portFast === true;
+    const portFast = this.isPortFastOperational(portName);
     if (portFast || current === undefined) {
       this.applyForwardState(portName, 'forwarding');
       return;
@@ -539,6 +762,14 @@ export class StpAgent extends ReactiveAgentBase {
         port: portName, oldState: previous ?? null, newState: state,
       },
     });
+    // A non-edge port reaching forwarding is a topology change
+    // (802.1D-1998 §8.5.3.12). Initial bring-up (previous === undefined)
+    // follows the RSTP-style rapid path and stays silent, consistent
+    // with requestForwarding(); PortFast ports never notify.
+    if (state === 'forwarding' && previous !== undefined
+      && !this.isPortFastOperational(portName) && this.config.enabled) {
+      this.notifyTopologyChange();
+    }
   }
 
   private publishConfigChange(): void {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -256,5 +256,77 @@ describe('LACP — Huawei Eth-Trunk parity', () => {
                             cisco.getPort('FastEthernet0/0')!);
     expect(huawei.getLacpAgent().getPortInfo('GigabitEthernet0/0/0')?.bundled).toBe(true);
     expect(cisco.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
+  });
+});
+
+describe('LACP — receive timeouts (802.3ad §43.4.12)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function buildBundledPair() {
+    const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
+    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
+    return { s1, s2 };
+  }
+
+  it('a silent partner expires the port out of the bundle, then is defaulted', async () => {
+    vi.useFakeTimers();
+    const { s1, s2 } = await buildBundledPair();
+
+    // The partner falls silent while the link stays up (hung peer,
+    // unidirectional failure) — previously the port stayed bundled forever.
+    s2.getLacpAgent().stop();
+
+    // current_while at slow rate: 3 × 30 s.
+    vi.advanceTimersByTime(91_000);
+    const expired = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    expect(expired?.state).toBe('expired');
+    expect(expired?.bundled).toBe(false);
+    expect(expired?.partner).not.toBeNull(); // kept one short interval
+
+    // EXPIRED → DEFAULTED after the grace interval.
+    vi.advanceTimersByTime(4_000);
+    const defaulted = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    expect(defaulted?.state).toBe('standalone');
+    expect(defaulted?.partner).toBeNull();
+  });
+
+  it('a fresh LACPDU revives an expired port into the bundle', async () => {
+    vi.useFakeTimers();
+    const { s1, s2 } = await buildBundledPair();
+
+    s2.getLacpAgent().stop();
+    vi.advanceTimersByTime(91_000);
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.state).toBe('expired');
+
+    // Partner comes back and speaks again.
+    s2.getLacpAgent().start();
+    s2.getLacpAgent().advertise('FastEthernet0/0');
+
+    const revived = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    expect(revived?.bundled).toBe(true);
+    expect(revived?.state).toBe('bundled');
+  });
+
+  it('expiry publishes lacp.port.unbundled with cause partner-timeout', async () => {
+    vi.useFakeTimers();
+    const bus = new EventBus();
+    const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
+    s1.setEventBus(bus); s2.setEventBus(bus);
+    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+
+    const causes: string[] = [];
+    bus.subscribe('lacp.port.unbundled', (e) => causes.push((e.payload as { cause: string }).cause));
+
+    s2.getLacpAgent().stop();
+    vi.advanceTimersByTime(91_000);
+
+    expect(causes).toContain('partner-timeout');
   });
 });

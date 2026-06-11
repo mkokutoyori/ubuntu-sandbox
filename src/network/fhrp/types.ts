@@ -33,6 +33,35 @@ export interface FhrpConfigBase<G extends FhrpGroupBase> {
 }
 
 /**
+ * Data-plane surface every FHRP agent exposes to its owning router.
+ * Without it the protocols are control-plane theatre: hosts using the
+ * VIP as gateway could never resolve it (RFC 5798 §8.1.2, RFC 2281 §5.3).
+ */
+export interface FhrpDataPlane {
+  /**
+   * Virtual MAC to put in an ARP reply for `targetIp` received on
+   * `iface`, or null when this device must stay silent (not the
+   * active/master/AVG, or no group owns the VIP). `requesterIp` feeds
+   * GLBP's per-client load balancing.
+   */
+  vipArpOwner(iface: string, targetIp: string, requesterIp: string): string | null;
+  /** True when frames addressed to `dstMac` on `iface` must be accepted and routed. */
+  ownsVirtualMac(iface: string, dstMac: string): boolean;
+  /** True when `ip` is a VIP this device currently answers for (ICMP echo to the VIP). */
+  ownsVip(iface: string, ip: string): boolean;
+}
+
+/**
+ * Wire/runtime MAC representation: lowercase colon-separated.
+ * Accepts Cisco dotted display format (0000.0c07.ac01) used by the
+ * HSRP helpers so the same constant serves `show standby` and the wire.
+ */
+export function normalizeVirtualMac(mac: string): string {
+  const hex = mac.replace(/[.:-]/g, '').toLowerCase();
+  return hex.match(/.{2}/g)?.join(':') ?? mac.toLowerCase();
+}
+
+/**
  * Election comparison shared by the whole family: highest priority
  * wins, then highest interface IP (HSRP/VRRP/GLBP all tie-break the
  * same way). Negative when `a` beats `b`.

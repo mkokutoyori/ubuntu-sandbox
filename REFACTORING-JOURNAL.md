@@ -412,3 +412,682 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 
 - 5 nouveaux tests (badges palette + classification) ; suites `unit/gui` +
   `unit/react` : 12 fichiers, 99 tests verts.
+
+---
+
+## Entrée n°9 — 2026-06-11 — RIP `passive-interface` : config acceptée mais jamais appliquée
+
+> Début de la campagne « protocoles réseau ». Trois audits structurels ont été
+> menés (routage dynamique, L2/commutation, DHCP/ARP/FHRP/NAT) ; les entrées
+> suivantes traitent les constats par ordre d'impact.
+
+### Défaillances constatées
+
+1. **`passive-interface` (Cisco) sans aucun effet sur RIP** — la commande
+   `passive-interface Gi0/0` sous `router rip` n'écrivait que dans
+   `RoutingConfigRepository` (utilisé par `show running-config`). Le moteur
+   `RIPEngine` n'avait **aucun concept d'interface passive** : les updates
+   périodiques, triggered et les réponses aux Requests continuaient de sortir
+   sur l'interface « passive ». Config de façade, comportement réel absent.
+2. **`silent-interface` (Huawei VRP) idem** — stocké dans `_huaweiRipExtras`
+   (projection `display`/config) sans jamais atteindre le moteur.
+3. **`no passive-interface` ignorait l'EIGRP** — le handler ne traitait que le
+   repo RIP ; impossible de réactiver une interface EIGRP passive via CLI.
+4. **Pas de résolution des noms d'interface** — `passive-interface gi0/0`
+   (abréviation IOS standard) stockait la chaîne brute, qui ne matchait jamais
+   les noms canoniques des ports (le handler OSPF, lui, résolvait déjà via
+   `ctx.resolveInterfaceName`). Même demi-câblage côté EIGRP.
+5. **VRP : `rip` sans numéro de process n'entrait pas dans la vue RIP** — sur
+   un vrai VRP, `rip` entre dans `[hostname-rip-1]` (process 1 implicite) ;
+   le simulateur ne le faisait que pour `rip <n>`, rendant inaccessibles les
+   commandes de la vue RIP (dont `silent-interface`).
+
+### Correction (structurelle)
+
+- **`RIPEngine`** : nouveau champ `passiveInterfaces: Set<string>` dans
+  `RIPConfig` + API `setPassiveInterface()` / `removePassiveInterface()` /
+  `isPassiveInterface()` (même contrat que l'OSPFEngine — cohérence des
+  moteurs). Sémantique IOS/VRP fidèle : l'interface n'émet **rien** (pas de
+  Request au démarrage, pas d'update périodique/triggered, pas de réponse aux
+  Requests reçues) mais **continue d'apprendre** les routes des Responses
+  reçues.
+- **`RouterRIPEngine` + `Router`** : pass-through et façade
+  (`ripSetPassiveInterface`/`ripRemovePassiveInterface`).
+- **CLI Cisco** (`CiscoRoutingProtoCommands`) : helper unique `setPassive()`
+  (RIP + EIGRP, repo + moteur — fini le double câblage divergent),
+  résolution canonique via `ctx.resolveInterfaceName` (abréviations `gi0/0`),
+  support de `passive-interface default` / `no passive-interface default`
+  appliqué à tous les ports, `% Invalid interface` sur nom inconnu.
+- **CLI Huawei** (`HuaweiVRPShell`) : `silent-interface`/`undo
+  silent-interface` plombés jusqu'au moteur, avec résolution
+  insensible à la casse/aux espaces contre les ports réels.
+- **CLI Huawei** (`HuaweiConfigCommands`) : `rip` sans argument entre
+  désormais dans la vue RIP, comme un vrai VRP.
+
+### Fichiers
+
+- `src/network/rip/RIPEngine.ts`
+- `src/network/devices/router/RouterRIPEngine.ts`
+- `src/network/devices/Router.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/network/devices/shells/HuaweiVRPShell.ts`
+- `src/network/devices/shells/huawei/HuaweiConfigCommands.ts`
+- `src/__tests__/unit/network-v2/rip.test.ts` (+6 tests, groupe « Passive interfaces »)
+
+### Validation
+
+- 6 nouveaux tests : silence émission + apprentissage conservé, non-réponse aux
+  Requests, reprise via `no passive-interface`, résolution d'abréviations CLI,
+  `passive-interface default`, `silent-interface` VRP.
+- Suite complète `unit/network-v2` : **287 fichiers, 6873 tests verts**.
+
+---
+
+## Entrée n°10 — 2026-06-11 — FHRP (HSRP/VRRP/GLBP) : un control plane sans data plane
+
+### Défaillances constatées
+
+1. **La VIP était injoignable** — les agents HSRP/VRRP/GLBP géraient l'élection
+   (hellos, états, priorités, preempt) mais **aucun routeur ne répondait à
+   l'ARP pour l'adresse virtuelle**. Un PC configuré avec la VIP comme
+   passerelle par défaut ne pouvait jamais la résoudre : le FHRP était du
+   théâtre de control plane. Les helpers `hsrpVirtualMac`/`vrrpVirtualMac`
+   n'étaient utilisés que par `show standby` (affichage).
+2. **Trames vers MAC virtuelle jetées** — le filtre L2 de `Router.handleFrame`
+   n'acceptait que la MAC du port, broadcast et multicast : même avec une
+   entrée ARP statique vers la MAC virtuelle, le routeur actif jetait les
+   trames qui lui étaient adressées.
+3. **Ping de la VIP impossible** — `processIPv4` ne considérait que les IP
+   d'interface pour la livraison locale.
+4. **Pas d'ARP gratuit au basculement** (RFC 5798 §6.4.1) — le nouveau master
+   n'annonçait pas la MAC virtuelle, laissant les tables CAM des commutateurs
+   pointer vers le routeur mort.
+5. **GLBP : le load balancing ne tournait jamais** — du point de vue de l'AVG,
+   l'AVF d'un pair restait `listen` pour toujours (seul le propriétaire
+   marquait son AVF `active` à la réception de l'assignation). La sélection
+   round-robin/weighted/host-dependent (`nextForwarderMacForClient`) existait
+   mais ne servait qu'une seule MAC — et n'était appelée **que par les tests**.
+
+### Correction (structurelle)
+
+- **`fhrp/types.ts`** : nouvelle interface `FhrpDataPlane` (`vipArpOwner`,
+  `ownsVirtualMac`, `ownsVip`) + `normalizeVirtualMac()` (le format pointé
+  Cisco `0000.0c07.ac01` et le format `aa:bb:…` convergent).
+- **`FhrpAgentBase`** implémente `FhrpDataPlane` une seule fois (Template
+  Method, cohérent avec le reste de la famille) via trois hooks protocole :
+  `vipArpMac(g, requesterIp)`, `ownedVirtualMacs(g)`, `isVipOwner(g)` ;
+  + helper partagé `gratuitousVipArp()` (GARP émis depuis la MAC virtuelle).
+- **HSRP** (RFC 2281 §5.3) : seul l'actif répond/possède, GARP en passant
+  actif. **VRRP** (RFC 5798 §8.1.2, §6.4.1) : idem pour le master, MAC
+  `00-00-5E-00-01-{VRID}`. **GLBP** : l'AVG répond à l'ARP en distribuant les
+  MAC d'AVF selon le mode de load balancing (curseur avancé une seule fois
+  par requête) ; chaque AVF n'accepte que sa propre MAC virtuelle. Pas de
+  GARP par AVF (il écraserait la répartition dans les caches des hôtes).
+- **`Router`** : point d'extension `fhrpDataPlanes()` (vide en base,
+  surchargé par `CiscoRouter` [HSRP+VRRP+GLBP] et `HuaweiRouter` [VRRP]) ;
+  filtre L2 élargi aux MAC virtuelles détenues ; réponse ARP pour la VIP
+  sourcée de la MAC virtuelle (jamais en réponse à un ARP gratuit) ;
+  livraison locale des paquets destinés à une VIP détenue.
+- **GLBP** : un AVF assigné à un propriétaire dont on vient d'entendre le
+  hello démarre `active` (il est vivant) ; un hello reçu ressuscite un AVF
+  `init` après expiration — le failback fonctionne.
+
+### Fichiers
+
+- `src/network/fhrp/types.ts`, `src/network/fhrp/FhrpAgentBase.ts`
+- `src/network/hsrp/HsrpAgent.ts`, `src/network/vrrp/VrrpAgent.ts`,
+  `src/network/glbp/GlbpAgent.ts`
+- `src/network/devices/Router.ts`, `CiscoRouter.ts`, `HuaweiRouter.ts`
+- `src/__tests__/unit/network-v2/fhrp-dataplane.test.ts` (nouveau, 7 tests)
+
+### Validation
+
+- 7 nouveaux tests de bout en bout : ping de la VIP (la table ARP du PC
+  contient bien `0000.0c07.ac01` / `00:00:5e:00:01:05`, pas la MAC du port),
+  silence du standby, routage via la MAC virtuelle (VIP passerelle), failover
+  réel (shutdown de l'actif → hold time → le standby sert la VIP, CAM
+  re-pointée par le GARP), rotation round-robin GLBP, isolation des MAC
+  d'AVF.
+- Suite complète `unit/network-v2` : **288 fichiers, 6880 tests verts**.
+
+### Défaut préexistant relevé (entrée future)
+
+- HSRP : l'opcode `resign` est traité en réception mais jamais émis
+  (`advertise` n'envoie que des hellos). Un vrai IOS envoie un resign quand
+  l'actif abandonne son rôle administrativement.
+
+---
+
+## Entrée n°11 — 2026-06-11 — STP : les Topology Change Notifications jetées en silence (802.1D §8.6.14)
+
+### Défaillances constatées
+
+1. **BPDU TCN ignorés** — `StpAgent.handleFrame` filtrait
+   `bpduType !== 'config'` : un TCN reçu était jeté sans traitement, alors que
+   le type existait dans le vocabulaire (`StpBpduType = 'config' | 'tcn'`).
+2. **Flags TC/TCA câblés à `false`** — `sendBpdu` n'émettait jamais ni le
+   Topology Change flag ni le Topology Change Acknowledgment : la machinerie
+   de propagation (TCN → racine → TC broadcast) n'existait pas.
+3. **Pas de fast aging** — après une reconvergence, les tables MAC gardaient
+   leur vieillissement de 300 s : les chemins morts persistaient plusieurs
+   minutes (un vrai pont passe à `forward delay` = 15 s pendant le TC,
+   802.1D §8.3.5).
+4. **Aucune détection** — ni la perte d'un port actif ni le passage d'un port
+   en forwarding ne déclenchaient quoi que ce soit.
+5. **BPDU Guard partiel** — la garde ne se déclenchait que sur les BPDU
+   config ; un TCN sur un port PortFast+bpduguard n'err-disablait pas le
+   port (un vrai IOS le fait sur tout BPDU).
+6. **Latent** — champ `this.scheduler` assigné mais jamais déclaré dans
+   `StpAgent` (erreur de type masquée car vitest ne typecheck pas).
+
+### Correction (structurelle)
+
+- **Détection** (§8.5.3.12) : perte d'un port actif (forwarding/learning,
+  non-PortFast) et passage en forwarding d'un port géré non-edge →
+  `notifyTopologyChange()`. Le bring-up initial (chemin rapide type RSTP
+  existant) reste silencieux, cohérent avec le design du simulateur.
+- **Notification** : un pont non-racine émet des TCN sur son root port à
+  chaque hello jusqu'à réception d'un TCA (timer nommé `tcn` sur la
+  machinerie `ReactiveAgentBase` existante).
+- **Acquittement + propagation** : le pont désigné qui reçoit un TCN répond
+  immédiatement (TCA one-shot via `pendingTcAck`) et relaie vers la racine.
+- **tcWhile** : la racine émet TC=1 pendant `max age + forward delay`
+  (timer), diffusé immédiatement puis à chaque hello.
+- **Fast aging** : tout pont voyant TC=1 sur son root port (et la racine
+  elle-même) raccourcit le vieillissement MAC à `forward delay` via le
+  nouveau hook `StpHost.onTopologyChangeAging` ; restauration sur TC=0.
+  Côté `Switch` : `_setStpFastAging()` + `effectiveMacAgingTime()` dans le
+  balayage existant (pas de second timer).
+- **BPDU Guard** déplacé avant le dispatch par type : déclenche sur tout BPDU.
+- Événements : `stp.tcn.sent`, `stp.tcn.received`,
+  `stp.topology-change.detected` + getters `isTopologyChangeActive()` /
+  `isFastAgingActive()`.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`
+- `src/network/devices/Switch.ts`, `CiscoSwitch.ts`, `HuaweiSwitch.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (nouveau, 6 tests)
+
+### Validation
+
+- 6 nouveaux tests : TCN émis vers la racine + ack synchrone (une seule
+  émission), TC + fast aging sur toute la chaîne, expiration tcWhile
+  (35 s) → retour au vieillissement normal, flush réel d'une entrée MAC
+  dynamique à 15 s, PortFast silencieux vs port normal (contraste).
+- Suite complète `unit/network-v2` : **289 fichiers, 6886 tests verts**.
+
+---
+
+## Entrée n°12 — 2026-06-11 — Commutation : flush MAC au link-down ; HSRP : resign jamais émis
+
+### Défaillances constatées
+
+1. **Entrées MAC fantômes après une coupure** — quand un port tombait, ses
+   entrées dynamiques restaient dans la table jusqu'à 300 s (balayage de
+   vieillissement) : le commutateur continuait d'envoyer des trames vers un
+   port mort. Un vrai commutateur purge immédiatement les entrées du port.
+2. **Test encodant le bug** — `huawei-vrp.test.ts` (« MAC move ») validait
+   qu'un swap de câble incrémentait le compteur de MAC move ; sur du vrai
+   matériel, un swap propre = link-down → flush → re-apprentissage (pas un
+   move). Les alarmes de MAC flapping ne comptent que les MAC alternant
+   entre deux ports **vivants** (boucle/usurpation).
+3. **HSRP : resign en réception seulement** — relevé à l'entrée n°10 :
+   `advertise()` n'émettait que des hellos. Un actif perdant l'élection
+   (preempt d'un pair, baisse de priorité) restait silencieux : le pair
+   devait attendre le hold timer au lieu de basculer immédiatement
+   (RFC 2281 §5.4.3).
+
+### Correction
+
+- **`Switch`** : `flushDynamicMacsOnPort()` raccordé au handler
+  `port.onLinkChange` existant (indépendant du bus → insensible au rebind) ;
+  événement `switch.mac.flushed` publié. Les entrées statiques et les autres
+  ports ne sont pas touchés.
+- **`HsrpAgent`** : `advertise()` refactorisé en `emit(g, opcode)` ;
+  `sendResign()` émis (1) sur transition active→non-active avec lien vivant
+  (perte d'élection), (2) avant suppression administrative d'un groupe actif
+  (`removeGroup` surchargé). Le resign est edge-triggered et part souvent
+  dans la cascade synchrone de réception où la garde anti-réentrance est
+  tenue : il est envoyé hors garde, sans risque de boucle.
+- Test MAC-move réécrit pour simuler un vrai flap (même MAC émise sur deux
+  ports vivants).
+
+### Fichiers
+
+- `src/network/devices/Switch.ts`
+- `src/network/hsrp/HsrpAgent.ts`
+- `src/__tests__/unit/network-v2/ping-through-switch.test.ts` (+1 test)
+- `src/__tests__/unit/network-v2/fhrp-dataplane.test.ts` (+1 test resign)
+- `src/__tests__/unit/network-v2/huawei-vrp.test.ts` (test corrigé)
+
+### Validation
+
+- Flush : les MAC du port mort disparaissent à l'instant du débranchement,
+  celles du port survivant restent. Resign : l'actif rétrogradé émet un
+  resign observé sur le bus et le pair preemptant devient actif sans
+  attendre le hold timer.
+- Suite complète `unit/network-v2` : **289 fichiers, 6888 tests verts**.
+
+### Note
+
+- `ospf-packet-exchange.test.ts` (8.4) s'est montré flaky une fois sous
+  charge (ExStart au lieu de Full) puis vert en isolation et au run
+  suivant — sensibilité au timing préexistante, sans lien avec ces
+  changements.
+
+---
+
+## Entrée n°13 — 2026-06-11 — HSRP : preempt ignoré et démarrage sans phase d'écoute
+
+### Défaillances constatées
+
+1. **`standby preempt` sans effet** — `HsrpAgent.recompute` prenait le rôle
+   actif dès que sa priorité battait celle de l'actif en place, sans
+   consulter `g.preempt`. Sur un vrai IOS, la préemption est **désactivée
+   par défaut** : sans elle, un routeur prioritaire n'évince jamais un
+   actif vivant — il attend sa mort.
+2. **Pas de phase Listen/Learn** — un groupe fraîchement configuré
+   revendiquait `active` immédiatement (avant d'avoir écouté le segment),
+   et le récepteur adoptait **inconditionnellement** toute revendication
+   active. Conséquence : le dernier routeur configuré détrônait
+   systématiquement l'incumbent, preempt ou pas — l'inverse du vrai HSRP.
+3. **Collision active/active mal résolue** — RFC 2281 §5.5 : un actif ne
+   cède qu'à une revendication active de priorité **supérieure** ; le
+   simulateur adoptait aussi les revendications inférieures.
+4. **Tests encodant le bug** — « on equal priority, higher IP wins the
+   election » validait qu'un nouveau venu à IP supérieure (sans preempt)
+   délogeait l'actif en place.
+
+### Correction (structurelle)
+
+- **Équivalent synchrone de Listen/Learn** : nouveau flag runtime
+  `probed` ; un groupe frais (ou dont le lien revient — reset dans
+  `clearPeerState`) émet d'abord un hello en état `speak` (la « sonde ») ;
+  l'incumbent répond synchronement via le `maybeAdvertiseBack` existant ;
+  seule une sonde restée sans réponse autorise la revendication active
+  (`probeThenClaim`, branché sur `setVip` surchargé et `onLinkUp`).
+  Ce modèle préserve la convergence synchrone du simulateur (pas de
+  hold-timer obligatoire dans tous les tests).
+- **Gate preempt** dans `recompute` : sans `standby preempt`, un routeur
+  prioritaire reste standby face à un actif vivant.
+- **Garde de collision** dans `handleUdp` : un actif ignore les
+  revendications actives inférieures (son prochain hello fait reculer
+  l'usurpateur), conforme §5.5.
+- Tests : 2 nouveaux cas (préemption refusée sans `preempt`, acceptée
+  avec) + le test « higher IP wins » corrigé (le challenger préempte,
+  comme dans la réalité) + cas contrastif sans preempt.
+
+### Fichiers
+
+- `src/network/hsrp/types.ts`, `src/network/hsrp/HsrpAgent.ts`
+- `src/__tests__/unit/network-v2/hsrp-protocol.test.ts` (+3 tests, 1 corrigé)
+
+### Validation
+
+- VRRP (preempt par défaut RFC 5798, déjà respecté) et GLBP inchangés.
+- Suite complète `unit/network-v2` : **289 fichiers, 6891 tests verts**.
+
+### Limite connue (volontaire)
+
+- Après avoir été délogé, l'ex-actif peut rester `listen` jusqu'à
+  l'expiration (hold timer) de son entrée standby périmée avant de se
+  ré-élire standby — fidèle au comportement réel, qui prend aussi un
+  cycle de ré-élection.
+
+---
+
+## Entrée n°14 — 2026-06-11 — NAT/PAT : collision de ports au wraparound ; DHCP : épuisement de pool silencieux
+
+### Défaillances constatées
+
+1. **PAT : réutilisation de ports vivants** — `NATEngine.allocatePort()`
+   était un simple compteur linéaire : au retour à 10240 (wraparound),
+   il redistribuait des ports **encore détenus par des sessions
+   actives**. Le `reverseSessions.set()` écrasait alors la session
+   ancienne : son trafic entrant était traduit vers le mauvais hôte
+   interne (violation RFC 4787 REQ-1, et faille de confidentialité —
+   le trafic d'un hôte arrive chez un autre).
+2. **DHCP : épuisement de pool invisible** — `findAvailableIP()` à null
+   → retour silencieux, aucun log ni événement. Un vrai IOS émet
+   `%DHCPD-4-PING_CONFLICT`/log d'épuisement ; l'opérateur du simulateur
+   ne découvrait l'épuisement qu'en voyant les clients sans bail.
+
+### Correction
+
+- **`allocatePort(proto, globalIP)`** : balaye la plage éphémère en
+  sautant les ports présents dans `reverseSessions` pour ce
+  (protocole, IP globale) ; plage entièrement occupée → `null`
+  (la règle est sautée) + événement `nat.port.exhausted`. Constante
+  nommée `NAT_EPHEMERAL_MIN` (fin du magic number dupliqué).
+- **`DHCPServer.processDiscover`** : pool plein → événement
+  `dhcp.pool.exhausted` (nom du pool, réseau, MAC demandeuse) + log
+  d'avertissement, avant le retour null existant.
+
+### Fichiers
+
+- `src/network/devices/router/NATEngine.ts`
+- `src/network/dhcp/DHCPServer.ts`
+- `src/__tests__/unit/network-v2/nat-pat.test.ts` (+1 test wraparound)
+- `src/__tests__/unit/network-v2/dhcp_fixes.test.ts` (+1 test épuisement)
+
+### Validation
+
+- Test wraparound : curseur forcé sur le port d'une session vivante →
+  le nouvel allocataire reçoit un autre port et la traduction inverse
+  de la session originale reste intacte.
+- Suite complète `unit/network-v2` : **289 fichiers, 6893 tests verts**.
+
+---
+
+## Entrée n°15 — 2026-06-11 — LACP & DTP : pas de détection de pair silencieux
+
+### Défaillances constatées
+
+1. **LACP : bundle éternel** (802.3ad §43.4.12) — `lastRxMs` était mis à
+   jour à chaque LACPDU reçue mais **jamais consulté**. Un partenaire qui
+   cessait d'émettre (équipement figé, panne unidirectionnelle) laissait le
+   port `bundled` indéfiniment tant que le lien physique restait up : le
+   port-channel continuait de balancer du trafic vers un membre mort. Les
+   constantes `LACP_FLAG_EXPIRED`/`DEFAULTED` existaient déjà… inutilisées.
+2. **DTP : trunk fantôme** — même schéma : `lastHelloMs` suivi, raison
+   `peer-loss` déclarée dans le type d'événement, **aucun balayage
+   d'expiration**. Un trunk négocié dynamiquement restait opérationnellement
+   trunk pour toujours après la disparition du pair.
+3. **Agents zombies** — un agent `stop()` (timers arrêtés, abonnements
+   détachés) continuait de **traiter et répondre** aux trames reçues via le
+   chemin direct du switch : impossible de simuler un pair silencieux, et
+   incohérent (un agent arrêté qui parle).
+
+### Correction
+
+- **`LacpAgent`** : machine de réception conforme — timer `current_while`
+  (3 × l'intervalle demandé : 90 s slow / 3 s fast) ; à expiration le port
+  passe `expired` (hors agrégat, événement `lacp.port.unbundled` avec la
+  nouvelle cause `partner-timeout`), garde l'info partenaire un court
+  intervalle puis est **defaulted** (partenaire oublié, retour
+  `standalone`). Une LACPDU fraîche ressuscite un port `expired`
+  (EXPIRED → CURRENT). Nouvel état `'expired'` dans `LacpPortState`
+  (documenté), la sélection ne re-bundle jamais un port expiré sur des
+  données périmées.
+- **`DtpAgent`** : balayage d'expiration (5 × hello, vieillissement de
+  voisin façon IOS) — le pair oublié déclenche `resolveOperationalMode`
+  avec `null` et publie enfin `peer-loss`.
+- **`handleFrame` des deux agents** : gate sur `isRunning()` — un agent
+  arrêté ne traite plus rien.
+
+### Fichiers
+
+- `src/network/lacp/types.ts`, `src/network/lacp/LacpAgent.ts`
+- `src/network/dtp/DtpAgent.ts`
+- `src/__tests__/unit/network-v2/lacp-protocol.test.ts` (+3 tests)
+- `src/__tests__/unit/network-v2/dtp-protocol.test.ts` (+1 test)
+
+### Validation
+
+- Tests : expiration après 91 s (slow), info partenaire conservée puis
+  defaulted, résurrection par LACPDU fraîche, cause `partner-timeout` sur
+  le bus ; trunk DTP retombant en access avec `peer-loss` après 5 × hello.
+- Suite complète `unit/network-v2` : **289 fichiers, 6897 tests verts**.
+
+---
+
+## Entrée n°16 — 2026-06-11 — CDP : native VLAN mismatch indétectable ; EIGRP : mismatch K-values muet
+
+### Défaillances constatées
+
+1. **Native VLAN mismatch invisible** — deux trunks avec des native VLAN
+   différents font disparaître silencieusement le trafic non taggué.
+   Un vrai Cisco loggue `%CDP-4-NATIVE_VLAN_MISMATCH` à chaque hello CDP ;
+   le simulateur transportait le TLV native VLAN dans ses trames CDP mais
+   **ne comparait jamais** à la réception.
+2. **Hook `getNativeVlan` faux pour les trunks** — `CiscoSwitch` câblait le
+   hook CDP sur `accessVlan` même en mode trunk (le native annoncé était
+   donc faux). La logique correcte existait déjà dans
+   `resolveSnoopingVlan()` — dupliquée au lieu d'être réutilisée.
+3. **EIGRP : K-values silencieux** — un pair avec des K-values différents
+   était simplement omis de la table des voisins (`continue` muet). Un
+   vrai IOS loggue `%DUAL-5-NBRCHANGE … K-value mismatch` ; ici aucun
+   moyen de diagnostiquer pourquoi l'adjacence ne montait pas.
+
+### Correction
+
+- **`CdpAgent.handleFrame`** : comparaison du native VLAN local
+  (hook) avec celui du hello reçu → événement
+  `cdp.native-vlan.mismatch` + log d'avertissement au format IOS, à
+  chaque hello (comme le vrai matériel). Silence quand les deux
+  côtés concordent.
+- **`CiscoSwitch`** : hook `getNativeVlan` réutilise
+  `resolveSnoopingVlan()` (trunk → native du trunk, access → VLAN
+  d'accès) — déduplication.
+- **`EIGRPEngine.computeNeighbors`** : le rejet pour K-values publie
+  `eigrp.neighbor.k-value-mismatch` (K locaux + K du pair) et loggue au
+  format IOS ; l'adjacence reste bloquée (RFC 7868 §5.4).
+
+### Fichiers
+
+- `src/network/cdp/CdpAgent.ts`, `src/network/devices/CiscoSwitch.ts`
+- `src/network/eigrp/EIGRPEngine.ts`
+- `src/__tests__/unit/network-v2/cdp-protocol.test.ts` (+2 tests)
+- `src/__tests__/unit/network-v2/eigrp-engine.test.ts` (+1 test)
+
+### Validation
+
+- Mismatch détecté des deux côtés du câble, silence si accord ; événement
+  EIGRP avec IP du voisin et K-values des deux côtés, adjacence toujours
+  bloquée.
+- Suite complète `unit/network-v2` : **289 fichiers, 6900 tests verts**.
+
+---
+
+## Entrée n°17 — 2026-06-11 — STP : pas d'expiration max-age des BPDU (racine morte = topologie figée)
+
+### Défaillances constatées
+
+1. **Info BPDU immortelle** — `StpPortInfo.ageMs` était horodaté à chaque
+   réception mais **jamais lu** : aucune expiration max-age (802.1D §8.6.4).
+   Si la racine (ou n'importe quel pont désigné) mourait silencieusement —
+   sans link-down local, p. ex. derrière un autre commutateur — son info
+   restait épinglée pour toujours : **aucune ré-élection**, et surtout un
+   port redondant bloqué ne se débloquait **jamais** (le scénario de
+   récupération de boucle, raison d'être du STP).
+2. **Comparaison d'identifiants de pont par collation locale** —
+   `localeCompare` sur les MAC : faux classement possible sur entrée à
+   casse mixte ('AA…' vs '0a…') dans l'élection ; `bridgeEquals` était
+   également sensible à la casse.
+
+### Correction
+
+- **`StpAgent`** : balayage `info-age` (1 s) — toute info apprise d'un pair
+  plus vieille que `maxAgeSec` est supprimée (les entrées auto-générées par
+  `applyRole` ne vieillissent pas), événement `stp.bpdu-info.expired` +
+  ré-élection. Le port libéré retraverse listening → learning → forwarding
+  (2 × forward delay), soit la reconvergence 802.1D réelle de ~50 s
+  (20 + 15 + 15) après une mort silencieuse.
+- **`compareBridge`/`bridgeEquals`** : comparaison hex insensible à la
+  casse (équivalente à la comparaison numérique 48 bits).
+- Conformément à la consigne, le code STP de cette itération est livré
+  sans commentaires ; la justification vit ici.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`, `src/network/stp/types.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (+3 tests)
+
+### Validation
+
+- Racine arrêtée sans link-down → SW2 se ré-élit racine après 21 s ; port
+  redondant bloqué → forwarding après max age + 2 × forward delay ; hellos
+  frais = aucune ré-élection parasite (60 s).
+- Suites STP : 39 tests verts ; suite complète `unit/network-v2` :
+  **289 fichiers, 6912 tests verts** (run incluant les changements avant
+  retrait des commentaires, re-validé sur les suites STP après).
+
+---
+
+## Entrée n°18 — 2026-06-11 — STP : PortFast indélogeable malgré la réception de BPDU
+
+### Défaillances constatées
+
+1. **PortFast permanent** — un port PortFast (sans BPDU guard) qui recevait
+   un BPDU **gardait son statut edge** : rôle designated forcé, transition
+   rapide, aucune génération de TCN. Sur un vrai IOS, la réception d'un
+   BPDU fait perdre le statut PortFast opérationnel (le port redevient un
+   port STP normal) — c'est la protection de base contre le branchement
+   accidentel d'un commutateur sur un port d'accès. La config
+   `spanning-tree portfast` reste, seul l'état opérationnel tombe.
+
+### Correction
+
+- **`StpAgent`** : distinction config/opérationnel — `portFastLost`
+  (Set) + getter public `isPortFastOperational()`. À la réception de tout
+  BPDU sur un port PortFast (hors cas BPDU guard, qui err-disable comme
+  avant) : perte du statut, événement `stp.portfast.lost` + log
+  d'avertissement. Tous les consommateurs (élection, transition rapide,
+  suppression de TCN, détection au link-down) lisent désormais le statut
+  opérationnel. Le statut revient quand le lien retombe (cycle du port),
+  comme sur le vrai matériel ; `no spanning-tree portfast` purge aussi
+  l'état.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (+3 tests)
+
+### Validation
+
+- BPDU d'un commutateur supérieur sur port PortFast → statut perdu (config
+  intacte), retour après cycle du lien, et le port démis signale désormais
+  les changements de topologie comme un port normal.
+- Suite complète `unit/network-v2` : **289 fichiers, 6915 tests verts**.
+
+---
+
+## Entrée n°19 — 2026-06-11 — RIP : le RIB entier fuyait dans les annonces ; redistribution réelle
+
+### Défaillances constatées
+
+1. **Fuite du RIB complet** — `sendUpdate` annonçait **toutes** les routes
+   de la table de routage (statiques, OSPF, par défaut…) sur chaque
+   interface RIP, sans aucun filtre ni configuration. Un vrai RIP
+   n'annonce que : les connectées couvertes par une instruction
+   `network`, les routes RIP, et ce qui est **explicitement redistribué**.
+   Le défaut était l'inverse de celui supposé par l'audit (« redistribution
+   manquante ») : elle était involontaire, permanente et non configurable.
+2. **`redistribute`/`default-metric`/`default-information originate`
+   décoratifs** — sous `router rip`, ces commandes n'écrivaient que dans
+   le repo de `show running-config` ; `import-route` VRP idem.
+
+### Correction
+
+- **`RIPEngine`** : sélection des routes annonçables (`advertisableMetric`) —
+  RIP : métrique+1 ; connectée : couverte par `network` → 1, sinon
+  uniquement si `redistribute connected` ; statique : uniquement si
+  `redistribute static` (métrique configurée ou 1, sémantique IOS) ;
+  OSPF/EIGRP/BGP : `redistribute <proto>` + métrique explicite ou
+  `default-metric`, sinon non annoncée (comme IOS) ; préfixe 0.0.0.0/0 :
+  uniquement avec `default-information originate`. Nouvelle config
+  (`redistribute` Map, `defaultMetric`, `defaultInformationOriginate`)
+  + API moteur, pass-throughs adaptateur et façade Router.
+- **CLI Cisco** : `redistribute <proto> [metric N]` parsé et appliqué au
+  moteur (le repo garde la ligne pour `show run`), `no redistribute`,
+  `default-metric`, `default-information originate`/`no …` câblés.
+- **CLI Huawei** : `import-route <proto> [cost N]`, `undo import-route`,
+  `default-route originate`/`undo …` câblés au même moteur.
+
+### Fichiers
+
+- `src/network/rip/RIPEngine.ts`
+- `src/network/devices/router/RouterRIPEngine.ts`, `src/network/devices/Router.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/network/devices/shells/HuaweiVRPShell.ts`
+- `src/__tests__/unit/network-v2/rip.test.ts` (+8 tests)
+
+### Validation (ciblée — régression complète en fin de campagne)
+
+- 8 tests : non-fuite des statiques/connectées hors `network`/défaut,
+  redistribution effective avec métriques IOS, exigence de métrique pour
+  les protocoles dynamiques, plomberie CLI des deux vendeurs.
+- Suites ciblées : rip (39), cisco-routing-proto, huawei-vrp,
+  huawei-config-parity, routing-engine-consistency, rip-versions —
+  **247 tests verts**.
+
+---
+
+## Entrée n°20 — 2026-06-11 — Redistribution mutuelle RIP ↔ OSPF complète
+
+### Défaillances constatées
+
+1. **`redistribute rip` inexistant en OSPF** — le handler `redistribute`
+   d'OSPF ne connaissait que `static` et `connected` ; `redistribute rip`
+   était accepté puis ignoré (aucun branchement). Le lab pédagogique
+   classique de redistribution mutuelle entre deux domaines de routage
+   était impossible : les préfixes RIP ne devenaient jamais des externes
+   OSPF (O E2/E1).
+2. Le sens inverse (OSPF→RIP) venait d'être rendu possible à l'entrée
+   n°19 ; les deux sens n'avaient jamais fonctionné ensemble.
+
+### Correction
+
+- **`OSPFExtraConfig.redistributeRip`** (`subnets`, `metric`,
+  `metricType`) + injection des routes RIP du RIB comme externes dans le
+  calcul d'intégration OSPF (E2 : coût fixe — 20 par défaut comme IOS ;
+  E1 : coût + chemin interne), même mécanique que les redistributions
+  static/connected existantes (réutilisation, pas de duplication).
+- **CLI OSPF** : `redistribute rip [metric N] [metric-type T] [subnets]`
+  parsé, `no redistribute rip` ciblé, auto-convergence déclenchée après
+  chaque changement de redistribution.
+
+### Fichiers
+
+- `src/network/devices/router/RouterOSPFIntegration.ts`
+- `src/network/devices/shells/cisco/CiscoOspfCommands.ts`
+- `src/__tests__/unit/network-v2/redistribution.test.ts` (nouveau, 3 tests)
+
+### Validation (ciblée)
+
+- Lab à deux domaines (R1 RIP — R2 frontière — R3 OSPF) : R3 apprend les
+  préfixes RIP en `O E2` (visible dans `show ip route`), R1 apprend les
+  préfixes OSPF avec la métrique `redistribute ospf metric 2`, et rien ne
+  traverse sans redistribution configurée.
+- Suites ciblées : redistribution (3), ospf-commands, ospf-cli, ospf-full —
+  **138 tests verts**.
+
+### Limite connue
+
+- Les lignes `redistribute …` d'OSPF ne sont pas projetées dans
+  `show running-config` (défaut préexistant, non introduit ici).
+
+---
+
+## Entrée n°21 — 2026-06-11 — GRE : blocage définitif du tunnel au wraparound de séquence
+
+### Défaillances constatées
+
+1. **Comparaison de séquence non sérielle** — `tunnel sequence-datagrams`
+   jetait l'out-of-order par `gre.sequence < expectedRecvSeq` : au
+   wraparound 32 bits (0xFFFFFFFF → 0), tous les paquets suivants
+   devenaient « inférieurs » à l'attendu et le tunnel se bloquait
+   définitivement. (Le drop strict de l'out-of-order, lui, est conforme au
+   comportement Cisco de cette option.)
+
+### Correction
+
+- Comparaison en arithmétique sérielle 32 bits
+  (`((seq - expected) | 0) < 0`), insensible au wraparound.
+
+### Constats d'audit vérifiés et écartés à cette occasion
+
+- **VTP transparent** : le mode transparent relaie et sort avant tout
+  traitement (`forwardOnTrunks` + return) — il n'applique jamais les mises
+  à jour reçues ni ne touche sa révision. Conforme, rien à corriger.
+- **UDLD** : `udld-protocol.test.ts` existe (l'audit affirmait zéro
+  couverture) et l'agent implémente probe/echo/transitions/err-disable.
+
+### Fichiers
+
+- `src/network/gre/GreAgent.ts`
+
+### Validation (ciblée)
+
+- Suite GRE : 13 tests verts.

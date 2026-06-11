@@ -70,6 +70,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
+import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
@@ -843,6 +844,12 @@ export abstract class Router extends Equipment {
   getRIPConfig() { return this.ripEngine.getConfig(); }
   getRIPRoutes() { return this.ripEngine.getRoutes(); }
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
+  ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
+  ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
+  ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number) { this.ripEngine.setRedistribution(source, metric); }
+  ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
+  ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
+  ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
   getDynamicRouting() { return this.dynamicRouting; }
@@ -850,6 +857,53 @@ export abstract class Router extends Equipment {
   getBGPEngine() { return this.dynamicRouting.bgp; }
   /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
   convergeDynamicRouting() { this.dynamicRouting.converge(); }
+
+  // ─── FHRP data plane (HSRP/VRRP/GLBP) ─────────────────────────
+  //
+  // Vendor subclasses override to expose their agents; the base router
+  // then accepts frames sent to owned virtual MACs, answers ARP for
+  // VIPs, and treats owned VIPs as local addresses.
+
+  protected fhrpDataPlanes(): FhrpDataPlane[] { return []; }
+
+  private fhrpVipArpOwner(iface: string, targetIp: string, requesterIp: string): string | null {
+    for (const agent of this.fhrpDataPlanes()) {
+      const mac = agent.vipArpOwner(iface, targetIp, requesterIp);
+      if (mac) return mac;
+    }
+    return null;
+  }
+
+  private fhrpOwnsVirtualMac(iface: string, dstMac: string): boolean {
+    return this.fhrpDataPlanes().some(a => a.ownsVirtualMac(iface, dstMac));
+  }
+
+  private fhrpOwnsVip(iface: string, ip: string): boolean {
+    return this.fhrpDataPlanes().some(a => a.ownsVip(iface, ip));
+  }
+
+  /**
+   * Answer an ARP request for an owned VIP with the virtual MAC
+   * (RFC 2281 §5.3, RFC 5798 §8.1.2). The reply is sourced from the
+   * virtual MAC so switches learn the virtual path. Single lookup —
+   * GLBP's load-balancing cursor advances once per request.
+   */
+  private answerFhrpVipArp(portName: string, arp: ARPPacket): boolean {
+    const mac = this.fhrpVipArpOwner(
+      portName, arp.targetIP.toString(), arp.senderIP.toString());
+    if (!mac) return false;
+    const vmac = new MACAddress(mac);
+    const reply: ARPPacket = {
+      type: 'arp', operation: 'reply',
+      senderMAC: vmac, senderIP: arp.targetIP,
+      targetMAC: arp.senderMAC, targetIP: arp.senderIP,
+    };
+    this.sendFrame(portName, {
+      srcMAC: vmac, dstMAC: arp.senderMAC,
+      etherType: ETHERTYPE_ARP, payload: reply,
+    });
+    return true;
+  }
 
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
@@ -878,7 +932,8 @@ export abstract class Router extends Equipment {
     const isIpv4Multicast =
       octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
 
-    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast) {
+    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast
+      && !this.fhrpOwnsVirtualMac(portName, frame.dstMAC.toString())) {
       return;
     }
 
@@ -928,6 +983,10 @@ export abstract class Router extends Equipment {
         srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
         etherType: ETHERTYPE_ARP, payload: reply,
       });
+    } else if (arp.operation === 'request'
+      && !arp.senderIP.equals(arp.targetIP) // never answer a gratuitous ARP
+      && this.answerFhrpVipArp(portName, arp)) {
+      // handled — HSRP active / VRRP master / GLBP AVG answered for the VIP
     } else if (arp.operation === 'request' && port.isProxyArpEnabled()) {
       const targetMask = port.getSubnetMask();
       if (targetMask && !myIP.isInSameSubnet(arp.targetIP, targetMask)) {
@@ -1024,6 +1083,13 @@ export abstract class Router extends Equipment {
         this.handleLocalDelivery(inPort, ipPkt);
         return;
       }
+    }
+
+    // C.1-bis: FHRP — the active/master answers for the VIP (ICMP echo
+    // to the default gateway must succeed against the virtual address)
+    if (this.fhrpOwnsVip(inPort, destIP.toString())) {
+      this.handleLocalDelivery(inPort, ipPkt);
+      return;
     }
 
     // C.1b: SPD inbound check (RFC 4301 §4.4.1) — DISCARD/BYPASS before ACL

@@ -736,3 +736,257 @@ describe('Group 5: CLI Commands', () => {
     expect(r1.isRIPEnabled()).toBe(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUP 6: Passive interfaces (IOS passive-interface / VRP silent-interface)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Group 6: Passive interfaces', () => {
+
+  function buildPair() {
+    // R1 (172.16.0.0/16) --- 10.0.1.0/24 --- R2 (192.168.1.0/24)
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    r1.configureInterface('GigabitEthernet0/1', new IPAddress('172.16.0.1'), new SubnetMask('255.255.0.0'));
+    r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+    const c1 = new Cable('c1');
+    c1.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+    r1.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r1.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    r1.ripAdvertiseNetwork(new IPAddress('172.16.0.0'), new SubnetMask('255.255.0.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('192.168.1.0'), new SubnetMask('255.255.255.0'));
+    return { r1, r2 };
+  }
+
+  it('passive interface stops transmitting but keeps learning', () => {
+    const { r1, r2 } = buildPair();
+    r2.ripSetPassiveInterface('GigabitEthernet0/0');
+
+    vi.advanceTimersByTime(2200);
+
+    // R2 stays silent: R1 must NOT learn 192.168.1.0/24
+    expect(r1.getRoutingTable().find(
+      r => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBeUndefined();
+
+    // R2 still listens: it must have learned 172.16.0.0/16 from R1
+    expect(r2.getRoutingTable().find(
+      r => r.type === 'rip' && r.network.toString() === '172.16.0.0')).toBeDefined();
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+
+  it('passive interface does not answer RIP Requests', () => {
+    const { r1, r2 } = buildPair();
+    r2.ripSetPassiveInterface('GigabitEthernet0/0');
+
+    // r1.enableRIP() already multicast a Request at startup; r2 must not
+    // have answered it, and nothing may leak before the first periodic tick.
+    vi.advanceTimersByTime(900);
+    expect(r1.getRoutingTable().find(
+      r => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBeUndefined();
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+
+  it('no passive-interface resumes updates', () => {
+    const { r1, r2 } = buildPair();
+    r2.ripSetPassiveInterface('GigabitEthernet0/0');
+
+    vi.advanceTimersByTime(2200);
+    expect(r1.getRoutingTable().find(
+      r => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBeUndefined();
+
+    r2.ripRemovePassiveInterface('GigabitEthernet0/0');
+    vi.advanceTimersByTime(1100);
+    expect(r1.getRoutingTable().find(
+      r => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBeDefined();
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+
+  it('Cisco: "passive-interface" resolves abbreviations and reaches the engine', async () => {
+    const r1 = new CiscoRouter('R1');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('network 10.0.0.0');
+    await r1.executeCommand('passive-interface gi0/0');
+
+    expect(r1.getRIPConfig().passiveInterfaces.has('GigabitEthernet0/0')).toBe(true);
+
+    await r1.executeCommand('no passive-interface gi0/0');
+    expect(r1.getRIPConfig().passiveInterfaces.has('GigabitEthernet0/0')).toBe(false);
+
+    r1.disableRIP();
+  });
+
+  it('Cisco: "passive-interface default" marks every interface passive', async () => {
+    const r1 = new CiscoRouter('R1');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('passive-interface default');
+
+    const cfg = r1.getRIPConfig();
+    expect(cfg.passiveInterfaces.has('GigabitEthernet0/0')).toBe(true);
+    expect(cfg.passiveInterfaces.size).toBeGreaterThan(0);
+
+    await r1.executeCommand('no passive-interface default');
+    expect(r1.getRIPConfig().passiveInterfaces.size).toBe(0);
+
+    r1.disableRIP();
+  });
+
+  it('Huawei: "silent-interface" reaches the engine; undo reverts', async () => {
+    const r1 = new HuaweiRouter('HW1');
+    r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+
+    await r1.executeCommand('system-view');
+    await r1.executeCommand('rip');
+    await r1.executeCommand('silent-interface GE0/0/0');
+    expect(r1.getRIPConfig().passiveInterfaces.has('GE0/0/0')).toBe(true);
+
+    await r1.executeCommand('undo silent-interface GE0/0/0');
+    expect(r1.getRIPConfig().passiveInterfaces.has('GE0/0/0')).toBe(false);
+
+    r1.disableRIP();
+  });
+});
+
+describe('Group 7: Advertisement filtering & redistribution', () => {
+
+  function buildPair() {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+    const c1 = new Cable('c1');
+    c1.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+    r1.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r1.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    return { r1, r2 };
+  }
+
+  const r1Route = (r1: CiscoRouter, net: string) =>
+    r1.getRoutingTable().find(r => r.type === 'rip' && r.network.toString() === net);
+
+  it('a static route is NOT advertised without redistribute static', () => {
+    const { r1, r2 } = buildPair();
+    r2.addStaticRoute(new IPAddress('172.30.0.0'), new SubnetMask('255.255.0.0'), new IPAddress('192.168.1.99'));
+
+    vi.advanceTimersByTime(2200);
+
+    expect(r1Route(r1, '172.30.0.0')).toBeUndefined();
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('redistribute static advertises it with metric 1 by default', () => {
+    const { r1, r2 } = buildPair();
+    r2.addStaticRoute(new IPAddress('172.30.0.0'), new SubnetMask('255.255.0.0'), new IPAddress('192.168.1.99'));
+    r2.ripSetRedistribution('static');
+
+    vi.advanceTimersByTime(2200);
+
+    const learned = r1Route(r1, '172.30.0.0');
+    expect(learned).toBeDefined();
+    expect(learned!.metric).toBe(1);
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('redistribute static metric N uses the configured metric', () => {
+    const { r1, r2 } = buildPair();
+    r2.addStaticRoute(new IPAddress('172.30.0.0'), new SubnetMask('255.255.0.0'), new IPAddress('192.168.1.99'));
+    r2.ripSetRedistribution('static', 5);
+
+    vi.advanceTimersByTime(2200);
+
+    expect(r1Route(r1, '172.30.0.0')!.metric).toBe(5);
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('a connected network outside any network statement needs redistribute connected', () => {
+    const { r1, r2 } = buildPair();
+
+    vi.advanceTimersByTime(2200);
+    expect(r1Route(r1, '192.168.1.0')).toBeUndefined();
+
+    r2.ripSetRedistribution('connected');
+    vi.advanceTimersByTime(1100);
+    expect(r1Route(r1, '192.168.1.0')).toBeDefined();
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('an OSPF route needs redistribute ospf plus a metric', () => {
+    const { r1, r2 } = buildPair();
+    (r2 as unknown as { routingTable: unknown[] }).routingTable.push({
+      network: new IPAddress('172.31.0.0'), mask: new SubnetMask('255.255.0.0'),
+      nextHop: new IPAddress('192.168.1.99'), iface: 'GigabitEthernet0/1',
+      type: 'ospf', ad: 110, metric: 30,
+    });
+
+    r2.ripSetRedistribution('ospf');
+    vi.advanceTimersByTime(2200);
+    expect(r1Route(r1, '172.31.0.0')).toBeUndefined();
+
+    r2.ripSetDefaultMetric(4);
+    vi.advanceTimersByTime(1100);
+    const learned = r1Route(r1, '172.31.0.0');
+    expect(learned).toBeDefined();
+    expect(learned!.metric).toBe(4);
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('the default route is only advertised with default-information originate', () => {
+    const { r1, r2 } = buildPair();
+    r2.addStaticRoute(new IPAddress('0.0.0.0'), new SubnetMask('0.0.0.0'), new IPAddress('192.168.1.99'));
+
+    vi.advanceTimersByTime(2200);
+    expect(r1Route(r1, '0.0.0.0')).toBeUndefined();
+
+    r2.ripSetDefaultInformationOriginate(true);
+    vi.advanceTimersByTime(1100);
+    expect(r1Route(r1, '0.0.0.0')).toBeDefined();
+    r1.disableRIP(); r2.disableRIP();
+  });
+
+  it('Cisco CLI: redistribute static metric 3 reaches the engine', async () => {
+    const r1 = new CiscoRouter('R1');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('redistribute static metric 3');
+    expect(r1.getRIPConfig().redistribute.get('static')).toEqual({ metric: 3 });
+
+    await r1.executeCommand('no redistribute static');
+    expect(r1.getRIPConfig().redistribute.has('static')).toBe(false);
+    r1.disableRIP();
+  });
+
+  it('Huawei CLI: import-route static cost 2 reaches the engine', async () => {
+    const r1 = new HuaweiRouter('HW1');
+    r1.configureInterface('GE0/0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    await r1.executeCommand('system-view');
+    await r1.executeCommand('rip');
+    await r1.executeCommand('import-route static cost 2');
+    expect(r1.getRIPConfig().redistribute.get('static')).toEqual({ metric: 2 });
+
+    await r1.executeCommand('undo import-route static');
+    expect(r1.getRIPConfig().redistribute.has('static')).toBe(false);
+    r1.disableRIP();
+  });
+});

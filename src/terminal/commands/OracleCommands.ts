@@ -8,6 +8,7 @@
 import type { Equipment } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
 import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from './OracleConfig';
+import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
 
 /** Callback to append a line to the terminal. */
 type OutputFn = (text: string, type?: string) => void;
@@ -202,13 +203,18 @@ export function handleOrapwd(
 }
 
 /**
- * Handle `adrci` — Automatic Diagnostic Repository Command Interpreter (stub).
+ * Handle `adrci` — Automatic Diagnostic Repository Command Interpreter.
+ * SHOW ALERT reads the live instance alert log (the same one the
+ * filesystem sync materialises under the diag home).
  */
 export function handleAdrci(
-  _device: Equipment,
+  device: Equipment,
   args: string[],
   addLine: OutputFn,
 ): void {
+  initOracleFilesystem(device);
+  const db = getOracleDatabase(device.getId());
+
   addLine('');
   addLine('ADRCI: Release 19.0.0.0.0 - Production');
   addLine('');
@@ -217,7 +223,7 @@ export function handleAdrci(
 
   if (args.length === 0) {
     addLine('adrci> This is a simulated ADRCI environment.');
-    addLine('adrci> Available commands: SHOW HOMES, SHOW ALERT, SHOW INCIDENT, EXIT');
+    addLine('adrci> Available commands: SHOW HOMES, SHOW ALERT [-TAIL n], SHOW INCIDENT, EXIT');
     addLine('');
     return;
   }
@@ -231,8 +237,15 @@ export function handleAdrci(
     addLine(`  ${adrHomeRel}`);
   } else if (subcmd.includes('SHOW ALERT')) {
     addLine(`ADR Home = ${ORACLE_CONFIG.DIAG_HOME}:`);
-    addLine('');
-    addLine('No alert log entries found in simulated environment.');
+    addLine('*************************************************************************');
+    const alertLog = db.instance.getAlertLog();
+    const tailMatch = subcmd.match(/-TAIL\s+(\d+)/);
+    const entries = tailMatch ? alertLog.slice(-parseInt(tailMatch[1], 10)) : alertLog;
+    if (entries.length === 0) {
+      addLine('No alert log entries.');
+    } else {
+      for (const line of entries) addLine(line);
+    }
   } else if (subcmd.includes('SHOW INCIDENT')) {
     addLine(`ADR Home = ${ORACLE_CONFIG.DIAG_HOME}:`);
     addLine('');
@@ -333,43 +346,35 @@ export function handleExpdp(
   const logfile = params.get('LOGFILE') || 'export.log';
   const tables = params.get('TABLES')?.toUpperCase().split(',');
   const full = params.get('FULL')?.toUpperCase() === 'Y';
-  const directory = params.get('DIRECTORY') || 'DATA_PUMP_DIR';
 
+  const jobName = `SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01`;
   addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
-  addLine(`Starting "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01":`);
+  addLine(`Starting "${schemas[0]}"."${jobName}":`);
   addLine('');
 
-  // Gather objects to "export"
-  const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
-  let totalTables = 0;
-  let totalRows = 0;
-
-  for (const schema of schemas) {
-    const tableNames = storage.getTableNames(schema);
-    const exportTables = tables
-      ? tableNames.filter(t => tables.some(tt => tt === t || tt === `${schema}.${t}`))
-      : tableNames;
-
-    for (const tname of exportTables) {
-      const rows = storage.getRows(schema, tname);
-      totalTables++;
-      totalRows += rows.length;
-      addLine(`. . exported "${schema}"."${tname}"                     ${rows.length} rows`);
-    }
-  }
+  const engine = new DataPumpEngine(db);
+  const { dump, report } = engine.export({ schemas, tables, full });
+  for (const line of report.lines) addLine(line);
 
   addLine('');
-  addLine(`Master table "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully loaded/unloaded`);
+  addLine(`Master table "${schemas[0]}"."${jobName}" successfully loaded/unloaded`);
   addLine('******************************************************************************');
-  addLine(`Dump file set for ${schemas[0]}.SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01 is:`);
+  addLine(`Dump file set for ${schemas[0]}.${jobName} is:`);
   addLine(`  /u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`);
-  addLine(`Job "${schemas[0]}"."SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully completed at ${new Date().toLocaleTimeString()}`);
+  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
-  // Create the dump file on VFS
+  // The dump file IS the transport: impdp reads it back and restores.
   const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
   const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(dumpPath, `[ORACLE DATA PUMP DUMP - ${totalTables} tables, ${totalRows} rows - ${new Date().toISOString()}]`);
-  device.writeFileFromEditor(logPath, `Export: Release ${ORACLE_CONFIG.VERSION}.0\nSchemas: ${schemas.join(',')}\nTables: ${totalTables}\nRows: ${totalRows}\nCompleted at ${new Date().toISOString()}`);
+  device.writeFileFromEditor(dumpPath, JSON.stringify(dump));
+  device.writeFileFromEditor(logPath, [
+    `Export: Release ${ORACLE_CONFIG.VERSION}.0`,
+    `Schemas: ${schemas.join(',')}`,
+    ...report.lines,
+    `Tables: ${report.tables}`,
+    `Rows: ${report.rows}`,
+    `Completed at ${new Date().toISOString()}`,
+  ].join('\n'));
 }
 
 /**
@@ -386,6 +391,7 @@ export function handleImpdp(
   addLine: OutputFn,
 ): void {
   initOracleFilesystem(device);
+  const db = getOracleDatabase(device.getId());
 
   addLine('');
   addLine(`Import: Release ${ORACLE_CONFIG.VERSION}.0 - Production on ${new Date().toDateString()}`);
@@ -415,7 +421,7 @@ export function handleImpdp(
   const tables = params.get('TABLES')?.toUpperCase().split(',');
   const full = params.get('FULL')?.toUpperCase() === 'Y';
   const remap = params.get('REMAP_SCHEMA');
-  const directory = params.get('DIRECTORY') || 'DATA_PUMP_DIR';
+  const existsAction = (params.get('TABLE_EXISTS_ACTION')?.toUpperCase() ?? 'SKIP') as TableExistsAction;
 
   // Check if dump file exists on VFS
   const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
@@ -427,28 +433,44 @@ export function handleImpdp(
     return;
   }
 
-  addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
-  addLine(`Master table "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully loaded/unloaded`);
-  addLine(`Starting "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01":`);
-  addLine('');
-
-  if (remap) {
-    const [src, dst] = remap.split(':');
-    addLine(`Remapping schema "${src}" to "${dst}"`);
+  const dump = DataPumpEngine.parse(fileContent);
+  if (!dump) {
+    addLine(`ORA-39000: bad dump file specification`);
+    addLine(`ORA-39143: dump file "${dumpPath}" may be an original export dump file`);
+    return;
   }
 
-  // Parse the dump file to know what was in it
-  const dumpMeta = fileContent.match(/(\d+) tables, (\d+) rows/);
-  const nTables = dumpMeta ? parseInt(dumpMeta[1]) : 5;
-  const nRows = dumpMeta ? parseInt(dumpMeta[2]) : 100;
-
-  addLine(`. . imported "${schemas[0]}"  ${nTables} tables, ${nRows} rows`);
+  const jobName = `SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01`;
+  addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
+  addLine(`Master table "${schemas[0]}"."${jobName}" successfully loaded/unloaded`);
+  addLine(`Starting "${schemas[0]}"."${jobName}":`);
   addLine('');
-  addLine(`Job "${schemas[0]}"."SYS_IMPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01" successfully completed at ${new Date().toLocaleTimeString()}`);
+
+  let remapOption: { from: string; to: string } | undefined;
+  if (remap) {
+    const [src, dst] = remap.split(':');
+    if (src && dst) {
+      remapOption = { from: src, to: dst };
+      addLine(`Remapping schema "${src.toUpperCase()}" to "${dst.toUpperCase()}"`);
+    }
+  }
+
+  const engine = new DataPumpEngine(db);
+  const report = engine.import(dump, { remapSchema: remapOption, tableExistsAction: existsAction });
+  for (const line of report.lines) addLine(line);
+
+  addLine('');
+  addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
   // Write log file
   const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(logPath, `Import: Release ${ORACLE_CONFIG.VERSION}.0\nSchemas: ${schemas.join(',')}\nTables: ${nTables}\nRows: ${nRows}\nCompleted at ${new Date().toISOString()}`);
+  device.writeFileFromEditor(logPath, [
+    `Import: Release ${ORACLE_CONFIG.VERSION}.0`,
+    ...report.lines,
+    `Tables: ${report.tables}`,
+    `Rows: ${report.rows}`,
+    `Completed at ${new Date().toISOString()}`,
+  ].join('\n'));
 }
 
 /** Parse Data Pump keyword=value pairs from args. */

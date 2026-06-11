@@ -547,6 +547,122 @@ Les imports `OracleLexer`/`OracleParser` disparaissent de l'exécuteur (4327 lig
 −840 depuis le départ).
 **Validation :** `npx tsc --noEmit` propre ; `unit/database/` : 2520/2520.
 
+### 2026-06-11 — Packages PL/SQL utilisateur : un vrai runtime (GAP §10.6 clos)
+**Défaillance :** `CREATE PACKAGE [BODY]` était accepté mais les packages étaient
+inutilisables — le dernier gap « Majeur » encore ouvert du GAP §10 :
+1. Les membres étaient extraits du corps par **regex** vers des unités autonomes
+   sans aucune portée commune : les variables de package (`g_counter` du spec,
+   privées du corps) levaient `PLS-00201` au premier appel — l'état de package
+   n'existait tout simplement pas.
+2. Les membres privés du corps étaient soit inaccessibles aux membres publics,
+   soit exposés à l'extérieur (aucune notion de visibilité spec/corps).
+3. `pkg.variable` lu depuis un bloc externe retournait NULL en silence ;
+   l'écriture était impossible ; les constantes étaient assignables.
+4. Corps manquant → `PLS-00201` au lieu d'`ORA-04067` ; recompilation → l'état
+   périmé survivait au lieu d'`ORA-04068` ; le bloc d'initialisation du corps
+   (`BEGIN … END pkg;`) n'était jamais exécuté.
+5. **SQL*Plus exécutait la 1re ligne** d'un `CREATE PACKAGE` multi-ligne comme
+   un statement complet (le corps contient des `;`), puis crachait `SP2-0734`
+   sur chaque ligne suivante — toute création interactive d'unité PL/SQL
+   multi-ligne était impossible dans le terminal.
+6. `DESCRIBE pkg` n'affichait pas les sous-programmes ; `DBA_PROCEDURES`
+   listait les membres avec `OBJECT_NAME='PKG.MEMBER'` au lieu du couple
+   (`OBJECT_NAME`=package, `PROCEDURE_NAME`=membre) d'Oracle 19c.
+**Correction :** suppression totale de l'extraction regex ; spec et corps sont
+compilés par le **vrai parser PL/SQL** et exécutés dans une **portée d'instance
+de package par session** — le mécanisme existant des sous-programmes locaux
+fait alors naturellement la résolution des variables, des privés et des appels
+croisés (zéro duplication d'interpréteur) :
+- `PlsqlParser.parsePackageSection` — nouvelle production : déclarations +
+  bloc d'initialisation optionnel + `END [name]` (gère les forward
+  declarations du spec, déjà supportées par `parseSubprogram`).
+- Nouveau `plsql/PackageUnit.ts` — compilation (`compilePackageSection`,
+  erreurs → `USER_ERRORS`/`SHOW ERRORS`), contrat `PackageRuntimeHandle`
+  (déclarations fusionnées spec→corps, `publicNames` du spec, version,
+  état de session opaque).
+- `PlsqlHost.resolvePackage` (optionnel) + interpréteur : instanciation
+  paresseuse (déclarations puis bloc init, comme Oracle), appels
+  `pkg.proc`/`pkg.fn` depuis PL/SQL et SQL, lecture/écriture `pkg.var`,
+  `PLS-00302` pour les privés, `PLS-00363` pour les constantes,
+  `ORA-04067`+`ORA-06508` si corps absent (sans instancier l'état),
+  `ORA-04068`+`ORA-04061` une fois après recompilation puis reprise propre.
+- `OracleDatabase` : registre `userPackages` versionné, état par session via
+  `WeakMap<executor>`, visibilité EXECUTE alignée sur les unités stockées
+  (information hiding), `PLS-00304` pour un corps sans spec, `ORA-00955`
+  pour un `CREATE PACKAGE` sans `OR REPLACE` sur un nom existant.
+- `SQLPlusSession` : mode « unité PL/SQL » fidèle — `CREATE [OR REPLACE]
+  PROCEDURE|FUNCTION|PACKAGE [BODY]|TRIGGER` multi-ligne est collecté
+  jusqu'au `/` terminal (jamais d'auto-exécution sur un `END;` de membre,
+  comportement du vrai SQL*Plus) ; les DDL mono-ligne `… END;` restent
+  exécutés immédiatement (compatibilité). `DESCRIBE` liste les
+  sous-programmes publics avec leur table d'arguments.
+- Dictionnaire : `DBA_PROCEDURES` expose les membres au format 19c via un
+  provider dédié (`setPackageMembersProvider`) ; `DBA_OBJECTS`/`DBA_SOURCE`
+  inchangés (les entrées PACKAGE/PACKAGE BODY restent dans `storedUnits`).
+**Validation :** `npx tsc --noEmit` propre ; nouvelle suite
+`oracle-user-packages.test.ts` (26 tests : état par session et par session
+distincte, init block, constantes, privés depuis SQL/PLSQL, 04067/04068,
+DROP spec/corps, DBA_*, DESCRIBE, erreurs de compilation, multi-ligne `/`) ;
+`unit/database/` : **2619/2619** ; `unit/terminal*` : 451/451 ; ESLint propre.
+
+### 2026-06-11 — Fonctions analytiques : registre + écarts Oracle corrigés
+**Défaillance :** `computeWindowValue` était un switch monolithique de ~190 lignes
+dans la God class `OracleExecutor` (violation Open/Closed : ajouter une fonction
+analytique = modifier l'exécuteur), avec quatre écarts vis-à-vis du vrai Oracle :
+1. `RANK` recalculait le rang **depuis le début de la partition pour chaque
+   ligne** (O(n²) par partition, O(n³) au pire) ;
+2. `MIN`/`MAX` fenêtrés passaient par `Math.min`/`Math.max` — résultat faux
+   (NaN→NULL) sur VARCHAR2 et DATE, alors qu'Oracle ordonne tout type ;
+3. `PERCENT_RANK` et `CUME_DIST` (analytiques standard) n'existaient pas ;
+4. une fonction analytique **inconnue produisait NULL en silence** au lieu
+   d'`ORA-00904: invalid identifier`.
+**Correction :** nouveau `functions/windowFunctions.ts` sur le pattern registre
+déjà établi (`functions/registry`, `views/registry`, `PackageRegistry`) :
+- contrat `WindowPartition` **vectorisé par partition** (une implémentation
+  reçoit la partition ordonnée et rend une valeur par position) — `RANK`,
+  `DENSE_RANK`, `PERCENT_RANK`, `CUME_DIST` deviennent des balayages cumulés
+  O(n) ; l'exécuteur garde le partitionnement, le tri et la résolution de
+  frame (`resolveFramePositions`, désormais en positions pures) ;
+- 16 fonctions enregistrées : ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK,
+  CUME_DIST, NTILE, LAG/LEAD (factorisés en `lagLead(direction)`),
+  FIRST/LAST/NTH_VALUE, COUNT/SUM/AVG et MIN/MAX via le comparateur Oracle
+  trois voies (chaînes et dates correctes) ;
+- nom inconnu → `ORA-00904`, comme le vrai moteur.
+`OracleExecutor` : −160 lignes, le switch disparaît au profit d'une délégation.
+**Validation :** `npx tsc --noEmit` propre ; `oracle-phase4.test.ts` étendu
+(PERCENT_RANK, CUME_DIST avec et sans ex æquo, MIN/MAX OVER sur VARCHAR2,
+ORA-00904) : 73/73 ; `unit/database/` : **2624/2624**.
+
+### 2026-06-11 — Data Pump réel (expdp/impdp) + adrci branché sur l'alert log
+**Défaillance :** deux outils Oracle du terminal mentaient sur l'état simulé :
+1. `impdp` affichait « imported … rows » **sans rien restaurer** : le fichier
+   dump écrit par `expdp` était un marqueur cosmétique (`[ORACLE DATA PUMP
+   DUMP - n tables…]`), l'import se contentait de re-parser ce texte pour
+   afficher des compteurs. Le workflow DBA export → drop → import — central
+   dans un lab — était donc factice. `REMAP_SCHEMA` n'était qu'un message,
+   `TABLE_EXISTS_ACTION` n'existait pas.
+2. `adrci SHOW ALERT` répondait « No alert log entries found in simulated
+   environment » alors que l'instance maintient un véritable alert log
+   (`logAlertEvent`/`getAlertLog`), déjà matérialisé sur le VFS par
+   `OracleFilesystemSync`.
+**Correction :**
+- Nouveau `src/database/oracle/datapump/DataPumpEngine.ts` (sous-système
+  conforme à l'arborescence oracle/) : `export()` sérialise métadonnées de
+  tables (colonnes, contraintes, tablespace) et lignes (Dates encodées pour
+  le round-trip JSON) ; `import()` recrée réellement les tables via l'API
+  storage avec la sémantique Oracle : `TABLE_EXISTS_ACTION`
+  SKIP (défaut, `ORA-31684`) / APPEND / TRUNCATE / REPLACE, `REMAP_SCHEMA`
+  effectif, utilisateur cible inexistant → `ORA-39083`+`ORA-01918` par objet
+  (pas de création magique de schéma) ; FULL exclut les schémas dictionnaire.
+- `OracleCommands` : expdp écrit le dump réel sur le VFS (le fichier EST le
+  transport), impdp le relit (`ORA-39000/39143` si contenu étranger), les
+  deux journalisent les lignes par table dans le logfile.
+- `adrci SHOW ALERT [-TAIL n]` lit le vrai alert log de l'instance.
+**Validation :** `linux-commands-and-oracle-tools.test.ts` étendu (round-trip
+export→drop→import avec comptes de lignes, SKIP/APPEND/TRUNCATE, REMAP vers
+user existant/absent, dump étranger rejeté, adrci marqueur + -TAIL) : 66/66 ;
+suites adjacentes (filesystem, ssh-lan) : 77/77 ; `npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

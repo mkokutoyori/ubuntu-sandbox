@@ -8,7 +8,13 @@ export type LacpPortState =
   | 'sync'
   | 'collecting'
   | 'distributing'
-  | 'bundled';
+  | 'bundled'
+  /**
+   * 802.3ad §43.4.12: no LACPDU from the partner within current_while
+   * (3 × the requested interval). The port has left the aggregate;
+   * partner info survives one short interval longer, then is defaulted.
+   */
+  | 'expired';
 
 export interface LacpActorInfo {
   systemPriority: number;

@@ -40,7 +40,8 @@ import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
 import { runAnonymousBlock, PlsqlInterpreter } from './plsql';
-import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
+import type { PlsqlHost, StoredUnitLike, Scalar, PackageSection, PackageRuntimeHandle, PackageSessionState } from './plsql';
+import { compilePackageSection, declarationNames } from './plsql';
 import { compileStoredUnit } from './plsql/unitSource';
 import { SchedulerManager } from './scheduler/SchedulerManager';
 import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
@@ -81,6 +82,21 @@ export interface StoredPLSQLUnit {
   status: 'VALID' | 'INVALID';
 }
 
+/**
+ * A user-defined package: spec and body compiled through the real
+ * PL/SQL parser. `version` increments on every redefinition so that
+ * per-session instantiation state can be discarded (ORA-04068).
+ */
+interface UserPackage {
+  schema: string;
+  name: string;
+  version: number;
+  spec: PackageSection;
+  body: PackageSection | null;
+  /** Members declared in the spec — the package's public surface. */
+  publicNames: Set<string>;
+}
+
 export class OracleDatabase implements SqlCommandHost {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
@@ -92,6 +108,10 @@ export class OracleDatabase implements SqlCommandHost {
   private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
+  /** User-defined packages, keyed "SCHEMA.NAME". */
+  private userPackages: Map<string, UserPackage> = new Map();
+  /** Per-session (per-executor) package instantiation state. */
+  private packageSessionStates: WeakMap<object, Map<string, PackageSessionState>> = new WeakMap();
   /** Last unit compiled in this session — what SHOW ERRORS reports on. */
   private lastCompiledUnit: { schema: string; name: string; type: string } | null = null;
   /** Per-block partial line buffer for DBMS_OUTPUT.PUT (no implicit
@@ -195,6 +215,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storage = new OracleStorage();
     this.catalog = new OracleCatalog(this.storage, this.instance);
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
+    this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
     this.securityEngine = new SecurityEngine(this.catalog);
     this.catalog.setSecurityEngine(this.securityEngine);
     // Provision the predefined non-DEFAULT profiles (MONITORING_PROFILE,
@@ -764,6 +785,7 @@ export class OracleDatabase implements SqlCommandHost {
       isServerOutput: () => !!ctx.serverOutput,
       currentSchema: () => ctx.currentSchema ?? 'SYS',
       lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
+      resolvePackage: (name: string) => this.resolvePackageHandle(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
     };
@@ -783,13 +805,39 @@ export class OracleDatabase implements SqlCommandHost {
   ): { handled: boolean; value: import('../engine/storage/BaseStorage').CellValue } {
     const oraExecutor = executor as OracleExecutor;
     const schema = ((oraExecutor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS').toUpperCase();
-    const unit = this.resolveStoredUnit(schema, qualifiedName);
-    if (!unit || unit.type !== 'FUNCTION') return { handled: false, value: null };
 
     // DBMS_OUTPUT produced by SQL-invoked functions is collected but not
     // surfaced — matching SQL*Plus, which only flushes the buffer after
     // top-level PL/SQL blocks.
     const output: string[] = [];
+
+    // Package member function (pkg.fn / schema.pkg.fn) takes priority:
+    // package state must come from the session's instance scope.
+    const parts = qualifiedName.toUpperCase().split('.');
+    if (parts.length >= 2) {
+      const pkgName = parts.slice(0, -1).join('.');
+      const member = parts[parts.length - 1];
+      const handle = this.resolvePackageHandle(oraExecutor, pkgName);
+      if (handle) {
+        const { host } = this.buildPlsqlHost(oraExecutor, output);
+        const interp = new PlsqlInterpreter(host);
+        try {
+          return { handled: true, value: this.scalarToCell(interp.callPackageFunction(handle, member, args as Scalar[])) };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          // A private (or missing) member is invisible from SQL: real
+          // Oracle raises ORA-00904 here, not the PL/SQL diagnostic.
+          if (msg.includes('PLS-00302')) return { handled: false, value: null };
+          // Other PL/SQL diagnostics (ORA-04067, ORA-04068, …) surface
+          // as the SQL error for this expression, like real Oracle.
+          throw e instanceof Error ? e : new Error(msg);
+        }
+      }
+    }
+
+    const unit = this.resolveStoredUnit(schema, qualifiedName);
+    if (!unit || unit.type !== 'FUNCTION') return { handled: false, value: null };
+
     const { host } = this.buildPlsqlHost(oraExecutor, output);
     const interp = new PlsqlInterpreter(host);
     const value = interp.callStoredFunction(unit as StoredUnitLike, args as Scalar[]);
@@ -801,10 +849,22 @@ export class OracleDatabase implements SqlCommandHost {
     return { handled: true, value: String(value) };
   }
 
+  /** Narrow a PL/SQL value to a SQL cell value. */
+  private scalarToCell(value: unknown): import('../engine/storage/BaseStorage').CellValue {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' || typeof value === 'string' || value instanceof Date) return value;
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    return String(value);
+  }
+
   private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
     const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
     const up = name.toUpperCase();
-    const unit = this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
+    // Dotted names resolve as schema-qualified standalone units; package
+    // members go through PlsqlHost.resolvePackage instead.
+    const unit = up.includes('.')
+      ? this.resolveStoredUnit(schema, up)
+      : this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
     if (!unit) return undefined;
     return unit as StoredUnitLike;
   }
@@ -1082,16 +1142,14 @@ export class OracleDatabase implements SqlCommandHost {
       return this.storedUnits.get(`${currentSchema}.${name}`) ?? this.storedUnits.get(`SYS.${name}`);
     }
 
+    // SCHEMA.UNIT — package members are not stored as standalone units;
+    // they resolve through the package runtime (resolvePackageHandle).
     if (parts.length === 2) {
       const [a, b] = parts;
-      const schemaQualified = this.catalog.userExists(a) ? this.storedUnits.get(`${a}.${b}`) : undefined;
-      const packageMember = this.storedUnits.get(`${currentSchema}.${a}.${b}`)
-        ?? this.storedUnits.get(`SYS.${a}.${b}`);
-      return schemaQualified ?? packageMember ?? this.storedUnits.get(`${a}.${b}`);
+      return this.storedUnits.get(`${a}.${b}`);
     }
 
-    const [schema, ...rest] = parts;
-    return this.storedUnits.get(`${schema}.${rest.join('.')}`) ?? this.storedUnits.get(qualifiedName.toUpperCase());
+    return undefined;
   }
 
   private callStoredUnit(executor: OracleExecutor, callExpr: string): ResultSet {
@@ -1180,8 +1238,11 @@ export class OracleDatabase implements SqlCommandHost {
         return emptyResult(`ORA-04043: object ${name} does not exist`);
       }
       this.storedUnits.delete(bodyKey);
-      // Also remove member units
-      this.removePackageMembers(schema, name);
+      const pkg = this.userPackages.get(`${schema}.${name}`);
+      if (pkg) {
+        pkg.body = null;
+        pkg.version += 1; // session state built on this body is now stale
+      }
       return emptyResult('Package body dropped.');
     }
 
@@ -1208,7 +1269,7 @@ export class OracleDatabase implements SqlCommandHost {
   // PL/SQL Packages
   // ═══════════════════════════════════════════════════════════════════
 
-  /** Parse and store a CREATE [OR REPLACE] PACKAGE (specification) */
+  /** Compile and store a CREATE [OR REPLACE] PACKAGE (specification) */
   private createPackageSpec(executor: OracleExecutor, sql: string): ResultSet {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
@@ -1216,29 +1277,42 @@ export class OracleDatabase implements SqlCommandHost {
     const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
-    const body = match[4].trim();
+    const source = match[4].trim();
     const key = `${schema}.${name}`;
 
-    // If OR REPLACE, remove existing spec (but keep body and members)
-    if (match[1]) {
-      this.storedUnits.delete(key);
+    if (!match[1] && this.storedUnits.has(key)) {
+      return emptyResult(`ORA-00955: name is already used by an existing object`);
     }
 
+    const compilation = compilePackageSection(source);
+    this.lastCompiledUnit = { schema, name, type: 'PACKAGE' };
     this.storedUnits.set(key, {
-      schema,
-      name,
-      type: 'PACKAGE',
-      parameters: [],
-      body,
-      sourceLines: sql.split('\n'),
-      created: new Date(),
-      status: 'VALID',
+      schema, name, type: 'PACKAGE', parameters: [],
+      body: source, sourceLines: sql.split('\n'),
+      created: new Date(), status: compilation.ok ? 'VALID' : 'INVALID',
     });
 
+    if (!compilation.ok) {
+      this.catalog.setCompilationErrors(schema, name, 'PACKAGE', compilation.errors);
+      return emptyResult('Warning: Package created with compilation errors.');
+    }
+    this.catalog.clearCompilationErrors(schema, name);
+
+    // Redefining the spec discards session state (version bump) but keeps
+    // an existing body — real Oracle marks it invalid and recompiles it
+    // on next use; here the body source stays valid as compiled.
+    const existing = this.userPackages.get(key);
+    this.userPackages.set(key, {
+      schema, name,
+      version: (existing?.version ?? 0) + 1,
+      spec: compilation.section,
+      body: existing?.body ?? null,
+      publicNames: declarationNames(compilation.section.declarations),
+    });
     return emptyResult('Package created.');
   }
 
-  /** Parse and store a CREATE [OR REPLACE] PACKAGE BODY */
+  /** Compile and store a CREATE [OR REPLACE] PACKAGE BODY */
   private createPackageBody(executor: OracleExecutor, sql: string): ResultSet {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
@@ -1246,111 +1320,53 @@ export class OracleDatabase implements SqlCommandHost {
     const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const pkgName = match[3].toUpperCase();
-    const bodyContent = match[4].trim();
-    const bodyKey = `${schema}.${pkgName}`;
+    const source = match[4].trim();
+    const key = `${schema}.${pkgName}`;
+    const bodyUnitKey = `${schema}.${pkgName}.__BODY__`;
 
-    // If OR REPLACE, remove existing body and its member units
-    if (match[1]) {
-      this.removePackageMembers(schema, pkgName);
-      // Remove the PACKAGE BODY entry
-      const bodyKey = `${schema}.${pkgName}.__BODY__`;
-      this.storedUnits.delete(bodyKey);
+    const pkg = this.userPackages.get(key);
+    this.lastCompiledUnit = { schema, name: pkgName, type: 'PACKAGE BODY' };
+
+    const fail = (errors: { line: number; position: number; text: string }[]): ResultSet => {
+      this.storedUnits.set(bodyUnitKey, {
+        schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
+        body: source, sourceLines: sql.split('\n'),
+        created: new Date(), status: 'INVALID',
+      });
+      this.catalog.setCompilationErrors(schema, pkgName, 'PACKAGE BODY', errors);
+      return emptyResult('Warning: Package Body created with compilation errors.');
+    };
+
+    // A body cannot compile without its specification (PLS-00304).
+    if (!pkg) {
+      return fail([{
+        line: 1, position: 1,
+        text: `PLS-00304: cannot compile body of '${pkgName}' without its specification`,
+      }]);
     }
 
-    // Store the package body unit
-    // Use a separate key pattern for PACKAGE BODY to avoid colliding with the spec
-    const bodyUnitKey = `${schema}.${pkgName}.__BODY__`;
+    const compilation = compilePackageSection(source);
+    if (!compilation.ok) return fail(compilation.errors);
+
     this.storedUnits.set(bodyUnitKey, {
-      schema,
-      name: pkgName,
-      type: 'PACKAGE BODY',
-      parameters: [],
-      body: bodyContent,
-      sourceLines: sql.split('\n'),
-      created: new Date(),
-      status: 'VALID',
+      schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
+      body: source, sourceLines: sql.split('\n'),
+      created: new Date(), status: 'VALID',
     });
-
-    // Parse and extract individual procedures and functions from the body
-    this.extractPackageMembers(schema, pkgName, bodyContent);
-
+    this.catalog.clearCompilationErrors(schema, pkgName);
+    pkg.body = compilation.section;
+    pkg.version += 1; // discard any session state built on the old body
     return emptyResult('Package body created.');
   }
 
-  /** Extract individual procedures/functions from a package body and store them */
-  private extractPackageMembers(schema: string, pkgName: string, bodyContent: string): void {
-    // Remove the final END [package_name]; from the body
-    const content = bodyContent.replace(/\bEND\s+\w*\s*;?\s*$/i, '').trim();
-
-    // Find PROCEDURE and FUNCTION definitions
-    // We'll scan for PROCEDURE name(...) IS|AS and FUNCTION name(...) RETURN type IS|AS
-    const memberPattern = /\b(PROCEDURE|FUNCTION)\s+(\w+)\s*(\([^)]*\))?\s*(?:RETURN\s+(\w+(?:\([^)]*\))?)\s*)?(?:IS|AS)\b/gi;
-    let memberMatch: RegExpExecArray | null;
-    const members: { type: string; name: string; paramStr: string; returnType: string; startIdx: number }[] = [];
-
-    while ((memberMatch = memberPattern.exec(content)) !== null) {
-      members.push({
-        type: memberMatch[1].toUpperCase(),
-        name: memberMatch[2].toUpperCase(),
-        paramStr: memberMatch[3] ? memberMatch[3].slice(1, -1) : '', // remove parens
-        returnType: memberMatch[4]?.toUpperCase() || '',
-        startIdx: memberMatch.index,
-      });
-    }
-
-    // Extract each member's body
-    for (let i = 0; i < members.length; i++) {
-      const member = members[i];
-      // Body starts after the IS|AS keyword
-      const headerEnd = content.indexOf(content.substring(member.startIdx).match(/\b(?:IS|AS)\b/i)![0], member.startIdx) +
-        content.substring(member.startIdx).match(/\b(?:IS|AS)\b/i)![0].length;
-
-      // Body ends at the start of the next member, or at the end of content
-      let bodyEnd: number;
-      if (i + 1 < members.length) {
-        bodyEnd = members[i + 1].startIdx;
-      } else {
-        bodyEnd = content.length;
-      }
-
-      const memberBody = content.substring(headerEnd, bodyEnd).trim();
-      const parameters = this.parseParameters(member.paramStr);
-
-      const qualifiedKey = `${schema}.${pkgName}.${member.name}`;
-
-      const unit: StoredPLSQLUnit = {
-        schema,
-        name: `${pkgName}.${member.name}`,
-        type: member.type === 'FUNCTION' ? 'FUNCTION' : 'PROCEDURE',
-        parameters,
-        body: memberBody,
-        sourceLines: memberBody.split('\n'),
-        created: new Date(),
-        status: 'VALID',
-      };
-
-      if (member.type === 'FUNCTION') {
-        unit.returnType = member.returnType;
-      }
-
-      this.storedUnits.set(qualifiedKey, unit);
-    }
-  }
-
-  /** Remove all stored members of a package */
-  private removePackageMembers(schema: string, pkgName: string): void {
-    const prefix = `${schema}.${pkgName}.`;
-    const keysToDelete = Array.from(this.storedUnits.keys()).filter(k => k.startsWith(prefix));
-    keysToDelete.forEach(key => this.storedUnits.delete(key));
-  }
-
-  /** DROP PACKAGE — drops spec, body, and all member procedures/functions */
+  /** DROP PACKAGE — drops spec and body */
   private dropPackage(_executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^DROP\s+PACKAGE\s+(\w+)/i);
+    const match = sql.match(/^DROP\s+PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const name = match[1].toUpperCase();
-    const schema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS';
+    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS';
+    const schema = (match[1] ?? ctxSchema).toUpperCase();
+    const name = match[2].toUpperCase();
 
     const specKey = `${schema}.${name}`;
     const bodyKey = `${schema}.${name}.__BODY__`;
@@ -1359,14 +1375,108 @@ export class OracleDatabase implements SqlCommandHost {
       return emptyResult(`ORA-04043: object ${name} does not exist`);
     }
 
-    // Remove spec
     this.storedUnits.delete(specKey);
-    // Remove body
     this.storedUnits.delete(bodyKey);
-    // Remove all member units
-    this.removePackageMembers(schema, name);
+    this.userPackages.delete(specKey);
+    this.catalog.clearCompilationErrors(schema, name);
 
     return emptyResult('Package dropped.');
+  }
+
+  /**
+   * Resolve a package reference ("PKG" or "SCHEMA.PKG") for the PL/SQL
+   * interpreter: visibility follows the stored-unit rules (current
+   * schema, then SYS; non-owners need EXECUTE). Returns the runtime
+   * handle bound to this session's instantiation state.
+   */
+  private resolvePackageHandle(executor: OracleExecutor, name: string): PackageRuntimeHandle | undefined {
+    const ctx = (executor as { context?: { currentSchema?: string; currentUser?: string } }).context;
+    const schema = (ctx?.currentSchema ?? 'SYS').toUpperCase();
+    const parts = name.toUpperCase().split('.');
+
+    let pkg: UserPackage | undefined;
+    if (parts.length === 1) {
+      pkg = this.userPackages.get(`${schema}.${parts[0]}`) ?? this.userPackages.get(`SYS.${parts[0]}`);
+    } else if (parts.length === 2) {
+      pkg = this.userPackages.get(`${parts[0]}.${parts[1]}`);
+    }
+    if (!pkg) return undefined;
+
+    // EXECUTE privilege: same information-hiding rule as stored units —
+    // a caller without rights simply does not see the package.
+    const currentUser = (ctx?.currentUser || schema).toUpperCase();
+    if (currentUser !== 'SYS' && currentUser !== pkg.schema) {
+      const engine = this.catalog.getSecurityEngine?.();
+      const hasExecute = !!engine && (
+        engine.privileges.isDba(currentUser)
+        || engine.privileges.hasSystemPrivilege(currentUser, 'EXECUTE ANY PROCEDURE')
+        || engine.privileges.hasObjectPrivilege(currentUser, 'EXECUTE', pkg.schema, pkg.name)
+      );
+      if (!hasExecute) return undefined;
+    }
+
+    const key = `${pkg.schema}.${pkg.name}`;
+    let states = this.packageSessionStates.get(executor);
+    if (!states) {
+      states = new Map();
+      this.packageSessionStates.set(executor, states);
+    }
+    let state = states.get(key);
+    if (!state) {
+      state = { version: pkg.version, scope: null };
+      states.set(key, state);
+    }
+
+    return {
+      qualifiedName: key,
+      version: pkg.version,
+      declarations: [...pkg.spec.declarations, ...(pkg.body?.declarations ?? [])],
+      initBody: pkg.body?.initBody ?? [],
+      initHandlers: pkg.body?.initHandlers ?? [],
+      publicNames: pkg.publicNames,
+      hasBody: pkg.body !== null,
+      state,
+    };
+  }
+
+  /**
+   * Public subprogram signatures of a package, for SQL*Plus DESCRIBE.
+   * Returns undefined when the package does not exist.
+   */
+  describePackage(schema: string, name: string): {
+    name: string; kind: 'PROCEDURE' | 'FUNCTION'; returnType?: string;
+    parameters: { name: string; dataType: string; mode: 'IN' | 'OUT' | 'IN OUT'; hasDefault: boolean }[];
+  }[] | undefined {
+    const pkg = this.userPackages.get(`${schema.toUpperCase()}.${name.toUpperCase()}`);
+    if (!pkg) return undefined;
+    const typeText = (t: { name: string; args: number[] }): string =>
+      t.args.length ? `${t.name}(${t.args.join(',')})` : t.name;
+    const members: ReturnType<OracleDatabase['describePackage']> = [];
+    for (const d of pkg.spec.declarations) {
+      if (d.kind !== 'subprogram') continue;
+      members!.push({
+        name: d.name,
+        kind: d.isFunction ? 'FUNCTION' : 'PROCEDURE',
+        returnType: d.returnType ? typeText(d.returnType) : undefined,
+        parameters: d.params.map(p => ({
+          name: p.name, dataType: typeText(p.type), mode: p.mode, hasDefault: p.init !== null,
+        })),
+      });
+    }
+    return members;
+  }
+
+  /** Package members for the data dictionary (DBA_PROCEDURES). */
+  getPackageMembers(): { schema: string; pkg: string; member: string; kind: 'PROCEDURE' | 'FUNCTION' }[] {
+    const rows: { schema: string; pkg: string; member: string; kind: 'PROCEDURE' | 'FUNCTION' }[] = [];
+    for (const pkg of this.userPackages.values()) {
+      for (const d of pkg.spec.declarations) {
+        if (d.kind === 'subprogram') {
+          rows.push({ schema: pkg.schema, pkg: pkg.name, member: d.name, kind: d.isFunction ? 'FUNCTION' : 'PROCEDURE' });
+        }
+      }
+    }
+    return rows;
   }
 
   /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */

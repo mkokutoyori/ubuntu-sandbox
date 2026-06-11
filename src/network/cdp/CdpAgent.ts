@@ -188,6 +188,26 @@ export class CdpAgent extends ReactiveAgentBase {
     };
     this.neighbors.set(key, entry);
     const bus = this.getBus();
+
+    // %CDP-4-NATIVE_VLAN_MISMATCH equivalent: both ends carry their
+    // native VLAN in the hello; a disagreement silently black-holes
+    // untagged traffic, so real switches log it on every hello.
+    const localNative = this.host.getNativeVlan?.(portName);
+    if (localNative !== undefined && payload.nativeVlan !== undefined
+      && payload.nativeVlan !== localNative) {
+      bus.publish({
+        topic: 'cdp.native-vlan.mismatch',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName, localVlan: localNative,
+          remoteHost: payload.deviceId, remotePort: payload.portId,
+          remoteVlan: payload.nativeVlan,
+        },
+      });
+      Logger.warn(this.host.id, 'cdp:native-vlan-mismatch',
+        `${this.host.name}: Native VLAN mismatch discovered on ${portName} (${localNative}), with ${payload.deviceId} ${payload.portId} (${payload.nativeVlan})`);
+    }
+
     bus.publish({
       topic: 'cdp.frame.received',
       payload: {

@@ -62,6 +62,8 @@ export interface RIPRouteState {
   gcTimer: symbol | null;
 }
 
+export type RIPRedistSource = 'static' | 'connected' | 'ospf' | 'eigrp' | 'bgp';
+
 /** RIP configuration */
 export interface RIPConfig {
   networks: Array<{ network: IPAddress; mask: SubnetMask }>;
@@ -70,6 +72,15 @@ export interface RIPConfig {
   gcTimeout: number;
   splitHorizon: boolean;
   poisonedReverse: boolean;
+  /**
+   * Interfaces on which RIP never transmits (Cisco `passive-interface`,
+   * Huawei `silent-interface`). Received Responses are still processed —
+   * the interface keeps learning routes, it just stays silent.
+   */
+  passiveInterfaces: Set<string>;
+  redistribute: Map<RIPRedistSource, { metric?: number }>;
+  defaultMetric: number | null;
+  defaultInformationOriginate: boolean;
 }
 
 /**
@@ -113,6 +124,10 @@ function createDefaultConfig(): RIPConfig {
     gcTimeout: RIP_TIMERS.GARBAGE_COLLECTION_MS,
     splitHorizon: true,
     poisonedReverse: true,
+    passiveInterfaces: new Set(),
+    redistribute: new Map(),
+    defaultMetric: null,
+    defaultInformationOriginate: false,
   };
 }
 
@@ -262,7 +277,12 @@ export class RIPEngine implements IProtocolEngine {
   // ─── Configuration ────────────────────────────────────────────────
 
   getConfig(): RIPConfig {
-    return { ...this.config, networks: [...this.config.networks] };
+    return {
+      ...this.config,
+      networks: [...this.config.networks],
+      passiveInterfaces: new Set(this.config.passiveInterfaces),
+      redistribute: new Map(this.config.redistribute),
+    };
   }
 
   /** Merge a partial config (used by `router rip` re-entry). */
@@ -272,6 +292,41 @@ export class RIPEngine implements IProtocolEngine {
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
     this.config.networks.push({ network, mask });
+  }
+
+  // ── Passive interfaces (IOS `passive-interface` / VRP `silent-interface`) ──
+  //
+  // RFC 2453 has no passive concept; this models real router behaviour:
+  // the interface sends NO RIP traffic (no Request at startup, no periodic
+  // or triggered Responses, no answer to received Requests) but received
+  // Responses are still processed, so routes keep being learned on it.
+
+  setPassiveInterface(iface: string): void {
+    this.config.passiveInterfaces.add(iface);
+  }
+
+  removePassiveInterface(iface: string): void {
+    this.config.passiveInterfaces.delete(iface);
+  }
+
+  isPassiveInterface(iface: string): boolean {
+    return this.config.passiveInterfaces.has(iface);
+  }
+
+  setRedistribution(source: RIPRedistSource, metric?: number): void {
+    this.config.redistribute.set(source, { metric });
+  }
+
+  removeRedistribution(source: RIPRedistSource): void {
+    this.config.redistribute.delete(source);
+  }
+
+  setDefaultMetric(metric: number | null): void {
+    this.config.defaultMetric = metric;
+  }
+
+  setDefaultInformationOriginate(on: boolean): void {
+    this.config.defaultInformationOriginate = on;
   }
 
   /** Get route states for debugging/display */
@@ -296,7 +351,8 @@ export class RIPEngine implements IProtocolEngine {
     if (!this.isRIPInterface(inPort)) return;
 
     if (ripPkt.command === 1) {
-      this.sendUpdate(inPort);
+      // A passive interface never transmits — not even Request replies.
+      if (!this.isPassiveInterface(inPort)) this.sendUpdate(inPort);
       return;
     }
 
@@ -357,6 +413,7 @@ export class RIPEngine implements IProtocolEngine {
 
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       this.sendPacket(portName, request);
     }
   }
@@ -366,7 +423,51 @@ export class RIPEngine implements IProtocolEngine {
 
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       this.sendUpdate(portName);
+    }
+  }
+
+  private coveredByNetworkStatement(network: IPAddress): boolean {
+    const netInt = network.toUint32();
+    for (const stmt of this.config.networks) {
+      const cfgNetInt = stmt.network.toUint32() & stmt.mask.toUint32();
+      if ((netInt & stmt.mask.toUint32()) === cfgNetInt) return true;
+    }
+    return false;
+  }
+
+  private advertisableMetric(
+    route: { network: IPAddress; type: string; metric: number },
+  ): number | null {
+    const isDefaultPrefix = route.network.toUint32() === 0;
+    if (isDefaultPrefix) {
+      return this.config.defaultInformationOriginate ? 1 : null;
+    }
+    switch (route.type) {
+      case 'rip':
+        return route.metric >= RIP_METRIC_INFINITY
+          ? null : Math.min(route.metric + 1, RIP_METRIC_INFINITY);
+      case 'connected': {
+        if (this.coveredByNetworkStatement(route.network)) return 1;
+        const redist = this.config.redistribute.get('connected');
+        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+      }
+      case 'static': {
+        const redist = this.config.redistribute.get('static');
+        return redist ? Math.min(redist.metric ?? 1, RIP_METRIC_INFINITY) : null;
+      }
+      case 'ospf':
+      case 'eigrp':
+      case 'bgp': {
+        const redist = this.config.redistribute.get(route.type);
+        if (!redist) return null;
+        const metric = redist.metric ?? this.config.defaultMetric;
+        return metric === null || metric === undefined
+          ? null : Math.min(metric, RIP_METRIC_INFINITY);
+      }
+      default:
+        return null;
     }
   }
 
@@ -375,7 +476,8 @@ export class RIPEngine implements IProtocolEngine {
     const routingTable = this.callbacks.getRoutingTable();
 
     for (const route of routingTable) {
-      if (route.type === 'rip' && route.metric >= RIP_METRIC_INFINITY) continue;
+      const metric = this.advertisableMetric(route);
+      if (metric === null) continue;
 
       if (this.config.splitHorizon && route.iface === outIface) {
         if (this.config.poisonedReverse && route.type === 'rip') {
@@ -384,7 +486,6 @@ export class RIPEngine implements IProtocolEngine {
         continue;
       }
 
-      const metric = route.type === 'connected' ? 1 : Math.min(route.metric + 1, RIP_METRIC_INFINITY);
       entries.push(this.routeToRIPEntry(route, metric));
     }
 
@@ -438,6 +539,7 @@ export class RIPEngine implements IProtocolEngine {
     let totalEntries = 0;
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
       const entries: RIPRouteEntry[] = [];
       for (const route of changed) {
         if (this.config.splitHorizon && route.iface === portName) {

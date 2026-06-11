@@ -228,6 +228,10 @@ export class CiscoRouter extends Router {
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
   getHsrpAgent(): HsrpAgent { return this.hsrpAgent; }
   getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
+  /** FHRP data plane: VIP ARP answering, virtual-MAC frame acceptance. */
+  protected override fhrpDataPlanes() {
+    return [this.hsrpAgent, this.vrrpAgent, this.glbpAgent];
+  }
   getNtpAgent(): NtpAgent { return this.ntpAgent; }
   getGlbpAgent(): GlbpAgent { return this.glbpAgent; }
   getBfdAgent(): BfdAgent { return this.bfdAgent; }

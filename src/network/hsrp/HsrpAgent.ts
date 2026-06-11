@@ -7,7 +7,7 @@
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket,
   defaultGroupRuntime, makeKey, compareSpeaker,
-  effectivePriority,
+  effectivePriority, hsrpVirtualMac,
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
@@ -38,6 +38,9 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   protected clearPeerState(g: HsrpGroupRuntime): void {
     g.activeRouterIp = null;
     g.standbyRouterIp = null;
+    // The segment may have a different active when the link returns:
+    // force a fresh Speak probe before any Active claim.
+    g.probed = false;
   }
 
   protected helloIntervalMs(): number { return 3000; }
@@ -53,6 +56,39 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     const g = super.ensureGroup(iface, group);
     if (version !== undefined) g.version = version;
     return g;
+  }
+
+  /**
+   * Synchronous stand-in for the RFC 2281 Listen/Learn phase: a fresh
+   * (or re-risen) group advertises once in Speak; the incumbent active
+   * answers synchronously through maybeAdvertiseBack, and only an
+   * unanswered probe lets the group claim Active. This is what keeps a
+   * non-preempting higher-priority newcomer from hijacking a live
+   * active router, without introducing hold-timer waits everywhere.
+   */
+  private probeThenClaim(g: HsrpGroupRuntime): void {
+    this.recompute(g, 'config');
+    this.advertiseIfDue(g); // the Speak probe (or a normal hello)
+    if (!g.probed) {
+      g.probed = true;
+      this.recompute(g, 'config');
+      this.advertiseIfDue(g);
+    }
+  }
+
+  override setVip(iface: string, id: number, vip: string): void {
+    const g = this.ensureGroup(iface, id);
+    g.vip = vip;
+    this.probeThenClaim(g);
+  }
+
+  /** Unconfiguring an active group resigns first, like real IOS. */
+  override removeGroup(iface: string, group: number): void {
+    const g = this.getGroup(iface, group);
+    if (g && g.state === 'active' && this.linkContext(g).linkUp) {
+      this.sendResign(g);
+    }
+    super.removeGroup(iface, group);
   }
 
   // HSRP (unlike VRRP/GLBP) also advertises right after a preempt
@@ -127,9 +163,17 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     const now = Date.now();
     const oldActiveIp = g.activeRouterIp;
     if (payload.state === 'active') {
-      g.activeRouterIp = payload.senderIp;
-      g.activeRouterPriority = payload.priority;
-      g.lastHeardActiveMs = now;
+      // RFC 2281 §5.5: an Active router yields only to a HIGHER-priority
+      // active claim (active/active collision after a partition heal);
+      // an inferior claim is ignored — our next hello makes them back
+      // down. Non-active routers always learn the active this way.
+      const claimer = { priority: payload.priority, ip: payload.senderIp };
+      const me = { priority: effectivePriority(g), ip: this.linkContext(g).myIp };
+      if (g.state !== 'active' || compareSpeaker(claimer, me) < 0) {
+        g.activeRouterIp = payload.senderIp;
+        g.activeRouterPriority = payload.priority;
+        g.lastHeardActiveMs = now;
+      }
     } else if (payload.state === 'standby') {
       g.standbyRouterIp = payload.senderIp;
       g.standbyRouterPriority = payload.priority;
@@ -148,11 +192,23 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
 
   // ── Wire format (UDP/1985, v1 224.0.0.2 / v2 224.0.0.102) ────────
   protected advertise(g: HsrpGroupRuntime): void {
+    this.emit(g, 'hello');
+  }
+
+  /**
+   * RFC 2281 §5.4.3: an active router relinquishing its role sends a
+   * Resign so the standby takes over immediately instead of waiting
+   * out the hold timer.
+   */
+  private sendResign(g: HsrpGroupRuntime): void {
+    this.emit(g, 'resign');
+  }
+
+  private emit(g: HsrpGroupRuntime, opcode: HsrpPacket['opcode']): void {
     const port = this.host.getPort(g.iface);
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    const opcode: HsrpPacket['opcode'] = 'hello';
     const payload: HsrpPacket = {
       type: 'hsrp', version: g.version,
       opcode, state: g.state,
@@ -177,7 +233,11 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       srcMAC: port.getMAC(), dstMAC: multicastMacFor(dstIp),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
-    this.sendGuarded(g, eth);
+    // A resign is edge-triggered (once per active→non-active transition)
+    // and often fires inside the synchronous receive cascade where the
+    // re-entrancy guard is held — send it directly.
+    if (opcode === 'resign') this.host.sendFrame(g.iface, eth);
+    else this.sendGuarded(g, eth);
     this.getBus().publish({
       topic: 'hsrp.packet.sent',
       payload: {
@@ -204,12 +264,21 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
         ? { priority: g.activeRouterPriority, ip: g.activeRouterIp }
         : null;
       if (!active) {
-        g.state = 'active';
-        g.activeRouterIp = myIp;
-        g.activeRouterPriority = myPriority;
+        if (!g.probed) {
+          // Synchronous Listen/Learn: speak first, claim only if the
+          // probe goes unanswered (see probeThenClaim).
+          g.state = 'speak';
+        } else {
+          g.state = 'active';
+          g.activeRouterIp = myIp;
+          g.activeRouterPriority = myPriority;
+        }
       } else if (active.ip === myIp) {
         g.state = 'active';
-      } else if (compareSpeaker(me, active) < 0) {
+      } else if (compareSpeaker(me, active) < 0 && g.preempt) {
+        // RFC 2281 §5.3 / IOS default: preemption is DISABLED. Without
+        // `standby <grp> preempt`, a higher-priority router never
+        // displaces a live active router — it waits for it to die.
         g.state = 'active';
         g.activeRouterIp = myIp;
         g.activeRouterPriority = myPriority;
@@ -239,10 +308,37 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       });
       Logger.info(this.host.id, 'hsrp:state',
         `${this.host.name}: ${g.iface} grp ${g.group} ${oldState} → ${g.state}`);
+      // New active router claims the virtual MAC on the segment so
+      // switches re-learn it and host traffic shifts over.
+      if (g.state === 'active') {
+        this.gratuitousVipArp(g, hsrpVirtualMac(g.group, g.version));
+      }
+      // RFC 2281 §5.4.3: relinquishing the active role while the link
+      // is still alive (lost election to a preempting peer, priority
+      // drop) is announced with a Resign — the peer takes over now
+      // instead of waiting out the hold timer.
+      if (oldState === 'active' && g.state !== 'active' && linkUp) {
+        this.sendResign(g);
+      }
     }
     if (oldActiveIp !== g.activeRouterIp) {
       this.publishActiveChanged(g);
     }
+  }
+
+  // ── Data-plane hooks (FhrpDataPlane) ─────────────────────────────
+  // RFC 2281 §5.3: only the active router answers ARP for the VIP,
+  // always with the group's virtual MAC, and forwards frames sent to it.
+  protected vipArpMac(g: HsrpGroupRuntime): string | null {
+    return g.state === 'active' ? hsrpVirtualMac(g.group, g.version) : null;
+  }
+
+  protected ownedVirtualMacs(g: HsrpGroupRuntime): string[] {
+    return g.state === 'active' ? [hsrpVirtualMac(g.group, g.version)] : [];
+  }
+
+  protected isVipOwner(g: HsrpGroupRuntime): boolean {
+    return g.state === 'active';
   }
 
   private publishActiveChanged(g: HsrpGroupRuntime): void {
@@ -281,8 +377,10 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
         if (t.target === portName && t.down) { t.down = false; touched = true; }
       }
       if (g.iface === portName) {
-        this.recompute(g, 'config');
-        touched = true;
+        // Probe again after a link cycle — there may be a live active
+        // on the segment we must not displace.
+        this.probeThenClaim(g);
+        touched = false;
       } else if (touched) {
         this.recompute(g, 'priority');
       }

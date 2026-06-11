@@ -494,6 +494,34 @@ describe('Group 8: NATEngine — SNAT (translateOutbound)', () => {
     expect(r1!.sourceIP.toString()).toBe('203.0.113.1');
   });
 
+  it('8.3b PAT wraparound skips ports still held by live sessions (RFC 4787 REQ-1)', () => {
+    engine.setInterfaceIPFn(() => '203.0.113.1');
+    engine.setACLMatchFn(() => true);
+    engine.addDynamicRule({ aclId: '1', type: 'overload' });
+
+    // Session A takes the first ephemeral port.
+    const rA = engine.translateOutbound(
+      makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53), 'outside', 'inside');
+    const portA = (rA!.payload as UDPPacket).sourcePort;
+
+    // Simulate the cursor wrapping back onto A's port while A is alive.
+    (engine as unknown as { nextPort: number }).nextPort = portA;
+    const rB = engine.translateOutbound(
+      makeUDPPacket('192.168.1.11', '8.8.8.8', 5001, 53), 'outside', 'inside');
+    const portB = (rB!.payload as UDPPacket).sourcePort;
+
+    // The old allocator handed out portA again and silently overwrote
+    // A's reverse mapping — inbound traffic for A reached host B.
+    expect(portB).not.toBe(portA);
+
+    // A's reverse mapping is intact: an inbound reply to portA still
+    // translates back to host A.
+    const replyA = makeUDPPacket('8.8.8.8', '203.0.113.1', 53, portA);
+    const backA = engine.translateInbound(replyA, 'outside');
+    expect(backA).not.toBeNull();
+    expect(backA!.destinationIP.toString()).toBe('192.168.1.10');
+  });
+
   it('8.4 PAT reuses existing session for same source', () => {
     engine.setInterfaceIPFn(() => '203.0.113.1');
     engine.setACLMatchFn(() => true);

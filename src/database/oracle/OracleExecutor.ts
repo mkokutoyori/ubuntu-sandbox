@@ -36,6 +36,7 @@ import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
+import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 
 export class OracleExecutor extends BaseExecutor {
@@ -1373,6 +1374,11 @@ export class OracleExecutor extends BaseExecutor {
         partitions.get(key)!.push(i);
       }
 
+      const impl = resolveWindowFunction(funcName);
+      // Real Oracle rejects an unknown analytic function instead of
+      // silently producing NULLs.
+      if (!impl) throw new OracleError(904, `"${funcName}": invalid identifier`);
+
       // For each partition, sort indices by window ORDER BY and compute
       for (const [, indices] of partitions) {
         // Sort within partition
@@ -1388,152 +1394,20 @@ export class OracleExecutor extends BaseExecutor {
           });
         }
 
-        // Evaluate function for each row in partition
-        for (let posInPartition = 0; posInPartition < indices.length; posInPartition++) {
-          const rowIdx = indices[posInPartition];
-          const value = this.computeWindowValue(
-            funcName, funcExpr, windowSpec, sourceRows, sourceColumns,
-            indices, posInPartition, rowIdx
-          );
-          resultRows[rowIdx][colIdx] = value;
+        const partition: WindowPartition = {
+          size: indices.length,
+          argCount: funcExpr.args.length,
+          star: funcExpr.args.length === 0 || funcExpr.args[0]?.type === 'Star',
+          arg: (i, pos) => this.evaluateExpression(funcExpr.args[i], sourceRows[indices[pos]], sourceColumns),
+          frame: (pos) => this.resolveFramePositions(windowSpec, indices.length, pos),
+          rowsEqual: (a, b) => this.windowRowsEqual(windowSpec, sourceRows[indices[a]], sourceRows[indices[b]], sourceColumns),
+          compare: (a, b) => this.compareValues(a, b),
+        };
+        const values = impl(partition);
+        for (let pos = 0; pos < indices.length; pos++) {
+          resultRows[indices[pos]][colIdx] = values[pos];
         }
       }
-    }
-  }
-
-  private computeWindowValue(
-    funcName: string,
-    funcExpr: FunctionCallExpr,
-    windowSpec: import('../engine/parser/ASTNode').WindowSpec,
-    sourceRows: StorageRow[],
-    sourceColumns: StorageColMeta[],
-    partitionIndices: number[],
-    posInPartition: number,
-    rowIdx: number
-  ): CellValue {
-    switch (funcName) {
-      case 'ROW_NUMBER':
-        return posInPartition + 1;
-
-      case 'RANK': {
-        // Rank with gaps: same rank for ties, gap after
-        if (posInPartition === 0) return 1;
-        // Compare with previous row
-        const prev = partitionIndices[posInPartition - 1];
-        const isTie = this.windowRowsEqual(windowSpec, sourceRows[prev], sourceRows[rowIdx], sourceColumns);
-        // Get previous rank
-        let rank = 1;
-        for (let i = 1; i <= posInPartition; i++) {
-          const iPrev = partitionIndices[i - 1];
-          const iCurr = partitionIndices[i];
-          if (!this.windowRowsEqual(windowSpec, sourceRows[iPrev], sourceRows[iCurr], sourceColumns)) {
-            rank = i + 1;
-          }
-        }
-        return rank;
-      }
-
-      case 'DENSE_RANK': {
-        if (posInPartition === 0) return 1;
-        let denseRank = 1;
-        for (let i = 1; i <= posInPartition; i++) {
-          const iPrev = partitionIndices[i - 1];
-          const iCurr = partitionIndices[i];
-          if (!this.windowRowsEqual(windowSpec, sourceRows[iPrev], sourceRows[iCurr], sourceColumns)) {
-            denseRank++;
-          }
-        }
-        return denseRank;
-      }
-
-      case 'NTILE': {
-        const nBuckets = funcExpr.args.length > 0
-          ? Number(this.evaluateExpression(funcExpr.args[0], sourceRows[rowIdx], sourceColumns))
-          : 1;
-        const totalRows = partitionIndices.length;
-        return Math.floor(posInPartition * nBuckets / totalRows) + 1;
-      }
-
-      case 'LAG': {
-        const offset = funcExpr.args.length > 1
-          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
-          : 1;
-        const defaultVal = funcExpr.args.length > 2
-          ? this.evaluateExpression(funcExpr.args[2], sourceRows[rowIdx], sourceColumns)
-          : null;
-        const lagIdx = posInPartition - offset;
-        if (lagIdx < 0) return defaultVal;
-        const lagRowIdx = partitionIndices[lagIdx];
-        return this.evaluateExpression(funcExpr.args[0], sourceRows[lagRowIdx], sourceColumns);
-      }
-
-      case 'LEAD': {
-        const offset = funcExpr.args.length > 1
-          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
-          : 1;
-        const defaultVal = funcExpr.args.length > 2
-          ? this.evaluateExpression(funcExpr.args[2], sourceRows[rowIdx], sourceColumns)
-          : null;
-        const leadIdx = posInPartition + offset;
-        if (leadIdx >= partitionIndices.length) return defaultVal;
-        const leadRowIdx = partitionIndices[leadIdx];
-        return this.evaluateExpression(funcExpr.args[0], sourceRows[leadRowIdx], sourceColumns);
-      }
-
-      case 'FIRST_VALUE': {
-        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
-        if (frameIndices.length === 0) return null;
-        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[0]], sourceColumns);
-      }
-
-      case 'LAST_VALUE': {
-        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
-        if (frameIndices.length === 0) return null;
-        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[frameIndices.length - 1]], sourceColumns);
-      }
-
-      case 'NTH_VALUE': {
-        const n = funcExpr.args.length > 1
-          ? Number(this.evaluateExpression(funcExpr.args[1], sourceRows[rowIdx], sourceColumns))
-          : 1;
-        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
-        if (n < 1 || n > frameIndices.length) return null;
-        return this.evaluateExpression(funcExpr.args[0], sourceRows[frameIndices[n - 1]], sourceColumns);
-      }
-
-      // Aggregate window functions: SUM, COUNT, AVG, MIN, MAX with OVER
-      case 'COUNT': case 'SUM': case 'AVG': case 'MIN': case 'MAX': {
-        const frameIndices = this.resolveFrameIndices(windowSpec, partitionIndices, posInPartition);
-
-        if (funcName === 'COUNT') {
-          if (funcExpr.args.length === 0 || (funcExpr.args[0] && funcExpr.args[0].type === 'Star')) {
-            return frameIndices.length;
-          }
-          let count = 0;
-          for (const idx of frameIndices) {
-            if (this.evaluateExpression(funcExpr.args[0], sourceRows[idx], sourceColumns) != null) count++;
-          }
-          return count;
-        }
-
-        const vals: number[] = [];
-        for (const idx of frameIndices) {
-          const v = this.evaluateExpression(funcExpr.args[0], sourceRows[idx], sourceColumns);
-          if (v != null) vals.push(Number(v));
-        }
-        if (vals.length === 0) return null;
-
-        switch (funcName) {
-          case 'SUM': return vals.reduce((a, b) => a + b, 0);
-          case 'AVG': return vals.reduce((a, b) => a + b, 0) / vals.length;
-          case 'MIN': return Math.min(...vals);
-          case 'MAX': return Math.max(...vals);
-        }
-        return null;
-      }
-
-      default:
-        return null;
     }
   }
 
@@ -1552,22 +1426,26 @@ export class OracleExecutor extends BaseExecutor {
     return true;
   }
 
-  private resolveFrameIndices(
+  /** Window-frame positions (0-based, within the partition) for `pos`. */
+  private resolveFramePositions(
     windowSpec: import('../engine/parser/ASTNode').WindowSpec,
-    partitionIndices: number[],
+    partitionSize: number,
     posInPartition: number
   ): number[] {
+    const positions = (start: number, end: number): number[] => {
+      if (start > end) return [];
+      return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    };
     const frame = windowSpec.frame;
     if (!frame) {
       // Default frame: if ORDER BY present, UNBOUNDED PRECEDING to CURRENT ROW; else whole partition
       const hasOrderBy = windowSpec.orderBy && windowSpec.orderBy.length > 0;
-      const end = hasOrderBy ? posInPartition : partitionIndices.length - 1;
-      return partitionIndices.slice(0, end + 1);
+      return positions(0, hasOrderBy ? posInPartition : partitionSize - 1);
     }
     const resolveBound = (bound: import('../engine/parser/ASTNode').FrameBound): number => {
       switch (bound.type) {
         case 'UNBOUNDED_PRECEDING': return 0;
-        case 'UNBOUNDED_FOLLOWING': return partitionIndices.length - 1;
+        case 'UNBOUNDED_FOLLOWING': return partitionSize - 1;
         case 'CURRENT_ROW': return posInPartition;
         case 'PRECEDING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
@@ -1575,14 +1453,13 @@ export class OracleExecutor extends BaseExecutor {
         }
         case 'FOLLOWING': {
           const n = bound.value ? Number(this.evaluateExpression(bound.value, [], [])) : 1;
-          return Math.min(partitionIndices.length - 1, posInPartition + n);
+          return Math.min(partitionSize - 1, posInPartition + n);
         }
       }
     };
     const start = resolveBound(frame.start);
     const end = frame.end ? resolveBound(frame.end) : posInPartition; // single bound defaults end to CURRENT ROW
-    if (start > end) return [];
-    return partitionIndices.slice(start, end + 1);
+    return positions(start, end);
   }
 
   private evaluateExpressionGrouped(expr: Expression, groupRows: StorageRow[], columns: StorageColMeta[]): CellValue {

@@ -138,7 +138,60 @@ describe('HSRP — two-speaker election', () => {
     expect(g2?.state).toBe('standby');
   });
 
-  it('on equal priority, higher IP wins the election', async () => {
+  it('without preempt, a later higher-priority router does NOT displace the incumbent (IOS default)', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    // R1 (priority 100) is active first; R2 joins later with 200 but no preempt.
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 200);
+
+    expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+    expect(r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('standby');
+  });
+
+  it('with preempt, a later higher-priority router takes over', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 200, true);
+
+    expect(r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+    expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).not.toBe('active');
+  });
+
+  it('on equal priority, higher IP wins when the challenger preempts', async () => {
+    // Without preempt a live active is never displaced (IOS default) —
+    // the IP tie-break only decides a contested election, so the
+    // higher-IP challenger here is configured with preempt.
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100, true);
+
+    const g1 = r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g2?.state).toBe('active');
+    // The displaced router re-elects itself standby only after the
+    // stale standby entry ages out (hold timer), like real IOS.
+    expect(g1?.state).not.toBe('active');
+  });
+
+  it('without preempt, equal-priority higher IP does NOT displace the incumbent', async () => {
     const bus = new EventBus();
     const r1 = new CiscoRouter('R1');
     const r2 = new CiscoRouter('R2');
@@ -149,10 +202,8 @@ describe('HSRP — two-speaker election', () => {
     await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
 
-    const g1 = r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
-    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
-    expect(g2?.state).toBe('active');
-    expect(g1?.state).toBe('standby');
+    expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+    expect(r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('standby');
   });
 });
 

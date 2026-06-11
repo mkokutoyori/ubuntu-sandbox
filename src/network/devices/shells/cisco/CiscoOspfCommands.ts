@@ -298,7 +298,21 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     } else if (protocol === 'connected') {
       const subnets = args.some(a => a.toLowerCase() === 'subnets');
       extra.redistributeConnected = { subnets };
+    } else if (protocol === 'rip') {
+      const subnets = args.some(a => a.toLowerCase() === 'subnets');
+      let metricType = 2;
+      let metric: number | undefined;
+      for (let i = 0; i < args.length - 1; i++) {
+        const tk = args[i].toLowerCase();
+        if (tk === 'metric-type') metricType = parseInt(args[i + 1], 10);
+        else if (tk === 'metric') {
+          const m = parseInt(args[i + 1], 10);
+          if (!Number.isNaN(m)) metric = m;
+        }
+      }
+      extra.redistributeRip = { subnets, metric, metricType };
     }
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -322,7 +336,12 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     const protocol = (args[0] ?? '').toLowerCase();
     if (protocol === 'static') extra.redistributeStatic = undefined;
     else if (protocol === 'connected') extra.redistributeConnected = undefined;
-    else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
+    else if (protocol === 'rip') extra.redistributeRip = undefined;
+    else {
+      extra.redistributeStatic = undefined;
+      extra.redistributeConnected = undefined;
+      extra.redistributeRip = undefined;
+    }
     ctx.r()._ospfAutoConverge?.();
     return '';
   });

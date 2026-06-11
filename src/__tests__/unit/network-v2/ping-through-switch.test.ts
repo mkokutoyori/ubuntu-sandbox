@@ -312,6 +312,29 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     expect(macTable.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('should flush dynamic MACs of a port the moment its link drops', async () => {
+    const { pc1, pc2, sw, cable1 } = setupLAN();
+
+    await pc1.executeCommand('ifconfig eth0 192.168.1.10');
+    await pc2.executeCommand('ifconfig eth0 192.168.1.20');
+    await pc1.executeCommand('ping -c 1 192.168.1.20');
+
+    const onPort1 = () => sw.getMACTable().filter(
+      e => e.port === 'FastEthernet0/0' && e.type === 'dynamic');
+    const onPort2 = () => sw.getMACTable().filter(
+      e => e.port === 'FastEthernet0/1' && e.type === 'dynamic');
+    expect(onPort1().length).toBeGreaterThanOrEqual(1);
+    expect(onPort2().length).toBeGreaterThanOrEqual(1);
+
+    // Real switches purge entries learned on a dead port immediately —
+    // not after up to 300 s of background aging.
+    cable1.disconnect();
+
+    expect(onPort1()).toHaveLength(0);
+    // Entries on the surviving port are untouched.
+    expect(onPort2().length).toBeGreaterThanOrEqual(1);
+  });
+
   // ─── SELF PING ─────────────────────────────────────────────────
 
   it('should ping itself (loopback)', async () => {
