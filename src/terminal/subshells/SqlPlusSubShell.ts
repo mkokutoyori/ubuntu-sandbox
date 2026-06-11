@@ -58,6 +58,26 @@ export class SqlPlusSubShell implements ISubShell {
       session.setHostCommandRunner(runner);
     }
 
+    // SPOOL / @script filesystem surface. Relative paths resolve against
+    // the launching shell's cwd (like a real sqlplus process); reads and
+    // writes go through the device's stable editor file surface.
+    const fsDevice = device as unknown as {
+      writeFileFromEditor?: (p: string, c: string) => boolean;
+      readFileForEditor?: (p: string) => string | null;
+    };
+    session.setFileIO({
+      resolve: (path: string): string => {
+        if (path.startsWith('/')) return path;
+        const pwd = host?.executeShellCommandSync('pwd').trim();
+        const baseDir = pwd && pwd.startsWith('/') ? pwd : '/root';
+        return `${baseDir}/${path}`.replace(/\/{2,}/g, '/');
+      },
+      read: (path: string): string | null =>
+        fsDevice.readFileForEditor?.(path) ?? null,
+      write: (path: string, content: string): boolean =>
+        fsDevice.writeFileFromEditor?.(path, content) ?? false,
+    });
+
     return {
       subShell: new SqlPlusSubShell(session, session.getPrompt()),
       banner,

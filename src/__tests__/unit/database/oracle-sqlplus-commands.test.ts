@@ -390,16 +390,73 @@ describe('DESC table_name / DESCRIBE table_name', () => {
 // 5. SCRIPT EXECUTION: @ and START
 // ═══════════════════════════════════════════════════════════════════
 
-describe('@script.sql — execute script (stub)', () => {
-  test('@script.sql returns SP2-0310 unable to open file', () => {
+describe('@script.sql — execute script from the VFS', () => {
+  /** In-memory SqlPlusFileIO standing in for the device VFS. */
+  function memIO(files: Record<string, string>) {
+    return {
+      resolve: (p: string) => (p.startsWith('/') ? p : `/root/${p}`),
+      read: (p: string) => (p in files ? files[p] : null),
+      write: (p: string, c: string) => { files[p] = c; return true; },
+    };
+  }
+
+  test('@missing.sql returns SP2-0310 unable to open file', () => {
     const result = cmd('@myscript.sql');
     expect(result.output.some(l => l.includes('SP2-0310'))).toBe(true);
     expect(result.output.some(l => l.includes('myscript.sql'))).toBe(true);
   });
 
-  test('START script.sql returns SP2-0310', () => {
+  test('START missing.sql returns SP2-0310', () => {
     const result = cmd('START myscript.sql');
     expect(result.output.some(l => l.includes('SP2-0310'))).toBe(true);
+  });
+
+  test('@script runs its statements; .sql extension is implied', () => {
+    const files: Record<string, string> = {
+      '/root/mk.sql': 'CREATE TABLE hr.script_t (id NUMBER);\nINSERT INTO hr.script_t VALUES (7);\n',
+    };
+    session.setFileIO(memIO(files));
+    const result = cmd('@mk');
+    expect(result.output.join('\n')).toContain('Table created.');
+    expect(result.output.join('\n')).toContain('1 row created.');
+    expect(output('SELECT id FROM hr.script_t;')).toContain('7');
+  });
+
+  test('SET ECHO ON prints the script commands, interactive input stays unechoed', () => {
+    const files: Record<string, string> = {
+      '/root/q.sql': 'SELECT 1 AS one FROM dual;\n',
+    };
+    session.setFileIO(memIO(files));
+    cmd('SET ECHO ON');
+    const echoed = cmd('@q').output.join('\n');
+    expect(echoed).toContain('SQL> SELECT 1 AS one FROM dual;');
+    // Interactive statements are not echoed, even with ECHO ON.
+    const inter = cmd('SELECT 2 AS two FROM dual;').output.join('\n');
+    expect(inter).not.toContain('SQL> SELECT 2');
+  });
+});
+
+describe('DEFINE substitution — &var with SET VERIFY', () => {
+  test('&var is replaced and old/new lines are shown', () => {
+    cmd("DEFINE owner = 'HR'");
+    const out = output("SELECT COUNT(*) FROM all_tables WHERE owner = '&owner';");
+    expect(out).toMatch(/old   1: .*&owner/);
+    expect(out).toMatch(/new   1: .*'HR'/);
+  });
+
+  test('SET VERIFY OFF suppresses old/new but still substitutes', () => {
+    cmd('DEFINE v = 42');
+    cmd('SET VERIFY OFF');
+    const out = output('SELECT &v AS n FROM dual;');
+    expect(out).not.toMatch(/old   1:/);
+    expect(out).toContain('42');
+  });
+
+  test('SET DEFINE OFF disables substitution', () => {
+    cmd('DEFINE v = 42');
+    cmd('SET DEFINE OFF');
+    const out = output("SELECT '&v' AS n FROM dual;");
+    expect(out).toContain('&v');
   });
 });
 
@@ -408,17 +465,49 @@ describe('@script.sql — execute script (stub)', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('SPOOL filename / SPOOL OFF', () => {
-  test('SPOOL output.txt starts spooling (no error)', () => {
-    const result = cmd('SPOOL output.txt');
-    expect(result.output.length).toBe(0);
-    expect(result.exit).toBe(false);
+  function memIO(files: Record<string, string>) {
+    return {
+      resolve: (p: string) => (p.startsWith('/') ? p : `/root/${p}`),
+      read: (p: string) => (p in files ? files[p] : null),
+      write: (p: string, c: string) => { files[p] = c; return true; },
+    };
+  }
+
+  test('SPOOL captures prompt, commands and output into the file', () => {
+    const files: Record<string, string> = {};
+    session.setFileIO(memIO(files));
+    cmd('SPOOL output.txt');
+    cmd('SELECT 1 AS one FROM dual;');
+    cmd('SPOOL OFF');
+    const spooled = files['/root/output.txt'];
+    expect(spooled).toBeDefined();
+    expect(spooled).toContain('SQL> SELECT 1 AS one FROM dual;');
+    expect(spooled).toContain('ONE');
+    // The closing command is the last line, like the real client.
+    expect(spooled.trimEnd().endsWith('SQL> SPOOL OFF')).toBe(true);
   });
 
-  test('SPOOL OFF stops spooling (no error)', () => {
-    cmd('SPOOL output.txt');
-    const result = cmd('SPOOL OFF');
-    expect(result.output.length).toBe(0);
-    expect(result.exit).toBe(false);
+  test('SPOOL without extension appends .lst', () => {
+    const files: Record<string, string> = {};
+    session.setFileIO(memIO(files));
+    cmd('SPOOL report');
+    cmd('SPOOL OFF');
+    expect(Object.keys(files)).toContain('/root/report.lst');
+  });
+
+  test('bare SPOOL reports state; SPOOL OFF without one says not spooling', () => {
+    const files: Record<string, string> = {};
+    session.setFileIO(memIO(files));
+    expect(output('SPOOL')).toContain('not spooling currently');
+    expect(output('SPOOL OFF')).toContain('not spooling currently');
+    cmd('SPOOL /tmp/x.txt');
+    expect(output('SPOOL')).toContain('currently spooling to /tmp/x.txt');
+    cmd('SPOOL OFF');
+  });
+
+  test('without a wired filesystem SPOOL fails with SP2-0606', () => {
+    const result = cmd('SPOOL output.txt');
+    expect(result.output.some(l => l.includes('SP2-0606'))).toBe(true);
   });
 });
 

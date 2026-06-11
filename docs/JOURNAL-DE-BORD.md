@@ -1052,6 +1052,52 @@ Database 2650 + terminal 380 verts ; zéro nouvelle erreur tsc.
 
 Database 2650 + RMAN 284 verts ; pas de nouvelle erreur tsc.
 
+### Entrée S3.5 — SQL*Plus : SPOOL réel, @/START réels, ECHO, substitution &var + VERIFY
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées (audit terminal)
+
+1. **SPOOL factice** : `spoolFile` stocké puis **jamais écrit** — aucun
+   fichier créé, `SPOOL OFF` ne faisait que vider la variable. Le
+   workflow DBA le plus banal (spool → requêtes → spool off → cat)
+   était silencieusement cassé.
+2. **`@script` / `START` toujours en échec** : SP2-0310 inconditionnel,
+   alors que la lecture du VFS device existe (S3.3).
+3. **`SET ECHO/VERIFY/TRIMSPOOL` ignorés** : réglages stockés sans
+   aucun effet.
+4. **DEFINE mort** : les variables `DEFINE` étaient stockées mais la
+   substitution `&var` n'était **jamais appliquée** aux statements.
+
+#### Corrections
+
+- Nouvelle surface injectée `SqlPlusFileIO { resolve, read, write }` —
+  câblée par `SqlPlusSubShell` sur le VFS du device
+  (`readFileForEditor`/`writeFileFromEditor`, mêmes surfaces que RMAN) ;
+  les chemins relatifs se résolvent contre le cwd du shell lanceur
+  (`pwd`), comme un vrai process sqlplus.
+- **SPOOL réel** : capture prompt + commande + sortie (fidèle au client
+  réel en interactif), écriture au fil de l'eau, extension `.lst`
+  implicite, modes CREATE/REPLACE/APPEND (SP2-0771 sur CREATE existant),
+  `SPOOL` nu = état courant, `SPOOL OFF` enregistre sa propre ligne en
+  dernière position, TRIMSPOOL effectif, SP2-0606 sans filesystem.
+- **@/START réels** : lecture du script sur le VFS (extension `.sql`
+  implicite, `@@` accepté), exécution ligne à ligne via le processeur
+  normal (imbrication possible), **SET ECHO ON** affiche chaque commande
+  de script derrière son prompt — et uniquement pour les scripts, comme
+  le vrai client.
+- **Substitution `&var`/`&&var`** au moment de l'exécution SQL avec
+  affichage `old N:`/`new N:` sous SET VERIFY ON, `SET DEFINE OFF`/char
+  personnalisé honorés, terminaison `.` gérée. Limite documentée : pas
+  d'invite interactive pour les symboles non définis (laissés verbatim).
+- 3 tests qui figeaient les comportements factices mis en conformité ;
+  +9 tests neufs (spool capture/extension/états, @ + ECHO, VERIFY ON/OFF,
+  DEFINE OFF).
+
+#### Validation
+
+Database + terminal + suite sqlplus-LAN : **3139 tests verts**.
+
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
 - **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :
