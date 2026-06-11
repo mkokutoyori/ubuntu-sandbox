@@ -447,7 +447,7 @@ les principes de design :
 | O2 | DROP INDEX/SEQUENCE/VIEW/TRIGGER/SYNONYM silencieux sur objet inexistant ; CREATE INDEX sans aucune validation | ORA-01418/02289/00942/04080/01434/00904/00955/01452 | Haute | ✅ Corrigé |
 | O3 | ROWNUM affecté après filtrage WHERE (allégation d'audit) | Modèle row-source Oracle | — | ❎ Réfuté (voir O3) |
 | O3b | Résultat vide : en-tête affiché au lieu de `no rows selected` ; erreurs au format `ERROR:` au lieu de `ERROR at line N:` | SQL*Plus réel | Moyenne | ✅ Corrigé |
-| O4 | CURRVAL/NEXTVAL : suivi par exécuteur, pas par session | Séquences Oracle | Moyenne | À faire |
+| O4 | CURRVAL lisait le compteur global au lieu de la valeur de session | Séquences Oracle | Moyenne | ✅ Corrigé |
 | O5 | STARTUP/SHUTDOWN : transitions d'états non validées, RESTRICT non appliqué | Cycle de vie instance | Moyenne | À faire |
 | O6 | Listener sans état (established/refused figés à 0, jamais BLOCKED) | lsnrctl réel | Moyenne | À faire |
 | O7 | OracleExecutor god class (4 400 lignes, dispatch switch 60+ cas) | SRP / Strategy | Haute (long terme) | À faire |
@@ -535,6 +535,39 @@ régression.
 (nouveau, 9 tests), `oracle-access-management-comprehensive.test.ts`.
 
 **Validation** : database + terminal = **2998 tests verts**, zéro échec.
+
+### Entrée O4 — Séquences : CURRVAL par session, ORA-02289 réels
+
+**Date** : 2026-06-11
+
+#### Défaillances constatées
+
+1. **CURRVAL non conforme** : `storage.currVal()` retournait le compteur
+   **global** de la séquence. Si la session B faisait `NEXTVAL` après la
+   session A, le `CURRVAL` de A renvoyait la valeur de B. Dans Oracle,
+   CURRVAL est strictement « la dernière valeur obtenue par MA session ».
+   (Le garde-fou ORA-08002 était, lui, correctement par session.)
+2. **Logique dupliquée** : l'évaluation NEXTVAL/CURRVAL était copiée dans
+   deux branches de `evaluateExpression` (`Identifier` à trois parties et
+   `SequenceExpr`), avec le même montage de clé et les mêmes erreurs.
+3. **Séquence absente** : NEXTVAL/CURRVAL sur séquence inexistante levait
+   une `Error` JS générique (affichée ORA-00900) au lieu d'ORA-02289 ;
+   `CURRVAL` après `DROP SEQUENCE` renvoyait la valeur périmée.
+
+#### Correction
+
+Helpers uniques `sequenceNextVal()` / `sequenceCurrVal()` :
+`_sessionCurrval: Map<string, number>` mémorise la dernière valeur tirée
+par session (l'exécuteur est par session) ; le compteur global reste dans
+le stockage partagé ; ORA-02289 sur séquence absente ou supprimée,
+ORA-08002 avant le premier NEXTVAL de la session. Les deux branches
+d'évaluation délèguent aux helpers (duplication supprimée).
+
+**Fichiers** : `src/database/oracle/OracleExecutor.ts`,
+`src/__tests__/unit/database/oracle-sequence-session-state.test.ts`
+(nouveau, 4 tests dont un scénario réellement multi-sessions).
+
+**Validation** : suite database **2622 tests verts**, zéro échec.
 
 ---
 

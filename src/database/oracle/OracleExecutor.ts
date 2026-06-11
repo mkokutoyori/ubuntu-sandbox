@@ -93,8 +93,10 @@ export class OracleExecutor extends BaseExecutor {
   private readonly privileges: PrivilegeEnforcer;
   /** Row-level integrity enforcement (NOT NULL, PK/UNIQUE, FK, CHECK, types). */
   private readonly constraints: ConstraintValidator;
-  /** Track sequences that have had NEXTVAL called in this session */
-  private _nextvalCalled: Set<string> = new Set();
+  /** Last NEXTVAL obtained per sequence IN THIS SESSION. CURRVAL is a
+   *  session-scoped value in Oracle: another session's NEXTVAL must not
+   *  change what this session sees. */
+  private _sessionCurrval: Map<string, number> = new Map();
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
@@ -3677,16 +3679,9 @@ export class OracleExecutor extends BaseExecutor {
         const idSchema = (expr as IdentifierExpr).schema?.toUpperCase();
         if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
           const seqSchema = idSchema || this.context.currentSchema;
-          const seqKey = `${seqSchema.toUpperCase()}.${idTable}`;
-          if (idName === 'NEXTVAL') {
-            const val = this.storage.nextVal(seqSchema, idTable);
-            this._nextvalCalled.add(seqKey);
-            return val;
-          }
-          if (!this._nextvalCalled.has(seqKey)) {
-            throw new OracleError(8002, `sequence ${idTable}.CURRVAL is not yet defined in this session`);
-          }
-          return this.storage.currVal(seqSchema, idTable);
+          return idName === 'NEXTVAL'
+            ? this.sequenceNextVal(seqSchema, idTable)
+            : this.sequenceCurrVal(seqSchema, idTable);
         }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
         const pkgName = idTable;
@@ -3766,22 +3761,41 @@ export class OracleExecutor extends BaseExecutor {
 
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
-        const seqKey = `${seqSchema.toUpperCase()}.${expr.sequenceName.toUpperCase()}`;
-        if (expr.operation === 'NEXTVAL') {
-          const val = this.storage.nextVal(seqSchema, expr.sequenceName);
-          this._nextvalCalled.add(seqKey);
-          return val;
-        }
-        // CURRVAL requires NEXTVAL to have been called first in this session
-        if (!this._nextvalCalled.has(seqKey)) {
-          throw new OracleError(8002, `sequence ${expr.sequenceName.toUpperCase()}.CURRVAL is not yet defined in this session`);
-        }
-        return this.storage.currVal(seqSchema, expr.sequenceName);
+        return expr.operation === 'NEXTVAL'
+          ? this.sequenceNextVal(seqSchema, expr.sequenceName)
+          : this.sequenceCurrVal(seqSchema, expr.sequenceName);
       }
 
       default:
         return null;
     }
+  }
+
+  /** NEXTVAL: advance the global counter, remember the value per session. */
+  private sequenceNextVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this.storage.nextVal(s, n) as number;
+    this._sessionCurrval.set(`${s}.${n}`, val);
+    return val;
+  }
+
+  /** CURRVAL: the last NEXTVAL of THIS session — never the global counter
+   *  (ORA-08002 before the first NEXTVAL, ORA-02289 if dropped). */
+  private sequenceCurrVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this._sessionCurrval.get(`${s}.${n}`);
+    if (val === undefined) {
+      throw new OracleError(8002, `sequence ${n}.CURRVAL is not yet defined in this session`);
+    }
+    return val;
   }
 
   private evaluateCondition(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean {
