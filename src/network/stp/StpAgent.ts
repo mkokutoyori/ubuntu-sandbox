@@ -486,6 +486,31 @@ export class StpAgent extends ReactiveAgentBase {
   protected armTimers(): void {
     this.scheduleInterval('hello', () => this.emitBpduOnAllPorts(),
       this.config.helloSec * 1000);
+    this.scheduleInterval('info-age', () => this.expireStaleBpduInfo(), 1_000);
+  }
+
+  private expireStaleBpduInfo(): void {
+    if (!this.config.enabled) return;
+    const now = Date.now();
+    const own = this.ownBridgeId();
+    let expired = false;
+    for (const [portName, info] of this.portInfo) {
+      if (bridgeEquals(info.designatedBridge, own)) continue;
+      if (now - info.ageMs <= this.config.maxAgeSec * 1000) continue;
+      this.portInfo.delete(portName);
+      expired = true;
+      this.getBus().publish({
+        topic: 'stp.bpdu-info.expired',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName,
+          designatedBridge: `${info.designatedBridge.priority}/${info.designatedBridge.mac}`,
+        },
+      });
+      Logger.info(this.host.id, 'stp:info-age',
+        `${this.host.name}: BPDU info on ${portName} aged out (max age ${this.config.maxAgeSec}s)`);
+    }
+    if (expired) this.runElection();
   }
 
   protected override onPortLinkUp(_portName: string): void {

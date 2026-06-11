@@ -79,11 +79,14 @@ export function defaultPathCost(speedKbps: number): number {
 
 export function compareBridge(a: BridgeId, b: BridgeId): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
-  return a.mac.localeCompare(b.mac);
+  const am = a.mac.toLowerCase();
+  const bm = b.mac.toLowerCase();
+  return am < bm ? -1 : am > bm ? 1 : 0;
 }
 
 export function bridgeEquals(a: BridgeId, b: BridgeId): boolean {
-  return a.priority === b.priority && a.mac === b.mac;
+  return a.priority === b.priority
+    && a.mac.toLowerCase() === b.mac.toLowerCase();
 }
 
 export function bridgeToString(b: BridgeId): string {

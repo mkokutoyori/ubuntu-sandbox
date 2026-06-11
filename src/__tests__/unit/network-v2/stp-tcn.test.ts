@@ -171,3 +171,45 @@ describe('STP topology change notification', () => {
     expect(root.getStpAgent().isTopologyChangeActive()).toBe(true);
   });
 });
+
+describe('STP — BPDU info aging (802.1D §8.6.4 max age)', () => {
+  it('a silently dead root is re-elected away after max age', async () => {
+    vi.useFakeTimers();
+    const { root, sw2 } = await buildChain();
+    expect(sw2.getStpAgent().isRoot()).toBe(false);
+
+    root.getStpAgent().stop();
+
+    vi.advanceTimersByTime(21_000);
+    expect(sw2.getStpAgent().isRoot()).toBe(true);
+  });
+
+  it('a blocked redundant port recovers after the designated bridge dies silently', async () => {
+    vi.useFakeTimers();
+    const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    await makeRoot(root);
+    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    const states = () => ['FastEthernet0/0', 'FastEthernet0/1']
+      .map(p => sw2.getStpAgent().getForwardState(p));
+    expect(states()).toContain('blocking');
+
+    root.getStpAgent().stop();
+
+    vi.advanceTimersByTime(21_000);
+    expect(sw2.getStpAgent().isRoot()).toBe(true);
+    vi.advanceTimersByTime(31_000);
+    expect(states()).toEqual(['forwarding', 'forwarding']);
+  });
+
+  it('fresh hellos keep the info alive — no spurious re-election', async () => {
+    vi.useFakeTimers();
+    const { root, sw2 } = await buildChain();
+
+    vi.advanceTimersByTime(60_000);
+
+    expect(root.getStpAgent().isRoot()).toBe(true);
+    expect(sw2.getStpAgent().isRoot()).toBe(false);
+  });
+});

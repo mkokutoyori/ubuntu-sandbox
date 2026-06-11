@@ -877,3 +877,48 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   EIGRP avec IP du voisin et K-values des deux côtés, adjacence toujours
   bloquée.
 - Suite complète `unit/network-v2` : **289 fichiers, 6900 tests verts**.
+
+---
+
+## Entrée n°17 — 2026-06-11 — STP : pas d'expiration max-age des BPDU (racine morte = topologie figée)
+
+### Défaillances constatées
+
+1. **Info BPDU immortelle** — `StpPortInfo.ageMs` était horodaté à chaque
+   réception mais **jamais lu** : aucune expiration max-age (802.1D §8.6.4).
+   Si la racine (ou n'importe quel pont désigné) mourait silencieusement —
+   sans link-down local, p. ex. derrière un autre commutateur — son info
+   restait épinglée pour toujours : **aucune ré-élection**, et surtout un
+   port redondant bloqué ne se débloquait **jamais** (le scénario de
+   récupération de boucle, raison d'être du STP).
+2. **Comparaison d'identifiants de pont par collation locale** —
+   `localeCompare` sur les MAC : faux classement possible sur entrée à
+   casse mixte ('AA…' vs '0a…') dans l'élection ; `bridgeEquals` était
+   également sensible à la casse.
+
+### Correction
+
+- **`StpAgent`** : balayage `info-age` (1 s) — toute info apprise d'un pair
+  plus vieille que `maxAgeSec` est supprimée (les entrées auto-générées par
+  `applyRole` ne vieillissent pas), événement `stp.bpdu-info.expired` +
+  ré-élection. Le port libéré retraverse listening → learning → forwarding
+  (2 × forward delay), soit la reconvergence 802.1D réelle de ~50 s
+  (20 + 15 + 15) après une mort silencieuse.
+- **`compareBridge`/`bridgeEquals`** : comparaison hex insensible à la
+  casse (équivalente à la comparaison numérique 48 bits).
+- Conformément à la consigne, le code STP de cette itération est livré
+  sans commentaires ; la justification vit ici.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`, `src/network/stp/types.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (+3 tests)
+
+### Validation
+
+- Racine arrêtée sans link-down → SW2 se ré-élit racine après 21 s ; port
+  redondant bloqué → forwarding après max age + 2 × forward delay ; hellos
+  frais = aucune ré-élection parasite (60 s).
+- Suites STP : 39 tests verts ; suite complète `unit/network-v2` :
+  **289 fichiers, 6912 tests verts** (run incluant les changements avant
+  retrait des commentaires, re-validé sur les suites STP après).
