@@ -409,6 +409,54 @@ préexistant déjà documenté en entrée 2).
 
 ---
 
+## Entrée 10 — Consolidation des branches + unification des deux moteurs best-path BGP
+
+**Date** : 2026-06-11
+
+### Contexte
+
+Avant d'ouvrir une nouvelle série (focus PC), inventaire des 17 branches
+distantes pour partir d'une base intégrant tout le travail existant :
+
+- **15 branches déjà contenues dans `main`** (0 commit d'avance) — rien à faire.
+- **`claude/awesome-shannon-zyqb1r`** (4 commits, 2026-06-10) : BGP AS_PATH
+  transitif + dispatch shell polymorphique — **mergée** (voir ci-dessous).
+- **`claude/fix-powershell-tests-M4mpL` et `claude/general-session-6Nwqo`**
+  (mi-mai, 765/828 commits d'avance mais 550 commits de retard sur main) :
+  **écartées volontairement**. Vérification faite : leur contenu (SSH gap
+  analysis, tab-completion PowerShell, sous-shell RMAN…) a été entièrement
+  réimplémenté et dépassé dans main (ex. `RmanSubShell.ts` → architecture
+  réactive `subshells/rman/` complète ; main possède 1517 fichiers absents de
+  ces branches). Les merger aurait régressé un mois de travail.
+
+### Conflit résolu : deux implémentations BGP concurrentes
+
+`main` et la branche avaient chacune réécrit `BGPEngine.computeRoutes` :
+
+| | `main` (bestPath.ts) | branche (collectRib) |
+|---|---|---|
+| Sélection | échelle §9.1.1 complète (weight, LOCAL_PREF, origine locale, AS_PATH, origin, MED, eBGP>iBGP, router-id, peer IP) | longueur d'AS_PATH seule |
+| Propagation | 1 saut (préfixes originés des voisins directs) | transitive (graphe complet) |
+| Boucles | n/a (1 saut) | §6.3 (rejet de son propre ASN) |
+| `show ip bgp` | absent | `getBgpTable()` réel |
+
+Plutôt que d'écraser un côté, la résolution **combine** : `collectRib()`
+collecte transitivement des `BgpPathCandidate` complets (AS_PATH + attributs)
+et la réduction par préfixe passe par `selectBestPath()` — l'échelle de
+décision complète s'applique donc aussi aux chemins multi-sauts.
+`advertisedTo()` n'annonce que le best path par préfixe (§9.1.3).
+L'exclusion des préfixes connectés localement (le « local route wins ») de
+main est conservée dans `computeRoutes`.
+
+### Tests
+
+Les **deux** suites de tests sont conservées : 17 tests `bgp-engine.test.ts`
+verts (best-path §9.1.1 × propagation AS_PATH), 520 tests shell/routing-proto
+verts. La dette « best-path limité au plus court AS_PATH » de l'entrée 8 est
+soldée.
+
+---
+
 ## Validation finale de la série
 
 - `npm run build` : ✅ build de production OK.
@@ -426,9 +474,10 @@ préexistant déjà documenté en entrée 2).
 
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
-- **BGP** : best-path limité au plus court AS_PATH (pas de local-pref, MED,
-  origin) ; pas de route-reflectors ; FSM dérivée synchrone (pas de phases
-  Connect/OpenConfirm — exigerait un moteur asynchrone à acteurs comme OSPF).
+- **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :
+  échelle §9.1.1 complète sur les chemins transitifs) ; pas de
+  route-reflectors ; FSM dérivée synchrone (pas de phases Connect/OpenConfirm
+  — exigerait un moteur asynchrone à acteurs comme OSPF).
 - **STP** : RSTP (802.1w) et PVST+ ne sont pas implémentés ; le fast path
   « premier bring-up » simule un comportement type RSTP pour préserver
   l'utilisabilité (décision documentée dans le code).
