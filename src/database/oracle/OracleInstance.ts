@@ -8,6 +8,7 @@
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
+import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
 import { ListenerControl } from './listener/ListenerControl';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -410,11 +411,19 @@ export class OracleInstance {
     // NOMOUNT
     this.transitionTo('NOMOUNT');
     this.startBackgroundProcesses();
-    output.push(`Total System Global Area  ${this.config.sgaTarget} bytes`);
-    output.push(`Fixed Size                  2.0M bytes`);
-    output.push(`Variable Size             256.0M bytes`);
-    output.push(`Database Buffers          128.0M bytes`);
-    output.push(`Redo Buffers               16.0M bytes`);
+    {
+      // Real startup banner prints exact byte counts derived from the
+      // live sga_target, not canned figures.
+      const sga = this.getSGAInfo();
+      const b = (spec: string): number => parseSize(spec);
+      const fixed = 2 * 1024 * 1024;
+      const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
+      output.push(`Total System Global Area ${String(b(sga.totalSize)).padStart(10)} bytes`);
+      output.push(`Fixed Size               ${String(fixed).padStart(10)} bytes`);
+      output.push(`Variable Size            ${String(variable).padStart(10)} bytes`);
+      output.push(`Database Buffers         ${String(b(sga.bufferCache)).padStart(10)} bytes`);
+      output.push(`Redo Buffers             ${String(b(sga.redoLogBuffer)).padStart(10)} bytes`);
+    }
 
     if (mode === 'NOMOUNT') {
       this.logAlert('Instance started in NOMOUNT mode');
@@ -746,14 +755,32 @@ export class OracleInstance {
 
   // ── SGA Info ─────────────────────────────────────────────────────
 
+  /**
+   * SGA component sizes derived from the live `sga_target` parameter —
+   * `ALTER SYSTEM SET sga_target=…` immediately reshapes the breakdown,
+   * like ASMM on a real instance. Components are granule-rounded
+   * (4M granules below 1G of SGA, 16M above, like real Oracle).
+   */
   getSGAInfo(): SGAInfo {
+    const ONE_MB = 1024 * 1024;
+    const total = parseSize(this.getParameter('sga_target') ?? this.config.sgaTarget)
+      || parseSize(this.config.sgaTarget);
+    const granule = total > 1024 * ONE_MB ? 16 * ONE_MB : 4 * ONE_MB;
+    const round = (b: number): number => Math.max(granule, Math.round(b / granule) * granule);
+    const asMb = (b: number): string => `${Math.round(b / ONE_MB)}M`;
+    // Typical ASMM steady-state split of a 19c instance.
+    const bufferCache = round(total * 0.50);
+    const sharedPool = round(total * 0.25);
+    const largePool = round(total * 0.03);
+    const javaPool = round(total * 0.03);
+    const redoBuffer = total >= 1024 * ONE_MB ? 16 * ONE_MB : 8 * ONE_MB;
     return {
-      totalSize: this.config.sgaTarget,
-      sharedPool: '256M',
-      bufferCache: '128M',
-      redoLogBuffer: '16M',
-      javaPool: '64M',
-      largePool: '32M',
+      totalSize: asMb(total),
+      sharedPool: asMb(sharedPool),
+      bufferCache: asMb(bufferCache),
+      redoLogBuffer: asMb(redoBuffer),
+      javaPool: asMb(javaPool),
+      largePool: asMb(largePool),
     };
   }
 

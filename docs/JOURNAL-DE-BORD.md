@@ -1098,6 +1098,35 @@ Database 2650 + RMAN 284 verts ; pas de nouvelle erreur tsc.
 
 Database + terminal + suite sqlplus-LAN : **3139 tests verts**.
 
+### Entrée S3.6 — SGA dynamique pilotée par `sga_target`
+
+**Date** : 2026-06-11
+
+#### Défaillance constatée
+
+`getSGAInfo()` retournait des constantes (`'256M'`, `'128M'`, …) quel
+que soit `sga_target` ; la bannière STARTUP affichait
+`Total System Global Area 512M bytes` (une string « 512M » à la place
+du compte d'octets) et des tailles composantes câblées en dur.
+`ALTER SYSTEM SET sga_target=…` n'avait aucun effet observable —
+V$SGA/V$SGAINFO et SHOW SGA mentaient.
+
+#### Correction
+
+- `getSGAInfo()` dérive les composantes du **paramètre vivant**
+  `sga_target` : répartition type ASMM 19c (50 % buffer cache, 25 %
+  shared pool, 3 % large/java pools), arrondie au granule réel (4M sous
+  1G de SGA, 16M au-delà), redo buffer 8M/16M selon la taille.
+- Bannière STARTUP : compte d'octets exacts dérivés du même calcul
+  (`Total System Global Area  536870912 bytes`…), plus de chiffres
+  fantaisistes.
+- 4 tests neufs (`oracle-sga-dynamic.test.ts`) : défauts à 512M, reshape
+  par ALTER SYSTEM (1G/2G), bannière en octets, V$SGAINFO suiveur.
+
+#### Validation
+
+Database **2662 tests verts** (2658 + 4).
+
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
 - **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :
