@@ -35,6 +35,7 @@ export class StpAgent extends ReactiveAgentBase {
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
+  private readonly portFastLost = new Set<string>();
   private readonly advertising = new Set<string>();
   private readonly forwardStates = new Map<string, StpForwardState>();
   private readonly transitionTimers = new Map<string, TimerHandle>();
@@ -148,6 +149,12 @@ export class StpAgent extends ReactiveAgentBase {
 
   setPortFast(portName: string, on: boolean): void {
     this.getPortGuards(portName).portFast = on;
+    if (!on) this.portFastLost.delete(portName);
+  }
+
+  isPortFastOperational(portName: string): boolean {
+    return this.guards.get(portName)?.portFast === true
+      && !this.portFastLost.has(portName);
   }
 
   setPortBpduGuard(portName: string, on: boolean): void {
@@ -232,6 +239,19 @@ export class StpAgent extends ReactiveAgentBase {
         `${this.host.name}: BPDU Guard triggered on ${portName} — err-disabling`);
       this.host.onStpBpduGuardErrDisable?.(portName, payload.senderBridge.mac);
       return;
+    }
+
+    if (g.portFast && !this.portFastLost.has(portName)) {
+      this.portFastLost.add(portName);
+      this.getBus().publish({
+        topic: 'stp.portfast.lost',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName, senderMac: payload.senderBridge.mac,
+        },
+      });
+      Logger.warn(this.host.id, 'stp:portfast-lost',
+        `${this.host.name}: ${portName} received a BPDU — PortFast operational status lost`);
     }
 
     if (payload.bpduType === 'tcn') {
@@ -522,7 +542,8 @@ export class StpAgent extends ReactiveAgentBase {
     // (802.1D-1998 §8.5.3.12) — capture the state before forgetting it.
     const wasActive = this.forwardStates.get(portName) === 'forwarding'
       || this.forwardStates.get(portName) === 'learning';
-    const portFast = this.guards.get(portName)?.portFast === true;
+    const portFast = this.isPortFastOperational(portName);
+    this.portFastLost.delete(portName);
     this.portInfo.delete(portName);
     // Forget the applied forward state so a re-connected link is treated as a
     // fresh edge port (rapid transition), matching the link-up fast path in
@@ -584,7 +605,7 @@ export class StpAgent extends ReactiveAgentBase {
         continue;
       }
       const guards = this.guards.get(name);
-      if (guards?.portFast && name !== this.rootPort) {
+      if (this.isPortFastOperational(name) && name !== this.rootPort) {
         this.applyRole(name, 'designated');
         continue;
       }
@@ -700,7 +721,7 @@ export class StpAgent extends ReactiveAgentBase {
   private requestForwarding(portName: string): void {
     const current = this.forwardStates.get(portName);
     if (current === 'forwarding' || current === 'listening' || current === 'learning') return;
-    const portFast = this.guards.get(portName)?.portFast === true;
+    const portFast = this.isPortFastOperational(portName);
     if (portFast || current === undefined) {
       this.applyForwardState(portName, 'forwarding');
       return;
@@ -746,7 +767,7 @@ export class StpAgent extends ReactiveAgentBase {
     // follows the RSTP-style rapid path and stays silent, consistent
     // with requestForwarding(); PortFast ports never notify.
     if (state === 'forwarding' && previous !== undefined
-      && this.guards.get(portName)?.portFast !== true && this.config.enabled) {
+      && !this.isPortFastOperational(portName) && this.config.enabled) {
       this.notifyTopologyChange();
     }
   }

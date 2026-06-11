@@ -922,3 +922,41 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 - Suites STP : 39 tests verts ; suite complète `unit/network-v2` :
   **289 fichiers, 6912 tests verts** (run incluant les changements avant
   retrait des commentaires, re-validé sur les suites STP après).
+
+---
+
+## Entrée n°18 — 2026-06-11 — STP : PortFast indélogeable malgré la réception de BPDU
+
+### Défaillances constatées
+
+1. **PortFast permanent** — un port PortFast (sans BPDU guard) qui recevait
+   un BPDU **gardait son statut edge** : rôle designated forcé, transition
+   rapide, aucune génération de TCN. Sur un vrai IOS, la réception d'un
+   BPDU fait perdre le statut PortFast opérationnel (le port redevient un
+   port STP normal) — c'est la protection de base contre le branchement
+   accidentel d'un commutateur sur un port d'accès. La config
+   `spanning-tree portfast` reste, seul l'état opérationnel tombe.
+
+### Correction
+
+- **`StpAgent`** : distinction config/opérationnel — `portFastLost`
+  (Set) + getter public `isPortFastOperational()`. À la réception de tout
+  BPDU sur un port PortFast (hors cas BPDU guard, qui err-disable comme
+  avant) : perte du statut, événement `stp.portfast.lost` + log
+  d'avertissement. Tous les consommateurs (élection, transition rapide,
+  suppression de TCN, détection au link-down) lisent désormais le statut
+  opérationnel. Le statut revient quand le lien retombe (cycle du port),
+  comme sur le vrai matériel ; `no spanning-tree portfast` purge aussi
+  l'état.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`
+- `src/__tests__/unit/network-v2/stp-tcn.test.ts` (+3 tests)
+
+### Validation
+
+- BPDU d'un commutateur supérieur sur port PortFast → statut perdu (config
+  intacte), retour après cycle du lien, et le port démis signale désormais
+  les changements de topologie comme un port normal.
+- Suite complète `unit/network-v2` : **289 fichiers, 6915 tests verts**.
