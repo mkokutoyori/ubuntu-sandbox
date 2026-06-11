@@ -675,3 +675,62 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   charge (ExStart au lieu de Full) puis vert en isolation et au run
   suivant — sensibilité au timing préexistante, sans lien avec ces
   changements.
+
+---
+
+## Entrée n°13 — 2026-06-11 — HSRP : preempt ignoré et démarrage sans phase d'écoute
+
+### Défaillances constatées
+
+1. **`standby preempt` sans effet** — `HsrpAgent.recompute` prenait le rôle
+   actif dès que sa priorité battait celle de l'actif en place, sans
+   consulter `g.preempt`. Sur un vrai IOS, la préemption est **désactivée
+   par défaut** : sans elle, un routeur prioritaire n'évince jamais un
+   actif vivant — il attend sa mort.
+2. **Pas de phase Listen/Learn** — un groupe fraîchement configuré
+   revendiquait `active` immédiatement (avant d'avoir écouté le segment),
+   et le récepteur adoptait **inconditionnellement** toute revendication
+   active. Conséquence : le dernier routeur configuré détrônait
+   systématiquement l'incumbent, preempt ou pas — l'inverse du vrai HSRP.
+3. **Collision active/active mal résolue** — RFC 2281 §5.5 : un actif ne
+   cède qu'à une revendication active de priorité **supérieure** ; le
+   simulateur adoptait aussi les revendications inférieures.
+4. **Tests encodant le bug** — « on equal priority, higher IP wins the
+   election » validait qu'un nouveau venu à IP supérieure (sans preempt)
+   délogeait l'actif en place.
+
+### Correction (structurelle)
+
+- **Équivalent synchrone de Listen/Learn** : nouveau flag runtime
+  `probed` ; un groupe frais (ou dont le lien revient — reset dans
+  `clearPeerState`) émet d'abord un hello en état `speak` (la « sonde ») ;
+  l'incumbent répond synchronement via le `maybeAdvertiseBack` existant ;
+  seule une sonde restée sans réponse autorise la revendication active
+  (`probeThenClaim`, branché sur `setVip` surchargé et `onLinkUp`).
+  Ce modèle préserve la convergence synchrone du simulateur (pas de
+  hold-timer obligatoire dans tous les tests).
+- **Gate preempt** dans `recompute` : sans `standby preempt`, un routeur
+  prioritaire reste standby face à un actif vivant.
+- **Garde de collision** dans `handleUdp` : un actif ignore les
+  revendications actives inférieures (son prochain hello fait reculer
+  l'usurpateur), conforme §5.5.
+- Tests : 2 nouveaux cas (préemption refusée sans `preempt`, acceptée
+  avec) + le test « higher IP wins » corrigé (le challenger préempte,
+  comme dans la réalité) + cas contrastif sans preempt.
+
+### Fichiers
+
+- `src/network/hsrp/types.ts`, `src/network/hsrp/HsrpAgent.ts`
+- `src/__tests__/unit/network-v2/hsrp-protocol.test.ts` (+3 tests, 1 corrigé)
+
+### Validation
+
+- VRRP (preempt par défaut RFC 5798, déjà respecté) et GLBP inchangés.
+- Suite complète `unit/network-v2` : **289 fichiers, 6891 tests verts**.
+
+### Limite connue (volontaire)
+
+- Après avoir été délogé, l'ex-actif peut rester `listen` jusqu'à
+  l'expiration (hold timer) de son entrée standby périmée avant de se
+  ré-élire standby — fidèle au comportement réel, qui prend aussi un
+  cycle de ré-élection.

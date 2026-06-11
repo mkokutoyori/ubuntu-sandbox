@@ -38,6 +38,9 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   protected clearPeerState(g: HsrpGroupRuntime): void {
     g.activeRouterIp = null;
     g.standbyRouterIp = null;
+    // The segment may have a different active when the link returns:
+    // force a fresh Speak probe before any Active claim.
+    g.probed = false;
   }
 
   protected helloIntervalMs(): number { return 3000; }
@@ -53,6 +56,30 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     const g = super.ensureGroup(iface, group);
     if (version !== undefined) g.version = version;
     return g;
+  }
+
+  /**
+   * Synchronous stand-in for the RFC 2281 Listen/Learn phase: a fresh
+   * (or re-risen) group advertises once in Speak; the incumbent active
+   * answers synchronously through maybeAdvertiseBack, and only an
+   * unanswered probe lets the group claim Active. This is what keeps a
+   * non-preempting higher-priority newcomer from hijacking a live
+   * active router, without introducing hold-timer waits everywhere.
+   */
+  private probeThenClaim(g: HsrpGroupRuntime): void {
+    this.recompute(g, 'config');
+    this.advertiseIfDue(g); // the Speak probe (or a normal hello)
+    if (!g.probed) {
+      g.probed = true;
+      this.recompute(g, 'config');
+      this.advertiseIfDue(g);
+    }
+  }
+
+  override setVip(iface: string, id: number, vip: string): void {
+    const g = this.ensureGroup(iface, id);
+    g.vip = vip;
+    this.probeThenClaim(g);
   }
 
   /** Unconfiguring an active group resigns first, like real IOS. */
@@ -136,9 +163,17 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     const now = Date.now();
     const oldActiveIp = g.activeRouterIp;
     if (payload.state === 'active') {
-      g.activeRouterIp = payload.senderIp;
-      g.activeRouterPriority = payload.priority;
-      g.lastHeardActiveMs = now;
+      // RFC 2281 §5.5: an Active router yields only to a HIGHER-priority
+      // active claim (active/active collision after a partition heal);
+      // an inferior claim is ignored — our next hello makes them back
+      // down. Non-active routers always learn the active this way.
+      const claimer = { priority: payload.priority, ip: payload.senderIp };
+      const me = { priority: effectivePriority(g), ip: this.linkContext(g).myIp };
+      if (g.state !== 'active' || compareSpeaker(claimer, me) < 0) {
+        g.activeRouterIp = payload.senderIp;
+        g.activeRouterPriority = payload.priority;
+        g.lastHeardActiveMs = now;
+      }
     } else if (payload.state === 'standby') {
       g.standbyRouterIp = payload.senderIp;
       g.standbyRouterPriority = payload.priority;
@@ -229,12 +264,21 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
         ? { priority: g.activeRouterPriority, ip: g.activeRouterIp }
         : null;
       if (!active) {
-        g.state = 'active';
-        g.activeRouterIp = myIp;
-        g.activeRouterPriority = myPriority;
+        if (!g.probed) {
+          // Synchronous Listen/Learn: speak first, claim only if the
+          // probe goes unanswered (see probeThenClaim).
+          g.state = 'speak';
+        } else {
+          g.state = 'active';
+          g.activeRouterIp = myIp;
+          g.activeRouterPriority = myPriority;
+        }
       } else if (active.ip === myIp) {
         g.state = 'active';
-      } else if (compareSpeaker(me, active) < 0) {
+      } else if (compareSpeaker(me, active) < 0 && g.preempt) {
+        // RFC 2281 §5.3 / IOS default: preemption is DISABLED. Without
+        // `standby <grp> preempt`, a higher-priority router never
+        // displaces a live active router — it waits for it to die.
         g.state = 'active';
         g.activeRouterIp = myIp;
         g.activeRouterPriority = myPriority;
@@ -333,8 +377,10 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
         if (t.target === portName && t.down) { t.down = false; touched = true; }
       }
       if (g.iface === portName) {
-        this.recompute(g, 'config');
-        touched = true;
+        // Probe again after a link cycle — there may be a live active
+        // on the segment we must not displace.
+        this.probeThenClaim(g);
+        touched = false;
       } else if (touched) {
         this.recompute(g, 'priority');
       }
