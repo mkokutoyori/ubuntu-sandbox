@@ -17,12 +17,18 @@ import type { IEventBus } from '@/events/EventBus';
 import {
   getDefaultScheduler, type IScheduler, type TimerHandle,
 } from '@/events/Scheduler';
-import type { EthernetFrame } from '../core/types';
-import type {
-  FhrpConfigBase, FhrpGroupBase, FhrpHost, FhrpRecomputeReason,
+import {
+  IPAddress, MACAddress, ETHERTYPE_ARP,
+  type ARPPacket, type EthernetFrame,
+} from '../core/types';
+import {
+  normalizeVirtualMac,
+  type FhrpConfigBase, type FhrpDataPlane, type FhrpGroupBase,
+  type FhrpHost, type FhrpRecomputeReason,
 } from './types';
 
-export abstract class FhrpAgentBase<G extends FhrpGroupBase> {
+export abstract class FhrpAgentBase<G extends FhrpGroupBase>
+implements FhrpDataPlane {
   protected config: FhrpConfigBase<G> = { enabled: true, groups: new Map() };
   private readonly emitting = new Set<string>();
   private helloTimer: TimerHandle | null = null;
@@ -57,6 +63,76 @@ export abstract class FhrpAgentBase<G extends FhrpGroupBase> {
   protected abstract helloIntervalMs(): number;
   /** Expiry sweep cadence (ms); protocols may probe faster. */
   protected expiryProbeMs(): number { return 1000; }
+  /**
+   * Virtual MAC to answer ARP for g's VIP when this device is the
+   * answering role (HSRP active, VRRP master, GLBP AVG), else null.
+   * GLBP uses `requesterIp` for per-client load balancing.
+   */
+  protected abstract vipArpMac(g: G, requesterIp: string): string | null;
+  /** Virtual MACs this device currently forwards for in g. */
+  protected abstract ownedVirtualMacs(g: G): string[];
+  /** True when this device answers for g's VIP as a local address. */
+  protected abstract isVipOwner(g: G): boolean;
+
+  // ── Data plane (FhrpDataPlane) ────────────────────────────────────
+  vipArpOwner(iface: string, targetIp: string, requesterIp: string): string | null {
+    if (!this.config.enabled) return null;
+    for (const g of this.config.groups.values()) {
+      if (g.iface !== iface || g.vip !== targetIp) continue;
+      const mac = this.vipArpMac(g, requesterIp);
+      if (mac) return normalizeVirtualMac(mac);
+    }
+    return null;
+  }
+
+  ownsVirtualMac(iface: string, dstMac: string): boolean {
+    if (!this.config.enabled) return false;
+    const wanted = normalizeVirtualMac(dstMac);
+    for (const g of this.config.groups.values()) {
+      if (g.iface !== iface) continue;
+      for (const mac of this.ownedVirtualMacs(g)) {
+        if (normalizeVirtualMac(mac) === wanted) return true;
+      }
+    }
+    return false;
+  }
+
+  ownsVip(iface: string, ip: string): boolean {
+    if (!this.config.enabled) return false;
+    for (const g of this.config.groups.values()) {
+      if (g.iface === iface && g.vip === ip && this.isVipOwner(g)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Gratuitous ARP broadcast after a takeover (RFC 5798 §6.4.1, and
+   * the HSRP/GLBP equivalent): sender = VIP with the virtual MAC, so
+   * switches re-learn the path and hosts refresh their ARP caches.
+   */
+  protected gratuitousVipArp(g: G, virtualMac: string): void {
+    if (!g.vip) return;
+    const port = this.host.getPort(g.iface);
+    if (!port || !port.getIsUp() || !port.isConnected()) return;
+    const vmac = new MACAddress(normalizeVirtualMac(virtualMac));
+    const vip = new IPAddress(g.vip);
+    const garp: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: vmac, senderIP: vip,
+      targetMAC: MACAddress.broadcast(), targetIP: vip,
+    };
+    this.host.sendFrame(g.iface, {
+      srcMAC: vmac, dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: garp,
+    });
+    this.getBus().publish({
+      topic: 'fhrp.gratuitous-arp.sent',
+      payload: {
+        ...this.deviceRef(),
+        iface: g.iface, group: this.groupId(g), vip: g.vip, virtualMac: vmac.toString(),
+      },
+    });
+  }
 
   // ── Lifecycle ─────────────────────────────────────────────────────
   start(): void {

@@ -6,7 +6,7 @@
  */
 import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
-  defaultGroupRuntime, makeKey,
+  defaultGroupRuntime, makeKey, vrrpVirtualMac,
   compareCandidate, masterDownIntervalMs,
   IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
 } from './types';
@@ -153,7 +153,28 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
       });
       Logger.info(this.host.id, 'vrrp:state',
         `${this.host.name}: ${g.iface} vrid ${g.vrid} ${oldState} → ${g.state}`);
+      // RFC 5798 §6.4.1: on becoming master, broadcast a gratuitous
+      // ARP carrying the virtual router MAC.
+      if (g.state === 'master') {
+        this.gratuitousVipArp(g, vrrpVirtualMac(g.vrid));
+      }
     }
+  }
+
+  // ── Data-plane hooks (FhrpDataPlane) ─────────────────────────────
+  // RFC 5798 §8.1.2: the master answers ARP for the VIP with the
+  // virtual router MAC (00-00-5E-00-01-{VRID}) and forwards frames
+  // addressed to it.
+  protected vipArpMac(g: VrrpGroupRuntime): string | null {
+    return g.state === 'master' ? vrrpVirtualMac(g.vrid) : null;
+  }
+
+  protected ownedVirtualMacs(g: VrrpGroupRuntime): string[] {
+    return g.state === 'master' ? [vrrpVirtualMac(g.vrid)] : [];
+  }
+
+  protected isVipOwner(g: VrrpGroupRuntime): boolean {
+    return g.state === 'master';
   }
 
   // ── Master-down expiry (RFC 5798 §6.1) ───────────────────────────

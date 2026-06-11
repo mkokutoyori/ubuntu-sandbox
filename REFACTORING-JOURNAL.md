@@ -480,3 +480,78 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   Requests, reprise via `no passive-interface`, résolution d'abréviations CLI,
   `passive-interface default`, `silent-interface` VRP.
 - Suite complète `unit/network-v2` : **287 fichiers, 6873 tests verts**.
+
+---
+
+## Entrée n°10 — 2026-06-11 — FHRP (HSRP/VRRP/GLBP) : un control plane sans data plane
+
+### Défaillances constatées
+
+1. **La VIP était injoignable** — les agents HSRP/VRRP/GLBP géraient l'élection
+   (hellos, états, priorités, preempt) mais **aucun routeur ne répondait à
+   l'ARP pour l'adresse virtuelle**. Un PC configuré avec la VIP comme
+   passerelle par défaut ne pouvait jamais la résoudre : le FHRP était du
+   théâtre de control plane. Les helpers `hsrpVirtualMac`/`vrrpVirtualMac`
+   n'étaient utilisés que par `show standby` (affichage).
+2. **Trames vers MAC virtuelle jetées** — le filtre L2 de `Router.handleFrame`
+   n'acceptait que la MAC du port, broadcast et multicast : même avec une
+   entrée ARP statique vers la MAC virtuelle, le routeur actif jetait les
+   trames qui lui étaient adressées.
+3. **Ping de la VIP impossible** — `processIPv4` ne considérait que les IP
+   d'interface pour la livraison locale.
+4. **Pas d'ARP gratuit au basculement** (RFC 5798 §6.4.1) — le nouveau master
+   n'annonçait pas la MAC virtuelle, laissant les tables CAM des commutateurs
+   pointer vers le routeur mort.
+5. **GLBP : le load balancing ne tournait jamais** — du point de vue de l'AVG,
+   l'AVF d'un pair restait `listen` pour toujours (seul le propriétaire
+   marquait son AVF `active` à la réception de l'assignation). La sélection
+   round-robin/weighted/host-dependent (`nextForwarderMacForClient`) existait
+   mais ne servait qu'une seule MAC — et n'était appelée **que par les tests**.
+
+### Correction (structurelle)
+
+- **`fhrp/types.ts`** : nouvelle interface `FhrpDataPlane` (`vipArpOwner`,
+  `ownsVirtualMac`, `ownsVip`) + `normalizeVirtualMac()` (le format pointé
+  Cisco `0000.0c07.ac01` et le format `aa:bb:…` convergent).
+- **`FhrpAgentBase`** implémente `FhrpDataPlane` une seule fois (Template
+  Method, cohérent avec le reste de la famille) via trois hooks protocole :
+  `vipArpMac(g, requesterIp)`, `ownedVirtualMacs(g)`, `isVipOwner(g)` ;
+  + helper partagé `gratuitousVipArp()` (GARP émis depuis la MAC virtuelle).
+- **HSRP** (RFC 2281 §5.3) : seul l'actif répond/possède, GARP en passant
+  actif. **VRRP** (RFC 5798 §8.1.2, §6.4.1) : idem pour le master, MAC
+  `00-00-5E-00-01-{VRID}`. **GLBP** : l'AVG répond à l'ARP en distribuant les
+  MAC d'AVF selon le mode de load balancing (curseur avancé une seule fois
+  par requête) ; chaque AVF n'accepte que sa propre MAC virtuelle. Pas de
+  GARP par AVF (il écraserait la répartition dans les caches des hôtes).
+- **`Router`** : point d'extension `fhrpDataPlanes()` (vide en base,
+  surchargé par `CiscoRouter` [HSRP+VRRP+GLBP] et `HuaweiRouter` [VRRP]) ;
+  filtre L2 élargi aux MAC virtuelles détenues ; réponse ARP pour la VIP
+  sourcée de la MAC virtuelle (jamais en réponse à un ARP gratuit) ;
+  livraison locale des paquets destinés à une VIP détenue.
+- **GLBP** : un AVF assigné à un propriétaire dont on vient d'entendre le
+  hello démarre `active` (il est vivant) ; un hello reçu ressuscite un AVF
+  `init` après expiration — le failback fonctionne.
+
+### Fichiers
+
+- `src/network/fhrp/types.ts`, `src/network/fhrp/FhrpAgentBase.ts`
+- `src/network/hsrp/HsrpAgent.ts`, `src/network/vrrp/VrrpAgent.ts`,
+  `src/network/glbp/GlbpAgent.ts`
+- `src/network/devices/Router.ts`, `CiscoRouter.ts`, `HuaweiRouter.ts`
+- `src/__tests__/unit/network-v2/fhrp-dataplane.test.ts` (nouveau, 7 tests)
+
+### Validation
+
+- 7 nouveaux tests de bout en bout : ping de la VIP (la table ARP du PC
+  contient bien `0000.0c07.ac01` / `00:00:5e:00:01:05`, pas la MAC du port),
+  silence du standby, routage via la MAC virtuelle (VIP passerelle), failover
+  réel (shutdown de l'actif → hold time → le standby sert la VIP, CAM
+  re-pointée par le GARP), rotation round-robin GLBP, isolation des MAC
+  d'AVF.
+- Suite complète `unit/network-v2` : **288 fichiers, 6880 tests verts**.
+
+### Défaut préexistant relevé (entrée future)
+
+- HSRP : l'opcode `resign` est traité en réception mais jamais émis
+  (`advertise` n'envoie que des hellos). Un vrai IOS envoie un resign quand
+  l'actif abandonne son rôle administrativement.

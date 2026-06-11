@@ -7,7 +7,7 @@
 import {
   type HsrpConfig, type HsrpGroupRuntime, type HsrpPacket,
   defaultGroupRuntime, makeKey, compareSpeaker,
-  effectivePriority,
+  effectivePriority, hsrpVirtualMac,
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
@@ -239,10 +239,30 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       });
       Logger.info(this.host.id, 'hsrp:state',
         `${this.host.name}: ${g.iface} grp ${g.group} ${oldState} → ${g.state}`);
+      // New active router claims the virtual MAC on the segment so
+      // switches re-learn it and host traffic shifts over.
+      if (g.state === 'active') {
+        this.gratuitousVipArp(g, hsrpVirtualMac(g.group, g.version));
+      }
     }
     if (oldActiveIp !== g.activeRouterIp) {
       this.publishActiveChanged(g);
     }
+  }
+
+  // ── Data-plane hooks (FhrpDataPlane) ─────────────────────────────
+  // RFC 2281 §5.3: only the active router answers ARP for the VIP,
+  // always with the group's virtual MAC, and forwards frames sent to it.
+  protected vipArpMac(g: HsrpGroupRuntime): string | null {
+    return g.state === 'active' ? hsrpVirtualMac(g.group, g.version) : null;
+  }
+
+  protected ownedVirtualMacs(g: HsrpGroupRuntime): string[] {
+    return g.state === 'active' ? [hsrpVirtualMac(g.group, g.version)] : [];
+  }
+
+  protected isVipOwner(g: HsrpGroupRuntime): boolean {
+    return g.state === 'active';
   }
 
   private publishActiveChanged(g: HsrpGroupRuntime): void {

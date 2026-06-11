@@ -191,6 +191,10 @@ export class HuaweiRouter extends Router {
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
   getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
+  /** FHRP data plane: VIP ARP answering, virtual-MAC frame acceptance. */
+  protected override fhrpDataPlanes() {
+    return [this.vrrpAgent];
+  }
   getNtpAgent(): NtpAgent { return this.ntpAgent; }
   getBfdAgent(): BfdAgent { return this.bfdAgent; }
   getIgmpAgent(): IgmpAgent { return this.igmpAgent; }
