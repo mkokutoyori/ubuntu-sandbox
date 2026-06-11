@@ -31,6 +31,7 @@ import {
   SubnetMask,
   type DeviceType,
   type IPv4Packet,
+  type IPv6Address,
   type MACAddress,
 } from '../core/types';
 
@@ -1244,6 +1245,13 @@ export abstract class LinuxMachine extends EndHost {
         ttl?: number,
       ): Promise<PingResult[]> {
         return self.executePingSequence(target, count, timeoutMs, ttl);
+      },
+      ping6Sequence(
+        target: IPv6Address,
+        count: number,
+        timeoutMs = 2000,
+      ): Promise<PingResult[]> {
+        return self.executePing6Sequence(target, count, timeoutMs);
       },
       async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]> {
         const hops = await self.executeTraceroute(target, maxHops, 2000, probesPerHop, firstTtl);

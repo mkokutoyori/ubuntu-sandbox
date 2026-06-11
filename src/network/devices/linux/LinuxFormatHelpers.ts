@@ -12,7 +12,7 @@
  * See `linux_gap.md` §7.3 and §8.4.
  */
 
-import type { IPAddress } from '../../core/types';
+import type { IPAddress, IPv6Address } from '../../core/types';
 import type { PingResult } from '../EndHost';
 import type { Port } from '../../hardware/Port';
 import type { TracerouteHop } from './LinuxNetKernel';
@@ -23,6 +23,13 @@ export interface LinuxFormatHelpers {
    * @param size Payload size in bytes (defaults to 56, as in the real ping).
    */
   formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number, hostname?: string): string;
+
+  /**
+   * Render a full `ping6` sequence output. iputils formats the IPv6
+   * header differently from IPv4: `PING <name>(<addr>) <size> data bytes`
+   * (no `(size+28)` total, since the IPv6 header is not counted there).
+   */
+  formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size?: number, hostname?: string): string;
 
   /**
    * Render a `traceroute` output including header and per-hop lines.
@@ -72,10 +79,21 @@ function formatInterface(port: Port): string {
 }
 
 function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
-  const lines: string[] = [];
   const totalSize = size + 28; // ICMP header (8) + IP header (20)
   const displayName = hostname ?? target.toString();
-  lines.push(`PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`);
+  const header = `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
+  return renderPingBody(header, String(target), count, results, size);
+}
+
+function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
+  const displayName = hostname ?? target.toString();
+  const header = `PING ${displayName}(${target}) ${size} data bytes`;
+  return renderPingBody(header, String(target), count, results, size);
+}
+
+/** Per-packet lines + statistics block, shared by ping and ping6. */
+function renderPingBody(header: string, targetStr: string, count: number, results: PingResult[], size: number): string {
+  const lines: string[] = [header];
 
   const received = results.filter(r => r.success);
   const failed = count - received.length;
@@ -102,7 +120,7 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   }
 
   lines.push('');
-  lines.push(`--- ${target} ping statistics ---`);
+  lines.push(`--- ${targetStr} ping statistics ---`);
   lines.push(`${count} packets transmitted, ${received.length} received, ${Math.round((failed / count) * 100)}% packet loss`);
 
   if (received.length > 0) {
@@ -174,6 +192,7 @@ function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHop
 /** Default singleton — no state, safe to share across machines. */
 export const defaultLinuxFormatHelpers: LinuxFormatHelpers = {
   formatPingOutput,
+  formatPing6Output,
   formatTracerouteOutput,
   formatInterface,
   formatBytes,
