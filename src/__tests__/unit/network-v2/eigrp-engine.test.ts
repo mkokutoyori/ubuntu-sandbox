@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EIGRPEngine } from '@/network/eigrp/EIGRPEngine';
 import type { RoutingPeer } from '@/network/routing';
+import { EventBus } from '@/events/EventBus';
 import {
   IPAddress, SubnetMask, resetCounters,
 } from '@/network/core/types';
@@ -241,5 +242,33 @@ describe('EIGRPEngine — DUAL feasibility & variance', () => {
     ]);
     self.converge();
     expect(self.getContributedRoutes()).toHaveLength(2); // 3 equal paths
+  });
+});
+
+describe('K-value mismatch diagnostics', () => {
+  it('publishes eigrp.neighbor.k-value-mismatch instead of hiding the peer silently', () => {
+    const r1 = new EIGRPEngine('R1');
+    const r2 = new EIGRPEngine('R2');
+    r1.setDeviceContext(ctx('192.168.1.0', '192.168.1.1'));
+    r2.setDeviceContext(ctx('192.168.2.0', '192.168.2.1'));
+    r1.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r2.enable({
+      asn: 100, networks: [{ network: '10.0.0.0' }],
+      kValues: { k1: 1, k2: 1, k3: 1, k4: 0, k5: 0 },
+    });
+    link(r1, 'R1', '10.0.0.1', r2, 'R2', '10.0.0.2');
+
+    const bus = new EventBus();
+    r1.setBus(bus);
+    const mismatches: Array<{ neighborIp: string; asn: number }> = [];
+    bus.subscribe('eigrp.neighbor.k-value-mismatch', (e) =>
+      mismatches.push(e.payload as { neighborIp: string; asn: number }));
+
+    r1.converge();
+
+    expect(r1.getNeighbors()).toHaveLength(0); // adjacency still blocked
+    expect(mismatches.length).toBeGreaterThanOrEqual(1);
+    expect(mismatches[0].neighborIp).toBe('10.0.0.2');
+    expect(mismatches[0].asn).toBe(100);
   });
 });

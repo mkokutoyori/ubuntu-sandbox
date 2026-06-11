@@ -829,3 +829,51 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   defaulted, résurrection par LACPDU fraîche, cause `partner-timeout` sur
   le bus ; trunk DTP retombant en access avec `peer-loss` après 5 × hello.
 - Suite complète `unit/network-v2` : **289 fichiers, 6897 tests verts**.
+
+---
+
+## Entrée n°16 — 2026-06-11 — CDP : native VLAN mismatch indétectable ; EIGRP : mismatch K-values muet
+
+### Défaillances constatées
+
+1. **Native VLAN mismatch invisible** — deux trunks avec des native VLAN
+   différents font disparaître silencieusement le trafic non taggué.
+   Un vrai Cisco loggue `%CDP-4-NATIVE_VLAN_MISMATCH` à chaque hello CDP ;
+   le simulateur transportait le TLV native VLAN dans ses trames CDP mais
+   **ne comparait jamais** à la réception.
+2. **Hook `getNativeVlan` faux pour les trunks** — `CiscoSwitch` câblait le
+   hook CDP sur `accessVlan` même en mode trunk (le native annoncé était
+   donc faux). La logique correcte existait déjà dans
+   `resolveSnoopingVlan()` — dupliquée au lieu d'être réutilisée.
+3. **EIGRP : K-values silencieux** — un pair avec des K-values différents
+   était simplement omis de la table des voisins (`continue` muet). Un
+   vrai IOS loggue `%DUAL-5-NBRCHANGE … K-value mismatch` ; ici aucun
+   moyen de diagnostiquer pourquoi l'adjacence ne montait pas.
+
+### Correction
+
+- **`CdpAgent.handleFrame`** : comparaison du native VLAN local
+  (hook) avec celui du hello reçu → événement
+  `cdp.native-vlan.mismatch` + log d'avertissement au format IOS, à
+  chaque hello (comme le vrai matériel). Silence quand les deux
+  côtés concordent.
+- **`CiscoSwitch`** : hook `getNativeVlan` réutilise
+  `resolveSnoopingVlan()` (trunk → native du trunk, access → VLAN
+  d'accès) — déduplication.
+- **`EIGRPEngine.computeNeighbors`** : le rejet pour K-values publie
+  `eigrp.neighbor.k-value-mismatch` (K locaux + K du pair) et loggue au
+  format IOS ; l'adjacence reste bloquée (RFC 7868 §5.4).
+
+### Fichiers
+
+- `src/network/cdp/CdpAgent.ts`, `src/network/devices/CiscoSwitch.ts`
+- `src/network/eigrp/EIGRPEngine.ts`
+- `src/__tests__/unit/network-v2/cdp-protocol.test.ts` (+2 tests)
+- `src/__tests__/unit/network-v2/eigrp-engine.test.ts` (+1 test)
+
+### Validation
+
+- Mismatch détecté des deux côtés du câble, silence si accord ; événement
+  EIGRP avec IP du voisin et K-values des deux côtés, adjacence toujours
+  bloquée.
+- Suite complète `unit/network-v2` : **289 fichiers, 6900 tests verts**.

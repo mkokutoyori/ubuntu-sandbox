@@ -287,3 +287,49 @@ describe('CDP — show cdp neighbors detail', () => {
     expect(out).toMatch(/Interface: GigabitEthernet0\/1/);
   });
 });
+
+describe('CDP — native VLAN mismatch detection (%CDP-4-NATIVE_VLAN_MISMATCH)', () => {
+  async function trunkWithNative(sw: CiscoSwitch, port: string, native: number): Promise<void> {
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    await sw.executeCommand(`interface ${port}`);
+    await sw.executeCommand('switchport mode trunk');
+    await sw.executeCommand(`switchport trunk native vlan ${native}`);
+    await sw.executeCommand('end');
+  }
+
+  it('publishes a mismatch when trunk native VLANs disagree', async () => {
+    const bus = new EventBus();
+    const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
+    s1.setEventBus(bus); s2.setEventBus(bus);
+    await trunkWithNative(s1, 'FastEthernet0/0', 1);
+    await trunkWithNative(s2, 'FastEthernet0/0', 99);
+
+    const mismatches: Array<{ deviceId: string; localVlan: number; remoteVlan: number }> = [];
+    bus.subscribe('cdp.native-vlan.mismatch', (e) =>
+      mismatches.push(e.payload as { deviceId: string; localVlan: number; remoteVlan: number }));
+
+    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+
+    // Both ends detect it (each sees the other's hello).
+    expect(mismatches.some(m => m.deviceId === s1.id && m.localVlan === 1 && m.remoteVlan === 99)).toBe(true);
+    expect(mismatches.some(m => m.deviceId === s2.id && m.localVlan === 99 && m.remoteVlan === 1)).toBe(true);
+  });
+
+  it('stays silent when native VLANs agree', async () => {
+    const bus = new EventBus();
+    const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
+    s1.setEventBus(bus); s2.setEventBus(bus);
+    await trunkWithNative(s1, 'FastEthernet0/0', 99);
+    await trunkWithNative(s2, 'FastEthernet0/0', 99);
+
+    const mismatches: unknown[] = [];
+    bus.subscribe('cdp.native-vlan.mismatch', (e) => mismatches.push(e.payload));
+
+    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+
+    expect(mismatches).toHaveLength(0);
+  });
+});

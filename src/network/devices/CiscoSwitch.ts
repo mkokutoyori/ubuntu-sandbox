@@ -63,7 +63,9 @@ export class CiscoSwitch extends Switch {
     };
     this.cdpAgent = new CdpAgent({
       ...hostBase,
-      getNativeVlan: (p: string) => this.getSwitchportConfig(p)?.accessVlan,
+      // Trunk ports advertise their native VLAN, access ports their
+      // access VLAN — same resolution the snooping agents use.
+      getNativeVlan: (p: string) => this.resolveSnoopingVlan(p),
     }, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.dtpAgent = new DtpAgent({

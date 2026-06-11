@@ -13,6 +13,7 @@
  * 256-scaled composite of min-bandwidth and cumulative delay.
  */
 import { IPAddress, SubnetMask } from '../core/types';
+import { Logger } from '../core/Logger';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -152,9 +153,28 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       const peerEng = p.peerEngineFor('eigrp') as EIGRPEngine | null;
       if (!peerEng || !peerEng.isEnabled()) continue;
       if (peerEng.asn !== this.config.asn) continue;   // AS must match
-      // RFC 7868 §5.4 — mismatched K values block the adjacency.
+      // RFC 7868 §5.4 — mismatched K values block the adjacency. Real
+      // IOS logs '%DUAL-5-NBRCHANGE … K-value mismatch' instead of
+      // hiding the neighbour silently — make it diagnosable.
       if (!kValuesMatch(this.config.kValues,
-        peerEng.getConfig().kValues)) continue;
+        peerEng.getConfig().kValues)) {
+        const peerIp = p.remoteIp ? String(p.remoteIp) : p.hostname;
+        this.bus?.publish({
+          topic: 'eigrp.neighbor.k-value-mismatch',
+          payload: {
+            deviceId: this.deviceId,
+            neighbor: p.deviceId,
+            neighborIp: peerIp,
+            iface: p.localIface,
+            asn: this.config.asn,
+            localK: { ...this.config.kValues },
+            peerK: { ...peerEng.getConfig().kValues },
+          },
+        } as never);
+        Logger.warn(this.deviceId, 'eigrp:k-mismatch',
+          `EIGRP-IPv4 ${this.config.asn}: Neighbor ${peerIp} (${p.localIface}) is down: K-value mismatch`);
+        continue;
+      }
       keep.add(p.deviceId);
       const isNew = !previousIds.has(p.deviceId);
       this.neighbors.upsert(
