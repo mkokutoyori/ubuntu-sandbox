@@ -138,10 +138,11 @@ export function projectNdpTable(entries: Map<string, NdpEntryLike>): HostNdpEntr
   return out;
 }
 
+/** Producer-side shape — mirrors `HostRouteEntry` (EndHost.ts). */
 export interface HostRouteLike {
-  destination: { toString(): string };
+  network: { toString(): string };
   mask: { toString(): string };
-  gateway: { toString(): string } | null;
+  nextHop: { toString(): string } | null;
   iface: string;
   metric?: number;
   type?: string;
@@ -151,9 +152,9 @@ export function projectHostRoutes(routes: Iterable<HostRouteLike>): HostRouteVM[
   const out: HostRouteVM[] = [];
   for (const r of routes) {
     out.push({
-      destination: String(r.destination),
+      destination: String(r.network),
       mask: String(r.mask),
-      gateway: r.gateway ? String(r.gateway) : null,
+      gateway: r.nextHop ? String(r.nextHop) : null,
       iface: r.iface,
       metric: r.metric ?? 0,
       type: r.type ?? 'static',

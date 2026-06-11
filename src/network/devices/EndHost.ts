@@ -333,32 +333,17 @@ export abstract class EndHost extends Equipment {
 
   /** [actor-API] Refresh the ARP signal from `this.arpTable`. */
   _refreshArpSignal(): void {
-    const map = (this as unknown as { arpTable?: Map<string, { mac: { toString(): string }; iface: string; timestamp: number }> }).arpTable;
-    if (!map) return;
-    this.hostSignalStore.arp.set(projectArpTable(map));
+    this.hostSignalStore.arp.set(projectArpTable(this.arpTable));
   }
 
-  /** [actor-API] Refresh the NDP signal from `this.ndpCache`. */
+  /** [actor-API] Refresh the NDP signal from `this.neighborCache`. */
   _refreshNdpSignal(): void {
-    const map = (this as unknown as { ndpCache?: Map<string, { mac: { toString(): string }; iface: string }> }).ndpCache;
-    if (!map) return;
-    this.hostSignalStore.ndp.set(projectNdpTable(map));
+    this.hostSignalStore.ndp.set(projectNdpTable(this.neighborCache));
   }
 
   /** [actor-API] Refresh the routes signal from `this.routingTable`. */
   _refreshRoutesSignal(): void {
-    const routes = (this as unknown as {
-      routingTable?: Iterable<{
-        destination: { toString(): string };
-        mask: { toString(): string };
-        gateway: { toString(): string } | null;
-        iface: string;
-        metric?: number;
-        type?: string;
-      }>;
-    }).routingTable;
-    if (!routes) return;
-    this.hostSignalStore.routes.set(projectHostRoutes(routes));
+    this.hostSignalStore.routes.set(projectHostRoutes(this.routingTable));
   }
 
   /** [actor-API] Refresh the TCP listeners + connections signals. */
@@ -375,13 +360,10 @@ export abstract class EndHost extends Equipment {
 
   /** [actor-API] Refresh the aggregate stats signal. */
   _refreshHostStatsSignal(): void {
-    const arpMap = (this as unknown as { arpTable?: Map<unknown, unknown> }).arpTable;
-    const ndpMap = (this as unknown as { ndpCache?: Map<unknown, unknown> }).ndpCache;
-    const routes = (this as unknown as { routingTable?: { length: number } }).routingTable;
     this.hostSignalStore.stats.set({
-      arpCacheSize: arpMap?.size ?? 0,
-      ndpCacheSize: ndpMap?.size ?? 0,
-      routeCount: routes?.length ?? 0,
+      arpCacheSize: this.arpTable.size,
+      ndpCacheSize: this.neighborCache.size,
+      routeCount: this.routingTable.length,
       tcpListeners: this.tcpv2.listListeners().length,
       tcpConnections: this.tcpv2.listSockets().length,
       icmpEchosSent: this.icmpEchosSent,
@@ -965,7 +947,7 @@ export abstract class EndHost extends Equipment {
         ip: arp.senderIP.toString(),
         mac: arp.senderMAC.toString(),
         iface: portName,
-        source: arp.opcode === 1 ? 'request' : 'reply',
+        source: arp.operation === 'request' ? 'request' : 'reply',
       });
     }
 
@@ -2289,14 +2271,24 @@ export abstract class EndHost extends Equipment {
     const route = this.resolveIPv6Route(ipv6.sourceIP);
     if (!route) return;
 
-    const dstMAC = this.neighborCache.get(route.nextHopIP.toString());
-    if (dstMAC) {
+    const send = (mac: MACAddress): void => {
       this.sendFrame(route.port.getName(), {
         srcMAC: route.port.getMAC(),
-        dstMAC: dstMAC.mac,
+        dstMAC: mac,
         etherType: ETHERTYPE_IPV6,
         payload: replyPkt,
       });
+    };
+
+    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    if (cached) {
+      send(cached.mac);
+    } else {
+      // No neighbor entry — resolve it instead of silently dropping the
+      // reply (RFC 4861 §7.2.2: queue the packet pending resolution).
+      this.resolveNDP(route.port.getName(), route.nextHopIP)
+        .then(send)
+        .catch(() => { /* resolution failed: drop, as a real stack would */ });
     }
   }
 
@@ -2508,8 +2500,14 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
 
-    const srcIP = port.getLinkLocalIPv6();
-    if (!srcIP) throw new Error('No link-local address');
+    // RFC 4861 §7.2.2: the NS source SHOULD be the address the pending
+    // traffic uses, so the target's cache maps THAT address to our MAC
+    // (a link-local-only NS would leave the peer unable to reply to our
+    // global address without a resolution round of its own).
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) throw new Error('No IPv6 source address');
 
     const targetIpStr = targetIP.toString();
     const waitPromise = waitForEvent(
