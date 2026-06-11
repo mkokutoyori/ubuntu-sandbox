@@ -941,6 +941,29 @@ par étapes, chaque étape compilant et passant la suite complète.
 Suite database complète : **2650 tests verts**, zéro régression ;
 `tsc` : zéro erreur ajoutée (baseline identique avant/après).
 
+### Entrée S3.2 — O7 (étape 2/n) : extraction de `SecurityDclExecutor`
+
+**Date** : 2026-06-11
+
+#### Correction (étape 2)
+
+- Nouveau module `src/database/oracle/executor/SecurityDclExecutor.ts` :
+  GRANT/REVOKE (privilèges système, rôles, grants objet et colonne),
+  AUDIT/NOAUDIT traditionnels, politiques d'audit unifié, ADMINISTER KEY
+  MANAGEMENT (TDE) et COMMENT ON — avec leurs trois helpers privés
+  (`granteesOf`, `expandSystemPrivileges`, `assertGrantableObjectExists`)
+  qui n'étaient utilisés que par ce groupe.
+- Les imports inline `import('../engine/parser/ASTNode').X` répétés dans
+  les signatures sont remplacés par des imports de types normaux.
+- 9 casts `as OracleCatalog` supprimés (typage direct).
+- OracleExecutor : 4 362 → 4 040 lignes ; imports morts purgés.
+
+#### Validation
+
+Suite database : **2650 tests verts** ; baseline `tsc` inchangée (25
+erreurs préexistantes dans OracleExecutor.ts, toutes antérieures et
+documentées comme bruit de la config `tsconfig.app.json` + TS récent).
+
 - **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
   identifiés, documentés, non traités dans cette série.
 - **BGP** : ~~best-path limité au plus court AS_PATH~~ (soldé en entrée 10 :
