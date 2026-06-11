@@ -445,7 +445,8 @@ les principes de design :
 |---|-------|-----------|----------|--------|
 | O1 | Auto-commit DDL appliqué à 3 statements sur ~45 (CREATE/DROP TABLE, TRUNCATE seulement) | Oracle SQL Ref « Types of SQL Statements » | Haute | ✅ Corrigé |
 | O2 | DROP INDEX/SEQUENCE/VIEW/TRIGGER/SYNONYM silencieux sur objet inexistant ; CREATE INDEX sans aucune validation | ORA-01418/02289/00942/04080/01434/00904/00955/01452 | Haute | ✅ Corrigé |
-| O3 | ROWNUM affecté après filtrage WHERE (à vérifier sur code) | Modèle row-source Oracle | Haute | À faire |
+| O3 | ROWNUM affecté après filtrage WHERE (allégation d'audit) | Modèle row-source Oracle | — | ❎ Réfuté (voir O3) |
+| O3b | Résultat vide : en-tête affiché au lieu de `no rows selected` ; erreurs au format `ERROR:` au lieu de `ERROR at line N:` | SQL*Plus réel | Moyenne | ✅ Corrigé |
 | O4 | CURRVAL/NEXTVAL : suivi par exécuteur, pas par session | Séquences Oracle | Moyenne | À faire |
 | O5 | STARTUP/SHUTDOWN : transitions d'états non validées, RESTRICT non appliqué | Cycle de vie instance | Moyenne | À faire |
 | O6 | Listener sans état (established/refused figés à 0, jamais BLOCKED) | lsnrctl réel | Moyenne | À faire |
@@ -497,6 +498,43 @@ tests), `oracle-object-management.test.ts`.
 **Validation** : suite database complète **2609 tests verts** (baseline
 2593 avant la série, zéro échec), terminal 380 verts, ESLint propre sur
 les fichiers touchés.
+
+### Entrée O3 — ROWNUM : allégation réfutée + fidélité de sortie SQL*Plus
+
+**Date** : 2026-06-11
+
+#### Vérification ROWNUM (réfutation)
+
+L'audit initial suspectait que ROWNUM était affecté *après* le filtrage
+WHERE. **Vérification empirique : faux.** Le simulateur implémente déjà le
+modèle row-source réel (`OracleExecutor.executeSelectFromTable`, étape
+WHERE) : le compteur ne s'incrémente que lorsqu'une ligne est acceptée.
+`WHERE ROWNUM > 1` → 0 ligne, `ROWNUM = 2` → 0 ligne, `ROWNUM <= N` →
+N premières lignes, affectation avant ORDER BY. Ce comportement n'était
+couvert par **aucun test** — il est désormais verrouillé par 5 tests de
+régression.
+
+#### Défaillances réellement constatées (et corrigées)
+
+1. **Résultat vide** : le simulateur affichait l'en-tête de colonnes et
+   rien d'autre. Le vrai SQL*Plus n'affiche *pas* d'en-tête et imprime
+   `no rows selected` (supprimé par `SET FEEDBACK OFF`).
+2. **Format d'erreur** : les erreurs de statement sortaient comme
+   `ERROR:\nORA-…`. Le vrai SQL*Plus écho la ligne source fautive, place
+   un astérisque sous la colonne en faute, puis `ERROR at line N:` et le
+   message ORA-/PLS-. Implémenté dans `renderSqlError()` : position
+   exploitée pour `ParserError` (ligne/colonne) et `DatabaseError.position`
+   (offset caractère) ; repli ligne 1 / colonne 1 sinon — comme le client réel.
+3. 18 cas du test access-management validaient l'ancien comportement
+   (en-tête sur vue vide comme preuve d'existence) ; mis à jour pour
+   accepter `no rows selected` — qui prouve toujours l'existence de la vue
+   et des colonnes (sinon ORA-00942/00904).
+
+**Fichiers** : `src/database/oracle/commands/SQLPlusSession.ts`,
+`src/__tests__/unit/database/oracle-rownum-and-error-format.test.ts`
+(nouveau, 9 tests), `oracle-access-management-comprehensive.test.ts`.
+
+**Validation** : database + terminal = **2998 tests verts**, zéro échec.
 
 ---
 
