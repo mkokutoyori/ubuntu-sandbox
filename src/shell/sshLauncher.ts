@@ -14,6 +14,7 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { primaryShellKindFor } from './shellKind';
 import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
 import type { IShell, ShellLineResult } from './IShell';
 
@@ -405,9 +406,5 @@ function findEquipmentByHostname(hostname: string): Equipment | null {
 }
 
 function pickPrimaryShellKind(dev: Equipment): string {
-  const name = (dev as unknown as { constructor: { name: string } }).constructor.name;
-  if (name === 'WindowsPC' || name === 'WindowsServer') return 'cmd';
-  if (name === 'CiscoRouter' || name === 'CiscoSwitch') return 'cisco-ios';
-  if (name === 'HuaweiRouter' || name === 'HuaweiSwitch') return 'huawei-vrp';
-  return 'bash';
+  return primaryShellKindFor(dev);
 }

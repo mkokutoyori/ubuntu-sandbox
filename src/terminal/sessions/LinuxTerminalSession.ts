@@ -10,6 +10,7 @@
  */
 
 import { Equipment } from '@/network';
+import { primaryShellKindFor } from '@/shell/shellKind';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
@@ -45,6 +46,7 @@ import {
 import {
   RemoteDeviceSubShell,
   CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
+  strategyForShellKind,
   type RemotePromptStrategy,
 } from '@/terminal/subshells/RemoteDeviceSubShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
@@ -2881,11 +2883,8 @@ function pickPrimaryKindFromStrategy(s: RemotePromptStrategy): string | null {
 }
 
 function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
-  const name = (eq.constructor as { name: string }).name;
-  if (name === 'CiscoRouter' || name === 'CiscoSwitch') return CiscoPromptStrategy;
-  if (name === 'HuaweiRouter' || name === 'HuaweiSwitch') return HuaweiPromptStrategy;
-  if (name === 'WindowsPC') return WindowsPromptStrategy;
-  return null;
+  const kind = primaryShellKindFor(eq);
+  return kind === 'bash' ? null : strategyForShellKind(kind);
 }
 
 function findEquipmentByIp(targetIp: string): Equipment | null {
