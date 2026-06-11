@@ -555,19 +555,48 @@ export function renderPSCellValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (value === true) return 'True';
   if (value === false) return 'False';
+  // Arrays render as PowerShell's `{item1, item2, ...}` collection literal so
+  // table cells holding things like an ACL's Access array don't degenerate to
+  // "[object Object]". Nested objects use their canonical string form.
+  if (Array.isArray(value)) {
+    const inner = value.map(v => renderObjectShort(v)).join(', ');
+    return `{${inner}}`;
+  }
   if (value instanceof Date) {
-    // PowerShell short date + short time, en-US culture.
-    // Example: "5/15/2026 11:10 AM"
-    const m  = value.getMonth() + 1;
-    const d  = value.getDate();
-    const y  = value.getFullYear();
+    // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
+    // The format follows .NET's `{0:d} {0:t}` for en-US culture — single
+    // space between date and time, hour without leading zero. Column-level
+    // alignment is handled by the table formatter (padStart/padEnd), not by
+    // padding inside the rendered value.
+    const m   = value.getMonth() + 1;
+    const d   = value.getDate();
+    const y   = value.getFullYear();
     const h24 = value.getHours();
     const min = value.getMinutes();
     const tt  = h24 >= 12 ? 'PM' : 'AM';
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
   }
+  // Plain objects in a cell render as `Key=Value; ...` so users see the
+  // shape rather than `[object Object]`. Real PowerShell shows the type
+  // name (e.g. `MSFT_NetAdapter`); without ETS metadata we fall back to
+  // the hashtable form which preserves all field information.
+  if (typeof value === 'object') {
+    return renderObjectShort(value);
+  }
   return String(value);
+}
+
+/** Render any value compact enough to fit in one table/list cell. */
+function renderObjectShort(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return `{${value.map(v => renderObjectShort(v)).join(', ')}}`;
+  if (typeof value === 'object' && !(value instanceof Date)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return '';
+    return entries.map(([k, w]) => `${k}=${renderPSCellValue(w)}`).join('; ');
+  }
+  return renderPSCellValue(value);
 }
 
 /**
@@ -709,10 +738,39 @@ export function formatDefault(objects: PSObject[]): string {
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
-    return formatTable(objects, defaultCols.join(', '));
+    const body = formatTable(objects, defaultCols.join(', '));
+    // FileSystem objects get the canonical "Directory: <path>" banner that
+    // real `Get-ChildItem` prints above the table.
+    const dirBanner = filesystemDirectoryBanner(objects);
+    return dirBanner ? `${dirBanner}${body}` : body;
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+/**
+ * For filesystem entries, derive the parent directory and return a banner
+ * matching real PowerShell's Get-ChildItem header:
+ *
+ *     Directory: C:\Users
+ *
+ * Returns an empty string when the rows are not filesystem objects, or when
+ * the rows span multiple parent directories (rare; we fall back to no banner).
+ */
+function filesystemDirectoryBanner(objects: PSObject[]): string {
+  const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
+  if (!lower.has('mode') || !lower.has('lastwritetime') || !lower.has('name')) return '';
+  const fullKey = Object.keys(objects[0]).find(k => k.toLowerCase() === 'fullname');
+  if (!fullKey) return '';
+  const parents = new Set<string>();
+  for (const o of objects) {
+    const full = String((o as Record<string, unknown>)[fullKey] ?? '');
+    const sep = Math.max(full.lastIndexOf('\\'), full.lastIndexOf('/'));
+    if (sep > 1) parents.add(full.slice(0, sep));
+  }
+  if (parents.size !== 1) return '';
+  const dir = parents.values().next().value;
+  return `\n\n    Directory: ${dir}\n`;
 }
 
 /**
@@ -742,9 +800,19 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
     return ['Name', 'Enabled', 'Description'];
   }
+  // LocalGroup: Name, Description (real PS hides SID/Members in the default
+  // table, surfacing them only on Format-List or property access).
+  if (lower.has('sid') && lower.has('members') && lower.has('name') && lower.has('description')) {
+    return ['Name', 'Description'];
+  }
   // PSDrive: Name, Used (GB), Free (GB), Provider, Root
   if (lower.has('provider') && lower.has('root') && lower.has('name')) {
     return ['Name', 'Used', 'Free', 'Provider', 'Root'];
+  }
+  // PathInfo from Get-Location: hide ProviderPath/Provider in the default
+  // table, mirroring real PowerShell's PathInfo display formatter.
+  if (lower.has('path') && lower.has('providerpath') && lower.has('provider') && keys.length === 3) {
+    return ['Path'];
   }
   // DirectoryEntry from Get-ChildItem: Mode, LastWriteTime, Length, Name
   if (lower.has('mode') && lower.has('lastwritetime') && lower.has('name')) {
