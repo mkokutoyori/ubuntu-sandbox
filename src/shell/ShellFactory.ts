@@ -16,6 +16,7 @@
 import type { Equipment } from '@/network';
 import type { IShell, ShellConnection } from './IShell';
 import { ShellContext } from './ShellContext';
+import { primaryShellKindFor } from './shellKind';
 
 export interface ShellSpawnArgs {
   readonly device: Equipment;
@@ -86,7 +87,7 @@ export class ShellFactory {
     const dev = args.device as unknown as {
       getHostname?: () => string;
       getCwd?: () => string;
-      constructor: { name: string };
+      getOSType?: () => string;
     };
     const hostname = dev.getHostname?.() ?? 'remote';
     const cwd = args.cwd ?? this.defaultCwdFor(dev, args.user);
@@ -103,11 +104,10 @@ export class ShellFactory {
    * device's local-console cwd, which belongs to a different user.
    */
   private static defaultCwdFor(
-    dev: { constructor: { name: string } },
+    dev: { getOSType?: () => string },
     user: string,
   ): string {
-    const cls = dev.constructor.name;
-    if (cls === 'WindowsPC' || cls === 'WindowsServer') {
+    if (primaryShellKindFor(dev) === 'cmd') {
       return `C:\\Users\\${user}`;
     }
     if (user === 'root') return '/root';

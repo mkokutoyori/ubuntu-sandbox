@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-06-07T20:22:37.978Z
+Generated: 2026-06-11T00:25:01.415Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -539,8 +539,8 @@ $ [81/302]> route -n
 $ [82/302]> netstat -rn
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
-  0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0
-  10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0
+  192.168.20.0    0.0.0.0         255.255.255.0   U       0 0          0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG      0 0          0 
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 
@@ -603,17 +603,20 @@ $ [100/302]> arp -i eth0
 --- [101] § connectivité — ping ---
 $ [101/302]> ping -c 1 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [102/302]> ping -c 2 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  2 packets transmitted, 0 received, 100% packet loss
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [103/302]> ping -c 1 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
@@ -624,10 +627,13 @@ $ [103/302]> ping -c 1 192.168.10.2
 
 $ [104/302]> ping -c 3 -i 1 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
   PING 192.168.10.99 (192.168.10.99) 56(84) bytes of data.
@@ -638,31 +644,35 @@ $ [105/302]> ping -c 1 -W 1 192.168.10.99
 
 $ [106/302]> ping -c 1 -s 100 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 100(128) bytes of data.
-  connect: Network is unreachable
+  108 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [107/302]> ping -c 1 -t 64 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [108/302]> ping -c 1 -n 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [109/302]> ping -c 1 -q 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [110/302]> ping -c 1 10.255.255.254
   PING 10.255.255.254 (10.255.255.254) 56(84) bytes of data.
@@ -763,7 +773,7 @@ $ [133/302]> nslookup example.com
   ** server can't find example.com: REFUSED
 
 $ [134/302]> nslookup example.com 8.8.8.8
-  ** server can't find example.com: REFUSED
+  ;; connection timed out; no servers could be reached
 
 $ [135/302]> nslookup 8.8.8.8
   ** server can't find 8.8.8.8: REFUSED
@@ -894,24 +904,31 @@ $ [157/302]> netstat -an | head
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
 
 $ [158/302]> netstat -s | head
-  Active Internet connections (only servers)
-  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
-  udp             0      0 127.0.0.53:53           0.0.0.0:*
-  tcp             0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+  Ip:
+      Forwarding: 2
+      0 total packets received
+      0 forwarded
+      0 incoming packets discarded
+      0 incoming packets delivered
+      0 requests sent out
+  Icmp:
+      0 ICMP messages received
+      0 input ICMP message failed
 
 $ [159/302]> netstat -i
   Kernel Interface table
   Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg
-  eth0      1500     1024      0      0 0           512      0      0      0 BMRU
-  lo       65536      128      0      0 0           128      0      0      0 LRU
+  eth0          1500        0      0      0 0                0      0      0      0 BMU
+  eth1          1500        0      0      0 0                0      0      0      0 BMU
+  eth2          1500        0      0      0 0                0      0      0      0 BMU
+  eth3          1500        0      0      0 0                0      0      0      0 BMU
+  lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [160/302]> netstat -rn
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
-  0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0
-  10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0
+  192.168.20.0    0.0.0.0         255.255.255.0   U       0 0          0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG      0 0          0 
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 $ [161/302]> lsof -i :22
@@ -954,22 +971,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-06-07 20:22:37--  http://192.168.10.1
+  --2026-06-11 00:25:01--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-06-07 20:22:37--  http://192.168.10.1
+  --2026-06-11 00:25:01--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-06-07 20:22:37--  http://192.168.10.1
+  --2026-06-11 00:25:01--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-06-07 20:22:37--  http://192.168.10.99
+  --2026-06-11 00:25:01--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1192,11 +1209,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Jun  7 20:22 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Jun  7 20:22 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jun 11 00:25 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Jun 11 00:25 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAphjf272ucnd root@linux-server
+  ssh-rsa AAAAl2d0v5752bj root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1205,7 +1222,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAifhn41dm78 root@localhost
+  ssh-ed25519 AAAAc1nrybonqwd root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1330,7 +1347,7 @@ $ [245/302]> ip -br addr
   eth3            DOWN          
 
 $ [246/302]> ip route show | wc -l
-  2
+  1
 
 $ [247/302]> ss -tln | wc -l
   4
@@ -1470,8 +1487,11 @@ $ [270/302]> ifconfig eth0 | grep -E "RX|TX"
 $ [271/302]> netstat -i
   Kernel Interface table
   Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg
-  eth0      1500     1024      0      0 0           512      0      0      0 BMRU
-  lo       65536      128      0      0 0           128      0      0      0 LRU
+  eth0          1500        0      0      0 0                0      0      0      0 BMU
+  eth1          1500        0      0      0 0                0      0      0      0 BMU
+  eth2          1500        0      0      0 0                0      0      0      0 BMU
+  eth3          1500        0      0      0 0                0      0      0      0 BMU
+  lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [272/302]> ss -s
   Total: 120
@@ -1485,7 +1505,16 @@ $ [272/302]> ss -s
   FRAG      0         0         0
 
 $ [273/302]> cat /proc/net/snmp | head
-  cat: /proc/net/snmp: No such file or directory
+  Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates
+  Ip: 1 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
+  Icmp: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  IcmpMsg: InType8 OutType0
+  IcmpMsg: 0 0
+  Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
+  Tcp: 1 200 120000 -1 0 0 0 0 0 0 0 0 0 0 0
+  Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti
+  Udp: 0 0 0 0 0 0 0 0
 
 $ [274/302]> cat /proc/net/sockstat
   cat: /proc/net/sockstat: No such file or directory
@@ -1618,10 +1647,14 @@ $ [297/302]> ip route add
 
 $ [298/302]> ping --truc 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
+  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
+  64 bytes from 127.0.0.1: icmp_seq=4 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  4 packets transmitted, 0 received, 100% packet loss
+  4 packets transmitted, 4 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [299/302]> iptabless -L
   iptabless: command not found

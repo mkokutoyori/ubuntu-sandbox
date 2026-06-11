@@ -78,6 +78,13 @@ describe('Cisco BGP — config-driven real state (no peer ⇒ Idle)', () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
+    // Back the `network` statement with a real connected network — like
+    // real IOS, BGP only installs/advertises a network statement when a
+    // matching route exists in the RIB.
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('ip address 192.168.1.1 255.255.255.0');
+    await r.executeCommand('no shutdown');
+    await r.executeCommand('exit');
     await r.executeCommand('router bgp 65000');
     for (const c of [
       'bgp router-id 1.1.1.1', 'no synchronization',
@@ -85,6 +92,7 @@ describe('Cisco BGP — config-driven real state (no peer ⇒ Idle)', () => {
       'neighbor 10.0.0.2 description PEER-A',
       'neighbor 10.0.0.2 update-source Loopback0',
       'network 192.168.1.0 mask 255.255.255.0',
+      'network 172.31.0.0 mask 255.255.0.0',
       'redistribute connected', 'address-family ipv4 unicast',
       'neighbor 10.0.0.2 activate', 'exit-address-family',
     ]) {
@@ -98,7 +106,9 @@ describe('Cisco BGP — config-driven real state (no peer ⇒ Idle)', () => {
     expect(sum).toContain('10.0.0.2');
     expect(sum).toMatch(/Idle/);                 // no peer ⇒ true state
     const tbl = await r.executeCommand('show ip bgp');
-    expect(tbl).toContain('192.168.1.0');
+    expect(tbl).toContain('192.168.1.0');        // backed by a connected route
+    expect(tbl).toContain('32768');              // locally originated weight
+    expect(tbl).not.toContain('172.31.0.0');     // unbacked stmt ⇒ not installed
     expect(await r.executeCommand('show ip protocols'))
       .toMatch(/Routing Protocol is "bgp 65000"/);
   });

@@ -20,8 +20,8 @@ corrections sont structurelles, jamais cosmétiques.
 | 5 | Helpers IP réimplémentés 6× (OSPF ×2, EIGRP, BGP, PIM, CLI OSPF) | DRY | Moyenne | ✅ Corrigé |
 | 6 | Cycle de vie des agents protocolaires copié-collé dans CiscoRouter / HuaweiRouter / CiscoSwitch / HuaweiSwitch (init + restart `setEventBus`) | Registry pattern | Haute | ✅ Corrigé |
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | ✅ Corrigé |
-| 8 | Dispatch par `constructor.name` dans ShellFactory / sshLauncher / WindowsTerminalSession (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | À faire |
-| 9 | BGP : FSM incomplète (états Connect/OpenConfirm absents), pas de détection de boucle AS-path | RFC 4271 | Haute | À faire |
+| 8 | Dispatch par `constructor.name` dans 5 sites shell/terminal (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | ✅ Corrigé |
+| 9 | BGP : pas de propagation transitive, pas d'AS_PATH, pas de détection de boucle, table `show ip bgp` fabriquée | RFC 4271 | Haute | ✅ Corrigé |
 | 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | À faire |
 
 ---
@@ -314,12 +314,182 @@ champ) + non-régression CDP/LLDP/STP.
 
 ---
 
+## Entrée 8 — BGP : AS_PATH, propagation transitive, prévention de boucle
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+1. **Pas de propagation transitive** : `computeRoutes` n'installait que les
+   préfixes *directement originés* par les voisins directs. Dans une chaîne
+   A—B—C, A n'apprenait jamais les réseaux de C — irréaliste pour BGP dont
+   c'est la fonction première (path vector inter-AS).
+2. **Pas d'AS_PATH** : aucune trace du chemin d'AS, donc ni détection de
+   boucle (RFC 4271 §6.3) ni sélection du chemin le plus court (§9.1.2.2).
+3. **`show ip bgp` fabriqué** : la table affichait les statements `network`
+   même sans route connectée derrière (l'IOS réel n'installe un statement
+   que s'il est couvert par une route de la RIB), et tous les chemins
+   étaient affichés `i` sans path.
+
+### Correction
+
+- `BGPEngine.collectRib()` : RIB locale avec AS_PATH, alimentée
+  récursivement par `advertisedTo(receiverAsn)` des pairs Established.
+  Sémantiques RFC 4271 implémentées :
+  - §6.3 : rejet à la réception de tout chemin contenant son propre ASN ;
+  - §5.1.2 : prepend du propre ASN à l'annonce eBGP, AS_PATH inchangé en
+    iBGP ;
+  - §9.1.2.2 (sous-ensemble) : à préfixe égal, AS_PATH le plus court gagne ;
+  - §9.2.1.1 : split-horizon iBGP (une route apprise d'un pair iBGP n'est
+    pas relayée à un autre pair iBGP — hypothèse full-mesh).
+- Garde de récursion par *chemin* (copie du `visited` par branche) : la
+  marche dans le graphe d'engines ne boucle pas, sans élaguer les chemins
+  alternatifs légitimes via des voisins frères.
+- `getBgpTable()` expose la table réelle (préfixe, next-hop, AS_PATH, poids
+  32768 pour l'originé local) ; `show ip bgp` l'affiche désormais (vrais
+  paths, plus de fabrication).
+- `AbstractRoutingProtocolEngine` : accesseur protégé `locatePeers()` pour
+  les calculs récursifs des sous-classes.
+
+### Décision documentée
+
+La FSM 6 états complète (Connect/OpenConfirm) n'est **pas** simulée : le
+moteur dérive l'état de la topologie de façon synchrone (philosophie « état
+vrai, jamais fabriqué » du moteur). Simuler des phases TCP/OPEN qui
+n'existent pas serait de la fabrication ; cela nécessiterait un moteur
+asynchrone à acteurs (comme OSPF) — noté en dette restante.
+
+### Tests
+
+7 nouveaux tests : propagation 2 sauts (A apprend C via B, next-hop = B),
+AS_PATH ordonné [65002, 65003], originé local (path vide, weight 32768),
+boucle triangle rejetée (A ne réapprend jamais son préfixe), chemin le plus
+court préféré, split-horizon iBGP en chaîne (A ne voit pas C), AS traversé
+deux fois rejeté (A—B—A'). 1 test CLI mis à jour (il assertait l'affichage
+fabriqué : statement `network` non couvert visible) — remplacé par le
+comportement IOS réel avec assertions complémentaires. Suite complète :
+255 fichiers / 6614 tests verts.
+
+---
+
+## Entrée 9 — Shell/terminal : dispatch polymorphique au lieu de `constructor.name`
+
+**Date** : 2026-06-10
+
+### Défaillance constatée
+
+Cinq sites comparaient `dev.constructor.name` à des littéraux
+(`'WindowsPC'`, `'CiscoRouter'`, …) pour choisir le shell, le cwd SSH ou la
+stratégie de prompt distant : `sshLauncher.pickPrimaryShellKind`,
+`ShellFactory.defaultCwdFor`, `WindowsTerminalSession.pickRemoteStrategy` +
+`pickPrimaryShellKind`, `LinuxTerminalSession.pickVendorPromptStrategy`.
+Conséquences : danger de minification (d'où le `keepNames: true` forcé dans
+`vite.config.ts`), et ajout d'un vendor = 5 dispatchers à modifier. Or le
+hook polymorphique existait déjà : `Equipment.getOSType()` est surchargé
+par toutes les classes devices ('cisco-ios', 'huawei-vrp', 'windows',
+'linux', 'generic') — le sniffing de nom de classe était redondant.
+
+### Correction
+
+- Nouveau `src/shell/shellKind.ts` : `primaryShellKindFor(dev)` — unique
+  mapping `getOSType()` → `'bash' | 'cmd' | 'cisco-ios' | 'huawei-vrp'`.
+- `strategyForShellKind()` dans `RemoteDeviceSubShell.ts` (à côté des
+  stratégies) : unique mapping kind → stratégie de prompt.
+- Les 5 sites délèguent ; comportements identiques (vérifié cas par cas :
+  GenericSwitch → bash, WindowsServer → cmd, mac-pc → bash).
+- Commentaire `keepNames` de `vite.config.ts` mis à jour : ce n'est plus
+  qu'une garde défensive (suppression possible après une vérification du
+  build minifié — non faite ici, notée en dette).
+
+### Tests
+
+Non-régression : shell + terminal + terminal-core + suites SSH LAN =
+2029 tests verts (l'unique échec `duplicate-display-fixes` est le
+préexistant déjà documenté en entrée 2).
+
+---
+
+## Entrée 10 — Consolidation des branches : best-path RFC 4271 §9.1.1 × propagation transitive
+
+**Date** : 2026-06-11
+
+### Contexte
+
+Reprise du travail : consigne de merger toutes les branches disponibles dans
+`mandeng` avant de continuer. État des lieux des branches distantes :
+
+- `origin/main` : contenu identique à `mandeng` (seul le commit de merge de
+  la PR #307 manquait) — fast-forward.
+- `origin/claude/awesome-shannon-zyqb1r` (4 commits, 2026-06-10) : série
+  « propagation transitive BGP + dispatch shell polymorphique » (entrées 8–9
+  de ce journal) — **mergée**, conflits résolus (voir ci-dessous).
+- `origin/claude/general-session-6Nwqo` et
+  `origin/claude/fix-powershell-tests-M4mpL` : **aucun ancêtre commun** avec
+  `mandeng` (historique du dépôt réécrit depuis), dernier commit 2026-05-13/16,
+  donc antérieures à toute la série de refactoring. Les merger (en
+  `--allow-unrelated-histories`) écraserait un mois de travail plus récent —
+  **écartées volontairement**, décision documentée ici.
+- Les 14 autres branches `claude/*` : déjà entièrement contenues dans
+  `mandeng` (0 commit d'avance).
+
+### Conflit de fond résolu (pas un simple conflit textuel)
+
+`mandeng` et la branche entrante avaient chacune réécrit
+`BGPEngine.computeRoutes` dans deux directions complémentaires :
+
+- `mandeng` : sélection de meilleur chemin **complète** RFC 4271 §9.1.1
+  (`bestPath.ts` : weight Cisco, LOCAL_PREF, originé local, longueur
+  d'AS_PATH, origin, MED, eBGP>iBGP, router-id, IP du pair) — mais
+  uniquement sur les préfixes originés par les voisins **directs** (modèle
+  1 saut, pas de propagation).
+- branche entrante : propagation **transitive** avec AS_PATH réel,
+  prévention de boucle §6.3 et split-horizon iBGP — mais sélection réduite
+  au plus court AS_PATH.
+
+Choisir un camp aurait perdu la moitié du travail. La résolution **unifie**
+les deux : `collectRib()` propage transitivement (AS_PATH, §6.3,
+split-horizon) et arbitre chaque préfixe via `compareBgpPaths()` (§9.1.1
+complet). Au passage :
+
+- `BgpAdvertisedRoute` transporte désormais LOCAL_PREF/origin/MED, ce qui
+  implémente correctement la portée du LOCAL_PREF (§5.1.5 : préservé en
+  iBGP, réinitialisé au défaut local en eBGP) — aucune des deux branches ne
+  le faisait sur le chemin transitif ;
+- les entrées originées portent weight 32768 / LOCAL_PREF local / origin
+  IGP, et participent à la sélection comme sur un vrai IOS ;
+- `getBgpTable()` expose weight et LOCAL_PREF réels par route (plus de
+  32768 codé en dur au moment de l'affichage).
+
+### Tests
+
+Les **deux** suites de tests en conflit sont conservées intégralement
+(best-path §9.1.1 : 6 tests ; propagation AS_PATH : 7 tests) — les 21 tests
+BGP passent sur le moteur unifié sans modification d'aucune assertion, ce
+qui valide que la fusion ne sacrifie aucun comportement.
+
+Suite complète : 13 648 verts, 9 échecs préexistants (vérifié en rejouant
+les fichiers concernés sur le HEAD pré-merge via worktree).
+
+---
+
+## Validation finale de la série
+
+- `npm run build` : ✅ build de production OK.
+- Suite unitaire complète (`src/__tests__/unit/`) : **13 216 tests verts**,
+  13 échecs **tous préexistants** (vérifié en rejouant les 4 fichiers
+  concernés sur le commit de base `ac13a7e` via un worktree : mêmes 13
+  échecs — Oracle access-management ×3, PowerShell DateTime/pushd ×9,
+  terminal sudo-prompt ×1). Zéro régression introduite.
+- ESLint : les fichiers touchés par la série sont propres ; les ~780
+  erreurs restantes sont le baseline préexistant du repo (hors périmètre).
+
+---
+
 ## Limites connues / dette restante
 
-- **Backlog #8 et #10** (dispatch `constructor.name`, ISP sur `Equipment`) :
-  identifiés, documentés, non traités dans cette série.
-- **BGP** : pas encore de best-path multi-critères complet (local-pref, MED,
-  origin) ni de route-reflectors — le moteur reste volontairement simplifié.
+- **Backlog #10** (ISP sur `Equipment`) : identifié, documenté, non traité.
+- **BGP** : pas de route-reflectors ; FSM dérivée synchrone (pas de phases
+  Connect/OpenConfirm — exigerait un moteur asynchrone à acteurs comme OSPF).
 - **STP** : RSTP (802.1w) et PVST+ ne sont pas implémentés ; le fast path
   « premier bring-up » simule un comportement type RSTP pour préserver
   l'utilisabilité (décision documentée dans le code).

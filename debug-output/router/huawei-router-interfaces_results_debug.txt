@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-06-09T08:05:51.516Z
+Generated: 2026-06-11T00:25:16.206Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -624,7 +624,7 @@ Total steps: 286
 
 
 --- [166] § per-interface display family ---
-[166/286] r1 [R1] display interface
+[166/286] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
@@ -784,7 +784,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[167/286] r1 [R1] display interface GigabitEthernet0/0/0
+[167/286] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
@@ -793,7 +793,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[168/286] r1 [R1] display ip interface GigabitEthernet0/0/0
+[168/286] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.100.1/24
@@ -806,10 +806,10 @@ Total steps: 286
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[169/286] r1 [R1] display interface GigabitEthernet0/0/0 | include line protocol
+[169/286] r1 <R1> display interface GigabitEthernet0/0/0 | include line protocol
   Line protocol current state : UP
 
-[170/286] r1 [R1] display interface GigabitEthernet0/0/1
+[170/286] r1 <R1> display interface GigabitEthernet0/0/1
   GE0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -817,7 +817,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[171/286] r1 [R1] display ip interface GigabitEthernet0/0/1
+[171/286] r1 <R1> display ip interface GigabitEthernet0/0/1
   GE0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
@@ -830,19 +830,19 @@ Total steps: 286
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[172/286] r1 [R1] display interface GigabitEthernet0/0/1 | include line protocol
+[172/286] r1 <R1> display interface GigabitEthernet0/0/1 | include line protocol
   Line protocol current state : UP
 
-[173/286] r1 [R1] display interface LoopBack0
+[173/286] r1 <R1> display interface LoopBack0
   Error: Wrong parameter found at '^' position.
 
-[174/286] r1 [R1] display ip interface LoopBack0
+[174/286] r1 <R1> display ip interface LoopBack0
   Error: Wrong parameter found at '^' position.
 
-[175/286] r1 [R1] display interface LoopBack0 | include line protocol
+[175/286] r1 <R1> display interface LoopBack0 | include line protocol
   Error: Wrong parameter found at '^' position.
 
-[176/286] r1 [R1] display interface Tunnel0/0/0
+[176/286] r1 <R1> display interface Tunnel0/0/0
   Tunnel0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 172.16.0.1/255.255.255.252
@@ -852,7 +852,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[177/286] r1 [R1] display ip interface Tunnel0/0/0
+[177/286] r1 <R1> display ip interface Tunnel0/0/0
   Tunnel0/0/0 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is 172.16.0.1/30
@@ -865,10 +865,10 @@ Total steps: 286
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[178/286] r1 [R1] display interface Tunnel0/0/0 | include line protocol
+[178/286] r1 <R1> display interface Tunnel0/0/0 | include line protocol
   Line protocol current state : UP
 
-[179/286] r1 [R1] display interface brief
+[179/286] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -896,7 +896,7 @@ Total steps: 286
   Tunnel0/0/0                 down    down      0%    0%       0          0
   Tunnel0/0/1                 down    down      0%    0%       0          0
 
-[180/286] r1 [R1] display interface description
+[180/286] r1 <R1> display interface description
   Interface                     PHY     Protocol Description
   GE0/0/0                       up      up       ## LAN to L1 ##
   GE0/0/1                       up      up       
@@ -923,7 +923,7 @@ Total steps: 286
   Tunnel0/0/0                   down    down     
   Tunnel0/0/1                   down    down     
 
-[181/286] r1 [R1] display ip interface brief
+[181/286] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -961,7 +961,7 @@ Total steps: 286
 
 
 --- [182] § regression: display family ---
-[182/286] r1 [R1] display version
+[182/286] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -970,7 +970,7 @@ Total steps: 286
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[183/286] r1 [R1] display version
+[183/286] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
@@ -979,7 +979,7 @@ Total steps: 286
   BootROM Version:     1.0
   R1 uptime is 0 days, 0 hours, 0 minutes
 
-[184/286] r1 [R1] display current-configuration
+[184/286] r1 <R1> display current-configuration
   #
   sysname R1
   #
@@ -1103,7 +1103,7 @@ Total steps: 286
   #
   #
 
-[185/286] r1 [R1] display saved-configuration
+[185/286] r1 <R1> display saved-configuration
   #
   sysname R1
   #
@@ -1227,7 +1227,7 @@ Total steps: 286
   #
   #
 
-[186/286] r1 [R1] display ip interface brief
+[186/286] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
@@ -1263,7 +1263,7 @@ Total steps: 286
   Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
   Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
 
-[187/286] r1 [R1] display interface
+[187/286] r1 <R1> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
@@ -1423,7 +1423,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[188/286] r1 [R1] display ip routing-table
+[188/286] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
@@ -1452,61 +1452,61 @@ Total steps: 286
   172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
-[189/286] r1 [R1] display ip routing-table statistics
+[189/286] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
   Direct    21
   --------------------
   Total     21
 
-[190/286] r1 [R1] display arp
+[190/286] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[191/286] r1 [R1] display arp all
+[191/286] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[192/286] r1 [R1] display ospf peer
+[192/286] r1 <R1> display ospf peer
   Error: OSPF is not configured.
 
-[193/286] r1 [R1] display ospf interface
+[193/286] r1 <R1> display ospf interface
   Error: OSPF is not configured.
 
-[194/286] r1 [R1] display ospf routing
+[194/286] r1 <R1> display ospf routing
   Info: OSPF is not running.
 
-[195/286] r1 [R1] display ospf lsdb
+[195/286] r1 <R1> display ospf lsdb
   Error: OSPF is not configured.
 
-[196/286] r1 [R1] display ospf brief
+[196/286] r1 <R1> display ospf brief
   Error: OSPF is not configured.
 
-[197/286] r1 [R1] display rip
+[197/286] r1 <R1> display rip
   Info: RIP is not enabled.
 
-[198/286] r1 [R1] display rip 1 route
+[198/286] r1 <R1> display rip 1 route
   Info: RIP is not enabled.
 
-[199/286] r1 [R1] display bgp peer
+[199/286] r1 <R1> display bgp peer
   Info: BGP is not running.
 
-[200/286] r1 [R1] display bgp routing-table
+[200/286] r1 <R1> display bgp routing-table
   Info: BGP is not running.
 
-[201/286] r1 [R1] display nat session all
+[201/286] r1 <R1> display nat session all
   Info: No NAT session is found.
 
-[202/286] r1 [R1] display nat address-group
+[202/286] r1 <R1> display nat address-group
   No NAT address pools configured.
 
-[203/286] r1 [R1] display ip pool
+[203/286] r1 <R1> display ip pool
   No DHCP pools configured.
 
-[204/286] r1 [R1] display acl all
+[204/286] r1 <R1> display acl all
   Total 0 ACL(s)
 
-[205/286] r1 [R1] display dhcp server statistics
+[205/286] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -1516,29 +1516,29 @@ Total steps: 286
     Inform: 0        Decline: 0
   Pool number: 0
 
-[206/286] r1 [R1] display vrrp
+[206/286] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[207/286] r1 [R1] display vrrp brief
+[207/286] r1 <R1> display vrrp brief
   Total: 0     Master: 0     Backup: 0     Non-active: 0
   VRID  State        Interface                Type     Virtual IP
 
-[208/286] r1 [R1] display ike sa
+[208/286] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
   dst             src             state          conn-id status
   
   There are no IKEv1 SAs (no SA established)
 
-[209/286] r1 [R1] display ipsec sa
+[209/286] r1 <R1> display ipsec sa
   No IPSec SAs established.
 
-[210/286] r1 [R1] display ipsec policy
+[210/286] r1 <R1> display ipsec policy
   No crypto maps configured.
 
-[211/286] r1 [R1] display ipsec proposal
+[211/286] r1 <R1> display ipsec proposal
   No transform sets defined.
 
-[212/286] r1 [R1] display ike proposal
+[212/286] r1 <R1> display ike proposal
   Global IKE policy
   Default protection suite
   	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
@@ -1547,48 +1547,48 @@ Total steps: 286
   	Diffie-Hellman group:   #1 (768 bit)
   	lifetime:               86400 seconds, no volume limit
 
-[213/286] r1 [R1] display ike peer
+[213/286] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[214/286] r1 [R1] display snmp-agent sys-info
+[214/286] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[215/286] r1 [R1] display ntp status
+[215/286] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
   Reference clock ID: .INIT.
 
-[216/286] r1 [R1] display ntp session
+[216/286] r1 <R1> display ntp session
   No NTP associations
 
-[217/286] r1 [R1] display clock
-  2026-06-09 08:05:51
-  Tuesday
+[217/286] r1 <R1> display clock
+  2026-06-11 00:25:16
+  Thursday
   Time Zone(UTC) : UTC
 
-[218/286] r1 [R1] display lldp neighbor
+[218/286] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[219/286] r1 [R1] display lldp neighbor brief
+[219/286] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[220/286] r1 [R1] display cpu-usage
+[220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-09 08:05:51
+  CPU Usage Stat. Time : 2026-06-11 00:25:16
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[221/286] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-09 08:05:51
+[221/286] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-06-11 00:25:16
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[222/286] r1 [R1] display device
+[222/286] r1 <R1> display device
   R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
@@ -1599,13 +1599,13 @@ Total steps: 286
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[223/286] r1 [R1] display users
+[223/286] r1 <R1> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[224/286] r1 [R1] display history-command
+[224/286] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -1617,7 +1617,7 @@ Total steps: 286
   display users
   display history-command
 
-[225/286] r1 [R1] display logbuffer
+[225/286] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -1626,7 +1626,7 @@ Total steps: 286
   Overwritten messages : 0
   Current messages : 0
 
-[226/286] r1 [R1] display trapbuffer
+[226/286] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -1634,10 +1634,10 @@ Total steps: 286
   Dropped messages : 0
   Current messages : 0
 
-[227/286] r1 [R1] display alarm all
+[227/286] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[228/286] r1 [R1] display startup
+[228/286] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -1649,10 +1649,10 @@ Total steps: 286
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[229/286] r1 [R1] display patch-information
+[229/286] r1 <R1> display patch-information
   Info: No patch exists.
 
-[230/286] r1 [R1] display elabel
+[230/286] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
@@ -1665,12 +1665,12 @@ Total steps: 286
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[231/286] r1 [R1] display license
+[231/286] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[232/286] r1 [R1] display interface brief
+[232/286] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -1698,7 +1698,7 @@ Total steps: 286
   Tunnel0/0/0                 down    down      0%    0%       0          0
   Tunnel0/0/1                 down    down      0%    0%       0          0
 
-[233/286] r1 [R1] display ip interface GigabitEthernet0/0/0
+[233/286] r1 <R1> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.100.1/24
@@ -1711,7 +1711,7 @@ Total steps: 286
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[234/286] r1 [R1] display interface GigabitEthernet0/0/0
+[234/286] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
@@ -1720,7 +1720,7 @@ Total steps: 286
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[235/286] r1 [R1] display this
+[235/286] r1 <R1> display this
   #
   sysname R1
   #
@@ -1844,12 +1844,12 @@ Total steps: 286
   #
   #
 
-[236/286] r1 [R1] display diagnostic-information
+[236/286] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[237/286] r1 [R1] display aaa configuration
+[237/286] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -1859,13 +1859,13 @@ Total steps: 286
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[238/286] r1 [R1] display aaa online-fail-record
+[238/286] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[239/286] r1 [R1] display ssh server status
+[239/286] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[240/286] r1 [R1] display ssh user-information
+[240/286] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -1873,7 +1873,7 @@ Total steps: 286
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[241/286] r1 [R1] display user-interface
+[241/286] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
   + 0      CON 0           9600     -      0      0            N      -
     34     VTY 0           -        -      0      0            N      -
@@ -1882,16 +1882,16 @@ Total steps: 286
     37     VTY 3           -        -      0      0            N      -
     38     VTY 4           -        -      0      0            N      -
 
-[242/286] r1 [R1] display port-security
+[242/286] r1 <R1> display port-security
   Port-security is enabled on the following interfaces:
    (configuration is recorded per interface; see display this)
 
 
 --- [243] § regression: pipe filters ---
-[243/286] r1 [R1] display current-configuration | include ospf
+[243/286] r1 <R1> display current-configuration | include ospf
 <empty>
 
-[244/286] r1 [R1] display current-configuration | begin interface
+[244/286] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
@@ -2012,7 +2012,7 @@ Total steps: 286
   #
   #
 
-[245/286] r1 [R1] display current-configuration | exclude #
+[245/286] r1 <R1> display current-configuration | exclude #
   sysname R1
   interface GigabitEthernet0/0/0
    ip address 192.168.100.1 255.255.255.0
@@ -2108,7 +2108,7 @@ Total steps: 286
    destination 10.0.0.2
    ipsec profile PROF1
 
-[246/286] r1 [R1] display ip routing-table | include Direct
+[246/286] r1 <R1> display ip routing-table | include Direct
   192.168.100.0/24    Direct  0    0     D     192.168.100.1   GE0/0/0
   10.255.255.1/32     Direct  0    0     D     10.255.255.1    LoopBack1
   10.255.255.2/32     Direct  0    0     D     10.255.255.2    LoopBack2
@@ -2131,7 +2131,7 @@ Total steps: 286
   172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
-[247/286] r1 [R1] display ip interface brief | include up
+[247/286] r1 <R1> display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
   GE0/0/0                           192.168.100.1/24     UP         UP
@@ -2191,10 +2191,10 @@ Total steps: 286
 <empty>
 
 [265/286] r1 [R1] undo terminal monitor
-<empty>
+  Info: Current terminal monitor is off.
 
 [266/286] r1 [R1] undo terminal monitor
-<empty>
+  Info: Current terminal monitor is off.
 
 [267/286] r1 [R1] sysname TEST
 <empty>
@@ -2269,9 +2269,12 @@ Total steps: 286
     routing-table  routing-table
 
 [283/286] r1 [Huawei] undo ?
-    lldp           lldp
+    terminal       terminal
+    debugging      Disable debugging
+    lldp           Disable LLDP
     command-alias  Disable CLI alias
     ip             ip
+    local-user     Remove a local user
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     ipv6           Disable IPv6
@@ -2280,9 +2283,9 @@ Total steps: 286
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
-    debugging      debugging
     ike            ike
     ipsec          ipsec
+    ikev2          ikev2
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy

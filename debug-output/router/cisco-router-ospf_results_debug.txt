@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-09T09:12:40.302Z
+Generated: 2026-06-11T00:24:47.010Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -944,9 +944,7 @@ Total steps: 311
           Area type: NORMAL
 
 [193/311] r1 R1# show ip ospf neighbor GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show ip ospf neighbor GigabitEthernet0/1
-                        ^
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
 
 [194/311] r1 R1# show ip ospf request-list
   Neighbor                Interface  Area
@@ -1191,17 +1189,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000076        0x6a31      2
+  1.1.1.1         1.1.1.1         0           0x80000079        0x6d94      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000077        0x43ae      1
+  1.1.1.1         1.1.1.1         0           0x8000007a        0x46ed      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000078        0xc9eb      2
+  1.1.1.1         1.1.1.1         0           0x8000007b        0xcc4f      2
   
 
 [216/311] r1 R1# show ip ospf interface brief
@@ -1304,7 +1302,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD25788.5BE76C8B (09:12:40.359 UTC Tue Jun 9 2026)
+  reference time is EDD47ECF.122D0E56 (00:24:47.071 UTC Thu Jun 11 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1313,7 +1311,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *09:12:40.000 UTC Tue Jun 9 2026
+  *00:24:47.000 UTC Thu Jun 11 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1643,7 +1641,8 @@ Total steps: 311
 
 [260/311] r1 R1# show hosts
   Default domain is not set
-  Name/address lookup uses domain service
+  Name servers are 255.255.255.255
+  Name/address lookup uses static table only (recursive resolver not simulated)
   
   Host                      Port  Flags      Age Type   Address(es)
 
