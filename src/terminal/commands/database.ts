@@ -54,6 +54,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
 
     const systemd = new OracleSystemdSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);

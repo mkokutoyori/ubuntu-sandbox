@@ -740,6 +740,40 @@ netstat) ; non-régression `unit/database/` + suites services/ports
 network-v2 ; `npx tsc --noEmit` et ESLint propres (au passage : purge des
 4 échappements `\$` inutiles préexistants dans database.ts).
 
+### 2026-06-12 — systemctl pilote réellement l'instance et le listener (synchro inverse)
+**Défaillance :** la synchronisation Oracle ⇄ systemd était unidirectionnelle.
+`OracleSystemdSync` installait bien `oracle-database-<SID>.service` /
+`oracle-listener-<SID>.service` quand le moteur changeait d'état, mais dans
+l'autre sens `systemctl start/stop oracle-…` ne faisait que spawner/tuer un
+wrapper shell : le moteur Oracle n'en savait rien. Conséquence directe après
+l'entrée précédente : `systemctl stop oracle-listener-ORCL` tuait tnslsnr et
+libérait le port (projection), mais `lsnrctl status` répondait encore
+« running » et `attemptConnect` acceptait les connexions — un état
+schizophrène impossible sur une vraie machine où l'unité et lsnrctl pilotent
+le même daemon. Idem pour la base : `systemctl stop oracle-database-ORCL`
+laissait l'instance OPEN avec ses pmon/smon fantômes.
+**Correction :**
+- `OracleSystemdSync` s'abonne aussi à `linux.service.started/restarted/
+  stopped` et pilote le moteur : unité listener → `startListener()`/
+  `stopListener()`, unité database → `startup()`/`shutdown('IMMEDIATE')`
+  (sémantique dbstart/dbshut). Ctx étendu d'un `resolveDatabase` optionnel
+  (même pattern que `OracleFilesystemSync`).
+- Convergence sans boucle par **idempotence des deux côtés** : chaque
+  handler vérifie d'abord l'état cible (no-op si déjà atteint), et le
+  service manager n'émet aucun événement pour un start/stop no-op — un
+  aller-retour se termine toujours en un cycle. Documenté en tête d'adapter.
+- Au passage, correction du sens aller : seuls les états terminaux pilotent
+  l'unité database (OPEN → active, SHUTDOWN → inactive). Avant, les phases
+  transitoires NOMOUNT/MOUNT d'un même STARTUP flappaient l'unité par
+  `inactive` — avec la synchro inverse, ce flap aurait rappelé
+  `shutdown()` en plein démarrage.
+**Validation :** nouvelle suite `oracle-systemd-reverse-sync.test.ts`
+(5 tests : stop/start listener via systemctl avec accord netstat +
+attemptConnect, stop/start database avec disparition/retour des ora_pmon
+dans ps et alert log « immediate », SHUTDOWN/STARTUP SQL*Plus → unité
+cohérente sans boucle) ; non-régression `unit/database/` + `unit/shell/` +
+suites services network-v2 ; `npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
