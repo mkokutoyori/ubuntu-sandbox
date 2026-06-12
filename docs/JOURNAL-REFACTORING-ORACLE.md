@@ -1056,6 +1056,24 @@ de delta par ligne) — le contrat visible (logs requis, purge, erreurs)
 est celui du vrai Oracle.
 **Validation :** `oracle-materialized-views.test.ts` 17/17 (+5).
 
+### 2026-06-12 — Le port du listener obéit à listener.ora
+**Défaillance :** le port TNS était la constante `ORACLE_CONFIG.PORT`
+(1521) câblée dans le contrôleur du listener, la résolution Oracle Net,
+l'unité systemd et les transcripts — éditer `listener.ora` (geste DBA
+canonique) n'avait aucun effet, et tout port ≠ 1521 répondait ORA-12541
+même correctement configuré.
+**Correction :** `ListenerControl` porte le port ; `startListener()` lit
+`(PORT = n)` de la section LISTENER du vrai listener.ora du device (via
+le `deviceFileReader` déjà injecté) ; l'événement
+`oracle.listener.event` transporte le port, l'unité
+`oracle-listener-<SID>` déclare le bon socket (la projection de ports
+bind/release le port effectif), la résolution client compare au port du
+listener CIBLE, et les transcripts lsnrctl affichent le port réel.
+**Validation :** suites listener-coherence (5 tests, +1 : édition du
+fichier → stop/start → netstat sur 1530, plus de 1521, status l'affiche)
+et tns-remote (20, +1 : depuis le client, :1521 → ORA-12541, :1530 →
+Connected, tnsping cohérent) : 25/25.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

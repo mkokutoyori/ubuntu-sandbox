@@ -103,7 +103,7 @@ export class OracleSystemdSync {
         const host = this.host(e.payload.deviceId);
         if (!host) return;
         const desired: 'active' | 'inactive' = e.payload.state === 'running' ? 'active' : 'inactive';
-        host.installSystemdUnit(listenerUnit(e.payload.sid), desired);
+        host.installSystemdUnit(listenerUnit(e.payload.sid, e.payload.port ?? 1521), desired);
       }),
 
       // systemd → Oracle: systemctl start/stop genuinely runs the engine.
@@ -165,7 +165,7 @@ function databaseUnit(sid: string): SystemdUnitSpec {
   };
 }
 
-function listenerUnit(sid: string): SystemdUnitSpec {
+function listenerUnit(sid: string, port: number): SystemdUnitSpec {
   return {
     name: `oracle-listener-${sid}`,
     description: `Oracle TNS Listener (SID=${sid})`,
@@ -177,7 +177,7 @@ function listenerUnit(sid: string): SystemdUnitSpec {
     listener: {
       processName: 'tnslsnr',
       daemonCommand: '/u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr LISTENER -inherit',
-      sockets: [{ port: 1521, protocol: 'tcp' }],
+      sockets: [{ port, protocol: 'tcp' }],
     },
   };
 }

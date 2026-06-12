@@ -273,3 +273,25 @@ describe('DML across database links settles with the local transaction', () => {
     sh.dispose();
   });
 });
+
+describe('remote connections honour the configured listener port', () => {
+  it('after moving the remote listener to 1530, only that port answers', () => {
+    const { client, dbhost } = lan();
+    const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora';
+    const conf = dbhost.readFileForEditor(path)!;
+    dbhost.writeFileFromEditor(path, conf.replace('(PORT = 1521)', '(PORT = 1530)'));
+    handleLsnrctl(dbhost, ['stop'], () => {});
+    handleLsnrctl(dbhost, ['start'], () => {});
+
+    const refused = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2:1521/ORCL']);
+    expect(refused.loginOutput.join('\n')).toMatch(/ORA-12541/);
+    refused.subShell.dispose();
+
+    const ok = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2:1530/ORCL']);
+    expect(ok.loginOutput.join('\n')).toContain('Connected.');
+    ok.subShell.dispose();
+
+    expect(tnsping(client, '//10.0.0.2:1530/ORCL')).toMatch(/OK \(\d+ msec\)/);
+    expect(tnsping(client, '//10.0.0.2:1521/ORCL')).toMatch(/TNS-12541/);
+  });
+});

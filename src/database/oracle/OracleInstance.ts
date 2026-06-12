@@ -924,22 +924,31 @@ export class OracleInstance {
     return this._listener.running ? 'running' : 'stopped';
   }
 
+  private readListenerOraPort(): number | null {
+    const content = this._deviceFileReader?.(`${ORACLE_CONFIG.HOME}/network/admin/listener.ora`);
+    if (!content) return null;
+    const m = /LISTENER\s*=[\s\S]*?\(\s*PORT\s*=\s*(\d+)\s*\)/i.exec(content);
+    return m ? Number.parseInt(m[1], 10) : null;
+  }
+
   startListener(): string {
+    const configuredPort = this.readListenerOraPort();
+    if (configuredPort !== null) this._listener.setPort(configuredPort);
     if (!this._listener.start()) {
       return TNS_ERRORS.TNS_01106;
     }
     this.logAlert('Listener LISTENER started successfully');
-    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT}))`;
+    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'running', endpoint },
+      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
       payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
     });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._listener.port;
     const sid = this.config.sid;
     return [
       `LSNRCTL for Linux: Version ${ver} - Production`,
@@ -964,14 +973,14 @@ export class OracleInstance {
     this.logAlert('Listener LISTENER stopped');
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'stopped', endpoint: '' },
+      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
       payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
     });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._listener.port;
     return [
       `LSNRCTL for Linux: Version ${ver} - Production`,
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
@@ -983,7 +992,7 @@ export class OracleInstance {
 
   getListenerStatus(): string {
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._listener.port;
     const header = [
       `LSNRCTL for Linux: Version ${ver} - Production`,
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,

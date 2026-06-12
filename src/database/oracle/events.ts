@@ -181,6 +181,7 @@ export interface OracleServiceEventPayload extends OracleDeviceRef {
 export interface OracleListenerEventPayload extends OracleDeviceRef {
   state: 'running' | 'stopped';
   endpoint: string;
+  port?: number;
 }
 
 export interface OracleSessionLongopsPayload extends OracleSessionRef {

@@ -90,3 +90,21 @@ describe('listener lifecycle drives the socket and process tables', () => {
     expect(srv.executeShellCommandSync('ss -tlnp')).not.toMatch(/1521/);
   });
 });
+
+describe('listener.ora drives the listening port', () => {
+  it('a port edited in listener.ora is honoured at lsnrctl start', () => {
+    const srv = bootOracleServer('oraport');
+    const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora';
+    const conf = srv.readFileForEditor(path)!;
+    srv.writeFileFromEditor(path, conf.replace('(PORT = 1521)', '(PORT = 1530)'));
+
+    lsnrctl(srv, 'stop');
+    expect(netstat(srv)).not.toMatch(/:1521\b/);
+    lsnrctl(srv, 'start');
+
+    const net = netstat(srv);
+    expect(net).toMatch(/:1530\b.*tnslsnr/);
+    expect(net).not.toMatch(/:1521\b/);
+    expect(lsnrctl(srv, 'status')).toContain('PORT=1530');
+  });
+});

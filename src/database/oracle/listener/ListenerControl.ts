@@ -23,6 +23,7 @@ export class ListenerControl {
   private _startedAt: Date | null = null;
   private _established = 0;
   private _refused = 0;
+  private _port = ORACLE_CONFIG.PORT;
 
   constructor(private readonly env: {
     sid: () => string;
@@ -30,6 +31,10 @@ export class ListenerControl {
   }) {}
 
   get running(): boolean { return this._running; }
+  get port(): number { return this._port; }
+  setPort(p: number): void {
+    if (Number.isFinite(p) && p > 0 && p < 65536) this._port = p;
+  }
   get startedAt(): Date | null { return this._startedAt; }
   get established(): number { return this._established; }
   get refused(): number { return this._refused; }
@@ -107,7 +112,7 @@ export class ListenerControl {
   /** "STATUS of the LISTENER" block (no banner / Connecting-to line). */
   statusBody(): string[] {
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._port;
     const sid = this.env.sid();
     return [
       'STATUS of the LISTENER',

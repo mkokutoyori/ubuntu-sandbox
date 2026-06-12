@@ -158,8 +158,7 @@ export function resolveOracleConnectTarget(
   }
 
   const db = getDb(target.getId());
-  // Non-default port: nothing listens there (the listener binds 1521).
-  if (desc.port !== ORACLE_CONFIG.PORT) {
+  if (desc.port !== db.instance.listener.port) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
   }
   const outcome = db.instance.listener.attemptConnect(desc.service);
