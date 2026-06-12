@@ -499,7 +499,7 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 | P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 19 |
 | P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 19 |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | ✅ Entrée 14 (session parallèle) |
-| P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | ✅ Entrée 22 |
+| P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | ✅ Entrée 25 |
 | P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | ✅ Entrée 21 |
 | P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | ✅ Entrée 21 |
 | P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | ✅ Entrée 12 (session parallèle) |
@@ -782,7 +782,7 @@ cmd-netsh + windows-netsh-dhcp-dns + windows-consistency : 251 verts.
 
 ---
 
-## Entrée 22 — Catalogue de devices : source unique de vérité (P8)
+## Entrée 25 — Catalogue de devices : source unique de vérité (P8)
 
 **Date** : 2026-06-12
 
