@@ -1167,7 +1167,7 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 | # | Sujet | Norme / Pattern | Sévérité | Statut |
 |---|-------|-----------------|----------|--------|
 | 12 | Equipment : 11 stubs « hôte » (passwords, cwd, éditeur) hérités par routeurs/switches (backlog #10) | ISP (SOLID) | Moyenne | ✅ Corrigé |
-| 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | À faire |
+| 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | ✅ Transport corrigé (entrée 13) — orchestration encore synchrone |
 | 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | À faire |
 | 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
 | 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
@@ -1230,3 +1230,70 @@ Conséquences structurelles :
   préexistantes avant = 1379 après, uniquement décalages de lignes).
 - Tests : terminal + terminal-core + shell (967), cross-vendor SSH (75),
   flows/SSH LAN (529), database + react + gui (2792) — tous verts.
+
+---
+
+## Entrée 13 — OSPF : le transport passe par les câbles, plus par le registre
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **Téléportation des paquets OSPF.** `RouterOSPFIntegration.deliverPacket`
+   localisait le moteur du routeur voisin via un registre statique
+   (`getByEquipmentId`) et appelait **directement**
+   `remoteEngine.processPacket(...)`. Les Hello/DD/LSR/LSU/LSAck ne
+   traversaient ni le port, ni le câble, ni le data plane du switch :
+   un câble coupé, un port down ou un équipement éteint n'interrompait
+   pas l'échange protocolaire en cours. Ironie : le chemin propre
+   existait déjà (`sendPacket` encapsule en IPv4 proto 89, TTL=1,
+   multicast 224.0.0.5 → MAC 01:00:5e:00:00:05 conformément à
+   RFC 2328 §4.3 et RFC 1112 §6.4) mais `setupSendCallbacks` l'écrasait
+   par la téléportation à chaque convergence.
+2. **Réception inexistante.** Aucun routeur ne traitait le protocole IP
+   89 en entrée : `handleLocalDelivery` dispatchait ESP/AH/TCP/ICMP/UDP
+   (RIP y passe déjà par de vraies trames !) mais ignorait OSPF — raison
+   d'être historique de la téléportation.
+3. **Pas d'authentification à la réception.** `processHello` validait
+   masque et timers (RFC 2328 §10.5) mais pas l'authentification — le
+   pré-check hors-bande de l'orchestrateur masquait ce manque, en
+   violation de RFC 2328 §8.2 (la vérification AuType/clé est un
+   prérequis de TOUT traitement de paquet reçu).
+
+### Correction
+
+- `IP_PROTO_OSPF = 89` ajouté aux constantes protocolaires canoniques.
+- **Réception** : `Router.handleLocalDelivery` dispatch proto 89 →
+  `RouterOSPFIntegration.receivePacket` → `OSPFEngine.processPacket`.
+  Le filtre L2 du routeur acceptait déjà les MAC 01:00:5e:… et
+  `processIPv4` consomme déjà 224.0.0.0/24 localement sans forwarding
+  (RFC 1112) : la chaîne Port → Câble → `handleFrame` → `processIPv4` →
+  contrôle plane est maintenant complète.
+- **Émission** : `setupSendCallbacks` câble désormais `sendPacket`
+  (vraies trames) pour tous les moteurs du domaine ; `deliverPacket`
+  (le téléporteur) est **supprimé**. La livraison par câble étant
+  synchrone, l'échange DD/LSR/LSU/LSAck piloté par la machine à états
+  aboutit toujours dans le même appel de convergence — mais il transite
+  réellement par le plan physique (y compris le flooding multicast des
+  switches pour les segments partagés).
+- **Authentification sur le fil** (RFC 2328 §8.2 / annexe D) :
+  l'en-tête `OSPFPacketHeader` transporte `authType`/`authKey`,
+  estampillés à l'égress unique (`dispatchOutgoing`) depuis la config
+  d'interface, validés à l'ingress (`processPacket`) avant tout
+  traitement FSM — drop + log en cas de désaccord.
+
+### Limites restantes (documentées, backlog #13 partiellement soldé)
+
+- L'**orchestration** de convergence (`autoConverge` : activation des
+  interfaces distantes, `formAdjacency` bilatéral, `driveStateMachine`,
+  `synchronizeLSDBs` en filet de sécurité) reste synchrone et
+  topology-walk. Le transport est conforme ; la découverte de voisins
+  par vrais Hello périodiques (les timers existent déjà côté moteur)
+  est l'étape suivante.
+- OSPFv3 (IPv6) garde son ancien modèle — à migrer séparément.
+
+### Validation
+
+- 16 fichiers de tests OSPF : 399 tests verts.
+- Suite `network-v2` complète : verte (voir commit).
+- `tsc --noEmit` : diff nul vs baseline.

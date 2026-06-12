@@ -13,7 +13,7 @@
 import type { Port } from '../../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ETHERTYPE_IPV4,
+  ETHERTYPE_IPV4, IP_PROTO_OSPF,
   createIPv4Packet,
 } from '../../core/types';
 import { Equipment } from '../../equipment/Equipment';
@@ -196,7 +196,7 @@ export class RouterOSPFIntegration {
     const ipPkt = createIPv4Packet(
       myIP,
       new IPAddress(destIP),
-      89, // OSPF protocol number
+      IP_PROTO_OSPF,
       1,  // TTL=1 (link-local)
       ospfPkt,
       64,
@@ -225,63 +225,41 @@ export class RouterOSPFIntegration {
   }
 
   /**
-   * Deliver an OSPF packet from a local interface to the correct remote
-   * OSPFEngine(s). Follows the physical cable topology:
-   *   - Direct P2P link → single remote router
-   *   - Through a switch/hub → all routers connected to that segment
+   * Entry point for OSPF packets received from the wire. Called by the
+   * router's IPv4 local-delivery path when an IP protocol 89 packet
+   * arrives on a port (multicast 224.0.0.5/6 or unicast to our IP).
+   *
+   * This is the ONLY way packets reach the engine: there is no registry
+   * teleportation — a cut cable, a down port or a powered-off peer
+   * really interrupts the protocol exchange.
    */
-  private deliverPacket(localIfaceName: string, packet: OSPFPacket, _destIP: string): void {
-    const port = this.ctx.getPorts().get(localIfaceName);
-    if (!port) return;
-
-    const cable = port.getCable();
-    if (!cable) return;
-
-    const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-    if (!remotePort) return;
-
-    const srcIP = port.getIPAddress()?.toString() ?? '0.0.0.0';
-    const remoteEquipId = remotePort.getEquipmentId();
-    const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteEquipId);
-
-    if (remoteOSPF && remoteOSPF.ospfEngine) {
-      remoteOSPF.ospfEngine.processPacket(remotePort.getName(), srcIP, packet);
-    } else {
-      // Switch / Hub — deliver to all other connected routers on the segment
-      const remoteEquip = Equipment.getById(remoteEquipId);
-      if (!remoteEquip) return;
-      for (const swPort of remoteEquip.getPorts()) {
-        if (swPort === remotePort) continue;
-        const swCable = swPort.getCable();
-        if (!swCable) continue;
-        const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-        if (!otherEnd) continue;
-        const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherEnd.getEquipmentId());
-        if (otherOSPF?.ospfEngine) {
-          otherOSPF.ospfEngine.processPacket(otherEnd.getName(), srcIP, packet);
-        }
-      }
-    }
+  receivePacket(ifaceName: string, srcIP: string, packet: OSPFPacket): void {
+    this.ospfEngine?.processPacket(ifaceName, srcIP, packet);
   }
 
   /**
-   * Wire every OSPFEngine in the domain with a sendCallback that calls
-   * deliverPacket, enabling real DD/LSR/LSU/LSAck packet exchange.
+   * Wire every OSPFEngine in the domain with a sendCallback that emits
+   * REAL frames (IP proto 89 encapsulated in Ethernet) out the device's
+   * port. Delivery follows the physical plant: Port → Cable →
+   * switch/hub data plane → peer router's handleFrame → processIPv4 →
+   * local delivery → receivePacket. Cable delivery being synchronous,
+   * the DD/LSR/LSU/LSAck exchange still completes within the
+   * convergence call.
    */
   private setupSendCallbacks(allPeers: RouterOSPFIntegration[], useDelay = false): void {
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
       peer.ospfEngine.setSendCallback((ifaceName, packet, destIP) => {
         if (!useDelay) {
-          peer.deliverPacket(ifaceName, packet, destIP);
+          peer.sendPacket(ifaceName, packet, destIP);
           return;
         }
         const iface = peer.ospfEngine!.getInterface(ifaceName);
         const delay = iface?.propagationDelayMs ?? 0;
         if (delay > 0) {
-          setTimeout(() => peer.deliverPacket(ifaceName, packet, destIP), delay);
+          setTimeout(() => peer.sendPacket(ifaceName, packet, destIP), delay);
         } else {
-          peer.deliverPacket(ifaceName, packet, destIP);
+          peer.sendPacket(ifaceName, packet, destIP);
         }
       });
     }

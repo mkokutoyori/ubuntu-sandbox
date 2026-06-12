@@ -61,7 +61,7 @@ import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
   UDP_PORT_RIP, UDP_PORT_IKE_NAT_T,
   TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
@@ -1128,6 +1128,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    // OSPF runs directly over IP (protocol 89, RFC 2328 §4.3). Hellos
+    // arrive on 224.0.0.5/224.0.0.6, DD/LSR/LSU/LSAck unicast to our
+    // interface IP — all delivered here by processIPv4.
+    if (ipPkt.protocol === IP_PROTO_OSPF) {
+      const ospfPkt = ipPkt.payload as { type?: string };
+      if (ospfPkt?.type === 'ospf' && this.ospfIntegration.isOSPFEnabled()) {
+        this.ospfIntegration.receivePacket(
+          inPort, ipPkt.sourceIP.toString(),
+          ipPkt.payload as import('../ospf/types').OSPFPacket,
+        );
+      }
+      return;
+    }
+
     // IPSec inbound decapsulation
     if (ipPkt.protocol === IP_PROTO_ESP && this.ipsecEngine) {
       const inner = this.ipsecEngine.processInboundESP(ipPkt);
