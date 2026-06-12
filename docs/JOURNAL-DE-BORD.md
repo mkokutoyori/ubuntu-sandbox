@@ -1400,3 +1400,26 @@ Conséquences structurelles :
 - 9 fichiers de tests DHCP : 103 tests verts.
 - Suite `network-v2` complète : verte (voir commit).
 - `tsc --noEmit` : diff nul vs baseline (1379 = 1379).
+
+---
+
+## Entrée 16 — Tests de régression verrouillant les entrées 13 et 15
+
+**Date** : 2026-06-12
+
+Les migrations « transport réel » des entrées 13 (OSPF) et 15 (DHCP)
+passaient les suites existantes, mais aucune n'affirmait explicitement
+les comportements différenciants. Deux fichiers neufs les verrouillent :
+
+- `dhcp-client-wire-channel.test.ts` (4 tests) :
+  - bail obtenu par pur échange de trames, **sans aucun** serveur
+    enregistré (l'ancien chemin n'aurait rien pu faire) ;
+  - **câble coupé ⇒ pas de bail du pool** (APIPA RFC 3927) — la
+    coupure physique interrompt réellement le protocole ;
+  - DHCPRELEASE traverse le fil et libère le binding **côté serveur** ;
+  - renouvellement (REQUEST sans server-id) ACKé sur le fil.
+- `ospf-wire-auth.test.ts` (5 tests) : RFC 2328 §8.2 à l'ingress
+  (mauvaise clé, AuType discordant dans les deux sens, acceptation à
+  clé exacte) + estampillage des champs auth à l'égress unique.
+
+Validation : 9 tests neufs verts.
