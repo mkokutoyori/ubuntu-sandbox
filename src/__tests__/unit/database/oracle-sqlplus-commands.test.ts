@@ -361,9 +361,30 @@ describe('DESC table_name / DESCRIBE table_name', () => {
     expect(out).toContain('SALARY');
   });
 
-  test('DESC nonexistent table returns ORA-04043', () => {
+  test('DESC nonexistent table returns ORA-04043 with the object name substituted', () => {
     const result = cmd('DESC NONEXISTENT_TABLE');
-    expect(result.output.some(l => l.includes('ORA-04043'))).toBe(true);
+    const out = result.output.join('\n');
+    expect(out).toContain('ORA-04043: object NONEXISTENT_TABLE does not exist');
+    expect(out).not.toContain('%s');
+  });
+
+  test('DESC sys.user$ resolves the SYS-prefixed dictionary view', () => {
+    const out = cmd('DESC sys.user$').output.join('\n');
+    expect(out).not.toContain('ORA-04043');
+    expect(out).toContain('USER#');
+    expect(out).toContain('NAME');
+  });
+
+  test('DESC sys.obj$ also resolves', () => {
+    const out = cmd('DESC sys.obj$').output.join('\n');
+    expect(out).not.toContain('ORA-04043');
+    expect(out).toContain('OBJ#');
+  });
+
+  test('DESC v$session works without a schema prefix', () => {
+    const out = cmd('DESC v$session').output.join('\n');
+    expect(out).not.toContain('ORA-04043');
+    expect(out).toContain('SID');
   });
 
   test('DESC describes a stored function and its parameters', () => {

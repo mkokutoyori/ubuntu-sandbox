@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-06-11T16:01:44.556Z
+Generated: 2026-06-12T11:47:59.086Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -350,55 +350,117 @@ $ [39/302]> ip addr add 192.168.10.5 dev interface_inexistante_xyz
 --- [40] § config legacy — ifconfig ---
 $ [40/302]> ifconfig
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet 192.168.10.2  netmask 255.255.255.0
-          ether 02:00:00:00:00:01
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
   
   eth1: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet (not configured)
-          ether 02:00:00:00:00:02
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          ether 02:00:00:00:00:02  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
   
   eth2: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet (not configured)
-          ether 02:00:00:00:00:03
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          ether 02:00:00:00:00:03  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
   
   eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet (not configured)
-          ether 02:00:00:00:00:04
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
-  
+          ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [41/302]> ifconfig -a
-  ifconfig: interface -a not found
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth1: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:02  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth2: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:03  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [42/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet 192.168.10.2  netmask 255.255.255.0
-          ether 02:00:00:00:00:01
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [43/302]> ifconfig lo
   ifconfig: interface lo not found
 
 $ [44/302]> ifconfig -s
-  ifconfig: interface -s not found
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth1: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:02  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth2: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:03  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
+  
+  eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          ether 02:00:00:00:00:04  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [45/302]> ifconfig eth0 down
 <empty>
 
 $ [46/302]> ifconfig eth0
-  eth0: flags=4099<BROADCAST,MULTICAST>  mtu 1500
-          inet 192.168.10.2  netmask 255.255.255.0
-          ether 02:00:00:00:00:01
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+  eth0: flags=4098<BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0  broadcast 192.168.10.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [47/302]> ifconfig eth0 up
 <empty>
@@ -408,20 +470,24 @@ $ [48/302]> ifconfig eth0 192.168.20.2 netmask 255.255.255.0
 
 $ [49/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet 192.168.20.2  netmask 255.255.255.0
-          ether 02:00:00:00:00:01
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          inet 192.168.20.2  netmask 255.255.255.0  broadcast 192.168.20.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [50/302]> ifconfig eth0 mtu 1450
   ifconfig: Invalid IP address: mtu
 
 $ [51/302]> ifconfig eth0
   eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
-          inet 192.168.20.2  netmask 255.255.255.0
-          ether 02:00:00:00:00:01
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          inet 192.168.20.2  netmask 255.255.255.0  broadcast 192.168.20.255
+          ether 02:00:00:00:00:01  txqueuelen 1000  (Ethernet)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [52/302]> ifconfig interface_inexistante_xyz
   ifconfig: interface interface_inexistante_xyz not found
@@ -685,7 +751,12 @@ $ [111/302]> ping -c 1 hote_inexistant_xyz
   ping: hote_inexistant_xyz: Name or service not known
 
 $ [112/302]> ping6 -c 1 ::1
-  ping6: command not found
+  PING ::1(::1) 56 data bytes
+  64 bytes from ::1: icmp_seq=1 ttl=64 time=0.010 ms
+  
+  --- ::1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [113/302]> ping -c abc 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
@@ -960,22 +1031,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-06-11 16:01:44--  http://192.168.10.1
+  --2026-06-12 11:47:59--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-06-11 16:01:44--  http://192.168.10.1
+  --2026-06-12 11:47:59--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-06-11 16:01:44--  http://192.168.10.1
+  --2026-06-12 11:47:59--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-06-11 16:01:44--  http://192.168.10.99
+  --2026-06-12 11:47:59--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1196,11 +1267,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Jun 11 16:01 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Jun 11 16:01 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Jun 12 11:47 /tmp/id_rsa
+  -rw-r--r-- 1 user user 37 Jun 12 11:47 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA0nqm30k1xr7 user@linux-pc
+  ssh-rsa AAAAw98niumi3g user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1209,7 +1280,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAApobbu3ym9he user@localhost
+  ssh-ed25519 AAAAl6vykyau8k user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1359,7 +1430,6 @@ $ [252/302]> ip addr show | grep inet
 $ [253/302]> ip -6 addr show
   1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
@@ -1373,7 +1443,6 @@ $ [253/302]> ip -6 addr show
 $ [254/302]> ip -6 addr show eth0
   1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
@@ -1385,8 +1454,7 @@ $ [254/302]> ip -6 addr show eth0
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [255/302]> ip -6 route show
-  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
-  default via 192.168.50.1 dev eth0 proto static
+<empty>
 
 $ [256/302]> ip -6 neigh show
 <empty>
@@ -1397,7 +1465,6 @@ $ [257/302]> ip addr add 2001:db8::10/64 dev eth0
 $ [258/302]> ip -6 addr show eth0
   1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
@@ -1409,17 +1476,25 @@ $ [258/302]> ip -6 addr show eth0
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [259/302]> ip -6 route add default via 2001:db8::1
-  Error: Invalid IP address: 2001:db8::1
+  Command "add" is unknown, try "ip route help".
 
 $ [260/302]> ip -6 route show
-  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
-  default via 192.168.50.1 dev eth0 proto static
+<empty>
 
 $ [261/302]> ping6 -c 1 ::1
-  ping6: command not found
+  PING ::1(::1) 56 data bytes
+  64 bytes from ::1: icmp_seq=1 ttl=64 time=0.010 ms
+  
+  --- ::1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [262/302]> ping -6 -c 1 2001:db8::10
-  ping: 2001:db8::10: Name or service not known
+  PING 2001:db8::10(2001:db8::10) 56 data bytes
+  connect: Network is unreachable
+  
+  --- 2001:db8::10 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
 
 $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
 <empty>
@@ -1468,8 +1543,10 @@ $ [269/302]> cat /proc/net/dev
   cat: /proc/net/dev: No such file or directory
 
 $ [270/302]> ifconfig eth0 | grep -E "RX|TX"
-          RX packets 0  bytes 0 (0.0 B)
-          TX packets 0  bytes 0 (0.0 B)
+          RX packets 0  bytes 0 (0.0 KiB)
+          RX errors 0  dropped 0  overruns 0  frame 0
+          TX packets 0  bytes 0 (0.0 KiB)
+          TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 $ [271/302]> netstat -i
   Kernel Interface table

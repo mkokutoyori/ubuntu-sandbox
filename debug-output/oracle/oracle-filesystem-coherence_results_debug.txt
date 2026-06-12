@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-filesystem-coherence
-Generated: 2026-06-12T02:06:09.077Z
+Generated: 2026-06-12T11:47:14.343Z
 Topology:  LinuxServer ora-fs — Oracle ORCL OPEN
 Total commands: 373
 ============================================================
@@ -531,21 +531,21 @@ SQL [54/373]> SELECT * FROM dba_extents WHERE owner = 'HR' AND segment_name = 'E
 --- [55] § ORADATA layout ---
 SQL [55/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/
   total 96
-  drwxr-xr-x 2 root root  0 Jun 12 02:06 .
-  drwxr-xr-x 3 root root  0 Jun 12 02:06 ..
-  -rw-r--r-- 1 root root 23 Jun 12 02:06 control01.ctl
-  -rw-r--r-- 1 root root 23 Jun 12 02:06 control02.ctl
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo01.log
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo02.log
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo03.log
-  -rw-r--r-- 1 root root 44 Jun 12 02:06 sysaux01.dbf
-  -rw-r--r-- 1 root root 44 Jun 12 02:06 system01.dbf
-  -rw-r--r-- 1 root root 42 Jun 12 02:06 temp01.dbf
-  -rw-r--r-- 1 root root 42 Jun 12 02:06 undotbs01.dbf
-  -rw-r--r-- 1 root root 43 Jun 12 02:06 users01.dbf
+  drwxr-xr-x 2 oracle oinstall  0 Jun 12 11:47 .
+  drwxr-xr-x 3 oracle oinstall  0 Jun 12 11:47 ..
+  -rw-r--r-- 1 oracle oinstall 23 Jun 12 11:47 control01.ctl
+  -rw-r--r-- 1 oracle oinstall 23 Jun 12 11:47 control02.ctl
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo01.log
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo02.log
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo03.log
+  -rw-r--r-- 1 oracle oinstall 44 Jun 12 11:47 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Jun 12 11:47 system01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Jun 12 11:47 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Jun 12 11:47 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall 43 Jun 12 11:47 users01.dbf
 
 SQL [56/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/system01.dbf
-  -rw-r--r-- 1 root root 44 Jun 12 02:06 /u01/app/oracle/oradata/ORCL/system01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Jun 12 11:47 /u01/app/oracle/oradata/ORCL/system01.dbf
 
 SQL [57/373]> HOST du -sh /u01/app/oracle/oradata/ORCL/
   360B	/u01/app/oracle/oradata/ORCL/
@@ -1233,23 +1233,23 @@ SQL [168/373]> HOST stat /u01/app/oracle/oradata/ORCL/system01.dbf 2>/dev/null
     File: /u01/app/oracle/oradata/ORCL/system01.dbf
     Size: 44	Blocks: 8	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 282	Links: 1
-  Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-06-12T02:06:08.893Z
-  Modify: 2026-06-12T02:06:08.146Z
-  Change: 2026-06-12T02:06:08.146Z
+  Access: (644/-rw-r--r--)  Uid: ( 54321/ oracle)   Gid: ( 54321/ oinstall)
+  Access: 2026-06-12T11:47:14.188Z
+  Modify: 2026-06-12T11:47:13.414Z
+  Change: 2026-06-12T11:47:13.414Z
 
 SQL [169/373]> HOST ls -lh /u01/app/oracle/oradata/ORCL/
   total 80
-  -rw-r--r-- 1 root root 23 Jun 12 02:06 control01.ctl
-  -rw-r--r-- 1 root root 23 Jun 12 02:06 control02.ctl
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo01.log
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo02.log
-  -rw-r--r-- 1 root root 33 Jun 12 02:06 redo03.log
-  -rw-r--r-- 1 root root 44 Jun 12 02:06 sysaux01.dbf
-  -rw-r--r-- 1 root root 44 Jun 12 02:06 system01.dbf
-  -rw-r--r-- 1 root root 42 Jun 12 02:06 temp01.dbf
-  -rw-r--r-- 1 root root 42 Jun 12 02:06 undotbs01.dbf
-  -rw-r--r-- 1 root root 43 Jun 12 02:06 users01.dbf
+  -rw-r--r-- 1 oracle oinstall 23 Jun 12 11:47 control01.ctl
+  -rw-r--r-- 1 oracle oinstall 23 Jun 12 11:47 control02.ctl
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo01.log
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo02.log
+  -rw-r--r-- 1 oracle oinstall 33 Jun 12 11:47 redo03.log
+  -rw-r--r-- 1 oracle oinstall 44 Jun 12 11:47 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Jun 12 11:47 system01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Jun 12 11:47 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall 42 Jun 12 11:47 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall 43 Jun 12 11:47 users01.dbf
 
 SQL [170/373]> HOST ls -lh /u01/app/oracle/flash_recovery_area/ORCL/
   ls: cannot access '/u01/app/oracle/flash_recovery_area/ORCL/': No such file or directory
@@ -1448,7 +1448,7 @@ SQL [181/373]> SELECT name, dbid, open_mode, log_mode FROM v$database;
   
   NAME       DBID OPEN_MODE  LOG_MODE    
   ---- ---------- ---------- ------------
-  ORCL 1112766303 READ WRITE NOARCHIVELOG
+  ORCL 3065369294 READ WRITE NOARCHIVELOG
   
   1 row selected.
 
@@ -1466,7 +1466,7 @@ SQL [183/373]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-                1 ORCL          localhost 19.0.0.0.0 2026-06-12T02:06:08.868Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+                1 ORCL          localhost 19.0.0.0.0 2026-06-12T11:47:14.166Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1474,7 +1474,7 @@ SQL [184/373]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- ------------------------ ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  1112766303 ORCL 2026-06-12T02:06:09.203Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-JUN-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000356            1000001
+  3065369294 ORCL 2026-06-12T11:47:14.440Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-JUN-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000356            1000001
   
   1 row selected.
 
@@ -1510,10 +1510,10 @@ SQL [188/373]> SELECT * FROM v$session WHERE rownum < 5;
   
   SADDR            SID SERIAL# AUDSID PADDR            USER# USERNAME COMMAND    OWNERID TADDR LOCKWAIT STATUS SERVER    SCHEMA# SCHEMANAME OSUSER PROCESS MACHINE   PORT TERMINAL PROGRAM                 TYPE       SQL_ADDRESS SQL_HASH_VALUE SQL_ID SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID PREV_SQL_ID MODULE ACTION CLIENT_INFO CLIENT_IDENTIFIER FIXED_TABLE_SEQUENCE ROW_WAIT_OBJ# ROW_WAIT_FILE# ROW_WAIT_BLOCK# ROW_WAIT_ROW# LOGON_TIME               LAST_CALL_ET PDML_ENABLED FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER RESOURCE_CONSUMER_GROUP PDML_STATUS PDDL_STATUS PQ_STATUS EVENT# EVENT      WAIT_CLASS# WAIT_CLASS WAIT_TIME SECONDS_IN_WAIT STATE   BLOCKING_SESSION_STATUS BLOCKING_SESSION SQL_TRACE SERVICE_NAME CON_ID
   ---------------- --- ------- ------ ---------------- ----- -------- ------- ---------- ----- -------- ------ --------- ------- ---------- ------ ------- --------- ---- -------- ----------------------- ---------- ----------- -------------- ------ ---------------- -------------- ----------- ----------- ------ ------ ----------- ----------------- -------------------- ------------- -------------- --------------- ------------- ------------------------ ------------ ------------ ------------- --------------- ----------- ----------------------- ----------- ----------- --------- ------ ---------- ----------- ---------- --------- --------------- ------- ----------------------- ---------------- --------- ------------ ------
-  0000000000000001   1       1      0 0000FFFF00000011     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T02:06:09.204Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000002   2       1      0 0000FFFF00000022     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T02:06:09.204Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000003   3       1      0 0000FFFF00000033     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T02:06:09.204Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000004   4       1      0 0000FFFF00000044     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T02:06:09.204Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000001   1       1      0 0000FFFF00000011     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T11:47:14.441Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000002   2       1      0 0000FFFF00000022     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T11:47:14.441Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000003   3       1      0 0000FFFF00000033     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T11:47:14.441Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000004   4       1      0 0000FFFF00000044     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-12T11:47:14.441Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
   
   4 rows selected.
 
@@ -1801,18 +1801,18 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         2095     1676           1          0              0 SYS                 2026-06-12T02:06:08
+         REGION_          1         4541     3633           1          0              0 SYS                 2026-06-12T11:47:14
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          244      195           1          0              0 SYS                 2026-06-12T02:06:08
+         COUNTR          1          885      708           1          0              0 SYS                 2026-06-12T11:47:14
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          263      210           1          0              0 SYS                 2026-06-12T02:06:08
+         STR          1          574      459           1          0              0 SYS                 2026-06-12T11:47:14
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -1823,7 +1823,7 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          341      272           1          0              0 SYS                 2026-06-12T02:06:08
+                  1          863      691           1          0              0 SYS                 2026-06-12T11:47:14
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -1836,10 +1836,10 @@ SQL [214/373]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  0jfss4xa3xqw0               0           1          1       1         2095     1676           1          0              0 SYS                 2026-06-12T02:06:08.907Z
-  1p340y2a3xqw0               0           1          1       1          244      195           1          0              0 SYS                 2026-06-12T02:06:08.911Z
-  0438608a3xqw0               0           1          1       1          263      210           1          0              0 SYS                 2026-06-12T02:06:08.912Z
-  0jmvs97a3xqw0               0           1          1       1          341      272           1          0              0 SYS                 2026-06-12T02:06:08.913Z
+  0jfss4xa3xqw0               0           1          1       1         4541     3633           1          0              0 SYS                 2026-06-12T11:47:14.216Z
+  1p340y2a3xqw0               0           1          1       1          885      708           1          0              0 SYS                 2026-06-12T11:47:14.224Z
+  0438608a3xqw0               0           1          1       1          574      459           1          0              0 SYS                 2026-06-12T11:47:14.227Z
+  0jmvs97a3xqw0               0           1          1       1          863      691           1          0              0 SYS                 2026-06-12T11:47:14.228Z
   
   4 rows selected.
 
@@ -1880,10 +1880,10 @@ SQL [218/373]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-06-12T02:05:54.246Z 2026-06-12T02:06:09.246Z         1500 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
-  2026-06-12T02:05:54.246Z 2026-06-12T02:06:09.246Z         1500 2             2003 User Calls Per Sec      33 Calls Per Second       
-  2026-06-12T02:05:54.246Z 2026-06-12T02:06:09.246Z         1500 2             2007 Executions Per Sec      32 Executes Per Second    
-  2026-06-12T02:05:54.246Z 2026-06-12T02:06:09.246Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-06-12T11:46:59.473Z 2026-06-12T11:47:14.473Z         1500 2             2000 CPU Usage Per Sec       32 CentiSeconds Per Second
+  2026-06-12T11:46:59.473Z 2026-06-12T11:47:14.473Z         1500 2             2003 User Calls Per Sec      33 Calls Per Second       
+  2026-06-12T11:46:59.473Z 2026-06-12T11:47:14.473Z         1500 2             2007 Executions Per Sec      32 Executes Per Second    
+  2026-06-12T11:46:59.473Z 2026-06-12T11:47:14.473Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -1891,10 +1891,10 @@ SQL [219/373]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-06-12T02:05:09.247Z 2026-06-12T02:06:09.247Z         6000 2             2000 CPU Usage Per Sec       33 CentiSeconds Per Second
-  2026-06-12T02:05:09.247Z 2026-06-12T02:06:09.247Z         6000 2             2003 User Calls Per Sec      33 Calls Per Second       
-  2026-06-12T02:05:09.247Z 2026-06-12T02:06:09.247Z         6000 2             2007 Executions Per Sec      33 Executes Per Second    
-  2026-06-12T02:05:09.247Z 2026-06-12T02:06:09.247Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-06-12T11:46:14.474Z 2026-06-12T11:47:14.474Z         6000 2             2000 CPU Usage Per Sec       33 CentiSeconds Per Second
+  2026-06-12T11:46:14.474Z 2026-06-12T11:47:14.474Z         6000 2             2003 User Calls Per Sec      33 Calls Per Second       
+  2026-06-12T11:46:14.474Z 2026-06-12T11:47:14.474Z         6000 2             2007 Executions Per Sec      33 Executes Per Second    
+  2026-06-12T11:46:14.474Z 2026-06-12T11:47:14.474Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -1992,7 +1992,7 @@ SQL [231/373]> SELECT * FROM v$transaction WHERE rownum < 5;
   
   ADDR           XIDUSN XIDSLOT XIDSQN STATUS START_TIME          USED_UBLK USED_UREC
   -------------- ------ ------- ------ ------ ------------------- --------- ---------
-  0x000000000001      2       0      1 ACTIVE 2026-06-12 02:06:09         0         0
+  0x000000000001      2       0      1 ACTIVE 2026-06-12 11:47:14         0         0
   
   1 row selected.
 
@@ -2209,9 +2209,9 @@ SQL [258/373]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-06-12T02:06:08.899Z        -1181458941
-           2 SYS$USERS      SYS$USERS      2026-06-12T02:06:08.898Z        -1181458942
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-06-12T02:06:08.898Z        -1181458942
+           1 ORCL           ORCL           2026-06-12T11:47:14.197Z        -1146593643
+           2 SYS$USERS      SYS$USERS      2026-06-12T11:47:14.193Z        -1146593647
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-06-12T11:47:14.193Z        -1146593647
   
   3 rows selected.
 
@@ -2219,9 +2219,9 @@ SQL [259/373]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-06-12T02:06:08.899Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-06-12T02:06:08.898Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-06-12T02:06:08.898Z
+           1 ORCL           ORCL           ORCL 2026-06-12T11:47:14.197Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-06-12T11:47:14.193Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-06-12T11:47:14.193Z
   
   3 rows selected.
 
@@ -2268,10 +2268,10 @@ SQL [264/373]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 139478
-  100 3712030189 DB CPU                  111567
-  100 1561673735 background elapsed time  34869
-  100 4157170894 background cpu time      27891
+  100 3649082374 DB time                 116014
+  100 3712030189 DB CPU                   92810
+  100 1561673735 background elapsed time  29003
+  100 4157170894 background cpu time      23202
   
   4 rows selected.
 
@@ -2298,10 +2298,10 @@ SQL [268/373]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN               LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ------------------------ ------
-  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-12T02:06:08.166Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-12T02:06:09.075Z      0
-  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-12T02:06:08.166Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-06-12T02:06:08.166Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  HR             3 OPEN                                 USERS              TEMP                 2026-06-12T02:06:08.166Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-12T11:47:13.434Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-12T11:47:14.342Z      0
+  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-12T11:47:13.434Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-06-12T11:47:13.434Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  HR             3 OPEN                                 USERS              TEMP                 2026-06-12T11:47:13.434Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
   
   4 rows selected.
 
@@ -2364,10 +2364,10 @@ SQL [274/373]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        2026-06-12T02:06:08.867Z 2026-06-12T02:06:08.867Z 2026-06-12:02:06:08 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        2026-06-12T02:06:08.867Z 2026-06-12T02:06:08.867Z 2026-06-12:02:06:08 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        2026-06-12T02:06:08.867Z 2026-06-12T02:06:08.867Z 2026-06-12:02:06:08 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        2026-06-12T02:06:08.867Z 2026-06-12T02:06:08.867Z 2026-06-12:02:06:08 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        2026-06-12T11:47:14.165Z 2026-06-12T11:47:14.165Z 2026-06-12:11:47:14 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        2026-06-12T11:47:14.165Z 2026-06-12T11:47:14.165Z 2026-06-12:11:47:14 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        2026-06-12T11:47:14.165Z 2026-06-12T11:47:14.165Z 2026-06-12:11:47:14 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        2026-06-12T11:47:14.165Z 2026-06-12T11:47:14.165Z 2026-06-12:11:47:14 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2594,19 +2594,19 @@ SQL [304/373]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-06-12T02:06:08.900Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
-  oracle      SYS      localhost 2026-06-12T02:06:08.909Z CREATE TABLE REGIONS            0 HR                0           CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-06-12T11:47:14.198Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
+  oracle      SYS      localhost 2026-06-12T11:47:14.220Z CREATE TABLE REGIONS            0 HR                0           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ CREATE TABLE  
                                                                                                                           NAME VARCHAR2(25)
        )                                                                       
-  oracle      SYS      localhost 2026-06-12T02:06:08.911Z CREATE TABLE COUNTRIES          0 HR                0           CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-06-12T11:47:14.225Z CREATE TABLE COUNTRIES          0 HR                0           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR CREATE TABLE  
                                                                                                                           Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                         
-  oracle      SYS      localhost 2026-06-12T02:06:08.912Z CREATE TABLE LOCATIONS          0 HR                0           CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-06-12T11:47:14.227Z CREATE TABLE LOCATIONS          0 HR                0           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR CREATE TABLE  
                                                                                                                           EET_ADDRESS VARCHAR2(40),
@@ -2624,10 +2624,10 @@ SQL [305/373]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- ------------ -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      SYS      localhost    pts/0    2026-06-12T02:06:08.900Z LOGON               5                      0
-  oracle      SYS      localhost    pts/0    2026-06-12T02:06:08.973Z LOGON               6                      0
-  oracle      SYS      localhost    pts/0    2026-06-12T02:06:08.977Z LOGON               7                      0
-  root        SYS      linux-server pts/0    2026-06-12T02:06:09.075Z LOGON               8                      0
+  oracle      SYS      localhost    pts/0    2026-06-12T11:47:14.198Z LOGON               5                      0
+  oracle      SYS      localhost    pts/0    2026-06-12T11:47:14.267Z LOGON               6                      0
+  oracle      SYS      localhost    pts/0    2026-06-12T11:47:14.272Z LOGON               7                      0
+  root        SYS      linux-server pts/0    2026-06-12T11:47:14.342Z LOGON               8                      0
   
   4 rows selected.
 
@@ -2635,19 +2635,19 @@ SQL [306/373]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-06-12T02:06:08.900Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
-  2026-06-12T02:06:08.909Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
+  2026-06-12T11:47:14.198Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
+  2026-06-12T11:47:14.220Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ HR            REGIONS     CREATE TABLE                                2
                                                                                                                NAME VARCHAR2(25)
        )                                                                                                                                
-  2026-06-12T02:06:08.911Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
+  2026-06-12T11:47:14.225Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR HR            COUNTRIES   CREATE TABLE                                3
                                                                                                                Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                  
-  2026-06-12T02:06:08.912Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
+  2026-06-12T11:47:14.227Z Standard           0 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR HR            LOCATIONS   CREATE TABLE                                4
                                                                                                                EET_ADDRESS VARCHAR2(40),
@@ -2663,12 +2663,12 @@ SQL [306/373]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
 
 SQL [307/373]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
-  SEQUENCE_ID REASON_ID            SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                               
-  ----------- -------------------- -------- ----------- ------------------------ ------------------------------------------------------
-           53 UNUSUAL_LOGIN_SOURCE LOW      Security    2026-06-12T02:06:08.901Z Successful logon outside business hours               
-           54 DDL_ON_SYS_OBJECT    HIGH     Security    2026-06-12T02:06:08.910Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS  
-           55 DDL_ON_SYS_OBJECT    HIGH     Security    2026-06-12T02:06:08.911Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES
-           56 DDL_ON_SYS_OBJECT    HIGH     Security    2026-06-12T02:06:08.912Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS
+  SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                 
+  ----------- ----------------- -------- ----------- ------------------------ --------------------------------------------------------
+           52 DDL_ON_SYS_OBJECT HIGH     Security    2026-06-12T11:47:14.222Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
+           53 DDL_ON_SYS_OBJECT HIGH     Security    2026-06-12T11:47:14.225Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
+           54 DDL_ON_SYS_OBJECT HIGH     Security    2026-06-12T11:47:14.228Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
+           55 DDL_ON_SYS_OBJECT HIGH     Security    2026-06-12T11:47:14.229Z DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
   
   4 rows selected.
 
@@ -2676,10 +2676,10 @@ SQL [308/373]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                                          
   ----------- --------- -------- ------------------------ ------------------------ -----------------------------------------------------------------
-            1 Info      NORMAL   2026-06-12T02:06:08.868Z 2026-06-12T02:06:09.868Z 2026-06-12 02:06:08: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   2026-06-12T02:06:08.892Z 2026-06-12T02:06:09.892Z 2026-06-12 02:06:08: Database mounted                            
-            3 Info      NORMAL   2026-06-12T02:06:08.898Z 2026-06-12T02:06:09.898Z 2026-06-12 02:06:08: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   2026-06-12T02:06:08.898Z 2026-06-12T02:06:09.898Z 2026-06-12 02:06:08: Database opened                             
+            1 Info      NORMAL   2026-06-12T11:47:14.166Z 2026-06-12T11:47:15.166Z 2026-06-12 11:47:14: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   2026-06-12T11:47:14.187Z 2026-06-12T11:47:15.187Z 2026-06-12 11:47:14: Database mounted                            
+            3 Info      NORMAL   2026-06-12T11:47:14.193Z 2026-06-12T11:47:15.193Z 2026-06-12 11:47:14: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   2026-06-12T11:47:14.193Z 2026-06-12T11:47:15.193Z 2026-06-12 11:47:14: Database opened                             
   
   4 rows selected.
 
@@ -2709,7 +2709,7 @@ SQL [311/373]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ ----------- ------------- ------
-        1    1               1          1 2026-06-12T01:06:09.294Z 2026-06-12T02:06:09.294Z COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 2026-06-12T10:47:14.514Z 2026-06-12T11:47:14.514Z COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -2717,10 +2717,10 @@ SQL [312/373]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 1112766303               1       0 logons cumulative             1
-        1 1112766303               1       1 logons current                1
-        1 1112766303               1       2 opened cursors cumulative   591
-        1 1112766303               1       3 opened cursors current      531
+        1 3065369294               1       0 logons cumulative             1
+        1 3065369294               1       1 logons current                1
+        1 3065369294               1       2 opened cursors cumulative   591
+        1 3065369294               1       3 opened cursors current      531
   
   4 rows selected.
 
@@ -2728,10 +2728,10 @@ SQL [313/373]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0pjan8ka3xqw0               0                1                108             86                 1                0                    1
+        1 0pjan8ka3xqw0               0                1                128            102                 1                0                    1
         1 0bpd8mza3xqw0               0                1               1538           1230                 1                0                    1
-        1 03ovs3qa3xqw0               0                1                 51             41                 1                0                    1
-        1 1ubqo2ta3xqw0               0                1                113             90                 1                0                    1
+        1 03ovs3qa3xqw0               0                1                 94             75                 1                0                    1
+        1 1ubqo2ta3xqw0               0                1                110             88                 1                0                    1
   
   4 rows selected.
 
@@ -3118,7 +3118,7 @@ SQL [369/373]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-06-12 02:06:09
+  2026-06-12 11:47:14
   
   1 row selected.
 
@@ -3126,7 +3126,7 @@ SQL [370/373]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-06-12T02:06:09.304Z
+  2026-06-12T11:47:14.524Z
   
   1 row selected.
 

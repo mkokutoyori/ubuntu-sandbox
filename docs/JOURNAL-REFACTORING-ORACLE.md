@@ -980,6 +980,20 @@ utilisateur hors oinstall ne peut plus écraser ces fichiers au shell
 binaires, datafiles/control files, alert log, spfile post-ALTER SYSTEM,
 /etc/oratab root) ; tsc propre. Régression globale en fin de série.
 
+### 2026-06-12 — DESCRIBE résout les objets dictionnaire SYS.x ; message ORA-04043 réel
+**Défaillance :** signalée à l'usage : `DESC sys.user$` répondait
+`ORA-04043: object %s does not exist: SYS.USER$` alors que
+`SELECT * FROM sys.user$` fonctionne. Deux bugs : (1) `handleDescribe`
+cherchait les vues dictionnaire sous le nom nu (`USER$`) alors que les
+vues SYS-préfixées sont enregistrées sous leur clé complète
+(`SYS.USER$`, `SYS.OBJ$`, …) — même règle de résolution que `loadTable`,
+non répliquée ; (2) le template `ORA_04043` était concaténé au lieu de
+substituer son `%s` (seul site fautif du codebase, audité).
+**Correction :** résolution en deux temps (`SYS.<nom>` si le schéma est
+SYS, puis nom nu) et `replace('%s', nom)` pour le message exact d'Oracle.
+**Validation :** `oracle-sqlplus-commands.test.ts` 124/124 (+4 : sys.user$,
+sys.obj$, v$session sans préfixe, message substitué sans %s).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

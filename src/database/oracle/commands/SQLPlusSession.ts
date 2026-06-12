@@ -1097,13 +1097,17 @@ export class SQLPlusSession {
     // 4. Dictionary view (DBA_*/ALL_*/USER_*/V$*/UNIFIED_AUDIT_TRAIL …).
     //    These live in the catalog rather than storage; resolve them
     //    via the catalog so DESC ALL_VIEWS et al. work out of the box.
-    const dictCols = this.db.catalog.describeCatalogView(name, this.executor.getContext().currentSchema);
+    const currentSchema = this.executor.getContext().currentSchema;
+    const dictCols = (schema === 'SYS'
+      ? this.db.catalog.describeCatalogView(`SYS.${name}`, currentSchema)
+      : null)
+      ?? this.db.catalog.describeCatalogView(name, currentSchema);
     if (dictCols && dictCols.length) {
       return this.formatDescribe(dictCols);
     }
 
     return {
-      output: [`ERROR:`, `${ORACLE_ERRORS.ORA_04043}: ${upper}`],
+      output: [`ERROR:`, ORACLE_ERRORS.ORA_04043.replace('%s', upper)],
       exit: false, needsMoreInput: false, prompt: this.getPrompt(),
     };
   }
