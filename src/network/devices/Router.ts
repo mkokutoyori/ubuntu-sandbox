@@ -1931,8 +1931,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             dns: pool?.dnsServers ?? [],
             domainName: pool?.domainName ?? undefined,
             leaseDuration: pool?.leaseDuration ?? 86400,
+            renewalTime: pool?.renewalTime,
+            rebindingTime: pool?.rebindingTime,
           });
       }
+    } else if (type === 'DHCPDECLINE') {
+      // RFC 2131 §3.1.5 — client detected an address conflict.
+      this.dhcpServer.processDecline({
+        clientMAC: pkt.chaddr,
+        declinedIP: String(pkt.getOption(50) ?? ''),
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return; // No reply to a DECLINE
+    } else if (type === 'DHCPRELEASE') {
+      // RFC 2131 §3.4 — client gives the lease back.
+      this.dhcpServer.processRelease({
+        clientMAC: pkt.chaddr,
+        clientIP: pkt.ciaddr,
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return; // No reply to a RELEASE
     }
     if (!reply) return;
     if (option82) reply.setOption(82, option82);

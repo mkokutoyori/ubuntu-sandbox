@@ -70,6 +70,7 @@ import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 
@@ -535,6 +536,41 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    // Wire transport: the client's DORA exchanges travel as real UDP
+    // 68→67 broadcast frames through the cable plant (backlog #17 —
+    // no more direct server-object calls when a topology is cabled).
+    this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
+  }
+
+  /** Per-interface wire channels for the DHCP client (lazy). */
+  private dhcpWireChannels = new Map<string, WireDhcpChannel>();
+
+  private getDhcpWireChannel(iface: string): WireDhcpChannel | null {
+    const port = this.ports.get(iface);
+    if (!port) return null;
+    let channel = this.dhcpWireChannels.get(iface);
+    if (!channel) {
+      channel = new WireDhcpChannel(iface, (ifc, pkt) => this.sendWireDhcpFrame(ifc, pkt));
+      this.dhcpWireChannels.set(iface, channel);
+      this.ensureDhcpUdp68Listener();
+    }
+    return channel;
+  }
+
+  /**
+   * Single UDP/68 listener feeding BOTH consumers of server replies:
+   * the legacy requestLeaseOnWire sessions and the DHCPClient's wire
+   * channels. Registered lazily by whichever path runs first.
+   */
+  private ensureDhcpUdp68Listener(): void {
+    if (this.udpListeners.has(68)) return;
+    this.udpListeners.set(68, (dgram) => {
+      this.handleWireDhcpReply(dgram.inPort, dgram.udp);
+      const pkt = dgram.udp.payload;
+      if (pkt instanceof DHCPPacket) {
+        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt);
+      }
+    });
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
@@ -550,9 +586,7 @@ export abstract class EndHost extends Equipment {
   requestLeaseOnWire(iface: string): string {
     const port = this.ports.get(iface);
     if (!port) return `Interface ${iface} not found`;
-    if (!this.udpListeners.has(68)) {
-      this.udpListeners.set(68, (dgram) => this.handleWireDhcpReply(dgram.inPort, dgram.udp));
-    }
+    this.ensureDhcpUdp68Listener();
     const xid = Math.floor(Math.random() * 0xffffffff) >>> 0;
     const session = { xid, state: 'selecting' as const, log: [] as string[] };
     this.wireDhcp.set(iface, session);

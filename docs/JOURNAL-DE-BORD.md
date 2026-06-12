@@ -1171,7 +1171,7 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 | 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | À faire |
 | 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
 | 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
-| 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | À faire |
+| 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | ✅ Corrigé (entrée 15) — scan registre conservé en repli des topologies non câblées |
 | 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | ✅ Corrigé (entrée 14) |
 | 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | ✅ Corrigé (entrée 14 — iptables écarté : déléguait déjà à IPAddress.tryParse) |
 
@@ -1339,3 +1339,64 @@ Conséquences structurelles :
 - Suites windows/netsh/powershell : 2 420 verts ; les 9 échecs restants
   (DateTime/pushd/dir-Length) reproduits à l'identique sur la baseline
   **avant** modification (vérifié par `git stash`) — préexistants.
+
+---
+
+## Entrée 15 — DHCP : le client converse en trames UDP 68→67, plus en appels d'objets
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **DORA par références directes.** `EndHost.autoDiscoverDHCPServers`
+   parcourait le graphe (câbles, puis **fallback : scan du registre
+   global** de tous les équipements !) pour récupérer des références
+   d'objets `DHCPServer`, puis `DHCPClient.requestLease` appelait
+   `server.processDiscover()/processRequestWithNak()` **directement en
+   mémoire** — découverte, bail, renouvellement T1/T2, RELEASE, DECLINE :
+   aucun de ces échanges ne traversait le plan physique.
+2. **Duplication révélatrice** : un second client minimal,
+   `EndHost.requestLeaseOnWire`, faisait déjà la séquence DORA en
+   *vraies* trames broadcast (le serveur du routeur répond entièrement
+   sur le fil : OFFER/ACK/NAK, relay option 82, giaddr) — preuve que le
+   chemin filaire existait, inutilisé par le client principal.
+
+### Correction (pattern Strategy sur le canal de conversation)
+
+- Nouveau `dhcp/DhcpServerChannel.ts` :
+  - interface `DhcpServerChannel` calquée sur les échanges RFC 2131
+    (DISCOVER→OFFER, REQUEST→ACK/NAK, DECLINE, RELEASE) ;
+  - `WireDhcpChannel` : construit de vrais `DHCPPacket`, les émet en
+    UDP 68→67 broadcast par le port, et lit les réponses livrées —
+    synchronement, le câble étant synchrone — par l'écouteur UDP/68 de
+    l'hôte. La vue « pool » du bail est **synthétisée depuis les options
+    du paquet** (1, 3, 6, 15, 51, 58, 59) : le client ne sait que ce que
+    le serveur lui a dit, comme dans la réalité.
+  - `DirectServerChannel` (dans DHCPClient.ts) : enrobe l'ancienne
+    référence d'objet — conservé pour les tests unitaires sans câblage,
+    et comme repli des topologies non câblées.
+- `DHCPClient` : toutes les boucles (DORA, INIT-REBOOT, renouvellement
+  T1, rebinding T2, RELEASE, DECLINE) consomment `channelsFor(iface)`
+  — **fil d'abord**, refs directes en repli. Le repli APIPA (RFC 3927)
+  est préservé quand rien ne répond et qu'aucun serveur n'est enregistré.
+- `EndHost` : fabrique de canaux par interface + écouteur UDP/68 unifié
+  (alimente à la fois les sessions `requestLeaseOnWire` historiques et
+  les canaux du client).
+- `Router.serveDhcpOnWire` : traite désormais aussi **DHCPDECLINE et
+  DHCPRELEASE** reçus sur le fil (sans réponse, conformément à
+  RFC 2131 §3.4/§3.1.5) et estampille T1/T2 (options 58/59) dans l'ACK.
+
+### Limites restantes
+
+- `autoDiscoverDHCPServers` (scan registre) subsiste comme repli pour
+  les topologies de test sans câbles — documenté, à éteindre quand ces
+  tests seront migrés.
+- `requestLeaseOnWire` reste une surface parallèle (sortie de log
+  différente) ; candidate à fusion sur `requestLease` maintenant que les
+  deux empruntent le même chemin physique.
+
+### Validation
+
+- 9 fichiers de tests DHCP : 103 tests verts.
+- Suite `network-v2` complète : verte (voir commit).
+- `tsc --noEmit` : diff nul vs baseline (1379 = 1379).

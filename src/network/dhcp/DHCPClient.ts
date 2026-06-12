@@ -39,11 +39,37 @@ import {
   type DHCPClientObservables,
 } from './observables';
 import { DHCPClientSignalRefreshActor } from './actors';
+import type { DhcpServerChannel } from './DhcpServerChannel';
 
-/** Reference to a connected DHCP server (for simulated DORA) */
-interface ServerRef {
-  server: DHCPServer;
-  serverIP: string;
+/**
+ * Direct (in-memory) channel to a DHCPServer object.
+ *
+ * Legacy path kept for unit tests that exercise the client/server state
+ * machines without a cabled topology. Real devices talk through
+ * {@link WireDhcpChannel} (frames on the cable plant), which the host
+ * injects via {@link DHCPClient.setWireChannelFactory}.
+ */
+class DirectServerChannel implements DhcpServerChannel {
+  constructor(
+    readonly server: DHCPServer,
+    readonly serverIP: string,
+  ) {}
+
+  processDiscover(params: Parameters<DHCPServer['processDiscover']>[0]) {
+    return this.server.processDiscover(params);
+  }
+  processRequestWithNak(params: Parameters<DHCPServer['processRequestWithNak']>[0]) {
+    return this.server.processRequestWithNak(params);
+  }
+  processRequest(params: Parameters<DHCPServer['processRequest']>[0]) {
+    return this.server.processRequest(params);
+  }
+  processDecline(params: Parameters<DHCPServer['processDecline']>[0]) {
+    this.server.processDecline(params);
+  }
+  processRelease(params: Parameters<DHCPServer['processRelease']>[0]) {
+    this.server.processRelease(params);
+  }
 }
 
 /** Standard DHCP Option codes requested by clients (RFC 2132) */
@@ -63,8 +89,26 @@ export class DHCPClient implements IProtocolEngine {
   /** Per-interface DHCP state */
   private ifaceStates: Map<string, DHCPClientIfaceState> = new Map();
 
-  /** Connected DHCP servers reachable from this host */
-  private connectedServers: ServerRef[] = [];
+  /** Directly registered DHCP servers (legacy/unit-test path) */
+  private connectedServers: DirectServerChannel[] = [];
+
+  /**
+   * Factory for the per-interface wire channel (real frames through the
+   * cable plant). Injected by the host (EndHost). When present, the wire
+   * is ALWAYS tried first — the direct refs only serve as fallback for
+   * uncabled test topologies.
+   */
+  private wireChannelFactory: ((iface: string) => DhcpServerChannel | null) | null = null;
+
+  setWireChannelFactory(factory: (iface: string) => DhcpServerChannel | null): void {
+    this.wireChannelFactory = factory;
+  }
+
+  /** Channels to converse with, wire first (RFC-faithful), then direct refs. */
+  private channelsFor(iface: string): DhcpServerChannel[] {
+    const wire = this.wireChannelFactory?.(iface) ?? null;
+    return wire ? [wire, ...this.connectedServers] : [...this.connectedServers];
+  }
 
   /** MAC address resolver callback */
   private getMACForIface: (iface: string) => string;
@@ -214,7 +258,7 @@ export class DHCPClient implements IProtocolEngine {
   registerServer(server: DHCPServer, serverIP: string): void {
     // Avoid duplicates
     if (!this.connectedServers.find(s => s.server === server)) {
-      this.connectedServers.push({ server, serverIP });
+      this.connectedServers.push(new DirectServerChannel(server, serverIP));
     }
   }
 
@@ -287,8 +331,10 @@ export class DHCPClient implements IProtocolEngine {
       lines.push(`INIT state`);
     }
 
-    // If no servers connected
-    if (this.connectedServers.length === 0) {
+    const channels = this.channelsFor(iface);
+
+    // If no channel at all (no wire transport injected AND no registered servers)
+    if (channels.length === 0) {
       // Verbose mode or explicit timeout: show failure
       if (verbose || options.timeout !== undefined) {
         state.state = 'INIT';
@@ -304,10 +350,10 @@ export class DHCPClient implements IProtocolEngine {
       return this.autoAssignLease(iface, state);
     }
 
-    // SELECTING: Send DISCOVER to all servers, pick first OFFER
+    // SELECTING: broadcast DISCOVER (wire channel first), pick first OFFER
     this.emitStateChange(iface, 'INIT', 'SELECTING', 'DISCOVER');
     state.state = 'SELECTING';
-    let offer: (DHCPOfferResult & { serverRef: ServerRef }) | null = null;
+    let offer: (DHCPOfferResult & { channel: DhcpServerChannel }) | null = null;
 
     this.discoversSent++;
     this.getBus().publish({
@@ -315,8 +361,8 @@ export class DHCPClient implements IProtocolEngine {
       payload: { ...this.deviceRef(), iface, xid: state.xid },
     });
 
-    for (const ref of this.connectedServers) {
-      const result = ref.server.processDiscover({
+    for (const channel of channels) {
+      const result = channel.processDiscover({
         clientMAC: mac,
         xid: state.xid,
         clientIdentifier,
@@ -328,7 +374,7 @@ export class DHCPClient implements IProtocolEngine {
           state.logs.push(`DHCPOFFER XID mismatch (expected ${state.xid}, got ${result.xid}) - ignoring`);
           continue;
         }
-        offer = { ...result, serverRef: ref };
+        offer = { ...result, channel };
         this.offersReceived++;
         this.getBus().publish({
           topic: 'dhcp.offer.received',
@@ -345,6 +391,13 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     if (!offer) {
+      // Nothing answered on the wire and no direct server produced an
+      // offer. Preserve the historical convenience: a host with no
+      // registered servers, non-verbose, no explicit timeout, falls back
+      // to APIPA (RFC 3927) like a real OS would after DISCOVER timeouts.
+      if (this.connectedServers.length === 0 && !verbose && options.timeout === undefined) {
+        return this.autoAssignLease(iface, state);
+      }
       state.state = 'INIT';
       state.logs.push('No DHCPOFFERS received');
       if (verbose) {
@@ -373,7 +426,7 @@ export class DHCPClient implements IProtocolEngine {
         xid: state.xid,
       },
     });
-    const replyResult = offer.serverRef.server.processRequestWithNak({
+    const replyResult = offer.channel.processRequestWithNak({
       clientMAC: mac,
       xid: state.xid,
       requestedIP: offer.ip,
@@ -430,7 +483,7 @@ export class DHCPClient implements IProtocolEngine {
           reason: 'arp-conflict',
         },
       });
-      offer.serverRef.server.processDecline({
+      offer.channel.processDecline({
         clientMAC: mac,
         declinedIP: ackResult.binding.ipAddress,
         serverIdentifier: offer.serverIdentifier,
@@ -558,10 +611,10 @@ export class DHCPClient implements IProtocolEngine {
     // Send broadcast REQUEST without server identifier (RFC 2131 §3.2)
     state.state = 'REBOOTING';
     let ackResult: DHCPAckResult | null = null;
-    let respondingRef: ServerRef | null = null;
+    let respondingChannel: DhcpServerChannel | null = null;
 
-    for (const ref of this.connectedServers) {
-      const result = ref.server.processRequest({
+    for (const channel of this.channelsFor(iface)) {
+      const result = channel.processRequest({
         clientMAC: mac,
         xid: state.xid,
         requestedIP: lastLease.ipAddress,    // Option 50
@@ -570,12 +623,12 @@ export class DHCPClient implements IProtocolEngine {
       });
       if (result && result.xid === state.xid) {
         ackResult = result;
-        respondingRef = ref;
+        respondingChannel = channel;
         break;
       }
     }
 
-    if (!ackResult || !respondingRef) {
+    if (!ackResult || !respondingChannel) {
       // NAK or no response — fall back to normal INIT
       state.state = 'INIT';
       state.lastKnownLease = null;
@@ -590,7 +643,7 @@ export class DHCPClient implements IProtocolEngine {
     // ARP probe
     if (this.checkAddressConflict && this.checkAddressConflict(iface, ackResult.binding.ipAddress)) {
       state.logs.push(`ARP probe conflict detected for ${ackResult.binding.ipAddress} - sending DHCPDECLINE`);
-      respondingRef.server.processDecline({
+      respondingChannel.processDecline({
         clientMAC: mac,
         declinedIP: ackResult.binding.ipAddress,
         serverIdentifier: ackResult.serverIdentifier,
@@ -657,10 +710,13 @@ export class DHCPClient implements IProtocolEngine {
     const clientIdentifier = this.buildClientIdentifier(mac);
     const lease = state.lease;
 
-    // Notify server with RFC-compliant RELEASE (MAC + IP + Server Identifier)
-    for (const ref of this.connectedServers) {
-      if (ref.serverIP === lease.serverIdentifier) {
-        ref.server.processRelease({
+    // Notify server with RFC-compliant RELEASE (MAC + IP + Server Identifier).
+    // A wire channel (serverIP null until it has conversed, or matching
+    // the grantor) carries the RELEASE to whoever serves the segment;
+    // direct refs only fire for the exact grantor.
+    for (const channel of this.channelsFor(iface)) {
+      if (channel.serverIP === null || channel.serverIP === lease.serverIdentifier) {
+        channel.processRelease({
           clientMAC: mac,
           clientIP: lease.ipAddress,
           serverIdentifier: lease.serverIdentifier,
@@ -831,10 +887,10 @@ export class DHCPClient implements IProtocolEngine {
         state.logs.push('RENEWING - T1 expired, sending DHCPREQUEST to server');
         state.logs.push(`DHCPREQUEST for ${lease.ipAddress} to ${lease.serverIdentifier}`);
 
-        // Try to renew with original server
-        for (const ref of this.connectedServers) {
-          if (ref.serverIP === lease.serverIdentifier) {
-            const ackResult = ref.server.processRequest({
+        // Try to renew with original server (unicast on the wire)
+        for (const channel of this.channelsFor(iface)) {
+          if (channel.serverIP === null || channel.serverIP === lease.serverIdentifier) {
+            const ackResult = channel.processRequest({
               clientMAC: mac,
               xid: state.xid,
               requestedIP: lease.ipAddress,
@@ -873,9 +929,9 @@ export class DHCPClient implements IProtocolEngine {
         state.logs.push('REBINDING - T2 expired, broadcast DHCPREQUEST');
         state.logs.push(`DHCPREQUEST for ${lease.ipAddress} broadcast`);
 
-        // Try any server
-        for (const ref of this.connectedServers) {
-          const ackResult = ref.server.processRequest({
+        // Try any server (broadcast on the wire)
+        for (const channel of this.channelsFor(iface)) {
+          const ackResult = channel.processRequest({
             clientMAC: mac,
             xid: state.xid,
             requestedIP: lease.ipAddress,
