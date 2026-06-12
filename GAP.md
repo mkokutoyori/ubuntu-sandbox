@@ -1212,7 +1212,7 @@ La couche UI repose sur un store Zustand unique (`networkStore.ts`) qui détient
 - **Sévérité** : Mineure
 - **Recommandation** : RAS pour la logique métier ; voir 11.6 pour l'impact sur la réactivité du rendu (identité de `Map` recréée à chaque mutation).
 
-### 11.2 Canvas / rendu de topologie
+### 11.2 Canvas / rendu de topologie — ✅ CORRIGÉ (2026-06-12 : snapshots stabilisés référentiellement, moveDevice sans copie de Map, NetworkDevice sélecteurs + React.memo — voir docs/JOURNAL-DE-BORD.md entrée 24)
 - **Constat** : `getDevices()` est appelé directement dans le corps du composant à chaque rendu (`NetworkCanvas`, `NetworkDesigner`, `PropertiesPanel`). Cette fonction reconstruit un tableau complet de `NetworkDeviceUI` — en relisant tous les ports, IP, masques, MAC de **chaque** appareil — sans mémoïsation ni sélecteur Zustand dédié. Comme `useNetworkStore()` est appelé sans sélecteur, tout changement d'état (y compris `moveDevice`, qui recrée systématiquement la `Map` à `networkStore.ts:232`) force un nouveau calcul de `getDevices()` et un re-rendu de la totalité de la liste de devices/connexions — un risque réel de "re-render storm" lors d'un drag-and-drop sur une topologie de grande taille.
 - **Preuve** : `src/components/network/NetworkCanvas.tsx:41` (`const devices = getDevices();`), `src/store/networkStore.ts:227-234` (`moveDevice` → `new Map(state.deviceInstances)` à chaque pixel de déplacement).
 - **Sévérité** : Majeure
