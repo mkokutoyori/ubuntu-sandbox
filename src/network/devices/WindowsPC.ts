@@ -24,6 +24,7 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
+import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -916,20 +917,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   // ─── Command Parsing ──────────────────────────────────────────────
 
   private parseCommandLine(line: string): string[] {
-    const parts: string[] = [];
-    let current = '';
-    let inQuote = false;
-    for (const ch of line) {
-      if (ch === '"') {
-        inQuote = !inQuote;
-      } else if (ch === ' ' && !inQuote) {
-        if (current) { parts.push(current); current = ''; }
-      } else {
-        current += ch;
-      }
-    }
-    if (current) parts.push(current);
-    return parts;
+    return splitCmdArgs(line);
   }
 
   private expandEnvVars(text: string): string {

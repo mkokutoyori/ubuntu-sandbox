@@ -28,6 +28,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask } from '../../core/types';
+import { isValidIPv4 } from '../../core/ip';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 
 // ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
@@ -2715,11 +2716,6 @@ show           - Displays information.
 To view help for a command, type the command, followed by a space, and then
  type ?.`;
 
-const IP4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-function isValidIPv4(s: string): boolean {
-  if (!IP4_RE.test(s)) return false;
-  return s.split('.').every(o => parseInt(o, 10) <= 255);
-}
 
 function handleNetshHttp(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {

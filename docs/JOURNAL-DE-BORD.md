@@ -1172,8 +1172,8 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 | 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
 | 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
 | 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | À faire |
-| 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | À faire |
-| 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | À faire |
+| 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | ✅ Corrigé (entrée 14) |
+| 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | ✅ Corrigé (entrée 14 — iptables écarté : déléguait déjà à IPAddress.tryParse) |
 
 ---
 
@@ -1297,3 +1297,45 @@ Conséquences structurelles :
 - 16 fichiers de tests OSPF : 399 tests verts.
 - Suite `network-v2` complète : verte (voir commit).
 - `tsc --noEmit` : diff nul vs baseline.
+
+---
+
+## Entrée 14 — DRY : tokenisation cmd.exe et validation IP canoniques
+
+**Date** : 2026-06-12
+
+### Défaillances constatées
+
+1. **Parsing de ligne cmd.exe dupliqué à l'identique** dans
+   `WindowsPC.parseCommandLine` et `CmdSubShell.splitArgs` (~30 lignes
+   chacun) : un fix de quoting dans l'un manquait silencieusement
+   l'autre.
+2. **Validation IP réimplémentée par module** avec des sémantiques
+   divergentes :
+   - `PowerShellExecutor.isValidIP` : IPv6 « validé » par
+     `/^[0-9a-f:]+$/` — `:::::` ou `12345::` passaient ;
+   - `WinNetsh.isValidIPv4` : variante regex locale ;
+   - (`LinuxIptablesManager` délègue déjà à `IPAddress.tryParse` —
+     écarté du périmètre après vérification, contrairement au
+     pré-audit.)
+
+### Corrections
+
+- `src/network/devices/windows/cmdline.ts` : `splitCmdArgs` unique
+  (sémantique cmd.exe documentée : quotes toggle, pas d'échappement),
+  les deux copies privées délèguent.
+- `src/network/core/ip.ts` (déjà le module canonique de l'arithmétique
+  IPv4) : `isValidIPv4` (via `tryIpToUint32`) et `isValidIPv6`
+  structurel RFC 4291 §2.2 (max un `::` qui compresse au moins un
+  groupe, hextets 1-4 hex, queue IPv4 embarquée, suffixe `%zone`).
+  `PowerShellExecutor` et `WinNetsh` consomment ces validateurs — le
+  durcissement IPv6 rejette désormais le garbage accepté avant.
+
+### Validation
+
+- 12 tests neufs (`core-ip-and-cmdline.test.ts`) : bornes IPv4, formes
+  compressées/zone/IPv4-embarquée IPv6, rejets du garbage historique,
+  quoting cmd.exe.
+- Suites windows/netsh/powershell : 2 420 verts ; les 9 échecs restants
+  (DateTime/pushd/dir-Length) reproduits à l'identique sur la baseline
+  **avant** modification (vérifié par `git stash`) — préexistants.

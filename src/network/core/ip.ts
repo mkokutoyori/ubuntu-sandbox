@@ -70,3 +70,55 @@ export function wildcardMatches(ip: string, network: string, wildcard: string): 
   const care = (~ipToUint32(wildcard)) >>> 0;
   return (ipToUint32(ip) & care) === (ipToUint32(network) & care);
 }
+
+/**
+ * Canonical IPv4 literal validation (four decimal octets, each 0-255).
+ * Replaces the per-module regex variants that used to live in
+ * PowerShellExecutor.isValidIP and WinNetsh.isValidIPv4 — each with
+ * subtly different acceptance (e.g. `999.1.1.1` passed some regexes).
+ */
+export function isValidIPv4(ip: string): boolean {
+  return tryIpToUint32(ip) !== null;
+}
+
+/**
+ * Structural IPv6 literal validation per RFC 4291 §2.2:
+ *   - up to 8 hextets of 1-4 hex digits;
+ *   - at most one `::`, which must compress at least one group;
+ *   - optional embedded dotted-quad tail (`::ffff:192.0.2.1`);
+ *   - an optional `%zone` suffix is ignored (fe80::1%eth0).
+ *
+ * Replaces the old `/^[0-9a-f:]+$/` checks that accepted garbage
+ * like `:::::` or `12345::`.
+ */
+export function isValidIPv6(s: string): boolean {
+  if (!s.includes(':')) return false;
+  const addr = s.split('%')[0];
+  if (addr.length === 0) return false;
+  const doubleColons = addr.split('::').length - 1;
+  if (doubleColons > 1) return false;
+
+  const [head, tail = ''] = addr.split('::');
+  // Without '::', stray leading/trailing ':' is invalid (split would
+  // produce an empty group and fail the hextet regex below).
+  const headGroups = head === '' ? [] : head.split(':');
+  const tailGroups = tail === '' ? [] : tail.split(':');
+  const groups = [...headGroups, ...tailGroups];
+
+  let count = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const isLast = i === groups.length - 1;
+    if (isLast && group.includes('.')) {
+      // Embedded IPv4 tail counts as two 16-bit groups.
+      if (!isValidIPv4(group)) return false;
+      count += 2;
+      continue;
+    }
+    if (!/^[0-9a-f]{1,4}$/i.test(group)) return false;
+    count += 1;
+  }
+
+  // '::' must stand for at least one zero group.
+  return doubleColons === 1 ? count <= 7 : count === 8;
+}
