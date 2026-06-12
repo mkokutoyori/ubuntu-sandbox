@@ -1,4 +1,4 @@
-// NSS `dns` source resolves through real UDP/53 frames (journal entrée 21).
+// NSS `dns` source resolves through real UDP/53 frames (journal entrée 23).
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
