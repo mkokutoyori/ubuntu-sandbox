@@ -1094,8 +1094,23 @@ export interface CreateMaterializedViewStatement extends ASTNode {
   /** Approximate source text of the defining query (DBA_MVIEWS.QUERY). */
   queryText?: string;
   buildMode?: 'IMMEDIATE' | 'DEFERRED';
-  refreshMethod?: 'COMPLETE' | 'FORCE';
+  refreshMethod?: 'COMPLETE' | 'FORCE' | 'FAST';
   refreshMode?: 'DEMAND' | 'COMMIT';
+}
+
+export interface CreateMviewLogStatement extends ASTNode {
+  type: 'CreateMviewLogStatement';
+  schema?: string;
+  table: string;
+  withRowid: boolean;
+  withPrimaryKey: boolean;
+  withSequence: boolean;
+}
+
+export interface DropMviewLogStatement extends ASTNode {
+  type: 'DropMviewLogStatement';
+  schema?: string;
+  table: string;
 }
 
 export interface DropMaterializedViewStatement extends ASTNode {
@@ -1148,5 +1163,6 @@ export type Statement =
   // Database links / materialized views (stubs)
   | CreateDbLinkStatement | DropDbLinkStatement
   | CreateMaterializedViewStatement | DropMaterializedViewStatement
+  | CreateMviewLogStatement | DropMviewLogStatement
   // PL/SQL
   | PLSQLBlock;

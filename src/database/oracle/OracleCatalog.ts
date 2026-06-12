@@ -70,7 +70,7 @@ export interface MaterializedViewMeta {
   /** Original SQL text, surfaced by DBA_MVIEWS.QUERY. */
   queryText: string;
   buildMode: 'IMMEDIATE' | 'DEFERRED';
-  refreshMethod: 'COMPLETE' | 'FORCE';
+  refreshMethod: 'COMPLETE' | 'FORCE' | 'FAST';
   refreshMode: 'DEMAND' | 'COMMIT';
   /** Base tables the query reads — drives staleness on DML. */
   baseTables: { schema: string; table: string }[];
@@ -89,6 +89,17 @@ export interface DbLinkMeta {
   password: string | null;
   /** The USING 'tns_alias' connect string. */
   host: string | null;
+  created: Date;
+}
+
+export interface MviewLogMeta {
+  owner: string;
+  master: string;
+  logTable: string;
+  withRowid: boolean;
+  withPrimaryKey: boolean;
+  withSequence: boolean;
+  pendingChanges: number;
   created: Date;
 }
 
@@ -613,9 +624,29 @@ export class OracleCatalog extends BaseCatalog {
     return this.dbLinks.delete(OracleCatalog.mvKey(owner, name));
   }
 
+  private mviewLogs: Map<string, MviewLogMeta> = new Map();
+
+  registerMviewLog(meta: MviewLogMeta): void {
+    this.mviewLogs.set(OracleCatalog.mvKey(meta.owner, meta.master), meta);
+  }
+
+  getMviewLog(owner: string, master: string): MviewLogMeta | undefined {
+    return this.mviewLogs.get(OracleCatalog.mvKey(owner, master));
+  }
+
+  getMviewLogs(): readonly MviewLogMeta[] {
+    return [...this.mviewLogs.values()];
+  }
+
+  dropMviewLog(owner: string, master: string): boolean {
+    return this.mviewLogs.delete(OracleCatalog.mvKey(owner, master));
+  }
+
   /** DML touched schema.table — every MV reading it is no longer fresh. */
   markMaterializedViewsStale(schema: string, table: string): void {
     const s = schema.toUpperCase(); const t = table.toUpperCase();
+    const log = this.mviewLogs.get(OracleCatalog.mvKey(s, t));
+    if (log) log.pendingChanges++;
     for (const mv of this.materializedViews.values()) {
       if (mv.baseTables.some(b => b.schema === s && b.table === t)) {
         mv.staleness = 'STALE';

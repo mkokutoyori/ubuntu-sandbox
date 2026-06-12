@@ -1038,6 +1038,24 @@ capturé, granularité temporelle = ms.
 tests : AS OF SCN multi-générations, ORA-08181, flashback + re-flashback,
 BEFORE DROP préservé, AS OF TIMESTAMP futur/passé).
 
+### 2026-06-12 — MV logs réels et REFRESH FAST contractuel
+**Défaillance :** `CREATE MATERIALIZED VIEW LOG` n'existait pas (erreur de
+syntaxe), `DBA_MVIEW_LOGS` était une coquille vide permanente, et
+`REFRESH FAST` était accepté en silence sans le prérequis du vrai Oracle
+(un log sur chaque table maître, sinon ORA-23413 à la création).
+**Correction :** registre `MviewLogMeta` au catalogue (owner/master/
+MLOG$_…, options ROWID/PRIMARY KEY/SEQUENCE, compteur de changements
+incrémenté par le hook de staleness existant) ; parser `CREATE/DROP
+MATERIALIZED VIEW LOG ON t` ; exécuteur : ORA-12006 doublon, ORA-12002
+drop sans log, ORA-23413 à la création FAST sans log ET au refresh si le
+log a disparu entre-temps ; le refresh FAST purge le compteur du log ;
+`DBA_MVIEW_LOGS` branchée sur le registre vivant ;
+`DBA_MVIEWS.REFRESH_METHOD` expose FAST.
+**Limite assumée :** le « fast » re-matérialise (notre conteneur n'a pas
+de delta par ligne) — le contrat visible (logs requis, purge, erreurs)
+est celui du vrai Oracle.
+**Validation :** `oracle-materialized-views.test.ts` 17/17 (+5).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

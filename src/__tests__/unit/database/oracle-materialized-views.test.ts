@@ -130,3 +130,45 @@ describe('REFRESH ON COMMIT', () => {
     expect(run('SELECT n FROM hr.ddl_mv;')).toMatch(/\b4\b/);
   });
 });
+
+describe('Materialized view logs and REFRESH FAST', () => {
+  it('CREATE MATERIALIZED VIEW LOG registers in DBA_MVIEW_LOGS', () => {
+    run('CREATE MATERIALIZED VIEW LOG ON hr.emp WITH PRIMARY KEY;');
+    const out = run("SELECT log_owner, master, log_table, primary_key FROM dba_mview_logs;");
+    expect(out).toMatch(/HR\s+EMP\s+MLOG\$_EMP\s+YES/);
+  });
+
+  it('duplicate log raises ORA-12006, drop of missing log ORA-12002', () => {
+    run('CREATE MATERIALIZED VIEW LOG ON hr.emp;');
+    expect(run('CREATE MATERIALIZED VIEW LOG ON hr.emp;')).toMatch(/ORA-12006/);
+    expect(run('DROP MATERIALIZED VIEW LOG ON hr.emp;')).toMatch(/Materialized view log dropped/);
+    expect(run('DROP MATERIALIZED VIEW LOG ON hr.emp;')).toMatch(/ORA-12002/);
+  });
+
+  it('REFRESH FAST without a log on the master raises ORA-23413', () => {
+    expect(run('CREATE MATERIALIZED VIEW hr.fast_mv REFRESH FAST AS SELECT * FROM hr.emp;'))
+      .toMatch(/ORA-23413/);
+  });
+
+  it('REFRESH FAST with a log creates, goes stale on DML, refreshes', () => {
+    run('CREATE MATERIALIZED VIEW LOG ON hr.emp WITH PRIMARY KEY;');
+    expect(run('CREATE MATERIALIZED VIEW hr.fast_mv REFRESH FAST ON DEMAND AS SELECT COUNT(*) AS n FROM hr.emp;'))
+      .toMatch(/Materialized view created/);
+    expect(run("SELECT refresh_method FROM dba_mviews WHERE mview_name = 'FAST_MV';")).toMatch(/FAST/);
+
+    run("INSERT INTO hr.emp VALUES (7, 'IT', 600);");
+    run('COMMIT;');
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'FAST_MV';")).toMatch(/STALE/);
+
+    run("EXEC DBMS_MVIEW.REFRESH('HR.FAST_MV')");
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'FAST_MV';")).toMatch(/FRESH/);
+    expect(run('SELECT n FROM hr.fast_mv;')).toMatch(/\b4\b/);
+  });
+
+  it('a FAST refresh fails with ORA-23413 if the log was dropped meanwhile', () => {
+    run('CREATE MATERIALIZED VIEW LOG ON hr.emp;');
+    run('CREATE MATERIALIZED VIEW hr.fast_mv REFRESH FAST AS SELECT * FROM hr.emp;');
+    run('DROP MATERIALIZED VIEW LOG ON hr.emp;');
+    expect(run("EXEC DBMS_MVIEW.REFRESH('HR.FAST_MV')")).toMatch(/ORA-23413/);
+  });
+});

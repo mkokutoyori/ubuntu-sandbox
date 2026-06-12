@@ -50,6 +50,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
   'CreateViewStatement', 'DropViewStatement',
   'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'CreateMviewLogStatement', 'DropMviewLogStatement',
   'GrantStatement', 'RevokeStatement',
   'CreateUserStatement', 'AlterUserStatement', 'DropUserStatement',
   'CreateRoleStatement', 'DropRoleStatement',
@@ -646,6 +647,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropDbLinkStatement': return this.executeDropDbLink(statement);
       case 'CreateMaterializedViewStatement': return this.executeCreateMaterializedView(statement);
       case 'DropMaterializedViewStatement': return this.executeDropMaterializedView(statement);
+      case 'CreateMviewLogStatement': return this.executeCreateMviewLog(statement);
+      case 'DropMviewLogStatement': return this.executeDropMviewLog(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
       case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
       case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
@@ -2365,6 +2368,14 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(955, 'name is already used by an existing object');
     }
 
+    if (stmt.refreshMethod === 'FAST') {
+      for (const base of this.collectBaseTables(stmt.query)) {
+        if (!(this.catalog as OracleCatalog).getMviewLog(base.schema, base.table)) {
+          throw new OracleError(23413, `table "${base.schema}"."${base.table}" does not have a materialized view log`);
+        }
+      }
+    }
+
     const result = this.executeSelect(stmt.query);
     const columns: StorageColMeta[] = result.columns.map((col, i) => ({
       name: col.name, dataType: col.dataType, ordinalPosition: i,
@@ -2419,11 +2430,55 @@ export class OracleExecutor extends BaseExecutor {
     if (!meta) {
       throw new OracleError(12003, `materialized view "${o}"."${n}" does not exist`);
     }
+    if (meta.refreshMethod === 'FAST') {
+      for (const base of meta.baseTables) {
+        const log = (this.catalog as OracleCatalog).getMviewLog(base.schema, base.table);
+        if (!log) {
+          throw new OracleError(23413, `table "${base.schema}"."${base.table}" does not have a materialized view log`);
+        }
+        log.pendingChanges = 0;
+      }
+    }
     const result = this.executeSelect(meta.queryAst as SelectStatement);
     this.storage.deleteRows(o, n, () => true);
     for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
     meta.lastRefresh = new Date();
     meta.staleness = 'FRESH';
+  }
+
+  private executeCreateMviewLog(
+    stmt: import('../engine/parser/ASTNode').CreateMviewLogStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const master = stmt.table.toUpperCase();
+    this.requireTableMeta(owner, master);
+    const catalog = this.catalog as OracleCatalog;
+    if (catalog.getMviewLog(owner, master)) {
+      throw new OracleError(12006, `a materialized view log already exists on table '${master}'`);
+    }
+    catalog.registerMviewLog({
+      owner, master,
+      logTable: `MLOG$_${master.slice(0, 25)}`,
+      withRowid: stmt.withRowid,
+      withPrimaryKey: stmt.withPrimaryKey || !stmt.withRowid,
+      withSequence: stmt.withSequence,
+      pendingChanges: 0,
+      created: new Date(),
+    });
+    this.emitDdl('CREATE MATERIALIZED VIEW LOG', `${owner}.${master}`);
+    return emptyResult('Materialized view log created.');
+  }
+
+  private executeDropMviewLog(
+    stmt: import('../engine/parser/ASTNode').DropMviewLogStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const master = stmt.table.toUpperCase();
+    if (!(this.catalog as OracleCatalog).dropMviewLog(owner, master)) {
+      throw new OracleError(12002, `there is no materialized view log on table "${owner}"."${master}"`);
+    }
+    this.emitDdl('DROP MATERIALIZED VIEW LOG', `${owner}.${master}`);
+    return emptyResult('Materialized view log dropped.');
   }
 
   /** Base tables a SELECT reads — FROM list, JOINs, CTEs, FROM-subqueries. */

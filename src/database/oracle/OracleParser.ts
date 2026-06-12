@@ -509,7 +509,11 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, true); }
     }
     if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, false); }
-    if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); return this.parseCreateMaterializedView(pos, orReplace); }
+    if (this.matchKeyword('MATERIALIZED')) {
+      this.expectKeyword('VIEW');
+      if (this.matchKeyword('LOG')) return this.parseCreateMviewLog(pos);
+      return this.parseCreateMaterializedView(pos, orReplace);
+    }
     if (this.matchKeyword('AUDIT')) {
       this.expectKeyword('POLICY');
       return this.parseCreateAuditPolicy(pos);
@@ -790,6 +794,12 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('MATERIALIZED')) {
       this.expectKeyword('VIEW');
+      if (this.matchKeyword('LOG')) {
+        this.expectKeyword('ON');
+        const schema = this.parseSchemaPrefix();
+        const table = this.expectIdentifier();
+        return { type: 'DropMviewLogStatement', position: pos, schema, table } as import('../engine/parser/ASTNode').DropMviewLogStatement;
+      }
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();
       return { type: 'DropMaterializedViewStatement', position: pos, schema, name };
@@ -1303,7 +1313,7 @@ export class OracleParser extends BaseParser {
     // are recorded for the dictionary; unrecognised storage clauses are
     // still tolerated (script compatibility) and skipped.
     let buildMode: 'IMMEDIATE' | 'DEFERRED' | undefined;
-    let refreshMethod: 'COMPLETE' | 'FORCE' | undefined;
+    let refreshMethod: 'COMPLETE' | 'FORCE' | 'FAST' | undefined;
     let refreshMode: 'DEMAND' | 'COMMIT' | undefined;
     while (!this.check(TokenType.EOF) && !this.checkKeyword('AS')) {
       if (this.matchKeyword('BUILD')) {
@@ -1314,6 +1324,7 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('REFRESH')) {
         if (this.matchKeyword('COMPLETE')) refreshMethod = 'COMPLETE';
         else if (this.matchKeyword('FORCE')) refreshMethod = 'FORCE';
+        else if (this.matchKeyword('FAST')) refreshMethod = 'FAST';
         if (this.matchKeyword('ON')) {
           if (this.matchKeyword('DEMAND')) refreshMode = 'DEMAND';
           else if (this.matchKeyword('COMMIT')) refreshMode = 'COMMIT';
@@ -1332,6 +1343,21 @@ export class OracleParser extends BaseParser {
       type: 'CreateMaterializedViewStatement', position: pos, schema, name,
       query, queryText, buildMode, refreshMethod, refreshMode,
     };
+  }
+
+  private parseCreateMviewLog(pos: SourcePosition): import('../engine/parser/ASTNode').CreateMviewLogStatement {
+    this.expectKeyword('ON');
+    const schema = this.parseSchemaPrefix();
+    const table = this.expectIdentifier();
+    let withRowid = false, withPrimaryKey = false, withSequence = false;
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('WITH')) continue;
+      if (this.matchKeyword('ROWID')) { withRowid = true; continue; }
+      if (this.matchKeyword('PRIMARY')) { this.matchKeyword('KEY'); withPrimaryKey = true; continue; }
+      if (this.matchKeyword('SEQUENCE')) { withSequence = true; continue; }
+      this.advance();
+    }
+    return { type: 'CreateMviewLogStatement', position: pos, schema, table, withRowid, withPrimaryKey, withSequence };
   }
 
   // ── Unified audit policies ─────────────────────────────────────
