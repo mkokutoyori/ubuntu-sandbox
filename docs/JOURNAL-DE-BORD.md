@@ -2039,3 +2039,84 @@ après un ping et se vide après clear sans refresh manuel, instance null).
   7001 tests verts** ; gui/react/events 40 fichiers / 354 tests verts ;
   `tsc --noEmit` propre ; lint : seules 2 erreurs `any` préexistantes
   sur main (vérifié par stash).
+
+---
+
+## Entrée 28 — Archives Linux réelles : tar / gzip / gunzip / zcat / zip / unzip / file (GAP §8.4)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **`tar -x` ne restaurait rien** : la création écrivait un pseudo-manifest
+   (`TAR_ARCHIVE\nfichier: N bytes`), l'extraction vérifiait seulement que
+   l'archive existait puis ne faisait **rien**. Un script de
+   sauvegarde/restauration de lab était silencieusement cassé.
+2. **`gunzip` détruisait les données** : `gzip` écrivait `GZIP:<longueur>`
+   (perte du contenu), `gunzip` restituait le littéral
+   `(decompressed from f.gz)`. Round-trip = corruption garantie.
+3. **`zip`/`unzip` factices** : pas de membre stocké, `unzip` imprimait
+   `inflating: (simulated)` sans toucher au VFS.
+4. **`file` toujours figé** : `<cible>: ASCII text` même pour un répertoire
+   ou un fichier inexistant.
+5. Bugs annexes : pas de style ancien `tar czf …` (la forme la plus tapée),
+   pas de `-C`, pas de `zcat` ; les archives étaient créées avec un mode
+   aberrant 022 (le 0o644 passé en paramètre `umask` de `writeFile`).
+
+### Correction
+
+- Nouveau module `src/network/devices/linux/coreutils/ArchiveCommands.ts`
+  (pattern d'extraction coreutils existant ; fonctions pures sur un seam
+  `ArchiveFs` étroit — DIP, testable sans executor). L'executor délègue en
+  une ligne par commande (god-class réduite de ~140 lignes au passage).
+- **Format d'archive structuré** (enveloppe magique + JSON de membres
+  {chemin, type, mode, uid, gid, mtime, contenu}) : les round-trips sont
+  **sans perte** — contenus exacts, permissions restaurées, propriétaires
+  restaurés seulement si l'extracteur est root (sémantique tar réelle).
+- **tar** : grammaire complète c/x/t + f/v/z/j/C, style ancien groupé
+  (`tar czf a.tgz src`), récursion répertoires, strip du `/` de tête avec
+  l'avertissement GNU, erreurs et codes retour canoniques (`Cannot stat` +
+  `Exiting with failure status` exit 2 en archivant le reste, `This does
+  not look like a tar archive`, `Cowardly refusing…`, options en conflit),
+  auto-détection de la compression à la lecture comme GNU tar.
+- **gzip/gunzip/zcat** : remplacement du fichier par `.gz` (mode/owner
+  préservés), `-k`, `-d`, suffixes (`already has .gz suffix -- unchanged`,
+  `unknown suffix -- ignored`, `not in gzip format`), multi-opérandes avec
+  code retour agrégé ; `zcat` ajouté au catalogue de commandes.
+- **zip/unzip** : listing `adding:/updating:` par membre, mise à jour d'une
+  archive existante, `-r`, `zip warning: name not matched` + exit 12,
+  `unzip -l` (tableau Length/Date/Name + totaux), `-d dir`, suffixe `.zip`
+  implicite, `End-of-central-directory signature not found` exit 9.
+- **file** : classification depuis l'inode et le contenu réels —
+  répertoire, lien symbolique (avec cible), fichier manquant (`cannot
+  open … (No such file or directory)`), vide, scripts shebang, données
+  binaires, et reconnaissance des trois formats d'archive (`gzip
+  compressed data, was "…"`, `POSIX tar archive`, `Zip archive data`).
+- **cwd de script honnête** : `cd /x && tar xf …` extrait là où bash le
+  dit — le contexte archive lit le `PWD` de l'interpréteur (validé comme
+  répertoire) au lieu du cwd d'executor synchronisé seulement en fin de
+  script. (Limitation préexistante toujours ouverte pour les autres
+  familles de commandes — documentée ici.)
+
+### Limites restantes (documentées)
+
+- `bzip2`/`bunzip2`/`xz`/`unxz` restent des stubs (suffixes et magies
+  différents — à traiter sur le même seam si besoin).
+- `apt`/`dpkg` restent des transcriptions figées (limite assumée, GAP 8.4).
+- Le « binaire » d'archive est une enveloppe JSON lisible par `cat` —
+  choix assumé du simulateur (lossless + introspectable), signalé par
+  la magie `!<simtar>/!<simgz>/!<simzip>`.
+
+### Validation
+
+- Nouvelle suite `archive-commands.test.ts` (16 cas) : round-trips tar/
+  gzip/zip avec vérification de contenu et de permissions, style ancien,
+  `-C`, strip du `/`, erreurs et codes retour exacts, `file` sur 8 types,
+  scénario de lab bout-en-bout (backup → perte → restore → `md5sum -c`
+  OK). Au passage la suite a confirmé un réalisme existant : un
+  utilisateur non-root ne peut pas écrire sous `/root` (le harnais a dû
+  passer sur LinuxServer).
+- Non-régression : bash 11 fichiers / 383 tests ; network-v2 + shell +
+  terminal **381 fichiers / 7984 tests verts** ; `tsc --noEmit` propre ;
+  lint : seules 3 erreurs `no-duplicate-case` préexistantes (vérifié par
+  stash).

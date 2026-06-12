@@ -919,7 +919,7 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 
 - **Constat** : `tar`, `gzip`, `gunzip`, `zip`, `unzip` sont de purs no-ops renvoyant une sortie vide, sans aucun effet de bord sur le VFS (pas de création d'archive, pas de décompression, pas de modification de la taille/contenu des fichiers).
 - **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2349-2354`.
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ (entrée 28 du journal : module `coreutils/ArchiveCommands.ts`, round-trips sans perte tar/gzip/zcat/zip + `file` réel ; suite `archive-commands.test.ts`, 16 cas)
 - **Recommandation** : à défaut d'implémenter un vrai format d'archive, simuler au minimum la création d'un fichier « archive » dans le VFS (avec une taille dérivée du contenu source) pour que les scripts de sauvegarde/déploiement testés dans les labs restent cohérents (`ls -la backup.tar.gz` doit montrer un fichier non vide après `tar czf`).
 
 - **Constat** : `apt`/`apt-get`/`dpkg` renvoient des transcriptions figées et identiques quel que soit le paquet demandé (toujours « is already the newest version », toujours la même liste `dpkg -l`), sans mise à jour d'un état « paquets installés » persistant ni d'effets sur le VFS/`LinuxServiceManager`.
