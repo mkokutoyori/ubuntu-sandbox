@@ -1151,13 +1151,13 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure (assumé)
 - **Recommandation** : RAS si l'objectif reste la "tolérance de script" ; documenter dans le BRD que `DBA_TAB_PARTITIONS` ne sera jamais peuplée pour ces tables.
 
-### 10.10 Transactions / MVCC — snapshot complet plutôt que journal redo/undo réel
+### 10.10 Transactions / MVCC — snapshot complet plutôt que journal redo/undo réel — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : `COMMIT`/`ROLLBACK`/`SAVEPOINT` sont en réalité bien implémentés via une copie complète de l'état du storage (`captureSnapshot`/`restoreSnapshot`, Map<schema, Map<table, rows[]>>), ce qui dément le statut BRD "🟡 stubs, pas de vrai rollback" (ligne 1433) — le rollback fonctionne réellement. Il s'agit cependant d'un instantané "tout ou rien" en mémoire (pas de undo log par ligne, pas d'isolation entre sessions concurrentes, `SET TRANSACTION ISOLATION LEVEL …` est un simple acquiescement).
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:143-175` (`captureSnapshot`/`restoreSnapshot`/`_txnSnapshot`), `:684-727` (`executeCommit`/`executeRollback`/`executeSavepoint` avec restauration réelle), `:495-498` (`case 'SetTransactionStatement': … // The simulator does not differentiate transaction isolation levels`).
 - **Sévérité** : Mineure (le BRD est *plus pessimiste* que le code réel sur ce point — dette de documentation)
 - **Recommandation** : Mettre à jour le BRD §16 (Phase 6.3-6.4) pour refléter que COMMIT/ROLLBACK/SAVEPOINT fonctionnent réellement par snapshot ; documenter explicitement la limite (pas de MVCC multi-session, pas d'isolation SERIALIZABLE réelle) pour fixer les attentes.
 
-### 10.11 V$ / data-dictionary — globalement bien câblées sur l'état vivant
+### 10.11 V$ / data-dictionary — globalement bien câblées sur l'état vivant — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : Contrairement à la crainte initiale de "vues canned", l'essentiel des vues `V/`DBA_*` interrogées (`V$SESSION`, `V$LOCK`, `V$TRANSACTION`, `DBA_AUDIT_TRAIL`, `DBA_PROFILES`, `DBA_TABLES`…) lisent l'état réel via `runtime`/`catalog`/`SecurityEngine`/`LockManager`. Le BRD est ici *en retard* sur le code : il qualifie encore `DBA_AUDIT_TRAIL` (ligne 445/1426) et `DBA_PROFILES` (ligne 1421) de "données statiques", alors que les deux lisent désormais respectivement `catalog.getAuditTrail()` et `SecurityEngine.profiles.getAllProfileRows()`.
 - **Preuve** : `src/database/oracle/views/v_session.ts` (lecture du `SecurityEngine session tracker`), `v_lock.ts:18-31` (`instance.lockManager.getHeldLocks()`), `v_transaction.ts:13-30` (`runtime.transactions`), `dba_audit_trail.ts:11-35` (`catalog.getAuditTrail()`), `dba_profiles.ts:39-46` (`catalog.getSecurityEngine()` puis `engine.profiles.getAllProfileRows()`).
 - **Sévérité** : Mineure (constat positif, mais documentation à corriger)
@@ -1171,7 +1171,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure
 - **Recommandation** : Aucune action urgente — `V$FIXED_VIEW_DEFINITION` est un cas légitime (Oracle réel ne révèle pas non plus le SQL des fixed views) ; pour `V$SQL_PLAN_MONITOR`, lier la sortie à `EXPLAIN PLAN` une fois 10.2 traité, pour cohérence inter-vues.
 
-### 10.13 RMAN — moteur réactif réel, au-delà du statut "stub" du BRD
+### 10.13 RMAN — moteur réactif réel, au-delà du statut "stub" du BRD — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : Contrairement au BRD (§3 ligne 99 : `RmanSession.ts # Session RMAN (stub)`, §16 ligne 1427 : "❌ Backup/Recovery concepts (RMAN stub) — non implémenté"), le sous-shell RMAN (`src/terminal/subshells/rman/`) est un sous-système conséquent : moteur de jobs (`RmanJobEngine`, 483 lignes) avec allocation de canaux, opérations BACKUP/RESTORE/RECOVER/DUPLICATE/CROSSCHECK/DELETE EXPIRED-OBSOLETE branchées sur un contexte réel (`IRmanOracleContext.getDatafiles()`), catalogue en mémoire (`InMemoryRmanCatalog`), bus d'événements réactif et suites de transcript dédiées (`debug/rman/*.debug.test.ts` : `rman-pitr-duplicate`, `rman-wan-disaster-recovery`, `rman-multi-server-lan`…). Seuls les messages d'étape de progression ("canned step messages") sont des chaînes pré-écrites — l'issue de l'opération (succès/échec, fichiers concernés) dépend de l'état réel.
 - **Preuve** : `src/terminal/subshells/rman/job/RmanJobEngine.ts:61` (commentaire `// 2. Stream the canned step messages`), `:98-111` (dispatch d'opérations réelles), `:113-129` (paramétrage réel `validate`/`compressed`/`encrypted`/`tag`/`incrementalLevel`) ; `BRD-Oracle-DBMS.md:99,1427` (statut documenté comme stub/non implémenté, désormais obsolète).
 - **Sévérité** : Mineure (constat positif — dette de documentation côté BRD)
