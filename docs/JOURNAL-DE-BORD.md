@@ -2120,3 +2120,34 @@ après un ping et se vide après clear sans refresh manuel, instance null).
   terminal **381 fichiers / 7984 tests verts** ; `tsc --noEmit` propre ;
   lint : seules 3 erreurs `no-duplicate-case` préexistantes (vérifié par
   stash).
+
+---
+
+## Entrée 29 — `ss -s` : résumé calculé depuis la vraie table de sockets (GAP §8.5 résiduel)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+`ss -s` renvoyait des compteurs globaux figés (« Total: 120 »,
+« TCP: 8 (estab 2, …) », tableau Transport inventé) sans aucun rapport
+avec la `SocketTable` réelle de la machine — un démon qui ouvre ou ferme
+un port ne changeait rien au résumé.
+
+### Correction
+
+`cmdSs` (`LinuxNetCommands.ts`) calcule désormais le résumé depuis
+`socketTable.getAll()` : Total, comptes TCP/UDP, ventilation
+`estab/closed/timewait` par état RFC 793, lignes Transport dérivées
+(IPv6 = 0, la table ne modèle que l'IPv4 — honnête). Le bloc figé ne
+survit que comme repli sans table (chemin dégradé documenté, jamais
+atteint depuis un device réel).
+
+### Validation
+
+Nouveaux tests SP-14 dans `socket-table.test.ts` : cohérence des
+compteurs avec la table vivante (et disparition du « Total: 120 »),
+incrément du compte TCP après bind d'un nouveau listener. Suites
+socket-table / linux-lan-ssh / linux-commands (365 tests) et
+oracle-listener-network-coherence (5 tests) vertes ; `tsc` propre ;
+lint propre.

@@ -295,6 +295,32 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
+    // Real `ss -s`: counters derived from the live socket table — the
+    // canned figures below only survive as the degraded no-table path.
+    if (socketTable) {
+      const all = socketTable.getAll();
+      const tcp = all.filter(s => s.protocol === 'tcp');
+      const udp = all.filter(s => s.protocol === 'udp');
+      const estab = tcp.filter(s => s.state === 'ESTABLISHED').length;
+      const closed = tcp.filter(s => s.state === 'CLOSED').length;
+      const timewait = tcp.filter(s => s.state === 'TIME_WAIT').length;
+      const inet = tcp.length + udp.length;
+      const row = (name: string, total: number, ip: number): string =>
+        `${name.padEnd(10)}${String(total).padEnd(10)}` +
+        `${String(ip).padEnd(10)}0`;
+      return [
+        `Total: ${all.length}`,
+        `TCP:   ${tcp.length} (estab ${estab}, closed ${closed}, ` +
+          `orphaned 0, timewait ${timewait})`,
+        '',
+        'Transport Total     IP        IPv6',
+        row('RAW', 0, 0),
+        row('UDP', udp.length, udp.length),
+        row('TCP', tcp.length, tcp.length),
+        row('INET', inet, inet),
+        row('FRAG', 0, 0),
+      ].join('\n');
+    }
     return [
       'Total: 120',
       'TCP:   8 (estab 2, closed 0, orphaned 0, timewait 0)',
