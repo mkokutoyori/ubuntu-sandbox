@@ -41,10 +41,19 @@ export interface OracleFilesystemSyncCtx {
  */
 interface FsEquipment {
   writeFileFromEditor(path: string, content: string): void;
+  installSystemFile?: (path: string, content: string, uid?: number, gid?: number) => boolean;
   deleteFileFromEditor?: (path: string) => boolean;
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
   clearSystemProcesses?: () => void;
+}
+
+const ORACLE_OS_UID = 54321;
+const ORACLE_OS_GID = 54321;
+
+function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
+  if (dev.installSystemFile) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+  else dev.writeFileFromEditor(path, content);
 }
 
 export class OracleFilesystemSync {
@@ -83,10 +92,10 @@ export class OracleFilesystemSync {
         // the adapter doesn't keep history itself).
         const db = this.ctx.resolveDatabase(deviceId);
         if (db) {
-          dev.writeFileFromEditor(path, db.instance.getAlertLog().join('\n') + '\n');
+          writeAsOracle(dev, path, db.instance.getAlertLog().join('\n') + '\n');
         } else {
           // No DB available — best effort, write just this line.
-          dev.writeFileFromEditor(path, line + '\n');
+          writeAsOracle(dev, path, line + '\n');
         }
       }),
 
@@ -117,7 +126,7 @@ export class OracleFilesystemSync {
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         for (const df of e.payload.datafiles) {
           this.markDatafileMaterialized(e.payload.deviceId, df.path);
-          dev.writeFileFromEditor(
+          writeAsOracle(dev, 
             df.path,
             `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
           );
@@ -129,7 +138,7 @@ export class OracleFilesystemSync {
         if (!dev) return;
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         this.markDatafileMaterialized(e.payload.deviceId, e.payload.path);
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
         );
@@ -138,7 +147,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ASM DISK ${e.payload.diskName} - diskgroup ${e.payload.diskgroup} - ${e.payload.sizeMb}M]`,
         );
@@ -159,7 +168,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.outputPath,
           renderParameterFile(e.payload.target, e.payload.params),
         );
@@ -171,7 +180,7 @@ export class OracleFilesystemSync {
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           `${ORACLE_CONFIG.AUDIT_DIR}/${fname}`,
           renderAuditEntry(e.payload),
         );
@@ -180,7 +189,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
         );
@@ -202,7 +211,7 @@ export class OracleFilesystemSync {
         const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
         const ts = storage?.getTablespace(e.payload.tablespace);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
         );
@@ -222,7 +231,7 @@ export class OracleFilesystemSync {
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
         const dbid = this.ctx.resolveDatabase(e.payload.deviceId)?.instance.getDbId() ?? 0;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           `${ORACLE_CONFIG.BASE}/admin/${e.payload.sid}/adump/${fname}`,
           renderConnectionAud(e.payload, dbid),
         );
@@ -267,7 +276,7 @@ export class OracleFilesystemSync {
         const df = ts?.datafiles.find(d => d.path === e.payload.newPath);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const size = df?.size ?? '0M';
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.newPath,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${size}]`,
         );
@@ -299,7 +308,7 @@ export class OracleFilesystemSync {
       const needsQuote = /[a-zA-Z]/.test(value) && !value.startsWith("'");
       lines.push(`*.${name}=${needsQuote ? `'${value}'` : value}`);
     }
-    dev.writeFileFromEditor(`${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+    writeAsOracle(dev, `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
   }
 
   /** Remember that a datafile path has been written once on a device. */
@@ -345,21 +354,21 @@ export class OracleFilesystemSync {
         seen.add(df.path);
         const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-        dev.writeFileFromEditor(df.path, content);
+        writeAsOracle(dev, df.path, content);
       }
     }
 
     for (const group of db.instance.getRedoLogGroups()) {
       for (const member of group.members) {
         const sizeMB = Math.round(group.sizeBytes / 1048576);
-        dev.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+        writeAsOracle(dev, member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
       }
     }
 
     const ctlFiles = (db.instance.getParameter('control_files') ?? '')
       .split(',').map(f => f.trim()).filter(f => f);
     ctlFiles.forEach((f, i) => {
-      dev.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+      writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }
 }

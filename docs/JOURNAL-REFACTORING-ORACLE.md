@@ -960,6 +960,26 @@ COMMIT avec contenu et staleness vérifiés avant/après, ON DEMAND inchangé
 au commit, commit implicite DDL déclencheur) ; tsc propre. Régression
 globale reportée en fin de série (consigne).
 
+### 2026-06-12 — Les fichiers Oracle appartiennent à oracle:oinstall sur le VFS
+**Défaillance :** toute l'arborescence /u01 (binaires, datafiles, redo,
+control files, alert log, spfile) était créée root:root, et les fichiers
+réécrits ensuite par `OracleFilesystemSync` prenaient l'uid de
+l'utilisateur shell courant — `ls -l` contredisait la réalité d'une
+installation (fichiers détenus par le propriétaire logiciel `oracle`,
+écrits par les background processes, pas par le client connecté).
+**Correction :** `installSystemFile` accepte un propriétaire optionnel
+(défaut root inchangé) ; `initOracleFilesystem` crée tout /u01 en
+54321:54321 (`/etc/oratab` et `/etc/profile.d/oracle.sh` restent root,
+comme en vrai) ; `OracleFilesystemSync` écrit désormais tous ses fichiers
+via `writeAsOracle` (installSystemFile en oracle:oinstall, fallback
+writeFileFromEditor) — un spfile régénéré par `ALTER SYSTEM … SCOPE=SPFILE`
+ou l'alert log appendé restent à oracle. Effet de bord réaliste : un
+utilisateur hors oinstall ne peut plus écraser ces fichiers au shell
+(permissions VFS 0644 + inode oracle).
+**Validation :** nouvelle suite `oracle-file-ownership.test.ts` (5 tests :
+binaires, datafiles/control files, alert log, spfile post-ALTER SYSTEM,
+/etc/oratab root) ; tsc propre. Régression globale en fin de série.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

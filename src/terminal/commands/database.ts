@@ -511,11 +511,15 @@ Completed: ALTER DATABASE OPEN
   };
 
   const install = (device as unknown as {
-    installSystemFile?(path: string, content: string): boolean;
+    installSystemFile?(path: string, content: string, uid?: number, gid?: number): boolean;
   }).installSystemFile?.bind(device);
   for (const [path, content] of Object.entries(files)) {
-    if (install) install(path, content);
-    else device.writeFileFromEditor?.(path, content);
+    if (install) {
+      if (path.startsWith('/u01')) install(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+      else install(path, content);
+    } else {
+      device.writeFileFromEditor?.(path, content);
+    }
   }
 
   provisionOracleOsIdentity(device);
@@ -537,6 +541,9 @@ Completed: ALTER DATABASE OPEN
  * DBA staff, so existing topologies keep working. Any *new* account is
  * outside dba and gets the real ORA-01031 on `sqlplus / as sysdba`.
  */
+export const ORACLE_OS_UID = 54321;
+export const ORACLE_OS_GID = 54321;
+
 function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice): void {
   const run = (device as unknown as {
     executeShellCommandSync?(command: string): string;

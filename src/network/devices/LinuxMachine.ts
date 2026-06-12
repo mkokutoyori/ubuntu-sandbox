@@ -1288,9 +1288,9 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
-  installSystemFile(path: string, content: string): boolean {
+  installSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
-    return this.executor.vfs.writeFile(absPath, content, 0, 0, 0o022);
+    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
   /**
