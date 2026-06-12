@@ -18,26 +18,8 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
+import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
-
-const DEVICE_TYPE_TO_OS_TYPE: Record<DeviceType, string> = {
-  'linux-pc': 'linux',
-  'linux-server': 'linux',
-  'mac-pc': 'linux',
-  'windows-pc': 'windows',
-  'windows-server': 'windows',
-  'switch-cisco': 'cisco-ios',
-  'switch-huawei': 'huawei-vrp',
-  'switch-generic': 'linux',
-  'router-cisco': 'cisco-ios',
-  'router-huawei': 'huawei-vrp',
-  'firewall-cisco': 'linux',
-  'firewall-fortinet': 'linux',
-  'firewall-paloalto': 'linux',
-  'hub': 'linux',
-  'access-point': 'linux',
-  'cloud': 'linux',
-};
 
 export abstract class Equipment {
   /**
@@ -114,7 +96,7 @@ export abstract class Equipment {
    * Override in subclasses for specific OS types.
    */
   getOSType(): string {
-    return DEVICE_TYPE_TO_OS_TYPE[this.deviceType] ?? 'linux';
+    return DEVICE_CATALOG[this.deviceType]?.osType ?? 'linux';
   }
 
   setName(name: string): void {

@@ -499,7 +499,7 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 | P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 19 |
 | P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 19 |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | ✅ Entrée 14 (session parallèle) |
-| P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
+| P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | ✅ Entrée 22 |
 | P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | ✅ Entrée 21 |
 | P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | ✅ Entrée 21 |
 | P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | ✅ Entrée 12 (session parallèle) |
@@ -779,6 +779,48 @@ cmd-netsh + windows-netsh-dhcp-dns + windows-consistency : 251 verts.
   vrai câble non connecté (plus un booléen posé à la main) ; le cas
   « active » câble deux vrais `Port`.
 - gui + react : 99 verts ; `tsc --noEmit` propre.
+
+---
+
+## Entrée 22 — Catalogue de devices : source unique de vérité (P8)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+Les caractéristiques d'un type d'équipement étaient éclatées en **cinq**
+tables parallèles à maintenir à la main :
+
+1. l'union `DeviceType` (core/types.ts) ;
+2. `DEVICE_TYPE_TO_OS_TYPE` (Equipment.ts) — OS par type ;
+3. `DEVICE_CATEGORIES` (core/types.ts) — palette UI (libellé,
+   description, catégorie) ;
+4. `hasTerminalSupport` (DeviceFactory) — switch de 14 cas ;
+5. `isFullyImplemented` (DeviceFactory) — switch de 10 cas, plus les
+   préfixes de nommage en dur dans `createDevice`.
+
+Ajouter un type imposait de modifier 5 fichiers (shotgun surgery), et
+rien ne garantissait leur cohérence.
+
+### Correction
+
+- Nouveau `core/deviceCatalog.ts` : `DEVICE_CATALOG: Record<DeviceType,
+  DeviceDefinition>` — libellé, description, osType, préfixe de nom,
+  capacité terminal, fidélité d'implémentation, catégorie de palette.
+  `Record<DeviceType, …>` rend l'oubli d'un nouveau type **erreur de
+  compilation**.
+- Dérivés : `DEVICE_CATEGORIES` (palette) est construit depuis le
+  catalogue ; `Equipment.getOSType`, `hasTerminalSupport`,
+  `isFullyImplemented` et les préfixes de `createDevice` lisent le
+  catalogue. Le switch de `createDevice` ne garde que le choix du
+  constructeur (signatures hétérogènes), sans données dupliquées.
+- `DeviceCategory` déplacé avec sa donnée ; ré-exports conservés via
+  `core/index.ts` et `network/index.ts` (UI inchangée).
+
+### Tests
+
+gui + react + terminal : 479 verts ; network-v2 complète ;
+`tsc --noEmit` propre.
 
 ---
 
