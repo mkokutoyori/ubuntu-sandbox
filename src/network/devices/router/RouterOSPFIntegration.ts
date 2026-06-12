@@ -224,27 +224,15 @@ export class RouterOSPFIntegration {
     });
   }
 
-  /**
-   * Entry point for OSPF packets received from the wire. Called by the
-   * router's IPv4 local-delivery path when an IP protocol 89 packet
-   * arrives on a port (multicast 224.0.0.5/6 or unicast to our IP).
-   *
-   * This is the ONLY way packets reach the engine: there is no registry
-   * teleportation — a cut cable, a down port or a powered-off peer
-   * really interrupts the protocol exchange.
-   */
+  /** OSPF packets from the wire (proto 89) — the only path into the engine. */
   receivePacket(ifaceName: string, srcIP: string, packet: OSPFPacket): void {
     this.ospfEngine?.processPacket(ifaceName, srcIP, packet);
   }
 
   /**
-   * Wire every OSPFEngine in the domain with a sendCallback that emits
-   * REAL frames (IP proto 89 encapsulated in Ethernet) out the device's
-   * port. Delivery follows the physical plant: Port → Cable →
-   * switch/hub data plane → peer router's handleFrame → processIPv4 →
-   * local delivery → receivePacket. Cable delivery being synchronous,
-   * the DD/LSR/LSU/LSAck exchange still completes within the
-   * convergence call.
+   * Wire every engine's sendCallback to sendPacket (real frames out the
+   * port). Cable delivery is synchronous, so the FSM-driven exchange
+   * completes within the convergence call.
    */
   private setupSendCallbacks(allPeers: RouterOSPFIntegration[], useDelay = false): void {
     for (const peer of allPeers) {

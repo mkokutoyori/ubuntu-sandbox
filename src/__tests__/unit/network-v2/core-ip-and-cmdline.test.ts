@@ -1,11 +1,4 @@
-/**
- * Tests for the canonical validators/tokenizers introduced by the
- * Série 3 dedup work (journal entries — backlog #18/#19):
- *   - core/ip.ts isValidIPv4 / isValidIPv6 (replaces three per-module
- *     regex variants in PowerShellExecutor, WinNetsh, …)
- *   - devices/windows/cmdline.ts splitCmdArgs (replaces the identical
- *     private copies in WindowsPC.parseCommandLine / CmdSubShell.splitArgs)
- */
+// Canonical validators/tokenizers (entrée 14): core/ip isValidIPv4/v6, splitCmdArgs.
 
 import { describe, it, expect } from 'vitest';
 import { isValidIPv4, isValidIPv6 } from '@/network/core/ip';

@@ -496,8 +496,7 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     destIp: string,
   ): void {
-    // RFC 2328 Appendix D — every outgoing packet carries the interface's
-    // authentication fields so the receiver can validate them (§8.2).
+    // RFC 2328 §8.2 / Appendix D — outgoing packets carry the interface auth.
     const ifc = this.interfaces.get(iface);
     if (ifc) {
       packet.authType = ifc.authType ?? 0;
@@ -3763,7 +3762,6 @@ export class OSPFEngine implements IProtocolEngine {
     if (packet.routerId === this.config.routerId) return;
 
     // RFC 2328 §8.2 — authentication check before any FSM processing.
-    // AuType and the auth data must both match the receiving interface.
     const rxIface = this.interfaces.get(ifaceName);
     if (rxIface) {
       const localAuthType = rxIface.authType ?? 0;

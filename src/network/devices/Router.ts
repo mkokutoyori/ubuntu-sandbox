@@ -62,7 +62,7 @@ import {
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
-  UDP_PORT_RIP, UDP_PORT_IKE_NAT_T,
+  UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
@@ -1128,9 +1128,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
-    // OSPF runs directly over IP (protocol 89, RFC 2328 §4.3). Hellos
-    // arrive on 224.0.0.5/224.0.0.6, DD/LSR/LSU/LSAck unicast to our
-    // interface IP — all delivered here by processIPv4.
+    // OSPF runs directly over IP (proto 89, RFC 2328 §4.3).
     if (ipPkt.protocol === IP_PROTO_OSPF) {
       const ospfPkt = ipPkt.payload as { type?: string };
       if (ospfPkt?.type === 'ospf' && this.ospfIntegration.isOSPFEnabled()) {
@@ -1287,9 +1285,36 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
       } else if (udp.destinationPort === 67) {
         this.handleDhcpUdp(inPort, ipPkt, udp);
+      } else if (udp.destinationPort === UDP_PORT_IKE) {
+        this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
+  }
+
+  /** @internal ISAKMP payload as a UDP 500→500 datagram through the FIB (DPD). */
+  _sendIkeUdp(destIp: string, payload: unknown): boolean {
+    const dst = new IPAddress(destIp);
+    const route = this.lookupRoute(dst);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const srcIp = egress?.getIPAddress();
+    if (!egress || !srcIp) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: UDP_PORT_IKE, destinationPort: UDP_PORT_IKE,
+      length: 8 + 64, checksum: 0, payload,
+    };
+    const ipPkt = createIPv4Packet(srcIp, dst, IP_PROTO_UDP, 64, udp, 8 + 64);
+    const arpHit = this.arpTable.get(
+      (route.nextHop ?? dst).toString(),
+    ) ?? this.arpTable.get(dst.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+    return true;
   }
 
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
@@ -1936,23 +1961,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           });
       }
     } else if (type === 'DHCPDECLINE') {
-      // RFC 2131 §3.1.5 — client detected an address conflict.
       this.dhcpServer.processDecline({
         clientMAC: pkt.chaddr,
         declinedIP: String(pkt.getOption(50) ?? ''),
         serverIdentifier: String(pkt.getOption(54) ?? ''),
         clientIdentifier: pkt.chaddr,
       });
-      return; // No reply to a DECLINE
+      return;
     } else if (type === 'DHCPRELEASE') {
-      // RFC 2131 §3.4 — client gives the lease back.
       this.dhcpServer.processRelease({
         clientMAC: pkt.chaddr,
         clientIP: pkt.ciaddr,
         serverIdentifier: String(pkt.getOption(54) ?? ''),
         clientIdentifier: pkt.chaddr,
       });
-      return; // No reply to a RELEASE
+      return;
     }
     if (!reply) return;
     if (option82) reply.setOption(82, option82);

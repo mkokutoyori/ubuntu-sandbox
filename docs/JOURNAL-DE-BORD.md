@@ -1168,7 +1168,7 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 |---|-------|-----------------|----------|--------|
 | 12 | Equipment : 11 stubs « hôte » (passwords, cwd, éditeur) hérités par routeurs/switches (backlog #10) | ISP (SOLID) | Moyenne | ✅ Corrigé |
 | 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | ✅ Transport corrigé (entrée 13) — orchestration encore synchrone |
-| 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | À faire |
+| 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | ✅ Corrigé (entrée 17) |
 | 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
 | 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
 | 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | ✅ Corrigé (entrée 15) — scan registre conservé en repli des topologies non câblées |
@@ -1423,3 +1423,42 @@ les comportements différenciants. Deux fichiers neufs les verrouillent :
   clé exacte) + estampillage des champs auth à l'égress unique.
 
 Validation : 9 tests neufs verts.
+
+---
+
+## Entrée 17 — IPSec DPD : sondes R-U-THERE réelles en UDP/500
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+`runDPDCheck` « simulait » R-U-THERE en localisant le routeur pair via un
+scan du registre (`findRouterByIP` → `Equipment.getAllEquipment()`) puis
+en lisant sa base SA en mémoire (`peerEngine.ikeSADB.has(...)`). Un câble
+coupé ne faisait donc jamais échouer la sonde — c'est précisément la
+panne que DPD (RFC 3706) existe pour détecter.
+
+### Correction
+
+- `IsakmpDpdMessage` (notify R-U-THERE / R-U-THERE-ACK + numéro de
+  séquence monotone, RFC 3706 §5.4) transporté en vrai datagramme
+  UDP 500→500 via la FIB (`Router._sendIkeUdp`).
+- Réception : `handleLocalDelivery` UDP/500 → `IPSecEngine.handleIkeUdp`
+  — un R-U-THERE n'est ACKé que si une IKE SA existe avec l'émetteur
+  (§5.5) ; l'ACK doit faire écho à la séquence de la sonde.
+- `runDPDCheck` : émet la sonde sur le fil ; la livraison câble étant
+  synchrone, l'ACK d'un pair vivant est traité au retour de l'envoi ;
+  `retries` timeouts consécutifs → SAs purgées. Le peek registre est
+  supprimé.
+
+### Note de style
+
+À la demande de l'auteur du projet : passe de réduction des commentaires
+sur l'ensemble des fichiers ajoutés par la série (en-têtes d'un
+paragraphe → une ligne ; suppression des commentaires narratifs).
+
+### Validation
+
+- 3 tests neufs (`ipsec-dpd-wire.test.ts`) : ACK synchrone d'un pair
+  vivant, câble coupé ⇒ 3 timeouts ⇒ SAs purgées, écho de séquence.
+- Suites IPSec complètes (112 tests) vertes ; baseline `tsc` inchangée.

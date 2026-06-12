@@ -104,9 +104,7 @@ export abstract class Equipment {
    */
   getCompletions(partial: string): string[] { return []; }
 
-  // Host-specific capabilities (users, passwords, cwd, editable files)
-  // intentionally do NOT live here — see HostCapabilities.ts. A router
-  // must not inherit `canSudo()` or `readFileForEditor()` stubs.
+  // Host capabilities (users, cwd, editable files) live in HostCapabilities.ts.
 
   /** Execute a command on this device. Override in concrete device classes. */
   executeCommand(_command: string): Promise<string> { return Promise.resolve(''); }

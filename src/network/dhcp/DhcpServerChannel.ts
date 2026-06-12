@@ -1,23 +1,12 @@
 /**
- * DhcpServerChannel — the client's conversation surface with a DHCP server.
+ * DhcpServerChannel — the client's conversation surface with a DHCP server,
+ * shaped after the RFC 2131 exchanges (DISCOVER→OFFER, REQUEST→ACK/NAK,
+ * DECLINE, RELEASE).
  *
- * Two implementations exist:
- *
- *  - {@link WireDhcpChannel}: builds real {@link DHCPPacket}s and sends
- *    them as UDP 68→67 broadcast frames out of the device's port. The
- *    server's reply (OFFER/ACK/NAK) travels back through the cable plant
- *    and is delivered into the channel's inbox by the host's UDP/68
- *    listener. Cable delivery being synchronous, the reply is available
- *    when `send` returns — which lets the DHCPClient state machine stay
- *    synchronous while the exchange genuinely crosses the physical plant
- *    (a missing cable or a powered-off router really means no lease).
- *
- *  - `DirectServerChannel` (in DHCPClient.ts): wraps a DHCPServer object
- *    reference. Legacy path kept for unit tests that exercise the
- *    client/server state machines without a cabled topology.
- *
- * The interface mirrors RFC 2131 message exchanges, not server internals:
- * DISCOVER→OFFER, REQUEST→ACK/NAK, DECLINE, RELEASE.
+ * WireDhcpChannel sends real DHCPPackets as UDP 68→67 frames; cable
+ * delivery being synchronous, the server's reply is in the inbox when
+ * `send` returns. DirectServerChannel (DHCPClient.ts) wraps an object
+ * reference for uncabled unit tests.
  */
 
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
@@ -33,11 +22,7 @@ import type {
 } from './types';
 
 export interface DhcpServerChannel {
-  /**
-   * Identity of the server this channel talks to. `null` for a wire
-   * channel that has not yet received an OFFER/ACK (the broadcast
-   * domain is the "server" until one answers).
-   */
+  /** `null` for a wire channel that has not yet received an OFFER/ACK. */
   readonly serverIP: string | null;
   processDiscover(params: DHCPDiscoverParams): DHCPOfferResult | null;
   processRequestWithNak(params: DHCPRequestParams): DHCPRequestWithNakResult | null;
@@ -46,7 +31,6 @@ export interface DhcpServerChannel {
   processRelease(params: DHCPReleaseParams): void;
 }
 
-/** Function the host provides to put a DHCP message on the wire. */
 export type DhcpFrameSender = (iface: string, pkt: DHCPPacket) => void;
 
 const str = (v: unknown): string | null => (v === undefined || v === null ? null : String(v));
@@ -58,7 +42,6 @@ const strArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(String) : v !== undefined && v !== null ? [String(v)] : [];
 
 export class WireDhcpChannel implements DhcpServerChannel {
-  /** Replies captured by the host's UDP/68 listener during a send. */
   private inbox: DHCPPacket[] = [];
   private lastServerIp: string | null = null;
 
@@ -74,7 +57,6 @@ export class WireDhcpChannel implements DhcpServerChannel {
     this.inbox.push(pkt);
   }
 
-  /** Send `pkt` and return the first matching synchronous reply, if any. */
   private exchange(
     pkt: DHCPPacket,
     expect: ReadonlyArray<string>,
@@ -101,9 +83,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     this.lastServerIp = serverIdentifier;
     const renewalTime = num(offer.getOption(DHCP_OPTION.RENEWAL_TIME));
     const rebindingTime = num(offer.getOption(DHCP_OPTION.REBINDING_TIME));
-    // Synthesise the pool view from the OFFER options — the wire client
-    // only knows what the server told it (unlike the direct path, which
-    // peeks at the server's pool object).
+    // The wire client only knows what the OFFER's options carry.
     const pool: DHCPPoolConfig = {
       name: 'wire',
       network: null,
@@ -129,8 +109,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
   processRequestWithNak(params: DHCPRequestParams): DHCPRequestWithNakResult | null {
     const request = DHCPPacket.createRequest(
       params.clientMAC, params.xid, params.requestedIP, params.serverIdentifier ?? '');
-    // INIT-REBOOT / RENEWING / REBINDING REQUESTs carry no Server
-    // Identifier (RFC 2131 §4.3.2) — strip the empty option.
+    // RENEWING/REBINDING/INIT-REBOOT REQUESTs carry no server id (RFC 2131 §4.3.2).
     if (!params.serverIdentifier) request.removeOption(DHCP_OPTION.SERVER_IDENTIFIER);
 
     const reply = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC);

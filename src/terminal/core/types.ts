@@ -245,12 +245,7 @@ export interface FlowContext {
   /** Collected user inputs, keyed by InteractiveStep.storeAs */
   values: Map<string, string>;
 
-  /**
-   * The device being operated on. Host capabilities (passwords, sudo,
-   * editable files) are optional — flows must handle their absence
-   * (`ctx.device.checkPassword?.(…) ?? false`) since CLI flows also run
-   * on routers/switches that have none of them.
-   */
+  /** The device being operated on — host capabilities are optional. */
   device: HostCapableDevice;
 
   /** Current user at flow start */

@@ -173,8 +173,19 @@ export interface IKE_SA {
   lastDPDActivity?: number;
   /** Number of consecutive DPD timeouts */
   dpdTimeouts?: number;
+  /** Monotonic R-U-THERE sequence number (RFC 3706 §5.4) */
+  dpdSeq?: number;
+  /** True between sending R-U-THERE and receiving the matching ACK */
+  dpdAwaitingAck?: boolean;
   /** IKE exchange mode: main (default) or aggressive */
   exchangeMode?: 'main' | 'aggressive';
+}
+
+/** DPD notify carried over UDP 500 — the ACK must echo the probe's seq (RFC 3706). */
+export interface IsakmpDpdMessage {
+  type: 'isakmp-dpd';
+  notify: 'R-U-THERE' | 'R-U-THERE-ACK';
+  seq: number;
 }
 
 export interface IKEv2_SA {

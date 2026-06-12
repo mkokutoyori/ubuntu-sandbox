@@ -1,41 +1,23 @@
 /**
- * HostCapabilities — segregated capability interfaces for host-like devices.
- *
- * These methods used to live as stub implementations on the Equipment base
- * class, which violated the Interface Segregation Principle: a CiscoRouter
- * inherited `canSudo()` (returning a lying `true`), `readFileForEditor()`
- * (returning `null`), `getCurrentUid()` (returning 0 — i.e. "root") and so
- * on, none of which mean anything on a router.
- *
- * Devices that genuinely implement a capability declare it with
- * `implements` (LinuxMachine, WindowsPC, Router for credential checks).
- * Consumers either:
- *   - work against {@link HostCapableDevice} and use optional calls
- *     (`device.canSudo?.() ?? false`) so capability absence is explicit
- *     at the call site, or
- *   - narrow with the exported type guards when a whole capability
- *     surface is needed.
+ * Segregated host capability interfaces (formerly lying stubs on Equipment).
+ * Hosts declare what they implement; consumers use optional calls
+ * (`device.canSudo?.() ?? false`) or the type guards below.
  */
 
 import type { Equipment } from './Equipment';
 
-/**
- * Validates <user, password> against the device's local credential store.
- * Single entry point used by SSH/console login regardless of vendor:
- * Linux hosts check /etc/shadow-style state, Windows hosts their SAM,
- * routers their local-user AAA database.
- */
+/** Validates <user, password> against the device's local credential store. */
 export interface CredentialAuthenticator {
   checkPassword(username: string, password: string): boolean;
 }
 
-/** Full local user-account management (Linux / Windows hosts). */
+/** Local user-account management (Linux / Windows hosts). */
 export interface UserAccountHost extends CredentialAuthenticator {
   setUserPassword(username: string, password: string): void;
   userExists(username: string): boolean;
 }
 
-/** Per-terminal shell identity and su/sudo session semantics (POSIX-like hosts). */
+/** Shell identity and su/sudo session semantics (POSIX-like hosts). */
 export interface ShellIdentityHost {
   getCurrentUser(): string;
   getCurrentUid(): number;
@@ -43,7 +25,7 @@ export interface ShellIdentityHost {
   handleExit(): { output: string; inSu: boolean };
 }
 
-/** Editable filesystem surface consumed by terminal editors and the Oracle FS sync. */
+/** Editable filesystem surface for terminal editors and the Oracle FS sync. */
 export interface FileEditorHost {
   getCwd(): string;
   resolveAbsolutePath(path: string): string;
@@ -51,12 +33,7 @@ export interface FileEditorHost {
   writeFileFromEditor(path: string, content: string): boolean;
 }
 
-/**
- * An Equipment that MAY expose host capabilities. The terminal layer types
- * its device references with this so that capability absence shows up at
- * the call site (`device.getCwd?.() ?? fallback`) instead of being masked
- * by base-class stubs that silently return fake values.
- */
+/** An Equipment that MAY expose host capabilities. */
 export type HostCapableDevice = Equipment &
   Partial<UserAccountHost & ShellIdentityHost & FileEditorHost>;
 

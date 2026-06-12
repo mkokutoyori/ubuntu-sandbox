@@ -446,13 +446,7 @@ export interface OSPFPacketHeader extends NetworkPdu {
   areaId: string;
   /** Authentication type (v2 only — 0 null, 1 simple password, 2 cryptographic) */
   authType?: number;
-  /**
-   * Authentication data (v2 only). For AuType 1 this models the 64-bit
-   * clear password field; for AuType 2 it stands in for the MD5 digest
-   * (the simulator compares configured keys instead of computing MD5).
-   * Stamped by the engine egress, validated at ingress (RFC 2328 §8.2
-   * / Appendix D).
-   */
+  /** Auth data — stamped at egress, validated at ingress (RFC 2328 §8.2). */
   authKey?: string;
 }
 

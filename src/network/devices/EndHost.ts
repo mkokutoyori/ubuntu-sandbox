@@ -536,13 +536,9 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
-    // Wire transport: the client's DORA exchanges travel as real UDP
-    // 68→67 broadcast frames through the cable plant (backlog #17 —
-    // no more direct server-object calls when a topology is cabled).
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
   }
 
-  /** Per-interface wire channels for the DHCP client (lazy). */
   private dhcpWireChannels = new Map<string, WireDhcpChannel>();
 
   private getDhcpWireChannel(iface: string): WireDhcpChannel | null {
@@ -557,11 +553,7 @@ export abstract class EndHost extends Equipment {
     return channel;
   }
 
-  /**
-   * Single UDP/68 listener feeding BOTH consumers of server replies:
-   * the legacy requestLeaseOnWire sessions and the DHCPClient's wire
-   * channels. Registered lazily by whichever path runs first.
-   */
+  /** Single UDP/68 listener feeding both wire sessions and client channels. */
   private ensureDhcpUdp68Listener(): void {
     if (this.udpListeners.has(68)) return;
     this.udpListeners.set(68, (dgram) => {

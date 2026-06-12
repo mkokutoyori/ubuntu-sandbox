@@ -1,11 +1,4 @@
-/**
- * Regression tests for journal entrée 13 (backlog #13): RFC 2328 §8.2 —
- * authentication must be validated at packet INGRESS, before any FSM
- * processing. Historically the out-of-band convergence orchestrator
- * pre-checked auth compatibility, masking the fact that the engine
- * accepted any packet; now that OSPF packets really travel the cable
- * plant, the engine itself is the gatekeeper.
- */
+// RFC 2328 §8.2 — OSPF auth validated at ingress, stamped at egress (entrée 13).
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { OSPFEngine } from '@/network/ospf/OSPFEngine';

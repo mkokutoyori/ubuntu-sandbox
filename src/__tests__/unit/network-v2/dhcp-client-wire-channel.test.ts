@@ -1,16 +1,4 @@
-/**
- * Regression tests for journal entrée 15 (backlog #17): the main
- * DHCPClient state machine (the one behind `dhclient` / `ipconfig
- * /renew`) must converse with servers through REAL UDP 68→67 frames on
- * the cable plant — not through direct DHCPServer object references.
- *
- * The discriminating scenarios:
- *   - a cabled host gets its lease without any registered server ref
- *     (pure wire DORA);
- *   - cutting the cable really cuts the protocol: same call, no lease
- *     from the pool (APIPA fallback);
- *   - DHCPRELEASE travels the wire and frees the binding server-side.
- */
+// DHCPClient must converse through real UDP 68->67 frames (journal entrée 15).
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';

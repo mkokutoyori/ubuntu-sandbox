@@ -41,14 +41,7 @@ import {
 import { DHCPClientSignalRefreshActor } from './actors';
 import type { DhcpServerChannel } from './DhcpServerChannel';
 
-/**
- * Direct (in-memory) channel to a DHCPServer object.
- *
- * Legacy path kept for unit tests that exercise the client/server state
- * machines without a cabled topology. Real devices talk through
- * {@link WireDhcpChannel} (frames on the cable plant), which the host
- * injects via {@link DHCPClient.setWireChannelFactory}.
- */
+/** In-memory channel to a DHCPServer object — fallback for uncabled topologies. */
 class DirectServerChannel implements DhcpServerChannel {
   constructor(
     readonly server: DHCPServer,
@@ -92,19 +85,13 @@ export class DHCPClient implements IProtocolEngine {
   /** Directly registered DHCP servers (legacy/unit-test path) */
   private connectedServers: DirectServerChannel[] = [];
 
-  /**
-   * Factory for the per-interface wire channel (real frames through the
-   * cable plant). Injected by the host (EndHost). When present, the wire
-   * is ALWAYS tried first — the direct refs only serve as fallback for
-   * uncabled test topologies.
-   */
+  /** Injected by the host; when present the wire is always tried first. */
   private wireChannelFactory: ((iface: string) => DhcpServerChannel | null) | null = null;
 
   setWireChannelFactory(factory: (iface: string) => DhcpServerChannel | null): void {
     this.wireChannelFactory = factory;
   }
 
-  /** Channels to converse with, wire first (RFC-faithful), then direct refs. */
   private channelsFor(iface: string): DhcpServerChannel[] {
     const wire = this.wireChannelFactory?.(iface) ?? null;
     return wire ? [wire, ...this.connectedServers] : [...this.connectedServers];
@@ -391,10 +378,7 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     if (!offer) {
-      // Nothing answered on the wire and no direct server produced an
-      // offer. Preserve the historical convenience: a host with no
-      // registered servers, non-verbose, no explicit timeout, falls back
-      // to APIPA (RFC 3927) like a real OS would after DISCOVER timeouts.
+      // APIPA fallback (RFC 3927) when nothing answered anywhere.
       if (this.connectedServers.length === 0 && !verbose && options.timeout === undefined) {
         return this.autoAssignLease(iface, state);
       }
@@ -710,10 +694,7 @@ export class DHCPClient implements IProtocolEngine {
     const clientIdentifier = this.buildClientIdentifier(mac);
     const lease = state.lease;
 
-    // Notify server with RFC-compliant RELEASE (MAC + IP + Server Identifier).
-    // A wire channel (serverIP null until it has conversed, or matching
-    // the grantor) carries the RELEASE to whoever serves the segment;
-    // direct refs only fire for the exact grantor.
+    // RFC-compliant RELEASE to the grantor (RFC 2131 §3.4).
     for (const channel of this.channelsFor(iface)) {
       if (channel.serverIP === null || channel.serverIP === lease.serverIdentifier) {
         channel.processRelease({

@@ -191,10 +191,6 @@ export abstract class TerminalSession {
    * Active device. Mutable so an SSH session can temporarily swap the
    * remote machine in (`LinuxTerminalSession.pushRemoteDevice`) and pop
    * back to the local one when the session ends.
-   *
-   * Typed as HostCapableDevice: host capabilities (cwd, users, editable
-   * files) are optional, so call sites must spell out their fallback
-   * (`device.getCwd?.() ?? '/'`) instead of relying on lying base stubs.
    */
   device: HostCapableDevice;
 
