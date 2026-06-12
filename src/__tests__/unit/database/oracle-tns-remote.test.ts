@@ -156,3 +156,65 @@ describe('in-session CONNECT and tnsping follow the same client', () => {
     expect(tnsping(client, 'ORCL')).toMatch(/OK \(\d+ msec\)/);
   });
 });
+
+describe('queries cross database links (SELECT … FROM t@link)', () => {
+  function localSysdba(client: import('@/network/devices/LinuxServer').LinuxServer) {
+    return SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
+  }
+
+  it('a link with EZConnect USING reaches the remote rows', () => {
+    const { client } = lan();
+    const sh = localSysdba(client);
+    sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
+    const rows = sh.processLine('SELECT city FROM remote_marker@farlink;');
+    expect(rows.output.join('\n')).toContain('YAOUNDE');
+    // The local database genuinely has no such table.
+    expect(sh.processLine('SELECT city FROM remote_marker;').output.join('\n')).toMatch(/ORA-00942/);
+    sh.dispose();
+  });
+
+  it('a link whose USING is a tnsnames alias resolves through the file', () => {
+    const { client } = lan();
+    const sh = localSysdba(client);
+    const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/tnsnames.ora';
+    const existing = client.readFileForEditor(path) ?? '';
+    client.writeFileFromEditor(path, existing + `
+FARDB =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 10.0.0.2)(PORT = 1521))
+    (CONNECT_DATA = (SERVICE_NAME = ORCL))
+  )
+`);
+    sh.processLine("CREATE DATABASE LINK aliaslink CONNECT TO system IDENTIFIED BY oracle USING 'FARDB';");
+    const rows = sh.processLine('SELECT city FROM remote_marker@aliaslink;');
+    expect(rows.output.join('\n')).toContain('YAOUNDE');
+    sh.dispose();
+  });
+
+  it('an undefined link raises ORA-02019', () => {
+    const { client } = lan();
+    const sh = localSysdba(client);
+    expect(sh.processLine('SELECT * FROM remote_marker@ghostlink;').output.join('\n'))
+      .toMatch(/ORA-02019/);
+    sh.dispose();
+  });
+
+  it('bad link credentials surface the remote ORA-01017', () => {
+    const { client } = lan();
+    const sh = localSysdba(client);
+    sh.processLine("CREATE DATABASE LINK badlink CONNECT TO system IDENTIFIED BY wrong USING '//10.0.0.2/ORCL';");
+    expect(sh.processLine('SELECT * FROM remote_marker@badlink;').output.join('\n'))
+      .toMatch(/ORA-01017/);
+    sh.dispose();
+  });
+
+  it('remote listener down → the link query fails with ORA-12541', () => {
+    const { client, dbhost } = lan();
+    const sh = localSysdba(client);
+    sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
+    handleLsnrctl(dbhost, ['stop'], () => {});
+    expect(sh.processLine('SELECT * FROM remote_marker@farlink;').output.join('\n'))
+      .toMatch(/ORA-12541/);
+    sh.dispose();
+  });
+});

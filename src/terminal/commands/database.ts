@@ -62,6 +62,18 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       return read.call(dev, path) !== null;
     });
 
+    // Database links resolve their USING clause through the same Oracle
+    // Net client as sqlplus@/tnsping — alias in this device's
+    // tnsnames.ora or EZConnect, possibly to a remote topology host.
+    db.setDbLinkResolver((connectString) => {
+      const local = EquipmentRegistry.getInstance().getById(deviceId);
+      if (!local) {
+        return { ok: false, error: 'ORA-12154: TNS:could not resolve the connect identifier specified' };
+      }
+      return resolveOracleConnectTarget(
+        local as import('@/network').HostCapableDevice, connectString, getOracleDatabase);
+    });
+
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
       resolveDatabase: (id) => oracleInstances.get(id) ?? null,

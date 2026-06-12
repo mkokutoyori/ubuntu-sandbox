@@ -1073,6 +1073,7 @@ export interface CreateDbLinkStatement extends ASTNode {
   isPublic: boolean;
   name: string;
   connectUser?: string;
+  connectPassword?: string;
   usingAlias?: string;
 }
 
