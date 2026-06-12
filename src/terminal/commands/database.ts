@@ -7,6 +7,7 @@
 
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
@@ -74,10 +75,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
  */
 export function createSQLPlusSession(
   deviceId: string,
-  args: string[]
+  args: string[],
+  osCtx?: OsSecurityContext
 ): { session: SQLPlusSession; banner: string[]; loginOutput: string[] } {
   const db = getOracleDatabase(deviceId);
   const session = new SQLPlusSession(db);
+  // Bind the launching shell's OS identity so bequeath connections
+  // (`/ as sysdba`) are gated by real dba-group membership and the audit
+  // trail records the real OSUSER/MACHINE instead of a hardcoded default.
+  if (osCtx) session.setOsContext(osCtx);
 
   const banner = session.getBanner();
   let loginOutput: string[] = [];
@@ -448,9 +454,37 @@ Completed: ALTER DATABASE OPEN
     else device.writeFileFromEditor?.(path, content);
   }
 
+  provisionOracleOsIdentity(device);
+
   // Register Oracle background processes so they appear in `ps aux`
   if (oracleInstances.has(deviceId)) {
     syncOracleProcessesToDevice(device, oracleInstances.get(deviceId)!);
+  }
+}
+
+/**
+ * Provision the OS identity a real Oracle installation requires
+ * (oracle-database-preinstall): the oinstall/dba groups and the oracle
+ * software owner. Runs through the device's own shell surface so
+ * /etc/passwd, /etc/group and IAM events stay coherent.
+ *
+ * The pre-seeded operator cast (root, alice, bob, carl, dave) is added to
+ * the dba group — this lab server is provisioned as if its admins were
+ * DBA staff, so existing topologies keep working. Any *new* account is
+ * outside dba and gets the real ORA-01031 on `sqlplus / as sysdba`.
+ */
+function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice): void {
+  const run = (device as unknown as {
+    executeShellCommandSync?(command: string): string;
+  }).executeShellCommandSync?.bind(device);
+  if (!run) return;
+
+  // Idempotent: groupadd/useradd answer "already exists" on re-init.
+  run('groupadd -g 54321 oinstall');
+  run('groupadd -g 54322 dba');
+  run('useradd -u 54321 -g oinstall -G dba -m -d /home/oracle -s /bin/bash oracle');
+  for (const u of ['root', 'alice', 'bob', 'carl', 'dave']) {
+    run(`usermod -aG dba ${u}`);
   }
 }
 

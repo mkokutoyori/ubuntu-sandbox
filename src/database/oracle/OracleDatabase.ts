@@ -390,12 +390,33 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   /**
+   * Reject a bequeath `AS SYSDBA`/`AS SYSOPER` attempt from an OS user
+   * outside the dba group. Real Oracle leaves a trace of every refused
+   * privileged logon (OS audit file + audit trail, SESSIONID 0) before
+   * returning ORA-01031 — failures must be as observable as successes.
+   */
+  private rejectOsAuthentication(role: 'SYSDBA' | 'SYSOPER', osCtx: OsSecurityContext): never {
+    this.catalog.recordAudit({
+      sessionId: 0, username: 'SYS', actionName: 'LOGON', returncode: 1031,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: role, statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(
+      `Failed ${role} logon: os_user=${osCtx.osUser} not in dba group (ORA-01031)`);
+    this.publishConnectionTrace({
+      username: 'SYS', sessionId: 0, serial: 0, osCtx,
+      authMethod: role, role, outcome: 'FAILURE', returncode: 1031,
+    });
+    throw new Error('ORA-01031: insufficient privileges');
+  }
+
+  /**
    * Connect as SYSDBA (no password check, sets user to SYS).
    */
   connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     // OS-group enforcement: SYSDBA requires the OS user to be in the dba group.
     if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      throw new Error('ORA-01031: insufficient privileges');
+      this.rejectOsAuthentication('SYSDBA', osCtx);
     }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
@@ -451,7 +472,7 @@ export class OracleDatabase implements SqlCommandHost {
    */
   connectAsSysoper(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      throw new Error('ORA-01031: insufficient privileges');
+      this.rejectOsAuthentication('SYSOPER', osCtx);
     }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;

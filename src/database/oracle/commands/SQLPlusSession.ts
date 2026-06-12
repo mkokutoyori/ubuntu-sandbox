@@ -18,6 +18,7 @@
 
 import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
+import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from '../security/types';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../OracleConfig';
 import { ParserError } from '../../engine/parser/ParserError';
@@ -107,6 +108,13 @@ export class SQLPlusSession {
   private columnFormats: Map<string, ColumnFormat> = new Map();
   /** Optional host-shell executor for HOST / `!` commands. */
   private hostRunner: HostCommandRunner | null = null;
+  /**
+   * OS identity of the process that launched sqlplus. Drives bequeath
+   * (`/ AS SYSDBA`) group checks and the OSUSER/MACHINE audit columns.
+   * Defaults to the engine's privileged context for engine-level tests;
+   * the terminal sub-shell injects the real shell user via setOsContext.
+   */
+  private osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT;
 
   private readonly commands: SqlPlusCommand[];
 
@@ -155,6 +163,15 @@ export class SQLPlusSession {
   }
 
   /**
+   * Bind the launching shell's OS identity. Every subsequent login —
+   * including in-session CONNECT — authenticates with this context,
+   * exactly like a real sqlplus process inherits its uid/groups.
+   */
+  setOsContext(ctx: OsSecurityContext): void {
+    this.osCtx = ctx;
+  }
+
+  /**
    * Get the banner displayed when SQL*Plus starts.
    */
   getBanner(): string[] {
@@ -182,10 +199,10 @@ export class SQLPlusSession {
     try {
       let result;
       if (asSysdba) {
-        result = this.db.connectAsSysdba();
+        result = this.db.connectAsSysdba(this.osCtx);
         this.asSysdba = true;
       } else {
-        result = this.db.connect(username, password);
+        result = this.db.connect(username, password, this.osCtx);
         this.asSysdba = false;
       }
       this.executor = result.executor;

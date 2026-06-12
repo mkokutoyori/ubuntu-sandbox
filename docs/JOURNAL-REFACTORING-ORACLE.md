@@ -663,6 +663,48 @@ export→drop→import avec comptes de lignes, SKIP/APPEND/TRUNCATE, REMAP vers
 user existant/absent, dump étranger rejeté, adrci marqueur + -TAIL) : 66/66 ;
 suites adjacentes (filesystem, ssh-lan) : 77/77 ; `npx tsc --noEmit` propre.
 
+### 2026-06-12 — Authentification OS réelle pour `/ AS SYSDBA` (bequeath)
+**Défaillance :** incohérence majeure entre la couche Oracle et la couche
+identité/accès du Linux simulé. Le moteur possédait déjà le garde-fou
+(`connectAsSysdba(osCtx)` → ORA-01031 si `!osCtx.isDbaGroup`), mais la couche
+terminal ne lui transmettait **jamais** la réalité : `SQLPlusSession.login`
+appelait `connectAsSysdba()` sans argument, donc tout `sqlplus / as sysdba`
+réussissait quel que soit l'utilisateur shell — `su eve` puis
+`sqlplus / as sysdba` donnait les pleins pouvoirs SYS, là où le vrai Oracle
+vérifie l'appartenance au groupe OS `dba` (authentification bequeath).
+S'ajoutaient trois écarts secondaires : (1) aucun utilisateur `oracle` ni
+groupe `dba`/`oinstall` n'existait sur l'hôte (l'audit trail affichait un
+OSUSER `oracle` fantôme) ; (2) V$SESSION.OSUSER et DBA_AUDIT_TRAIL.OS_USERNAME
+montraient le contexte par défaut codé en dur au lieu du vrai utilisateur ;
+(3) un refus SYSDBA ne laissait aucune trace (le vrai Oracle journalise tout
+logon privilégié refusé : audit OS + alert log).
+**Correction :**
+- `SqlPlusSubShell.captureOsContext` — au lancement, snapshot de l'identité
+  réelle du shell via la surface existante (`getCurrentUser()` de
+  `ShellIdentityHost`, `id -Gn`, `hostname`) — comme un vrai process sqlplus
+  hérite de l'uid/groupes du shell qui l'exec.
+- `SQLPlusSession.setOsContext` — le contexte est porté par la session et
+  utilisé par **tous** les chemins de login (lancement + `CONNECT` en cours
+  de session) ; les tests moteur sans device gardent le contexte par défaut.
+- `initOracleFilesystem` provisionne l'identité OS qu'une vraie installation
+  crée (`oracle-database-preinstall`) : groupes `oinstall` (54321) /
+  `dba` (54322), utilisateur `oracle` (54321, home, bash) — via les
+  commandes shell du device (groupadd/useradd/usermod), donc /etc/passwd,
+  /etc/group et les événements IAM restent cohérents. Choix de lab assumé et
+  documenté : le cast opérateur pré-seedé (root, alice, bob, carl, dave) est
+  enrôlé dans `dba` pour que les topologies existantes continuent de
+  fonctionner ; tout **nouveau** compte est hors dba → ORA-01031 réel.
+- `OracleDatabase.rejectOsAuthentication` — un refus SYSDBA/SYSOPER laisse
+  désormais une trace fidèle : entrée d'audit LOGON returncode 1031 avec
+  SESSIONID 0 (marqueur Oracle « aucune session ouverte »), alert log, et
+  événement `oracle.connection.traced` outcome FAILURE.
+**Validation :** nouvelle suite `oracle-os-authentication.test.ts` (8 tests :
+refus moteur SYSDBA/SYSOPER, audit du refus, provisioning `id oracle`,
+root connecté, cycle `su eve` → ORA-01031 → `usermod -aG dba eve` → Connected
+avec V$SESSION.OSUSER=eve, OS_USERNAME réel dans DBA_AUDIT_TRAIL) ;
+non-régression `unit/database/` + `unit/shell/` + `unit/terminal/` ;
+`npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
