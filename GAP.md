@@ -1139,7 +1139,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 
 - **Correction appliquée (2026-06-12)** : vues matérialisées réelles (conteneur CTAS interrogeable, DBA_MVIEWS vivante, staleness sur DML, DBMS_MVIEW.REFRESH, ORA-00955/12003) et DB links persistés au catalogue (DBA_DB_LINKS vivante, ORA-02011/02024). Limites restantes documentées dans docs/JOURNAL-REFACTORING-ORACLE.md : pas de fast refresh / query rewrite, pas de requêtes cross-link (`SELECT … FROM t@link`).
 
-### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive
+### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive — ✅ CORRIGÉ (2026-06-12 : AS OF SCN/TIMESTAMP + FLASHBACK TABLE TO SCN/TIMESTAMP sur historique de pré-images)
 - **Constat** : `FlashbackArchiveManager` gère un état réel (archives, rétention, tables activées), mais les requêtes `SELECT … AS OF TIMESTAMP` et `FLASHBACK TABLE … TO TIMESTAMP/SCN` sont des no-op loggés dans l'alert log ; seul `FLASHBACK TABLE … TO BEFORE DROP` (recyclebin) fonctionne réellement.
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:525-549` (commentaire explicite : `// DATABASE / TO TIMESTAMP / SCN are accepted but logical no-ops — the simulator has no undo/redo time machine.`) ; `BRD-Oracle-DBMS.md:1364-1369` confirme le statut ❌.
 - **Sévérité** : Mineure (déviation documentée et assumée)

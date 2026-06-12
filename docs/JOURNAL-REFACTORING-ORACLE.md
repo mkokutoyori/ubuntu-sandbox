@@ -1011,6 +1011,33 @@ COMMIT/ROLLBACK au distant puis ferme les sessions.
 commité visible côté serveur distant, UPDATE/DELETE avec WHERE, ROLLBACK
 local annule le distant, ORA-02019 sur lien inconnu).
 
+### 2026-06-12 — Flashback temporel réel (clôt GAP §10.8)
+**Défaillance :** `SELECT … AS OF TIMESTAMP/SCN` n'était pas parsé du tout
+et `FLASHBACK TABLE … TO TIMESTAMP/SCN` était un no-op loggé : « Flashback
+complete. » sans aucun voyage dans le temps — la clause TO était stockée
+en texte brut jamais interprété.
+**Correction :** machine à remonter le temps par pré-images :
+- `flashback/TableHistory` — pré-image par table capturée au premier DML
+  de chaque transaction (dédup par txn via un Set vidé au commit/rollback,
+  64 générations max par table), indexée par SCN réel de l'instance et
+  horodatage ; sémantique de lecture : première entrée `scn >= q` (SCN
+  discret, bump par commit) / `timeMs > q` (temps continu), sinon état
+  courant ;
+- parser : `AS OF SCN|TIMESTAMP expr` sur les références de tables
+  (lookahead AS+OF pour ne pas avaler les alias) ; `FLASHBACK … TO`
+  structuré (`toKind`/`toExpr`) en conservant le texte brut pour l'alert
+  log ;
+- exécuteur : lecture AS OF dans `loadTable` (ORA-08181 SCN invalide,
+  ORA-08186 timestamp invalide), `FLASHBACK TABLE TO SCN/TIMESTAMP`
+  remplace le contenu par l'image passée — en capturant d'abord la
+  pré-image, donc un flashback est lui-même flashback-able ;
+  `TO BEFORE DROP` (recyclebin) inchangé.
+**Limites assumées :** pas de flashback à travers un DDL, MERGE non
+capturé, granularité temporelle = ms.
+**Validation :** nouvelle suite `oracle-flashback-temporal.test.ts` (9
+tests : AS OF SCN multi-générations, ORA-08181, flashback + re-flashback,
+BEFORE DROP préservé, AS OF TIMESTAMP futur/passé).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

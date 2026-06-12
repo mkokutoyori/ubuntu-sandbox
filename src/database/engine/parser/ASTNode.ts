@@ -185,6 +185,7 @@ export interface TableRef extends ASTNode {
   name: string;
   alias?: string;
   dbLink?: string;
+  asOf?: { kind: 'TIMESTAMP' | 'SCN'; expr: Expression };
 }
 
 export interface SubqueryTableRef extends ASTNode {
@@ -735,6 +736,8 @@ export interface FlashbackStatement extends ASTNode {
   name?: string;
   /** Raw SCN / TIMESTAMP / RESTORE POINT / BEFORE DROP clause. */
   to: string;
+  toKind?: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW';
+  toExpr?: Expression;
 }
 
 export interface PurgeStatement extends ASTNode {

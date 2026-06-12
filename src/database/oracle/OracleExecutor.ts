@@ -582,7 +582,20 @@ export class OracleExecutor extends BaseExecutor {
         // real state (the recyclebin). DATABASE / TO TIMESTAMP / SCN
         // are accepted but logical no-ops — the simulator has no
         // undo/redo time machine.
-        if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
+        if (s.target === 'TABLE' && (s.toKind === 'SCN' || s.toKind === 'TIMESTAMP') && s.toExpr) {
+          const owner = this.resolveSchema(s.schema);
+          const name = s.name!.toUpperCase();
+          this.requireTableMeta(owner, name);
+          const past = this.flashbackRowsAt(owner, name, { kind: s.toKind, expr: s.toExpr });
+          if (past) {
+            this.captureFlashbackImage(owner, name);
+            this.storage.deleteRows(owner, name, () => true);
+            for (const row of past) this.storage.insertRow(owner, name, row);
+          }
+          this.instance.logAlert(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
+          return emptyResult('Flashback complete.');
+        }
+        if (s.target === 'TABLE' && (s.toKind === 'BEFORE_DROP' || /BEFORE\s+DROP/i.test(s.to))) {
           const owner = this.resolveSchema(s.schema);
           const name = s.name!.toUpperCase();
           const catalog = this.catalog as OracleCatalog;
@@ -676,7 +689,32 @@ export class OracleExecutor extends BaseExecutor {
       this.context.currentUser, dbLink!, { ...stmt, table });
   }
 
+  private readonly flashbackCaptured = new Set<string>();
+
+  private captureFlashbackImage(schema: string, table: string): void {
+    const key = `${schema}.${table}`;
+    if (this.flashbackCaptured.has(key)) return;
+    this.flashbackCaptured.add(key);
+    (this.catalog as OracleCatalog).tableHistory.capture(
+      schema, table, this.instance.getCurrentScn(), this.storage.getRows(schema, table));
+  }
+
+  private flashbackRowsAt(schema: string, table: string,
+    asOf: NonNullable<import('../engine/parser/ASTNode').TableRef['asOf']>): StorageRow[] | null {
+    const value = this.evaluateExpression(asOf.expr, [], []);
+    const history = (this.catalog as OracleCatalog).tableHistory;
+    if (asOf.kind === 'SCN') {
+      const scn = Number(value);
+      if (!Number.isFinite(scn)) throw new OracleError(8181, 'specified number is not a valid system change number');
+      return history.stateAtScn(schema, table, scn);
+    }
+    const ms = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    if (!Number.isFinite(ms)) throw new OracleError(8186, 'invalid timestamp specified');
+    return history.stateAtTime(schema, table, ms);
+  }
+
   private commitActiveTransaction(): void {
+    this.flashbackCaptured.clear();
     this.commandHost?.settleDbLinkTransactions('COMMIT');
     this.txn.commit();
     for (const mv of this.catalog.getMaterializedViews()) {
@@ -691,6 +729,7 @@ export class OracleExecutor extends BaseExecutor {
       this.txn.rollbackToSavepoint(savepoint);
       return emptyResult('Rollback complete.');
     }
+    this.flashbackCaptured.clear();
     this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
@@ -1165,7 +1204,10 @@ export class OracleExecutor extends BaseExecutor {
     const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
-    const storageRows = this.storage.getRows(schema, tableName);
+    let storageRows = this.storage.getRows(schema, tableName);
+    if (ref.asOf) {
+      storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
+    }
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
@@ -2126,6 +2168,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
     let insertedCount = 0;
 
@@ -2205,6 +2248,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
 
     for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
@@ -2240,6 +2284,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
     // Validate FK constraints on rows to be deleted

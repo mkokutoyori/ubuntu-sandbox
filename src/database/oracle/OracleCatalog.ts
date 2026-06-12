@@ -5,6 +5,7 @@
  * Queries against these views return simulated metadata from the storage layer.
  */
 
+import { TableHistory } from './flashback/TableHistory';
 import { BaseCatalog, type CatalogUser, type CatalogPrivilege } from '../engine/catalog/BaseCatalog';
 import { type ResultSet, queryResult, emptyResult } from '../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/DataType';
@@ -589,6 +590,8 @@ export class OracleCatalog extends BaseCatalog {
   dropMaterializedView(owner: string, name: string): boolean {
     return this.materializedViews.delete(OracleCatalog.mvKey(owner, name));
   }
+
+  readonly tableHistory = new TableHistory();
 
   // ── Database links ────────────────────────────────────────────────
 

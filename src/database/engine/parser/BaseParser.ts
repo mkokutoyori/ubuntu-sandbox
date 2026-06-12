@@ -303,8 +303,16 @@ export abstract class BaseParser {
       dbLink = this.expectIdentifier();
     }
 
+    let asOf: import('./ASTNode').TableRef['asOf'];
+    if (this.checkKeyword('AS') && this.peekNext()?.value?.toUpperCase() === 'OF') {
+      this.advance();
+      this.advance();
+      const kind = this.matchKeyword('SCN') ? 'SCN' : (this.expectKeyword('TIMESTAMP'), 'TIMESTAMP');
+      asOf = { kind: kind as 'SCN' | 'TIMESTAMP', expr: this.parseExpression() };
+    }
+
     const alias = this.parseOptionalAlias();
-    return { type: 'TableRef', position: pos, schema, name, alias, dbLink };
+    return { type: 'TableRef', position: pos, schema, name, alias, dbLink, asOf };
   }
 
   protected tryParseJoin(): JoinClause | null {
@@ -1558,14 +1566,28 @@ export abstract class BaseParser {
     } else {
       this.matchKeyword('DATABASE');
     }
-    // Capture the trailing TO TIMESTAMP / TO SCN / TO BEFORE DROP / TO
-    // RESTORE POINT … clause verbatim — the simulator can't time-travel
-    // but we keep the textual record so audit dumps make sense.
+    let toKind: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW' = 'RAW';
+    let toExpr: import('./ASTNode').Expression | undefined;
+    if (this.matchKeyword('TO')) {
+      if (this.matchKeyword('BEFORE')) {
+        this.expectKeyword('DROP');
+        toKind = 'BEFORE_DROP';
+      } else if (this.matchKeyword('SCN')) {
+        toKind = 'SCN';
+        toExpr = this.parseExpression();
+      } else if (this.matchKeyword('TIMESTAMP')) {
+        toKind = 'TIMESTAMP';
+        toExpr = this.parseExpression();
+      }
+    }
     const parts: string[] = [];
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       parts.push(this.advance().value);
     }
-    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: parts.join(' ') };
+    const toText = toKind === 'RAW'
+      ? `TO ${parts.join(' ')}`.trim()
+      : `TO ${toKind.replace('_', ' ')}${toExpr ? ' …' : ''}`;
+    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: toText, toKind, toExpr };
   }
 
   protected parsePurge(): import('./ASTNode').PurgeStatement {
