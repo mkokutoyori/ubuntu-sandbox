@@ -176,7 +176,31 @@ export class OracleDatabase implements SqlCommandHost {
       statistics: this.instance.statistics,
       scheduler: this.scheduler,
       storage: this.storage,
+      materializedViews: {
+        refresh: (owner, name) => this.refreshMaterializedView(owner, name),
+      },
     };
+  }
+
+  /**
+   * Complete refresh of a materialized view, re-executing its defining
+   * query with the MV owner's name resolution (definer semantics, like
+   * the real DBMS_MVIEW.REFRESH). Throws ORA-12003 when unknown.
+   */
+  refreshMaterializedView(owner: string, name: string): void {
+    const o = owner.toUpperCase();
+    const context: ExecutionContext = {
+      currentUser: o,
+      currentSchema: o,
+      autoCommit: false,
+      serverOutput: false,
+      feedback: false,
+      timing: false,
+    };
+    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
+    executor.setDatabaseRef(this);
+    executor.refreshMaterializedView(o, name);
   }
 
   /** Close an OracleSession (called on disconnect). */
@@ -913,6 +937,7 @@ export class OracleDatabase implements SqlCommandHost {
       || upper.startsWith('DBMS_STATS.')
       || upper.startsWith('DBMS_SCHEDULER.')
       || upper.startsWith('DBMS_CRYPTO.')
+      || upper.startsWith('DBMS_MVIEW.')
     ) {
       this.invokeBuiltinPackage(executor, call, noVars, output);
       return true;

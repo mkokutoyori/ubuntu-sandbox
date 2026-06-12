@@ -231,9 +231,9 @@ describe('Database Links (stubs)', () => {
   });
 });
 
-// ── Materialized Views (stubs) ───────────────────────────────────
+// ── Materialized Views (real objects since the §10.7 fix) ────────
 
-describe('Materialized Views (stubs)', () => {
+describe('Materialized Views', () => {
 
   test('CREATE MATERIALIZED VIEW succeeds', () => {
     exec(`CREATE TABLE mv_source (id NUMBER, val NUMBER)`);
@@ -241,8 +241,15 @@ describe('Materialized Views (stubs)', () => {
     expect(result.message).toContain('Materialized view created');
   });
 
-  test('DROP MATERIALIZED VIEW succeeds', () => {
+  test('DROP MATERIALIZED VIEW drops an existing MV', () => {
+    exec(`CREATE TABLE mv_source (id NUMBER, val NUMBER)`);
+    exec(`CREATE MATERIALIZED VIEW mv_test AS SELECT id, val FROM mv_source`);
     const result = exec(`DROP MATERIALIZED VIEW mv_test`);
     expect(result.message).toContain('Materialized view dropped');
+  });
+
+  test('DROP MATERIALIZED VIEW on a missing MV raises ORA-12003', () => {
+    // Used to "succeed" silently when MVs were success-message stubs.
+    expect(() => exec(`DROP MATERIALIZED VIEW never_existed`)).toThrow(/ORA-12003/);
   });
 });

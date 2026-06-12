@@ -160,9 +160,15 @@ export class OracleExecutor extends BaseExecutor {
   private emitDml(stmt: Statement, rowsAffected: number): void {
     const kind = stmt.type;
     let table = '';
+    let tableSchema = this.context.currentSchema;
     if (kind === 'InsertStatement' || kind === 'UpdateStatement' || kind === 'DeleteStatement') {
-      const s = stmt as unknown as { table?: { name?: string }; tableName?: string };
+      const s = stmt as unknown as { table?: { name?: string; schema?: string }; tableName?: string };
       table = s.table?.name ?? s.tableName ?? '';
+      tableSchema = s.table?.schema ?? tableSchema;
+    }
+    // Materialized views reading this table are no longer fresh.
+    if (table && rowsAffected > 0) {
+      this.catalog.markMaterializedViewsStale(tableSchema, table);
     }
     this.bus.publish({
       topic: 'oracle.dml.executed',
@@ -620,8 +626,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterIndexStatement': return this.executeAlterIndex(statement);
       case 'CreateDbLinkStatement': return emptyResult('Database link created.');
       case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
-      case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');
-      case 'DropMaterializedViewStatement': return emptyResult('Materialized view dropped.');
+      case 'CreateMaterializedViewStatement': return this.executeCreateMaterializedView(statement);
+      case 'DropMaterializedViewStatement': return this.executeDropMaterializedView(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
       case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
       case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
@@ -2212,6 +2218,109 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   // ── DDL ───────────────────────────────────────────────────────────
+
+  /**
+   * CREATE MATERIALIZED VIEW — a real object, not a success-message stub:
+   * the defining query is executed (BUILD IMMEDIATE) into a genuine
+   * storage table (which is what makes SELECT work afterwards) and the
+   * dictionary side (query, refresh metadata, staleness, base tables)
+   * is registered in the catalog for DBA_MVIEWS and DBMS_MVIEW.REFRESH.
+   */
+  private executeCreateMaterializedView(
+    stmt: import('../engine/parser/ASTNode').CreateMaterializedViewStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const name = stmt.name.toUpperCase();
+
+    if (owner === this.context.currentUser) {
+      this.privileges.requireSystemPrivilege('CREATE MATERIALIZED VIEW', 'CREATE ANY MATERIALIZED VIEW');
+    } else {
+      this.privileges.requireSystemPrivilege('CREATE ANY MATERIALIZED VIEW');
+    }
+    if (this.storage.tableExists(owner, name) || this.catalog.getMaterializedView(owner, name)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+
+    const result = this.executeSelect(stmt.query);
+    const columns: StorageColMeta[] = result.columns.map((col, i) => ({
+      name: col.name, dataType: col.dataType, ordinalPosition: i,
+    }));
+    this.storage.ensureSchema(owner);
+    this.storage.createTable({
+      schema: owner, name, columns, constraints: [],
+      tablespace: 'USERS', rowCount: 0,
+    });
+    // BUILD DEFERRED creates an empty (unusable until refreshed) container.
+    const deferred = stmt.buildMode === 'DEFERRED';
+    if (!deferred) {
+      for (const row of result.rows) this.storage.insertRow(owner, name, row as StorageRow);
+    }
+    this.catalog.registerMaterializedView({
+      owner, name,
+      queryAst: stmt.query,
+      queryText: stmt.queryText ?? '',
+      buildMode: stmt.buildMode ?? 'IMMEDIATE',
+      refreshMethod: stmt.refreshMethod ?? 'FORCE',
+      refreshMode: stmt.refreshMode ?? 'DEMAND',
+      baseTables: this.collectBaseTables(stmt.query),
+      lastRefresh: deferred ? null : new Date(),
+      staleness: deferred ? 'UNUSABLE' : 'FRESH',
+    });
+    this.emitDdl('CREATE MATERIALIZED VIEW', `${owner}.${name}`);
+    return emptyResult('Materialized view created.');
+  }
+
+  private executeDropMaterializedView(
+    stmt: import('../engine/parser/ASTNode').DropMaterializedViewStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const name = stmt.name.toUpperCase();
+    const meta = this.catalog.getMaterializedView(owner, name);
+    if (!meta) {
+      throw new OracleError(12003, `materialized view "${owner}"."${name}" does not exist`);
+    }
+    this.catalog.dropMaterializedView(owner, name);
+    if (this.storage.tableExists(owner, name)) this.storage.dropTable(owner, name);
+    this.emitDdl('DROP MATERIALIZED VIEW', `${owner}.${name}`);
+    return emptyResult('Materialized view dropped.');
+  }
+
+  /**
+   * Complete refresh: re-run the defining query and replace the container
+   * rows. Exposed for DBMS_MVIEW.REFRESH. ORA-12003 when unknown.
+   */
+  refreshMaterializedView(owner: string, name: string): void {
+    const o = owner.toUpperCase(); const n = name.toUpperCase();
+    const meta = this.catalog.getMaterializedView(o, n);
+    if (!meta) {
+      throw new OracleError(12003, `materialized view "${o}"."${n}" does not exist`);
+    }
+    const result = this.executeSelect(meta.queryAst as SelectStatement);
+    this.storage.deleteRows(o, n, () => true);
+    for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
+    meta.lastRefresh = new Date();
+    meta.staleness = 'FRESH';
+  }
+
+  /** Base tables a SELECT reads — FROM list, JOINs, CTEs, FROM-subqueries. */
+  private collectBaseTables(query: SelectStatement): { schema: string; table: string }[] {
+    const out = new Map<string, { schema: string; table: string }>();
+    const visit = (q: SelectStatement): void => {
+      const refs = [...(q.from ?? []), ...(q.joins ?? []).map(j => j.table)];
+      for (const ref of refs) {
+        if (ref.type === 'TableRef') {
+          const schema = (ref.schema ?? this.context.currentSchema).toUpperCase();
+          const table = ref.name.toUpperCase();
+          out.set(`${schema}.${table}`, { schema, table });
+        } else if (ref.type === 'SubqueryTableRef') {
+          visit(ref.query);
+        }
+      }
+      for (const cte of q.withClause?.ctes ?? []) visit(cte.query);
+    };
+    visit(query);
+    return [...out.values()];
+  }
 
   private executeCreateTable(stmt: CreateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);

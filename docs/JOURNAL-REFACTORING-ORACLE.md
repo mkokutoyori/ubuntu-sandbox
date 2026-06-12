@@ -815,6 +815,44 @@ boucle DBA complète backup → rm → MOUNT → restore datafile 4 → ALTER
 DATABASE OPEN) ; non-régression `unit/database/` + `unit/terminal/` +
 `debug/rman/` + `debug/oracle/` ; `npx tsc --noEmit` propre.
 
+### 2026-06-12 — Vues matérialisées réelles (clôt GAP §10.7 côté MV)
+**Défaillance :** `CREATE MATERIALIZED VIEW` était un stub menteur :
+« Materialized view created. » sans créer le moindre objet — `SELECT` sur la
+MV échouait en ORA-00942, `DBA_MVIEWS` restait éternellement vide, `DROP
+MATERIALIZED VIEW` « réussissait » sur du vide, et les clauses
+BUILD/REFRESH étaient jetées par le parseur.
+**Correction :**
+- Parseur : capture de `BUILD IMMEDIATE|DEFERRED`, `REFRESH COMPLETE|FORCE
+  [ON DEMAND|COMMIT]` et du texte de la requête (les clauses de stockage
+  inconnues restent tolérées, compatibilité scripts).
+- Exécuteur : `CREATE MATERIALIZED VIEW` exécute la requête définissante
+  dans une **vraie table conteneur** (réutilisation du chemin CTAS existant
+  — c'est ce qui rend `SELECT` fonctionnel ensuite), privilèges `CREATE
+  [ANY] MATERIALIZED VIEW` exigés, `ORA-00955` sur doublon ; `BUILD
+  DEFERRED` → conteneur vide, STALENESS=UNUSABLE ; `DROP` supprime conteneur
+  + dictionnaire, `ORA-12003` si absent.
+- Catalogue : registre `MaterializedViewMeta` (requête AST + texte, modes,
+  tables de base extraites de l'AST — FROM/JOIN/CTE/sous-requêtes FROM,
+  lastRefresh, staleness). Au choke point DML existant (`emitDml`), tout
+  DML sur une table de base bascule les MV dépendantes à **STALE** — la MV
+  reste un snapshot (sémantique Oracle), le dictionnaire dit la vérité.
+- `DBMS_MVIEW.REFRESH` : nouveau package builtin (pattern
+  `PackageRegistry` établi), service `materializedViews` injecté par
+  `OracleDatabase` — refresh complet ré-exécutant la requête avec la
+  résolution de noms du **propriétaire** (sémantique definer du vrai
+  package), retour à FRESH, `ORA-12003` sur MV inconnue. Routé pour `EXEC`
+  et pour les blocs `BEGIN…END` (même routeur).
+- `DBA_MVIEWS` branchée sur le registre vivant (+ colonnes QUERY,
+  LAST_REFRESH_DATE).
+**Limites assumées :** refresh toujours COMPLETE (pas de log MV/fast
+refresh), `ON COMMIT` accepté mais non déclencheur (pas de hook commit par
+session sur les tables de base), pas de query rewrite.
+**Validation :** nouvelle suite `oracle-materialized-views.test.ts`
+(9 tests : conteneur interrogeable, DBA_MVIEWS, ORA-00955, BUILD DEFERRED
+vide+UNUSABLE, snapshot + bascule STALE sur DML, REFRESH→FRESH avec
+nouvelles données, ORA-12003 ×2, DROP complet) ; non-régression
+`unit/database/` complète ; `npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

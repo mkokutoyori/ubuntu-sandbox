@@ -1288,18 +1288,44 @@ export class OracleParser extends BaseParser {
     return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, usingAlias };
   }
 
-  // ── CREATE MATERIALIZED VIEW (stub) ────────────────────────────────
+  // ── CREATE MATERIALIZED VIEW ───────────────────────────────────────
 
   private parseCreateMaterializedView(pos: SourcePosition, _orReplace: boolean): import('../engine/parser/ASTNode').CreateMaterializedViewStatement {
     const schema = this.parseSchemaPrefix();
     const name = this.expectIdentifier();
-    // Skip optional BUILD, REFRESH clauses
+    // BUILD IMMEDIATE|DEFERRED and REFRESH COMPLETE|FORCE [ON DEMAND|COMMIT]
+    // are recorded for the dictionary; unrecognised storage clauses are
+    // still tolerated (script compatibility) and skipped.
+    let buildMode: 'IMMEDIATE' | 'DEFERRED' | undefined;
+    let refreshMethod: 'COMPLETE' | 'FORCE' | undefined;
+    let refreshMode: 'DEMAND' | 'COMMIT' | undefined;
     while (!this.check(TokenType.EOF) && !this.checkKeyword('AS')) {
+      if (this.matchKeyword('BUILD')) {
+        if (this.matchKeyword('IMMEDIATE')) buildMode = 'IMMEDIATE';
+        else if (this.matchKeyword('DEFERRED')) buildMode = 'DEFERRED';
+        continue;
+      }
+      if (this.matchKeyword('REFRESH')) {
+        if (this.matchKeyword('COMPLETE')) refreshMethod = 'COMPLETE';
+        else if (this.matchKeyword('FORCE')) refreshMethod = 'FORCE';
+        if (this.matchKeyword('ON')) {
+          if (this.matchKeyword('DEMAND')) refreshMode = 'DEMAND';
+          else if (this.matchKeyword('COMMIT')) refreshMode = 'COMMIT';
+        }
+        continue;
+      }
       this.advance();
     }
     this.expectKeyword('AS');
+    const queryStart = this.pos;
     const query = this.parseSelect();
-    return { type: 'CreateMaterializedViewStatement', position: pos, schema, name, query };
+    const queryText = this.tokens.slice(queryStart, this.pos)
+      .map(t => t.type === TokenType.STRING_LITERAL ? `'${t.value}'` : t.value)
+      .join(' ');
+    return {
+      type: 'CreateMaterializedViewStatement', position: pos, schema, name,
+      query, queryText, buildMode, refreshMethod, refreshMode,
+    };
   }
 
   // ── Unified audit policies ─────────────────────────────────────

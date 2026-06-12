@@ -57,6 +57,26 @@ export interface EnumeratedObject {
 }
 
 /** Audit trail entry shape */
+/**
+ * One materialized view. The container table (rows) lives in storage
+ * under the same owner/name; this is the dictionary side of the object.
+ */
+export interface MaterializedViewMeta {
+  owner: string;
+  name: string;
+  /** Defining query, kept as AST so REFRESH can re-execute it. */
+  queryAst: unknown;
+  /** Original SQL text, surfaced by DBA_MVIEWS.QUERY. */
+  queryText: string;
+  buildMode: 'IMMEDIATE' | 'DEFERRED';
+  refreshMethod: 'COMPLETE' | 'FORCE';
+  refreshMode: 'DEMAND' | 'COMMIT';
+  /** Base tables the query reads — drives staleness on DML. */
+  baseTables: { schema: string; table: string }[];
+  lastRefresh: Date | null;
+  staleness: 'FRESH' | 'STALE' | 'UNUSABLE';
+}
+
 export interface AuditEntry {
   sessionId: number;
   osUsername: string;
@@ -527,6 +547,44 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Read-only snapshot of the audit trail (most recent last). */
   getAuditTrail(): readonly AuditEntry[] { return this.auditTrail; }
+
+  // ── Materialized views ────────────────────────────────────────────
+  //
+  // The MV container rows live in storage as a real table (that is what
+  // makes SELECT work); this registry holds what makes it a materialized
+  // view: the defining query, refresh metadata, and staleness. DML on a
+  // base table flips dependent MVs to STALE (executor choke point).
+
+  private materializedViews: Map<string, MaterializedViewMeta> = new Map();
+  private static mvKey(owner: string, name: string): string {
+    return `${owner.toUpperCase()}.${name.toUpperCase()}`;
+  }
+
+  registerMaterializedView(meta: MaterializedViewMeta): void {
+    this.materializedViews.set(OracleCatalog.mvKey(meta.owner, meta.name), meta);
+  }
+
+  getMaterializedView(owner: string, name: string): MaterializedViewMeta | undefined {
+    return this.materializedViews.get(OracleCatalog.mvKey(owner, name));
+  }
+
+  getMaterializedViews(): readonly MaterializedViewMeta[] {
+    return [...this.materializedViews.values()];
+  }
+
+  dropMaterializedView(owner: string, name: string): boolean {
+    return this.materializedViews.delete(OracleCatalog.mvKey(owner, name));
+  }
+
+  /** DML touched schema.table — every MV reading it is no longer fresh. */
+  markMaterializedViewsStale(schema: string, table: string): void {
+    const s = schema.toUpperCase(); const t = table.toUpperCase();
+    for (const mv of this.materializedViews.values()) {
+      if (mv.baseTables.some(b => b.schema === s && b.table === t)) {
+        mv.staleness = 'STALE';
+      }
+    }
+  }
 
   /** Read-only snapshot of statement audit options. */
   getStmtAuditOpts(): readonly StmtAuditOption[] { return this.stmtAuditOpts; }

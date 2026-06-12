@@ -1087,6 +1087,11 @@ export interface CreateMaterializedViewStatement extends ASTNode {
   schema?: string;
   name: string;
   query: SelectStatement;
+  /** Approximate source text of the defining query (DBA_MVIEWS.QUERY). */
+  queryText?: string;
+  buildMode?: 'IMMEDIATE' | 'DEFERRED';
+  refreshMethod?: 'COMPLETE' | 'FORCE';
+  refreshMode?: 'DEMAND' | 'COMMIT';
 }
 
 export interface DropMaterializedViewStatement extends ASTNode {

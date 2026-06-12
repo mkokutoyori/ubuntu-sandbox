@@ -12,6 +12,7 @@ import { DbmsResourceManager } from './DbmsResourceManager';
 import { DbmsStats } from './DbmsStats';
 import { DbmsScheduler } from './DbmsScheduler';
 import { DbmsCrypto } from './DbmsCrypto';
+import { DbmsMview } from './DbmsMview';
 
 DbmsApplicationInfo.register();
 DbmsSession.register();
@@ -20,7 +21,8 @@ DbmsResourceManager.register();
 DbmsStats.register();
 DbmsScheduler.register();
 DbmsCrypto.register();
+DbmsMview.register();
 
 export { builtinPackageRegistry, PackageRegistry } from './PackageRegistry';
 export type { IPackageRoutine, PackageCallContext } from './PackageRegistry';
-export { DbmsApplicationInfo, DbmsSession, DbmsWorkloadRepository, DbmsResourceManager, DbmsStats, DbmsScheduler, DbmsCrypto };
+export { DbmsApplicationInfo, DbmsSession, DbmsWorkloadRepository, DbmsResourceManager, DbmsStats, DbmsScheduler, DbmsCrypto, DbmsMview };
