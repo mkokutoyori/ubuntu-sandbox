@@ -705,6 +705,41 @@ avec V$SESSION.OSUSER=eve, OS_USERNAME réel dans DBA_AUDIT_TRAIL) ;
 non-régression `unit/database/` + `unit/shell/` + `unit/terminal/` ;
 `npx tsc --noEmit` propre.
 
+### 2026-06-12 — Listener TNS : socket 1521 et processus tnslsnr pilotés par l'état réel
+**Défaillance :** le listener était un simple booléen en mémoire, incohérent
+avec les trois tables OS que tout DBA inspecte :
+1. TCP 1521 était pré-lié au boot (`initDefaultSockets`, pid figé 2001) et
+   **survivait à `lsnrctl stop`** — `netstat`/`ss` montraient un port à
+   l'écoute alors que `tnsping` répondait ORA-12541 ;
+2. aucun processus `tnslsnr` n'existait jamais dans `ps`, alors que les
+   processus background de l'instance (pmon, smon…) y figurent ;
+3. `oracle-listener-<SID>.service` (installé par OracleSystemdSync) ouvrait
+   un wrapper shell sans lien avec le port — la `ServicePortProjection`
+   existante (qui fait exactement ce travail pour ssh/nginx/mysql…) ne
+   connaissait pas les unités au nom dynamique.
+**Correction :** réutilisation du mécanisme existant plutôt qu'un canal ad hoc
+(consigne « pas de duplication, enrichir l'existant ») :
+- `LinuxServiceManager.registerServiceListener(name, spec)` — registre
+  dynamique consulté en priorité sur la table statique `SERVICE_LISTENERS`
+  (daemon-reload stampe les sockets, `getPortBinding` les sert à la
+  projection) ; `ServiceListenerSpec.daemonCommand` optionnel : le process
+  laissé en vie par l'unité quand il diffère d'ExecStart (`lsnrctl start`
+  n'est qu'un lanceur, le daemon est `tnslsnr LISTENER -inherit` — c'est
+  lui que `ps` doit montrer).
+- `LinuxMachine.installSystemdUnit` accepte la déclaration listener et
+  l'enregistre avant le daemon-reload.
+- `OracleSystemdSync.listenerUnit()` déclare `tnslsnr` + TCP 1521. La chaîne
+  devient : `lsnrctl stop` → événement bus oracle.listener.event →
+  service inactive → `linux.service.stopped` → projection libère 1521 et
+  SIGTERM le tnslsnr ; `lsnrctl start` → l'inverse, avec le vrai mainPid
+  dans netstat/ss (plus jamais le pid placebo 2001 après un cycle).
+**Validation :** nouvelle suite `oracle-listener-network-coherence.test.ts`
+(4 tests : état initial cohérent, stop → port libéré + tnslsnr tué +
+unité inactive + TNS-12541, start → re-bind avec pid vivant, accord ss ↔
+netstat) ; non-régression `unit/database/` + suites services/ports
+network-v2 ; `npx tsc --noEmit` et ESLint propres (au passage : purge des
+4 échappements `\$` inutiles préexistants dans database.ts).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -39,6 +39,16 @@ export interface SystemdUnitSpec {
   user?: string;
   /** Ordering hint — comma-separated dependency unit names (no .service). */
   after?: string[];
+  /**
+   * Listener identity: the sockets the unit opens while active and the
+   * daemon process it leaves behind. The host's port projection uses it
+   * to keep netstat/ss/ps coherent with the service state.
+   */
+  listener?: {
+    processName: string;
+    daemonCommand?: string;
+    sockets: { port: number; protocol: 'tcp' | 'udp'; address?: string }[];
+  };
 }
 
 export interface OracleSystemdSyncCtx {
@@ -101,5 +111,12 @@ function listenerUnit(sid: string): SystemdUnitSpec {
     execStart: '/u01/app/oracle/product/19c/dbhome_1/bin/lsnrctl start',
     execStop:  '/u01/app/oracle/product/19c/dbhome_1/bin/lsnrctl stop',
     user: 'oracle',
+    // lsnrctl is only the launcher; the daemon that stays behind and
+    // owns TCP 1521 is tnslsnr — that's what ps and netstat -p show.
+    listener: {
+      processName: 'tnslsnr',
+      daemonCommand: '/u01/app/oracle/product/19c/dbhome_1/bin/tnslsnr LISTENER -inherit',
+      sockets: [{ port: 1521, protocol: 'tcp' }],
+    },
   };
 }

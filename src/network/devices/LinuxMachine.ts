@@ -1449,6 +1449,11 @@ export abstract class LinuxMachine extends EndHost
       execStop?: string;
       user?: string;
       after?: string[];
+      listener?: {
+        processName: string;
+        daemonCommand?: string;
+        sockets: { port: number; protocol: 'tcp' | 'udp'; address?: string }[];
+      };
     },
     desired: 'active' | 'inactive',
   ): void {
@@ -1477,6 +1482,10 @@ export abstract class LinuxMachine extends EndHost
     );
     this.executor.vfs.writeFile(path, lines.join('\n'), 0, 0, 0o022);
     const mgr = this.executor.serviceMgr;
+    // Declare the unit's sockets/daemon BEFORE the reload so the scan
+    // stamps them and the port projection binds/unbinds them on
+    // start/stop — netstat/ss/ps stay coherent with the service state.
+    if (spec.listener) mgr.registerServiceListener(spec.name, spec.listener);
     mgr.daemonReload();
     if (desired === 'active') {
       mgr.enable(spec.name);

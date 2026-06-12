@@ -273,6 +273,13 @@ const SERVER_UNITS: DefaultUnit[] = [
 export interface ServiceListenerSpec {
   processName: string;
   sockets: PortSpec[];
+  /**
+   * Long-running process the unit leaves behind, when it differs from
+   * ExecStart — e.g. `lsnrctl start` is a launcher that exits while the
+   * daemon it forks is `tnslsnr LISTENER -inherit`. `ps` shows the
+   * daemon, not the launcher.
+   */
+  daemonCommand?: string;
 }
 
 /**
@@ -327,6 +334,13 @@ export class LinuxServiceManager {
    * A failing check aborts the reload and surfaces the error to the caller.
    */
   private configChecks = new Map<string, () => OperationResult>();
+  /**
+   * Listener specs registered at runtime for units that are not part of
+   * the static {@link SERVICE_LISTENERS} table — units with dynamic
+   * names, e.g. `oracle-listener-<SID>` installed by OracleSystemdSync.
+   * Consulted with priority over the static table.
+   */
+  private dynamicListeners = new Map<string, ServiceListenerSpec>();
   /** Reactive sink — null until a device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
@@ -618,7 +632,7 @@ export class LinuxServiceManager {
       });
       // Stamp the daemon's well-known listening sockets onto the unit so the
       // model carries them and the port projection can keep them coherent.
-      unit.listenSockets = (SERVICE_LISTENERS[name]?.sockets ?? []).map((s) => ({ ...s }));
+      unit.listenSockets = (this.listenerSpecFor(name)?.sockets ?? []).map((s) => ({ ...s }));
       this.units.set(name, unit);
     }
 
@@ -639,9 +653,27 @@ export class LinuxServiceManager {
    * `netstat`-visible process name, and the sockets it opens. Returns
    * `undefined` when the unit is unknown or opens no ports.
    */
+  /**
+   * Declare the listener identity of a dynamically-named unit (which
+   * sockets it opens and which daemon process it leaves behind). Must be
+   * called before the unit is installed/started so daemon-reload stamps
+   * the sockets and the port projection can bind/unbind them.
+   */
+  registerServiceListener(name: string, spec: ServiceListenerSpec): void {
+    this.dynamicListeners.set(name.replace(/\.service$/, ''), {
+      ...spec,
+      sockets: spec.sockets.map((s) => ({ ...s })),
+    });
+  }
+
+  /** Listener spec for a unit — runtime registrations win over the static table. */
+  private listenerSpecFor(name: string): ServiceListenerSpec | undefined {
+    return this.dynamicListeners.get(name) ?? SERVICE_LISTENERS[name];
+  }
+
   getPortBinding(name: string): ServicePortBinding | undefined {
     const unit = this.units.get(name);
-    const listener = SERVICE_LISTENERS[name];
+    const listener = this.listenerSpecFor(name);
     if (!unit || !listener || listener.sockets.length === 0) return undefined;
     return {
       name,
@@ -681,7 +713,10 @@ export class LinuxServiceManager {
     const userEntry = u.user || 'root';
     const uid = userEntry === 'root' ? 0 : 1;
     const gid = userEntry === 'root' ? 0 : 1;
-    const expanded = u.execStart.replace(/\$MAINPID/g, '');
+    // The process the unit leaves behind: the daemon it forks when the
+    // listener spec declares one (lsnrctl start → tnslsnr), else ExecStart.
+    const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
+    const expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
     const profile = serviceMemoryProfile(u.name);
     const proc = this.processMgr.spawn({
       command: expanded,

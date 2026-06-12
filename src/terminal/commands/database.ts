@@ -314,9 +314,9 @@ remote_login_passwordfile = EXCLUSIVE
 `export ORACLE_HOME=${oracleHome}
 export ORACLE_SID=${sid}
 export ORACLE_BASE=${oracleBase}
-export PATH=\$ORACLE_HOME/bin:\$PATH
-export LD_LIBRARY_PATH=\$ORACLE_HOME/lib
-export TNS_ADMIN=\$ORACLE_HOME/network/admin
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib
+export TNS_ADMIN=$ORACLE_HOME/network/admin
 `,
 
     // ── Stub binaries ($ORACLE_HOME/bin/) ─────────────────────
