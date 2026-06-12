@@ -1770,3 +1770,44 @@ et la zone du serveur DNS n'avait aucune autorité.
   fil, **NXDOMAIN autoritaire malgré un équipement homonyme dans le
   registre**, câble coupé ⇒ échec, PTR, repli sans nameserver.
 - Suites dns/hosts/nslookup/resolv-conf + getent/nss : 153 vertes.
+
+---
+
+## Entrée 24 — UI : fin du re-render storm du canvas (GAP §11.2)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. `getDevices()` reconstruisait un tableau complet de `NetworkDeviceUI`
+   (relecture de tous les ports/IP/MAC de **chaque** appareil) à chaque
+   rendu de `NetworkCanvas`/`NetworkDesigner`/`PropertiesPanel`, avec des
+   identités d'objets neuves à chaque fois — aucun bail-out React possible.
+2. `moveDevice` recréait la `Map` complète des instances **à chaque pixel**
+   de drag (O(n) par mousemove), et tous les composants consommaient le
+   store sans sélecteur : déplacer un nœud re-rendait tous les nœuds,
+   toutes les connexions et tous les panneaux.
+
+### Correction
+
+- **Stabilisation référentielle, pas cache aveugle** (`networkStore.ts`) :
+  chaque appel dérive toujours un snapshot frais depuis l'`Equipment`
+  vivant, mais retourne l'objet PRÉCÉDENT si rien de visible n'a changé
+  (comparaison structurelle, interfaces comprises). Une IP configurée au
+  terminal (mutation hors store) surface donc toujours au rendu suivant —
+  c'est testé. Idem pour le tableau (`getDevices()` rend la même référence
+  tant que membres et snapshots sont identiques).
+- `moveDevice` ne copie plus la Map : signal par compteur `revision`
+  (la position vit sur l'instance).
+- `NetworkDevice` : consommation du store par **sélecteurs** zustand
+  (bail-out automatique quand la tranche sélectionnée n'a pas changé) et
+  export enveloppé de `React.memo` — pendant un drag, seul le nœud
+  déplacé se re-rend.
+
+### Validation
+
+Nouvelle suite `devices-snapshot-stability.test.ts` (6 tests : identité
+stable sans changement, drag = renouvellement du seul nœud déplacé, pas de
+copie de Map + tick de révision, non-staleness sur mutation hors store,
+rename, membership). Suites `unit/gui/` + `unit/react/` : 105/105 ;
+`npx tsc --noEmit` et ESLint propres.

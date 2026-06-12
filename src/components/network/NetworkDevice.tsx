@@ -7,7 +7,7 @@
  * appears for the target interface selection.
  */
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { memo, useRef, useState, useCallback, useEffect } from 'react';
 import { Power, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
 import { InterfaceSelectorPopover } from './InterfaceSelectorPopover';
@@ -23,20 +23,21 @@ interface NetworkDeviceProps {
   onOpenTerminal?: (device: BaseDevice) => void;
 }
 
-export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDeviceProps) {
-  const {
-    selectedDeviceId,
-    selectDevice,
-    moveDevice,
-    removeDevice,
-    updateDevice,
-    isConnecting,
-    startConnecting,
-    finishConnecting,
-    cancelConnecting,
-    connectionSource,
-    connections
-  } = useNetworkStore();
+function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps) {
+  // Per-field selectors: zustand bails out when the selected slice is
+  // unchanged, so dragging ANOTHER node (a store revision tick) no
+  // longer re-renders this one. Actions are stable references.
+  const selectDevice = useNetworkStore(s => s.selectDevice);
+  const moveDevice = useNetworkStore(s => s.moveDevice);
+  const removeDevice = useNetworkStore(s => s.removeDevice);
+  const updateDevice = useNetworkStore(s => s.updateDevice);
+  const startConnecting = useNetworkStore(s => s.startConnecting);
+  const finishConnecting = useNetworkStore(s => s.finishConnecting);
+  const cancelConnecting = useNetworkStore(s => s.cancelConnecting);
+  const selectedDeviceId = useNetworkStore(s => s.selectedDeviceId);
+  const isConnecting = useNetworkStore(s => s.isConnecting);
+  const connectionSource = useNetworkStore(s => s.connectionSource);
+  const connections = useNetworkStore(s => s.connections);
 
   const [isDragging, setIsDragging] = useState(false);
   const [showSourceSelector, setShowSourceSelector] = useState(false);
@@ -267,3 +268,10 @@ export function NetworkDevice({ device, zoom, onOpenTerminal }: NetworkDevicePro
     </>
   );
 }
+
+/**
+ * Memoised: the canvas re-renders on every drag tick, but a node only
+ * re-renders when ITS snapshot (referentially stabilised by the store),
+ * the zoom, or the terminal callback actually changed.
+ */
+export const NetworkDevice = memo(NetworkDeviceImpl);
