@@ -494,8 +494,8 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 |---|-------|-----------|----------|--------|
 | P1 | EndHost : signaux NDP/routes/stats morts (self-casts `ndpCache` inexistant, schéma routes divergent) + `arp.opcode` inexistant | Typage / observabilité | Haute | ✅ Entrée 11 |
 | P2 | `ping6` listé mais sans handler ; moteur ICMPv6 (`executePing6Sequence`) orphelin ; NS depuis link-local uniquement ; réponse écho silencieusement abandonnée sans entrée NDP | RFC 4861 §7.2.2 | Haute | ✅ Entrée 11 |
-| P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | À faire |
-| P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | À faire |
+| P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | ✅ Entrée 12 |
+| P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | ✅ Entrée 12 |
 | P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | À faire |
 | P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | À faire |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | À faire |
@@ -566,6 +566,90 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 - `ping6-command.test.ts` (5) : ping6 on-link via vraie NDP, équivalence
   `ping -6`/littéral v6, unreachable honnête, nom insoluble, self-ping.
 - Non-régression : suite network-v2 complète + `tsc --noEmit` propre.
+
+---
+
+## Entrée 12 — ifconfig honnête + IPv6 visible (P3, P4) et adaptateur ip unifié
+
+**Date** : 2026-06-12
+
+### Préambule — consolidation des branches (consigne de session)
+
+Avant cette entrée, fusion de **toutes** les branches distantes dans
+`mandeng` (désormais la base de travail) :
+
+- `origin/main` (merges PR #308/#309) — trivial.
+- `claude/friendly-babbage-plxyqc` (entrée 11, backlog P1-P12) — conflit
+  BGPEngine résolu en faveur de la variante `mandeng` (§5.1.5 : les
+  attributs LOCAL_PREF/origin/MED voyagent dans `BgpAdvertisedRoute`
+  au lieu d'être recodés en dur à la réception). 26 tests verts.
+- `claude/keen-babbage-krj5ab` (série Oracle O1-O8) — même résolution
+  BGP ; 2698 tests database verts.
+- `claude/keen-babbage-yzw42r` (série Oracle 3 : démantèlement de la god
+  class `OracleExecutor`, DBID/SCN réels, SPOOL/@scripts, SGA dynamique ;
+  contient aussi le merge conservateur des deux branches de mai sans
+  ancêtre commun) — conflit d'import résolu (`OracleConfig` déplacé dans
+  la couche database + import DataPumpEngine conservé). 2715 tests verts.
+
+Après fusion : `git rev-list --count mandeng..<branche>` = 0 pour les
+19 branches distantes — plus aucun travail orphelin.
+
+### Défaillances corrigées (P3 + P4)
+
+1. **`LinuxCommandExecutor` → `cmdIfconfig` fabriquait sa sortie** :
+   compteurs RX/TX tirés à `Math.random()` à chaque invocation (deux
+   `ifconfig` consécutifs montraient un trafic différent sans qu'aucune
+   trame ne circule), adresse IPv6 inventée `fe80::N` (N = index du port),
+   broadcast calculé par regex `\.\d+$` → `.255` (faux pour tout préfixe
+   hors /24), `flags=4163<UP,...>` même interface DOWN. Le comble : le
+   `netstat -i` du même fichier lisait déjà les **vrais compteurs**
+   (`info.counters`, incrémentés par les trames qui traversent réellement
+   les `Cable`/`Port`).
+2. **Deux rendus ifconfig divergents** : `LinuxFormatHelpers.formatInterface`
+   (chemin registre, LinuxPC/LinuxServer) affichait un format tronqué
+   (pas de broadcast, pas d'inet6, pas de lignes erreurs, `flags=4099`
+   codé en dur pour DOWN au lieu de 4098, `inet (not configured)` qui
+   n'existe pas dans net-tools).
+3. **IPv6 réel invisible (P4)** : la pile NDP/RFC 4861 d'`EndHost` est
+   réelle (cache de voisinage, table de routage v6, EUI-64) mais ni
+   `ip addr`, ni `ip -6 route`, ni `ifconfig` ne la montraient.
+4. **Adaptateur Port→contexte dupliqué** : `LinuxMachine.buildIpNetworkContext`
+   (170 lignes) ≡ `buildIpCtx` de `commands/net/Ip.ts` — deux copies du
+   même mapping, dérive garantie.
+
+### Corrections
+
+- `core/ip.ts` : `broadcastAddress(ip, prefixLength)` canonique (null
+  pour /31-/32, conforme RFC 3021) ; remplace la regex et le calcul local
+  de `LinuxIpCommand.computeBroadcast`.
+- `IpInterfaceInfo.ipv6` + `IpNetworkContext.getIPv6RoutingTable()` :
+  le contrat expose les adresses v6 réelles des ports
+  (`port.getIPv6Addresses()`) et la vraie table v6 (`HostIPv6RouteEntry`).
+- `formatIfconfigInterface()` : rendu net-tools unique calculé depuis les
+  bits réels net/if.h (IFF_UP/BROADCAST/LOOPBACK/RUNNING/MULTICAST) —
+  UP sans porteuse = 4099 sans RUNNING, admin-down = 4098 sans UP, lo =
+  73<UP,LOOPBACK,RUNNING>. Compteurs = `port.getCounters()` (trafic réel
+  uniquement). inet6 seulement si une adresse existe. Les deux chemins
+  (registre via `LinuxFormatHelpers`, executor via `cmdIfconfig`)
+  délèguent au même renderer : octets identiques partout.
+- `ifconfig` sans argument liste les interfaces admin-UP, `-a` inclut
+  les down (comportement net-tools).
+- `ip` : options de famille `-4`/`-6`/`-f inet|inet6` parsées ;
+  `ip addr` affiche les lignes `inet6 .../64 scope link` réelles ;
+  `ip -6 route` rend la table v6 réelle au format iproute2
+  (`proto kernel|ra|static`, `pref medium`).
+- `LinuxNetKernel.getIPv6RoutingTable()` ajouté au contrat ; suppression
+  des 170 lignes dupliquées de `LinuxMachine.buildIpNetworkContext` au
+  profit de l'unique `buildIpCtx(net, xfrm)` exporté.
+
+### Tests
+
+- `linux-lan-ssh-suite` : l'assertion `flags=4099` pour une interface
+  admin-down corrigée en `flags=4098` (la valeur réelle de net-tools ;
+  l'ancienne valeur correspondait à UP|BROADCAST|MULTICAST, incohérente
+  avec un down).
+- Non-régression : linux-ip-command (76), linux-lan-ssh-suite (216),
+  arp-command + ping6 (72), network-v2 complète, `tsc --noEmit` propre.
 
 ---
 

@@ -18,7 +18,7 @@
 
 import type { Port } from '../../hardware/Port';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, PingResult } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsWireResponse } from '../../dns/DnsWire';
 
@@ -66,6 +66,7 @@ export interface LinuxNetKernel {
 
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
+  getIPv6RoutingTable(): HostIPv6RouteEntry[];
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
   removeRoute(network: IPAddress, mask: SubnetMask): boolean;
   setDefaultGateway(gw: IPAddress): void;

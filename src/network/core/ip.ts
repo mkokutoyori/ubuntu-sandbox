@@ -70,3 +70,11 @@ export function wildcardMatches(ip: string, network: string, wildcard: string): 
   const care = (~ipToUint32(wildcard)) >>> 0;
   return (ipToUint32(ip) & care) === (ipToUint32(network) & care);
 }
+
+export function broadcastAddress(ip: string, prefixLength: number): string | null {
+  if (prefixLength >= 31) return null;
+  const value = tryIpToUint32(ip);
+  if (value === null) return null;
+  const hostMask = (~prefixLengthToMaskUint32(prefixLength)) >>> 0;
+  return uint32ToIp((value | hostMask) >>> 0);
+}

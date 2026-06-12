@@ -44,36 +44,37 @@ export const ifconfigCommand: LinuxCommand = {
 
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();
+    const showAll = args.includes('-a');
+    const positional = args.filter(a => !a.startsWith('-'));
 
-    // ── No argument: show every interface ─────────────────────
-    if (args.length === 0) {
-      const lines: string[] = [];
+    // ── No interface argument: list interfaces ─────────────────
+    if (positional.length === 0) {
+      const blocks: string[] = [];
       for (const [, port] of ports) {
-        lines.push(ctx.fmt.formatInterface(port));
-        lines.push('');
+        if (showAll || port.getIsUp()) blocks.push(ctx.fmt.formatInterface(port));
       }
-      return lines.join('\n');
+      return blocks.join('\n\n');
     }
 
-    const ifName = args[0];
+    const ifName = positional[0];
     const port = ports.get(ifName);
     if (!port) return `ifconfig: interface ${ifName} not found`;
 
     // ── Single-interface show ─────────────────────────────────
-    if (args.length === 1) return ctx.fmt.formatInterface(port);
+    if (positional.length === 1) return ctx.fmt.formatInterface(port);
 
     // ── ifconfig <if> up|down ─────────────────────────────────
-    const verb = args[1].toLowerCase();
+    const verb = positional[1].toLowerCase();
     if (verb === 'up' || verb === 'down') {
       ctx.net.setInterfaceAdmin(ifName, verb === 'up');
       return '';
     }
 
     // ── ifconfig <if> <ip> [netmask M] ────────────────────────
-    const ipStr = args[1];
+    const ipStr = positional[1];
     let maskStr = '255.255.255.0';
-    const nmIdx = args.indexOf('netmask');
-    if (nmIdx !== -1 && args[nmIdx + 1]) maskStr = args[nmIdx + 1];
+    const nmIdx = positional.indexOf('netmask');
+    if (nmIdx !== -1 && positional[nmIdx + 1]) maskStr = positional[nmIdx + 1];
 
     try {
       ctx.net.configureInterface(ifName, new IPAddress(ipStr), new SubnetMask(maskStr));

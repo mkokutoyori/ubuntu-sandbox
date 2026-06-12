@@ -1275,7 +1275,7 @@ describe('§19 — interface down / network unreachable', () => {
       setup: (l) => { void l.pc1.executeCommand('ifconfig eth0 down'); },
       on: l => l.pc1,
       cmd: 'ifconfig eth0',
-      contains: [/DOWN|state DOWN|flags=4099/],
+      contains: [/DOWN|state DOWN|flags=4098/],
       excludes: [/UP\b.*RUNNING/],
     },
   ];

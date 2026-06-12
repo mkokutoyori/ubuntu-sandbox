@@ -16,6 +16,7 @@ import type { IPAddress, IPv6Address } from '../../core/types';
 import type { PingResult } from '../EndHost';
 import type { Port } from '../../hardware/Port';
 import type { TracerouteHop } from './LinuxNetKernel';
+import { formatIfconfigInterface } from './LinuxNetCommands';
 
 export interface LinuxFormatHelpers {
   /**
@@ -57,25 +58,23 @@ function formatBytes(bytes: number): string {
 function formatInterface(port: Port): string {
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const mac = port.getMAC();
-  const isUp = port.getIsUp();
-  const isConnected = port.isConnected();
-  const hasCarrier = isUp && isConnected;
-  const flags: string[] = [];
-  if (isUp) flags.push('UP');
-  flags.push('BROADCAST');
-  if (hasCarrier) flags.push('RUNNING');
-  flags.push('MULTICAST');
-  const flagsStr = flags.join(',');
-  const flagNum = hasCarrier ? 4163 : 4099;
-  const counters = port.getCounters();
-  return [
-    `${port.getName()}: flags=${flagNum}<${flagsStr}>  mtu ${port.getMTU()}`,
-    ip ? `        inet ${ip}  netmask ${mask || '255.255.255.0'}` : '        inet (not configured)',
-    `        ether ${mac}`,
-    `        RX packets ${counters.framesIn}  bytes ${counters.bytesIn} (${formatBytes(counters.bytesIn)})`,
-    `        TX packets ${counters.framesOut}  bytes ${counters.bytesOut} (${formatBytes(counters.bytesOut)})`,
-  ].join('\n');
+  return formatIfconfigInterface({
+    name: port.getName(),
+    mac: port.getMAC().toString(),
+    ip: ip ? ip.toString() : null,
+    mask: mask ? mask.toString() : null,
+    cidr: mask ? mask.toCIDR() : null,
+    mtu: port.getMTU(),
+    isUp: port.getIsUp(),
+    isConnected: port.isConnected(),
+    isDHCP: false,
+    counters: port.getCounters(),
+    ipv6: port.getIPv6Addresses().map(entry => ({
+      address: entry.address.toString(),
+      prefixLength: entry.prefixLength,
+      scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
+    })),
+  });
 }
 
 function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
