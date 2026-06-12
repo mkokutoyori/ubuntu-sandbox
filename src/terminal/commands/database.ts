@@ -180,7 +180,7 @@ export function resetAllOracleInstances(): void {
  */
 const oracleFilesystemInitialized = new Set<string>();
 
-export function initOracleFilesystem(device: import('@/network').Equipment): void {
+export function initOracleFilesystem(device: import('@/network').HostCapableDevice): void {
   const deviceId = device.id || 'default';
   if (oracleFilesystemInitialized.has(deviceId)) return;
   oracleFilesystemInitialized.add(deviceId);
@@ -445,7 +445,7 @@ Completed: ALTER DATABASE OPEN
   }).installSystemFile?.bind(device);
   for (const [path, content] of Object.entries(files)) {
     if (install) install(path, content);
-    else device.writeFileFromEditor(path, content);
+    else device.writeFileFromEditor?.(path, content);
   }
 
   // Register Oracle background processes so they appear in `ps aux`
@@ -457,7 +457,7 @@ Completed: ALTER DATABASE OPEN
 /**
  * Write updated spfile content to the VFS after ALTER SYSTEM SET ... SCOPE=SPFILE|BOTH.
  */
-export function updateSpfileOnDevice(device: import('@/network').Equipment, parameters: Map<string, string>): void {
+export function updateSpfileOnDevice(device: import('@/network').HostCapableDevice, parameters: Map<string, string>): void {
   const oracleHome = ORACLE_CONFIG.HOME;
   const sid = ORACLE_CONFIG.SID;
   const lines: string[] = [];
@@ -465,23 +465,23 @@ export function updateSpfileOnDevice(device: import('@/network').Equipment, para
     const needsQuote = /[a-zA-Z]/.test(value) && !value.startsWith("'");
     lines.push(`*.${name}=${needsQuote ? `'${value}'` : value}`);
   }
-  device.writeFileFromEditor(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+  device.writeFileFromEditor?.(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
 }
 
 /**
  * Write updated alert log to the VFS.
  */
-export function syncAlertLogToDevice(device: import('@/network').Equipment, alertLogEntries: string[]): void {
+export function syncAlertLogToDevice(device: import('@/network').HostCapableDevice, alertLogEntries: string[]): void {
   const sid = ORACLE_CONFIG.SID;
   const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
-  device.writeFileFromEditor(path, alertLogEntries.join('\n') + '\n');
+  device.writeFileFromEditor?.(path, alertLogEntries.join('\n') + '\n');
 }
 
 /**
  * Sync tablespace datafiles from the Oracle storage layer to the VFS.
  * Creates stub files for new datafiles, removes files for dropped tablespaces.
  */
-export function syncDatafilesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncDatafilesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
   const tablespaces = storage.getAllTablespaces();
 
@@ -490,7 +490,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
     for (const df of ts.datafiles) {
       const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
       const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-      device.writeFileFromEditor(df.path, content);
+      device.writeFileFromEditor?.(df.path, content);
     }
   }
 
@@ -499,14 +499,14 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
   for (const group of redoGroups) {
     for (const member of group.members) {
       const sizeMB = Math.round(group.sizeBytes / 1048576);
-      device.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+      device.writeFileFromEditor?.(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
     }
   }
 
   // Sync control files from instance parameters
   const ctlFiles = (db.instance.getParameter('control_files') ?? '').split(',').map(f => f.trim()).filter(f => f);
   ctlFiles.forEach((f, i) => {
-    device.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+    device.writeFileFromEditor?.(f, `[ORACLE CONTROL FILE ${i + 1}]`);
   });
 }
 
@@ -514,7 +514,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
  * Register Oracle background processes (PMON, SMON, etc.) in the device's process table
  * so they appear in `ps aux` output, like on a real Oracle server.
  */
-export function syncOracleProcessesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncOracleProcessesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   // Only register if the device supports it (LinuxServer)
   const dev = device as { registerProcess?: (pid: number, user: string, cmd: string) => void; clearSystemProcesses?: () => void };
   if (typeof dev.registerProcess !== 'function') return;

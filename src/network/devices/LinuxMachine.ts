@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
+import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -93,7 +94,8 @@ function globMatch(pattern: string, candidate: string): boolean {
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
-export abstract class LinuxMachine extends EndHost {
+export abstract class LinuxMachine extends EndHost
+  implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   protected readonly defaultTTL = 64;
 
   /** Active profile — describes the "flavor" of this Linux machine. */

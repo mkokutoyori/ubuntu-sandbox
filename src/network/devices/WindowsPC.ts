@@ -15,6 +15,7 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
@@ -112,7 +113,7 @@ function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: b
   return { patterns: positional, ignoreCase, invert, count };
 }
 
-export class WindowsPC extends EndHost {
+export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
   private dhcpEventLog: string[] = [];
@@ -379,7 +380,7 @@ export class WindowsPC extends EndHost {
    * the {@link Equipment} stub so SSH (and any future caller) can authenticate
    * a Windows account without reaching into the private user manager.
    */
-  override checkPassword(username: string, password: string): boolean {
+  checkPassword(username: string, password: string): boolean {
     return this.userMgr.checkPassword(username, password);
   }
 
@@ -388,7 +389,7 @@ export class WindowsPC extends EndHost {
    * LinuxMachine.setUserPassword so the two platforms expose a parallel
    * surface to callers that don't care which OS they're talking to.
    */
-  override setUserPassword(username: string, password: string): void {
+  setUserPassword(username: string, password: string): void {
     this.userMgr.setUserProperty(username, 'password', password);
   }
 
@@ -1474,7 +1475,7 @@ export class WindowsPC extends EndHost {
 
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
    *  reports the real currently-logged-in account on this Windows host. */
-  override getCurrentUser(): string { return this.userMgr.currentUser; }
+  getCurrentUser(): string { return this.userMgr.currentUser; }
 
   /** Get the user manager (for PowerShellExecutor and other integrations) */
   getUserManager(): WindowsUserManager { return this.userMgr; }

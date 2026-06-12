@@ -24,7 +24,7 @@
  *   └── WindowsTerminalSession   — CMD/PS dual-mode, shell nesting
  */
 
-import { Equipment } from '@/network';
+import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -191,8 +191,12 @@ export abstract class TerminalSession {
    * Active device. Mutable so an SSH session can temporarily swap the
    * remote machine in (`LinuxTerminalSession.pushRemoteDevice`) and pop
    * back to the local one when the session ends.
+   *
+   * Typed as HostCapableDevice: host capabilities (cwd, users, editable
+   * files) are optional, so call sites must spell out their fallback
+   * (`device.getCwd?.() ?? '/'`) instead of relying on lying base stubs.
    */
-  device: Equipment;
+  device: HostCapableDevice;
 
   // ── Observable state ──
   lines: OutputLine[] = [];
@@ -864,8 +868,8 @@ export abstract class TerminalSession {
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
-      currentUser: this.device.getCurrentUser(),
-      currentUid: this.device.getCurrentUid(),
+      currentUser: this.device.getCurrentUser?.() ?? 'user',
+      currentUid: this.device.getCurrentUid?.() ?? 0,
       metadata: new Map<string, unknown>([
         ['original_command', command],
         ...(extraMetadata ?? []),

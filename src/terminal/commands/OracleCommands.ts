@@ -5,7 +5,7 @@
  * so the session class doesn't need to know about Oracle internals.
  */
 
-import type { Equipment } from '@/network';
+import type { HostCapableDevice } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
 import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from '@/database/oracle/OracleConfig';
 import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
@@ -17,7 +17,7 @@ type OutputFn = (text: string, type?: string) => void;
  * Handle `lsnrctl <subcommand>` — Oracle Listener Control.
  */
 export function handleLsnrctl(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -101,7 +101,7 @@ export function handleLsnrctl(
  * Handle `dbca` — Database Configuration Assistant (simplified stub).
  */
 export function handleDbca(
-  _device: Equipment,
+  _device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -141,7 +141,7 @@ export function handleDbca(
  * Handle `orapwd` — Oracle Password File Utility (stub).
  */
 export function handleOrapwd(
-  _device: Equipment,
+  _device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -176,7 +176,7 @@ export function handleOrapwd(
  * filesystem sync materialises under the diag home).
  */
 export function handleAdrci(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -227,7 +227,7 @@ export function handleAdrci(
  * Handle `tnsping <service>` — Oracle TNS connectivity test.
  */
 export function handleTnsping(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -279,7 +279,7 @@ export function handleTnsping(
  *   expdp user/pass TABLES=HR.EMPLOYEES ...
  */
 export function handleExpdp(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -333,8 +333,8 @@ export function handleExpdp(
   // The dump file IS the transport: impdp reads it back and restores.
   const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
   const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(dumpPath, JSON.stringify(dump));
-  device.writeFileFromEditor(logPath, [
+  device.writeFileFromEditor?.(dumpPath, JSON.stringify(dump));
+  device.writeFileFromEditor?.(logPath, [
     `Export: Release ${ORACLE_CONFIG.VERSION}.0`,
     `Schemas: ${schemas.join(',')}`,
     ...report.lines,
@@ -353,7 +353,7 @@ export function handleExpdp(
  *   impdp user/pass FULL=Y ...
  */
 export function handleImpdp(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -392,7 +392,7 @@ export function handleImpdp(
 
   // Check if dump file exists on VFS
   const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
-  const fileContent = device.readFileForEditor(dumpPath);
+  const fileContent = device.readFileForEditor?.(dumpPath);
   if (!fileContent) {
     addLine(`ORA-39001: invalid argument value`);
     addLine(`ORA-39000: bad dump file specification`);
@@ -431,7 +431,7 @@ export function handleImpdp(
 
   // Write log file
   const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(logPath, [
+  device.writeFileFromEditor?.(logPath, [
     `Import: Release ${ORACLE_CONFIG.VERSION}.0`,
     ...report.lines,
     `Tables: ${report.tables}`,

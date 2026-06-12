@@ -22,7 +22,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | ✅ Corrigé |
 | 8 | Dispatch par `constructor.name` dans 5 sites shell/terminal (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | ✅ Corrigé |
 | 9 | BGP : pas de propagation transitive, pas d'AS_PATH, pas de détection de boucle, table `show ip bgp` fabriquée | RFC 4271 | Haute | ✅ Corrigé |
-| 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | À faire |
+| 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | ✅ Corrigé (Série 3, entrée 12) |
 
 ---
 
@@ -1142,7 +1142,7 @@ Database **2662 tests verts** (2658 + 4).
 
 ## Limites connues / dette restante
 
-- **Backlog #10** (ISP sur `Equipment`) : identifié, documenté, non traité.
+- **Backlog #10** (ISP sur `Equipment`) : ✅ traité en Série 3, entrée 12.
 - **BGP** : pas de route-reflectors ; FSM dérivée synchrone (pas de phases
   Connect/OpenConfirm — exigerait un moteur asynchrone à acteurs comme OSPF).
 - **STP** : RSTP (802.1w) et PVST+ ne sont pas implémentés ; le fast path
@@ -1153,3 +1153,80 @@ Database **2662 tests verts** (2658 + 4).
 - Les firewalls (`firewall-*`), `access-point` et `cloud` restent des stubs
   (`LinuxPC`/`Hub`) — hors périmètre de cette série, à traiter comme des
   fonctionnalités à part entière.
+
+---
+
+## Série 3 (2026-06-12) — Refonte structurelle : ISP & conformité couche physique
+
+### Backlog issu de l'audit du 2026-06-12
+
+Audit en deux volets : (a) violations de la règle « toute communication
+inter-équipements passe par les câbles » (Port → Cable → Port →
+`handleFrame`), (b) duplication / anti-patterns résiduels.
+
+| # | Sujet | Norme / Pattern | Sévérité | Statut |
+|---|-------|-----------------|----------|--------|
+| 12 | Equipment : 11 stubs « hôte » (passwords, cwd, éditeur) hérités par routeurs/switches (backlog #10) | ISP (SOLID) | Moyenne | ✅ Corrigé |
+| 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | À faire |
+| 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | À faire |
+| 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
+| 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
+| 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | À faire |
+| 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | À faire |
+| 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | À faire |
+
+---
+
+## Entrée 12 — Equipment : ségrégation des capacités hôte (ISP)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+`Equipment` (classe de base de TOUT équipement) portait 11 méthodes stub
+spécifiques aux hôtes : `checkPassword` (retournait `false`),
+`setUserPassword` (no-op silencieux), `userExists`, `getCurrentUser`
+(`'user'`), `getCurrentUid` (**0, c.-à-d. root !**), `canSudo`
+(**`true` !**), `handleExit`, `getCwd` (`'/'`),
+`resolveAbsolutePath`, `readFileForEditor`, `writeFileFromEditor`.
+
+Conséquences structurelles :
+- un `CiscoSwitch` « répond » à `canSudo()` par `true` et à
+  `getCurrentUid()` par 0 — des mensonges silencieux qui masquent les
+  erreurs d'aiguillage au lieu de les révéler ;
+- la couche terminal appelait ces stubs sans distinguer « le device n'a
+  pas cette capacité » de « la capacité a répondu » ;
+- violation frontale de l'Interface Segregation Principle : les
+  sous-classes réseau dépendaient d'une interface qu'elles n'utilisent
+  pas.
+
+### Correction
+
+- Nouveau module `src/network/equipment/HostCapabilities.ts` suivant le
+  pattern « interface Host + type guard » déjà conventionnel dans le
+  projet (cf. `StpHost`, `TcpHost`, `FhrpHost`…) :
+  - `CredentialAuthenticator` (`checkPassword`) — implémenté par
+    `LinuxMachine`, `WindowsPC` **et `Router`** (point d'entrée SSH
+    unique multi-vendeur, comportement préservé) ;
+  - `UserAccountHost` (`setUserPassword`, `userExists`) ;
+  - `ShellIdentityHost` (`getCurrentUser/Uid`, `canSudo`, `handleExit`) ;
+  - `FileEditorHost` (`getCwd`, `resolveAbsolutePath`,
+    `readFileForEditor`, `writeFileFromEditor`) ;
+  - type `HostCapableDevice = Equipment & Partial<…>` + 4 type guards.
+- `Equipment` ne garde que la surface CLI universelle (`executeCommand`,
+  `getCompletions`) ; les 11 stubs sont supprimés.
+- Les implémenteurs déclarent leurs capacités (`implements`) — toute
+  dérive de signature est désormais une erreur `tsc` (les `override`
+  orphelins de `WindowsPC`/`Router` sont devenus des déclarations
+  d'interface).
+- Sites d'appel (sessions terminal, flows sudo/su/passwd/adduser,
+  commandes Oracle, sshLauncher) : passage à `HostCapableDevice` — la
+  absence de capacité est explicite au site d'appel
+  (`device.canSudo?.() ?? false`) au lieu d'être masquée par un stub.
+
+### Validation
+
+- `tsc --noEmit` : diff strictement nul vs baseline (1379 erreurs
+  préexistantes avant = 1379 après, uniquement décalages de lignes).
+- Tests : terminal + terminal-core + shell (967), cross-vendor SSH (75),
+  flows/SSH LAN (529), database + react + gui (2792) — tous verts.

@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
@@ -191,7 +192,7 @@ export interface IPv6ACL {
   entries: IPv6ACLEntry[];
 }
 
-export abstract class Router extends Equipment {
+export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
@@ -2303,7 +2304,7 @@ export abstract class Router extends Equipment {
    * to — `device.checkPassword` is the single-call entry point that
    * the LinuxMachine / WindowsPC counterparts already expose.
    */
-  override checkPassword(username: string, password: string): boolean {
+  checkPassword(username: string, password: string): boolean {
     const authority = this.getSshHost().getAuthority();
     return authority.authenticate(username, password);
   }

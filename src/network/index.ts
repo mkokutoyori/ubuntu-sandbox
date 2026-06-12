@@ -24,6 +24,19 @@ export { Cable } from './hardware/Cable';
 // Equipment
 export { Equipment } from './equipment/Equipment';
 export type { ICLIDevice } from './equipment/ICLIDevice';
+export type {
+  CredentialAuthenticator,
+  UserAccountHost,
+  ShellIdentityHost,
+  FileEditorHost,
+  HostCapableDevice,
+} from './equipment/HostCapabilities';
+export {
+  isCredentialAuthenticator,
+  isUserAccountHost,
+  isShellIdentityHost,
+  isFileEditorHost,
+} from './equipment/HostCapabilities';
 
 // Devices
 export { EndHost } from './devices/EndHost';
