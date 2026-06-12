@@ -7,6 +7,7 @@
 
 import type { HostCapableDevice } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
+import { parseConnectIdentifier, resolveOracleConnectTarget } from './oracleNet';
 import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from '@/database/oracle/OracleConfig';
 import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
 
@@ -250,23 +251,43 @@ export function handleTnsping(
     return;
   }
 
+  // Real client-side resolution: tnsnames.ora alias or EZConnect,
+  // local or across the simulated network. A bare SID name is also
+  // accepted for the local instance (historical convenience).
   const upper = serviceName.toUpperCase();
-
-  if (upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase() || upper === 'LOCALHOST') {
-    const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = ${ORACLE_CONFIG.PORT})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`;
-    if (db.instance.listener.running) {
-      addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact ${connectDesc}`);
-      const latency = Math.floor(Math.random() * 5) + 1;
-      addLine(`OK (${latency} msec)`);
-    } else {
-      addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact ${connectDesc}`);
-      addLine(TNS_ERRORS.TNS_12541);
-      addLine(` ${TNS_ERRORS.TNS_12560}`);
-    }
-  } else {
+  const localShortcut =
+    upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase();
+  const desc = parseConnectIdentifier(device, serviceName)
+    ?? (localShortcut || upper === 'LOCALHOST'
+      ? { host: 'localhost', port: ORACLE_CONFIG.PORT, service: db.getServiceName() }
+      : null);
+  if (!desc) {
     addLine(TNS_ERRORS.TNS_03505);
+    return;
+  }
+
+  const adapter = desc.alias || localShortcut || upper === 'LOCALHOST'
+    ? 'Used TNSNAMES adapter to resolve the alias'
+    : 'Used EZCONNECT adapter to resolve the alias';
+  const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = ${desc.host})(PORT = ${desc.port})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${desc.service})))`;
+  addLine(adapter);
+  addLine(`Attempting to contact ${connectDesc}`);
+
+  // tnsping only checks that a listener answers at the endpoint — it
+  // does NOT validate the service (real tnsping says OK even for an
+  // unknown service, because it never sends a CONNECT_DATA probe).
+  const probe = resolveOracleConnectTarget(
+    device, `//${desc.host}:${desc.port}/${desc.service}`, getOracleDatabase);
+  if (probe.ok) {
+    const latency = Math.floor(Math.random() * 5) + 1;
+    addLine(`OK (${latency} msec)`);
+  } else if (/ORA-12514|ORA-12528/.test(probe.error)) {
+    // Listener answered; service-level refusals are invisible to tnsping.
+    const latency = Math.floor(Math.random() * 5) + 1;
+    addLine(`OK (${latency} msec)`);
+  } else {
+    addLine(TNS_ERRORS.TNS_12541);
+    addLine(` ${TNS_ERRORS.TNS_12560}`);
   }
 }
 

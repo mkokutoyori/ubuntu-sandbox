@@ -1640,3 +1640,51 @@ paragraphe → une ligne ; suppression des commentaires narratifs).
 - 3 tests neufs (`ipsec-dpd-wire.test.ts`) : ACK synchrone d'un pair
   vivant, câble coupé ⇒ 3 timeouts ⇒ SAs purgées, écho de séquence.
 - Suites IPSec complètes (112 tests) vertes ; baseline `tsc` inchangée.
+
+---
+
+## Entrée 20 — OSPF phase 2 : la convergence est pilotée par de vrais Hellos
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+Après l'entrée 13, le transport était conforme mais l'orchestration de
+convergence restait hors-bande : `formAdjacency` créait les voisins
+**bilatéralement** par accès direct aux moteurs des deux côtés (avec
+pré-checks auth/timers dupliquant ce que le moteur sait faire), et
+`driveStateMachine` injectait manuellement HelloReceived/TwoWayReceived.
+Les vrais Hellos émis par les timers du moteur étaient ignorés du
+processus de convergence.
+
+### Correction
+
+- `autoConverge`/`exchangeAndCompute` : suppression du seeding bilatéral
+  et des pré-checks hors-bande (la validation est faite à l'ingress par
+  `processHello` §10.5 et l'auth §8.2). La découverte de voisins, le
+  2-Way, l'élection DR et l'échange DD/LSR/LSU découlent de **rondes de
+  vrais Hellos** (`pumpHellos` ×2, élection, ×1) traversant câbles et
+  switches. Les étapes bornées par des timers (élection différée par
+  WaitTimer, retransmission DD §10.6) sont déclenchées synchronement —
+  uniquement pour les interfaces encore en attente.
+- Interfaces virtuelles (tunnels GRE, virtual links — pas de transport
+  de trames) : seeding synthétique conservé, restreint par le critère
+  « port sans câble ».
+- Deux bugs RFC du moteur, masqués jusqu'ici par l'orchestration :
+  1. **NbrChange incomplet (§9.2)** : la transition d'un voisin
+     vers/depuis 2-Way ne re-déclenchait pas l'élection DR → split-brain
+     durable (deux DR auto-déclarés sur le même segment, SPF asymétrique,
+     zéro route d'un côté). L'ancien code ne le voyait pas car les
+     déclarations DR des voisins restaient à 0.0.0.0 (jamais de hello
+     traité).
+  2. **passive-interface poreux** : un hello reçu sur une interface
+     passive créait un voisin INIT ; IOS n'en traite aucun. Drop à
+     l'ingress.
+- `collectCandidateRouters` (parcours de topologie) supprimé — plus
+  d'appelants.
+
+### Validation
+
+- 16 fichiers OSPF + redistribute (404 tests) verts ; suite network-v2
+  complète verte (voir commit).
+- Diff `tsc` : aucune erreur dans les fichiers touchés.

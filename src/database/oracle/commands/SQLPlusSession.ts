@@ -108,6 +108,9 @@ export class SQLPlusSession {
   private columnFormats: Map<string, ColumnFormat> = new Map();
   /** Optional host-shell executor for HOST / `!` commands. */
   private hostRunner: HostCommandRunner | null = null;
+  /** Oracle Net client for CONNECT @identifier — injected by the terminal layer. */
+  private tnsResolver: ((identifier: string) =>
+    { ok: true; db: OracleDatabase } | { ok: false; error: string }) | null = null;
   /**
    * OS identity of the process that launched sqlplus. Drives bequeath
    * (`/ AS SYSDBA`) group checks and the OSUSER/MACHINE audit columns.
@@ -169,6 +172,19 @@ export class SQLPlusSession {
    */
   setOsContext(ctx: OsSecurityContext): void {
     this.osCtx = ctx;
+  }
+
+  /**
+   * Wire the Oracle Net client used by CONNECT user/pass@identifier.
+   * Injected by the terminal layer (which knows the device and the
+   * network registry) — this session never touches Equipment. When the
+   * resolution lands on another database (a remote host across the
+   * simulated network), the session re-binds to it, like a real
+   * SQL*Plus CONNECT hops servers.
+   */
+  setTnsResolver(resolver: (identifier: string) =>
+    { ok: true; db: OracleDatabase } | { ok: false; error: string }): void {
+    this.tnsResolver = resolver;
   }
 
   /**
@@ -1181,7 +1197,11 @@ export class SQLPlusSession {
     }
 
     if (connStr.includes('/')) {
-      [username, password] = connStr.split('/', 2);
+      // Split on the FIRST slash only — EZConnect identifiers carry
+      // slashes of their own (user/pass@//host:port/service).
+      const slash = connStr.indexOf('/');
+      username = connStr.slice(0, slash);
+      password = connStr.slice(slash + 1);
     } else {
       username = connStr;
       // In real SQL*Plus, this would prompt for password interactively.
@@ -1190,18 +1210,31 @@ export class SQLPlusSession {
       return { output: ['ERROR:', `SP2-0306: Invalid option.`, `Usage: CONNECT username/password[@connect_identifier] [AS SYSDBA]`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // user/password@connect_identifier goes through the TNS listener;
-    // a plain user/password is a local bequeath connection and does not.
+    // user/password@connect_identifier goes through Oracle Net (local
+    // listener or a remote host across the simulated network); a plain
+    // user/password is a local bequeath connection and does not.
     const atIdx = password.indexOf('@');
     if (atIdx >= 0) {
       const alias = password.slice(atIdx + 1).trim();
       password = password.slice(0, atIdx);
-      const outcome = this.db.instance.listener.attemptConnect(alias);
-      if (!outcome.ok) {
-        return {
-          output: ['ERROR:', outcome.error],
-          exit: false, needsMoreInput: false, prompt: this.getPrompt(),
-        };
+      if (this.tnsResolver) {
+        const res = this.tnsResolver(alias);
+        if (!res.ok) {
+          return {
+            output: ['ERROR:', res.error],
+            exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+          };
+        }
+        // Re-bind the session to the resolved database (possibly remote).
+        this.db = res.db;
+      } else {
+        const outcome = this.db.instance.listener.attemptConnect(alias);
+        if (!outcome.ok) {
+          return {
+            output: ['ERROR:', outcome.error],
+            exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+          };
+        }
       }
     }
 
