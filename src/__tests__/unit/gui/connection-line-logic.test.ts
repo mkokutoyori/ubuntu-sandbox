@@ -127,9 +127,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'ethernet',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0',
-        isActive: true
-      };
+        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0'
+              };
 
       const info = getConnectionMidpointInfo(connection);
       expect(info.typeLabel).toBe('Ethernet');
@@ -140,9 +139,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'serial',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'serial0/0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0',
-        isActive: true
-      };
+        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0'
+              };
 
       const info = getConnectionMidpointInfo(connection);
       expect(info.typeLabel).toBe('Serial');
@@ -153,9 +151,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'console',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'console0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'console0',
-        isActive: true
-      };
+        targetDeviceId: 'dev-2', targetInterfaceId: 'console0'
+              };
 
       const info = getConnectionMidpointInfo(connection);
       expect(info.typeLabel).toBe('Console');

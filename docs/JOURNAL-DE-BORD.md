@@ -500,8 +500,8 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 | P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 19 |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | ✅ Entrée 14 (session parallèle) |
 | P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
-| P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | À faire |
-| P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | À faire |
+| P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | ✅ Entrée 21 |
+| P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | ✅ Entrée 21 |
 | P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | ✅ Entrée 12 (session parallèle) |
 | P12 | NUD : 5 états déclarés (RFC 4861 §7.3), 2 utilisés, pas de machine à états | RFC 4861 | Moyenne | ✅ Entrée 20 |
 
@@ -744,6 +744,41 @@ cmd-netsh + windows-netsh-dhcp-dns + windows-consistency : 251 verts.
   complètes, expiration, sondes, annulation par confirmation, Override,
   MAC changée, stop.
 - Non-régression : ping6 + host-observables + suite network-v2 complète.
+
+---
+
+## Entrée 21 — UI/store : statut de lien dérivé du réel + fabrique de connexion unique (P9, P10)
+
+**Date** : 2026-06-12
+
+### Défaillances constatées
+
+1. **P10** : `Connection.isActive` était écrit `true` à la création et
+   plus jamais mis à jour — mais le panneau de propriétés affichait un
+   badge « Active/Inactive » et `ConnectionLine` grisait les liens
+   « inactifs » : de l'UI branchée sur une constante. Un `ifconfig eth0
+   down`, un câble débranché ou un device éteint laissaient le badge
+   au vert.
+2. **P9** : le bloc « retrouver les ports → `new Cable` → `connect` →
+   construire l'objet `Connection` » était copié-collé entre
+   `networkStore.addConnection` et l'import de `topologySerializer`.
+
+### Corrections
+
+- Champ `isActive` supprimé du modèle : remplacé par
+  `isConnectionActive(connection)` qui dérive l'état **du vrai
+  matériel** au rendu : câble connecté + les deux ports admin-up + les
+  deux équipements alimentés.
+- `buildConnection(...)` : fabrique unique partagée par le store et le
+  sérialiseur (import de topologie).
+- `getConnectionDetails` et `ConnectionLine` consomment l'état dérivé.
+
+### Tests
+
+- Tests gui mis à jour : le cas « inactive » construit désormais un
+  vrai câble non connecté (plus un booléen posé à la main) ; le cas
+  « active » câble deux vrais `Port`.
+- gui + react : 99 verts ; `tsc --noEmit` propre.
 
 ---
 

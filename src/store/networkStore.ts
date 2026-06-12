@@ -41,8 +41,44 @@ export interface Connection {
   sourceInterfaceId: string;
   targetDeviceId: string;
   targetInterfaceId: string;
-  isActive: boolean;
   cable: Cable;
+}
+
+export function buildConnection(
+  sourceDevice: Equipment,
+  sourceInterfaceId: string,
+  targetDevice: Equipment,
+  targetInterfaceId: string,
+  type: ConnectionType,
+): Connection | null {
+  const sourcePort = sourceDevice.getPort(sourceInterfaceId);
+  const targetPort = targetDevice.getPort(targetInterfaceId);
+  if (!sourcePort || !targetPort) return null;
+
+  const connId = generateId();
+  const cable = new Cable(connId);
+  cable.connect(sourcePort, targetPort);
+
+  return {
+    id: connId,
+    type,
+    sourceDeviceId: sourceDevice.getId(),
+    sourceInterfaceId,
+    targetDeviceId: targetDevice.getId(),
+    targetInterfaceId,
+    cable,
+  };
+}
+
+export function isConnectionActive(connection: Connection): boolean {
+  const portA = connection.cable.getPortA();
+  const portB = connection.cable.getPortB();
+  if (!portA || !portB) return false;
+  if (!portA.getIsUp() || !portB.getIsUp()) return false;
+  const state = useNetworkStore.getState();
+  const source = state.deviceInstances.get(connection.sourceDeviceId);
+  const target = state.deviceInstances.get(connection.targetDeviceId);
+  return (source?.getIsPoweredOn() ?? true) && (target?.getIsPoweredOn() ?? true);
 }
 
 /**
@@ -262,30 +298,13 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     );
     if (exists) return null;
 
-    // Find the actual ports on the devices
     const sourceDevice = state.deviceInstances.get(sourceDeviceId);
     const targetDevice = state.deviceInstances.get(targetDeviceId);
     if (!sourceDevice || !targetDevice) return null;
 
-    const sourcePort = sourceDevice.getPort(sourceInterfaceId);
-    const targetPort = targetDevice.getPort(targetInterfaceId);
-    if (!sourcePort || !targetPort) return null;
-
-    // Create a Cable and connect the ports
-    const connId = generateId();
-    const cable = new Cable(connId);
-    cable.connect(sourcePort, targetPort);
-
-    const connection: Connection = {
-      id: connId,
-      type,
-      sourceDeviceId,
-      sourceInterfaceId,
-      targetDeviceId,
-      targetInterfaceId,
-      isActive: true,
-      cable,
-    };
+    const connection = buildConnection(
+      sourceDevice, sourceInterfaceId, targetDevice, targetInterfaceId, type);
+    if (!connection) return null;
 
     set(state => ({
       connections: [...state.connections, connection],
