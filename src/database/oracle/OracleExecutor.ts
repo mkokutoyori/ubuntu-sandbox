@@ -624,8 +624,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropSynonymStatement': return this.executeDropSynonym(statement);
       case 'AlterSequenceStatement': return this.executeAlterSequence(statement);
       case 'AlterIndexStatement': return this.executeAlterIndex(statement);
-      case 'CreateDbLinkStatement': return emptyResult('Database link created.');
-      case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
+      case 'CreateDbLinkStatement': return this.executeCreateDbLink(statement);
+      case 'DropDbLinkStatement': return this.executeDropDbLink(statement);
       case 'CreateMaterializedViewStatement': return this.executeCreateMaterializedView(statement);
       case 'DropMaterializedViewStatement': return this.executeDropMaterializedView(statement);
       case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
@@ -2218,6 +2218,44 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   // ── DDL ───────────────────────────────────────────────────────────
+
+  /**
+   * CREATE [PUBLIC] DATABASE LINK — persists the link in the catalog so
+   * DBA_DB_LINKS reflects it and DROP has something real to remove. The
+   * simulator does not dispatch queries across links (documented limit);
+   * the dictionary, at least, must not lie about what exists.
+   */
+  private executeCreateDbLink(
+    stmt: import('../engine/parser/ASTNode').CreateDbLinkStatement,
+  ): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.context.currentUser;
+    const name = stmt.name.toUpperCase();
+    this.privileges.requireSystemPrivilege(
+      stmt.isPublic ? 'CREATE PUBLIC DATABASE LINK' : 'CREATE DATABASE LINK');
+    if (this.catalog.getDbLink(owner, name)) {
+      throw new OracleError(2011, 'duplicate database link name');
+    }
+    this.catalog.registerDbLink({
+      owner, name,
+      username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
+      host: stmt.usingAlias ?? null,
+      created: new Date(),
+    });
+    this.emitDdl('CREATE DATABASE LINK', `${owner}.${name}`);
+    return emptyResult('Database link created.');
+  }
+
+  private executeDropDbLink(
+    stmt: import('../engine/parser/ASTNode').DropDbLinkStatement,
+  ): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.context.currentUser;
+    const name = stmt.name.toUpperCase();
+    if (!this.catalog.dropDbLink(owner, name)) {
+      throw new OracleError(2024, 'database link not found');
+    }
+    this.emitDdl('DROP DATABASE LINK', `${owner}.${name}`);
+    return emptyResult('Database link dropped.');
+  }
 
   /**
    * CREATE MATERIALIZED VIEW — a real object, not a success-message stub:

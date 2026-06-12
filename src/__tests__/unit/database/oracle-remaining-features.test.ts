@@ -213,21 +213,34 @@ describe('ALTER INDEX', () => {
 
 // ── DB Links (stubs) ─────────────────────────────────────────────
 
-describe('Database Links (stubs)', () => {
+describe('Database Links (catalog-backed since the §10.7 fix)', () => {
 
-  test('CREATE DATABASE LINK succeeds', () => {
+  test('CREATE DATABASE LINK persists in DBA_DB_LINKS', () => {
     const result = exec(`CREATE DATABASE LINK remote_db CONNECT TO user1 IDENTIFIED BY pass1 USING 'remote_tns'`);
     expect(result.message).toContain('Database link created');
+    const links = exec(`SELECT owner, db_link, username, host FROM dba_db_links`);
+    const flat = JSON.stringify(links.rows);
+    expect(flat).toContain('REMOTE_DB');
+    expect(flat).toContain('USER1');
+    expect(flat).toContain('remote_tns');
   });
 
-  test('CREATE PUBLIC DATABASE LINK succeeds', () => {
-    const result = exec(`CREATE PUBLIC DATABASE LINK pub_link CONNECT TO user1 IDENTIFIED BY pass1 USING 'remote'`);
-    expect(result.message).toContain('Database link created');
+  test('CREATE PUBLIC DATABASE LINK is owned by PUBLIC', () => {
+    exec(`CREATE PUBLIC DATABASE LINK pub_link CONNECT TO user1 IDENTIFIED BY pass1 USING 'remote'`);
+    const links = exec(`SELECT owner FROM dba_db_links WHERE db_link = 'PUB_LINK'`);
+    expect(JSON.stringify(links.rows)).toContain('PUBLIC');
   });
 
-  test('DROP DATABASE LINK succeeds', () => {
+  test('duplicate link name raises ORA-02011', () => {
+    exec(`CREATE DATABASE LINK dup_link USING 'x'`);
+    expect(() => exec(`CREATE DATABASE LINK dup_link USING 'y'`)).toThrow(/ORA-02011/);
+  });
+
+  test('DROP DATABASE LINK removes it; missing link raises ORA-02024', () => {
+    exec(`CREATE DATABASE LINK remote_db CONNECT TO user1 IDENTIFIED BY pass1 USING 'remote_tns'`);
     const result = exec(`DROP DATABASE LINK remote_db`);
     expect(result.message).toContain('Database link dropped');
+    expect(() => exec(`DROP DATABASE LINK remote_db`)).toThrow(/ORA-02024/);
   });
 });
 

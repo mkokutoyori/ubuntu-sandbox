@@ -77,6 +77,17 @@ export interface MaterializedViewMeta {
   staleness: 'FRESH' | 'STALE' | 'UNUSABLE';
 }
 
+/** One database link — PUBLIC links are owned by 'PUBLIC'. */
+export interface DbLinkMeta {
+  owner: string;
+  name: string;
+  /** CONNECT TO user, when the link carries fixed credentials. */
+  username: string | null;
+  /** The USING 'tns_alias' connect string. */
+  host: string | null;
+  created: Date;
+}
+
 export interface AuditEntry {
   sessionId: number;
   osUsername: string;
@@ -574,6 +585,26 @@ export class OracleCatalog extends BaseCatalog {
 
   dropMaterializedView(owner: string, name: string): boolean {
     return this.materializedViews.delete(OracleCatalog.mvKey(owner, name));
+  }
+
+  // ── Database links ────────────────────────────────────────────────
+
+  private dbLinks: Map<string, DbLinkMeta> = new Map();
+
+  registerDbLink(meta: DbLinkMeta): void {
+    this.dbLinks.set(OracleCatalog.mvKey(meta.owner, meta.name), meta);
+  }
+
+  getDbLink(owner: string, name: string): DbLinkMeta | undefined {
+    return this.dbLinks.get(OracleCatalog.mvKey(owner, name));
+  }
+
+  getDbLinks(): readonly DbLinkMeta[] {
+    return [...this.dbLinks.values()];
+  }
+
+  dropDbLink(owner: string, name: string): boolean {
+    return this.dbLinks.delete(OracleCatalog.mvKey(owner, name));
   }
 
   /** DML touched schema.table — every MV reading it is no longer fresh. */

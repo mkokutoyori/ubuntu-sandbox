@@ -853,6 +853,25 @@ vide+UNUSABLE, snapshot + bascule STALE sur DML, REFRESH→FRESH avec
 nouvelles données, ORA-12003 ×2, DROP complet) ; non-régression
 `unit/database/` complète ; `npx tsc --noEmit` propre.
 
+### 2026-06-12 — DB links persistés au catalogue (clôt GAP §10.7)
+**Défaillance :** seconde moitié du §10.7 : `CREATE [PUBLIC] DATABASE LINK`
+renvoyait « Database link created. » sans rien créer — `DBA_DB_LINKS`
+restait vide à jamais, `DROP DATABASE LINK` « réussissait » sur de
+l'inexistant, un nom dupliqué passait en silence. Un script DBA qui vérifie
+son travail dans le dictionnaire était systématiquement trompé.
+**Correction :** registre `DbLinkMeta` dans `OracleCatalog` (owner —
+`PUBLIC` pour les liens publics —, CONNECT TO user, USING host, created) ;
+exécuteur : privilèges `CREATE [PUBLIC] DATABASE LINK` exigés, `ORA-02011`
+sur doublon, `ORA-02024` sur DROP d'un lien absent ; `DBA_DB_LINKS`
+branchée sur le registre vivant. Les tests qui verrouillaient le stub
+(DROP silencieux sur du vide) assertent désormais le comportement réel.
+**Limite assumée (documentée dans GAP.md)** : pas de dispatch de requêtes
+cross-link (`SELECT … FROM t@link`) — le dictionnaire, lui, ne ment plus.
+**Validation :** `oracle-remaining-features.test.ts` réécrit (4 tests DB
+links : persistance DBA_DB_LINKS, owner PUBLIC, ORA-02011, drop +
+ORA-02024) ; non-régression `unit/database/` complète ; `npx tsc --noEmit`
+propre. GAP.md §10.7 marqué ✅ CORRIGÉ.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

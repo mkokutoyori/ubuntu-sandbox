@@ -1268,7 +1268,7 @@ export class OracleParser extends BaseParser {
     throw this.error('Expected REBUILD or RENAME after ALTER INDEX');
   }
 
-  // ── CREATE DATABASE LINK (stub) ────────────────────────────────────
+  // ── CREATE DATABASE LINK ───────────────────────────────────────────
 
   private parseCreateDbLink(pos: SourcePosition, isPublic: boolean): import('../engine/parser/ASTNode').CreateDbLinkStatement {
     const name = this.expectIdentifier();
