@@ -941,6 +941,25 @@ et lien alias-tnsnames lisant les lignes distantes, isolement local
 ORA-00942, ORA-02019, ORA-01017 distant, listener cible coupé → ORA-12541) ;
 non-régression `unit/database/` complète ; tsc + ESLint propres.
 
+### 2026-06-12 — Vues matérialisées : REFRESH ON COMMIT effectif
+**Défaillance :** la clause `REFRESH … ON COMMIT` était acceptée au parsing
+et exposée dans `DBA_MVIEWS.REFRESH_MODE`, mais aucun mécanisme ne la
+réalisait : après un `COMMIT`, une MV ON COMMIT restait STALE avec son
+contenu d'avant-transaction — exactement le mensonge dictionnaire ↔
+comportement que cette série corrige.
+**Correction :** les quatre points de commit de l'exécuteur (COMMIT
+explicite, commit implicite avant/après DDL, autocommit SQL*Plus) sont
+centralisés dans `commitActiveTransaction()`, qui après `txn.commit()`
+re-matérialise toute MV `refreshMode=COMMIT` encore STALE via le
+`refreshMaterializedView` existant (réutilisation, pas de second moteur de
+refresh). Une MV ON DEMAND reste STALE jusqu'à `DBMS_MVIEW.REFRESH`.
+**Limite assumée :** un ROLLBACK laisse la MV marquée STALE (le vrai
+Oracle ne l'aurait jamais marquée) — un refresh la remet correcte.
+**Validation :** `oracle-materialized-views.test.ts` 12/12 (+3 : refresh au
+COMMIT avec contenu et staleness vérifiés avant/après, ON DEMAND inchangé
+au commit, commit implicite DDL déclencheur) ; tsc propre. Régression
+globale reportée en fin de série (consigne).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -482,13 +482,13 @@ export class OracleExecutor extends BaseExecutor {
     // System/session control statements (ALTER SYSTEM / ALTER SESSION),
     // STARTUP/SHUTDOWN and TCL never commit.
     const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
-    if (isDdl && this.txn.isActive) this.txn.commit();
+    if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     const out = this.dispatchStatement(statement);
-    if (isDdl && this.txn.isActive) this.txn.commit();
+    if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
     const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
       || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
-    if (isDml && this.context.autoCommit && this.txn.isActive) this.txn.commit();
+    if (isDml && this.context.autoCommit && this.txn.isActive) this.commitActiveTransaction();
     this.invalidateResultCacheForStatement(statement);
     return out;
   }
@@ -657,8 +657,16 @@ export class OracleExecutor extends BaseExecutor {
   // ── Transaction control ──────────────────────────────────────────
 
   private executeCommit(): ResultSet {
-    this.txn.commit();
+    this.commitActiveTransaction();
     return emptyResult('Commit complete.');
+  }
+
+  private commitActiveTransaction(): void {
+    this.txn.commit();
+    for (const mv of this.catalog.getMaterializedViews()) {
+      if (mv.refreshMode !== 'COMMIT' || mv.staleness !== 'STALE') continue;
+      this.refreshMaterializedView(mv.owner, mv.name);
+    }
   }
 
   private executeRollback(savepoint?: string): ResultSet {

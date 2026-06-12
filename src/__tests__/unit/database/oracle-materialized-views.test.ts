@@ -99,3 +99,34 @@ describe('DROP MATERIALIZED VIEW', () => {
     expect(run('DROP MATERIALIZED VIEW hr.never_was;')).toMatch(/ORA-12003/);
   });
 });
+
+describe('REFRESH ON COMMIT', () => {
+  it('the MV refreshes itself when the transaction commits', () => {
+    run('CREATE MATERIALIZED VIEW hr.oc_mv BUILD IMMEDIATE REFRESH COMPLETE ON COMMIT AS SELECT COUNT(*) AS n FROM hr.emp;');
+    expect(run('SELECT n FROM hr.oc_mv;')).toMatch(/\b3\b/);
+
+    run("INSERT INTO hr.emp VALUES (4, 'IT', 900);");
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'OC_MV';")).toMatch(/STALE/);
+    expect(run('SELECT n FROM hr.oc_mv;')).toMatch(/\b3\b/);
+
+    run('COMMIT;');
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'OC_MV';")).toMatch(/FRESH/);
+    expect(run('SELECT n FROM hr.oc_mv;')).toMatch(/\b4\b/);
+  });
+
+  it('an ON DEMAND MV stays stale across a commit', () => {
+    run('CREATE MATERIALIZED VIEW hr.od_mv REFRESH COMPLETE ON DEMAND AS SELECT COUNT(*) AS n FROM hr.emp;');
+    run("INSERT INTO hr.emp VALUES (5, 'HR', 800);");
+    run('COMMIT;');
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'OD_MV';")).toMatch(/STALE/);
+    expect(run('SELECT n FROM hr.od_mv;')).toMatch(/\b3\b/);
+  });
+
+  it('DDL implicit commit also triggers the ON COMMIT refresh', () => {
+    run('CREATE MATERIALIZED VIEW hr.ddl_mv REFRESH COMPLETE ON COMMIT AS SELECT COUNT(*) AS n FROM hr.emp;');
+    run("INSERT INTO hr.emp VALUES (6, 'IT', 700);");
+    run('CREATE TABLE hr.unrelated (x NUMBER);');
+    expect(run("SELECT staleness FROM dba_mviews WHERE mview_name = 'DDL_MV';")).toMatch(/FRESH/);
+    expect(run('SELECT n FROM hr.ddl_mv;')).toMatch(/\b4\b/);
+  });
+});
