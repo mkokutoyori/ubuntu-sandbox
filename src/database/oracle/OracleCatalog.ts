@@ -83,6 +83,9 @@ export interface DbLinkMeta {
   name: string;
   /** CONNECT TO user, when the link carries fixed credentials. */
   username: string | null;
+  /** CONNECT TO … IDENTIFIED BY password — used to open the remote
+   *  session at query time; never exposed by the dictionary views. */
+  password: string | null;
   /** The USING 'tns_alias' connect string. */
   host: string | null;
   created: Date;

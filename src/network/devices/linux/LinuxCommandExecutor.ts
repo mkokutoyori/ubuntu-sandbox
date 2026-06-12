@@ -215,6 +215,8 @@ export class LinuxCommandExecutor {
    * source override.
    */
   private readonly filesNss: FilesNssSource;
+  /** Shared `dns` source — the owning machine injects its wire resolver. */
+  readonly dnsNss = new DnsNssSource();
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -333,7 +335,7 @@ export class LinuxCommandExecutor {
       this.vfs,
       new Map([
         ['files', this.filesNss],
-        ['dns',   new DnsNssSource()],
+        ['dns',   this.dnsNss],
       ]),
     );
     this.nss.seedConfigIfMissing();
@@ -577,7 +579,7 @@ export class LinuxCommandExecutor {
       this.vfs,
       new Map([
         ['files', this.filesNss],
-        ['dns',   new DnsNssSource()],
+        ['dns',   this.dnsNss],
       ]),
       bus,
       deviceId,

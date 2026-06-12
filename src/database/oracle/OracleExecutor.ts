@@ -1097,6 +1097,21 @@ export class OracleExecutor extends BaseExecutor {
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
 
+    // table@dblink — the rows live on ANOTHER database. Used to be
+    // silently ignored (the local table answered for the remote one).
+    if (ref.dbLink) {
+      const remote = this.requireCommandHost().fetchDbLinkRows(
+        this.context.currentUser, ref.dbLink, ref.schema, ref.name);
+      const prefix = alias || tableName;
+      const columns: StorageColMeta[] = remote.columns.map((c, i) => ({
+        name: c.name,
+        dataType: c.dataType,
+        ordinalPosition: i,
+        _qualifiedNames: [c.name, `${prefix}.${c.name}`],
+      } as StorageColMeta & { _qualifiedNames: string[] }));
+      return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
+    }
+
     // Check if it's a view first
     const viewMeta = this.storage.getViewMeta(schema, tableName);
     if (viewMeta) {
@@ -2238,6 +2253,7 @@ export class OracleExecutor extends BaseExecutor {
     this.catalog.registerDbLink({
       owner, name,
       username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
+      password: stmt.connectPassword ?? null,
       host: stmt.usingAlias ?? null,
       created: new Date(),
     });

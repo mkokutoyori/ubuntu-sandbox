@@ -100,6 +100,8 @@ export interface NetworkDeviceUI {
 interface NetworkState {
   deviceInstances: Map<string, Equipment>;
   connections: Connection[];
+  /** Monotonic change signal for in-place instance mutations (drag). */
+  revision: number;
   selectedDeviceId: string | null;
   selectedConnectionId: string | null;
   isConnecting: boolean;
@@ -143,6 +145,51 @@ interface NetworkState {
 }
 
 /**
+ * Referential stability for UI snapshots (GAP §11.2).
+ *
+ * `getDevices()` used to rebuild every NetworkDeviceUI object (reading
+ * all ports/IPs/MACs of every device) on each render, and `moveDevice`
+ * recreated the whole instances Map per mousemove pixel — so dragging
+ * one node re-rendered every node and connection on the canvas.
+ *
+ * The fix is NOT a blind cache (device state mutates outside the store,
+ * e.g. an IP configured in a terminal): each call still derives a fresh
+ * snapshot from the live Equipment, but returns the PREVIOUS object when
+ * nothing visible changed. Memoised children (NetworkDevice) and zustand
+ * selector equality then prune the re-render storm, while any real
+ * change — wherever it came from — is still picked up on the next render.
+ */
+const uiSnapshots = new WeakMap<Equipment, NetworkDeviceUI>();
+let devicesArraySnapshot: NetworkDeviceUI[] = [];
+
+function sameInterfaces(a: NetworkInterfaceConfig[], b: NetworkInterfaceConfig[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x.id !== y.id || x.name !== y.name || x.type !== y.type
+      || x.ipAddress !== y.ipAddress || x.subnetMask !== y.subnetMask
+      || x.macAddress !== y.macAddress || x.isUp !== y.isUp) return false;
+  }
+  return true;
+}
+
+function sameUI(a: NetworkDeviceUI, b: NetworkDeviceUI): boolean {
+  return a.id === b.id && a.type === b.type && a.name === b.name
+    && a.hostname === b.hostname && a.x === b.x && a.y === b.y
+    && a.isPoweredOn === b.isPoweredOn
+    && sameInterfaces(a.interfaces, b.interfaces);
+}
+
+/** Fresh snapshot, but referentially stable while nothing changed. */
+function stableDeviceUI(device: Equipment): NetworkDeviceUI {
+  const next = deviceToUI(device);
+  const prev = uiSnapshots.get(device);
+  if (prev && sameUI(prev, next)) return prev;
+  uiSnapshots.set(device, next);
+  return next;
+}
+
+/**
  * Convert an Equipment instance to a UI representation
  */
 function deviceToUI(device: Equipment): NetworkDeviceUI {
@@ -175,6 +222,7 @@ function deviceToUI(device: Equipment): NetworkDeviceUI {
 export const useNetworkStore = create<NetworkState>((set, get) => ({
   deviceInstances: new Map(),
   connections: [],
+  revision: 0,
   selectedDeviceId: null,
   selectedConnectionId: null,
   isConnecting: false,
@@ -265,7 +313,10 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     const device = state.deviceInstances.get(id);
     if (device) {
       device.setPosition(x, y);
-      set(state => ({ deviceInstances: new Map(state.deviceInstances) }));
+      // Notify subscribers without copying the whole Map on every
+      // mousemove pixel — the position lives on the instance; the
+      // revision tick is just the change signal.
+      set(state => ({ revision: state.revision + 1 }));
     }
   },
 
@@ -280,9 +331,16 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   getDevices: () => {
     const state = get();
     const devices: NetworkDeviceUI[] = [];
+    let unchanged = devicesArraySnapshot.length === state.deviceInstances.size;
+    let i = 0;
     state.deviceInstances.forEach(device => {
-      devices.push(deviceToUI(device));
+      const ui = stableDeviceUI(device);
+      if (unchanged && devicesArraySnapshot[i] !== ui) unchanged = false;
+      devices.push(ui);
+      i++;
     });
+    if (unchanged) return devicesArraySnapshot;
+    devicesArraySnapshot = devices;
     return devices;
   },
 

@@ -1274,18 +1274,24 @@ export class OracleParser extends BaseParser {
     const name = this.expectIdentifier();
     // Consume CONNECT TO user IDENTIFIED BY password USING 'tns_alias'
     let connectUser: string | undefined;
+    let connectPassword: string | undefined;
     let usingAlias: string | undefined;
     if (this.matchKeyword('CONNECT')) {
       this.expectKeyword('TO');
       connectUser = this.expectIdentifier();
       this.expectKeyword('IDENTIFIED');
       this.expectKeyword('BY');
-      this.advance(); // skip password
+      // The password authenticates the link's remote session at query
+      // time (SELECT … FROM t@link) — it must be kept, not skipped.
+      const rawPwd = this.advance().value;
+      connectPassword = rawPwd.startsWith("'") || rawPwd.startsWith('"')
+        ? rawPwd.slice(1, -1) : rawPwd;
     }
     if (this.matchKeyword('USING')) {
-      usingAlias = this.expect(TokenType.STRING_LITERAL).value;
+      const raw = this.expect(TokenType.STRING_LITERAL).value;
+      usingAlias = raw.startsWith("'") ? raw.slice(1, -1) : raw;
     }
-    return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, usingAlias };
+    return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, connectPassword, usingAlias };
   }
 
   // ── CREATE MATERIALIZED VIEW ───────────────────────────────────────

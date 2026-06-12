@@ -855,6 +855,55 @@ export class OracleDatabase implements SqlCommandHost {
    * handled=false when the name does not resolve to a stored function so
    * the SQL engine can raise its own ORA-00904.
    */
+  /**
+   * Oracle Net resolver for database links — injected by the terminal
+   * layer (which knows the device and the topology); the engine never
+   * imports Equipment. Absent in engine-only tests: links then fail
+   * with the resolution error, like a server with no network.
+   */
+  private dbLinkResolver:
+    ((connectString: string) => { ok: true; db: OracleDatabase } | { ok: false; error: string }) | null = null;
+
+  setDbLinkResolver(resolver: (connectString: string) =>
+    { ok: true; db: OracleDatabase } | { ok: false; error: string }): void {
+    this.dbLinkResolver = resolver;
+  }
+
+  fetchDbLinkRows(
+    currentUser: string,
+    dbLink: string,
+    schema: string | undefined,
+    table: string,
+  ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
+    const linkName = dbLink.toUpperCase();
+    const link = this.catalog.getDbLink(currentUser.toUpperCase(), linkName)
+      ?? this.catalog.getDbLink('PUBLIC', linkName);
+    if (!link) {
+      throw new Error('ORA-02019: connection description for remote database not found');
+    }
+    if (!this.dbLinkResolver || !link.host) {
+      // No network surface (engine-only) or link without USING clause.
+      throw new Error('ORA-12154: TNS:could not resolve the connect identifier specified');
+    }
+    const res = this.dbLinkResolver(link.host);
+    if (!res.ok) throw new Error(res.error);
+
+    const remote = res.db;
+    // Open the remote session as the link's CONNECT TO user — remote
+    // privileges and views apply, exactly like a real database link.
+    const { sid, executor } = remote.connect(link.username ?? currentUser, link.password ?? '');
+    try {
+      const qualified = schema ? `${schema}.${table}` : table;
+      const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
+      return {
+        rows: result.rows.map(r => [...r]),
+        columns: result.columns.map(c => ({ name: c.name, dataType: c.dataType ?? 'VARCHAR2' })),
+      };
+    } finally {
+      remote.disconnect(sid);
+    }
+  }
+
   execScalarFunctionCall(
     executor: import('../engine/executor/BaseExecutor').BaseExecutor,
     qualifiedName: string,

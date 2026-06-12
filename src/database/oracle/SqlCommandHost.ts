@@ -21,4 +21,13 @@ export interface SqlCommandHost {
   execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet;
   /** SQL→PL/SQL bridge: evaluate a stored FUNCTION used in a SQL expression. */
   execScalarFunctionCall(executor: BaseExecutor, qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
+  /**
+   * Cross-link row source: materialise `schema.table@dbLink` by opening
+   * a session on the remote database as the link's CONNECT TO user and
+   * running the SELECT there (remote privileges apply). Throws the real
+   * error ladder: ORA-02019 unknown link, TNS errors from resolution,
+   * ORA-01017 bad link credentials, ORA-00942 unknown remote table.
+   */
+  fetchDbLinkRows(currentUser: string, dbLink: string, schema: string | undefined, table: string):
+    { rows: CellValue[][]; columns: { name: string; dataType: string }[] };
 }

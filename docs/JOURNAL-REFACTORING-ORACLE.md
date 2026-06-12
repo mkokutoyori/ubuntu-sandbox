@@ -908,6 +908,39 @@ alias ajouté au tnsnames.ora, isolement local/distant, ORA-12514/12541/12545/
 TNS-12541) ; non-régression `unit/database/` + `unit/shell/` +
 `unit/terminal/` ; `npx tsc --noEmit` et ESLint propres.
 
+### 2026-06-12 — Requêtes cross-link réelles : SELECT … FROM table@dblink
+**Défaillance :** dernier mensonge du GAP §10.7 : le parser capturait déjà
+`@link` dans `TableRef.dbLink`… que l'exécuteur **ignorait silencieusement**
+— `SELECT * FROM emp@remotedb` lisait la table LOCALE `emp` comme si le lien
+n'existait pas (pire qu'une erreur : un résultat faux). Le mot de passe du
+`CONNECT TO … IDENTIFIED BY` était jeté au parsing, et la valeur `USING`
+était stockée avec ses quotes (`"'//host/svc'"`), rendant toute résolution
+impossible.
+**Correction :** chaîne complète, en réutilisant les briques des deux items
+précédents (liens au catalogue + client Oracle Net) :
+- parser : capture (et déquote) du mot de passe et du `USING` ;
+- `SqlCommandHost.fetchDbLinkRows` — nouvelle couture entre l'exécuteur et
+  la base : `loadTable` (point d'étranglement unique des row-sources) y
+  route toute référence portant un dbLink ;
+- `OracleDatabase.fetchDbLinkRows` : résolution du lien (courant puis
+  PUBLIC, sinon **ORA-02019**), résolution réseau du `USING` via un
+  résolveur injecté (`setDbLinkResolver`, même pattern que
+  setDeviceFileReader — le moteur n'importe jamais Equipment), puis
+  **ouverture d'une vraie session distante** comme l'utilisateur du lien :
+  les privilèges et vues s'appliquent CÔTÉ CIBLE, ORA-01017 si les
+  credentials du lien sont faux, ORA-12541/12545/12170 si le réseau ou le
+  listener cible est en cause, session fermée en finally ;
+- câblage terminal : le `USING` se résout comme sqlplus@/tnsping (alias du
+  tnsnames.ora local ou EZConnect, hôte distant de la topologie).
+- au passage : un test alias validait par un faux positif (`/1/` matchait
+  « ORA-12154 ») — durci vers une assertion de contenu réel.
+**Limite assumée :** lecture seule (pas de DML over link), pas de
+two-phase commit — documenté ici.
+**Validation :** `oracle-tns-remote.test.ts` étendu à 15 tests (lien EZConnect
+et lien alias-tnsnames lisant les lignes distantes, isolement local
+ORA-00942, ORA-02019, ORA-01017 distant, listener cible coupé → ORA-12541) ;
+non-régression `unit/database/` complète ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
