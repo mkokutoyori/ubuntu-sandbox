@@ -52,8 +52,12 @@ const ORACLE_OS_UID = 54321;
 const ORACLE_OS_GID = 54321;
 
 function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
-  if (dev.installSystemFile) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
-  else dev.writeFileFromEditor(path, content);
+  if (!dev.installSystemFile) {
+    dev.writeFileFromEditor(path, content);
+    return;
+  }
+  if (path.startsWith('/u01')) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+  else dev.installSystemFile(path, content);
 }
 
 export class OracleFilesystemSync {

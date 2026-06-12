@@ -73,7 +73,7 @@ $end = (Get-Location).Path
 "start=$start;mid=$mid;end=$end"
 `);
     expect(out).toMatch(/mid=C:\\Windows/i);
-    expect(out).toMatch(/start=[^;]+;mid=[^;]+;end=\1/);
+    expect(out).toMatch(/start=([^;]+);mid=[^;]+;end=\1/);
   });
 });
 

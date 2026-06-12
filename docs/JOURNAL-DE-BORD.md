@@ -1853,3 +1853,41 @@ stable sans changement, drag = renouvellement du seul nœud déplacé, pas de
 copie de Map + tick de révision, non-staleness sur mutation hors store,
 rename, membership). Suites `unit/gui/` + `unit/react/` : 105/105 ;
 `npx tsc --noEmit` et ESLint propres.
+
+---
+
+## Entrée 25 — PowerShell : scaffold « pass 5 » réalisé (DateTime, locations, switch scriptblocks)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+La suite `ps-fifth-pass.test.ts` (commit cc2d85dd, scaffold TDD) comptait
+8 tests rouges depuis sa création — fonctionnalités jamais implémentées :
+`[DateTime]::new(...)` absent de la table des types statiques,
+`ToString(format)` ignorait son argument (.NET tokens), la soustraction
+de deux dates ne produisait pas de TimeSpan, `Push-Location`/`Pop-Location`
+n'existaient pas, et les patterns scriptblock de `switch`
+(`{ $_ -lt 5 } { ... }`) n'étaient jamais évalués (le sujet tombait
+toujours sur `default`).
+
+### Correction
+
+- `STATIC_TYPES.datetime.new` (constructeur y/m/d/h/mi/s) ;
+- `formatDotNetDate` (nouveau module runtime, tokens yyyy/MM/dd/HH/mm/ss/
+  MMM/ddd/tt/fff…) branché sur `Date.ToString(fmt)` — sans argument, le
+  comportement ISO existant est préservé ;
+- opérateur binaire `-` : Date−Date → `makeTimeSpan` (réutilisé de
+  New-TimeSpan), Date−nombre → Date ;
+- cmdlets `Push-Location`/`Pop-Location` (alias pushd/popd), pile dans la
+  variable runtime, même résolution de chemin que Set-Location ;
+- `switchMatch` : un pattern scriptblock est invoqué par sujet via le
+  helper d'invocation existant (`invokeBlockInScope`, $_ lié) — et les
+  branches multiples cumulent sans break, comme en vrai.
+- Deux tests du scaffold corrigés car inexécutables/irréalistes :
+  regex FF1 avec `\1` sans groupe de capture ; attente Length=5 alors que
+  le vrai Set-Content ajoute un newline (=6).
+
+### Validation
+
+`unit/powershell/` : 57 fichiers, 1890 verts (0 échec, scaffold compris).
