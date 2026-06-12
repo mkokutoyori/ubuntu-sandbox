@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
+import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { WireDhcpChannel } from '@/network/dhcp/DhcpServerChannel';
+import type { DHCPPacket } from '@/network/dhcp/DHCPPacket';
 
 beforeEach(() => {
   resetCounters();
@@ -47,18 +49,20 @@ async function buildRelayLab() {
   return { h1, relay, server };
 }
 
+const dhcpState = (h: LinuxPC, iface: string) => h.getDHCPClient().getState(iface);
+
 describe('DHCP on the wire — direct server', () => {
-  it('completes a broadcast DORA against a directly connected router', async () => {
+  it('completes a broadcast DORA against a directly connected router via dhclient', async () => {
     const { h1 } = await buildDirectLab();
 
-    const out = h1.requestLeaseOnWire('eth0');
+    const out = await h1.executeCommand('dhclient -v eth0');
 
     expect(out).toContain('DHCPOFFER');
     expect(out).toContain('DHCPACK');
-    const state = h1.getWireDhcpState('eth0');
-    expect(state?.state).toBe('bound');
-    expect(state?.boundIp).toMatch(/^10\.0\.1\./);
-    expect(state?.boundIp).not.toBe('10.0.1.1');
+    const state = dhcpState(h1, 'eth0');
+    expect(state.state).toBe('BOUND');
+    expect(state.lease?.ipAddress).toMatch(/^10\.0\.1\./);
+    expect(state.lease?.ipAddress).not.toBe('10.0.1.1');
     expect(await h1.executeCommand('ping -c 1 10.0.1.1')).toContain('0% packet loss');
   });
 });
@@ -67,12 +71,12 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
   it('relays DORA across subnets with giaddr-based pool selection', async () => {
     const { h1 } = await buildRelayLab();
 
-    const out = h1.requestLeaseOnWire('eth0');
+    const out = await h1.executeCommand('dhclient -v eth0');
 
     expect(out).toContain('DHCPACK');
-    const state = h1.getWireDhcpState('eth0');
-    expect(state?.state).toBe('bound');
-    expect(state?.boundIp).toMatch(/^10\.0\.1\./);
+    const state = dhcpState(h1, 'eth0');
+    expect(state.state).toBe('BOUND');
+    expect(state.lease?.ipAddress).toMatch(/^10\.0\.1\./);
     expect(await h1.executeCommand('ping -c 1 10.0.12.2')).toContain('0% packet loss');
   });
 
@@ -82,8 +86,8 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
     labA.h1.setEventBus(busA); labA.relay.setEventBus(busA); labA.server.setEventBus(busA);
     const receivedA: unknown[] = [];
     busA.subscribe('dhcp.server.option82-received', (e) => receivedA.push(e.payload));
-    labA.h1.requestLeaseOnWire('eth0');
-    expect(labA.h1.getWireDhcpState('eth0')?.state).toBe('bound');
+    await labA.h1.executeCommand('dhclient eth0');
+    expect(dhcpState(labA.h1, 'eth0').state).toBe('BOUND');
     expect(receivedA).toHaveLength(0);
   });
 
@@ -96,9 +100,9 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
     bus.subscribe('dhcp.server.option82-received', (e) =>
       received.push(e.payload as { circuitId: string; remoteId: string; giaddr: string | null }));
 
-    h1.requestLeaseOnWire('eth0');
+    await h1.executeCommand('dhclient eth0');
 
-    expect(h1.getWireDhcpState('eth0')?.state).toBe('bound');
+    expect(dhcpState(h1, 'eth0').state).toBe('BOUND');
     expect(received.length).toBeGreaterThanOrEqual(2);
     expect(received[0].circuitId).toBe('GigabitEthernet0/0');
     expect(received[0].remoteId).toBe('RELAY');
@@ -109,19 +113,21 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
     const { h1, relay, server } = await buildRelayLab();
     await run(relay, ['configure terminal', 'ip dhcp relay information option', 'end']);
 
+    // Every server reply enters the client through WireDhcpChannel.deliver —
+    // observe Option 82 there, at the client's edge of the wire.
     const seenOnClient: unknown[] = [];
-    const origHandle = (h1 as unknown as {
-      handleWireDhcpReply: (inPort: string, udp: { payload?: { getOption?: (c: number) => unknown } }) => void;
-    }).handleWireDhcpReply.bind(h1);
-    (h1 as unknown as { handleWireDhcpReply: typeof origHandle }).handleWireDhcpReply =
-      (inPort, udp) => {
-        seenOnClient.push(udp.payload?.getOption?.(82));
-        origHandle(inPort, udp);
-      };
+    const origDeliver = WireDhcpChannel.prototype.deliver;
+    WireDhcpChannel.prototype.deliver = function (pkt: DHCPPacket) {
+      seenOnClient.push(pkt.getOption(82));
+      origDeliver.call(this, pkt);
+    };
+    try {
+      await h1.executeCommand('dhclient eth0');
+    } finally {
+      WireDhcpChannel.prototype.deliver = origDeliver;
+    }
 
-    h1.requestLeaseOnWire('eth0');
-
-    expect(h1.getWireDhcpState('eth0')?.state).toBe('bound');
+    expect(dhcpState(h1, 'eth0').state).toBe('BOUND');
     expect(seenOnClient.length).toBeGreaterThanOrEqual(2);
     expect(seenOnClient.every(v => v === undefined)).toBe(true);
   });

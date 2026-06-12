@@ -2151,3 +2151,59 @@ incrément du compte TCP après bind d'un nouveau listener. Suites
 socket-table / linux-lan-ssh / linux-commands (365 tests) et
 oracle-listener-network-coherence (5 tests) vertes ; `tsc` propre ;
 lint propre.
+
+---
+
+## Entrée 30 — DHCP : fusion des deux clients « câble » concurrents d'EndHost
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **Deux machines DORA dans la même classe.** Héritage des deux sessions
+   parallèles : `EndHost` portait à la fois le chemin officiel
+   `DHCPClient` + `WireDhcpChannel` (entrée 15, Strategy sur le canal de
+   conversation) **et** une seconde implémentation complète du DORA câble
+   — `requestLeaseOnWire()` / `handleWireDhcpReply()` / map privée
+   `wireDhcp` (~90 lignes, entrée 25 du REFACTORING-JOURNAL). Deux états
+   de bail divergents (`wireDhcp` vs `ifaceStates` du client), deux
+   validations xid/chaddr, deux chemins de configuration d'interface, et
+   une sortie de log propriétaire (`bound to X via Y`) qui ne ressemblait
+   ni à ISC dhclient ni à rien d'existant.
+2. **L'écouteur UDP/68 servait les deux maîtres** : chaque datagramme
+   était soumis d'abord à la machine parallèle puis aux canaux du client
+   — un ACK pouvait configurer l'interface par le chemin parallèle sans
+   que le bail du `DHCPClient` (T1/T2, lease file, signaux réactifs) n'en
+   sache rien.
+
+### Correction (fusion sur l'existant, zéro nouvelle surface)
+
+- Suppression pure de `requestLeaseOnWire`, `getWireDhcpState`,
+  `handleWireDhcpReply` et de la map `wireDhcp` : les validations
+  RFC 2131 §3.1 (xid, chaddr, type attendu) vivent déjà dans
+  `WireDhcpChannel.exchange()`, et les effets d'un ACK (route connectée,
+  passerelle, `dhcpInterfaces`, hook `onDhcpLeaseConfigured`) vivent déjà
+  dans le callback `configureIP` du `DHCPClient`. L'écouteur UDP/68 ne
+  nourrit plus que les canaux par interface.
+- Les tests `dhcp-relay-wire.test.ts` (DORA direct, relais RFC 3046,
+  Option 82 dans les deux sens) pilotent désormais le **vrai chemin
+  utilisateur** : `dhclient -v eth0` à travers le terminal, assertions
+  sur l'état RFC du client (`BOUND`, bail) au lieu de l'état privé de la
+  machine supprimée ; l'observation « l'Option 82 est strippée avant le
+  client » se fait à la frontière réelle (`WireDhcpChannel.deliver`).
+  Le scénario relais + Option 82 couvre donc maintenant le client
+  officiel, ce que l'ancienne machine parallèle était seule à exercer.
+
+### Validation
+
+- `dhcp-relay-wire` migré : 5 tests verts sur le chemin unifié.
+- Non-régression : 11 suites DHCP/hôte (dhcp_complete, dhcp_fixes,
+  dhcp-cli-gaps, dhcp-client-wire-channel, dhcp-resolv-conf,
+  dhcp-server-identifier, dhcp-stp-cli-gaps, cisco-dhcp-pool-options,
+  windows-netsh-dhcp-dns, host-model-loopback, ping-through-switch) :
+  136 tests verts. `tsc --noEmit` : 0 erreur.
+
+### Limite restante
+
+- `autoDiscoverDHCPServers` (repli hors-bande pour topologies non
+  câblées) demeure — toujours tracé au backlog #17.

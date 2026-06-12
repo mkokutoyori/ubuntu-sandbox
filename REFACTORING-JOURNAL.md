@@ -1295,6 +1295,10 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 
 ### Limite connue
 
-- Le client câble est exposé via `requestLeaseOnWire()` (nouvelle API) ;
+- ~~Le client câble est exposé via `requestLeaseOnWire()` (nouvelle API) ;
   le flux `dhclient`/UI historique reste sur le chemin hors-bande — la
-  bascule par défaut demanderait une migration des suites existantes.
+  bascule par défaut demanderait une migration des suites existantes.~~
+  **Soldée** : `dhclient` passe par le câble depuis l'entrée 15 du
+  JOURNAL-DE-BORD (canal `WireDhcpChannel` essayé en premier), et la
+  surface parallèle `requestLeaseOnWire` a été fusionnée dans le
+  `DHCPClient` (JOURNAL-DE-BORD, entrée 30).
