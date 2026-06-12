@@ -994,6 +994,23 @@ SYS, puis nom nu) et `replace('%s', nom)` pour le message exact d'Oracle.
 **Validation :** `oracle-sqlplus-commands.test.ts` 124/124 (+4 : sys.user$,
 sys.obj$, v$session sans préfixe, message substitué sans %s).
 
+### 2026-06-12 — DML over database links, réglé au COMMIT/ROLLBACK local
+**Défaillance :** suite du chantier cross-link : `INSERT/UPDATE/DELETE …
+@link` n'étaient pas même parsés (`parseTableRefSimple` ignorait `@`) —
+le DML « réussissait » sur la table LOCALE homonyme ou échouait en
+ORA-00942, sans jamais toucher la base distante.
+**Correction :** `@dblink` capturé sur les cibles DML ; l'exécuteur route
+vers `SqlCommandHost.execDbLinkDml` qui ouvre une session distante comme
+l'utilisateur du lien (réutilisée par lien pendant la transaction) et
+exécute l'AST côté cible (contraintes/privilèges distants appliqués).
+Approximation 2PC : la transaction distante reste ouverte jusqu'au
+règlement de la transaction LOCALE — `settleDbLinkTransactions` est
+appelé par les quatre points de commit et par ROLLBACK, propage
+COMMIT/ROLLBACK au distant puis ferme les sessions.
+**Validation :** `oracle-tns-remote.test.ts` 19/19 (+4 : INSERT@link
+commité visible côté serveur distant, UPDATE/DELETE avec WHERE, ROLLBACK
+local annule le distant, ORA-02019 sur lien inconnu).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

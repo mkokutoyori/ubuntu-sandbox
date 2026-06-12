@@ -2256,8 +2256,10 @@ export abstract class BaseParser {
     let schema: string | undefined;
     let name = this.expectIdentifier();
     if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    let dbLink: string | undefined;
+    if (this.match(TokenType.AT)) dbLink = this.expectIdentifier();
     const alias = this.parseOptionalAlias();
-    return { type: 'TableRef', position: pos, schema, name, alias };
+    return { type: 'TableRef', position: pos, schema, name, alias, dbLink };
   }
 
   protected parseOptionalAlias(): string | undefined {

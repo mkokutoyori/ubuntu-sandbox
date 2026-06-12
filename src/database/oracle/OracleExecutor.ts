@@ -518,9 +518,14 @@ export class OracleExecutor extends BaseExecutor {
   private dispatchStatement(statement: Statement): ResultSet {
     switch (statement.type) {
       case 'SelectStatement': return this.executeSelect(statement);
-      case 'InsertStatement': return this.executeInsert(statement);
-      case 'UpdateStatement': return this.executeUpdate(statement);
-      case 'DeleteStatement': return this.executeDelete(statement);
+      case 'InsertStatement':
+      case 'UpdateStatement':
+      case 'DeleteStatement': {
+        if (statement.table.dbLink) return this.executeRemoteDml(statement);
+        if (statement.type === 'InsertStatement') return this.executeInsert(statement);
+        if (statement.type === 'UpdateStatement') return this.executeUpdate(statement);
+        return this.executeDelete(statement);
+      }
       case 'CreateTableStatement': return this.executeCreateTable(statement);
       case 'DropTableStatement': return this.executeDropTable(statement);
       case 'TruncateTableStatement': return this.executeTruncate(statement);
@@ -661,7 +666,18 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Commit complete.');
   }
 
+  private executeRemoteDml(
+    stmt: import('../engine/parser/ASTNode').InsertStatement
+      | import('../engine/parser/ASTNode').UpdateStatement
+      | import('../engine/parser/ASTNode').DeleteStatement,
+  ): ResultSet {
+    const { dbLink, ...table } = stmt.table;
+    return this.requireCommandHost().execDbLinkDml(
+      this.context.currentUser, dbLink!, { ...stmt, table });
+  }
+
   private commitActiveTransaction(): void {
+    this.commandHost?.settleDbLinkTransactions('COMMIT');
     this.txn.commit();
     for (const mv of this.catalog.getMaterializedViews()) {
       if (mv.refreshMode !== 'COMMIT' || mv.staleness !== 'STALE') continue;
@@ -675,6 +691,7 @@ export class OracleExecutor extends BaseExecutor {
       this.txn.rollbackToSavepoint(savepoint);
       return emptyResult('Rollback complete.');
     }
+    this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
   }

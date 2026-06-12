@@ -30,4 +30,13 @@ export interface SqlCommandHost {
    */
   fetchDbLinkRows(currentUser: string, dbLink: string, schema: string | undefined, table: string):
     { rows: CellValue[][]; columns: { name: string; dataType: string }[] };
+  /**
+   * DML against `table@dbLink`: executed on the remote database as the
+   * link user, inside a remote transaction that stays open until the
+   * LOCAL transaction settles (two-phase-commit approximation).
+   */
+  execDbLinkDml(currentUser: string, dbLink: string,
+    stmt: import('../engine/parser/ASTNode').Statement): ResultSet;
+  /** COMMIT/ROLLBACK every remote transaction opened through a link. */
+  settleDbLinkTransactions(mode: 'COMMIT' | 'ROLLBACK'): void;
 }

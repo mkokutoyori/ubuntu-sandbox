@@ -218,3 +218,58 @@ FARDB =
     sh.dispose();
   });
 });
+
+describe('DML across database links settles with the local transaction', () => {
+  function linked(client: import('@/network/devices/LinuxServer').LinuxServer) {
+    const sh = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
+    sh.processLine("CREATE DATABASE LINK dmllink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
+    return sh;
+  }
+  const remoteRows = (dbhost: import('@/network/devices/LinuxServer').LinuxServer) => {
+    const sh = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']).subShell;
+    const out = sh.processLine('SELECT city FROM system.remote_marker ORDER BY city;').output.join('\n');
+    sh.dispose();
+    return out;
+  };
+
+  it('INSERT @link then COMMIT lands on the remote database', () => {
+    const { client, dbhost } = lan();
+    const sh = linked(client);
+    expect(sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('DOUALA');").output.join('\n'))
+      .toMatch(/1 row created/);
+    sh.processLine('COMMIT;');
+    sh.dispose();
+    expect(remoteRows(dbhost)).toContain('DOUALA');
+  });
+
+  it('UPDATE and DELETE @link work with WHERE clauses', () => {
+    const { client, dbhost } = lan();
+    const sh = linked(client);
+    sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('GAROUA');");
+    sh.processLine("UPDATE remote_marker@dmllink SET city = 'MAROUA' WHERE city = 'GAROUA';");
+    sh.processLine("DELETE FROM remote_marker@dmllink WHERE city = 'YAOUNDE';");
+    sh.processLine('COMMIT;');
+    sh.dispose();
+    const out = remoteRows(dbhost);
+    expect(out).toContain('MAROUA');
+    expect(out).not.toContain('GAROUA');
+    expect(out).not.toContain('YAOUNDE');
+  });
+
+  it('ROLLBACK undoes the remote change', () => {
+    const { client, dbhost } = lan();
+    const sh = linked(client);
+    sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('BAFOUSSAM');");
+    sh.processLine('ROLLBACK;');
+    sh.dispose();
+    expect(remoteRows(dbhost)).not.toContain('BAFOUSSAM');
+  });
+
+  it('DML through an undefined link raises ORA-02019', () => {
+    const { client } = lan();
+    const sh = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
+    expect(sh.processLine("INSERT INTO remote_marker@nolink VALUES ('X');").output.join('\n'))
+      .toMatch(/ORA-02019/);
+    sh.dispose();
+  });
+});

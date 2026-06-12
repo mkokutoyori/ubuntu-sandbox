@@ -869,12 +869,10 @@ export class OracleDatabase implements SqlCommandHost {
     this.dbLinkResolver = resolver;
   }
 
-  fetchDbLinkRows(
-    currentUser: string,
-    dbLink: string,
-    schema: string | undefined,
-    table: string,
-  ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
+  private pendingLinkSessions = new Map<string, { remote: OracleDatabase; sid: number; executor: OracleExecutor }>();
+
+  private resolveLinkRemote(currentUser: string, dbLink: string):
+    { remote: OracleDatabase; username: string; password: string } {
     const linkName = dbLink.toUpperCase();
     const link = this.catalog.getDbLink(currentUser.toUpperCase(), linkName)
       ?? this.catalog.getDbLink('PUBLIC', linkName);
@@ -882,16 +880,21 @@ export class OracleDatabase implements SqlCommandHost {
       throw new Error('ORA-02019: connection description for remote database not found');
     }
     if (!this.dbLinkResolver || !link.host) {
-      // No network surface (engine-only) or link without USING clause.
       throw new Error('ORA-12154: TNS:could not resolve the connect identifier specified');
     }
     const res = this.dbLinkResolver(link.host);
     if (!res.ok) throw new Error(res.error);
+    return { remote: res.db, username: link.username ?? currentUser, password: link.password ?? '' };
+  }
 
-    const remote = res.db;
-    // Open the remote session as the link's CONNECT TO user — remote
-    // privileges and views apply, exactly like a real database link.
-    const { sid, executor } = remote.connect(link.username ?? currentUser, link.password ?? '');
+  fetchDbLinkRows(
+    currentUser: string,
+    dbLink: string,
+    schema: string | undefined,
+    table: string,
+  ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
+    const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
+    const { sid, executor } = remote.connect(username, password);
     try {
       const qualified = schema ? `${schema}.${table}` : table;
       const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
@@ -901,6 +904,36 @@ export class OracleDatabase implements SqlCommandHost {
       };
     } finally {
       remote.disconnect(sid);
+    }
+  }
+
+  execDbLinkDml(
+    currentUser: string,
+    dbLink: string,
+    stmt: import('../engine/parser/ASTNode').Statement,
+  ): import('../engine/executor/ResultSet').ResultSet {
+    const key = `${currentUser.toUpperCase()}@${dbLink.toUpperCase()}`;
+    let session = this.pendingLinkSessions.get(key);
+    if (!session) {
+      const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
+      const { sid, executor } = remote.connect(username, password);
+      session = { remote, sid, executor };
+      this.pendingLinkSessions.set(key, session);
+    }
+    return session.executor.execute(stmt);
+  }
+
+  settleDbLinkTransactions(mode: 'COMMIT' | 'ROLLBACK'): void {
+    if (this.pendingLinkSessions.size === 0) return;
+    const sessions = [...this.pendingLinkSessions.values()];
+    this.pendingLinkSessions.clear();
+    const pos = { line: 1, column: 1 };
+    for (const s of sessions) {
+      try {
+        const type = mode === 'COMMIT' ? 'CommitStatement' : 'RollbackStatement';
+        s.executor.execute({ type, position: pos } as unknown as import('../engine/parser/ASTNode').Statement);
+      } catch { /* settle best-effort */ }
+      s.remote.disconnect(s.sid);
     }
   }
 
