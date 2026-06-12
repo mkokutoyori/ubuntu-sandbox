@@ -85,8 +85,22 @@ describe('@connect_identifier goes through the listener', () => {
     prepareUser(sh);
     const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
     db.instance.startListener();
-    expect(run(sh, 'CONNECT app/secret@NOPE')).toContain('ORA-12514');
+    // EZConnect with a bogus service reaches the listener, which refuses.
+    expect(run(sh, 'CONNECT app/secret@localhost/NOPE')).toContain('ORA-12514');
     expect(db.instance.listener.refused).toBe(1);
+    sh.dispose();
+  });
+
+  it('an alias missing from tnsnames.ora yields ORA-12154 before any listener probe', () => {
+    // Real client behaviour since the Oracle Net client landed: a bare
+    // word is a tnsnames alias; unresolvable → ORA-12154, the listener
+    // is never contacted (refusal counter untouched).
+    const sh = session('lsn3b');
+    prepareUser(sh);
+    const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
+    db.instance.startListener();
+    expect(run(sh, 'CONNECT app/secret@NOPE')).toContain('ORA-12154');
+    expect(db.instance.listener.refused).toBe(0);
     sh.dispose();
   });
 

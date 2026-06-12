@@ -15,6 +15,7 @@ import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
+import { resolveOracleConnectTarget } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
@@ -99,48 +100,78 @@ export function createSQLPlusSession(
   args: string[],
   osCtx?: OsSecurityContext
 ): { session: SQLPlusSession; banner: string[]; loginOutput: string[] } {
-  const db = getOracleDatabase(deviceId);
-  const session = new SQLPlusSession(db);
-  // Bind the launching shell's OS identity so bequeath connections
-  // (`/ as sysdba`) are gated by real dba-group membership and the audit
-  // trail records the real OSUSER/MACHINE instead of a hardcoded default.
-  if (osCtx) session.setOsContext(osCtx);
+  let db = getOracleDatabase(deviceId);
+  const localDevice = EquipmentRegistry.getInstance().getById(deviceId) as
+    import('@/network').HostCapableDevice | null;
 
-  const banner = session.getBanner();
-  let loginOutput: string[] = [];
-
-  // Parse sqlplus arguments:
-  //   sqlplus user/pass
-  //   sqlplus user/pass@tns
-  //   sqlplus / as sysdba
-  //   sqlplus -s user/pass  (silent mode)
-  //   sqlplus (no args — interactive login prompt, not supported yet)
-
+  // `user/pass@identifier` — resolve through Oracle Net like a real
+  // client (tnsnames.ora alias or EZConnect, possibly to a REMOTE host
+  // across the simulated network) instead of silently using local.
   let username = '';
   let password = '';
   let asSysdba = false;
+  let netError: string | null = null;
 
   const filtered = args.filter(a => !a.startsWith('-'));
-
   const asSysdbaIdx = filtered.findIndex(a => a.toUpperCase() === 'AS');
   if (asSysdbaIdx !== -1 && filtered[asSysdbaIdx + 1]?.toUpperCase() === 'SYSDBA') {
     asSysdba = true;
   }
 
   const connArg = filtered[0];
+  let connectIdentifier: string | null = null;
+  if (connArg && connArg !== '/' && connArg.includes('/')) {
+    const at = connArg.indexOf('@');
+    if (at >= 0) connectIdentifier = connArg.slice(at + 1);
+  }
+  if (connectIdentifier && localDevice) {
+    const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
+    if (res.ok) db = res.db;
+    else netError = res.error;
+  }
+
+  const session = new SQLPlusSession(db);
+  // Bind the launching shell's OS identity so bequeath connections
+  // (`/ as sysdba`) are gated by real dba-group membership and the audit
+  // trail records the real OSUSER/MACHINE instead of a hardcoded default.
+  if (osCtx) session.setOsContext(osCtx);
+  // In-session CONNECT user/pass@X resolves through the same client.
+  if (localDevice) {
+    session.setTnsResolver((id) =>
+      resolveOracleConnectTarget(localDevice, id, getOracleDatabase));
+  }
+
+  const banner = session.getBanner();
+  let loginOutput: string[] = [];
+
+  // Parse sqlplus arguments:
+  //   sqlplus user/pass
+  //   sqlplus user/pass@tns        (alias or EZConnect, local or remote)
+  //   sqlplus / as sysdba
+  //   sqlplus -s user/pass  (silent mode)
+  //   sqlplus (no args — interactive login prompt, not supported yet)
+
   if (connArg) {
     if (connArg === '/' && asSysdba) {
       // sqlplus / as sysdba
     } else if (connArg.includes('/')) {
-      [username, password] = connArg.split('/', 2);
-      password = password.replace(/@.*$/, ''); // strip @tns_alias
+      // First slash only — EZConnect identifiers carry slashes
+      // (user/pass@//host:port/service); the @-part was already
+      // extracted above as the connect identifier.
+      const slash = connArg.indexOf('/');
+      username = connArg.slice(0, slash);
+      password = connArg.slice(slash + 1).replace(/@.*$/, '');
     } else if (connArg !== 'AS') {
       username = connArg;
       // Would need password prompt — default to empty for now
     }
   }
 
-  if (asSysdba || (connArg === '/' && asSysdba)) {
+  if (netError) {
+    // The Oracle Net layer refused before any credential was checked —
+    // exactly what a real client prints (ERROR: ORA-12541: …).
+    loginOutput = ['ERROR:', netError];
+  } else if (asSysdba || (connArg === '/' && asSysdba)) {
     loginOutput = session.login('SYS', '', true);
   } else if (username) {
     loginOutput = session.login(username, password);

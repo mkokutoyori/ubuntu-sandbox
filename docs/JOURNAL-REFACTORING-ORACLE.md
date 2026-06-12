@@ -872,6 +872,42 @@ links : persistance DBA_DB_LINKS, owner PUBLIC, ORA-02011, drop +
 ORA-02024) ; non-régression `unit/database/` complète ; `npx tsc --noEmit`
 propre. GAP.md §10.7 marqué ✅ CORRIGÉ.
 
+### 2026-06-12 — Oracle Net traverse le réseau simulé (sqlplus/tnsping distants)
+**Défaillance :** la plus grosse incohérence Oracle ↔ couche réseau restante :
+`sqlplus user/pass@X` **supprimait** l'identifiant de connexion (`password
+= password.replace(/@.*$/, '')`) et atterrissait toujours sur l'instance
+LOCALE. Conséquences : impossible d'atteindre une base sur une autre
+machine de la topologie (cas d'usage central d'un simulateur réseau), un
+service inexistant « se connectait » quand même au lancement, le fichier
+`tnsnames.ora` écrit par le provisioning n'était jamais consulté, et
+`tnsping` ne connaissait que l'alias local (TNS-03505 pour tout le reste).
+**Correction :** nouveau client Oracle Net côté terminal
+(`src/terminal/commands/oracleNet.ts`), même politique de résolution que le
+client SSH (helpers extraits de `sshLauncher` dans `src/shell/hostResolution.ts`
+— partage, zéro duplication) :
+- parsing EZConnect (`//host[:port]/service`, `host:port/service`) et
+  **résolution d'alias dans le vrai tnsnames.ora du device client** (éditer
+  le fichier au vi change réellement la résolution) ;
+- échelle d'erreurs réelle : ORA-12154 (alias inconnu), ORA-12545 (hôte
+  introuvable), ORA-12170 (hôte éteint), ORA-12541 (pas de listener /
+  mauvais port / cible non-serveur), puis délégation au listener CIBLE
+  pour ORA-12514/12528 — et incrément de ses compteurs established/refused ;
+- la session SQL*Plus se **lie à l'OracleDatabase distante** ; le `CONNECT
+  user/pass@X` en cours de session re-bind la session via un résolveur
+  injecté (`setTnsResolver`, même pattern que setFileIO/setHostCommandRunner
+  — la couche database n'importe jamais Equipment) ;
+- `tnsping` résout alias + EZConnect, distingue adaptateur TNSNAMES/EZCONNECT,
+  et — comme le vrai — répond OK même pour un service inconnu (il ne sonde
+  que le listener, pas le CONNECT_DATA) ;
+- au passage : correction du parsing `user/pass@id` qui tronquait au
+  deuxième `/` (split('/', 2)) dans les deux chemins launch et CONNECT.
+**Validation :** nouvelle suite `oracle-tns-remote.test.ts` (10 tests sur un
+LAN à 2 serveurs + switch : marqueur distant visible via EZConnect et via
+alias ajouté au tnsnames.ora, isolement local/distant, ORA-12514/12541/12545/
+12154, cycle lsnrctl stop/start vu du client, CONNECT re-bind, tnsping OK →
+TNS-12541) ; non-régression `unit/database/` + `unit/shell/` +
+`unit/terminal/` ; `npx tsc --noEmit` et ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
