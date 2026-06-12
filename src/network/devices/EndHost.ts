@@ -26,6 +26,12 @@ import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
+  NeighborCache,
+  NDP_RETRANS_TIMER_MS,
+  NDP_MAX_MULTICAST_SOLICIT,
+  type NeighborCacheEntry,
+} from './host/NeighborCache';
+import {
   HostSignalStore,
   makeReadonlyHostObservables,
   projectArpTable,
@@ -123,20 +129,7 @@ export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
-export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
-
-export interface NeighborCacheEntry {
-  /** Link-layer (MAC) address */
-  mac: MACAddress;
-  /** Interface on which this neighbor is reachable */
-  iface: string;
-  /** NDP state machine state */
-  state: NeighborState;
-  /** Whether this neighbor is a router */
-  isRouter: boolean;
-  /** Last reachability confirmation timestamp */
-  timestamp: number;
-}
+export type { NeighborState, NeighborCacheEntry } from './host/NeighborCache';
 
 // ─── IPv6 Routing Table Entry ────────────────────────────────────────
 
@@ -221,8 +214,12 @@ export abstract class EndHost extends Equipment {
   protected routingTable: HostRouteEntry[] = [];
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
-  /** Neighbor cache: IPv6 string → { mac, iface, state, isRouter, timestamp } */
-  protected neighborCache: Map<string, NeighborCacheEntry> = new Map();
+  protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
+    onLearned: (ip, entry) => this.emitNdpLearned({
+      ip, mac: entry.mac.toString(), iface: entry.iface,
+    }),
+    sendUnicastSolicit: (ip, entry) => this.sendUnicastNeighborSolicit(ip, entry),
+  });
   /** Monotonically increasing ICMPv6 echo identifier */
   protected ping6IdCounter: number = 0;
   /** Default IPv6 gateway (learned from RA or configured) */
@@ -340,7 +337,7 @@ export abstract class EndHost extends Equipment {
 
   /** [actor-API] Refresh the NDP signal from `this.neighborCache`. */
   _refreshNdpSignal(): void {
-    this.hostSignalStore.ndp.set(projectNdpTable(this.neighborCache));
+    this.hostSignalStore.ndp.set(projectNdpTable(this.neighborCache.snapshot()));
   }
 
   /** [actor-API] Refresh the routes signal from `this.routingTable`. */
@@ -689,6 +686,7 @@ export abstract class EndHost extends Equipment {
     super.powerOff();
     if (wasOn) this.lifecycle.powerOff();
     this.stopArpAgingTimer();
+    this.neighborCache.stop();
   }
 
   // ─── System identity ────────────────────────────────────────────
@@ -2309,7 +2307,7 @@ export abstract class EndHost extends Equipment {
   // ─── Neighbor Cache (NDP) ──────────────────────────────────────
 
   getNeighborCache(): Map<string, NeighborCacheEntry> {
-    return new Map(this.neighborCache);
+    return this.neighborCache.snapshot();
   }
 
   // ─── IPv6 Packet Handling ──────────────────────────────────────
@@ -2400,7 +2398,7 @@ export abstract class EndHost extends Equipment {
       });
     };
 
-    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    const cached = this.neighborCache.markUsed(route.nextHopIP.toString());
     if (cached) {
       send(cached.mac);
     } else {
@@ -2413,6 +2411,7 @@ export abstract class EndHost extends Equipment {
   }
 
   private handleICMPv6EchoReply(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    this.neighborCache.confirmReachability(ipv6.sourceIP.toString());
     // Phase 5.7: settle the awaiting `sendPing6` via the bus. The awaiter
     // computes its own rtt; rttMs=0 is a sentinel here so capture actors
     // can still record the reply.
@@ -2456,18 +2455,8 @@ export abstract class EndHost extends Equipment {
     // Learn the source's link-layer address if provided
     const srcLLOpt = ns.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: portName,
-        state: 'stale',
-        isRouter: false,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: portName,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, portName, false);
     }
 
     // Send Neighbor Advertisement
@@ -2526,17 +2515,11 @@ export abstract class EndHost extends Equipment {
     const mac = tgtLLOpt.address;
     const key = na.targetAddress.toString();
 
-    // Update neighbor cache
-    this.neighborCache.set(key, {
-      mac,
-      iface: portName,
-      state: na.solicitedFlag ? 'reachable' : 'stale',
+    this.neighborCache.learnFromAdvertisement(key, mac, portName, {
+      solicited: na.solicitedFlag,
       isRouter: na.routerFlag,
-      timestamp: Date.now(),
+      override: na.overrideFlag,
     });
-
-    // Phase 5.7: resolveNDP awaits this event via the bus.
-    this.emitNdpLearned({ ip: key, mac: mac.toString(), iface: portName });
 
     Logger.debug(this.id, 'ndp:na-received',
       `${this.name}: learned ${na.targetAddress} -> ${mac}`);
@@ -2554,18 +2537,8 @@ export abstract class EndHost extends Equipment {
     // Learn router's link-layer address
     const srcLLOpt = ra.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer') {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: portName,
-        state: 'reachable',
-        isRouter: true,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: portName,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, portName, true);
     }
 
     // If router lifetime > 0, consider as default router
@@ -2614,8 +2587,8 @@ export abstract class EndHost extends Equipment {
    * Returns cached result if available, otherwise sends NS and waits.
    */
   protected async resolveNDP(portName: string, targetIP: IPv6Address, timeoutMs: number = 2000): Promise<MACAddress> {
-    const cached = this.neighborCache.get(targetIP.toString());
-    if (cached && cached.state === 'reachable') return cached.mac;
+    const cached = this.neighborCache.markUsed(targetIP.toString());
+    if (cached && cached.state !== 'incomplete') return cached.mac;
 
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
@@ -2630,12 +2603,11 @@ export abstract class EndHost extends Equipment {
     if (!srcIP) throw new Error('No IPv6 source address');
 
     const targetIpStr = targetIP.toString();
-    const waitPromise = waitForEvent(
-      this.getBus(),
-      'host.ndp.entry-learned',
-      (p) => p.deviceId === this.id && p.ip === targetIpStr,
-      { timeoutMs, scheduler: this.getScheduler() },
+    const attempts = Math.min(
+      NDP_MAX_MULTICAST_SOLICIT,
+      Math.max(1, Math.round(timeoutMs / NDP_RETRANS_TIMER_MS)),
     );
+    const perAttemptMs = Math.max(1, Math.floor(timeoutMs / attempts));
 
     const ns = createNeighborSolicitation(targetIP, port.getMAC());
     const nsPkt = createIPv6Packet(
@@ -2648,20 +2620,47 @@ export abstract class EndHost extends Equipment {
     );
     const dstMAC = targetIP.toSolicitedNodeMulticast().toMulticastMAC();
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC,
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const waitPromise = waitForEvent(
+        this.getBus(),
+        'host.ndp.entry-learned',
+        (p) => p.deviceId === this.id && p.ip === targetIpStr,
+        { timeoutMs: perAttemptMs, scheduler: this.getScheduler() },
+      );
+
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC,
+        etherType: ETHERTYPE_IPV6, payload: nsPkt,
+      });
+
+      Logger.debug(this.id, 'ndp:ns-sent',
+        `${this.name}: NS for ${targetIP} sent (attempt ${attempt}/${attempts})`);
+
+      try {
+        const learned = await waitPromise;
+        return new MACAddress(learned.mac);
+      } catch (err) {
+        if (!(err instanceof WaitForEventTimeoutError)) throw err;
+      }
+    }
+    throw new Error('NDP timeout');
+  }
+
+  private sendUnicastNeighborSolicit(ip: string, entry: NeighborCacheEntry): void {
+    const port = this.ports.get(entry.iface);
+    if (!port || !port.isIPv6Enabled()) return;
+    const targetIP = new IPv6Address(ip);
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return;
+
+    const ns = createNeighborSolicitation(targetIP, port.getMAC());
+    const nsPkt = createIPv6Packet(srcIP, targetIP, IP_PROTO_ICMPV6, 255, ns, 24);
+    this.sendFrame(entry.iface, {
+      srcMAC: port.getMAC(), dstMAC: entry.mac,
       etherType: ETHERTYPE_IPV6, payload: nsPkt,
     });
-
-    Logger.debug(this.id, 'ndp:ns-sent', `${this.name}: NS for ${targetIP} sent`);
-
-    try {
-      const learned = await waitPromise;
-      return new MACAddress(learned.mac);
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) throw new Error('NDP timeout');
-      throw err;
-    }
   }
 
   // ─── IPv6 Route Resolution (LPM) ────────────────────────────────

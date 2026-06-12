@@ -498,12 +498,12 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 | P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | ✅ Entrée 18 |
 | P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 19 |
 | P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 19 |
-| P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | À faire |
+| P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | ✅ Entrée 14 (session parallèle) |
 | P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
 | P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | À faire |
 | P10 | `Connection.isActive` toujours `true` mais badge Actif/Inactif rendu | Dead code | Basse | À faire |
-| P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | À faire |
-| P12 | NUD : 5 états déclarés (RFC 4861 §7.3), 2 utilisés, pas de machine à états | RFC 4861 | Moyenne | À faire |
+| P11 | Equipment : 11 stubs terminal sur tous les devices (ISP, backlog #10 série 1) | SOLID | Moyenne | ✅ Entrée 12 (session parallèle) |
+| P12 | NUD : 5 états déclarés (RFC 4861 §7.3), 2 utilisés, pas de machine à états | RFC 4861 | Moyenne | ✅ Entrée 20 |
 
 ---
 
@@ -681,6 +681,69 @@ Après fusion : `git rev-list --count mandeng..<branche>` = 0 pour les
 ### Tests
 
 cmd-netsh + windows-netsh-dhcp-dns + windows-consistency : 251 verts.
+
+---
+
+## Entrée 20 — NDP : machine à états NUD complète (RFC 4861 §7.3) et cache unifié hôte/routeur (P12)
+
+**Date** : 2026-06-12
+
+### Défaillances constatées
+
+1. **Machine à états fantôme** : `NeighborState` déclarait les 5 états du
+   RFC 4861 (`incomplete | reachable | stale | delay | probe`) mais seuls
+   `reachable` et `stale` étaient écrits, et aucune transition n'existait :
+   - pas d'expiration `reachable → stale` (REACHABLE_TIME 30 s) — une
+     entrée restait « reachable » pour toujours ;
+   - pas de `stale → delay → probe` à l'utilisation : `resolveNDP`
+     ignorait une entrée STALE (MAC pourtant utilisable) et relançait une
+     NS multicast à chaque fois, l'inverse du comportement RFC §7.3.3 ;
+   - pas de sondes unicast ni de suppression d'entrée injoignable ;
+   - pas de confirmation de joignabilité par la couche supérieure
+     (§7.3.1) : une réponse écho ne rafraîchissait rien.
+2. **NS unique sans retransmission** : résolution = 1 seule NS multicast
+   puis timeout sec, au lieu de MAX_MULTICAST_SOLICIT (3) espacées de
+   RETRANS_TIMER (1 s).
+3. **Cache NDP dupliqué** : `EndHost` et `IPv6DataPlane` (routeur)
+   portaient chacun une `Map` + les mêmes blocs `set({state: 'stale'…})`
+   copiés-collés (NS source, NA, RS/RA), avec une divergence déjà
+   installée : l'hôte marquait la source d'un RA `reachable` (le RFC
+   §6.3.4 impose STALE), le routeur n'apprenait pas `isRouter`.
+4. `NeighborState`/`NeighborCacheEntry` définis en double (EndHost.ts et
+   IPv6DataPlane.ts).
+
+### Corrections
+
+- Nouvelle classe `host/NeighborCache.ts` : machine à états complète,
+  pilotée par le `IScheduler` injectable (testable en temps virtuel),
+  hooks `sendUnicastSolicit`/`onLearned`/`onUnreachable` :
+  - `learnFromSource` (NS/RS/RA source-LL) → STALE, en préservant
+    l'état si la MAC est inchangée (§7.2.3) ;
+  - `learnFromAdvertisement` → REACHABLE si sollicitée, STALE sinon,
+    avec sémantique du flag Override (§7.2.5 : O=0 + MAC différente →
+    MAC conservée, REACHABLE rétrogradé STALE) ;
+  - expiration paresseuse REACHABLE→STALE à 30 s ;
+  - `markUsed` : STALE → DELAY (5 s) → PROBE (3 NS unicast à 1 s) →
+    suppression + `onUnreachable` ; la MAC en cache reste utilisée
+    pendant la sonde (§7.3.3) ;
+  - `confirmReachability` (§7.3.1) branchée sur la réception d'une
+    réponse écho ICMPv6.
+- `resolveNDP` : entrée STALE/DELAY/PROBE → MAC immédiate (plus de
+  re-résolution superflue) ; cache miss → NS multicast retransmise
+  jusqu'à 3 fois dans le budget de timeout.
+- RA : source apprise STALE + `isRouter` (conforme §6.3.4).
+- `EndHost` et `IPv6DataPlane` partagent la même classe ; types et
+  constantes (REACHABLE_TIME, DELAY_FIRST_PROBE, RETRANS_TIMER,
+  MAX_*_SOLICIT) définis une seule fois et ré-exportés aux anciens
+  emplacements.
+- Timers NUD libérés au `powerOff()`.
+
+### Tests
+
+- `ndp-nud-state-machine.test.ts` (15, temps virtuel) : transitions
+  complètes, expiration, sondes, annulation par confirmation, Override,
+  MAC changée, stop.
+- Non-régression : ping6 + host-observables + suite network-v2 complète.
 
 ---
 
