@@ -3,15 +3,24 @@
  * EIGRP/BGP engines to a Router (mirrors the RIP/OSPF integration).
  *
  * SRP: it only wires the topology seams (RoutingPeerLocator /
- * RoutingDeviceContext) and reflects each engine's contributed routes
- * into the Router RIB. All protocol logic lives in the engines; all
- * adjacency remains REAL config-driven (a peer is only seen if it is
- * genuinely cabled and runs the same protocol).
+ * RoutingDeviceContext / EigrpWire) and reflects each engine's
+ * contributed routes into the Router RIB. All protocol logic lives in
+ * the engines. EIGRP converses in REAL IPv4 protocol-88 frames
+ * (multicast 224.0.0.10) leaving through the router's ports; BGP still
+ * resolves its peers through the locator (object-level — its
+ * TCP/179 migration is a separate, documented work item).
  */
 import { Equipment } from '../../equipment/Equipment';
 import type { Port } from '../../hardware/Port';
-import { IPAddress, SubnetMask } from '../../core/types';
+import {
+  EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
+  ETHERTYPE_IPV4, IP_PROTO_EIGRP, createIPv4Packet,
+} from '../../core/types';
+import { ipv4MulticastToMac, isMulticastIpv4 } from '../../core/ip';
 import { EIGRPEngine } from '../../eigrp/EIGRPEngine';
+import {
+  EIGRP_MULTICAST_IP, isEigrpPacket, type EigrpPacket,
+} from '../../eigrp/packets';
 import { BGPEngine } from '../../bgp/BGPEngine';
 import type {
   RoutingPeer, RibRoute,
@@ -31,6 +40,9 @@ export interface DynamicRoutingCtx {
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
   setRoutingTable(t: RouteEntry[]): void;
+  /** Egress for protocol frames (Port → Cable → peer handleFrame). */
+  sendFrame(iface: string, frame: EthernetFrame): void;
+  getArpEntry(ip: string): { mac: MACAddress; iface: string } | undefined;
   /** Existing frame-driven engines, exposed through the unified contract. */
   getRipEngine(): RouterRIPEngine;
   getOspfIntegration(): RouterOSPFIntegration;
@@ -65,6 +77,10 @@ export class RouterDynamicRouting {
       e.setDeviceContext(deviceContext);
       e.setPeerLocator(peerLocator);
     }
+    this.eigrp.setWire({
+      send: (iface, destIp, packet) =>
+        this.sendEigrpFrame(iface, destIp, packet),
+    });
   }
 
   /** Every routing protocol, uniformly (full consistency). */
@@ -81,6 +97,39 @@ export class RouterDynamicRouting {
     if (protocol === 'rip') return this.rip;
     if (protocol === 'ospf') return this.ospf;
     return null;
+  }
+
+  // ── EIGRP wire transport ──────────────────────────────────────────
+
+  /**
+   * Encapsulate an EIGRP packet in IPv4 protocol 88, TTL 1 (RFC 7868
+   * §4.2), and send the real frame out the port. Multicast maps to
+   * its RFC 1112 MAC; unicast resolves through the ARP cache.
+   */
+  private sendEigrpFrame(iface: string, destIp: string,
+    packet: EigrpPacket): void {
+    const port = this.ctx.getPorts().get(iface);
+    if (!port || !port.getIsUp()) return;
+    const myIP = port.getIPAddress();
+    if (!myIP) return;
+    const ipPkt = createIPv4Packet(
+      myIP, new IPAddress(destIp), IP_PROTO_EIGRP, 1, packet, 64);
+    const dstMAC = isMulticastIpv4(destIp)
+      ? new MACAddress(ipv4MulticastToMac(destIp))
+      : (this.ctx.getArpEntry(destIp)?.mac ?? MACAddress.broadcast());
+    this.ctx.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+  }
+
+  /** EIGRP packets from the wire (proto 88) — the only path in. */
+  receiveEigrpPacket(inPort: string, ipPkt: IPv4Packet): void {
+    const payload = ipPkt.payload;
+    if (!isEigrpPacket(payload)) return;
+    this.eigrp.processPacket(
+      inPort, ipPkt.sourceIP.toString(), payload,
+      ipPkt.destinationIP.toString() === EIGRP_MULTICAST_IP);
   }
 
   private connected(): ConnectedNetwork[] {
@@ -138,6 +187,23 @@ export class RouterDynamicRouting {
   converge(): void {
     this.eigrp.converge();
     this.bgp.converge();
+    this.reflectRib();
+  }
+
+  /**
+   * Data-path variant (called before every forwarding decision):
+   * reflect routes already learned from the wire WITHOUT pumping new
+   * EIGRP frames — a real router does not hello on every packet it
+   * forwards. Real rounds happen at config/show time (triggered
+   * updates) via {@link converge}.
+   */
+  refresh(): void {
+    this.eigrp.refreshFromCache();
+    this.bgp.converge();
+    this.reflectRib();
+  }
+
+  private reflectRib(): void {
     const kept = this.ctx.getRoutingTable()
       .filter((r) => r.type !== 'eigrp' && r.type !== 'bgp');
     const add = (rr: RibRoute): RouteEntry => ({

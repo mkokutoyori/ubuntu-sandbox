@@ -1425,7 +1425,7 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 | 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | ✅ Transport corrigé (entrée 13) — orchestration encore synchrone |
 | 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | ✅ Corrigé (entrée 17) |
 | 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | ✅ NSS corrigé (entrée 23) — reste ssh/scp par nom (chantier SSH-sur-TCP) |
-| 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
+| 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | ✅ EIGRP corrigé (entrée 27) — reste BGP (chantier TCP/179) |
 | 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | ✅ Corrigé (entrée 15) — scan registre conservé en repli des topologies non câblées |
 | 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | ✅ Corrigé (entrée 14) |
 | 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | ✅ Corrigé (entrée 14 — iptables écarté : déléguait déjà à IPAddress.tryParse) |
@@ -1932,3 +1932,110 @@ Nouvelle suite `mac-table-reactivity.test.tsx` (4 tests : learned publié
 par du trafic réel sur un LAN câblé, cleared publié, hook qui se remplit
 après un ping et se vide après clear sans refresh manuel, instance null).
 `unit/gui/` complet vert.
+
+---
+
+## Entrée 27 — EIGRP : la conversation passe par les câbles (backlog #16, volet EIGRP)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **Adjacence et routes par lecture d'objets.** `EIGRPEngine.computeNeighbors`
+   et `computeRoutes` appelaient `p.peerEngineFor('eigrp')` (fourni par
+   `RouterDynamicRouting.peers()` via le registre d'équipements) et lisaient
+   **directement** la config et `originatedPrefixes()` du moteur voisin.
+   Aucune trame EIGRP n'existait : ni Hello, ni Update, ni IP proto 88.
+2. **Pas d'adjacence à travers un switch.** `peers()` ne suivait qu'un câble
+   direct routeur↔routeur : deux routeurs EIGRP reliés par un switch L2 ne se
+   voyaient jamais — contraire au multicast 224.0.0.10 réel qui est inondé.
+3. **Pas de propagation multi-sauts.** Seuls les préfixes *originés* du voisin
+   direct étaient appris : dans une chaîne R1—R2—R3, R1 n'apprenait jamais le
+   LAN de R3. Le vrai EIGRP est un vecteur de distance qui ré-annonce de
+   proche en proche avec métrique vectorielle accumulée.
+4. **Pas de règle d'activation d'interface.** L'adjacence se formait sur
+   n'importe quelle interface câblée ; le vrai IOS n'émet/n'écoute des Hellos
+   que sur les interfaces couvertes par une instruction `network` (et jamais
+   sur les passives).
+5. **Trafic de contrôle sur le chemin de données.** `Router.lookupRoute`
+   convergeait EIGRP/BGP à chaque décision de forwarding — supportable en
+   god-mode (lectures mémoire), incompatible avec de vraies trames.
+
+### Correction
+
+- **Paquets filaires** (`src/network/eigrp/packets.ts`) : `EigrpHelloPacket`
+  (ASN, K-values, hold time, router-id — §5.3.4) et `EigrpUpdatePacket`
+  (TLVs route avec métrique vectorielle : min-bande-passante du chemin,
+  délai cumulé — §6.6), constantes 224.0.0.10 / proto 88 (RFC 7868 §4.2),
+  seam `EigrpWire` injecté dans le moteur (DIP).
+- **Émission** : `RouterDynamicRouting.sendEigrpFrame` encapsule en IPv4
+  proto 88, TTL 1, MAC multicast RFC 1112 (01:00:5e:00:00:0a) — la trame
+  part par le port réel (Port → Câble → `handleFrame`), donc traverse les
+  switches par inondation multicast. `ipv4MulticastToMac`/`isMulticastIpv4`
+  déménagent de `igmp/types` vers `core/ip.ts` (foyer canonique, ré-export
+  conservé) et remplacent la copie inline de `RouterOSPFIntegration` (DRY).
+- **Réception** : `Router.handleLocalDelivery` dispatch proto 88 →
+  `RouterDynamicRouting.receiveEigrpPacket` → `EIGRPEngine.processPacket`
+  (garde structurelle `isEigrpPacket`). Validation à l'ingress : ASN du
+  process, interface activée par `network` et non passive, K-values —
+  un désaccord K publie `eigrp.neighbor.k-value-mismatch` et logue le
+  `%DUAL-5-NBRCHANGE … K-value mismatch` d'IOS, des deux côtés (chaque
+  routeur diagnostique à la réception du Hello du pair, comme en vrai).
+- **Modèle de convergence** (analogue de l'entrée 22 OSPF) : une ronde =
+  l'intervalle Hello. `converge()` multicaste un Hello par interface
+  active ; la livraison câble étant synchrone, le pair traite à l'ingress,
+  rafraîchit sa propre vue (converge récursif, gardé contre la
+  réentrance), puis répond Hello unicast + Update table-complète. Un
+  voisin qui n'a pas répondu dans la ronde est déclaré down (analogue du
+  hold time) : câble coupé, port down, équipement éteint ou déconfiguré
+  interrompent réellement la conversation.
+- **Vecteur de distance réel** : les Updates ré-annoncent les préfixes
+  appris avec accumulation (bw = min, delay = somme) et **split horizon**
+  (jamais ré-annoncé sur l'interface du successeur). DUAL inchangé en
+  aval (RD/FD depuis les TLVs reçus, variance, maximum-paths) ; la
+  propagation multi-sauts devient correcte (métrique 3328 à deux sauts
+  GigE, conforme IOS).
+- **Chemin de données silencieux** : `lookupRoute` appelle désormais
+  `RouterDynamicRouting.refresh()` → `refreshFromCache()` (recalcul
+  depuis les Updates déjà reçus, zéro trame émise) ; les vraies rondes
+  partent aux convergences déclenchées par la config et les `show`
+  (triggered updates). Un routeur réel n'émet pas de Hello à chaque
+  paquet routé.
+- `peerEngineFor` n'est plus consommé par EIGRP ; il ne survit que pour
+  BGP (chantier TCP/179 documenté ci-dessous).
+
+### Comportements réels gagnés
+
+- Adjacence à travers un switch L2 (impossible avant) ; visible dans
+  `PacketAnimation` et le Logger (`cable:transmit` des Hellos/Updates).
+- `show ip route` : routes D multi-sauts avec next-hop et métrique
+  accumulée exacts ; ping de bout en bout sur routes apprises uniquement.
+- Coupure de câble → perte du voisin et retrait des routes à la ronde
+  suivante ; `network` manquant ou `passive-interface` → aucun Hello.
+- `show ip eigrp neighbors` affiche l'IP réelle du voisin (identité
+  filaire), plus un id d'équipement interne.
+
+### Limites restantes (documentées)
+
+- BGP reste en god-mode (lecture du moteur pair via le locator) — sa
+  migration exige des sessions TCP/179 réelles sur la TcpStack routeur.
+- Pas de RTP (ACK/retransmission §5.4) ni de Query/Reply DUAL actifs :
+  le modèle synchronie-par-ronde les rend inobservables ; à revisiter si
+  un scheduler global temporise un jour la livraison des trames.
+- La cohérence inter-routeurs est « eventually consistent » entre rondes
+  (un pair éloigné voit l'état complet à sa propre ronde suivante) —
+  cohérent avec l'architecture pull paresseuse existante.
+
+### Validation
+
+- `eigrp-engine.test.ts` réécrit sur un faux câble livrant de vrais
+  paquets (20 cas, dont : règle d'activation `network`, passive, coupure
+  de câble, multi-sauts avec métrique 3328, split horizon sans écho d'un
+  préfixe mort, refresh sans trame).
+- Nouveau `eigrp-wire.test.ts` (3 cas équipements réels) : adjacence à
+  travers un GenericSwitch avec trames proto 88 observées sur le bus
+  câble, coupure de câble, propagation multi-sauts + ping.
+- Non-régression : suite `network-v2` complète **301 fichiers /
+  7001 tests verts** ; gui/react/events 40 fichiers / 354 tests verts ;
+  `tsc --noEmit` propre ; lint : seules 2 erreurs `any` préexistantes
+  sur main (vérifié par stash).

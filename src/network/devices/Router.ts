@@ -62,6 +62,7 @@ import {
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
+  IP_PROTO_EIGRP,
   UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
@@ -307,6 +308,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      getArpEntry: (ip) => this.arpTable.get(ip),
       getRipEngine: () => this.ripEngine,
       getOspfIntegration: () => this.ospfIntegration,
     });
@@ -717,10 +720,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
-    // Keep EIGRP/BGP-learned routes fresh for the data path: a real
-    // adjacency over the live topology installs/withdraws routes
-    // before every forwarding decision (config-driven, reactive).
-    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.converge();
+    // Keep EIGRP/BGP-learned routes fresh for the data path WITHOUT
+    // emitting protocol frames: routes already received from the wire
+    // are reflected into the RIB before every forwarding decision.
+    // Real Hello/Update rounds happen at config/show time (triggered
+    // updates) — a router does not hello on every packet it forwards.
+    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.refresh();
 
     let bestRoute: RouteEntry | null = null;
     let bestPrefix = -1;
@@ -1137,6 +1142,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           ipPkt.payload as import('../ospf/types').OSPFPacket,
         );
       }
+      return;
+    }
+
+    // EIGRP runs directly over IP (proto 88, RFC 7868 §4.2).
+    if (ipPkt.protocol === IP_PROTO_EIGRP) {
+      this.dynamicRouting.receiveEigrpPacket(inPort, ipPkt);
       return;
     }
 

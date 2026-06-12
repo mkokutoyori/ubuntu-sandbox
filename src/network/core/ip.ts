@@ -84,6 +84,25 @@ export function isValidIPv4(ip: string): boolean {
   return tryIpToUint32(ip) !== null;
 }
 
+/**
+ * RFC 1112 §6.4 — map an IPv4 multicast group to its Ethernet MAC:
+ * 01:00:5e + the low-order 23 bits of the group address.
+ */
+export function ipv4MulticastToMac(group: string): string {
+  const parts = group.split('.').map(Number);
+  if (parts.length !== 4) return '01:00:5e:00:00:00';
+  const b1 = parts[1] & 0x7f;
+  const b2 = parts[2] & 0xff;
+  const b3 = parts[3] & 0xff;
+  return `01:00:5e:${b1.toString(16).padStart(2, '0')}:${b2.toString(16).padStart(2, '0')}:${b3.toString(16).padStart(2, '0')}`;
+}
+
+/** True for the IPv4 multicast range 224.0.0.0/4. */
+export function isMulticastIpv4(ip: string): boolean {
+  const first = parseInt(ip.split('.')[0], 10);
+  return first >= 224 && first <= 239;
+}
+
 /** Structural IPv6 validation per RFC 4291 §2.2 (single `::`, embedded IPv4 tail, `%zone`). */
 export function isValidIPv6(s: string): boolean {
   if (!s.includes(':')) return false;

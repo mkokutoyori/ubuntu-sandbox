@@ -17,6 +17,7 @@ import {
   createIPv4Packet,
 } from '../../core/types';
 import { Equipment } from '../../equipment/Equipment';
+import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
@@ -202,15 +203,10 @@ export class RouterOSPFIntegration {
       64,
     );
 
-    // Determine destination MAC
+    // Determine destination MAC (RFC 1112 §6.4 for multicast groups)
     let dstMAC: MACAddress;
     if (destIP === '224.0.0.5' || destIP === '224.0.0.6') {
-      // Multicast: 01:00:5e + lower 23 bits of IP
-      const ipOctets = new IPAddress(destIP).getOctets();
-      dstMAC = new MACAddress(
-        `01:00:5e:${(ipOctets[1] & 0x7f).toString(16).padStart(2, '0')}:` +
-        `${ipOctets[2].toString(16).padStart(2, '0')}:${ipOctets[3].toString(16).padStart(2, '0')}`
-      );
+      dstMAC = new MACAddress(ipv4MulticastToMac(destIP));
     } else {
       const cached = this.ctx.getArpEntry(destIP);
       dstMAC = cached ? cached.mac : MACAddress.broadcast();
