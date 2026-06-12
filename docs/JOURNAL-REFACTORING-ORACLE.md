@@ -774,6 +774,47 @@ dans ps et alert log « immediate », SHUTDOWN/STARTUP SQL*Plus → unité
 cohérente sans boucle) ; non-régression `unit/database/` + `unit/shell/` +
 suites services network-v2 ; `npx tsc --noEmit` propre.
 
+### 2026-06-12 — Datafiles ⇄ filesystem hôte : ORA-01157 réel et RESTORE qui restaure
+**Défaillance :** les copies VFS des datafiles étaient un décor en écriture
+seule, avec quatre mensonges en cascade :
+1. `rm users01.dbf` depuis bash n'avait **aucune** conséquence : Oracle ne
+   relisait jamais le disque, STARTUP ouvrait toujours ;
+2. pire, la resynchronisation sur chaque changement d'état
+   (`OracleFilesystemSync.syncDatafiles`) **ressuscitait** le fichier
+   supprimé au prochain MOUNT ;
+3. `RMAN RESTORE` n'écrivait **rien** sur le disque (événements de
+   progression seulement) — le workflow de récupération était théâtral ;
+4. `LinuxRmanContext.getDatafiles()` retournait une liste figée de 4
+   fichiers : un tablespace créé après le boot était invisible pour RMAN
+   et ses FILE# pouvaient diverger de V$DATAFILE.
+**Correction :**
+- `OracleStorage.listDatafiles()` — énumération canonique (FILE# séquentiel,
+  ordre tablespace, temp exclus, sémantique V$DATAFILE), source unique
+  partagée par le contexte RMAN et le contrôle d'ouverture de l'instance.
+- `OracleInstance` : à l'ouverture (STARTUP → OPEN et ALTER DATABASE OPEN),
+  vérification d'existence de chaque datafile sur le filesystem hôte via
+  deux injections (lister fourni par OracleDatabase, sonde d'existence
+  fournie par le câblage terminal — null = pas de filesystem, contrôle
+  sauté pour les tests moteur purs). Fichier manquant → la vraie échelle
+  d'erreurs (`ORA-01157` + `ORA-01110`, première occurrence, trace alert
+  log) et l'instance **reste MOUNT** pour RESTORE/RECOVER. Un `rm` sur
+  instance ouverte reste sans effet (sémantique inode ouvert du vrai Linux).
+- `OracleFilesystemSync` : matérialisation **une seule fois** par chemin
+  (set par device, amorcé au boot via `primeDatafiles`, alimenté par les
+  événements tablespace-created/datafile-added) — le VFS devient
+  l'autorité sur l'existence, un `rm` n'est plus annulé.
+- `RmanJobEngine._doRestore` : RESTORE réécrit réellement chaque datafile
+  ciblé sur le VFS (c'est tout l'objet d'un restore).
+- `LinuxRmanContext.getDatafiles()` : dérive du storage vivant quand une
+  base est enregistrée (fallback figé conservé pour les devices sans
+  Oracle, contextes de test).
+**Validation :** nouvelle suite `oracle-datafile-vfs-coherence.test.ts`
+(4 tests : instance ouverte insensible au rm, non-résurrection après
+shutdown/startup, STARTUP bloqué en MOUNT avec ORA-01157/01110 exacts,
+boucle DBA complète backup → rm → MOUNT → restore datafile 4 → ALTER
+DATABASE OPEN) ; non-régression `unit/database/` + `unit/terminal/` +
+`debug/rman/` + `debug/oracle/` ; `npx tsc --noEmit` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

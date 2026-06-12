@@ -333,6 +333,12 @@ export class RmanJobEngine implements IRmanJobEngine {
         type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
         fileNo: df.fileNo, to: df.path,
       });
+      // A restore puts the datafile back on disk — that's its whole
+      // point. The instance's OPEN-time existence check (ORA-01157)
+      // relies on this file being really rewritten.
+      const sizeMb = Math.max(1, Math.round(df.sizeBytes / 1048576));
+      this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(
+        `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 5_000,

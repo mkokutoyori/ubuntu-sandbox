@@ -7,6 +7,7 @@
 import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
 import { ORACLE_CONFIG } from './OracleConfig';
+import { parseSize } from './views/_fileSize';
 
 export interface TablespaceMeta {
   name: string;
@@ -116,6 +117,25 @@ export class OracleStorage extends BaseStorage {
 
   getAllTablespaces(): TablespaceMeta[] {
     return Array.from(this.tablespaces.values());
+  }
+
+  /**
+   * Canonical datafile enumeration — FILE# assigned sequentially in
+   * tablespace order with temp files excluded, exactly like V$DATAFILE.
+   * Single source of truth shared by the dictionary views, the RMAN
+   * context and the instance's open-time existence checks, so they all
+   * agree on file numbers and paths.
+   */
+  listDatafiles(): { fileNo: number; path: string; sizeBytes: number; tablespace: string }[] {
+    const out: { fileNo: number; path: string; sizeBytes: number; tablespace: string }[] = [];
+    let fileNo = 1;
+    for (const ts of this.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY') continue;
+      for (const df of ts.datafiles) {
+        out.push({ fileNo: fileNo++, path: df.path, sizeBytes: parseSize(df.size), tablespace: ts.name });
+      }
+    }
+    return out;
   }
 
   tablespaceExists(name: string): boolean {

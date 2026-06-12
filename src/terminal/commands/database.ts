@@ -31,6 +31,13 @@ const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 export function getOracleDatabase(deviceId: string): OracleDatabase {
   let db = oracleInstances.get(deviceId);
   if (!db) {
+    // Provision the Oracle home / datafiles / OS identity on the host
+    // BEFORE the instance boots: the OPEN-time datafile check reads the
+    // device VFS, so the disk must exist first. Idempotent — callers
+    // that already ran initOracleFilesystem are unaffected.
+    const dev = EquipmentRegistry.getInstance().getById(deviceId);
+    if (dev) initOracleFilesystem(dev as import('@/network').HostCapableDevice);
+
     db = new OracleDatabase();
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
@@ -43,6 +50,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);
       const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
       return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+    });
+    // Existence probe for the OPEN-time datafile check. Returns null
+    // (= skip the check) when no device with a filesystem backs this
+    // database — files can only go missing from a disk that exists.
+    db.instance.setDatafileProbe((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
+      if (typeof read !== 'function') return null;
+      return read.call(dev, path) !== null;
     });
 
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
@@ -66,6 +82,10 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     db.instance.startListener();
     installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
+    // The boot provisioning (initOracleFilesystem) wrote the seed
+    // datafiles before the database existed — tell the FS sync they are
+    // materialised so it never recreates a file the user later deletes.
+    sync.primeDatafiles(deviceId);
   }
   return db;
 }

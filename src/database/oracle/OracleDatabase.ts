@@ -213,6 +213,9 @@ export class OracleDatabase implements SqlCommandHost {
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
     this.storage = new OracleStorage();
+    // The instance checks datafile existence at OPEN time but does not
+    // own the storage layer — give it the canonical V$DATAFILE list.
+    this.instance.setDatafileLister(() => this.storage.listDatafiles());
     this.catalog = new OracleCatalog(this.storage, this.instance);
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
     this.catalog.setPackageMembersProvider(() => this.getPackageMembers());

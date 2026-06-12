@@ -61,8 +61,14 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> {
-    const sid = this.dbName;
-    const base = `${ORADATA_BASE}/${sid}`;
+    // Live database: the canonical V$DATAFILE enumeration — a
+    // tablespace created after boot is backed up / restored like any
+    // other, and file numbers agree with the dictionary views.
+    if (this._oracle) {
+      return this._oracle.storage.listDatafiles();
+    }
+    // Oracle-less device: the canonical seeded layout.
+    const base = `${ORADATA_BASE}/${this.dbName}`;
     return [
       { fileNo: 1, path: `${base}/system01.dbf`,  sizeBytes: 838_860_800, tablespace: 'SYSTEM'   },
       { fileNo: 2, path: `${base}/sysaux01.dbf`,  sizeBytes: 576_716_800, tablespace: 'SYSAUX'   },

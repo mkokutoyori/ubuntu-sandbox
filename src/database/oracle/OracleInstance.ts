@@ -233,6 +233,46 @@ export class OracleInstance {
     return this._deviceFileReader?.(path) ?? null;
   }
 
+  /**
+   * Datafile enumeration injected by OracleDatabase (the instance does
+   * not own the storage layer). Combined with the existence probe, it
+   * lets the open-time header check verify each datafile still exists
+   * on the host filesystem — like DBWR identifying/locking the files
+   * when the database opens.
+   */
+  private _datafileLister: (() => { fileNo: number; path: string }[]) | null = null;
+  setDatafileLister(fn: () => { fileNo: number; path: string }[]): void {
+    this._datafileLister = fn;
+  }
+
+  /**
+   * Host-filesystem existence probe, injected by the terminal wiring.
+   * Returns null when the device exposes no filesystem surface — in
+   * that case the open-time check is skipped entirely (engine-only
+   * tests have no disk for files to go missing from).
+   */
+  private _datafileProbe: ((path: string) => boolean | null) | null = null;
+  setDatafileProbe(fn: (path: string) => boolean | null): void {
+    this._datafileProbe = fn;
+  }
+
+  /**
+   * Datafiles missing from the host filesystem. A file deleted while
+   * the instance is up does NOT affect a running database (the OS
+   * keeps the open inode, as on a real host); the check only runs at
+   * OPEN time.
+   */
+  private missingDatafiles(): { fileNo: number; path: string }[] {
+    if (!this._datafileLister || !this._datafileProbe) return [];
+    const missing: { fileNo: number; path: string }[] = [];
+    for (const df of this._datafileLister()) {
+      const exists = this._datafileProbe(df.path);
+      if (exists === null) return []; // no host filesystem — nothing to check
+      if (!exists) missing.push(df);
+    }
+    return missing;
+  }
+
   // ── DBID / SCN accessors ──────────────────────────────────────────
 
   /**
@@ -437,7 +477,18 @@ export class OracleInstance {
 
     if (mode === 'MOUNT') return output;
 
-    // OPEN
+    // OPEN — DBWR must identify/lock every datafile first. A file
+    // deleted from the host filesystem surfaces here (not while the
+    // database was running), exactly like the real ORA-01157 ladder;
+    // the instance stays MOUNTed for RESTORE/RECOVER.
+    const missing = this.missingDatafiles();
+    if (missing.length > 0) {
+      const m = missing[0];
+      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+      output.push(`ORA-01157: cannot identify/lock data file ${m.fileNo} - see DBWR trace file`);
+      output.push(`ORA-01110: data file ${m.fileNo}: '${m.path}'`);
+      return output;
+    }
     this.markOpen();
     output.push(`Database opened.`);
 
@@ -482,6 +533,14 @@ export class OracleInstance {
     }
     if (this._state !== 'MOUNT') {
       throw new OracleError(1507, 'database not mounted');
+    }
+    const missing = this.missingDatafiles();
+    if (missing.length > 0) {
+      const m = missing[0];
+      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+      throw new OracleError(1157,
+        `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
+        `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
     }
     this.markOpen();
   }
