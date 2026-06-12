@@ -496,8 +496,8 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 | P2 | `ping6` listé mais sans handler ; moteur ICMPv6 (`executePing6Sequence`) orphelin ; NS depuis link-local uniquement ; réponse écho silencieusement abandonnée sans entrée NDP | RFC 4861 §7.2.2 | Haute | ✅ Entrée 11 |
 | P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | ✅ Entrée 12 |
 | P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | ✅ Entrée 12 |
-| P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | À faire |
-| P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | À faire |
+| P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 13 |
+| P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 13 |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | À faire |
 | P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
 | P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | À faire |
@@ -650,6 +650,37 @@ Après fusion : `git rev-list --count mandeng..<branche>` = 0 pour les
   avec un down).
 - Non-régression : linux-ip-command (76), linux-lan-ssh-suite (216),
   arp-command + ping6 (72), network-v2 complète, `tsc --noEmit` propre.
+
+---
+
+## Entrée 13 — Windows : ipconfig /all véridique + netsh dhcpclient agissant (P5, P6)
+
+**Date** : 2026-06-12
+
+### Défaillances corrigées
+
+1. **P5** : `ipconfig /all` sur un adaptateur en « Media disconnected »
+   affichait `DHCP Enabled : Yes` inconditionnellement
+   (`isDHCP ? 'Yes' : 'Yes'`) — un adaptateur configuré en statique
+   apparaissait DHCP dès qu'il était débranché.
+2. **P6** : `netsh dhcpclient release`/`renew` ne faisait que cocher un
+   drapeau d'affichage local (`releasedIfaces`) : le bail DHCP réel
+   n'était ni libéré ni renouvelé, contrairement à `ipconfig /release`
+   qui passe par le vrai client (`releaseLease`/`requestLease`,
+   DORA sur le câble, journal d'événements DHCP).
+
+### Corrections
+
+- `WinIpconfig` : `isDHCP ? 'Yes' : 'No'` sur le chemin déconnecté.
+- `WinNetsh` : `release` libère le vrai bail (`ctx.releaseLease`,
+  événement RELEASE, état client → INIT) ; `renew` relance la vraie
+  découverte (`autoDiscoverDHCPServers` + `requestLease`, événement
+  RENEW) — sur l'interface nommée ou toutes. Les messages de sortie et
+  le rendu `show parameters` (Lease obtained/expired) sont inchangés.
+
+### Tests
+
+cmd-netsh + windows-netsh-dhcp-dns + windows-consistency : 251 verts.
 
 ---
 

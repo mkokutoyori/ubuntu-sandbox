@@ -1355,20 +1355,45 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'renew') {
     const ifName = args[1] || '';
+    const targets: string[] = [];
     if (ifName) {
       const portName = resolveAdapterName(ifName, ctx.ports);
       if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      targets.push(portName);
+    } else {
+      targets.push(...ctx.ports.keys());
+    }
+    ctx.autoDiscoverDHCPServers();
+    for (const portName of targets) {
       st.releasedIfaces.delete(portName);
+      ctx.requestLease(portName, { verbose: false });
+      const state = ctx.getDHCPState(portName);
+      if (state?.lease) {
+        ctx.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${portName}`);
+      }
     }
     return `Renewal of interface(s) completed.`;
   }
 
   if (sub === 'release') {
     const ifName = args[1] || '';
+    const targets: string[] = [];
     if (ifName) {
       const portName = resolveAdapterName(ifName, ctx.ports);
       if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      targets.push(portName);
+    } else {
+      targets.push(...ctx.ports.keys());
+    }
+    for (const portName of targets) {
       st.releasedIfaces.add(portName);
+      const state = ctx.getDHCPState(portName);
+      if (state?.lease) {
+        const oldIP = state.lease.ipAddress;
+        ctx.releaseLease(portName);
+        ctx.addDHCPEvent('RELEASE', `Released IP ${oldIP} on ${portName}`);
+      }
+      if (state) state.state = 'INIT';
     }
     return `Release of interface(s) completed.`;
   }
