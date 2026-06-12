@@ -78,3 +78,38 @@ export function broadcastAddress(ip: string, prefixLength: number): string | nul
   const hostMask = (~prefixLengthToMaskUint32(prefixLength)) >>> 0;
   return uint32ToIp((value | hostMask) >>> 0);
 }
+
+/** Canonical IPv4 literal validation (four decimal octets, each 0-255). */
+export function isValidIPv4(ip: string): boolean {
+  return tryIpToUint32(ip) !== null;
+}
+
+/** Structural IPv6 validation per RFC 4291 §2.2 (single `::`, embedded IPv4 tail, `%zone`). */
+export function isValidIPv6(s: string): boolean {
+  if (!s.includes(':')) return false;
+  const addr = s.split('%')[0];
+  if (addr.length === 0) return false;
+  const doubleColons = addr.split('::').length - 1;
+  if (doubleColons > 1) return false;
+
+  const [head, tail = ''] = addr.split('::');
+  const headGroups = head === '' ? [] : head.split(':');
+  const tailGroups = tail === '' ? [] : tail.split(':');
+  const groups = [...headGroups, ...tailGroups];
+
+  let count = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const isLast = i === groups.length - 1;
+    if (isLast && group.includes('.')) {
+      if (!isValidIPv4(group)) return false;
+      count += 2;
+      continue;
+    }
+    if (!/^[0-9a-f]{1,4}$/i.test(group)) return false;
+    count += 1;
+  }
+
+  // '::' must stand for at least one zero group.
+  return doubleColons === 1 ? count <= 7 : count === 8;
+}

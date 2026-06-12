@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-06-11T16:02:57.025Z
+Generated: 2026-06-12T02:06:19.713Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Thu Jun 11 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Fri Jun 12 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -120,8 +120,7 @@ SQL [12/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$WAIT_CHAINS';
 
 SQL [13/31]> SELECT * FROM V$WAIT_CHAINS WHERE rownum < 3;
   
-  CHAIN_ID BLOCKER_SID BLOCKER_SESS_SERIAL# WAITING_SID WAITING_SESS_SERIAL# NUM_WAITERS IN_WAIT P1 P1_TEXT IS_DEADLOCK
-  -------- ----------- -------------------- ----------- -------------------- ----------- ------- -- ------- -----------
+  no rows selected
 
 SQL [14/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$SQL_MONITOR';
   
@@ -143,8 +142,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0           1 2026-06-11T16:02:57.046Z EXECUTING SYS                 0        0           0          0                   0
-  13ipzqna3xqw0           2 2026-06-11T16:02:57.045Z DONE      SYS               919      735           2          0                   0
+  1rcfn8ma3xqw0           1 2026-06-12T02:06:19.732Z EXECUTING SYS                 0        0           0          0                   0
+  13ipzqna3xqw0           2 2026-06-12T02:06:19.730Z DONE      SYS              1092      874           2          0                   0
   
   2 rows selected.
 
@@ -168,7 +167,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ ----------- ------------- ------
-        1    1               1          1 2026-06-11T15:02:57.049Z 2026-06-11T16:02:57.049Z COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 2026-06-12T01:06:19.738Z 2026-06-12T02:06:19.738Z COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -190,8 +189,7 @@ SQL [21/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'V$SESSION_LONGOPS
 
 SQL [22/31]> SELECT * FROM V$SESSION_LONGOPS WHERE rownum < 3;
   
-  SID SERIAL# OPNAME TARGET SOFAR TOTALWORK UNITS TIME_REMAINING ELAPSED_SECONDS MESSAGE
-  --- ------- ------ ------ ----- --------- ----- -------------- --------------- -------
+  no rows selected
 
 SQL [23/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'DBA_SCHEDULER_PROGRAMS';
   
@@ -211,8 +209,7 @@ SQL [24/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'DBA_SCHEDULER_PRO
 
 SQL [25/31]> SELECT * FROM DBA_SCHEDULER_PROGRAMS WHERE rownum < 3;
   
-  OWNER PROGRAM_NAME PROGRAM_TYPE PROGRAM_ACTION NUMBER_OF_ARGUMENTS ENABLED
-  ----- ------------ ------------ -------------- ------------------- -------
+  no rows selected
 
 SQL [26/31]> SELECT VIEW_NAME, TEXT_LENGTH FROM DBA_VIEWS WHERE VIEW_NAME = 'V$PGASTAT';
   
@@ -257,5 +254,4 @@ SQL [30/31]> SELECT COUNT(*) FROM ALL_VIEWS WHERE VIEW_NAME = 'DBA_RECYCLEBIN';
 
 SQL [31/31]> SELECT * FROM DBA_RECYCLEBIN WHERE rownum < 3;
   
-  OWNER OBJECT_NAME ORIGINAL_NAME OPERATION TYPE TS_NAME CREATETIME DROPTIME SPACE
-  ----- ----------- ------------- --------- ---- ------- ---------- -------- -----
+  no rows selected

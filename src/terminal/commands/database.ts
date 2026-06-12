@@ -7,6 +7,7 @@
 
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
@@ -30,6 +31,13 @@ const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 export function getOracleDatabase(deviceId: string): OracleDatabase {
   let db = oracleInstances.get(deviceId);
   if (!db) {
+    // Provision the Oracle home / datafiles / OS identity on the host
+    // BEFORE the instance boots: the OPEN-time datafile check reads the
+    // device VFS, so the disk must exist first. Idempotent — callers
+    // that already ran initOracleFilesystem are unaffected.
+    const dev = EquipmentRegistry.getInstance().getById(deviceId);
+    if (dev) initOracleFilesystem(dev as import('@/network').HostCapableDevice);
+
     db = new OracleDatabase();
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
@@ -43,6 +51,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
       return typeof read === 'function' ? read.call(dev, path) ?? null : null;
     });
+    // Existence probe for the OPEN-time datafile check. Returns null
+    // (= skip the check) when no device with a filesystem backs this
+    // database — files can only go missing from a disk that exists.
+    db.instance.setDatafileProbe((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
+      if (typeof read !== 'function') return null;
+      return read.call(dev, path) !== null;
+    });
 
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
@@ -53,6 +70,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
 
     const systemd = new OracleSystemdSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);
@@ -64,6 +82,10 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     db.instance.startListener();
     installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
+    // The boot provisioning (initOracleFilesystem) wrote the seed
+    // datafiles before the database existed — tell the FS sync they are
+    // materialised so it never recreates a file the user later deletes.
+    sync.primeDatafiles(deviceId);
   }
   return db;
 }
@@ -74,10 +96,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
  */
 export function createSQLPlusSession(
   deviceId: string,
-  args: string[]
+  args: string[],
+  osCtx?: OsSecurityContext
 ): { session: SQLPlusSession; banner: string[]; loginOutput: string[] } {
   const db = getOracleDatabase(deviceId);
   const session = new SQLPlusSession(db);
+  // Bind the launching shell's OS identity so bequeath connections
+  // (`/ as sysdba`) are gated by real dba-group membership and the audit
+  // trail records the real OSUSER/MACHINE instead of a hardcoded default.
+  if (osCtx) session.setOsContext(osCtx);
 
   const banner = session.getBanner();
   let loginOutput: string[] = [];
@@ -180,7 +207,7 @@ export function resetAllOracleInstances(): void {
  */
 const oracleFilesystemInitialized = new Set<string>();
 
-export function initOracleFilesystem(device: import('@/network').Equipment): void {
+export function initOracleFilesystem(device: import('@/network').HostCapableDevice): void {
   const deviceId = device.id || 'default';
   if (oracleFilesystemInitialized.has(deviceId)) return;
   oracleFilesystemInitialized.add(deviceId);
@@ -308,9 +335,9 @@ remote_login_passwordfile = EXCLUSIVE
 `export ORACLE_HOME=${oracleHome}
 export ORACLE_SID=${sid}
 export ORACLE_BASE=${oracleBase}
-export PATH=\$ORACLE_HOME/bin:\$PATH
-export LD_LIBRARY_PATH=\$ORACLE_HOME/lib
-export TNS_ADMIN=\$ORACLE_HOME/network/admin
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib
+export TNS_ADMIN=$ORACLE_HOME/network/admin
 `,
 
     // ── Stub binaries ($ORACLE_HOME/bin/) ─────────────────────
@@ -445,8 +472,10 @@ Completed: ALTER DATABASE OPEN
   }).installSystemFile?.bind(device);
   for (const [path, content] of Object.entries(files)) {
     if (install) install(path, content);
-    else device.writeFileFromEditor(path, content);
+    else device.writeFileFromEditor?.(path, content);
   }
+
+  provisionOracleOsIdentity(device);
 
   // Register Oracle background processes so they appear in `ps aux`
   if (oracleInstances.has(deviceId)) {
@@ -455,9 +484,35 @@ Completed: ALTER DATABASE OPEN
 }
 
 /**
+ * Provision the OS identity a real Oracle installation requires
+ * (oracle-database-preinstall): the oinstall/dba groups and the oracle
+ * software owner. Runs through the device's own shell surface so
+ * /etc/passwd, /etc/group and IAM events stay coherent.
+ *
+ * The pre-seeded operator cast (root, alice, bob, carl, dave) is added to
+ * the dba group — this lab server is provisioned as if its admins were
+ * DBA staff, so existing topologies keep working. Any *new* account is
+ * outside dba and gets the real ORA-01031 on `sqlplus / as sysdba`.
+ */
+function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice): void {
+  const run = (device as unknown as {
+    executeShellCommandSync?(command: string): string;
+  }).executeShellCommandSync?.bind(device);
+  if (!run) return;
+
+  // Idempotent: groupadd/useradd answer "already exists" on re-init.
+  run('groupadd -g 54321 oinstall');
+  run('groupadd -g 54322 dba');
+  run('useradd -u 54321 -g oinstall -G dba -m -d /home/oracle -s /bin/bash oracle');
+  for (const u of ['root', 'alice', 'bob', 'carl', 'dave']) {
+    run(`usermod -aG dba ${u}`);
+  }
+}
+
+/**
  * Write updated spfile content to the VFS after ALTER SYSTEM SET ... SCOPE=SPFILE|BOTH.
  */
-export function updateSpfileOnDevice(device: import('@/network').Equipment, parameters: Map<string, string>): void {
+export function updateSpfileOnDevice(device: import('@/network').HostCapableDevice, parameters: Map<string, string>): void {
   const oracleHome = ORACLE_CONFIG.HOME;
   const sid = ORACLE_CONFIG.SID;
   const lines: string[] = [];
@@ -465,23 +520,23 @@ export function updateSpfileOnDevice(device: import('@/network').Equipment, para
     const needsQuote = /[a-zA-Z]/.test(value) && !value.startsWith("'");
     lines.push(`*.${name}=${needsQuote ? `'${value}'` : value}`);
   }
-  device.writeFileFromEditor(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+  device.writeFileFromEditor?.(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
 }
 
 /**
  * Write updated alert log to the VFS.
  */
-export function syncAlertLogToDevice(device: import('@/network').Equipment, alertLogEntries: string[]): void {
+export function syncAlertLogToDevice(device: import('@/network').HostCapableDevice, alertLogEntries: string[]): void {
   const sid = ORACLE_CONFIG.SID;
   const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
-  device.writeFileFromEditor(path, alertLogEntries.join('\n') + '\n');
+  device.writeFileFromEditor?.(path, alertLogEntries.join('\n') + '\n');
 }
 
 /**
  * Sync tablespace datafiles from the Oracle storage layer to the VFS.
  * Creates stub files for new datafiles, removes files for dropped tablespaces.
  */
-export function syncDatafilesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncDatafilesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
   const tablespaces = storage.getAllTablespaces();
 
@@ -490,7 +545,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
     for (const df of ts.datafiles) {
       const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
       const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-      device.writeFileFromEditor(df.path, content);
+      device.writeFileFromEditor?.(df.path, content);
     }
   }
 
@@ -499,14 +554,14 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
   for (const group of redoGroups) {
     for (const member of group.members) {
       const sizeMB = Math.round(group.sizeBytes / 1048576);
-      device.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+      device.writeFileFromEditor?.(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
     }
   }
 
   // Sync control files from instance parameters
   const ctlFiles = (db.instance.getParameter('control_files') ?? '').split(',').map(f => f.trim()).filter(f => f);
   ctlFiles.forEach((f, i) => {
-    device.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+    device.writeFileFromEditor?.(f, `[ORACLE CONTROL FILE ${i + 1}]`);
   });
 }
 
@@ -514,7 +569,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
  * Register Oracle background processes (PMON, SMON, etc.) in the device's process table
  * so they appear in `ps aux` output, like on a real Oracle server.
  */
-export function syncOracleProcessesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncOracleProcessesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   // Only register if the device supports it (LinuxServer)
   const dev = device as { registerProcess?: (pid: number, user: string, cmd: string) => void; clearSystemProcesses?: () => void };
   if (typeof dev.registerProcess !== 'function') return;

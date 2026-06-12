@@ -14,6 +14,7 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
 import { primaryShellKindFor } from './shellKind';
 import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
 import type { IShell, ShellLineResult } from './IShell';
@@ -351,11 +352,10 @@ function formatLoginDate(d: Date): string {
 function verifyCredentials(
   device: Equipment, user: string, password: string,
 ): boolean {
+  if (isCredentialAuthenticator(device)) return device.checkPassword(user, password);
   const dev = device as unknown as {
-    checkPassword?: (u: string, p: string) => boolean;
     userMgr?: { checkPassword?: (u: string, p: string) => boolean };
   };
-  if (typeof dev.checkPassword === 'function') return dev.checkPassword(user, password);
   if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
   return true;
 }

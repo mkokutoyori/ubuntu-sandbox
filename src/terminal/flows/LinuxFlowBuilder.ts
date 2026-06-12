@@ -60,7 +60,7 @@ function sudoPasswordStep(currentUser: string): InteractiveStep {
     mask: 'hidden',
     storeAs: 'sudo_password',
     validation: (pwd: string, ctx: FlowContext) => {
-      const valid = ctx.device.checkPassword(ctx.currentUser, pwd);
+      const valid = ctx.device.checkPassword?.(ctx.currentUser, pwd) ?? false;
       return {
         valid,
         errorMessage: valid ? undefined : 'Sorry, try again.',
@@ -78,7 +78,7 @@ function suPasswordStep(targetUser: string): InteractiveStep {
     mask: 'hidden',
     storeAs: 'su_password',
     validation: (pwd: string, ctx: FlowContext) => {
-      const valid = ctx.device.checkPassword(targetUser, pwd);
+      const valid = ctx.device.checkPassword?.(targetUser, pwd) ?? false;
       return {
         valid,
         errorMessage: valid ? undefined : 'su: Authentication failure',
@@ -96,7 +96,7 @@ function currentPasswordStep(): InteractiveStep {
     mask: 'hidden',
     storeAs: 'current_password',
     validation: (pwd: string, ctx: FlowContext) => {
-      const valid = ctx.device.checkPassword(ctx.currentUser, pwd);
+      const valid = ctx.device.checkPassword?.(ctx.currentUser, pwd) ?? false;
       return {
         valid,
         errorMessage: valid ? undefined : 'passwd: Authentication token manipulation error\npasswd: password unchanged',
@@ -142,7 +142,7 @@ function setPasswordStep(targetUserKey: string): InteractiveStep {
       const targetUser = ctx.metadata.get(targetUserKey) as string ?? ctx.currentUser;
       const password = ctx.values.get('new_password');
       if (password) {
-        ctx.device.setUserPassword(targetUser, password);
+        ctx.device.setUserPassword?.(targetUser, password);
       }
     },
   };
@@ -271,7 +271,7 @@ export class LinuxFlowBuilder {
       {
         type: 'execute',
         action: async (ctx) => {
-          ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
+          ctx.device.setUserPassword?.(targetUser, ctx.values.get('new_password')!);
         },
       },
       { type: 'output', outputLines: ['passwd: password updated successfully'] },
@@ -317,7 +317,7 @@ export class LinuxFlowBuilder {
         {
           type: 'execute',
           action: async (ctx) => {
-            ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
+            ctx.device.setUserPassword?.(targetUser, ctx.values.get('new_password')!);
           },
         },
         { type: 'output', outputLines: ['passwd: password updated successfully'] },
@@ -414,7 +414,7 @@ export class LinuxFlowBuilder {
         {
           type: 'execute',
           action: async (ctx) => {
-            ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
+            ctx.device.setUserPassword?.(targetUser, ctx.values.get('new_password')!);
           },
         },
         { type: 'output', outputLines: ['passwd: password updated successfully'] },

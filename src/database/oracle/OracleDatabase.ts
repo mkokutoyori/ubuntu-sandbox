@@ -176,7 +176,31 @@ export class OracleDatabase implements SqlCommandHost {
       statistics: this.instance.statistics,
       scheduler: this.scheduler,
       storage: this.storage,
+      materializedViews: {
+        refresh: (owner, name) => this.refreshMaterializedView(owner, name),
+      },
     };
+  }
+
+  /**
+   * Complete refresh of a materialized view, re-executing its defining
+   * query with the MV owner's name resolution (definer semantics, like
+   * the real DBMS_MVIEW.REFRESH). Throws ORA-12003 when unknown.
+   */
+  refreshMaterializedView(owner: string, name: string): void {
+    const o = owner.toUpperCase();
+    const context: ExecutionContext = {
+      currentUser: o,
+      currentSchema: o,
+      autoCommit: false,
+      serverOutput: false,
+      feedback: false,
+      timing: false,
+    };
+    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
+    executor.setDatabaseRef(this);
+    executor.refreshMaterializedView(o, name);
   }
 
   /** Close an OracleSession (called on disconnect). */
@@ -213,6 +237,9 @@ export class OracleDatabase implements SqlCommandHost {
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
     this.storage = new OracleStorage();
+    // The instance checks datafile existence at OPEN time but does not
+    // own the storage layer — give it the canonical V$DATAFILE list.
+    this.instance.setDatafileLister(() => this.storage.listDatafiles());
     this.catalog = new OracleCatalog(this.storage, this.instance);
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
     this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
@@ -390,12 +417,33 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   /**
+   * Reject a bequeath `AS SYSDBA`/`AS SYSOPER` attempt from an OS user
+   * outside the dba group. Real Oracle leaves a trace of every refused
+   * privileged logon (OS audit file + audit trail, SESSIONID 0) before
+   * returning ORA-01031 — failures must be as observable as successes.
+   */
+  private rejectOsAuthentication(role: 'SYSDBA' | 'SYSOPER', osCtx: OsSecurityContext): never {
+    this.catalog.recordAudit({
+      sessionId: 0, username: 'SYS', actionName: 'LOGON', returncode: 1031,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: role, statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(
+      `Failed ${role} logon: os_user=${osCtx.osUser} not in dba group (ORA-01031)`);
+    this.publishConnectionTrace({
+      username: 'SYS', sessionId: 0, serial: 0, osCtx,
+      authMethod: role, role, outcome: 'FAILURE', returncode: 1031,
+    });
+    throw new Error('ORA-01031: insufficient privileges');
+  }
+
+  /**
    * Connect as SYSDBA (no password check, sets user to SYS).
    */
   connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     // OS-group enforcement: SYSDBA requires the OS user to be in the dba group.
     if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      throw new Error('ORA-01031: insufficient privileges');
+      this.rejectOsAuthentication('SYSDBA', osCtx);
     }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
@@ -451,7 +499,7 @@ export class OracleDatabase implements SqlCommandHost {
    */
   connectAsSysoper(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      throw new Error('ORA-01031: insufficient privileges');
+      this.rejectOsAuthentication('SYSOPER', osCtx);
     }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
@@ -889,6 +937,7 @@ export class OracleDatabase implements SqlCommandHost {
       || upper.startsWith('DBMS_STATS.')
       || upper.startsWith('DBMS_SCHEDULER.')
       || upper.startsWith('DBMS_CRYPTO.')
+      || upper.startsWith('DBMS_MVIEW.')
     ) {
       this.invokeBuiltinPackage(executor, call, noVars, output);
       return true;

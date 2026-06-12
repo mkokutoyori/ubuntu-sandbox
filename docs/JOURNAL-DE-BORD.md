@@ -22,7 +22,7 @@ corrections sont structurelles, jamais cosmétiques.
 | 7 | `lldpToNeighborDTO` / `cdpToNeighborDTO` dupliqués à l'identique dans 4 fichiers devices | DRY | Moyenne | ✅ Corrigé |
 | 8 | Dispatch par `constructor.name` dans 5 sites shell/terminal (oblige `keepNames: true` au build) | Polymorphisme | Moyenne | ✅ Corrigé |
 | 9 | BGP : pas de propagation transitive, pas d'AS_PATH, pas de détection de boucle, table `show ip bgp` fabriquée | RFC 4271 | Haute | ✅ Corrigé |
-| 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | À faire |
+| 10 | Equipment.ts : 11 méthodes « terminal » stub polluent routeurs/switches | ISP (SOLID) | Moyenne | ✅ Corrigé (Série 3, entrée 12) |
 
 ---
 
@@ -494,10 +494,10 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 |---|-------|-----------|----------|--------|
 | P1 | EndHost : signaux NDP/routes/stats morts (self-casts `ndpCache` inexistant, schéma routes divergent) + `arp.opcode` inexistant | Typage / observabilité | Haute | ✅ Entrée 11 |
 | P2 | `ping6` listé mais sans handler ; moteur ICMPv6 (`executePing6Sequence`) orphelin ; NS depuis link-local uniquement ; réponse écho silencieusement abandonnée sans entrée NDP | RFC 4861 §7.2.2 | Haute | ✅ Entrée 11 |
-| P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | ✅ Entrée 12 |
-| P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | ✅ Entrée 12 |
-| P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 13 |
-| P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 13 |
+| P3 | `ifconfig` fabrique compteurs RX/TX (`Math.random()`), IPv6 inventée (`fe80::N`), broadcast par regex (faux hors /24), flags incohérents | Réalisme / RFC 2863 | Haute | ✅ Entrée 18 |
+| P4 | IPv6 invisible : `ip addr` sans inet6, pas de `ip -6 route` malgré la table v6 réelle | Réalisme | Moyenne | ✅ Entrée 18 |
+| P5 | WinIpconfig : `isDHCP ? 'Yes' : 'Yes'` (adaptateur déconnecté) | Bug | Moyenne | ✅ Entrée 19 |
+| P6 | `netsh dhcpclient release/renew` cosmétique (ne touche pas le client DHCP réel, contrairement à `ipconfig /release`) | Réalisme | Moyenne | ✅ Entrée 19 |
 | P7 | `parseCommandLine` (WindowsPC) ≡ `splitArgs` (CmdSubShell) dupliqués | DRY | Moyenne | À faire |
 | P8 | Type de device en triple exemplaire (union `DeviceType`, `DEVICE_TYPE_TO_OS_TYPE`, `DEVICE_CATEGORIES`) | SSOT/Registry | Moyenne | À faire |
 | P9 | Mapping Port→config UI dupliqué (networkStore / topologySerializer) | DRY | Basse | À faire |
@@ -569,7 +569,7 @@ abonnements TerminalManager/TerminalSession sont correctement nettoyés).
 
 ---
 
-## Entrée 12 — ifconfig honnête + IPv6 visible (P3, P4) et adaptateur ip unifié
+## Entrée 18 — ifconfig honnête + IPv6 visible (P3, P4) et adaptateur ip unifié
 
 **Date** : 2026-06-12
 
@@ -653,7 +653,7 @@ Après fusion : `git rev-list --count mandeng..<branche>` = 0 pour les
 
 ---
 
-## Entrée 13 — Windows : ipconfig /all véridique + netsh dhcpclient agissant (P5, P6)
+## Entrée 19 — Windows : ipconfig /all véridique + netsh dhcpclient agissant (P5, P6)
 
 **Date** : 2026-06-12
 
@@ -1257,7 +1257,7 @@ Database **2662 tests verts** (2658 + 4).
 
 ## Limites connues / dette restante
 
-- **Backlog #10** (ISP sur `Equipment`) : identifié, documenté, non traité.
+- **Backlog #10** (ISP sur `Equipment`) : ✅ traité en Série 3, entrée 12.
 - **BGP** : pas de route-reflectors ; FSM dérivée synchrone (pas de phases
   Connect/OpenConfirm — exigerait un moteur asynchrone à acteurs comme OSPF).
 - **STP** : RSTP (802.1w) et PVST+ ne sont pas implémentés ; le fast path
@@ -1268,3 +1268,312 @@ Database **2662 tests verts** (2658 + 4).
 - Les firewalls (`firewall-*`), `access-point` et `cloud` restent des stubs
   (`LinuxPC`/`Hub`) — hors périmètre de cette série, à traiter comme des
   fonctionnalités à part entière.
+
+---
+
+## Série 3 (2026-06-12) — Refonte structurelle : ISP & conformité couche physique
+
+### Backlog issu de l'audit du 2026-06-12
+
+Audit en deux volets : (a) violations de la règle « toute communication
+inter-équipements passe par les câbles » (Port → Cable → Port →
+`handleFrame`), (b) duplication / anti-patterns résiduels.
+
+| # | Sujet | Norme / Pattern | Sévérité | Statut |
+|---|-------|-----------------|----------|--------|
+| 12 | Equipment : 11 stubs « hôte » (passwords, cwd, éditeur) hérités par routeurs/switches (backlog #10) | ISP (SOLID) | Moyenne | ✅ Corrigé |
+| 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | ✅ Transport corrigé (entrée 13) — orchestration encore synchrone |
+| 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | ✅ Corrigé (entrée 17) |
+| 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
+| 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
+| 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | ✅ Corrigé (entrée 15) — scan registre conservé en repli des topologies non câblées |
+| 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | ✅ Corrigé (entrée 14) |
+| 19 | Validation IPv4/IPv6 réimplémentée 3× (PowerShellExecutor, WinNetsh, LinuxIptablesManager) | DRY | Moyenne | ✅ Corrigé (entrée 14 — iptables écarté : déléguait déjà à IPAddress.tryParse) |
+
+---
+
+## Entrée 12 — Equipment : ségrégation des capacités hôte (ISP)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+`Equipment` (classe de base de TOUT équipement) portait 11 méthodes stub
+spécifiques aux hôtes : `checkPassword` (retournait `false`),
+`setUserPassword` (no-op silencieux), `userExists`, `getCurrentUser`
+(`'user'`), `getCurrentUid` (**0, c.-à-d. root !**), `canSudo`
+(**`true` !**), `handleExit`, `getCwd` (`'/'`),
+`resolveAbsolutePath`, `readFileForEditor`, `writeFileFromEditor`.
+
+Conséquences structurelles :
+- un `CiscoSwitch` « répond » à `canSudo()` par `true` et à
+  `getCurrentUid()` par 0 — des mensonges silencieux qui masquent les
+  erreurs d'aiguillage au lieu de les révéler ;
+- la couche terminal appelait ces stubs sans distinguer « le device n'a
+  pas cette capacité » de « la capacité a répondu » ;
+- violation frontale de l'Interface Segregation Principle : les
+  sous-classes réseau dépendaient d'une interface qu'elles n'utilisent
+  pas.
+
+### Correction
+
+- Nouveau module `src/network/equipment/HostCapabilities.ts` suivant le
+  pattern « interface Host + type guard » déjà conventionnel dans le
+  projet (cf. `StpHost`, `TcpHost`, `FhrpHost`…) :
+  - `CredentialAuthenticator` (`checkPassword`) — implémenté par
+    `LinuxMachine`, `WindowsPC` **et `Router`** (point d'entrée SSH
+    unique multi-vendeur, comportement préservé) ;
+  - `UserAccountHost` (`setUserPassword`, `userExists`) ;
+  - `ShellIdentityHost` (`getCurrentUser/Uid`, `canSudo`, `handleExit`) ;
+  - `FileEditorHost` (`getCwd`, `resolveAbsolutePath`,
+    `readFileForEditor`, `writeFileFromEditor`) ;
+  - type `HostCapableDevice = Equipment & Partial<…>` + 4 type guards.
+- `Equipment` ne garde que la surface CLI universelle (`executeCommand`,
+  `getCompletions`) ; les 11 stubs sont supprimés.
+- Les implémenteurs déclarent leurs capacités (`implements`) — toute
+  dérive de signature est désormais une erreur `tsc` (les `override`
+  orphelins de `WindowsPC`/`Router` sont devenus des déclarations
+  d'interface).
+- Sites d'appel (sessions terminal, flows sudo/su/passwd/adduser,
+  commandes Oracle, sshLauncher) : passage à `HostCapableDevice` — la
+  absence de capacité est explicite au site d'appel
+  (`device.canSudo?.() ?? false`) au lieu d'être masquée par un stub.
+
+### Validation
+
+- `tsc --noEmit` : diff strictement nul vs baseline (1379 erreurs
+  préexistantes avant = 1379 après, uniquement décalages de lignes).
+- Tests : terminal + terminal-core + shell (967), cross-vendor SSH (75),
+  flows/SSH LAN (529), database + react + gui (2792) — tous verts.
+
+---
+
+## Entrée 13 — OSPF : le transport passe par les câbles, plus par le registre
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **Téléportation des paquets OSPF.** `RouterOSPFIntegration.deliverPacket`
+   localisait le moteur du routeur voisin via un registre statique
+   (`getByEquipmentId`) et appelait **directement**
+   `remoteEngine.processPacket(...)`. Les Hello/DD/LSR/LSU/LSAck ne
+   traversaient ni le port, ni le câble, ni le data plane du switch :
+   un câble coupé, un port down ou un équipement éteint n'interrompait
+   pas l'échange protocolaire en cours. Ironie : le chemin propre
+   existait déjà (`sendPacket` encapsule en IPv4 proto 89, TTL=1,
+   multicast 224.0.0.5 → MAC 01:00:5e:00:00:05 conformément à
+   RFC 2328 §4.3 et RFC 1112 §6.4) mais `setupSendCallbacks` l'écrasait
+   par la téléportation à chaque convergence.
+2. **Réception inexistante.** Aucun routeur ne traitait le protocole IP
+   89 en entrée : `handleLocalDelivery` dispatchait ESP/AH/TCP/ICMP/UDP
+   (RIP y passe déjà par de vraies trames !) mais ignorait OSPF — raison
+   d'être historique de la téléportation.
+3. **Pas d'authentification à la réception.** `processHello` validait
+   masque et timers (RFC 2328 §10.5) mais pas l'authentification — le
+   pré-check hors-bande de l'orchestrateur masquait ce manque, en
+   violation de RFC 2328 §8.2 (la vérification AuType/clé est un
+   prérequis de TOUT traitement de paquet reçu).
+
+### Correction
+
+- `IP_PROTO_OSPF = 89` ajouté aux constantes protocolaires canoniques.
+- **Réception** : `Router.handleLocalDelivery` dispatch proto 89 →
+  `RouterOSPFIntegration.receivePacket` → `OSPFEngine.processPacket`.
+  Le filtre L2 du routeur acceptait déjà les MAC 01:00:5e:… et
+  `processIPv4` consomme déjà 224.0.0.0/24 localement sans forwarding
+  (RFC 1112) : la chaîne Port → Câble → `handleFrame` → `processIPv4` →
+  contrôle plane est maintenant complète.
+- **Émission** : `setupSendCallbacks` câble désormais `sendPacket`
+  (vraies trames) pour tous les moteurs du domaine ; `deliverPacket`
+  (le téléporteur) est **supprimé**. La livraison par câble étant
+  synchrone, l'échange DD/LSR/LSU/LSAck piloté par la machine à états
+  aboutit toujours dans le même appel de convergence — mais il transite
+  réellement par le plan physique (y compris le flooding multicast des
+  switches pour les segments partagés).
+- **Authentification sur le fil** (RFC 2328 §8.2 / annexe D) :
+  l'en-tête `OSPFPacketHeader` transporte `authType`/`authKey`,
+  estampillés à l'égress unique (`dispatchOutgoing`) depuis la config
+  d'interface, validés à l'ingress (`processPacket`) avant tout
+  traitement FSM — drop + log en cas de désaccord.
+
+### Limites restantes (documentées, backlog #13 partiellement soldé)
+
+- L'**orchestration** de convergence (`autoConverge` : activation des
+  interfaces distantes, `formAdjacency` bilatéral, `driveStateMachine`,
+  `synchronizeLSDBs` en filet de sécurité) reste synchrone et
+  topology-walk. Le transport est conforme ; la découverte de voisins
+  par vrais Hello périodiques (les timers existent déjà côté moteur)
+  est l'étape suivante.
+- OSPFv3 (IPv6) garde son ancien modèle — à migrer séparément.
+
+### Validation
+
+- 16 fichiers de tests OSPF : 399 tests verts.
+- Suite `network-v2` complète : verte (voir commit).
+- `tsc --noEmit` : diff nul vs baseline.
+
+---
+
+## Entrée 14 — DRY : tokenisation cmd.exe et validation IP canoniques
+
+**Date** : 2026-06-12
+
+### Défaillances constatées
+
+1. **Parsing de ligne cmd.exe dupliqué à l'identique** dans
+   `WindowsPC.parseCommandLine` et `CmdSubShell.splitArgs` (~30 lignes
+   chacun) : un fix de quoting dans l'un manquait silencieusement
+   l'autre.
+2. **Validation IP réimplémentée par module** avec des sémantiques
+   divergentes :
+   - `PowerShellExecutor.isValidIP` : IPv6 « validé » par
+     `/^[0-9a-f:]+$/` — `:::::` ou `12345::` passaient ;
+   - `WinNetsh.isValidIPv4` : variante regex locale ;
+   - (`LinuxIptablesManager` délègue déjà à `IPAddress.tryParse` —
+     écarté du périmètre après vérification, contrairement au
+     pré-audit.)
+
+### Corrections
+
+- `src/network/devices/windows/cmdline.ts` : `splitCmdArgs` unique
+  (sémantique cmd.exe documentée : quotes toggle, pas d'échappement),
+  les deux copies privées délèguent.
+- `src/network/core/ip.ts` (déjà le module canonique de l'arithmétique
+  IPv4) : `isValidIPv4` (via `tryIpToUint32`) et `isValidIPv6`
+  structurel RFC 4291 §2.2 (max un `::` qui compresse au moins un
+  groupe, hextets 1-4 hex, queue IPv4 embarquée, suffixe `%zone`).
+  `PowerShellExecutor` et `WinNetsh` consomment ces validateurs — le
+  durcissement IPv6 rejette désormais le garbage accepté avant.
+
+### Validation
+
+- 12 tests neufs (`core-ip-and-cmdline.test.ts`) : bornes IPv4, formes
+  compressées/zone/IPv4-embarquée IPv6, rejets du garbage historique,
+  quoting cmd.exe.
+- Suites windows/netsh/powershell : 2 420 verts ; les 9 échecs restants
+  (DateTime/pushd/dir-Length) reproduits à l'identique sur la baseline
+  **avant** modification (vérifié par `git stash`) — préexistants.
+
+---
+
+## Entrée 15 — DHCP : le client converse en trames UDP 68→67, plus en appels d'objets
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. **DORA par références directes.** `EndHost.autoDiscoverDHCPServers`
+   parcourait le graphe (câbles, puis **fallback : scan du registre
+   global** de tous les équipements !) pour récupérer des références
+   d'objets `DHCPServer`, puis `DHCPClient.requestLease` appelait
+   `server.processDiscover()/processRequestWithNak()` **directement en
+   mémoire** — découverte, bail, renouvellement T1/T2, RELEASE, DECLINE :
+   aucun de ces échanges ne traversait le plan physique.
+2. **Duplication révélatrice** : un second client minimal,
+   `EndHost.requestLeaseOnWire`, faisait déjà la séquence DORA en
+   *vraies* trames broadcast (le serveur du routeur répond entièrement
+   sur le fil : OFFER/ACK/NAK, relay option 82, giaddr) — preuve que le
+   chemin filaire existait, inutilisé par le client principal.
+
+### Correction (pattern Strategy sur le canal de conversation)
+
+- Nouveau `dhcp/DhcpServerChannel.ts` :
+  - interface `DhcpServerChannel` calquée sur les échanges RFC 2131
+    (DISCOVER→OFFER, REQUEST→ACK/NAK, DECLINE, RELEASE) ;
+  - `WireDhcpChannel` : construit de vrais `DHCPPacket`, les émet en
+    UDP 68→67 broadcast par le port, et lit les réponses livrées —
+    synchronement, le câble étant synchrone — par l'écouteur UDP/68 de
+    l'hôte. La vue « pool » du bail est **synthétisée depuis les options
+    du paquet** (1, 3, 6, 15, 51, 58, 59) : le client ne sait que ce que
+    le serveur lui a dit, comme dans la réalité.
+  - `DirectServerChannel` (dans DHCPClient.ts) : enrobe l'ancienne
+    référence d'objet — conservé pour les tests unitaires sans câblage,
+    et comme repli des topologies non câblées.
+- `DHCPClient` : toutes les boucles (DORA, INIT-REBOOT, renouvellement
+  T1, rebinding T2, RELEASE, DECLINE) consomment `channelsFor(iface)`
+  — **fil d'abord**, refs directes en repli. Le repli APIPA (RFC 3927)
+  est préservé quand rien ne répond et qu'aucun serveur n'est enregistré.
+- `EndHost` : fabrique de canaux par interface + écouteur UDP/68 unifié
+  (alimente à la fois les sessions `requestLeaseOnWire` historiques et
+  les canaux du client).
+- `Router.serveDhcpOnWire` : traite désormais aussi **DHCPDECLINE et
+  DHCPRELEASE** reçus sur le fil (sans réponse, conformément à
+  RFC 2131 §3.4/§3.1.5) et estampille T1/T2 (options 58/59) dans l'ACK.
+
+### Limites restantes
+
+- `autoDiscoverDHCPServers` (scan registre) subsiste comme repli pour
+  les topologies de test sans câbles — documenté, à éteindre quand ces
+  tests seront migrés.
+- `requestLeaseOnWire` reste une surface parallèle (sortie de log
+  différente) ; candidate à fusion sur `requestLease` maintenant que les
+  deux empruntent le même chemin physique.
+
+### Validation
+
+- 9 fichiers de tests DHCP : 103 tests verts.
+- Suite `network-v2` complète : verte (voir commit).
+- `tsc --noEmit` : diff nul vs baseline (1379 = 1379).
+
+---
+
+## Entrée 16 — Tests de régression verrouillant les entrées 13 et 15
+
+**Date** : 2026-06-12
+
+Les migrations « transport réel » des entrées 13 (OSPF) et 15 (DHCP)
+passaient les suites existantes, mais aucune n'affirmait explicitement
+les comportements différenciants. Deux fichiers neufs les verrouillent :
+
+- `dhcp-client-wire-channel.test.ts` (4 tests) :
+  - bail obtenu par pur échange de trames, **sans aucun** serveur
+    enregistré (l'ancien chemin n'aurait rien pu faire) ;
+  - **câble coupé ⇒ pas de bail du pool** (APIPA RFC 3927) — la
+    coupure physique interrompt réellement le protocole ;
+  - DHCPRELEASE traverse le fil et libère le binding **côté serveur** ;
+  - renouvellement (REQUEST sans server-id) ACKé sur le fil.
+- `ospf-wire-auth.test.ts` (5 tests) : RFC 2328 §8.2 à l'ingress
+  (mauvaise clé, AuType discordant dans les deux sens, acceptation à
+  clé exacte) + estampillage des champs auth à l'égress unique.
+
+Validation : 9 tests neufs verts.
+
+---
+
+## Entrée 17 — IPSec DPD : sondes R-U-THERE réelles en UDP/500
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+`runDPDCheck` « simulait » R-U-THERE en localisant le routeur pair via un
+scan du registre (`findRouterByIP` → `Equipment.getAllEquipment()`) puis
+en lisant sa base SA en mémoire (`peerEngine.ikeSADB.has(...)`). Un câble
+coupé ne faisait donc jamais échouer la sonde — c'est précisément la
+panne que DPD (RFC 3706) existe pour détecter.
+
+### Correction
+
+- `IsakmpDpdMessage` (notify R-U-THERE / R-U-THERE-ACK + numéro de
+  séquence monotone, RFC 3706 §5.4) transporté en vrai datagramme
+  UDP 500→500 via la FIB (`Router._sendIkeUdp`).
+- Réception : `handleLocalDelivery` UDP/500 → `IPSecEngine.handleIkeUdp`
+  — un R-U-THERE n'est ACKé que si une IKE SA existe avec l'émetteur
+  (§5.5) ; l'ACK doit faire écho à la séquence de la sonde.
+- `runDPDCheck` : émet la sonde sur le fil ; la livraison câble étant
+  synchrone, l'ACK d'un pair vivant est traité au retour de l'envoi ;
+  `retries` timeouts consécutifs → SAs purgées. Le peek registre est
+  supprimé.
+
+### Note de style
+
+À la demande de l'auteur du projet : passe de réduction des commentaires
+sur l'ensemble des fichiers ajoutés par la série (en-têtes d'un
+paragraphe → une ligne ; suppression des commentaires narratifs).
+
+### Validation
+
+- 3 tests neufs (`ipsec-dpd-wire.test.ts`) : ACK synchrone d'un pair
+  vivant, câble coupé ⇒ 3 timeouts ⇒ SAs purgées, écho de séquence.
+- Suites IPSec complètes (112 tests) vertes ; baseline `tsc` inchangée.

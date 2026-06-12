@@ -53,6 +53,8 @@ export class OracleFilesystemSync {
   private spfileParams: Map<string, Map<string, string>> = new Map();
   /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
   private auditCounters: Map<string, number> = new Map();
+  /** Datafile paths already materialised per device — see syncDatafiles. */
+  private materializedDatafiles: Map<string, Set<string>> = new Map();
 
   constructor(
     private readonly bus: IEventBus,
@@ -114,6 +116,7 @@ export class OracleFilesystemSync {
         if (!dev) return;
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         for (const df of e.payload.datafiles) {
+          this.markDatafileMaterialized(e.payload.deviceId, df.path);
           dev.writeFileFromEditor(
             df.path,
             `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
@@ -125,6 +128,7 @@ export class OracleFilesystemSync {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        this.markDatafileMaterialized(e.payload.deviceId, e.payload.path);
         dev.writeFileFromEditor(
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
@@ -298,14 +302,47 @@ export class OracleFilesystemSync {
     dev.writeFileFromEditor(`${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
   }
 
+  /** Remember that a datafile path has been written once on a device. */
+  private markDatafileMaterialized(deviceId: string, path: string): void {
+    const seen = this.materializedDatafiles.get(deviceId) ?? new Set<string>();
+    seen.add(path);
+    this.materializedDatafiles.set(deviceId, seen);
+  }
+
+  /**
+   * Mark every datafile the database currently knows as already
+   * materialised. Called once by the boot wiring, whose provisioning
+   * (initOracleFilesystem) wrote the seed files before the database
+   * was registered — without this, the first post-boot MOUNT would
+   * treat them as never-written and resurrect any file the user
+   * deleted in between.
+   */
+  primeDatafiles(deviceId: string): void {
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    for (const ts of storage.getAllTablespaces()) {
+      for (const df of ts.datafiles) this.markDatafileMaterialized(deviceId, df.path);
+    }
+  }
+
   private syncDatafiles(deviceId: string): void {
     const dev = this.dev(deviceId);
     const db = this.ctx.resolveDatabase(deviceId);
     if (!dev || !db) return;
 
     const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    const seen = this.materializedDatafiles.get(deviceId) ?? new Set<string>();
+    this.materializedDatafiles.set(deviceId, seen);
     for (const ts of storage.getAllTablespaces()) {
       for (const df of ts.datafiles) {
+        // Materialise each datafile ONCE. After that the VFS is the
+        // authority on existence: an `rm` from bash must not be undone
+        // by the next state-change sync — the hole it leaves is what
+        // the instance's ORA-01157 open check (and RMAN RESTORE, which
+        // rewrites the file) are about.
+        if (seen.has(df.path)) continue;
+        seen.add(df.path);
         const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
         dev.writeFileFromEditor(df.path, content);

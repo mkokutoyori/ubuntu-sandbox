@@ -1131,11 +1131,13 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Majeure
 - **Recommandation** : Soit câbler réellement `CREATE PACKAGE [BODY]` dans `OracleExecutor`/`OracleParser` en s'appuyant sur le nouveau `PlsqlInterpreter`, soit faire échouer proprement avec `ORA-00900`/message explicite plutôt que de laisser la grammaire silencieusement non reconnue.
 
-### 10.7 Statements DDL "stub" — message de succès sans persistance d'état
+### 10.7 Statements DDL "stub" — message de succès sans persistance d'état — ✅ CORRIGÉ
 - **Constat** : `CREATE/DROP DATABASE LINK` et `CREATE/DROP MATERIALIZED VIEW` retournent un message de succès figé sans créer le moindre objet de catalogue ni autoriser la requête correspondante par la suite (`SELECT … FROM table@link` reste impossible, `SELECT * FROM mv_name` échouerait).
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:578-581` (`case 'CreateDbLinkStatement': return emptyResult('Database link created.');` … `case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');`); commentaires de stub côté parseur : `src/database/oracle/OracleParser.ts:1271` (`// ── CREATE DATABASE LINK (stub) ──`) et `:1291` (`// ── CREATE MATERIALIZED VIEW (stub) ──`).
 - **Sévérité** : Mineure (conforme au statut "stub" annoncé par le BRD §15.4-15.6, mais l'absence de toute trace en catalogue peut surprendre des scripts DBA qui font ensuite `SELECT … FROM DBA_DB_LINKS`).
 - **Recommandation** : Au minimum, persister le nom dans le catalogue pour que `DBA_DB_LINKS`/`DBA_MVIEWS` reflètent les objets créés (cohérence avec le reste du dictionnaire de données qui, lui, est branché sur l'état réel).
+
+- **Correction appliquée (2026-06-12)** : vues matérialisées réelles (conteneur CTAS interrogeable, DBA_MVIEWS vivante, staleness sur DML, DBMS_MVIEW.REFRESH, ORA-00955/12003) et DB links persistés au catalogue (DBA_DB_LINKS vivante, ORA-02011/02024). Limites restantes documentées dans docs/JOURNAL-REFACTORING-ORACLE.md : pas de fast refresh / query rewrite, pas de requêtes cross-link (`SELECT … FROM t@link`).
 
 ### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive
 - **Constat** : `FlashbackArchiveManager` gère un état réel (archives, rétention, tables activées), mais les requêtes `SELECT … AS OF TIMESTAMP` et `FLASHBACK TABLE … TO TIMESTAMP/SCN` sont des no-op loggés dans l'alert log ; seul `FLASHBACK TABLE … TO BEFORE DROP` (recyclebin) fonctionne réellement.

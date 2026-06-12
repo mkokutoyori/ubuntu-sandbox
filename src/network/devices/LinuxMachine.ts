@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
+import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -94,7 +95,8 @@ function globMatch(pattern: string, candidate: string): boolean {
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
-export abstract class LinuxMachine extends EndHost {
+export abstract class LinuxMachine extends EndHost
+  implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   protected readonly defaultTTL = 64;
 
   /** Active profile — describes the "flavor" of this Linux machine. */
@@ -1296,6 +1298,11 @@ export abstract class LinuxMachine extends EndHost {
       execStop?: string;
       user?: string;
       after?: string[];
+      listener?: {
+        processName: string;
+        daemonCommand?: string;
+        sockets: { port: number; protocol: 'tcp' | 'udp'; address?: string }[];
+      };
     },
     desired: 'active' | 'inactive',
   ): void {
@@ -1324,6 +1331,10 @@ export abstract class LinuxMachine extends EndHost {
     );
     this.executor.vfs.writeFile(path, lines.join('\n'), 0, 0, 0o022);
     const mgr = this.executor.serviceMgr;
+    // Declare the unit's sockets/daemon BEFORE the reload so the scan
+    // stamps them and the port projection binds/unbinds them on
+    // start/stop — netstat/ss/ps stay coherent with the service state.
+    if (spec.listener) mgr.registerServiceListener(spec.name, spec.listener);
     mgr.daemonReload();
     if (desired === 'active') {
       mgr.enable(spec.name);

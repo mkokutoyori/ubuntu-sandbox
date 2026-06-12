@@ -15,7 +15,7 @@ import type { DHCPMessageType } from './types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 /** DHCP Option codes (RFC 2132) */
-const DHCP_OPTION = {
+export const DHCP_OPTION = {
   SUBNET_MASK: 1,
   ROUTER: 3,
   DNS: 6,

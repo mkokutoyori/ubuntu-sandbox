@@ -99,46 +99,12 @@ export abstract class Equipment {
   getDeviceType(): DeviceType { return this.deviceType; }
 
   /**
-   * Get the current working directory (for terminal prompt).
-   * Override in subclasses that track cwd (e.g. LinuxPC, LinuxServer).
-   */
-  getCwd(): string { return '/'; }
-
-  /**
    * Get tab completions for a partial input string.
    * Override in subclasses that support tab completion.
    */
   getCompletions(partial: string): string[] { return []; }
 
-  /** Get current username (for terminal prompt). Override in subclasses. */
-  getCurrentUser(): string { return 'user'; }
-
-  /** Handle exit/logout for su sessions. Override in subclasses. */
-  handleExit(): { output: string; inSu: boolean } { return { output: '', inSu: false }; }
-
-  /** Check password for a user. Override in Linux devices. */
-  checkPassword(_username: string, _password: string): boolean { return false; }
-
-  /** Set password for a user. Override in Linux devices. */
-  setUserPassword(_username: string, _password: string): void {}
-
-  /** Check if a user exists. Override in Linux devices. */
-  userExists(_username: string): boolean { return false; }
-
-  /** Get current UID (0 = root). Override in Linux devices. */
-  getCurrentUid(): number { return 0; }
-
-  /** Check if current user can use sudo. Override in Linux devices. */
-  canSudo(): boolean { return true; }
-
-  /** Read file content for editor. Override in devices with filesystem. */
-  readFileForEditor(_path: string): string | null { return null; }
-
-  /** Write file content from editor. Override in devices with filesystem. */
-  writeFileFromEditor(_path: string, _content: string): boolean { return false; }
-
-  /** Resolve absolute path from relative path + cwd. Override in devices with filesystem. */
-  resolveAbsolutePath(path: string): string { return path; }
+  // Host capabilities (users, cwd, editable files) live in HostCapabilities.ts.
 
   /** Execute a command on this device. Override in concrete device classes. */
   executeCommand(_command: string): Promise<string> { return Promise.resolve(''); }

@@ -663,6 +663,215 @@ export→drop→import avec comptes de lignes, SKIP/APPEND/TRUNCATE, REMAP vers
 user existant/absent, dump étranger rejeté, adrci marqueur + -TAIL) : 66/66 ;
 suites adjacentes (filesystem, ssh-lan) : 77/77 ; `npx tsc --noEmit` propre.
 
+### 2026-06-12 — Authentification OS réelle pour `/ AS SYSDBA` (bequeath)
+**Défaillance :** incohérence majeure entre la couche Oracle et la couche
+identité/accès du Linux simulé. Le moteur possédait déjà le garde-fou
+(`connectAsSysdba(osCtx)` → ORA-01031 si `!osCtx.isDbaGroup`), mais la couche
+terminal ne lui transmettait **jamais** la réalité : `SQLPlusSession.login`
+appelait `connectAsSysdba()` sans argument, donc tout `sqlplus / as sysdba`
+réussissait quel que soit l'utilisateur shell — `su eve` puis
+`sqlplus / as sysdba` donnait les pleins pouvoirs SYS, là où le vrai Oracle
+vérifie l'appartenance au groupe OS `dba` (authentification bequeath).
+S'ajoutaient trois écarts secondaires : (1) aucun utilisateur `oracle` ni
+groupe `dba`/`oinstall` n'existait sur l'hôte (l'audit trail affichait un
+OSUSER `oracle` fantôme) ; (2) V$SESSION.OSUSER et DBA_AUDIT_TRAIL.OS_USERNAME
+montraient le contexte par défaut codé en dur au lieu du vrai utilisateur ;
+(3) un refus SYSDBA ne laissait aucune trace (le vrai Oracle journalise tout
+logon privilégié refusé : audit OS + alert log).
+**Correction :**
+- `SqlPlusSubShell.captureOsContext` — au lancement, snapshot de l'identité
+  réelle du shell via la surface existante (`getCurrentUser()` de
+  `ShellIdentityHost`, `id -Gn`, `hostname`) — comme un vrai process sqlplus
+  hérite de l'uid/groupes du shell qui l'exec.
+- `SQLPlusSession.setOsContext` — le contexte est porté par la session et
+  utilisé par **tous** les chemins de login (lancement + `CONNECT` en cours
+  de session) ; les tests moteur sans device gardent le contexte par défaut.
+- `initOracleFilesystem` provisionne l'identité OS qu'une vraie installation
+  crée (`oracle-database-preinstall`) : groupes `oinstall` (54321) /
+  `dba` (54322), utilisateur `oracle` (54321, home, bash) — via les
+  commandes shell du device (groupadd/useradd/usermod), donc /etc/passwd,
+  /etc/group et les événements IAM restent cohérents. Choix de lab assumé et
+  documenté : le cast opérateur pré-seedé (root, alice, bob, carl, dave) est
+  enrôlé dans `dba` pour que les topologies existantes continuent de
+  fonctionner ; tout **nouveau** compte est hors dba → ORA-01031 réel.
+- `OracleDatabase.rejectOsAuthentication` — un refus SYSDBA/SYSOPER laisse
+  désormais une trace fidèle : entrée d'audit LOGON returncode 1031 avec
+  SESSIONID 0 (marqueur Oracle « aucune session ouverte »), alert log, et
+  événement `oracle.connection.traced` outcome FAILURE.
+**Validation :** nouvelle suite `oracle-os-authentication.test.ts` (8 tests :
+refus moteur SYSDBA/SYSOPER, audit du refus, provisioning `id oracle`,
+root connecté, cycle `su eve` → ORA-01031 → `usermod -aG dba eve` → Connected
+avec V$SESSION.OSUSER=eve, OS_USERNAME réel dans DBA_AUDIT_TRAIL) ;
+non-régression `unit/database/` + `unit/shell/` + `unit/terminal/` ;
+`npx tsc --noEmit` propre.
+
+### 2026-06-12 — Listener TNS : socket 1521 et processus tnslsnr pilotés par l'état réel
+**Défaillance :** le listener était un simple booléen en mémoire, incohérent
+avec les trois tables OS que tout DBA inspecte :
+1. TCP 1521 était pré-lié au boot (`initDefaultSockets`, pid figé 2001) et
+   **survivait à `lsnrctl stop`** — `netstat`/`ss` montraient un port à
+   l'écoute alors que `tnsping` répondait ORA-12541 ;
+2. aucun processus `tnslsnr` n'existait jamais dans `ps`, alors que les
+   processus background de l'instance (pmon, smon…) y figurent ;
+3. `oracle-listener-<SID>.service` (installé par OracleSystemdSync) ouvrait
+   un wrapper shell sans lien avec le port — la `ServicePortProjection`
+   existante (qui fait exactement ce travail pour ssh/nginx/mysql…) ne
+   connaissait pas les unités au nom dynamique.
+**Correction :** réutilisation du mécanisme existant plutôt qu'un canal ad hoc
+(consigne « pas de duplication, enrichir l'existant ») :
+- `LinuxServiceManager.registerServiceListener(name, spec)` — registre
+  dynamique consulté en priorité sur la table statique `SERVICE_LISTENERS`
+  (daemon-reload stampe les sockets, `getPortBinding` les sert à la
+  projection) ; `ServiceListenerSpec.daemonCommand` optionnel : le process
+  laissé en vie par l'unité quand il diffère d'ExecStart (`lsnrctl start`
+  n'est qu'un lanceur, le daemon est `tnslsnr LISTENER -inherit` — c'est
+  lui que `ps` doit montrer).
+- `LinuxMachine.installSystemdUnit` accepte la déclaration listener et
+  l'enregistre avant le daemon-reload.
+- `OracleSystemdSync.listenerUnit()` déclare `tnslsnr` + TCP 1521. La chaîne
+  devient : `lsnrctl stop` → événement bus oracle.listener.event →
+  service inactive → `linux.service.stopped` → projection libère 1521 et
+  SIGTERM le tnslsnr ; `lsnrctl start` → l'inverse, avec le vrai mainPid
+  dans netstat/ss (plus jamais le pid placebo 2001 après un cycle).
+**Validation :** nouvelle suite `oracle-listener-network-coherence.test.ts`
+(4 tests : état initial cohérent, stop → port libéré + tnslsnr tué +
+unité inactive + TNS-12541, start → re-bind avec pid vivant, accord ss ↔
+netstat) ; non-régression `unit/database/` + suites services/ports
+network-v2 ; `npx tsc --noEmit` et ESLint propres (au passage : purge des
+4 échappements `\$` inutiles préexistants dans database.ts).
+
+### 2026-06-12 — systemctl pilote réellement l'instance et le listener (synchro inverse)
+**Défaillance :** la synchronisation Oracle ⇄ systemd était unidirectionnelle.
+`OracleSystemdSync` installait bien `oracle-database-<SID>.service` /
+`oracle-listener-<SID>.service` quand le moteur changeait d'état, mais dans
+l'autre sens `systemctl start/stop oracle-…` ne faisait que spawner/tuer un
+wrapper shell : le moteur Oracle n'en savait rien. Conséquence directe après
+l'entrée précédente : `systemctl stop oracle-listener-ORCL` tuait tnslsnr et
+libérait le port (projection), mais `lsnrctl status` répondait encore
+« running » et `attemptConnect` acceptait les connexions — un état
+schizophrène impossible sur une vraie machine où l'unité et lsnrctl pilotent
+le même daemon. Idem pour la base : `systemctl stop oracle-database-ORCL`
+laissait l'instance OPEN avec ses pmon/smon fantômes.
+**Correction :**
+- `OracleSystemdSync` s'abonne aussi à `linux.service.started/restarted/
+  stopped` et pilote le moteur : unité listener → `startListener()`/
+  `stopListener()`, unité database → `startup()`/`shutdown('IMMEDIATE')`
+  (sémantique dbstart/dbshut). Ctx étendu d'un `resolveDatabase` optionnel
+  (même pattern que `OracleFilesystemSync`).
+- Convergence sans boucle par **idempotence des deux côtés** : chaque
+  handler vérifie d'abord l'état cible (no-op si déjà atteint), et le
+  service manager n'émet aucun événement pour un start/stop no-op — un
+  aller-retour se termine toujours en un cycle. Documenté en tête d'adapter.
+- Au passage, correction du sens aller : seuls les états terminaux pilotent
+  l'unité database (OPEN → active, SHUTDOWN → inactive). Avant, les phases
+  transitoires NOMOUNT/MOUNT d'un même STARTUP flappaient l'unité par
+  `inactive` — avec la synchro inverse, ce flap aurait rappelé
+  `shutdown()` en plein démarrage.
+**Validation :** nouvelle suite `oracle-systemd-reverse-sync.test.ts`
+(5 tests : stop/start listener via systemctl avec accord netstat +
+attemptConnect, stop/start database avec disparition/retour des ora_pmon
+dans ps et alert log « immediate », SHUTDOWN/STARTUP SQL*Plus → unité
+cohérente sans boucle) ; non-régression `unit/database/` + `unit/shell/` +
+suites services network-v2 ; `npx tsc --noEmit` propre.
+
+### 2026-06-12 — Datafiles ⇄ filesystem hôte : ORA-01157 réel et RESTORE qui restaure
+**Défaillance :** les copies VFS des datafiles étaient un décor en écriture
+seule, avec quatre mensonges en cascade :
+1. `rm users01.dbf` depuis bash n'avait **aucune** conséquence : Oracle ne
+   relisait jamais le disque, STARTUP ouvrait toujours ;
+2. pire, la resynchronisation sur chaque changement d'état
+   (`OracleFilesystemSync.syncDatafiles`) **ressuscitait** le fichier
+   supprimé au prochain MOUNT ;
+3. `RMAN RESTORE` n'écrivait **rien** sur le disque (événements de
+   progression seulement) — le workflow de récupération était théâtral ;
+4. `LinuxRmanContext.getDatafiles()` retournait une liste figée de 4
+   fichiers : un tablespace créé après le boot était invisible pour RMAN
+   et ses FILE# pouvaient diverger de V$DATAFILE.
+**Correction :**
+- `OracleStorage.listDatafiles()` — énumération canonique (FILE# séquentiel,
+  ordre tablespace, temp exclus, sémantique V$DATAFILE), source unique
+  partagée par le contexte RMAN et le contrôle d'ouverture de l'instance.
+- `OracleInstance` : à l'ouverture (STARTUP → OPEN et ALTER DATABASE OPEN),
+  vérification d'existence de chaque datafile sur le filesystem hôte via
+  deux injections (lister fourni par OracleDatabase, sonde d'existence
+  fournie par le câblage terminal — null = pas de filesystem, contrôle
+  sauté pour les tests moteur purs). Fichier manquant → la vraie échelle
+  d'erreurs (`ORA-01157` + `ORA-01110`, première occurrence, trace alert
+  log) et l'instance **reste MOUNT** pour RESTORE/RECOVER. Un `rm` sur
+  instance ouverte reste sans effet (sémantique inode ouvert du vrai Linux).
+- `OracleFilesystemSync` : matérialisation **une seule fois** par chemin
+  (set par device, amorcé au boot via `primeDatafiles`, alimenté par les
+  événements tablespace-created/datafile-added) — le VFS devient
+  l'autorité sur l'existence, un `rm` n'est plus annulé.
+- `RmanJobEngine._doRestore` : RESTORE réécrit réellement chaque datafile
+  ciblé sur le VFS (c'est tout l'objet d'un restore).
+- `LinuxRmanContext.getDatafiles()` : dérive du storage vivant quand une
+  base est enregistrée (fallback figé conservé pour les devices sans
+  Oracle, contextes de test).
+**Validation :** nouvelle suite `oracle-datafile-vfs-coherence.test.ts`
+(4 tests : instance ouverte insensible au rm, non-résurrection après
+shutdown/startup, STARTUP bloqué en MOUNT avec ORA-01157/01110 exacts,
+boucle DBA complète backup → rm → MOUNT → restore datafile 4 → ALTER
+DATABASE OPEN) ; non-régression `unit/database/` + `unit/terminal/` +
+`debug/rman/` + `debug/oracle/` ; `npx tsc --noEmit` propre.
+
+### 2026-06-12 — Vues matérialisées réelles (clôt GAP §10.7 côté MV)
+**Défaillance :** `CREATE MATERIALIZED VIEW` était un stub menteur :
+« Materialized view created. » sans créer le moindre objet — `SELECT` sur la
+MV échouait en ORA-00942, `DBA_MVIEWS` restait éternellement vide, `DROP
+MATERIALIZED VIEW` « réussissait » sur du vide, et les clauses
+BUILD/REFRESH étaient jetées par le parseur.
+**Correction :**
+- Parseur : capture de `BUILD IMMEDIATE|DEFERRED`, `REFRESH COMPLETE|FORCE
+  [ON DEMAND|COMMIT]` et du texte de la requête (les clauses de stockage
+  inconnues restent tolérées, compatibilité scripts).
+- Exécuteur : `CREATE MATERIALIZED VIEW` exécute la requête définissante
+  dans une **vraie table conteneur** (réutilisation du chemin CTAS existant
+  — c'est ce qui rend `SELECT` fonctionnel ensuite), privilèges `CREATE
+  [ANY] MATERIALIZED VIEW` exigés, `ORA-00955` sur doublon ; `BUILD
+  DEFERRED` → conteneur vide, STALENESS=UNUSABLE ; `DROP` supprime conteneur
+  + dictionnaire, `ORA-12003` si absent.
+- Catalogue : registre `MaterializedViewMeta` (requête AST + texte, modes,
+  tables de base extraites de l'AST — FROM/JOIN/CTE/sous-requêtes FROM,
+  lastRefresh, staleness). Au choke point DML existant (`emitDml`), tout
+  DML sur une table de base bascule les MV dépendantes à **STALE** — la MV
+  reste un snapshot (sémantique Oracle), le dictionnaire dit la vérité.
+- `DBMS_MVIEW.REFRESH` : nouveau package builtin (pattern
+  `PackageRegistry` établi), service `materializedViews` injecté par
+  `OracleDatabase` — refresh complet ré-exécutant la requête avec la
+  résolution de noms du **propriétaire** (sémantique definer du vrai
+  package), retour à FRESH, `ORA-12003` sur MV inconnue. Routé pour `EXEC`
+  et pour les blocs `BEGIN…END` (même routeur).
+- `DBA_MVIEWS` branchée sur le registre vivant (+ colonnes QUERY,
+  LAST_REFRESH_DATE).
+**Limites assumées :** refresh toujours COMPLETE (pas de log MV/fast
+refresh), `ON COMMIT` accepté mais non déclencheur (pas de hook commit par
+session sur les tables de base), pas de query rewrite.
+**Validation :** nouvelle suite `oracle-materialized-views.test.ts`
+(9 tests : conteneur interrogeable, DBA_MVIEWS, ORA-00955, BUILD DEFERRED
+vide+UNUSABLE, snapshot + bascule STALE sur DML, REFRESH→FRESH avec
+nouvelles données, ORA-12003 ×2, DROP complet) ; non-régression
+`unit/database/` complète ; `npx tsc --noEmit` propre.
+
+### 2026-06-12 — DB links persistés au catalogue (clôt GAP §10.7)
+**Défaillance :** seconde moitié du §10.7 : `CREATE [PUBLIC] DATABASE LINK`
+renvoyait « Database link created. » sans rien créer — `DBA_DB_LINKS`
+restait vide à jamais, `DROP DATABASE LINK` « réussissait » sur de
+l'inexistant, un nom dupliqué passait en silence. Un script DBA qui vérifie
+son travail dans le dictionnaire était systématiquement trompé.
+**Correction :** registre `DbLinkMeta` dans `OracleCatalog` (owner —
+`PUBLIC` pour les liens publics —, CONNECT TO user, USING host, created) ;
+exécuteur : privilèges `CREATE [PUBLIC] DATABASE LINK` exigés, `ORA-02011`
+sur doublon, `ORA-02024` sur DROP d'un lien absent ; `DBA_DB_LINKS`
+branchée sur le registre vivant. Les tests qui verrouillaient le stub
+(DROP silencieux sur du vide) assertent désormais le comportement réel.
+**Limite assumée (documentée dans GAP.md)** : pas de dispatch de requêtes
+cross-link (`SELECT … FROM t@link`) — le dictionnaire, lui, ne ment plus.
+**Validation :** `oracle-remaining-features.test.ts` réécrit (4 tests DB
+links : persistance DBA_DB_LINKS, owner PUBLIC, ORA-02011, drop +
+ORA-02024) ; non-régression `unit/database/` complète ; `npx tsc --noEmit`
+propre. GAP.md §10.7 marqué ✅ CORRIGÉ.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

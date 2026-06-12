@@ -20,7 +20,7 @@ import {
   ISAKMPPolicy, TransformSet, CryptoMapEntry, CryptoMap, DynamicCryptoMap,
   DynamicCryptoMapEntry, IKEv2Proposal, IKEv2Policy, IKEv2Keyring, IKEv2Profile,
   IPSecProfile, TunnelProtection,
-  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig,
+  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage,
   SecurityPolicy, SPDAction, SPDDirection,
   SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
   MulticastIPSecSA,
@@ -1191,19 +1191,37 @@ export class IPSecEngine implements IProtocolEngine {
     return this.esnDefault;
   }
 
-  // ── DPD Simulation (RFC 3706) ────────────────────────────────────
-  // In a real implementation, R-U-THERE / R-U-THERE-ACK messages are
-  // sent over IKE. Here we simulate this by checking peer reachability.
+  // ── DPD (RFC 3706) — real R-U-THERE / R-U-THERE-ACK on the wire ───
+
+  /** ISAKMP on UDP 500 — DPD R-U-THERE/ACK notifies (RFC 3706). */
+  handleIkeUdp(_inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    const msg = udp.payload as IsakmpDpdMessage | undefined;
+    if (!msg || msg.type !== 'isakmp-dpd') return;
+    const srcIp = ipPkt.sourceIP.toString();
+
+    if (msg.notify === 'R-U-THERE') {
+      const sa = this.ikeSADB.get(srcIp);
+      if (!sa) return;
+      sa.lastDPDActivity = Date.now();
+      if (this.debugIsakmp) {
+        Logger.info(this.deviceRef().deviceId, 'debug:isakmp',
+          `ISAKMP: DPD R-U-THERE seq ${msg.seq} from ${srcIp} — sending ACK`);
+      }
+      this.router._sendIkeUdp(srcIp, {
+        type: 'isakmp-dpd', notify: 'R-U-THERE-ACK', seq: msg.seq,
+      } satisfies IsakmpDpdMessage);
+      return;
+    }
+
+    const sa = this.ikeSADB.get(srcIp);
+    if (!sa || !sa.dpdAwaitingAck || sa.dpdSeq !== msg.seq) return;
+    sa.dpdAwaitingAck = false;
+  }
 
   /**
-   * Simulate DPD check for all IKE SAs. Called periodically by the
-   * simulation tick or explicitly by the user.
-   *
-   * For each SA with DPD enabled, checks:
-   *  - periodic mode: peer reachability every `interval` seconds
-   *  - on-demand mode: only when traffic is expected but none received
-   *
-   * If a peer fails `retries` consecutive checks, clear its SAs.
+   * Periodic DPD: real R-U-THERE probes through the FIB. Cable delivery
+   * is synchronous, so a live peer's ACK has been handled when the send
+   * returns; `retries` consecutive timeouts clear the peer's SAs.
    */
   runDPDCheck(): string[] {
     const events: string[] = [];
@@ -1234,21 +1252,22 @@ export class IPSecEngine implements IProtocolEngine {
         }
       }
 
-      // Simulate R-U-THERE: check if peer router is reachable
-      const peerRouter = IPSecEngine.findRouterByIP(peerIP);
-      if (peerRouter) {
-        const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
-        if (peerEngine && peerEngine.ikeSADB.has(ikeSA.localIP)) {
-          // Peer responded — R-U-THERE-ACK
-          ikeSA.lastDPDActivity = now;
-          ikeSA.dpdTimeouts = 0;
-          if (this.debugIsakmp) {
-            Logger.info(this.router.id, 'debug:isakmp',
-              `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP}`);
-          }
-          continue;
+      const seq = (ikeSA.dpdSeq ?? 0) + 1;
+      ikeSA.dpdSeq = seq;
+      ikeSA.dpdAwaitingAck = true;
+      this.router._sendIkeUdp(peerIP, {
+        type: 'isakmp-dpd', notify: 'R-U-THERE', seq,
+      } satisfies IsakmpDpdMessage);
+      if (!ikeSA.dpdAwaitingAck) {
+        ikeSA.lastDPDActivity = now;
+        ikeSA.dpdTimeouts = 0;
+        if (this.debugIsakmp) {
+          Logger.info(this.router.id, 'debug:isakmp',
+            `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP} (seq ${seq})`);
         }
+        continue;
       }
+      ikeSA.dpdAwaitingAck = false;
 
       // Peer unreachable — increment timeout counter
       ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;

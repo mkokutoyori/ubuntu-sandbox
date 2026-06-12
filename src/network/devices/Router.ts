@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
@@ -60,8 +61,8 @@ import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
-  UDP_PORT_RIP, UDP_PORT_IKE_NAT_T,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
+  UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
@@ -191,7 +192,7 @@ export interface IPv6ACL {
   entries: IPv6ACLEntry[];
 }
 
-export abstract class Router extends Equipment {
+export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
@@ -1127,6 +1128,18 @@ export abstract class Router extends Equipment {
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    // OSPF runs directly over IP (proto 89, RFC 2328 §4.3).
+    if (ipPkt.protocol === IP_PROTO_OSPF) {
+      const ospfPkt = ipPkt.payload as { type?: string };
+      if (ospfPkt?.type === 'ospf' && this.ospfIntegration.isOSPFEnabled()) {
+        this.ospfIntegration.receivePacket(
+          inPort, ipPkt.sourceIP.toString(),
+          ipPkt.payload as import('../ospf/types').OSPFPacket,
+        );
+      }
+      return;
+    }
+
     // IPSec inbound decapsulation
     if (ipPkt.protocol === IP_PROTO_ESP && this.ipsecEngine) {
       const inner = this.ipsecEngine.processInboundESP(ipPkt);
@@ -1272,9 +1285,36 @@ export abstract class Router extends Equipment {
         this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
       } else if (udp.destinationPort === 67) {
         this.handleDhcpUdp(inPort, ipPkt, udp);
+      } else if (udp.destinationPort === UDP_PORT_IKE) {
+        this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
+  }
+
+  /** @internal ISAKMP payload as a UDP 500→500 datagram through the FIB (DPD). */
+  _sendIkeUdp(destIp: string, payload: unknown): boolean {
+    const dst = new IPAddress(destIp);
+    const route = this.lookupRoute(dst);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const srcIp = egress?.getIPAddress();
+    if (!egress || !srcIp) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: UDP_PORT_IKE, destinationPort: UDP_PORT_IKE,
+      length: 8 + 64, checksum: 0, payload,
+    };
+    const ipPkt = createIPv4Packet(srcIp, dst, IP_PROTO_UDP, 64, udp, 8 + 64);
+    const arpHit = this.arpTable.get(
+      (route.nextHop ?? dst).toString(),
+    ) ?? this.arpTable.get(dst.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+    return true;
   }
 
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
@@ -1916,8 +1956,26 @@ export abstract class Router extends Equipment {
             dns: pool?.dnsServers ?? [],
             domainName: pool?.domainName ?? undefined,
             leaseDuration: pool?.leaseDuration ?? 86400,
+            renewalTime: pool?.renewalTime,
+            rebindingTime: pool?.rebindingTime,
           });
       }
+    } else if (type === 'DHCPDECLINE') {
+      this.dhcpServer.processDecline({
+        clientMAC: pkt.chaddr,
+        declinedIP: String(pkt.getOption(50) ?? ''),
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return;
+    } else if (type === 'DHCPRELEASE') {
+      this.dhcpServer.processRelease({
+        clientMAC: pkt.chaddr,
+        clientIP: pkt.ciaddr,
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return;
     }
     if (!reply) return;
     if (option82) reply.setOption(82, option82);
@@ -2303,7 +2361,7 @@ export abstract class Router extends Equipment {
    * to — `device.checkPassword` is the single-call entry point that
    * the LinuxMachine / WindowsPC counterparts already expose.
    */
-  override checkPassword(username: string, password: string): boolean {
+  checkPassword(username: string, password: string): boolean {
     const authority = this.getSshHost().getAuthority();
     return authority.authenticate(username, password);
   }
