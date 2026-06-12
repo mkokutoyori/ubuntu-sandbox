@@ -1891,3 +1891,44 @@ toujours sur `default`).
 ### Validation
 
 `unit/powershell/` : 57 fichiers, 1890 verts (0 échec, scaffold compris).
+
+---
+
+## Entrée 26 — UI : table MAC du PropertiesPanel réactive (GAP §11.3)
+
+**Date** : 2026-06-12
+
+### Défaillance constatée
+
+1. La table MAC affichée n'était **pas un flux réactif** : un `useEffect`
+   sur la sélection + bouton « Refresh » manuel — instantané figé tant
+   que l'utilisateur n'agissait pas, à rebours de l'architecture
+   read-models (`src/react/hooks`) que `NetworkLogsPanel` applique déjà.
+2. Bug d'affichage latent : le panneau typait `getMACTable()` en
+   `Map<string,string>` alors que les switches renvoient
+   `MACTableEntry[]` — `Array.from(table.entries())` produisait des
+   paires [index, objet] : la colonne MAC affichait un index de tableau,
+   le VLAN était codé en dur à 1.
+3. Côté moteur, seul `switch.mac.flushed` existait sur le bus — aucun
+   événement d'apprentissage/vieillissement/clear à observer.
+
+### Correction
+
+- `Switch` publie désormais des événements typés `switch.mac.learned`,
+  `switch.mac.moved` (avec fromPort), `switch.mac.aged`,
+  `switch.mac.cleared` (le `flushed` existant rejoint l'union typée
+  `DomainEvent`).
+- Nouveau hook `useMacTable(instance)` (`src/react/hooks`) : abonnement
+  aux cinq topics filtrés par deviceId, relecture du vrai
+  `getMACTable()` à chaque événement — aucune copie d'état, aucun
+  polling.
+- `PropertiesPanel` consomme le hook : vraies adresses MAC, vrais VLANs,
+  type dynamic/static réel ; bouton « Refresh » supprimé (plus rien à
+  rafraîchir à la main), « Clear » déclenche l'événement qui vide la vue.
+
+### Validation
+
+Nouvelle suite `mac-table-reactivity.test.tsx` (4 tests : learned publié
+par du trafic réel sur un LAN câblé, cleared publié, hook qui se remplit
+après un ping et se vide après clear sans refresh manuel, instance null).
+`unit/gui/` complet vert.

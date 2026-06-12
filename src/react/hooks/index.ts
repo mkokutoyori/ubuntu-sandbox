@@ -37,3 +37,4 @@ export {
   useOracleSessions,
   useOracleStats,
 } from './useOracle';
+export { useMacTable, type MacTableRow } from './useMacTable';
