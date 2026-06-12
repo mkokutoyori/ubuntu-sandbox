@@ -1741,6 +1741,42 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  /**
+   * Synchronous variant for callers bound to a sync contract (the NSS
+   * `dns` source). Cable delivery is synchronous, so a live server's
+   * response has been captured when the send returns; null = timeout.
+   */
+  public queryDnsServerSync(
+    serverIP: IPAddress,
+    name: string,
+    qtype: string,
+  ): DnsWireResponse | null {
+    let sourcePort: number;
+    try {
+      sourcePort = this.socketTable.allocateEphemeralPort();
+    } catch {
+      return null;
+    }
+    const id = nextDnsTransactionId();
+    let reply: DnsWireResponse | null = null;
+    try {
+      this.udpBind(sourcePort, ({ udp }) => {
+        const msg = udp.payload;
+        if (isDnsWireResponse(msg) && msg.id === id) reply = msg;
+      }, 'resolver');
+    } catch {
+      return null;
+    }
+    const query: DnsWireQuery = {
+      kind: 'dns-query', id, name, qtype, recursionDesired: true,
+    };
+    this.sendUdpDatagram(
+      serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+    );
+    this.udpClose(sourcePort);
+    return reply;
+  }
+
   // ─── ARP Resolution ────────────────────────────────────────────
 
   /**

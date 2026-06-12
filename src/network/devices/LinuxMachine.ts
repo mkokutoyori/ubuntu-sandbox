@@ -160,6 +160,25 @@ export abstract class LinuxMachine extends EndHost
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
     this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx));
+    // NSS `dns` source resolves through real UDP/53 once resolv.conf
+    // names a non-loopback server (loopback = systemd-resolved stub,
+    // modelled by the legacy fallback).
+    this.executor.dnsNss.setWireResolver({
+      nameservers: () => {
+        const content = this.executor.readFile('/etc/resolv.conf') ?? '';
+        return [...content.matchAll(/^\s*nameserver\s+(\S+)/gm)]
+          .map(m => m[1])
+          .filter(ip => !ip.startsWith('127.'))
+          .slice(0, 3);
+      },
+      query: (serverIp, name, qtype) => {
+        try {
+          return this.queryDnsServerSync(new IPAddress(serverIp), name, qtype);
+        } catch {
+          return null;
+        }
+      },
+    });
 
     // 4. Command registry
     this.commands = new LinuxCommandRegistry();

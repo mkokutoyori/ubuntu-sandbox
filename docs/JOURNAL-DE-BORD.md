@@ -1382,7 +1382,7 @@ inter-équipements passe par les câbles » (Port → Cable → Port →
 | 12 | Equipment : 11 stubs « hôte » (passwords, cwd, éditeur) hérités par routeurs/switches (backlog #10) | ISP (SOLID) | Moyenne | ✅ Corrigé |
 | 13 | OSPF : paquets « téléportés » au moteur du pair via `RouterOSPFIntegration.getByEquipmentId()` au lieu de trames sur le câble | RFC 2328 / archi équipement | Critique | ✅ Transport corrigé (entrée 13) — orchestration encore synchrone |
 | 14 | IPSec DPD : R-U-THERE simulé en lisant la base SA du pair en mémoire (`findRouterByIP` + `_getIPSecEngineInternal`) | RFC 3706 | Critique | ✅ Corrigé (entrée 17) |
-| 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | À faire |
+| 15 | Résolution DNS/host : scan du registre global d'équipements (`DnsNssSource`, `HostLookup`) au lieu de requêtes DNS réelles | RFC 1034/1035 | Haute | ✅ NSS corrigé (entrée 21) — reste ssh/scp par nom (chantier SSH-sur-TCP) |
 | 16 | Découverte de pairs EIGRP/BGP : accès direct au moteur du pair (`RouterDynamicRouting.peerEngineFor`) | Archi équipement | Haute | À faire |
 | 17 | EndHost/DHCP : découverte de serveurs par parcours du graphe (`Equipment.getById`) | RFC 2131 | Haute | ✅ Corrigé (entrée 15) — scan registre conservé en repli des topologies non câblées |
 | 18 | Parsing de ligne de commande quotée dupliqué (`WindowsPC.parseCommandLine` / `CmdSubShell.splitArgs`) | DRY | Moyenne | ✅ Corrigé (entrée 14) |
@@ -1723,3 +1723,50 @@ processus de convergence.
 - 16 fichiers OSPF + redistribute (404 tests) verts ; suite network-v2
   complète verte (voir commit).
 - Diff `tsc` : aucune erreur dans les fichiers touchés.
+
+---
+
+## Entrée 21 — NSS : la source `dns` résout en vrais datagrammes UDP/53
+
+**Date** : 2026-06-12
+
+### Défaillance constatée (backlog #15)
+
+Les outils ponctuels (`dig`, `nslookup`, `ping <nom>`) avaient déjà été
+migrés sur le fil (`DnsWire`, dnsmasq répondant sur UDP/53), mais la
+source NSS `dns` — consultée par `getent hosts/ahosts` et toute
+résolution passant par le Name Service Switch — scannait toujours le
+registre global d'équipements : un nom résolvait même câble débranché,
+et la zone du serveur DNS n'avait aucune autorité.
+
+### Correction
+
+- `EndHost.queryDnsServerSync` : variante synchrone du stub resolver
+  (le NSS a un contrat sync ; la livraison câble étant synchrone, la
+  réponse d'un serveur vivant est capturée au retour de l'envoi).
+- `DnsNssSource` : wire-first via un `DnsWireStubResolver` injecté par
+  `LinuxMachine` (nameservers lus en live dans `/etc/resolv.conf`,
+  stubs loopback 127.x exclus — ils modélisent systemd-resolved, servi
+  par le repli). Sémantique fidèle à la glibc : NXDOMAIN autoritaire →
+  NOTFOUND ; tous serveurs muets → TRYAGAIN (EAI_AGAIN) ; PTR sur le
+  fil pour `gethostbyaddr`.
+- Sans nameserver configuré : repli sur le scan topologique historique
+  (boîtes non configurées), documenté.
+- `LinuxCommandExecutor` : instance `dnsNss` unique partagée entre les
+  deux constructions du NameServiceSwitch (le resolver injecté survit
+  au re-build sur attachEventBus).
+
+### Limites restantes
+
+- `ssh/scp/sftp <nom>` (`HostLookup.findHostByAddress`) résout encore
+  les noms par scan du registre — à traiter avec le chantier
+  SSH-sur-TCP (la partie IP→équipement est de la plomberie simulateur,
+  pas une violation protocolaire).
+- Windows : chaîne de résolution séparée, non migrée.
+
+### Validation
+
+- 5 tests neufs (`nss-dns-wire.test.ts`) : résolution de zone sur le
+  fil, **NXDOMAIN autoritaire malgré un équipement homonyme dans le
+  registre**, câble coupé ⇒ échec, PTR, repli sans nameserver.
+- Suites dns/hosts/nslookup/resolv-conf + getent/nss : 153 vertes.
