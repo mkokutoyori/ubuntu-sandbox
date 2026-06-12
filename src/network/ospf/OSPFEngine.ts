@@ -1143,6 +1143,8 @@ export class OSPFEngine implements IProtocolEngine {
 
     const iface = vlIface ?? physIface;
     if (!iface) return;
+    // passive-interface: hellos neither sent nor processed (IOS behaviour)
+    if (iface.passive) return;
 
     // Validate hello parameters
     if (iface.networkType === 'broadcast') {
@@ -1179,14 +1181,17 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Check if we are listed in the neighbor's hello (2-Way check)
     const seesUs = hello.neighbors.includes(this.config.routerId);
+    let twoWayTransition = false;
 
     if (seesUs) {
       if (neighbor.state === 'Init') {
         this.neighborEvent(iface, neighbor, 'TwoWayReceived');
+        twoWayTransition = true;
       }
     } else {
       if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
         this.neighborEvent(iface, neighbor, 'OneWay');
+        twoWayTransition = true;
       }
     }
 
@@ -1203,8 +1208,10 @@ export class OSPFEngine implements IProtocolEngine {
         this.drElection(iface);
       }
     } else if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
-      // NbrChange: new neighbor or changed priority/DR/BDR declaration → re-run election
+      // NbrChange (RFC 2328 §9.2): 2-Way transition either way, new
+      // neighbor, or changed priority/DR/BDR declaration → re-election
       const nbrChange = isNewNeighbor
+        || twoWayTransition
         || prevPriority !== hello.priority
         || prevDR !== hello.designatedRouter
         || prevBDR !== hello.backupDesignatedRouter;
