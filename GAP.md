@@ -1163,7 +1163,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure (constat positif, mais documentation à corriger)
 - **Recommandation** : Mettre à jour le tableau récapitulatif du BRD (lignes 445, 1421, 1426) — ces deux vues sont passées de "stub statique" à "branchées sur l'état réel" ; ne pas laisser le document désynchronisé du code, au risque de fausser les futures évaluations de gap.
 
-### 10.12 Vues canned résiduelles (placeholders assumés)
+### 10.12 Vues canned résiduelles (placeholders assumés) — ✅ V$SQL_PLAN_MONITOR corrigée (2026-06-12 : lignes générées par le vrai PlanGenerator ; V$FIXED_VIEW_DEFINITION reste légitime)
 - **Constat** : Quelques vues restent volontairement synthétiques/placeholder, par construction du simulateur (équivalent réel Oracle = vues fixes opaques) :
   - `V$SQL_PLAN_MONITOR` génère une seule ligne `SELECT STATEMENT` factice par curseur surveillé, faute de vrais plans d'exécution.
   - `V$FIXED_VIEW_DEFINITION` synthétise `select * from x$<nom>` pour chaque vue enregistrée (l'équivalent réel n'expose pas non plus de vrai SQL).

@@ -274,6 +274,25 @@ export class OracleDatabase implements SqlCommandHost {
     // Statistics + plan generator — both need storage.
     this.instance.attachStatistics(this.storage);
     this.planGenerator = new PlanGenerator(this.storage, this.instance);
+    this.instance.getRuntimeState().planProvider = (sqlText, parsingSchema) => {
+      try {
+        const tokens = new OracleLexer().tokenize(sqlText);
+        const stmt = new OracleParser().parse(tokens);
+        const plan = this.planGenerator.generate(stmt, '', sqlText, parsingSchema || 'SYS');
+        return plan.nodes.map(n => ({
+          lineId: n.id,
+          depth: n.depth,
+          operation: n.operation,
+          options: n.options,
+          objectOwner: n.objectOwner,
+          objectName: n.objectName,
+          cardinality: n.cardinality,
+          cost: n.cost,
+        }));
+      } catch {
+        return null;
+      }
+    };
     this.scheduler = new SchedulerManager(this);
     this.instance.attachScheduler(this.scheduler);
     // User-activity ledger lives on the instance (rebinds on setDeviceId);

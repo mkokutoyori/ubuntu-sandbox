@@ -1074,6 +1074,21 @@ fichier → stop/start → netstat sur 1530, plus de 1521, status l'affiche)
 et tns-remote (20, +1 : depuis le client, :1521 → ORA-12541, :1530 →
 Connected, tnsping cohérent) : 25/25.
 
+### 2026-06-12 — V$SQL_PLAN_MONITOR générée par le vrai PlanGenerator (GAP §10.12)
+**Défaillance :** la vue émettait une unique ligne factice « SELECT
+STATEMENT » par curseur surveillé, déconnectée du moteur de plans que
+EXPLAIN PLAN utilise depuis la correction du §10.2 — deux vues du même
+sujet racontaient deux histoires.
+**Correction :** `OracleRuntimeState.planProvider` injecté par
+`OracleDatabase` (lexer+parser+`PlanGenerator.generate` sur le texte de
+chaque curseur du sqlCache, avec son parsing schema) ; la vue émet une
+ligne par étape réelle du plan (opération, options, owner/objet,
+cardinalité, OUTPUT_ROWS réels au niveau racine), fallback sur la ligne
+racine pour les textes non planifiables (DDL).
+**Validation :** nouvelle suite `oracle-sql-plan-monitor.test.ts` (3
+tests : TABLE ACCESS FULL sur le bon objet, chemin INDEX pour une
+recherche par clé primaire, plans multi-lignes racine en tête).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
