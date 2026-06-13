@@ -1594,6 +1594,19 @@ connexion — `/ as sysdba` et `user/pass@conn` — quand du SQL est présent
 SELECT piped vers `/ as sysdba` exécuté, banner pour la connexion nue) ;
 non-régression SSH/LAN + `unit/database/` (3119) ; tsc + ESLint propres.
 
+### 2026-06-13 — TRUNCATE : ORA-00942 et ORA-02266 (FK enfant active)
+**Défaillance :** `executeTruncate` ne vérifiait ni l'existence de la table
+(ORA-00942) ni les FK enfants. Le vrai Oracle refuse de tronquer une table
+parent référencée par une FK active (ORA-02266), même sans ligne enfant —
+contrairement à DELETE.
+**Correction :** `requireTableMeta` (ORA-00942) puis scan des tables du
+schéma pour une FK active pointant vers la table → ORA-02266 (auto-référence
+exclue ; comparaison robuste au préfixe schéma du refTable).
+**Validation :** nouvelle suite `oracle-truncate-fk.test.ts` (4 tests :
+parent → ORA-02266, enfant OK, parent OK après DROP de l'enfant, table
+absente → ORA-00942) ; non-régression `unit/database/` 2872 ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

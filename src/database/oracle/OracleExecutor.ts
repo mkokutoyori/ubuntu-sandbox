@@ -2756,7 +2756,20 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.truncateTable(schema, stmt.name.toUpperCase());
+    const tableName = stmt.name.toUpperCase();
+    this.requireTableMeta(schema, tableName);
+    // An enabled FK from another table blocks TRUNCATE (ORA-02266) — even
+    // with no child rows, unlike DELETE; self-references do not block.
+    for (const child of this.storage.getTableNames(schema)) {
+      if (child === tableName) continue;
+      const childMeta = this.storage.getTableMeta(schema, child);
+      const referenced = childMeta?.constraints.some(
+        c => c.type === 'FOREIGN_KEY' && c.refTable?.toUpperCase().split('.').pop() === tableName);
+      if (referenced) {
+        throw new OracleError(2266, 'unique/primary keys in table referenced by enabled foreign keys');
+      }
+    }
+    this.storage.truncateTable(schema, tableName);
     return emptyResult('Table truncated.');
   }
 
