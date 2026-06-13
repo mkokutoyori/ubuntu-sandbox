@@ -52,19 +52,20 @@ export class LinuxServer extends LinuxMachine {
         return `${banner}\nSQL> ${lines.join('\n')}\nSQL> Disconnected from Oracle Database 19c.`;
       }
 
-      if (args.length === 0 || args.join(' ').match(/^\s*\/\s*as\s+sysdba\s*$/i)) {
-        return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
-      }
-      // -s user/pass@conn "SQL" — run the SQL through the real engine
-      // (used to return a hardcoded "1 row selected" regardless of query).
+      // Run piped/arg SQL through the real engine — for both
+      // `user/pass@conn "SQL"` and `… | sqlplus / as sysdba` (used to
+      // drop the SQL on the sysdba path and fake "1 row selected" on the
+      // password path).
+      const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
       const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
-      const sqlRe = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate)\b/i;
+      const sqlRe = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate|grant|revoke)\b/i;
       const sqlSource = [
         ...args.filter(a => a !== connectArg && !a.startsWith('-') && sqlRe.test(a)),
         stdin ?? '',
       ].join('\n').trim();
-      if (connectArg && sqlSource && db.instance.state === 'OPEN') {
-        const { session, loginOutput } = createSQLPlusSession(this.id, [connectArg]);
+      const connArgs = isSysdba ? ['/', 'as', 'sysdba'] : connectArg ? [connectArg] : null;
+      if (sqlSource && connArgs && db.instance.state === 'OPEN') {
+        const { session, loginOutput } = createSQLPlusSession(this.id, connArgs);
         if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
         const out: string[] = [];
         for (const raw of sqlSource.split(';')) {
@@ -73,6 +74,9 @@ export class LinuxServer extends LinuxMachine {
         }
         session.disconnect();
         return out.join('\n');
+      }
+      if (args.length === 0 || isSysdba) {
+        return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
       }
       return null;
     };

@@ -52,4 +52,16 @@ describe('shell `sqlplus -s` runs the real query, not a hardcoded result', () =>
     const out = sh(srv, 'sqlplus -s system/wrongpw@ORCL "SELECT 1 FROM DUAL"');
     expect(out).toMatch(/ORA-01017|invalid username\/password/i);
   });
+
+  it('piped SQL to `/ as sysdba` is executed (not dropped)', () => {
+    const srv = boot('shell-sql-5');
+    const out = sh(srv, 'echo "SELECT SUM(n) FROM system.nums;" | sqlplus / as sysdba');
+    expect(out).toMatch(/\b60\b/);
+  });
+
+  it('bare `/ as sysdba` with no SQL still shows the banner', () => {
+    const srv = boot('shell-sql-6');
+    const out = sh(srv, 'sqlplus / as sysdba');
+    expect(out).toMatch(/SQL\*Plus: Release/);
+  });
 });

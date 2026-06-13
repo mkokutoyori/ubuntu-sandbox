@@ -1582,6 +1582,18 @@ BACKUP DATABASE piped exécuté, LIST BACKUP montre le catalogue, banner seul
 sans script) ; non-régression `unit/database/` + `debug/rman/` (2871) +
 SSH/shell (732) ; tsc + ESLint propres.
 
+### 2026-06-13 — `sqlplus / as sysdba` shell exécute aussi le SQL piped
+**Défaillance :** gap découvert après le fix `sqlplus -s`. La branche
+`/ as sysdba` nue retournait le banner **avant** l'exécution SQL, donc
+`echo "SELECT … ;" | sqlplus / as sysdba` (geste DBA très courant)
+**ignorait** le SQL piped.
+**Correction :** l'exécution réelle gère désormais les deux formes de
+connexion — `/ as sysdba` et `user/pass@conn` — quand du SQL est présent
+(args ou stdin) ; la connexion nue sans SQL retombe sur le banner.
+**Validation :** `oracle-shell-sqlplus-real-query.test.ts` étendu (+2 :
+SELECT piped vers `/ as sysdba` exécuté, banner pour la connexion nue) ;
+non-régression SSH/LAN + `unit/database/` (3119) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
