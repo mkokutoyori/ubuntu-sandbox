@@ -1607,6 +1607,24 @@ parent → ORA-02266, enfant OK, parent OK après DROP de l'enfant, table
 absente → ORA-00942) ; non-régression `unit/database/` 2872 ; tsc + ESLint
 propres.
 
+### 2026-06-13 — FK avec référence qualifiée (`REFERENCES schema.table`) enfin enforced
+**Défaillance :** une FK déclarée avec une référence qualifiée
+(`REFERENCES hr.dept`) stockait `refTable='HR.DEPT'`, mais le
+`ConstraintValidator` cherchait le parent via `tableExists(schema, refTable)`
+→ `tableExists('HR','HR.DEPT')` faux → la vérification ORA-02291 (INSERT/
+UPDATE) et la règle DELETE (ORA-02292) étaient **silencieusement sautées**.
+`REFERENCES dept` (non qualifié) fonctionnait, pas `REFERENCES hr.dept` :
+intégrité référentielle perdue selon la syntaxe. (Le DDL régénéré par
+MetadataExtractor produisait aussi `REFERENCES "HR"."HR.DEPT"`.)
+**Correction :** normalisation de `refTable` en nom **non qualifié** aux
+deux sites de construction de CREATE TABLE (cohérent avec l'hypothèse
+même-schéma du validateur). Tous les consommateurs (FK INSERT/UPDATE/DELETE,
+DDL, check TRUNCATE) sont désormais cohérents.
+**Validation :** nouvelle suite `oracle-fk-qualified-ref.test.ts` (2 tests :
+ORA-02291 sur INSERT d'un parent absent via ref qualifiée, ORA-02292 sur
+DELETE du parent) ; non-régression `unit/database/` 2874 ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

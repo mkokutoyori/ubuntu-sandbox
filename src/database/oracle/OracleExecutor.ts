@@ -2664,7 +2664,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (cc.constraintType === 'UNIQUE') {
           constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
         } else if (cc.constraintType === 'REFERENCES') {
-          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
         }
       }
     }
@@ -2676,7 +2676,7 @@ export class OracleExecutor extends BaseExecutor {
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
         columns: tc.columns.map(c => c.toUpperCase()),
-        refTable: tc.refTable?.toUpperCase(),
+        refTable: tc.refTable?.toUpperCase().split('.').pop(),
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
         checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
