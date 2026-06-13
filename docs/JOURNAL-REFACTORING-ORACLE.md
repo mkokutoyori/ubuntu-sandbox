@@ -1375,6 +1375,25 @@ aucun archived log avant le premier switch, plus aucun chemin fantôme
 `/u01/backup`) ; non-régression `unit/database/` + `debug/rman/` :
 **2832/2832** ; tsc + ESLint propres.
 
+### 2026-06-13 — Le listener enregistre un service par PDB ouverte
+**Défaillance :** incohérence multitenant ↔ réseau. Le `ListenerControl`
+n'enregistrait **que** le service nommé d'après le SID : `lsnrctl status`/
+`services` n'affichait jamais les PDB, et `attemptConnect` refusait
+(ORA-12514) tout service ≠ SID — donc impossible de joindre une PDB ouverte
+via `sqlplus user/pass@PDBNAME` ou de la voir dans le listener, alors que le
+vrai Oracle fait enregistrer (LREG/PMON) un service par PDB ouverte.
+**Correction :** l'env du listener gagne une callback `pdbServices()`
+branchée sur `instance.multitenant.getAll()` (PDB en READ WRITE/READ ONLY,
+`PDB$SEED` exclu). `registeredServices()` = SID + PDB ouvertes ;
+`servicesSummary` émet un bloc par service, `attemptConnect` accepte tout
+service enregistré (insensible à la casse). Ouvrir/fermer une PDB
+ajoute/retire dynamiquement son service.
+**Validation :** nouvelle suite `oracle-listener-pdb-services.test.ts` (5
+tests : ORCLPDB1 seedée visible, PDB$SEED jamais annoncée, CREATE+OPEN d'une
+PDB la fait apparaître, attemptConnect accepte une PDB ouverte et refuse un
+service inconnu, CLOSE la retire) ; non-régression `unit/database/` +
+`unit/terminal/` + `debug/oracle/` : 2832 + 394 verts ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

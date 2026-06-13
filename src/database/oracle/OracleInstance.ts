@@ -1006,6 +1006,9 @@ export class OracleInstance {
   private readonly _listener = new ListenerControl({
     sid: () => this.config.sid,
     instanceState: () => this._state,
+    pdbServices: () => this.multitenant.getAll()
+      .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
+      .map(p => p.name),
   });
 
   get listener(): ListenerControl { return this._listener; }

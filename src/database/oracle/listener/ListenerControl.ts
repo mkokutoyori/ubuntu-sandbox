@@ -28,7 +28,14 @@ export class ListenerControl {
   constructor(private readonly env: {
     sid: () => string;
     instanceState: () => InstanceState;
+    pdbServices?: () => string[];
   }) {}
+
+  private registeredServices(): string[] {
+    const sid = this.env.sid();
+    const pdbs = this.env.pdbServices?.() ?? [];
+    return [sid, ...pdbs];
+  }
 
   get running(): boolean { return this._running; }
   get port(): number { return this._port; }
@@ -73,7 +80,8 @@ export class ListenerControl {
     if (!this._running) {
       return { ok: false, error: 'ORA-12541: TNS:no listener' };
     }
-    if (service.toUpperCase() !== this.env.sid().toUpperCase()) {
+    const known = this.registeredServices().some(s => s.toUpperCase() === service.toUpperCase());
+    if (!known) {
       this._refused++;
       return {
         ok: false,
@@ -153,17 +161,19 @@ export class ListenerControl {
     if (status === null) {
       return ['The listener supports no services'];
     }
-    const out = [
-      'Services Summary...',
-      `Service "${sid}" has 1 instance(s).`,
-      `  Instance "${sid}", status ${status}, has 1 handler(s) for this service...`,
-    ];
-    if (withHandlers) {
+    const out = ['Services Summary...'];
+    for (const service of this.registeredServices()) {
       out.push(
-        '    Handler(s):',
-        `      "DEDICATED" established:${this._established} refused:${this._refused} state:ready`,
-        '         LOCAL SERVER',
+        `Service "${service}" has 1 instance(s).`,
+        `  Instance "${sid}", status ${status}, has 1 handler(s) for this service...`,
       );
+      if (withHandlers) {
+        out.push(
+          '    Handler(s):',
+          `      "DEDICATED" established:${this._established} refused:${this._refused} state:ready`,
+          '         LOCAL SERVER',
+        );
+      }
     }
     return out;
   }
