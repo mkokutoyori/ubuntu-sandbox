@@ -323,12 +323,12 @@ export class OracleFilesystemSync {
   }
 
   /**
-   * Mark every datafile the database currently knows as already
-   * materialised. Called once by the boot wiring, whose provisioning
-   * (initOracleFilesystem) wrote the seed files before the database
-   * was registered — without this, the first post-boot MOUNT would
-   * treat them as never-written and resurrect any file the user
-   * deleted in between.
+   * Mark every database file the instance currently knows (datafiles,
+   * redo log members, control files) as already materialised. Called
+   * once by the boot wiring, whose provisioning (initOracleFilesystem)
+   * wrote the seed files before the database was registered — without
+   * this, the first post-boot MOUNT would treat them as never-written
+   * and resurrect any file the user deleted in between.
    */
   primeDatafiles(deviceId: string): void {
     const db = this.ctx.resolveDatabase(deviceId);
@@ -336,6 +336,12 @@ export class OracleFilesystemSync {
     const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
     for (const ts of storage.getAllTablespaces()) {
       for (const df of ts.datafiles) this.markDatafileMaterialized(deviceId, df.path);
+    }
+    for (const group of db.instance.getRedoLogGroups()) {
+      for (const member of group.members) this.markDatafileMaterialized(deviceId, member);
+    }
+    for (const ctl of db.instance.getControlFilePaths()) {
+      this.markDatafileMaterialized(deviceId, ctl);
     }
   }
 
@@ -362,16 +368,23 @@ export class OracleFilesystemSync {
       }
     }
 
+    // Redo log members and control files follow the same once-only
+    // doctrine as datafiles: after the first materialisation the VFS is
+    // the authority on existence. Re-writing them on every state change
+    // used to resurrect an `rm control01.ctl` — making the MOUNT-time
+    // ORA-00205 check impossible to ever trip.
     for (const group of db.instance.getRedoLogGroups()) {
       for (const member of group.members) {
+        if (seen.has(member)) continue;
+        seen.add(member);
         const sizeMB = Math.round(group.sizeBytes / 1048576);
         writeAsOracle(dev, member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
       }
     }
 
-    const ctlFiles = (db.instance.getParameter('control_files') ?? '')
-      .split(',').map(f => f.trim()).filter(f => f);
-    ctlFiles.forEach((f, i) => {
+    db.instance.getControlFilePaths().forEach((f, i) => {
+      if (seen.has(f)) return;
+      seen.add(f);
       writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }

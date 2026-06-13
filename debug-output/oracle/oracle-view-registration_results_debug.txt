@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-06-12T11:49:22.408Z
+Generated: 2026-06-13T01:37:04.915Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Fri Jun 12 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Sat Jun 13 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -142,8 +142,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0           1 2026-06-12T11:49:22.426Z EXECUTING SYS                 0        0           0          0                   0
-  13ipzqna3xqw0           2 2026-06-12T11:49:22.425Z DONE      SYS               757      606           2          0                   0
+  1rcfn8ma3xqw0           1 2026-06-13T01:37:04.935Z EXECUTING SYS                 0        0           0          0                   0
+  13ipzqna3xqw0           2 2026-06-13T01:37:04.934Z DONE      SYS              1044      835           2          0                   0
   
   2 rows selected.
 
@@ -167,7 +167,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ ----------- ------------- ------
-        1    1               1          1 2026-06-12T10:49:22.429Z 2026-06-12T11:49:22.429Z COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 2026-06-13T00:37:04.940Z 2026-06-13T01:37:04.940Z COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 

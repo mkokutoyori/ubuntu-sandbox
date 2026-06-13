@@ -52,10 +52,11 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
       return typeof read === 'function' ? read.call(dev, path) ?? null : null;
     });
-    // Existence probe for the OPEN-time datafile check. Returns null
-    // (= skip the check) when no device with a filesystem backs this
-    // database — files can only go missing from a disk that exists.
-    db.instance.setDatafileProbe((path) => {
+    // Existence probe for the MOUNT-time control file check and the
+    // OPEN-time datafile check. Returns null (= skip the checks) when no
+    // device with a filesystem backs this database — files can only go
+    // missing from a disk that exists.
+    db.instance.setHostFileProbe((path) => {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);
       const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
       if (typeof read !== 'function') return null;

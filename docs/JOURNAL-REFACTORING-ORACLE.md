@@ -1138,6 +1138,37 @@ runtime est réellement exercé — probes qui s'incrémentent, < 10 builds pour
 **2794/2794** ; `unit/terminal*` + `unit/shell/` : 967/967 ; tsc + ESLint
 propres.
 
+### 2026-06-13 — Control files ⇄ VFS : ORA-00205 réel au MOUNT
+**Défaillance :** le STARTUP vérifiait les datafiles (ORA-01157, série du
+2026-06-12) mais jamais les control files : `rm control01.ctl` puis
+STARTUP montait et ouvrait comme si de rien n'était — pire, la
+resynchronisation sur chaque changement d'état **réécrivait** control
+files et redo logs à chaque fois, ressuscitant le fichier supprimé
+derrière le dos du DBA (les datafiles avaient déjà la doctrine
+« matérialisation une seule fois », pas eux). Le vrai Oracle lit chaque
+copie multiplexée du jeu de control files au MOUNT et échoue en ORA-00205
+si une seule manque — c'est tout l'intérêt du multiplexage.
+**Correction :**
+- `OracleInstance.getControlFilePaths()` — chemins issus du paramètre
+  `control_files` (ordre V$CONTROLFILE), source unique partagée avec
+  l'adapter FS ; `missingControlFiles()` réutilise la sonde
+  d'existence hôte injectée (renommée `setHostFileProbe` — elle sert
+  désormais les deux contrôles, datafiles et control files).
+- STARTUP et `ALTER DATABASE MOUNT` : copie manquante → ORA-00205 en
+  sortie, détail réel `ORA-00210`/`ORA-00202` dans l'alert log,
+  l'instance **reste NOMOUNT** (l'échelle d'erreur exacte du vrai CKPT).
+- `OracleFilesystemSync` : control files et membres redo passent à la
+  matérialisation une-seule-fois (même set `seen` que les datafiles,
+  amorcé au boot par `primeDatafiles` étendu) — le VFS redevient
+  l'autorité sur leur existence.
+**Validation :** nouvelle suite `oracle-controlfile-coherence.test.ts`
+(6 tests : provisioning des deux copies, non-résurrection après rm +
+switch logfile + restart, STARTUP bloqué NOMOUNT avec ORA-00205 et alert
+log 00210/00202, ALTER DATABASE MOUNT pareil, instance ouverte insensible
+au rm (sémantique inode), récupération canonique `cp control02 control01`
+→ MOUNT → OPEN) ; `unit/database/` : **2800/2800** ; `unit/terminal/` +
+`debug/rman/` + `debug/oracle/` : 399/399 ; tsc propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

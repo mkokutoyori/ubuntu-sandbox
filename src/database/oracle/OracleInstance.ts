@@ -247,13 +247,14 @@ export class OracleInstance {
 
   /**
    * Host-filesystem existence probe, injected by the terminal wiring.
-   * Returns null when the device exposes no filesystem surface — in
-   * that case the open-time check is skipped entirely (engine-only
+   * Used by the MOUNT-time control file check and the OPEN-time
+   * datafile check. Returns null when the device exposes no filesystem
+   * surface — in that case the checks are skipped entirely (engine-only
    * tests have no disk for files to go missing from).
    */
-  private _datafileProbe: ((path: string) => boolean | null) | null = null;
-  setDatafileProbe(fn: (path: string) => boolean | null): void {
-    this._datafileProbe = fn;
+  private _hostFileProbe: ((path: string) => boolean | null) | null = null;
+  setHostFileProbe(fn: (path: string) => boolean | null): void {
+    this._hostFileProbe = fn;
   }
 
   /**
@@ -263,12 +264,40 @@ export class OracleInstance {
    * OPEN time.
    */
   private missingDatafiles(): { fileNo: number; path: string }[] {
-    if (!this._datafileLister || !this._datafileProbe) return [];
+    if (!this._datafileLister || !this._hostFileProbe) return [];
     const missing: { fileNo: number; path: string }[] = [];
     for (const df of this._datafileLister()) {
-      const exists = this._datafileProbe(df.path);
+      const exists = this._hostFileProbe(df.path);
       if (exists === null) return []; // no host filesystem — nothing to check
       if (!exists) missing.push(df);
+    }
+    return missing;
+  }
+
+  /**
+   * Control file paths declared by the control_files parameter, in
+   * V$CONTROLFILE order (every copy of the multiplexed set).
+   */
+  getControlFilePaths(): string[] {
+    return (this.getParameter('control_files') ?? '')
+      .split(',')
+      .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean);
+  }
+
+  /**
+   * Control file copies missing from the host filesystem. Real Oracle
+   * reads EVERY multiplexed copy at MOUNT time — losing any one of
+   * them fails the mount with ORA-00205 (the whole point of
+   * multiplexing is detecting the loss immediately).
+   */
+  private missingControlFiles(): string[] {
+    if (!this._hostFileProbe) return [];
+    const missing: string[] = [];
+    for (const path of this.getControlFilePaths()) {
+      const exists = this._hostFileProbe(path);
+      if (exists === null) return []; // no host filesystem — nothing to check
+      if (!exists) missing.push(path);
     }
     return missing;
   }
@@ -470,7 +499,17 @@ export class OracleInstance {
       return output;
     }
 
-    // MOUNT
+    // MOUNT — the instance must identify every multiplexed control file
+    // copy named by control_files. Any missing copy fails the mount with
+    // ORA-00205 and the instance stays NOMOUNT (restore the control file
+    // or fix the parameter, then ALTER DATABASE MOUNT).
+    const missingCtl = this.missingControlFiles();
+    if (missingCtl.length > 0) {
+      this.logAlert('ORA-00210: cannot open the specified control file');
+      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+      output.push('ORA-00205: error in identifying control file, check alert log for more info');
+      return output;
+    }
     this.transitionTo('MOUNT');
     output.push(`Database mounted.`);
     this.logAlert('Database mounted');
@@ -521,6 +560,12 @@ export class OracleInstance {
     }
     if (this._state !== 'NOMOUNT') {
       throw new OracleError(1034, 'ORACLE not available');
+    }
+    const missingCtl = this.missingControlFiles();
+    if (missingCtl.length > 0) {
+      this.logAlert('ORA-00210: cannot open the specified control file');
+      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+      throw new OracleError(205, 'error in identifying control file, check alert log for more info');
     }
     this.transitionTo('MOUNT');
     this.logAlert('Database mounted');
