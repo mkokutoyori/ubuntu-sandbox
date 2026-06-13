@@ -2539,3 +2539,18 @@ lint propre.
   MAC apprise purgée, événement `switch.mac.flushed` émis). `tsc` propre ;
   lint : 4 `any` préexistants dans `Switch.ts` (hors de mes lignes,
   vérifié par `git stash`), aucun introduit.
+
+---
+
+## Entrée 36 — dot1x : suppression des champs de config morts `guestVlan` / `reauthIntervalSec`
+
+**Date** : 2026-06-13
+
+`Dot1xConfig` déclarait `guestVlan` et `reauthIntervalSec` (GAP §2.4) :
+ni commande CLI pour les poser, ni lecteur nulle part — de la config
+**décorative** annonçant des capacités inexistantes. Conformément à la
+recommandation du GAP (« implémenter ou retirer »), les deux champs sont
+supprimés du type et du constructeur par défaut. La config dot1x ne
+décrit plus que ce qui est réellement supporté (modes de port, users
+locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
+`tsc` propre ; `dot1x-protocol` 14 tests verts.
