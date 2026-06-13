@@ -65,6 +65,13 @@ export class BgpSession {
   private readonly timers: TimerSet;
   private holdTimer: symbol | null = null;
   private keepaliveTimer: symbol | null = null;
+  /**
+   * UPDATEs that arrived in OpenConfirm — delivered once Established.
+   * Cable delivery is synchronous, so a peer that finishes the handshake
+   * first can push its initial routes before this side has processed the
+   * final KEEPALIVE; buffering replays them instead of dropping them.
+   */
+  private pendingUpdates: BgpUpdateMessage[] = [];
 
   constructor(
     private readonly transport: BgpTransport,
@@ -150,11 +157,17 @@ export class BgpSession {
     this.transition('Established');
     this.armKeepalive();
     this.cb.onEstablished?.(this.peerAsn ?? 0, this.peerRouterId ?? '0.0.0.0');
+    if (this.pendingUpdates.length > 0) {
+      const buffered = this.pendingUpdates;
+      this.pendingUpdates = [];
+      for (const u of buffered) this.cb.onUpdate?.(u);
+    }
   }
 
   private handleUpdate(update: BgpUpdateMessage): void {
-    if (this._state !== 'Established') return;
-    this.cb.onUpdate?.(update);
+    if (this._state === 'Established') { this.cb.onUpdate?.(update); return; }
+    // Arrived before our own KEEPALIVE completed the handshake — hold it.
+    if (this._state === 'OpenConfirm') this.pendingUpdates.push(update);
   }
 
   // ── helpers ──────────────────────────────────────────────────────--
@@ -188,6 +201,7 @@ export class BgpSession {
     this.peerAsn = null;
     this.peerRouterId = null;
     this.sentOpen = false;
+    this.pendingUpdates = [];
     if (closeTransport) this.transport.close();
     if (wasActive) this.cb.onClose?.();
   }

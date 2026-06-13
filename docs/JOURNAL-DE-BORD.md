@@ -2358,3 +2358,93 @@ lint propre.
   `P2p Edge`, marche temporisée sur lien partagé post-bring-up).
 - Non-régression : 8 suites L2 + ping-through-switch — **87 tests verts**.
   `tsc --noEmit` propre ; lint propre.
+
+---
+
+## Entrée 33 — BGP : la conversation passe par de vraies sessions TCP/179 (backlog #16, volet BGP)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (dernier protocole de routage en god-mode)
+
+1. **Lecture directe du moteur du pair.** `BGPEngine` résolvait ses
+   voisins via `peer.peerEngineFor('bgp')` (fourni par le registre
+   d'équipements) et lisait **directement** la config et les routes
+   annoncées de l'objet moteur voisin (`collectRib`/`advertisedTo`
+   récursifs). Aucun paquet BGP n'existait : ni session TCP, ni OPEN, ni
+   UPDATE, ni KEEPALIVE. OSPF (entrée 13/22), EIGRP (entrée 27), RIP et
+   DHCP (entrée 15) conversaient déjà sur le câble ; BGP était le dernier
+   à téléporter son information de contrôle hors-bande.
+2. **Pas de FSM RFC 4271, pas de message réel** (GAP §3.7) : l'état de
+   session était déduit d'une comparaison de config réciproque, pas d'une
+   poignée de main réelle.
+
+### Correction (migration structurelle, en 3 incréments poussés)
+
+- **`bgp/messages.ts`** (entrée précédente) : vocabulaire BGP-4 (OPEN /
+  UPDATE / KEEPALIVE / NOTIFICATION), attributs de chemin, NLRI, codes
+  d'erreur §6, constantes (port 179, version 4, hold/keepalive), garde
+  `isBgpMessage`. `BgpOrigin` réutilisé de `bestPath.ts` (zéro doublon).
+- **`bgp/BgpSession.ts`** (entrée précédente) : la FSM par voisin
+  (RFC 4271 §8) sur un seam `BgpTransport` — TCP up → OPEN → KEEPALIVE →
+  Established, puis UPDATE/KEEPALIVE, NOTIFICATION/hold-timer/close en
+  sortie. **Discipline transition-avant-envoi** + **bufferisation des
+  UPDATE reçus en OpenConfirm** : la livraison câble étant synchrone (un
+  message ré-entre chez le pair avant le retour de `send()`), ces deux
+  mécanismes évitent qu'un KEEPALIVE/UPDATE synchrone soit perdu — les
+  deux pairs atteignent réellement Established.
+- **`BGPEngine` réécrit sur les sessions** : `Map<ip, PeerSession>` avec
+  **Adj-RIB-In** (routes apprises des UPDATE), **Adj-RIB-Out** (delta
+  envoyé, borne la cascade synchrone), Loc-RIB par best-path RFC 4271
+  §9.1.1 (inchangé), réannonce avec prepend d'AS_PATH eBGP, split-horizon
+  iBGP, anti-boucle §6.3, et **détection de collision §6.8** (on garde la
+  session déjà Established, on remplace une session en cours). Seam
+  `BgpWire` injecté (DIP) ; `acceptInbound` pour les connexions entrantes.
+  `getContributedRoutes`/`getBgpTable` calculés **en direct** depuis
+  l'Adj-RIB-In (cohérents quel que soit l'ordre de convergence). États
+  voisins Idle/Active/Established dérivés de la FSM réelle.
+- **`RouterDynamicRouting`** : `BgpWire` au-dessus de la vraie
+  `TcpStack` du routeur — `connect()` ouvre un TCP/179 sortant (null si
+  pas de listener ⇒ Idle, pas de session morte), listener 179 posé
+  paresseusement → `acceptInbound`, adaptateur `TcpSocket → BgpTransport`.
+  Hook `onRibChange` → `reflectRib()` : un UPDATE qui arrive pendant la
+  convergence du **pair** atteint quand même notre RIB. Réannonce
+  déclenchée à chaque convergence (un `network` ajouté après l'établissement
+  de la session est bien propagé).
+- **`Router`** : expose `getTcpStack()` au seam de routage dynamique.
+
+### Comportements réels gagnés
+
+- Adjacence BGP sur une vraie session TCP/179 (3-way handshake sur le
+  câble, comme SSH) ; OPEN/UPDATE/KEEPALIVE observables sur le bus TCP.
+- `show ip route` : routes `B` apprises par UPDATE réel (eBGP AD 20 /
+  iBGP AD 200, next-hop = pair) ; `show ip bgp` / `summary` /
+  `neighbors` dérivés des sessions vivantes.
+- Coupure de session, AS non réciproque, mismatch d'AS → pas
+  d'établissement, pas de route fabriquée.
+
+### Fichiers
+
+- `src/network/bgp/messages.ts` (entrée A), `src/network/bgp/BgpSession.ts`
+  (entrée B + buffering), `src/network/bgp/BGPEngine.ts` (réécrit)
+- `src/network/devices/router/RouterDynamicRouting.ts`, `src/network/devices/Router.ts`
+- `src/__tests__/unit/network-v2/bgp-messages.test.ts` (5),
+  `bgp-session.test.ts` (4), `bgp-engine.test.ts` (réécrit sur fabric de
+  sessions synchrones, 17)
+
+### Validation
+
+- BGP : 43 tests (messages, FSM, moteur sur fabric, best-path, CLI
+  intégration RIB réelle sur deux routeurs câblés).
+- Non-régression : **network-v2 complet — 304 fichiers / 7035 tests
+  verts** (45 skipped préexistants). `tsc --noEmit` propre ; lint propre
+  (les 2 `any` de `Router.ts` sont préexistants, hors de mes lignes).
+
+### Limites restantes (documentées)
+
+- MP-BGP / AFI-SAFI IPv6 (GAP §3.17) non couvert ; le plan de données
+  reste IPv4.
+- Route-refresh (RFC 2918), communautés, route-maps : hors périmètre.
+- Cohérence « eventually consistent » entre convergences (modèle pull
+  paresseux commun au simulateur, cf. EIGRP entrée 27) — atténuée par le
+  hook `onRibChange` qui pousse les routes apprises hors convergence locale.

@@ -1,16 +1,21 @@
 /**
- * TDD — real BGP engine. A session reaches Established only with a
- * genuinely cabled peer running BGP that points back reciprocally
- * with the right AS; otherwise Idle (no peer) / Active (peer, no
- * reciprocal). Routes learned only when Established. True state, no
- * fabricated "up".
+ * Real BGP engine over genuine TCP/179 sessions (no god-mode peer-engine
+ * reads). Peers exchange OPEN/KEEPALIVE/UPDATE over a synchronous fabric
+ * that mimics the cable: a session reaches Established only with a
+ * reciprocally configured peer carrying the right AS, and routes are
+ * learned solely from the UPDATEs that arrive (Adj-RIB-In). True state,
+ * no fabricated "up".
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import { BGPEngine } from '@/network/bgp/BGPEngine';
-import type { RoutingPeer } from '@/network/routing';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  BGPEngine, type BgpPeerLink, type BgpWire,
+} from '@/network/bgp/BGPEngine';
+import type { BgpTransport } from '@/network/bgp/BgpSession';
+import type { BgpMessage } from '@/network/bgp/messages';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 
-beforeEach(() => resetCounters());
+beforeEach(() => { resetCounters(); vi.useFakeTimers(); });
+afterEach(() => vi.useRealTimers());
 
 function ctx(net: string) {
   return {
@@ -23,15 +28,80 @@ function ctx(net: string) {
   };
 }
 
-function link(a: BGPEngine, aIp: string, b: BGPEngine, bIp: string) {
-  const mk = (eng: BGPEngine, localIp: string, remoteIp: string): RoutingPeer => ({
-    deviceId: remoteIp, hostname: remoteIp,
-    localIface: 'Gi0/0', localIp: new IPAddress(localIp),
-    remoteIface: 'Gi0/0', remoteIp: new IPAddress(remoteIp),
-    peerEngineFor: (p) => (p === 'bgp' ? eng : null),
+/** A pair of transports whose sends deliver synchronously to each other. */
+function syncPair(): [BgpTransport, BgpTransport] {
+  const h: Array<((m: BgpMessage) => void) | null> = [null, null];
+  const c: Array<(() => void) | null> = [null, null];
+  const pendingClose = [false, false];
+  let open = true;
+  const make = (self: 0 | 1, peer: 0 | 1): BgpTransport => ({
+    send: (m) => { if (open) h[peer]?.(m); },
+    close: () => {
+      if (!open) return;
+      open = false;
+      if (c[peer]) c[peer]!(); else pendingClose[peer] = true;
+    },
+    onMessage: (fn) => { h[self] = fn; },
+    onClose: (fn) => { c[self] = fn; if (pendingClose[self]) { pendingClose[self] = false; fn(); } },
   });
-  a.setPeerLocator({ locatePeers: () => [mk(b, aIp, bIp)] });
-  b.setPeerLocator({ locatePeers: () => [mk(a, bIp, aIp)] });
+  return [make(0, 1), make(1, 0)];
+}
+
+interface Ep { eng: BGPEngine; ip: string; iface?: string; }
+
+/**
+ * Install BgpWire transports so configured neighbours peer over real
+ * (synchronous) TCP/179 sessions — the test analogue of the cable. The
+ * initiator's first send triggers the peer's acceptInbound (the SYN), so a
+ * peer with no reciprocal config refuses and tears the session down.
+ */
+function fabric(links: Array<[Ep, Ep]>): void {
+  interface Rec {
+    myIp: string; myIface: string;
+    remoteEng: BGPEngine; remoteIp: string; remoteIface: string;
+  }
+  const index = new Map<BGPEngine, Map<string, Rec>>();
+  const idx = (e: BGPEngine) => {
+    let m = index.get(e);
+    if (!m) { m = new Map(); index.set(e, m); }
+    return m;
+  };
+  for (const [a, b] of links) {
+    const ai = a.iface ?? 'Gi0/0', bi = b.iface ?? 'Gi0/0';
+    idx(a.eng).set(b.ip, { myIp: a.ip, myIface: ai, remoteEng: b.eng, remoteIp: b.ip, remoteIface: bi });
+    idx(b.eng).set(a.ip, { myIp: b.ip, myIface: bi, remoteEng: a.eng, remoteIp: a.ip, remoteIface: ai });
+  }
+  for (const [eng, m] of index) {
+    const wire: BgpWire = {
+      connect: (remoteIp): BgpPeerLink | null => {
+        const rec = m.get(remoteIp);
+        if (!rec) return null;
+        const [near, far] = syncPair();
+        let accepted = false;
+        const trig: BgpTransport = {
+          send: (msg) => {
+            if (!accepted) {
+              accepted = true;
+              rec.remoteEng.acceptInbound({
+                neighborIp: rec.myIp, localIp: rec.remoteIp,
+                localIface: rec.remoteIface, transport: far,
+              });
+            }
+            near.send(msg);
+          },
+          close: () => near.close(),
+          onMessage: (fn) => near.onMessage(fn),
+          onClose: (fn) => near.onClose(fn),
+        };
+        return { neighborIp: remoteIp, localIp: rec.myIp, localIface: rec.myIface, transport: trig };
+      },
+    };
+    eng.setWire(wire);
+  }
+}
+
+function link(a: BGPEngine, aIp: string, b: BGPEngine, bIp: string): void {
+  fabric([[{ eng: a, ip: aIp }, { eng: b, ip: bIp }]]);
 }
 
 describe('BGPEngine — real config-driven', () => {
@@ -144,19 +214,10 @@ describe('BGPEngine — RFC 4271 §9.1.1 best-path selection', () => {
     c.getConfig().neighbors.set('10.0.1.1',
       { ip: '10.0.1.1', remoteAs: opts.selfAsn, activated: true });
 
-    const mk = (eng: BGPEngine, localIp: string, remoteIp: string,
-      iface: string): RoutingPeer => ({
-      deviceId: remoteIp, hostname: remoteIp,
-      localIface: iface, localIp: new IPAddress(localIp),
-      remoteIface: 'Gi0/0', remoteIp: new IPAddress(remoteIp),
-      peerEngineFor: (p) => (p === 'bgp' ? eng : null),
-    });
-    self.setPeerLocator({ locatePeers: () => [
-      mk(b, '10.0.0.1', '10.0.0.2', 'Gi0/0'),
-      mk(c, '10.0.1.1', '10.0.1.2', 'Gi0/1'),
-    ] });
-    b.setPeerLocator({ locatePeers: () => [mk(self, '10.0.0.2', '10.0.0.1', 'Gi0/0')] });
-    c.setPeerLocator({ locatePeers: () => [mk(self, '10.0.1.2', '10.0.1.1', 'Gi0/0')] });
+    fabric([
+      [{ eng: self, ip: '10.0.0.1', iface: 'Gi0/0' }, { eng: b, ip: '10.0.0.2', iface: 'Gi0/0' }],
+      [{ eng: self, ip: '10.0.1.1', iface: 'Gi0/1' }, { eng: c, ip: '10.0.1.2', iface: 'Gi0/0' }],
+    ]);
     self.converge();
     return self;
   }
@@ -186,9 +247,6 @@ describe('BGPEngine — RFC 4271 §9.1.1 best-path selection', () => {
       bRouterId: '2.2.2.2', cRouterId: '3.3.3.3',
     });
     const routes = self.getContributedRoutes();
-    // iBGP path: AS_PATH [] (locally originated in our AS) — shorter
-    // than the eBGP path's [65003] — so step 4 decides before the
-    // eBGP-over-iBGP step ever applies. RFC-faithful behaviour.
     expect(String(routes[0].nextHop)).toBe('10.0.0.2');
     expect(routes[0].adminDistance).toBe(200);
   });
@@ -229,31 +287,10 @@ describe('BGPEngine — RFC 4271 §9.1.1 best-path selection', () => {
 
 // ─── Transitive propagation, AS_PATH and loop prevention ────────────
 
-/** Wire several point-to-point links; each engine gets ONE combined locator. */
-function mesh(links: Array<[BGPEngine, string, BGPEngine, string]>) {
-  const peersOf = new Map<BGPEngine, RoutingPeer[]>();
-  const add = (eng: BGPEngine, peer: RoutingPeer) => {
-    const list = peersOf.get(eng) ?? [];
-    list.push(peer);
-    peersOf.set(eng, list);
-  };
-  for (const [a, aIp, b, bIp] of links) {
-    add(a, {
-      deviceId: bIp, hostname: bIp,
-      localIface: 'Gi0/0', localIp: new IPAddress(aIp),
-      remoteIface: 'Gi0/0', remoteIp: new IPAddress(bIp),
-      peerEngineFor: (proto) => (proto === 'bgp' ? b : null),
-    });
-    add(b, {
-      deviceId: aIp, hostname: aIp,
-      localIface: 'Gi0/0', localIp: new IPAddress(bIp),
-      remoteIface: 'Gi0/0', remoteIp: new IPAddress(aIp),
-      peerEngineFor: (proto) => (proto === 'bgp' ? a : null),
-    });
-  }
-  for (const [eng, list] of peersOf) {
-    eng.setPeerLocator({ locatePeers: () => list });
-  }
+/** Wire several point-to-point links into one synchronous fabric. */
+function mesh(links: Array<[BGPEngine, string, BGPEngine, string]>): void {
+  fabric(links.map(([a, aIp, b, bIp]) =>
+    [{ eng: a, ip: aIp }, { eng: b, ip: bIp }] as [Ep, Ep]));
 }
 
 function router(name: string, asn: number, net: string): BGPEngine {
@@ -306,8 +343,6 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
   });
 
   it('rejects a route whose AS_PATH already contains the local ASN (loop prevention)', () => {
-    // Full triangle: every prefix has a 1-hop and a 2-hop path; the
-    // 2-hop advert back to the originator contains its own ASN.
     const a = router('A', 65001, '192.168.1.0');
     const b = router('B', 65002, '192.168.2.0');
     const c = router('C', 65003, '192.168.3.0');
@@ -320,15 +355,12 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
       [c, '10.0.31.1', a, '10.0.31.2'],
     ]);
     a.converge(); b.converge(); c.converge();
-    // A must never re-learn its own prefix from B or C.
     const nets = a.getContributedRoutes().map((r) => String(r.network));
     expect(nets).not.toContain('192.168.1.0');
     expect(nets.sort()).toEqual(['192.168.2.0', '192.168.3.0']);
   });
 
   it('prefers the shortest AS_PATH between two paths to the same prefix', () => {
-    // Triangle again: A reaches C's prefix directly (path [65003]) and
-    // via B (path [65002 65003]); the direct path must win.
     const a = router('A', 65001, '192.168.1.0');
     const b = router('B', 65002, '192.168.2.0');
     const c = router('C', 65003, '192.168.3.0');
@@ -340,7 +372,7 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
       [b, '10.0.23.1', c, '10.0.23.2'],
       [c, '10.0.31.1', a, '10.0.31.2'],
     ]);
-    a.converge();
+    a.converge(); b.converge(); c.converge();
     const row = a.getBgpTable().find((r) => String(r.network) === '192.168.3.0')!;
     expect(row.asPath).toEqual([65003]);
     const rib = a.getContributedRoutes().find((r) => String(r.network) === '192.168.3.0')!;
@@ -348,15 +380,13 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
   });
 
   it('iBGP split-horizon: a route learned from an iBGP peer is not re-advertised to another iBGP peer', () => {
-    // A — B — C all in AS 65000, chain (no full mesh): C's prefix reaches
-    // B but must NOT be relayed by B to A.
     const a = router('A', 65000, '192.168.1.0');
     const b = router('B', 65000, '192.168.2.0');
     const c = router('C', 65000, '192.168.3.0');
     neighbor(a, '10.0.12.2', 65000); neighbor(b, '10.0.12.1', 65000);
     neighbor(b, '10.0.23.2', 65000); neighbor(c, '10.0.23.1', 65000);
     mesh([[a, '10.0.12.1', b, '10.0.12.2'], [b, '10.0.23.1', c, '10.0.23.2']]);
-    a.converge(); b.converge();
+    a.converge(); b.converge(); c.converge();
     expect(b.getContributedRoutes().map((r) => String(r.network)).sort())
       .toEqual(['192.168.1.0', '192.168.3.0']);
     expect(a.getContributedRoutes().map((r) => String(r.network)))
@@ -364,15 +394,13 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
   });
 
   it('eBGP prefix crossing an AS keeps the full path through it', () => {
-    // A(65001) — B(65002) — C(65001): C sees its own ASN in the path
-    // [65002, 65001, …] for A's prefix and rejects it.
     const a = router('A', 65001, '192.168.1.0');
     const b = router('B', 65002, '192.168.2.0');
     const c = router('C', 65001, '192.168.3.0');
     neighbor(a, '10.0.12.2', 65002); neighbor(b, '10.0.12.1', 65001);
     neighbor(b, '10.0.23.2', 65001); neighbor(c, '10.0.23.1', 65002);
     mesh([[a, '10.0.12.1', b, '10.0.12.2'], [b, '10.0.23.1', c, '10.0.23.2']]);
-    c.converge();
+    a.converge(); b.converge(); c.converge();
     const nets = c.getContributedRoutes().map((r) => String(r.network));
     expect(nets).toContain('192.168.2.0');
     expect(nets).not.toContain('192.168.1.0'); // own ASN in path → rejected

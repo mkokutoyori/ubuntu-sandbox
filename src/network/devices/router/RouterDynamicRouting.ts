@@ -16,12 +16,18 @@ import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ETHERTYPE_IPV4, IP_PROTO_EIGRP, createIPv4Packet,
 } from '../../core/types';
-import { ipv4MulticastToMac, isMulticastIpv4 } from '../../core/ip';
+import {
+  ipv4MulticastToMac, isMulticastIpv4,
+  tryIpToUint32, ipToUint32, prefixLengthToMaskUint32,
+} from '../../core/ip';
 import { EIGRPEngine } from '../../eigrp/EIGRPEngine';
 import {
   EIGRP_MULTICAST_IP, isEigrpPacket, type EigrpPacket,
 } from '../../eigrp/packets';
-import { BGPEngine } from '../../bgp/BGPEngine';
+import { BGPEngine, type BgpPeerLink } from '../../bgp/BGPEngine';
+import type { BgpTransport } from '../../bgp/BgpSession';
+import { BGP_PORT, isBgpMessage, type BgpMessage } from '../../bgp/messages';
+import type { TcpStack, TcpSocket } from '../../tcp/TcpStack';
 import type {
   RoutingPeer, RibRoute,
 } from '../../routing/types';
@@ -46,6 +52,8 @@ export interface DynamicRoutingCtx {
   /** Existing frame-driven engines, exposed through the unified contract. */
   getRipEngine(): RouterRIPEngine;
   getOspfIntegration(): RouterOSPFIntegration;
+  /** The router's TCP stack — BGP peers over real TCP/179 sessions. */
+  getTcpStack(): TcpStack;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -81,6 +89,65 @@ export class RouterDynamicRouting {
       send: (iface, destIp, packet) =>
         this.sendEigrpFrame(iface, destIp, packet),
     });
+    // BGP converses over real TCP/179 sessions on the cable (no god-mode):
+    // outbound via connect(), inbound via the listener wired lazily once
+    // the TCP stack exists (see ensureBgpListener).
+    this.bgp.setWire({ connect: (ip) => this.bgpConnect(ip) });
+    // An UPDATE that lands on a peer's converge must still reach our RIB.
+    this.bgp.setOnRibChange(() => this.reflectRib());
+  }
+
+  // ── BGP wire transport (TCP/179) ───────────────────────────────────
+
+  private bgpListenerSet = false;
+
+  /** Install the TCP/179 listener once BGP is enabled (passive opens). */
+  private ensureBgpListener(): void {
+    if (this.bgpListenerSet) return;
+    this.bgpListenerSet = true;
+    this.ctx.getTcpStack().listen(BGP_PORT, {
+      onAccept: (socket) => {
+        const neighborIp = socket.remoteIp;
+        const egress = this.egressToward(neighborIp);
+        this.bgp.acceptInbound({
+          neighborIp,
+          localIp: egress?.localIp ?? socket.localIp,
+          localIface: egress?.localIface ?? '',
+          transport: bgpTransport(socket),
+        });
+      },
+    });
+  }
+
+  /** Open an outbound TCP/179 session to a configured neighbour. */
+  private bgpConnect(neighborIp: string): BgpPeerLink | null {
+    const egress = this.egressToward(neighborIp);
+    if (!egress) return null;                 // not a cabled, same-subnet peer
+    const socket = this.ctx.getTcpStack().connect(neighborIp, BGP_PORT);
+    // No listener yet (peer not running BGP) ⇒ RST during the synchronous
+    // handshake. Don't hand back a dead socket — stay Idle and retry later.
+    if (!socket || socket.state !== 'established') { socket?.close(); return null; }
+    return {
+      neighborIp,
+      localIp: egress.localIp, localIface: egress.localIface,
+      transport: bgpTransport(socket),
+    };
+  }
+
+  /** The local IP/interface on the same subnet as a neighbour, if any. */
+  private egressToward(ip: string): { localIp: string; localIface: string } | null {
+    const target = tryIpToUint32(ip);
+    if (target === null) return null;
+    for (const [name, port] of this.ctx.getPorts()) {
+      const pip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!pip || !mask || !port.getIsUp()) continue;
+      const m = prefixLengthToMaskUint32(mask.toCIDR());
+      if ((ipToUint32(pip.toString()) & m) === (target & m)) {
+        return { localIp: pip.toString(), localIface: name };
+      }
+    }
+    return null;
   }
 
   /** Every routing protocol, uniformly (full consistency). */
@@ -186,6 +253,7 @@ export class RouterDynamicRouting {
   /** Recompute both engines and reflect their routes into the RIB. */
   converge(): void {
     this.eigrp.converge();
+    if (this.bgp.isEnabled()) this.ensureBgpListener();
     this.bgp.converge();
     this.reflectRib();
   }
@@ -199,6 +267,7 @@ export class RouterDynamicRouting {
    */
   refresh(): void {
     this.eigrp.refreshFromCache();
+    if (this.bgp.isEnabled()) this.ensureBgpListener();
     this.bgp.converge();
     this.reflectRib();
   }
@@ -219,4 +288,17 @@ export class RouterDynamicRouting {
     for (const rr of this.bgp.getContributedRoutes()) kept.push(add(rr));
     this.ctx.setRoutingTable(kept);
   }
+}
+
+/**
+ * Adapt a TCP socket to the BGP transport seam: BGP messages ride the real
+ * byte stream, and only well-formed BGP payloads are surfaced to the FSM.
+ */
+function bgpTransport(socket: TcpSocket): BgpTransport {
+  return {
+    send: (msg: BgpMessage) => socket.send(msg),
+    close: () => socket.close(),
+    onMessage: (h) => { socket.onData((d) => { if (isBgpMessage(d)) h(d); }); },
+    onClose: (h) => { socket.onClose(() => h()); },
+  };
 }

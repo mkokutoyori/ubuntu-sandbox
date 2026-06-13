@@ -312,6 +312,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getArpEntry: (ip) => this.arpTable.get(ip),
       getRipEngine: () => this.ripEngine,
       getOspfIntegration: () => this.ospfIntegration,
+      getTcpStack: () => this.tcpv2,
     });
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP) => {
