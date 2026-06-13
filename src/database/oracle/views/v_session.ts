@@ -90,10 +90,6 @@ registerView({
     for (const ls of liveSessions) liveBySid.set(ls.sid, ls);
     const now = new Date().toISOString();
     const saddr = (sid: number) => `00000000${sid.toString(16).padStart(8, '0').toUpperCase()}`;
-    // PADDR points at the V$PROCESS row of the process serving the
-    // session (dedicated server for users, the process itself for
-    // backgrounds) — derived from the same PID encoding as
-    // V$PROCESS.ADDR so the canonical s.paddr = p.addr join works.
     const fallbackPaddr = (sid: number) => `0000FFFF${(sid * 17).toString(16).padStart(8, '0').toUpperCase()}`;
     const bgPidByName = new Map(instance.getBackgroundProcesses().map(p => [p.name, p.pid]));
     const bgPaddr = (name: string, sid: number) => {

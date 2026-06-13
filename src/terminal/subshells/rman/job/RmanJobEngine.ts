@@ -317,6 +317,32 @@ export class RmanJobEngine implements IRmanJobEngine {
       return ok(undefined);
     }
 
+    // A catalog entry is only restorable while its piece files are still
+    // physically on disk. RMAN used to restore from a backup set whose
+    // piece had been `rm`'d — the catalog said yes, the filesystem said
+    // the bytes were gone. Real RMAN fails over past the missing piece
+    // and, with nothing left, aborts (RMAN-06026/06023).
+    const missingPieces: string[] = [];
+    const usableSets = sets.filter(s => {
+      const present = s.pieces.every(p => this._ctx.vfs.fileExists(p.path));
+      if (!present) for (const p of s.pieces) {
+        if (!this._ctx.vfs.fileExists(p.path)) missingPieces.push(p.path);
+      }
+      return present;
+    });
+    if (usableSets.length === 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'restore', pct: 0,
+        message: `ORA-19505: failed to identify file "${missingPieces[0] ?? '?'}"\n`
+          + 'ORA-27037: unable to obtain file status',
+      });
+      return err({
+        code: 'RMAN_06023',
+        message: 'RMAN-06026: some targets not found - aborting restore\n'
+          + 'RMAN-06023: no backup or copy of datafile found to restore',
+      });
+    }
+
     const tsFilter   = params.tablespace ? params.tablespace.toUpperCase() : undefined;
     const fileFilter = params.fileNo     ? Number(params.fileNo) : undefined;
     const datafiles  = this._ctx.getDatafiles().filter(df => {

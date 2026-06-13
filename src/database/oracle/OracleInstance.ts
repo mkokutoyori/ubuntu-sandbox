@@ -55,14 +55,12 @@ export interface BackgroundProcess {
   description: string;
 }
 
-/** Dedicated server process backing one user session (V$PROCESS, host ps). */
 export interface ServerProcess {
   pid: number;
   sessionSid: number;
   serial: number;
   username: string;
   osUser: string;
-  /** Bequeath (LOCAL=YES) vs network/listener (LOCAL=NO) connection. */
   local: boolean;
 }
 
@@ -161,8 +159,6 @@ export class OracleInstance {
     this.scheduler = s;
     this._schedulerSweepActor?.stop();
     this._schedulerSweepActor = null;
-    // CJQ0 only runs while open; if the DB is already open, start now,
-    // otherwise markOpen() will (and reattach won't drop it on the floor).
     if (this._state === 'OPEN') this.ensureSchedulerSweep();
   }
   attachStatistics(storage: OracleStorage): StatisticsManager {
@@ -245,13 +241,6 @@ export class OracleInstance {
   readDeviceFile(path: string): string | null {
     return this._deviceFileReader?.(path) ?? null;
   }
-  /**
-   * Whether a host device filesystem is wired. Lets callers tell "file
-   * genuinely missing" (a device is attached, the path just isn't there)
-   * apart from "no filesystem at all" (engine-only tests), which need
-   * different fidelity — e.g. ORA-01565 vs a benign live-parameter
-   * fallback for CREATE PFILE/SPFILE.
-   */
   hasDeviceFilesystem(): boolean {
     return this._deviceFileReader !== null;
   }
@@ -268,13 +257,6 @@ export class OracleInstance {
     this._datafileLister = fn;
   }
 
-  /**
-   * Host-filesystem existence probe, injected by the terminal wiring.
-   * Used by the MOUNT-time control file check and the OPEN-time
-   * datafile check. Returns null when the device exposes no filesystem
-   * surface — in that case the checks are skipped entirely (engine-only
-   * tests have no disk for files to go missing from).
-   */
   private _hostFileProbe: ((path: string) => boolean | null) | null = null;
   setHostFileProbe(fn: (path: string) => boolean | null): void {
     this._hostFileProbe = fn;
@@ -297,10 +279,6 @@ export class OracleInstance {
     return missing;
   }
 
-  /**
-   * Control file paths declared by the control_files parameter, in
-   * V$CONTROLFILE order (every copy of the multiplexed set).
-   */
   getControlFilePaths(): string[] {
     return (this.getParameter('control_files') ?? '')
       .split(',')
@@ -308,12 +286,6 @@ export class OracleInstance {
       .filter(Boolean);
   }
 
-  /**
-   * Control file copies missing from the host filesystem. Real Oracle
-   * reads EVERY multiplexed copy at MOUNT time — losing any one of
-   * them fails the mount with ORA-00205 (the whole point of
-   * multiplexing is detecting the loss immediately).
-   */
   private missingControlFiles(): string[] {
     if (!this._hostFileProbe) return [];
     const missing: string[] = [];
@@ -429,20 +401,9 @@ export class OracleInstance {
       this._indexUsage = new IndexUsageMonitor(this.getBus(), this._deviceId, this._indexUsageStorage);
       this._indexUsage.start();
     }
-    // The CJQ0 scheduler sweeper was torn down above with the other
-    // actors but — unlike them — used to never be recreated here. The
-    // boot wiring calls setEventBus()/setDeviceId() (both reattach) AFTER
-    // the constructor's attachScheduler(), so on a real device the
-    // sweeper ended up null and DBMS_SCHEDULER jobs never auto-ran.
-    // CJQ0 only runs while the database is open (markOpen() starts it
-    // otherwise), so only revive it here when already open.
     if (this._state === 'OPEN') this.ensureSchedulerSweep();
   }
 
-  /**
-   * Start the CJQ0-style job sweeper (idempotent). The real coordinator
-   * job queue process runs only while the database is open.
-   */
   private ensureSchedulerSweep(): void {
     if (!this.scheduler) return;
     if (!this._schedulerSweepActor) {
@@ -542,10 +503,6 @@ export class OracleInstance {
       return output;
     }
 
-    // MOUNT — the instance must identify every multiplexed control file
-    // copy named by control_files. Any missing copy fails the mount with
-    // ORA-00205 and the instance stays NOMOUNT (restore the control file
-    // or fix the parameter, then ALTER DATABASE MOUNT).
     const missingCtl = this.missingControlFiles();
     if (missingCtl.length > 0) {
       this.logAlert('ORA-00210: cannot open the specified control file');
@@ -588,8 +545,6 @@ export class OracleInstance {
     this._redoLogGroups[0].status = 'CURRENT';
     this.performCheckpoint();
     this.logAlert('Database opened');
-    // CJQ0 starts at open — and resumes after a SHUTDOWN/STARTUP cycle,
-    // which tore the actor down without restarting it.
     this.ensureSchedulerSweep();
     for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
       this.getBus().publish({
@@ -669,7 +624,6 @@ export class OracleInstance {
         payload: { ...this.ref(), name: p.name, pid: p.pid },
       });
     }
-    // Dedicated servers die with the instance (PMON cleans them up).
     for (const sp of [...this._serverProcesses.keys()]) {
       this.releaseServerProcess(sp);
     }
@@ -718,17 +672,8 @@ export class OracleInstance {
     return [...this._backgroundProcesses];
   }
 
-  // ── Dedicated server processes ────────────────────────────────────
-
-  /**
-   * One dedicated server process per user session, forked at connect
-   * time exactly like the bequeath adapter (LOCAL=YES) or the listener
-   * (LOCAL=NO) does on a real host. Backs V$PROCESS and — through the
-   * server-process events — the host `ps` table.
-   */
   private _serverProcesses = new Map<number, ServerProcess>();
 
-  /** The ps-style command label of a dedicated server process. */
   serverProcessCommand(local: boolean): string {
     return local
       ? `oracle${this.config.sid} (DESCRIPTION=(LOCAL=YES)(ADDRESS=(PROTOCOL=beq)))`

@@ -37,16 +37,10 @@ export interface OracleBackgroundProcessStoppedPayload extends OracleDeviceRef {
   pid: number;
 }
 
-/**
- * A dedicated server process was forked for a user session (what the
- * bequeath adapter or the listener does on every connect) — subscribers
- * materialise it in the host process table so `ps` agrees with V$PROCESS.
- */
 export interface OracleServerProcessStartedPayload extends OracleDeviceRef {
   pid: number;
   sessionSid: number;
   username: string;
-  /** ps-style command label: oracleSID (LOCAL=NO) / (DESCRIPTION=(LOCAL=YES)…). */
   command: string;
 }
 

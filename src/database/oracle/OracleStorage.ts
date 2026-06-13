@@ -90,7 +90,6 @@ export class OracleStorage extends BaseStorage {
     for (const ts of seed) this.tablespaces.set(ts.name, normaliseTablespace(ts));
   }
 
-  /** Probes against DATE columns honour Oracle's NLS implicit string→DATE conversion. */
   protected override indexValueSemantics(): IndexValueSemantics {
     return { toDate: implicitToDate };
   }

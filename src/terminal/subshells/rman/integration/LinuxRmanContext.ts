@@ -20,10 +20,11 @@ import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 
-/** Shape of an Equipment that exposes the optional readFile/deleteFile methods. */
 interface FsCapableEquipment {
   writeFileFromEditor(path: string, content: string): boolean;
+  readFileForEditor?(path: string): string | null;
   readFile?(path: string): string | null;
+  deleteFileFromEditor?(path: string): boolean;
   deleteFile?(path: string): boolean;
 }
 
@@ -109,14 +110,12 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   private _buildVfsAdapter(): VfsAdapter {
     const dev = this._device as unknown as FsCapableEquipment;
+    const read = (path: string): string | null =>
+      dev.readFileForEditor?.(path) ?? dev.readFile?.(path) ?? null;
     return {
       writeFile: (path, _data): Result<void, RmanError> => {
         try {
-          // Materialise as Oracle-style metadata marker. Content size is
-          // taken from the data length so capture actors / FS sync stays
-          // consistent.
-          const content = `[ORACLE RMAN BACKUP PIECE - ${_data.length} bytes]`;
-          dev.writeFileFromEditor(path, content);
+          dev.writeFileFromEditor(path, `[ORACLE RMAN BACKUP PIECE - ${_data.length} bytes]`);
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });
@@ -124,21 +123,20 @@ export class LinuxRmanContext implements IRmanOracleContext {
       },
       readFile: (path): Result<Uint8Array, RmanError> => {
         try {
-          const s = dev.readFile?.(path) ?? '';
-          return ok(new TextEncoder().encode(s));
+          return ok(new TextEncoder().encode(read(path) ?? ''));
         } catch (e) {
           return err({ code: 'VFS_READ_ERROR', message: String(e), path });
         }
       },
       fileExists: (path) => {
         try {
-          const s = dev.readFile?.(path);
-          return typeof s === 'string';
+          return read(path) !== null;
         } catch { return false; }
       },
       deleteFile: (path): Result<void, RmanError> => {
         try {
-          dev.deleteFile?.(path);
+          if (dev.deleteFileFromEditor) dev.deleteFileFromEditor(path);
+          else dev.deleteFile?.(path);
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });

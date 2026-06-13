@@ -999,12 +999,6 @@ export class OracleExecutor extends BaseExecutor {
     let rows = fromResult.rows;
     const columns = fromResult.columns;
 
-    // ── Step 1b: index access path ─────────────────────────────────
-    // Single-table query whose WHERE carries equality predicates that
-    // cover a declared index: narrow the row set through the storage
-    // index runtime (the plan generator already reports INDEX UNIQUE
-    // SCAN for these — execution now actually does it). The full WHERE
-    // filter still runs below, so this is purely an access-path change.
     if (stmt.where && stmt.from!.length === 1 && (!stmt.joins || stmt.joins.length === 0)) {
       const narrowed = this.tryIndexAccessPath(stmt.from![0], stmt.where, rows);
       if (narrowed) rows = narrowed;
@@ -1153,16 +1147,6 @@ export class OracleExecutor extends BaseExecutor {
     return { rows, columns };
   }
 
-  /**
-   * Try to narrow the FROM row set through a declared index.
-   *
-   * Applies when the reference is a plain table whose loaded `rows` IS the
-   * live storage array (no view, no redaction, no AS OF, no db link), and
-   * the WHERE's top-level AND conjuncts contain `col = literal` predicates
-   * covering every column of some declared, non-function-based index.
-   * Returns the candidate rows — a superset of the final result, since the
-   * caller re-applies the full WHERE — or null when no index applies.
-   */
   private tryIndexAccessPath(
     ref: import('../engine/parser/ASTNode').TableReference,
     where: Expression,
@@ -1172,9 +1156,6 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(ref.schema);
     const tableName = ref.name.toUpperCase();
     if (!this.storage.tableExists(schema, tableName)) return null;
-    // Reference identity is the safety interlock: views, dictionary views,
-    // redacted reads and flashback reads all return copies, never the live
-    // storage array — those silently keep the full-scan path.
     if (loadedRows !== this.storage.getRows(schema, tableName)) return null;
     const meta = this.storage.getTableMeta(schema, tableName);
     if (!meta) return null;
@@ -1213,8 +1194,6 @@ export class OracleExecutor extends BaseExecutor {
       const ordinals = ix.columns.map(cn => meta.columns.findIndex(c => c.name.toUpperCase() === cn.toUpperCase()));
       if (ordinals.some(o => o < 0 || !equalities.has(o))) continue;
       const values = ordinals.map(o => equalities.get(o)!);
-      // `col = NULL` is never true in SQL; probing would wrongly match
-      // stored NULLs, so leave that to the regular filter.
       if (values.some(v => v === null)) continue;
       const candidates = this.storage.findRowsByKey(schema, tableName, ordinals, values);
       if (candidates) return candidates;

@@ -25,7 +25,6 @@ import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 
-/** How a connection reached the instance: bequeath fork or Oracle Net. */
 export type ConnectTransport = 'beq' | 'tcp';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
@@ -166,8 +165,6 @@ export class OracleDatabase implements SqlCommandHost {
       instance: this.buildInstanceIdentity(),
     });
     this.sessions.set(args.sid, session);
-    // Fork the dedicated server process backing this session — bequeath
-    // (LOCAL=YES) unless the connection came in over Oracle Net.
     if (args.type !== 'BACKGROUND') {
       this.instance.spawnServerProcess({
         sessionSid: args.sid, serial: args.serial, username: args.username,
@@ -593,9 +590,6 @@ export class OracleDatabase implements SqlCommandHost {
     }
     this.connections.delete(sid);
     this.securityEngine.closeSession(String(sid));
-    // Close the live OracleSession too (it used to leak: closeSession had
-    // no caller, so the sessions map — and with it the dedicated server
-    // process — outlived every disconnect).
     this.closeSession(sid);
   }
 

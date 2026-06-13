@@ -163,9 +163,6 @@ export class PlanGenerator {
     const indexUsed = where ? this.findIndexForPredicate(schema, name, where) : null;
 
     if (indexUsed) {
-      // Equality over every column of a UNIQUE index returns at most one
-      // row — real Oracle plans INDEX UNIQUE SCAN; anything else is a
-      // RANGE SCAN. Both fetch the table row BY INDEX ROWID.
       const uniqueScan = indexUsed.unique && indexUsed.fullKeyEquality;
       const scanRows = uniqueScan ? 1 : rows;
       const idxCost = uniqueScan ? 1 : rows * COST_INDEX_RANGE_PER_ROW;
@@ -243,8 +240,6 @@ export class PlanGenerator {
       if (!cols.includes(first)) continue;
       const fullKeyEquality = idx.columns.every(c => cols.includes(c.toUpperCase()));
       const candidate = { name: idx.name, unique: idx.unique, fullKeyEquality };
-      // Prefer a unique index fully covered by equality predicates —
-      // that is the one real Oracle would drive a UNIQUE SCAN through.
       if (idx.unique && fullKeyEquality) return candidate;
       best = best ?? candidate;
     }

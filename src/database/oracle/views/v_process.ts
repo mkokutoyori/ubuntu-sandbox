@@ -1,10 +1,3 @@
-/**
- * V$PROCESS — background AND dedicated server processes, from the live
- * instance. Server rows follow the real shape: PNAME null, BACKGROUND
- * null, PROGRAM oracle@host — one per connected user session, joinable
- * with V$SESSION through PADDR = ADDR.
- */
-
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
@@ -30,14 +23,14 @@ registerView({
     const serverRows = instance.getServerProcesses().map(p => [
       processAddr(p.pid),
       p.pid, p.pid,
-      null, // PNAME is null for dedicated servers
+      null,
       'oracle',
       `oracle@${instance.config.sid}`,
       'localhost',
       p.local ? 'pts/0' : null,
       p.osUser,
       'ACTIVE',
-      null, // BACKGROUND is null for dedicated servers
+      null,
       null,
     ]);
     return queryResult(

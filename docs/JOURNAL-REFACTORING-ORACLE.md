@@ -1297,6 +1297,35 @@ gardent le fallback live (aucun disque d'où le fichier pourrait manquer).
 cas nominaux préservés (les fichiers seedés au boot existent) ;
 `unit/database/` + `debug/oracle/` : **2830/2830** ; tsc + ESLint propres.
 
+### 2026-06-13 — RMAN RESTORE vérifie l'existence physique des backup pieces
+**Défaillance :** `RESTORE` choisissait un backup set dans le catalogue et
+réécrivait les datafiles **sans vérifier que les fichiers backup pieces
+étaient encore sur le disque**. Un DBA ayant `rm` un piece pouvait encore
+« restaurer » depuis lui — le catalogue disait oui pendant que les octets
+avaient disparu. Cause racine annexe : le `VfsAdapter` du contexte RMAN
+lisait via `dev.readFile`, alors que l'écriture passait par
+`dev.writeFileFromEditor` — surfaces asymétriques, donc `fileExists`
+renvoyait toujours false (latent tant que `_doRestore` ne l'appelait pas).
+**Correction :**
+- `LinuxRmanContext` : lecture/existence/suppression alignées sur la paire
+  éditeur (`readFileForEditor`/`deleteFileFromEditor`), avec repli sur
+  `readFile`/`deleteFile`.
+- `RmanJobEngine._doRestore` : ne retient que les sets dont **tous** les
+  pieces existent sur le VFS ; quand il n'en reste aucun, abandon avec
+  l'échelle réelle (RMAN-06026/06023 + ORA-19505/27037) — l'instance reste
+  MOUNT, le datafile n'est pas faussement recréé.
+**Validation :** nouvelle suite `oracle-rman-backup-piece-coherence.test.ts`
+(2 tests : backup sain → restore OK ; rm des pieces → RESTORE échoue
+RMAN-0602x, datafile absent, instance MOUNT) ; non-régression
+`oracle-datafile-vfs-coherence` (le restore légitime marche enfin via la
+bonne surface de lecture) ; `unit/database/` : **2818/2818** ;
+`unit/terminal/` + `debug/rman/` + `debug/oracle/` : 399/399 ; tsc + ESLint
+propres.
+
+Note de style : à la demande de l'auteur, les commentaires de code ajoutés
+au cours de cette série ont été retirés (le rationnel vit ici, dans le
+journal, pas dans le code).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

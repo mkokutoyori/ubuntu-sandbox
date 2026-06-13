@@ -118,11 +118,6 @@ export class SQLPlusSession {
    * the terminal sub-shell injects the real shell user via setOsContext.
    */
   private osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT;
-  /**
-   * How logins reach the bound database: 'beq' for a plain local
-   * user/pass, 'tcp' once a connect identifier went through Oracle Net —
-   * decides whether the dedicated server is forked LOCAL=YES or LOCAL=NO.
-   */
   private transport: import('../OracleDatabase').ConnectTransport = 'beq';
 
   private readonly commands: SqlPlusCommand[];
@@ -180,7 +175,6 @@ export class SQLPlusSession {
     this.osCtx = ctx;
   }
 
-  /** Mark the session as reached over Oracle Net (sqlplus user/pass@X launch). */
   setTransport(transport: import('../OracleDatabase').ConnectTransport): void {
     this.transport = transport;
   }

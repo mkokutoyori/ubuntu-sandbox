@@ -126,14 +126,8 @@ export interface SynonymMeta {
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
-  /** Schema → Table name → Table data. `epoch` changes on every non-append mutation. */
   protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[]; epoch: number }>> = new Map();
-  /**
-   * Monotonic source for table epochs. Never reused, so a DROP + CREATE
-   * of the same table name can never alias a stale cached index.
-   */
   private static epochSource = 1;
-  /** Lazily-built equality indexes over table rows (see RowIndexCache). */
   private readonly rowIndexes = new RowIndexCache(this.indexValueSemantics());
   /** Schema → Sequence name → Sequence state */
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
@@ -146,10 +140,6 @@ export abstract class BaseStorage {
   /** Synonyms (public + private) */
   protected synonyms: Map<string, SynonymMeta> = new Map();
 
-  /**
-   * Implicit-conversion hooks the row indexes need for cross-type probes.
-   * Dialect subclasses override this (Oracle injects NLS string→DATE).
-   */
   protected indexValueSemantics(): IndexValueSemantics {
     return {};
   }
@@ -253,9 +243,6 @@ export abstract class BaseStorage {
     for (let i = 0; i < table.rows.length; i++) {
       if (predicate(table.rows[i])) {
         table.rows[i] = updater(table.rows[i]);
-        // Bump per replacement, not per statement: the updater itself may
-        // probe this table's indexes (UNIQUE validation of the next row
-        // must see the rows already rewritten by this same UPDATE).
         table.epoch = BaseStorage.epochSource++;
         count++;
       }
@@ -336,16 +323,6 @@ export abstract class BaseStorage {
     return all;
   }
 
-  /**
-   * Equality lookup through the row-index runtime.
-   *
-   * Returns the candidate rows whose `columnOrdinals` cells may equal
-   * `values` (in table order — callers must still verify each candidate
-   * with the engine comparator), `[]` when provably no row matches, or
-   * `null` when no hash structure can answer safely and the caller must
-   * fall back to a full scan. Cross-type implicit conversions follow the
-   * dialect's `indexValueSemantics()`.
-   */
   findRowsByKey(
     schema: string,
     tableName: string,
@@ -360,7 +337,6 @@ export abstract class BaseStorage {
     );
   }
 
-  /** Row-index runtime counters (builds / probes / fallbacks) — for tests and stats views. */
   getIndexRuntimeStats(): Readonly<IndexRuntimeStats> {
     return this.rowIndexes.getStats();
   }
@@ -384,7 +360,6 @@ export abstract class BaseStorage {
     for (const row of table.rows) row.splice(colIdx, 1);
     // Re-index ordinal positions
     table.meta.columns.forEach((c, i) => c.ordinalPosition = i);
-    // Column ordinals shifted — every cached index over this table is stale.
     table.epoch = BaseStorage.epochSource++;
   }
 

@@ -1,74 +1,28 @@
-/**
- * RowIndexCache — hash-index runtime over in-memory table rows.
- *
- * Until now indexes only existed as catalog metadata (IndexMeta): every
- * lookup — UNIQUE/PK constraint checks, FK parent checks, WHERE col = :x —
- * was a full linear scan. This module gives the storage layer a real,
- * lazily-built equality index so execution finally matches what the plan
- * generator advertises (INDEX UNIQUE SCAN) and bulk DML stops being O(n²).
- *
- * Design constraints that shaped this implementation:
- *
- * - **Never a false negative.** Callers may treat a probe result as the
- *   complete candidate set, so a row that `compareValues` considers equal
- *   to the probe key MUST be in the returned bucket. Where hashing cannot
- *   guarantee that (mixed-type columns, cross-type probes that the engine
- *   would implicitly convert), the probe answers `null` and the caller
- *   falls back to a full scan. False positives are fine — callers verify
- *   candidates with the real comparator (or re-run the full WHERE filter).
- *
- * - **Cheap appends.** INSERT is the hot path (bulk loads validate a
- *   UNIQUE key per row); appends therefore do not invalidate the index —
- *   the probe indexes the new tail incrementally. Any other mutation
- *   (UPDATE/DELETE/TRUNCATE/column drops) bumps the owning table's epoch,
- *   which throws the cached structure away wholesale.
- *
- * - **Engine stays vendor-agnostic.** Implicit string→DATE coercion is
- *   Oracle (NLS) behaviour, so it is injected via `IndexValueSemantics`
- *   rather than imported from the oracle/ layer.
- */
-
 import type { CellValue, StorageRow } from './BaseStorage';
 
-/** Dialect-specific implicit conversions the index needs for probing. */
 export interface IndexValueSemantics {
-  /** String→Date coercion used when probing a DATE-kind column with a string. */
   toDate?(value: CellValue): Date | null;
 }
 
-/** Counters exposed for tests and (eventually) V$-style statistics. */
 export interface IndexRuntimeStats {
-  /** Full index (re)builds — high churn here means epoch thrash. */
   builds: number;
-  /** Probes answered from a hash bucket (incl. provable no-match). */
   probes: number;
-  /** Probes that had to decline (mixed kinds, unsupported value shape). */
   fallbacks: number;
 }
 
-/**
- * The runtime type of every non-NULL value seen in an indexed column.
- * A column whose values mix kinds cannot be hashed safely (the engine's
- * comparator applies implicit conversions between kinds) — such an index
- * is marked unusable and probes fall back to scanning.
- */
 type ColumnKind = 'empty' | 'number' | 'string' | 'date' | 'boolean' | 'mixed';
 
 const NULL_PART = '\u0000';
 const PART_SEPARATOR = '\u0001';
-/** Lookup-encoding verdict: no bucket can match → provably empty result. */
 const NO_MATCH = Symbol('no-match');
-/** Lookup-encoding verdict: hashing unsafe for this value/kind pair. */
 const UNSAFE = Symbol('unsafe');
 
 const MAX_CACHED_INDEXES = 256;
 
 interface CachedIndex {
   epoch: number;
-  /** Rows [0, indexedLength) are reflected in the buckets. */
   indexedLength: number;
   kinds: ColumnKind[];
-  /** Encoded key → indices into the rows array, in table order. */
   buckets: Map<string, number[]>;
 }
 
@@ -78,26 +32,17 @@ function kindOfValue(v: CellValue): ColumnKind | null {
   if (typeof v === 'string') return 'string';
   if (typeof v === 'boolean') return 'boolean';
   if (v instanceof Date) return 'date';
-  return 'mixed'; // unknown runtime shape — refuse to hash
+  return 'mixed';
 }
 
-/** Encode a stored cell into its bucket key part (kind is tracked separately). */
 function encodeStored(v: CellValue): string {
   if (v === null || v === undefined) return NULL_PART;
   if (typeof v === 'number') return `n${v}`;
   if (typeof v === 'boolean') return `b${v}`;
   if (v instanceof Date) return `d${v.getTime()}`;
-  // NFC-normalise so composed/decomposed Unicode land in one bucket,
-  // mirroring localeCompare's normalisation-insensitive equality.
   return `s${String(v).normalize('NFC')}`;
 }
 
-/**
- * Encode a probe value against a column of the given kind. Returns the
- * bucket key part, NO_MATCH when the comparator provably cannot equate
- * the value with any stored one, or UNSAFE when hashing can't preserve
- * the comparator's implicit-conversion semantics.
- */
 function encodeLookup(
   v: CellValue,
   kind: ColumnKind,
@@ -107,14 +52,10 @@ function encodeLookup(
   if (v === null) return NULL_PART;
   switch (kind) {
     case 'empty':
-      // Only NULLs are stored; a non-NULL probe can never match.
       return NO_MATCH;
     case 'number': {
       if (typeof v === 'number') return `n${v}`;
       if (typeof v === 'string') {
-        // The comparator equates a number with a string only when the
-        // string is numeric ('5.0' = 5) — non-numeric strings can only
-        // match via String(number) === s, which is itself numeric.
         const n = Number(v);
         return Number.isNaN(n) ? NO_MATCH : `n${n}`;
       }
@@ -122,8 +63,6 @@ function encodeLookup(
     }
     case 'string':
       if (typeof v === 'string') return `s${v.normalize('NFC')}`;
-      // number/Date probes against string storage rely on per-value
-      // implicit conversion ('5.0' = 5) that buckets can't reproduce.
       return UNSAFE;
     case 'date': {
       if (v instanceof Date) return `d${v.getTime()}`;
@@ -140,6 +79,13 @@ function encodeLookup(
   }
 }
 
+/**
+ * Lazily-built equality index over in-memory table rows. Never produces a
+ * false negative: when hashing cannot preserve the comparator's implicit
+ * conversions, probe() returns null and the caller falls back to a scan.
+ * Appends extend the structure incrementally; any other mutation bumps the
+ * table epoch and discards the cache.
+ */
 export class RowIndexCache {
   private readonly entries = new Map<string, CachedIndex>();
   private readonly stats: IndexRuntimeStats = { builds: 0, probes: 0, fallbacks: 0 };
@@ -150,7 +96,6 @@ export class RowIndexCache {
     return this.stats;
   }
 
-  /** Drop every cached structure for a table (DROP TABLE housekeeping). */
   forgetTable(tableKey: string): void {
     const prefix = `${tableKey}#`;
     for (const key of this.entries.keys()) {
@@ -158,15 +103,6 @@ export class RowIndexCache {
     }
   }
 
-  /**
-   * Probe `rows` for entries whose `columnOrdinals` cells equal `values`.
-   *
-   * @param tableKey unique per-table cache key (schema.table)
-   * @param epoch    the table's mutation epoch — a mismatch discards the cache
-   * @returns candidate rows in table order (caller must verify with the real
-   *          comparator), `[]` when provably nothing matches, or `null` when
-   *          the caller must fall back to a full scan.
-   */
   probe(
     tableKey: string,
     epoch: number,
@@ -222,10 +158,9 @@ export class RowIndexCache {
         const oldest = this.entries.keys().next().value;
         if (oldest !== undefined) this.entries.delete(oldest);
       }
-      this.entries.delete(cacheKey); // refresh FIFO position
+      this.entries.delete(cacheKey);
       this.entries.set(cacheKey, entry);
     }
-    // Index the appended tail (appends never bump the epoch).
     for (let r = entry.indexedLength; r < rows.length; r++) {
       const parts: string[] = [];
       for (let c = 0; c < columnOrdinals.length; c++) {
