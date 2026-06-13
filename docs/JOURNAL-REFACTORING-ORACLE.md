@@ -1355,6 +1355,26 @@ tests : process libéré + absent de V$PROCESS après DROP USER, sessions des
 autres utilisateurs intactes) ; `unit/database/` : **2824/2824** ; tsc +
 ESLint propres.
 
+### 2026-06-13 — RMAN voit les vrais archived logs de l'instance
+**Défaillance :** `LinuxRmanContext.getArchivelogPaths()` renvoyait une
+liste **synthétique figée** de 3 chemins (`/u01/backup/archivelog/arch_1_N_SID.arc`),
+quel que soit le nombre réel de switches, à un répertoire **différent** de
+celui où l'instance écrit (`/u01/app/oracle/archivelog/1_N_arc.arc`, reflété
+par V$ARCHIVED_LOG et matérialisé sur le VFS). Conséquence : `BACKUP
+ARCHIVELOG ALL` / `DELETE ARCHIVELOG` opéraient sur des fichiers fantômes
+sans rapport avec les vrais archived logs — les vrais n'étaient jamais ni
+sauvegardés ni purgés.
+**Correction :** quand une base Oracle est enregistrée, `getArchivelogPaths`
+dérive du runtime vivant (`instance.getRuntimeState().archivedLogs`, la même
+source que V$ARCHIVED_LOG). RMAN, la vue dictionnaire et les fichiers VFS
+racontent enfin la même histoire ; la liste synthétique ne sert plus qu'aux
+devices sans Oracle (tests).
+**Validation :** nouvelle suite `oracle-rman-archivelog-coherence.test.ts`
+(3 tests : chemins RMAN == V$ARCHIVED_LOG == fichiers VFS après switches,
+aucun archived log avant le premier switch, plus aucun chemin fantôme
+`/u01/backup`) ; non-régression `unit/database/` + `debug/rman/` :
+**2832/2832** ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -101,10 +101,10 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
+    if (this._oracle) {
+      return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
+    }
     const sid = this.dbName;
-    // Synthesised list — the real instance doesn't expose archived-log
-    // file paths directly; we mint a handful so DELETE INPUT has
-    // something to consume.
     return [1, 2, 3].map(seq => `${BACKUP_BASE}/archivelog/arch_1_${seq}_${sid}.arc`);
   }
 
