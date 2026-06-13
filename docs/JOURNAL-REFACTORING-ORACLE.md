@@ -1564,6 +1564,24 @@ Data Pump existants (appel direct du handler) restent verts ;
 non-régression `unit/database/` + linux-oracle-tools (2929) ; tsc + ESLint
 propres.
 
+### 2026-06-13 — `rman` shell pilote le vrai moteur réactif (plus de banner seul)
+**Défaillance :** dernier outil du pattern terminal ↔ shell. `rman` via
+`executeShellCommandSync`/SSH/script ne renvoyait **que le banner**
+(`Recovery Manager: Release …`), sans exécuter le moindre RUN/BACKUP/
+RESTORE — alors que le terminal interactif utilise le vrai
+`ReactiveRmanSubShell`. `echo "BACKUP DATABASE;" | rman target /` via SSH
+ne sauvegardait rien.
+**Correction :** nouveau hook `_oracleRman(args, stdin)` dans l'exécuteur,
+branché sur `ReactiveRmanSubShell` : crée la session (target connecté),
+exécute chaque ligne du script piped (`processLine`), accumule la sortie,
+dispose en fin. `rman target /` sans script affiche toujours le banner de
+connexion ; un script piped exécute réellement les commandes RMAN
+(catalogue partagé par device, donc cohérent avec les backups précédents).
+**Validation :** nouvelle suite `oracle-shell-rman.test.ts` (3 tests :
+BACKUP DATABASE piped exécuté, LIST BACKUP montre le catalogue, banner seul
+sans script) ; non-régression `unit/database/` + `debug/rman/` (2871) +
+SSH/shell (732) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -302,6 +302,8 @@ export class LinuxCommandExecutor {
   _oracleTnsping: ((args: string[]) => string) | null = null;
   /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
+  /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
+  _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
 
   constructor(
     isServer = false,
@@ -2525,11 +2527,16 @@ export class LinuxCommandExecutor {
         }
         return { output: 'LSNRCTL: command not found on this host', exitCode: 1 };
       }
-      case 'rman':
+      case 'rman': {
+        if (this.isServer && this._oracleRman) {
+          const output = this._oracleRman(args, stdin);
+          if (output !== null) return { output, exitCode: /RMAN-\d|ORA-\d/.test(output) ? 1 : 0 };
+        }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
           exitCode: 0,
         };
+      }
       case 'tnsping': {
         if (this.isServer && this._oracleTnsping) {
           const output = this._oracleTnsping(args);

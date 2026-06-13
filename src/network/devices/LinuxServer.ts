@@ -14,6 +14,7 @@ import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
 import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
+import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import type { HostCapableDevice } from '@/network';
 
 export class LinuxServer extends LinuxMachine {
@@ -96,6 +97,20 @@ export class LinuxServer extends LinuxMachine {
       const lines: string[] = [];
       handler(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
       return lines.join('\n');
+    };
+    // `rman target / <<EOF … EOF` and `echo "BACKUP …;" | rman target /`
+    // drive the real reactive RMAN engine, not a banner-only stub.
+    this.executor._oracleRman = (args: string[], stdin?: string) => {
+      const { subShell, banner } = ReactiveRmanSubShell.create(this, args);
+      const out = [...banner];
+      const script = (stdin ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of script) {
+        const res = subShell.processLine(line);
+        out.push(...res.output);
+        if (res.exit) break;
+      }
+      subShell.dispose();
+      return out.join('\n');
     };
   }
 
