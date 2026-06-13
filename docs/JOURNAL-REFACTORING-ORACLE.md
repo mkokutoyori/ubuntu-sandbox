@@ -1089,6 +1089,55 @@ racine pour les textes non planifiables (DDL).
 tests : TABLE ACCESS FULL sur le bon objet, chemin INDEX pour une
 recherche par clé primaire, plans multi-lignes racine en tête).
 
+### 2026-06-13 — Les index existent enfin à l'exécution (clôt GAP §10.3)
+**Défaillance :** les index n'étaient que des métadonnées de catalogue
+(`IndexMeta`) : chaque validation UNIQUE/PK, chaque lookup de parent FK et
+chaque `WHERE col = x` était un scan linéaire complet — pendant qu'EXPLAIN
+PLAN affichait fièrement des accès INDEX (deux vues du même sujet racontant
+deux histoires, encore). Les insertions en masse dans une table à clé
+étaient O(n²). Le scan linéaire portait en outre **un bug de fidélité** :
+deux lignes à clé unique entièrement NULL levaient ORA-00001, alors que le
+vrai Oracle ne stocke pas les clés toutes-NULL dans les index uniques (il
+en accepte autant qu'on veut) ; et le message ORA-00001 omettait le schéma
+du nom de contrainte.
+**Correction :**
+- Nouveau `engine/storage/RowIndexCache.ts` : index de hachage construits
+  paresseusement, invalidés par *epoch* de table (séquence monotone jamais
+  réutilisée — un DROP+CREATE du même nom ne peut pas servir un index
+  périmé). Les **appends n'invalident pas** (la sonde indexe la queue
+  incrémentalement) → un INSERT par ligne reste O(1) amorti ; UPDATE bumpe
+  l'epoch **à chaque remplacement de ligne** (la validation d'unicité de la
+  ligne n suivante doit voir les lignes déjà réécrites par le même UPDATE).
+  Garantie contractuelle : jamais de faux négatif — quand le hachage ne
+  peut pas reproduire les conversions implicites du comparateur (colonnes
+  de types mélangés, sondes inter-types), la sonde répond null et l'appelant
+  retombe sur le scan ; les candidats sont toujours re-vérifiés par le vrai
+  `compareValues`. La conversion NLS chaîne→DATE est injectée par
+  `OracleStorage` (`indexValueSemantics()`) — la couche engine reste
+  agnostique du dialecte (DIP).
+- `ConstraintValidator` : UNIQUE/PK et parent-FK sondent l'index (le
+  PK/UNIQUE parent est toujours indexé, comme en vrai) ; clé toute-NULL
+  ignorée (sémantique B-tree d'Oracle) ; message
+  `unique constraint (SCHEMA.NAME) violated` fidèle. Le scan des FK enfants
+  côté DELETE reste linéaire — fidèle au vrai Oracle (FK non indexée).
+- `OracleExecutor.tryIndexAccessPath` : les SELECT mono-table dont les
+  conjonctions d'égalité couvrent un index déclaré passent par la sonde ;
+  l'identité de référence du tableau de lignes sert de verrou de sécurité
+  (vues, redaction, AS OF, db links produisent des copies → scan inchangé) ;
+  le WHERE complet est ré-appliqué sur les candidats.
+- `PlanGenerator` : égalité sur toutes les colonnes d'un index UNIQUE →
+  `INDEX UNIQUE SCAN` (cardinalité 1) comme le vrai optimiseur, RANGE SCAN
+  sinon — le plan et l'exécution sont désormais d'accord, mesurable par les
+  compteurs `getIndexRuntimeStats()`.
+**Validation :** nouvelle suite `oracle-index-runtime.test.ts` (19 tests :
+sémantique NULL ×4, exactitude des lookups après INSERT/UPDATE/DELETE/
+ROLLBACK ×8 dont le piège d'index périmé au milieu d'un UPDATE à clés
+permutées, types DATE/VARCHAR2/implicites ×3, FK ×2, et la preuve que le
+runtime est réellement exercé — probes qui s'incrémentent, < 10 builds pour
+60 insertions, accord EXPLAIN PLAN ↔ exécution) ; `unit/database/` :
+**2794/2794** ; `unit/terminal*` + `unit/shell/` : 967/967 ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

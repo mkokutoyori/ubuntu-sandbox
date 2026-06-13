@@ -5,9 +5,11 @@
  */
 
 import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
+import type { IndexValueSemantics } from '../engine/storage/RowIndexCache';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
 import { ORACLE_CONFIG } from './OracleConfig';
 import { parseSize } from './views/_fileSize';
+import { implicitToDate } from './functions/valueUtils';
 
 export interface TablespaceMeta {
   name: string;
@@ -88,11 +90,16 @@ export class OracleStorage extends BaseStorage {
     for (const ts of seed) this.tablespaces.set(ts.name, normaliseTablespace(ts));
   }
 
+  /** Probes against DATE columns honour Oracle's NLS implicit string→DATE conversion. */
+  protected override indexValueSemantics(): IndexValueSemantics {
+    return { toDate: implicitToDate };
+  }
+
   private initDual(): void {
     const dualCol: ColumnMeta = { name: 'DUMMY', dataType: oracleVarchar2(1), ordinalPosition: 0 };
-    const dualMeta: TableMeta = { schema: 'SYS', name: 'DUAL', columns: [dualCol], constraints: [], tablespace: 'SYSTEM', rowCount: 1 };
-    this.ensureSchema('SYS');
-    this.tables.get('SYS')!.set('DUAL', { meta: dualMeta, rows: [['X']] });
+    const dualMeta: TableMeta = { schema: 'SYS', name: 'DUAL', columns: [dualCol], constraints: [], tablespace: 'SYSTEM', rowCount: 0 };
+    this.createTable(dualMeta);
+    this.insertRow('SYS', 'DUAL', ['X']);
   }
 
   // ── Tablespace management ────────────────────────────────────────

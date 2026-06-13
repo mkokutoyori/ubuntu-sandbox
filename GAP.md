@@ -1102,7 +1102,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Correction appliquée** : `src/database/oracle/OracleExecutor.ts:executeExplainPlan` — quand `_db.planGenerator` est disponible (cas normal depuis `OracleDatabase.setDatabaseRef`), délègue directement à `PlanGenerator.generate(innerStmt, …)` — qui consulte réellement `storage.getIndexes()` pour choisir `TABLE ACCESS BY INDEX ROWID` + `INDEX RANGE SCAN` ou `TABLE ACCESS FULL` selon la présence d'un index utilisable sur les colonnes du WHERE. Les jointures utilisent `NESTED LOOPS` ou `HASH JOIN` selon le cardinalité. L'ancien code « toujours TABLE ACCESS FULL » est conservé uniquement comme fallback quand `_db` est absent (tests unitaires isolés).
 
-### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire
+### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire — ✅ CORRIGÉ (2026-06-13 : RowIndexCache — index de hachage epoch-invalidés dans le storage, contraintes UNIQUE/PK/FK et SELECT mono-table par égalité sondent l'index ; PlanGenerator émet INDEX UNIQUE SCAN conforme)
 - **Constat** : `BaseStorage`/`OracleStorage` gèrent bien des `IndexMeta` (création/suppression/listing), mais aucune structure de données indexée n'accélère les lectures : toutes les requêtes passent par `storage.getRows(schema, table)` puis un filtrage JS linéaire. `getIndexes` n'est utilisé que pour vérifier l'unicité de noms ou alimenter les vues de catalogue.
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:2504,2962,4492` (seuls usages de `getIndexes`, tous orientés catalogue) vs. `:1173,2535,4769,4791,4876` (`getRows` + filtrage manuel pour SELECT/UPDATE/DELETE/contraintes FK).
 - **Sévérité** : Mineure
@@ -1119,7 +1119,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
   3. **Appels de packages intégrés cassés par la résolution stricte** : une fois (1) et (2) en place, `EXEC DBMS_OUTPUT.ENABLE(1000000)` échouait avec `PLS-00201: identifier 'DBMS_OUTPUT.ENABLE' must be declared`, car `callStoredUnit` ne cherche que dans `storedUnits` (unités définies par l'utilisateur), pas dans les packages intégrés (`DBMS_OUTPUT`, `DBMS_STATS`, `UTL_FILE`, …). Restructuration de `executeProcedureCall` : tente d'abord `resolveStoredUnit` (et emprunte alors le chemin `callStoredUnit` avec vérification de privilèges) ; sinon, enveloppe l'appel en bloc anonyme `BEGIN <call>; END;` délégué à `executePLSQL`, qui dispose déjà de la chaîne `lookupUnit → callBuiltin → PLS-00201` dans `PlsqlInterpreter`/`PlsqlHost` — évite de dupliquer la logique de dispatch des packages intégrés (conforme à la consigne « pas de duplicate »).
   - Validé par la suite complète `unit/database/` + `debug/oracle/` (79 fichiers, 2529 tests) — 0 régression.
 
-### 10.5 Double moteur PL/SQL (duplication / dette technique)
+### 10.5 Double moteur PL/SQL (duplication / dette technique) — ✅ CORRIGÉ (2026-06-10 : interpréteur legacy supprimé, cf. JOURNAL-REFACTORING-ORACLE itération 2)
 - **Constat** : Il existe deux interpréteurs PL/SQL coexistants : le nouveau `PlsqlInterpreter`/`PlsqlParser` (moderne, basé AST, gère curseurs/exceptions/boucles, ~2 100 lignes au total) et un interpréteur "legacy" basé sur des regex et de l'évaluation de chaînes directement dans `OracleDatabase` (`executePLSQLLegacy`/`executePLSQLStatements`/`evaluatePLSQLExpressionWithVars`, ~700 lignes). Le legacy n'est censé servir que de fallback en cas d'erreur de parsing du nouveau moteur, mais il représente une masse de code dupliqué et difficile à maintenir, silencieusement activé dès que `PlsqlParser` échoue.
 - **Preuve** : `src/database/oracle/OracleDatabase.ts:739-751` (`runAnonymousBlock` puis `if (!outcome.parseError) {…} return this.executePLSQLLegacy(executor, sql);`), bloc legacy `:794-1456` (`executePLSQLLegacy`, `executePLSQLStatements` ligne 1016, `evaluatePLSQLExpressionWithVars` ligne 1456).
 - **Sévérité** : Majeure
@@ -1177,7 +1177,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure (constat positif — dette de documentation côté BRD)
 - **Recommandation** : Mettre à jour le BRD pour refléter le sous-système RMAN réel ; ne conserver l'étiquette "canned" que pour les libellés de progression d'étape, pas pour le résultat des opérations.
 
-### 10.14 Multitenant (CDB/PDB) — easter-egg "FAKED" dans un identifiant généré
+### 10.14 Multitenant (CDB/PDB) — easter-egg "FAKED" dans un identifiant généré — ✅ CORRIGÉ (2026-06-10 : GUID hexadécimal plausible, cf. JOURNAL-REFACTORING-ORACLE itération 7)
 - **Constat** : Le `MultitenantManager`/`PluggableDatabase` gère un état réel (création/ouverture/fermeture de PDB, conId, etc.), mais le GUID généré pour chaque PDB contient littéralement la chaîne `FAKED` en plein milieu — un artefact de génération laissé en production qui apparaîtrait tel quel dans `V$PDBS`/`DBA_PDBS`.
 - **Preuve** : `src/database/oracle/multitenant/PluggableDatabase.ts:27` — `this.guid = \`PDB${init.conId.toString(16)…}-CONS-OLE-OURO-FAKED${Math.random()…}\`;`
 - **Sévérité** : Mineure

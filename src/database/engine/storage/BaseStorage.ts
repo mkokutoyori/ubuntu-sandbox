@@ -6,6 +6,7 @@
  */
 
 import type { ColumnDataType } from '../catalog/DataType';
+import { RowIndexCache, type IndexValueSemantics, type IndexRuntimeStats } from './RowIndexCache';
 
 // ── Row representation ──────────────────────────────────────────────
 
@@ -125,8 +126,15 @@ export interface SynonymMeta {
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
-  /** Schema → Table name → Table data */
-  protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[] }>> = new Map();
+  /** Schema → Table name → Table data. `epoch` changes on every non-append mutation. */
+  protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[]; epoch: number }>> = new Map();
+  /**
+   * Monotonic source for table epochs. Never reused, so a DROP + CREATE
+   * of the same table name can never alias a stale cached index.
+   */
+  private static epochSource = 1;
+  /** Lazily-built equality indexes over table rows (see RowIndexCache). */
+  private readonly rowIndexes = new RowIndexCache(this.indexValueSemantics());
   /** Schema → Sequence name → Sequence state */
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
   /** Schema → Index name → Index meta */
@@ -137,6 +145,14 @@ export abstract class BaseStorage {
   protected triggers: Map<string, Map<string, TriggerMeta>> = new Map();
   /** Synonyms (public + private) */
   protected synonyms: Map<string, SynonymMeta> = new Map();
+
+  /**
+   * Implicit-conversion hooks the row indexes need for cross-type probes.
+   * Dialect subclasses override this (Oracle injects NLS string→DATE).
+   */
+  protected indexValueSemantics(): IndexValueSemantics {
+    return {};
+  }
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -163,7 +179,7 @@ export abstract class BaseStorage {
     if (schemaTables.has(name)) {
       throw new Error(`Table ${schema}.${name} already exists`);
     }
-    schemaTables.set(name, { meta: { ...meta, schema, name }, rows: [] });
+    schemaTables.set(name, { meta: { ...meta, schema, name }, rows: [], epoch: BaseStorage.epochSource++ });
   }
 
   dropTable(schema: string, name: string): void {
@@ -172,6 +188,7 @@ export abstract class BaseStorage {
     const schemaTables = this.tables.get(s);
     if (!schemaTables?.has(n)) throw new Error(`Table ${s}.${n} does not exist`);
     schemaTables.delete(n);
+    this.rowIndexes.forgetTable(`${s}.${n}`);
     // Drop associated indexes
     const schemaIndexes = this.indexes.get(s);
     if (schemaIndexes) {
@@ -225,7 +242,9 @@ export abstract class BaseStorage {
     const before = table.rows.length;
     table.rows = table.rows.filter(row => !predicate(row));
     table.meta.rowCount = table.rows.length;
-    return before - table.rows.length;
+    const removed = before - table.rows.length;
+    if (removed > 0) table.epoch = BaseStorage.epochSource++;
+    return removed;
   }
 
   updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number {
@@ -234,6 +253,10 @@ export abstract class BaseStorage {
     for (let i = 0; i < table.rows.length; i++) {
       if (predicate(table.rows[i])) {
         table.rows[i] = updater(table.rows[i]);
+        // Bump per replacement, not per statement: the updater itself may
+        // probe this table's indexes (UNIQUE validation of the next row
+        // must see the rows already rewritten by this same UPDATE).
+        table.epoch = BaseStorage.epochSource++;
         count++;
       }
     }
@@ -244,6 +267,7 @@ export abstract class BaseStorage {
     const table = this.getTableData(schema, tableName);
     table.rows = [];
     table.meta.rowCount = 0;
+    table.epoch = BaseStorage.epochSource++;
   }
 
   // ── Sequence operations ──────────────────────────────────────────
@@ -312,6 +336,35 @@ export abstract class BaseStorage {
     return all;
   }
 
+  /**
+   * Equality lookup through the row-index runtime.
+   *
+   * Returns the candidate rows whose `columnOrdinals` cells may equal
+   * `values` (in table order — callers must still verify each candidate
+   * with the engine comparator), `[]` when provably no row matches, or
+   * `null` when no hash structure can answer safely and the caller must
+   * fall back to a full scan. Cross-type implicit conversions follow the
+   * dialect's `indexValueSemantics()`.
+   */
+  findRowsByKey(
+    schema: string,
+    tableName: string,
+    columnOrdinals: number[],
+    values: CellValue[],
+  ): StorageRow[] | null {
+    const table = this.tables.get(schema.toUpperCase())?.get(tableName.toUpperCase());
+    if (!table) return null;
+    return this.rowIndexes.probe(
+      `${schema.toUpperCase()}.${tableName.toUpperCase()}`,
+      table.epoch, table.rows, columnOrdinals, values,
+    );
+  }
+
+  /** Row-index runtime counters (builds / probes / fallbacks) — for tests and stats views. */
+  getIndexRuntimeStats(): Readonly<IndexRuntimeStats> {
+    return this.rowIndexes.getStats();
+  }
+
   // ── Column alteration ────────────────────────────────────────────
 
   addColumn(schema: string, tableName: string, col: ColumnMeta): void {
@@ -331,6 +384,8 @@ export abstract class BaseStorage {
     for (const row of table.rows) row.splice(colIdx, 1);
     // Re-index ordinal positions
     table.meta.columns.forEach((c, i) => c.ordinalPosition = i);
+    // Column ordinals shifted — every cached index over this table is stale.
+    table.epoch = BaseStorage.epochSource++;
   }
 
   // ── View operations ─────────────────────────────────────────────

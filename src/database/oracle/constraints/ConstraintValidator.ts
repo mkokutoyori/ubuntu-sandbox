@@ -77,14 +77,22 @@ export class ConstraintValidator {
         }
       }
       if (constraint.type === 'PRIMARY_KEY' || constraint.type === 'UNIQUE') {
-        const existingRows = this.storage.getRows(schema, tableName);
         const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
         const newKey = colIndexes.map(i => row[i]);
-        for (const existing of existingRows) {
+        // Oracle B-tree semantics: an entirely-NULL key is not stored in
+        // the unique index, so any number of such rows may coexist.
+        // ORA-00001 only applies to keys with at least one non-NULL part.
+        if (newKey.every(v => v === null)) continue;
+        // O(1) candidate lookup through the index runtime (every PK/UNIQUE
+        // constraint has an auto-created index, like real Oracle); fall
+        // back to the full row set when hashing can't answer safely.
+        const candidates = this.storage.findRowsByKey(schema, tableName, colIndexes, newKey)
+          ?? this.storage.getRows(schema, tableName);
+        for (const existing of candidates) {
           if (excludeRow && existing === excludeRow) continue;
           const existingKey = colIndexes.map(i => existing[i]);
           if (newKey.every((v, i) => compareValues(v, existingKey[i]) === 0)) {
-            throw new OracleError(1, `unique constraint (${constraint.name}) violated`);
+            throw new OracleError(1, `unique constraint (${schema}.${constraint.name}) violated`);
           }
         }
       }
@@ -99,7 +107,10 @@ export class ConstraintValidator {
         if (this.storage.tableExists(refSchema, refTable)) {
           const refMeta = this.storage.getTableMeta(refSchema, refTable)!;
           const refColIndexes = constraint.refColumns.map(cn => refMeta.columns.findIndex(c => c.name === cn));
-          const parentRows = this.storage.getRows(refSchema, refTable);
+          // The referenced key is PK/UNIQUE, hence indexed — probe instead
+          // of scanning the whole parent table for every child row.
+          const parentRows = this.storage.findRowsByKey(refSchema, refTable, refColIndexes, fkValues)
+            ?? this.storage.getRows(refSchema, refTable);
           const found = parentRows.some(pRow =>
             refColIndexes.every((ri, i) => ri >= 0 && compareValues(pRow[ri], fkValues[i]) === 0));
           if (!found) {

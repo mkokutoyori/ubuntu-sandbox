@@ -163,14 +163,18 @@ export class PlanGenerator {
     const indexUsed = where ? this.findIndexForPredicate(schema, name, where) : null;
 
     if (indexUsed) {
-      // Index range scan + access by ROWID.
-      const idxCost = rows * COST_INDEX_RANGE_PER_ROW;
-      const accessCost = Math.max(1, Math.round(rows * BLOCKS_PER_ROW));
+      // Equality over every column of a UNIQUE index returns at most one
+      // row — real Oracle plans INDEX UNIQUE SCAN; anything else is a
+      // RANGE SCAN. Both fetch the table row BY INDEX ROWID.
+      const uniqueScan = indexUsed.unique && indexUsed.fullKeyEquality;
+      const scanRows = uniqueScan ? 1 : rows;
+      const idxCost = uniqueScan ? 1 : rows * COST_INDEX_RANGE_PER_ROW;
+      const accessCost = Math.max(1, Math.round(scanRows * BLOCKS_PER_ROW));
       const access = add(parentId, depth, 'TABLE ACCESS', 'BY INDEX ROWID',
-        schema, name, 'TABLE', rows, accessCost + idxCost);
-      add(access.id, depth + 1, 'INDEX', 'RANGE SCAN',
-        schema, indexUsed, 'INDEX', rows, idxCost,
-        `${this.firstColumnOf(indexUsed, schema)} = ?`);
+        schema, name, 'TABLE', scanRows, accessCost + idxCost);
+      add(access.id, depth + 1, 'INDEX', uniqueScan ? 'UNIQUE SCAN' : 'RANGE SCAN',
+        schema, indexUsed.name, 'INDEX', scanRows, idxCost,
+        `${this.firstColumnOf(indexUsed.name, schema)} = ?`);
       return access;
     }
     const blocks = Math.max(1, Math.ceil(rows * BLOCKS_PER_ROW));
@@ -226,16 +230,25 @@ export class PlanGenerator {
 
   /** Find a single-column index whose first column appears in the WHERE
    *  predicate as `col = expr` or `col IN (…)`. */
-  private findIndexForPredicate(schema: string, table: string, where: unknown): string | null {
+  private findIndexForPredicate(
+    schema: string, table: string, where: unknown,
+  ): { name: string; unique: boolean; fullKeyEquality: boolean } | null {
     const cols = this.extractEqualityColumns(where);
     if (cols.length === 0) return null;
+    let best: { name: string; unique: boolean; fullKeyEquality: boolean } | null = null;
     for (const idx of this.storage.getIndexes(schema)) {
       if (idx.tableName.toUpperCase() !== table) continue;
       if (idx.columns.length === 0) continue;
       const first = idx.columns[0].toUpperCase();
-      if (cols.includes(first)) return idx.name;
+      if (!cols.includes(first)) continue;
+      const fullKeyEquality = idx.columns.every(c => cols.includes(c.toUpperCase()));
+      const candidate = { name: idx.name, unique: idx.unique, fullKeyEquality };
+      // Prefer a unique index fully covered by equality predicates —
+      // that is the one real Oracle would drive a UNIQUE SCAN through.
+      if (idx.unique && fullKeyEquality) return candidate;
+      best = best ?? candidate;
     }
-    return null;
+    return best;
   }
 
   private extractEqualityColumns(expr: unknown): string[] {
