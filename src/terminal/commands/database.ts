@@ -137,13 +137,17 @@ export function createSQLPlusSession(
     const at = connArg.indexOf('@');
     if (at >= 0) connectIdentifier = connArg.slice(at + 1);
   }
+  let viaOracleNet = false;
   if (connectIdentifier && localDevice) {
     const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
-    if (res.ok) db = res.db;
+    if (res.ok) { db = res.db; viaOracleNet = true; }
     else netError = res.error;
   }
 
   const session = new SQLPlusSession(db);
+  // A connect identifier means the session came in through the listener:
+  // its dedicated server process is forked LOCAL=NO, not bequeath.
+  if (viaOracleNet) session.setTransport('tcp');
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit
   // trail records the real OSUSER/MACHINE instead of a hardcoded default.

@@ -61,8 +61,11 @@ describe('V$SESSION_CONTEXT (USERENV)', () => {
     const sh = newSession('vsc-1');
     const out = run(sh, "SELECT NAMESPACE, ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE ATTRIBUTE IN ('SESSION_USER','OS_USER','HOST','SERVICE_NAME');");
     expect(out).toMatch(/USERENV\s+SESSION_USER\s+SYS/);
-    expect(out).toMatch(/USERENV\s+OS_USER\s+oracle/);
-    expect(out).toMatch(/USERENV\s+HOST\s+localhost/);
+    // The OS user of the shell that launched sqlplus (root on these
+    // devices). It used to read 'oracle' because the view answered for a
+    // leaked demo-installer session instead of the live one.
+    expect(out).toMatch(/USERENV\s+OS_USER\s+root/);
+    expect(out).toMatch(/USERENV\s+HOST\s+linux-server/);
     sh.dispose();
   });
 });

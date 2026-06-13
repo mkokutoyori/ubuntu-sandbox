@@ -55,6 +55,17 @@ export interface BackgroundProcess {
   description: string;
 }
 
+/** Dedicated server process backing one user session (V$PROCESS, host ps). */
+export interface ServerProcess {
+  pid: number;
+  sessionSid: number;
+  serial: number;
+  username: string;
+  osUser: string;
+  /** Bequeath (LOCAL=YES) vs network/listener (LOCAL=NO) connection. */
+  local: boolean;
+}
+
 export interface RedoLogGroup {
   group: number;
   status: 'CURRENT' | 'ACTIVE' | 'INACTIVE' | 'UNUSED';
@@ -623,6 +634,10 @@ export class OracleInstance {
         payload: { ...this.ref(), name: p.name, pid: p.pid },
       });
     }
+    // Dedicated servers die with the instance (PMON cleans them up).
+    for (const sp of [...this._serverProcesses.keys()]) {
+      this.releaseServerProcess(sp);
+    }
     this.transitionTo('SHUTDOWN');
     this._startupTime = null;
     this._restrictedSession = false;
@@ -666,6 +681,56 @@ export class OracleInstance {
 
   getBackgroundProcesses(): BackgroundProcess[] {
     return [...this._backgroundProcesses];
+  }
+
+  // ── Dedicated server processes ────────────────────────────────────
+
+  /**
+   * One dedicated server process per user session, forked at connect
+   * time exactly like the bequeath adapter (LOCAL=YES) or the listener
+   * (LOCAL=NO) does on a real host. Backs V$PROCESS and — through the
+   * server-process events — the host `ps` table.
+   */
+  private _serverProcesses = new Map<number, ServerProcess>();
+
+  /** The ps-style command label of a dedicated server process. */
+  serverProcessCommand(local: boolean): string {
+    return local
+      ? `oracle${this.config.sid} (DESCRIPTION=(LOCAL=YES)(ADDRESS=(PROTOCOL=beq)))`
+      : `oracle${this.config.sid} (LOCAL=NO)`;
+  }
+
+  spawnServerProcess(args: {
+    sessionSid: number; serial: number; username: string; osUser: string; local: boolean;
+  }): ServerProcess {
+    const proc: ServerProcess = { pid: this._pidCounter++, ...args };
+    this._serverProcesses.set(args.sessionSid, proc);
+    this.getBus().publish({
+      topic: 'oracle.instance.server-process-started',
+      payload: {
+        ...this.ref(), pid: proc.pid, sessionSid: proc.sessionSid,
+        username: proc.username, command: this.serverProcessCommand(proc.local),
+      },
+    });
+    return proc;
+  }
+
+  releaseServerProcess(sessionSid: number): void {
+    const proc = this._serverProcesses.get(sessionSid);
+    if (!proc) return;
+    this._serverProcesses.delete(sessionSid);
+    this.getBus().publish({
+      topic: 'oracle.instance.server-process-stopped',
+      payload: { ...this.ref(), pid: proc.pid, sessionSid },
+    });
+  }
+
+  getServerProcesses(): ServerProcess[] {
+    return [...this._serverProcesses.values()];
+  }
+
+  getServerProcess(sessionSid: number): ServerProcess | undefined {
+    return this._serverProcesses.get(sessionSid);
   }
 
   // ── Redo logs ────────────────────────────────────────────────────

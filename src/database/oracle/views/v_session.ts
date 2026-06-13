@@ -14,6 +14,7 @@
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+import { processAddr } from './_processAddr';
 
 registerView({
   name: 'V$SESSION',
@@ -89,13 +90,26 @@ registerView({
     for (const ls of liveSessions) liveBySid.set(ls.sid, ls);
     const now = new Date().toISOString();
     const saddr = (sid: number) => `00000000${sid.toString(16).padStart(8, '0').toUpperCase()}`;
-    const paddr = (sid: number) => `0000FFFF${(sid * 17).toString(16).padStart(8, '0').toUpperCase()}`;
+    // PADDR points at the V$PROCESS row of the process serving the
+    // session (dedicated server for users, the process itself for
+    // backgrounds) — derived from the same PID encoding as
+    // V$PROCESS.ADDR so the canonical s.paddr = p.addr join works.
+    const fallbackPaddr = (sid: number) => `0000FFFF${(sid * 17).toString(16).padStart(8, '0').toUpperCase()}`;
+    const bgPidByName = new Map(instance.getBackgroundProcesses().map(p => [p.name, p.pid]));
+    const bgPaddr = (name: string, sid: number) => {
+      const pid = bgPidByName.get(name);
+      return pid !== undefined ? processAddr(pid) : fallbackPaddr(sid);
+    };
+    const paddr = (sid: number) => {
+      const pid = instance.getServerProcess(sid)?.pid;
+      return pid !== undefined ? processAddr(pid) : fallbackPaddr(sid);
+    };
 
-    const bgRow = (sid: number, prog: string): (string | number | null)[] => [
-      saddr(sid), sid, 1, 0, paddr(sid),
+    const bgRow = (sid: number, name: string): (string | number | null)[] => [
+      saddr(sid), sid, 1, 0, bgPaddr(name, sid),
       0, 'SYS', 0, 2147483644, null, null, 'ACTIVE',
       'DEDICATED', 0, 'SYS', 'oracle', String(sid),
-      'localhost', 0, 'pts/0', prog, 'BACKGROUND',
+      'localhost', 0, 'pts/0', `oracle@localhost (${name})`, 'BACKGROUND',
       null, 0, null, null, null, null, null,
       null, null, null, null, 0, 0, 0, 0, 0,
       now, 0, 'NO', 'NONE', 'NONE', 'NO',
@@ -105,10 +119,10 @@ registerView({
     ];
 
     const bgRows: (string | number | null)[][] = [
-      bgRow(1, 'oracle@localhost (PMON)'),
-      bgRow(2, 'oracle@localhost (SMON)'),
-      bgRow(3, 'oracle@localhost (DBW0)'),
-      bgRow(4, 'oracle@localhost (LGWR)'),
+      bgRow(1, 'PMON'),
+      bgRow(2, 'SMON'),
+      bgRow(3, 'DBW0'),
+      bgRow(4, 'LGWR'),
     ];
 
     if (activeSessions.length > 0) {

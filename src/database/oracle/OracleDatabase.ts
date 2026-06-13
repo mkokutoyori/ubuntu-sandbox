@@ -24,6 +24,9 @@ import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
+
+/** How a connection reached the instance: bequeath fork or Oracle Net. */
+export type ConnectTransport = 'beq' | 'tcp';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from './OracleConfig';
@@ -148,6 +151,7 @@ export class OracleDatabase implements SqlCommandHost {
     sid: number; serial: number; username: string; schema?: string;
     osCtx: OsSecurityContext; authenticationMethod: AuthenticationMethod;
     type?: 'USER' | 'BACKGROUND'; authenticatedIdentity?: string;
+    transport?: ConnectTransport;
   }): OracleSession {
     const user = this.catalog.getUser(args.username.toUpperCase());
     const session = new OracleSession({
@@ -162,6 +166,14 @@ export class OracleDatabase implements SqlCommandHost {
       instance: this.buildInstanceIdentity(),
     });
     this.sessions.set(args.sid, session);
+    // Fork the dedicated server process backing this session — bequeath
+    // (LOCAL=YES) unless the connection came in over Oracle Net.
+    if (args.type !== 'BACKGROUND') {
+      this.instance.spawnServerProcess({
+        sessionSid: args.sid, serial: args.serial, username: args.username,
+        osUser: args.osCtx.osUser, local: (args.transport ?? 'beq') === 'beq',
+      });
+    }
     return session;
   }
 
@@ -206,6 +218,7 @@ export class OracleDatabase implements SqlCommandHost {
   /** Close an OracleSession (called on disconnect). */
   closeSession(sid: number): void {
     this.sessions.delete(sid);
+    this.instance.releaseServerProcess(sid);
   }
 
   /** All currently-open sessions. */
@@ -322,7 +335,8 @@ export class OracleDatabase implements SqlCommandHost {
   connect(
     username: string,
     password: string,
-    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
+    transport: ConnectTransport = 'beq',
   ): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
       throw new Error(ORACLE_ERRORS.ORA_01034);
@@ -417,6 +431,7 @@ export class OracleDatabase implements SqlCommandHost {
       : 'PASSWORD';
     const session = this.openSession({
       sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
+      transport,
     });
 
     const context: ExecutionContext = {
@@ -578,6 +593,10 @@ export class OracleDatabase implements SqlCommandHost {
     }
     this.connections.delete(sid);
     this.securityEngine.closeSession(String(sid));
+    // Close the live OracleSession too (it used to leak: closeSession had
+    // no caller, so the sessions map — and with it the dedicated server
+    // process — outlived every disconnect).
+    this.closeSession(sid);
   }
 
   /** Build and publish the rich oracle.security.connection-traced event. */
@@ -913,7 +932,7 @@ export class OracleDatabase implements SqlCommandHost {
     table: string,
   ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
     const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
-    const { sid, executor } = remote.connect(username, password);
+    const { sid, executor } = remote.connect(username, password, DEFAULT_OS_CONTEXT, 'tcp');
     try {
       const qualified = schema ? `${schema}.${table}` : table;
       const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
@@ -935,7 +954,7 @@ export class OracleDatabase implements SqlCommandHost {
     let session = this.pendingLinkSessions.get(key);
     if (!session) {
       const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
-      const { sid, executor } = remote.connect(username, password);
+      const { sid, executor } = remote.connect(username, password, DEFAULT_OS_CONTEXT, 'tcp');
       session = { remote, sid, executor };
       this.pendingLinkSessions.set(key, session);
     }

@@ -1169,6 +1169,51 @@ au rm (sémantique inode), récupération canonique `cp control02 control01`
 → MOUNT → OPEN) ; `unit/database/` : **2800/2800** ; `unit/terminal/` +
 `debug/rman/` + `debug/oracle/` : 399/399 ; tsc propre.
 
+### 2026-06-13 — Processus serveur dédiés : les sessions existent dans `ps`
+**Défaillance :** trois incohérences liées entre la couche Oracle et la
+couche process/OS. (1) V$PROCESS ne montrait que les background processes
+et `ps` ignorait totalement les connexions — une session connectée n'avait
+aucune empreinte OS, alors qu'un vrai Oracle fork un serveur dédié
+`oracleSID (LOCAL=NO)` / bequeath `(LOCAL=YES)` par connexion. (2)
+V$SESSION.PADDR et V$PROCESS.ADDR utilisaient chacun son propre schéma
+d'adresse fabriqué, donc la jointure DBA canonique
+`v$session s, v$process p WHERE s.paddr = p.addr` ne renvoyait rien. (3)
+`OracleDatabase.closeSession` **n'avait aucun appelant** : chaque
+`disconnect` laissait fuiter l'objet `OracleSession` à vie (la map des
+sessions ne décroissait jamais) — y compris les sessions des installeurs
+de schémas démo, qui restaient ouvertes après le boot et faisaient mentir
+USERENV (OS_USER='oracle' de l'installeur au lieu de l'utilisateur réel).
+**Correction :**
+- `OracleInstance` : registre des serveurs dédiés (`spawnServerProcess` /
+  `releaseServerProcess` / `getServerProcesses`), un par session, qui
+  publie `oracle.instance.server-process-started/stopped` sur le bus —
+  même mécanisme que les background processes. Teardown au SHUTDOWN
+  (PMON nettoie les serveurs dédiés).
+- `OracleDatabase.openSession` fork le serveur (bequeath/LOCAL=YES par
+  défaut, LOCAL=NO quand `transport='tcp'`) ; `closeSession` le libère et
+  est désormais appelé par `disconnect` (la fuite est colmatée).
+- `connect()` reçoit un paramètre `ConnectTransport` ; les sessions
+  db-link et le re-bind TNS de SQL*Plus le passent à `'tcp'`, le launch
+  `sqlplus user/pass@alias` aussi (via `setTransport`).
+- `OracleFilesystemSync` matérialise/retire ces process dans la table
+  `ps` du device (réutilisation du `registerProcess`/`unregisterProcess`
+  déjà câblé pour les background processes).
+- Nouveau `views/_processAddr.ts` : encodage d'adresse unique dérivé du
+  PID, partagé par V$PROCESS.ADDR et V$SESSION.PADDR (la jointure marche).
+  Les serveurs dédiés apparaissent dans V$PROCESS (PNAME/BACKGROUND null,
+  PROGRAM `oracle@SID`, comme le vrai 19c).
+- Les trois installeurs de schémas démo (HR, SCOTT, FCUBSLIVE) ferment
+  désormais leur session (`db.disconnect(sid)`) — un script one-shot
+  ne laisse pas de session immortelle.
+**Validation :** nouvelle suite `oracle-server-processes.test.ts` (8
+tests : bequeath visible en LOCAL=YES dans `ps`, disparition au disconnect,
+nettoyage au SHUTDOWN, ligne V$PROCESS du serveur dédié, jointure
+s.paddr=p.addr résolue, connexion `tcp` trackée LOCAL=NO en moteur et via
+`sqlplus@alias`, non-fuite de `getOpenSessions`) ; `unit/database/` :
+**2808/2808** (USERENV ajusté : OS_USER reflète le vrai utilisateur shell
+maintenant que la session de l'installeur ne fuite plus) ; `unit/terminal/`
++ `unit/shell/` + `debug/oracle/` : 910/910 ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

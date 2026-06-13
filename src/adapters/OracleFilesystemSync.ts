@@ -124,6 +124,21 @@ export class OracleFilesystemSync {
         dev.unregisterProcess(e.payload.pid);
       }),
 
+      // Dedicated server processes: one oracleSID (LOCAL=…) per user
+      // session, so `ps` agrees with V$PROCESS/V$SESSION while the
+      // session lives.
+      this.bus.subscribe('oracle.instance.server-process-started', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.registerProcess) return;
+        dev.registerProcess(e.payload.pid, 'oracle', e.payload.command);
+      }),
+
+      this.bus.subscribe('oracle.instance.server-process-stopped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.unregisterProcess) return;
+        dev.unregisterProcess(e.payload.pid);
+      }),
+
       this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
