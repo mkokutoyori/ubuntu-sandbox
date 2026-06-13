@@ -13,7 +13,7 @@ import type { DeviceType } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
-import { handleLsnrctl, handleTnsping } from '@/terminal/commands/OracleCommands';
+import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { HostCapableDevice } from '@/network';
 
 export class LinuxServer extends LinuxMachine {
@@ -86,6 +86,15 @@ export class LinuxServer extends LinuxMachine {
     this.executor._oracleTnsping = (args: string[]) => {
       const lines: string[] = [];
       handleTnsping(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
+    };
+    this.executor._oracleUtil = (cmd: string, args: string[]) => {
+      const handler = cmd === 'expdp' ? handleExpdp
+        : cmd === 'impdp' ? handleImpdp
+        : cmd === 'adrci' ? handleAdrci : null;
+      if (!handler) return null;
+      const lines: string[] = [];
+      handler(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
       return lines.join('\n');
     };
   }

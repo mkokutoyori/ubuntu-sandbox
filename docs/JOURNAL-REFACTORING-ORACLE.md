@@ -1545,6 +1545,25 @@ ligne. Les chemins SHUTDOWN/STARTUP/`/ as sysdba` restent inchangés.
 reste vert (1 est le vrai résultat) ; non-régression `unit/database/` +
 `unit/shell/` (3376) + SSH/LAN network-v2 (317) ; tsc + ESLint propres.
 
+### 2026-06-13 — `expdp`/`impdp`/`adrci` shell : vrais handlers, plus de stubs
+**Défaillance :** suite du chantier d'unification terminal ↔ shell.
+`expdp`/`impdp` n'étaient **même pas câblés** dans `LinuxCommandExecutor`
+(→ « command not found » via SSH/script), et `adrci` répondait
+« non-interactive batch mode not supported » — alors que le terminal
+interactif route vers les vrais handlers (Data Pump réel sur le VFS, adrci
+sur l'alert log). Un script DBA d'export/import via SSH échouait.
+**Correction :** nouveau hook générique `_oracleUtil(cmd, args)` dans
+l'exécuteur, branché sur `handleExpdp`/`handleImpdp`/`handleAdrci` (mêmes
+handlers que le terminal). Les cases `expdp`/`impdp`/`adrci` y délèguent
+(repli sur le message « interactif » uniquement sans hook) ; `dbca`/`orapwd`
+restent des stubs (vraiment interactifs).
+**Validation :** nouvelle suite `oracle-shell-datapump-adrci.test.ts` (3
+tests : expdp shell exporte réellement + dump sur le VFS, round-trip
+expdp→drop→impdp via shell, adrci shell lit l'alert log) ; les tests
+Data Pump existants (appel direct du handler) restent verts ;
+non-régression `unit/database/` + linux-oracle-tools (2929) ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

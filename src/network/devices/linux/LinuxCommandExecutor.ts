@@ -300,6 +300,8 @@ export class LinuxCommandExecutor {
   _oracleListener: ((args: string[]) => string) | null = null;
   /** Optional Oracle TNS hook — backs `tnsping`. */
   _oracleTnsping: ((args: string[]) => string) | null = null;
+  /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
+  _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
 
   constructor(
     isServer = false,
@@ -2541,9 +2543,20 @@ export class LinuxCommandExecutor {
           exitCode: target ? 1 : 0,
         };
       }
+      case 'expdp':
+      case 'impdp':
+      case 'adrci': {
+        if (this.isServer && this._oracleUtil) {
+          const output = this._oracleUtil(cmd, args);
+          if (output !== null) return { output, exitCode: /ORA-\d|error/i.test(output) ? 1 : 0 };
+        }
+        return {
+          output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
+          exitCode: 0,
+        };
+      }
       case 'dbca':
       case 'orapwd':
-      case 'adrci':
         return {
           output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
           exitCode: 0,
