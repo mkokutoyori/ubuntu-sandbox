@@ -1394,6 +1394,23 @@ PDB la fait apparaître, attemptConnect accepte une PDB ouverte et refuse un
 service inconnu, CLOSE la retire) ; non-régression `unit/database/` +
 `unit/terminal/` + `debug/oracle/` : 2832 + 394 verts ; tsc + ESLint propres.
 
+### 2026-06-13 — Services PDB cohérents listener ↔ dictionnaire
+**Défaillance :** suite directe de l'enregistrement des services PDB au
+listener. Les vues de services (V$ACTIVE_SERVICES, V$SERVICES,
+DBA_SERVICES), alimentées par `oracle.service.event`, ne recevaient un
+événement que pour `[SID, SYS$USERS, SYS$BACKGROUND]` — pas pour les PDB.
+Le listener annonçait donc ORCLPDB1 alors que le dictionnaire l'ignorait :
+nouvelle incohérence interne à fermer.
+**Correction :** `markOpen()` émet aussi un `service.event started` pour
+chaque PDB ouverte (la ORCLPDB1 seedée apparaît dès le boot) ;
+`execPluggableDatabase` émet `started`/`stopped` à l'OPEN/CLOSE/DROP d'une
+PDB via le nouveau `instance.publishPdbServiceEvent`. Listener, vues
+dynamiques et DBA_SERVICES racontent la même histoire.
+**Validation :** `oracle-listener-pdb-services.test.ts` étendu (8 tests,
++3 : ORCLPDB1 dans V$ACTIVE_SERVICES + DBA_SERVICES, OPEN ajoute le service,
+CLOSE le retire) ; non-régression `unit/database/` + `debug/oracle/` :
+**2849** verts ; `unit/terminal/` : 380 ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

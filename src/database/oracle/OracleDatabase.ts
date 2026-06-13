@@ -766,11 +766,20 @@ export class OracleDatabase implements SqlCommandHost {
       return emptyResult('Pluggable database created.');
     }
     if (stmt.operation === 'DROP') {
+      const wasOpen = this.instance.multitenant.findByName(name)?.openMode !== 'MOUNTED';
       this.instance.multitenant.dropPdb(name);
+      if (wasOpen) this.instance.publishPdbServiceEvent(name, 'stopped');
       return emptyResult('Pluggable database dropped.');
     }
-    if (stmt.openMode) this.instance.multitenant.openPdb(name, stmt.openMode);
-    else if (stmt.close) this.instance.multitenant.closePdb(name);
+    if (stmt.openMode) {
+      if (this.instance.multitenant.openPdb(name, stmt.openMode)) {
+        this.instance.publishPdbServiceEvent(name, 'started');
+      }
+    } else if (stmt.close) {
+      if (this.instance.multitenant.closePdb(name)) {
+        this.instance.publishPdbServiceEvent(name, 'stopped');
+      }
+    }
     return emptyResult('Pluggable database altered.');
   }
 

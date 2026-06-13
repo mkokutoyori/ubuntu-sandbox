@@ -42,3 +42,25 @@ describe('the listener registers a service per open PDB', () => {
     expect(db.instance.listener.attemptConnect('ORCLPDB1').ok).toBe(false);
   });
 });
+
+describe('the dictionary services agree with the listener', () => {
+  const names = (sql: string) =>
+    db.executeSql(sys(), sql).rows.map(r => String(r[0])).join('\n');
+
+  it('the seeded open PDB appears in V$ACTIVE_SERVICES and DBA_SERVICES', () => {
+    expect(names("SELECT name FROM v$active_services")).toContain('ORCLPDB1');
+    expect(names('SELECT name FROM dba_services')).toContain('ORCLPDB1');
+  });
+
+  it('opening a PDB adds its service to V$ACTIVE_SERVICES', () => {
+    run("CREATE PLUGGABLE DATABASE hrpdb ADMIN USER a IDENTIFIED BY p");
+    expect(names("SELECT name FROM v$active_services")).not.toContain('HRPDB');
+    run('ALTER PLUGGABLE DATABASE hrpdb OPEN');
+    expect(names("SELECT name FROM v$active_services")).toContain('HRPDB');
+  });
+
+  it('closing a PDB removes it from V$ACTIVE_SERVICES', () => {
+    run('ALTER PLUGGABLE DATABASE orclpdb1 CLOSE');
+    expect(names("SELECT name FROM v$active_services")).not.toContain('ORCLPDB1');
+  });
+});

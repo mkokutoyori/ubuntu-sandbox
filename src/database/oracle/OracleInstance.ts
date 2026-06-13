@@ -546,12 +546,23 @@ export class OracleInstance {
     this.performCheckpoint();
     this.logAlert('Database opened');
     this.ensureSchedulerSweep();
-    for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
+    const openPdbServices = this.multitenant.getAll()
+      .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
+      .map(p => p.name);
+    for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND', ...openPdbServices]) {
       this.getBus().publish({
         topic: 'oracle.service.event',
         payload: { ...this.ref(), name, kind: 'started' },
       });
     }
+  }
+
+  /** Publish a PDB service registration/deregistration (LREG), matching the listener. */
+  publishPdbServiceEvent(name: string, kind: 'started' | 'stopped'): void {
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: name.toUpperCase(), kind },
+    });
   }
 
   /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
