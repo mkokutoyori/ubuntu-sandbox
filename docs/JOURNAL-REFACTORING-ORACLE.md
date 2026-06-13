@@ -1470,6 +1470,23 @@ source, sinon VARCHAR2.
 tests via CTAS + DBA_TAB_COLUMNS : COUNT/SUM/AVG en NUMBER, colonne GROUP BY
 en VARCHAR2, MIN/MAX sur NUMBER en NUMBER) ; `unit/database/` : 2849 verts.
 
+### 2026-06-13 — ORDER BY en collation BINARY (NLS_SORT par défaut)
+**Défaillance :** le comparateur de chaînes `compareValues` retombait sur
+`String(a).localeCompare(String(b))` — un tri sensible à la locale, alors
+que le défaut d'Oracle est `NLS_SORT=BINARY` (ordre des octets). Un
+`ORDER BY` sur des chaînes à casse mixte rendait un ordre non conforme
+(localeCompare classe souvent 'apple' avant 'Banana' ; Oracle binaire met
+les majuscules avant les minuscules, ASCII). L'équivalence (=== 0) n'était
+pas affectée — seul le signe du tri l'était.
+**Correction :** comparaison binaire (`sa < sb ? -1 : sa > sb ? 1 : 0`),
+fidèle à NLS_SORT=BINARY. Au passage : purge de deux échappements de regex
+inutiles préexistants (`[\-/]` → `[-/]`).
+**Validation :** nouvelle suite `oracle-binary-sort.test.ts` (2 tests :
+majuscules avant minuscules, chiffres avant lettres) ; **zéro régression**
+sur `unit/database/` (2849) + `unit/terminal/` + `debug/oracle/` (394) — le
+test data Oracle étant majoritairement en majuscules, le changement est
+invisible ailleurs ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

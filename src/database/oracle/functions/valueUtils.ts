@@ -97,7 +97,7 @@ export function implicitToDate(val: CellValue): Date | null {
   if (val == null) return null;
   const s = String(val).trim();
   // Try DD-MON-YYYY or DD-MON-YY (Oracle default NLS_DATE_FORMAT)
-  const oraMatch = s.match(/^(\d{1,2})[\-/]([A-Za-z]{3})[\-/](\d{2,4})(?:\s+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?$/);
+  const oraMatch = s.match(/^(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{2,4})(?:\s+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?$/);
   if (oraMatch) {
     const mon = MONTHS_SHORT_INDEX[oraMatch[2].toUpperCase()];
     if (mon !== undefined) {
@@ -118,7 +118,8 @@ export function implicitToDate(val: CellValue): Date | null {
 
 /**
  * Oracle 3-way comparison: NULLs last in ASC, implicit string→Date and
- * string→number conversions, string collation otherwise.
+ * string→number conversions, BINARY string collation otherwise
+ * (NLS_SORT=BINARY, the default — byte order, not locale-aware).
  */
 export function compareValues(a: CellValue, b: CellValue): number {
   if (a === null && b === null) return 0;
@@ -145,5 +146,7 @@ export function compareValues(a: CellValue, b: CellValue): number {
     if (!isNaN(n)) return n - b;
   }
 
-  return String(a).localeCompare(String(b));
+  const sa = String(a);
+  const sb = String(b);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
 }
