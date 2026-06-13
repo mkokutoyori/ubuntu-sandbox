@@ -1658,6 +1658,25 @@ severity→departments qui ne « passait » que via le no-op) ; non-régression
 `unit/database/` + `unit/terminal/` (3263) + `debug/oracle/` (14) ; tsc +
 ESLint propres.
 
+### 2026-06-13 — ALTER TABLE MODIFY (col NOT NULL) enforce vraiment (+ bug parser typeless)
+**Défaillance :** double bug. (1) `MODIFY_COLUMN` ne posait que le flag
+`dataType.nullable=false`, jamais une contrainte NOT_NULL → non enforced.
+(2) Plus grave : `parseColumnDefinition` exigeait toujours un type, donc
+`MODIFY (name NOT NULL)` (sans type) lisait **'NOT' comme type** et 'NULL'
+comme contrainte — inversant le sens (NOT NULL devenait NULL) et corrompant
+le type de colonne en « NOT ».
+**Correction :**
+- Parser : le type devient optionnel quand un mot-clé de contrainte
+  (NOT/NULL/CONSTRAINT/UNIQUE/PRIMARY/CHECK/REFERENCES/DEFAULT) suit le nom
+  → `TypeSpec` vide ; le MODIFY executor n'écrase alors plus le type.
+- Executor : `MODIFY (col NOT NULL)` valide les lignes existantes
+  (ORA-02296 si NULL présent) puis ajoute une vraie contrainte NOT_NULL ;
+  `MODIFY (col NULL)` retire la contrainte.
+**Validation :** nouvelle suite `oracle-modify-not-null.test.ts` (3 tests :
+NULL rejeté après NOT NULL, ORA-02296 sur données existantes NULL, NULL
+relève la contrainte) ; non-régression parser + `unit/database/` +
+`unit/terminal/` (3266) + `debug/oracle/` (20) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

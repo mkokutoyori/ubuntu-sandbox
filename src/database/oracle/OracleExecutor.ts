@@ -2816,12 +2816,31 @@ export class OracleExecutor extends BaseExecutor {
         if (!meta) throw new OracleError(942, `table or view does not exist`);
         const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
         if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
-        // Update data type
-        existing.dataType = parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale);
-        // Apply NOT NULL from constraints
+        // Update data type (a typeless MODIFY — `(col NOT NULL)` — leaves it).
+        if (col.dataType.name) {
+          existing.dataType = parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale);
+        }
+        const colNameU = col.name.toUpperCase();
+        const colIdx = meta.columns.findIndex(c => c.name === colNameU);
+        // NOT NULL / NULL used to only flip the nullable flag (never
+        // enforced). Add/remove a real NOT_NULL constraint so INSERT
+        // actually checks it.
         for (const cc of col.constraints) {
           if (cc.constraintType === 'NOT_NULL') {
+            if (this.storage.getRows(schema, tableName).some(r => r[colIdx] === null)) {
+              throw new OracleError(2296, `cannot enable (${schema}.${colNameU}) - null values found`);
+            }
             existing.dataType = { ...existing.dataType, nullable: false };
+            if (!meta.constraints.some(c => c.type === 'NOT_NULL' && c.columns.includes(colNameU))) {
+              meta.constraints.push({
+                name: `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`,
+                type: 'NOT_NULL', columns: [colNameU],
+              });
+            }
+          } else if (cc.constraintType === 'NULL') {
+            existing.dataType = { ...existing.dataType, nullable: true };
+            meta.constraints = meta.constraints.filter(
+              c => !(c.type === 'NOT_NULL' && c.columns.includes(colNameU)));
           }
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {

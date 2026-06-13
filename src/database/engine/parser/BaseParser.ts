@@ -672,7 +672,16 @@ export abstract class BaseParser {
   protected parseColumnDefinition(): ColumnDefinition {
     const pos = this.current().position;
     const name = this.expectIdentifier();
-    const dataType = this.parseTypeSpec();
+    // ALTER TABLE MODIFY (col NOT NULL) carries no type — only a
+    // constraint change. A constraint keyword right after the name means
+    // there is no type to parse (otherwise 'NOT' would be read as one).
+    const typeless = this.checkKeyword('NOT') || this.checkKeyword('NULL')
+      || this.checkKeyword('CONSTRAINT') || this.checkKeyword('UNIQUE')
+      || this.checkKeyword('PRIMARY') || this.checkKeyword('CHECK')
+      || this.checkKeyword('REFERENCES') || this.checkKeyword('DEFAULT');
+    const dataType: TypeSpec = typeless
+      ? { type: 'TypeSpec', position: pos, name: '' }
+      : this.parseTypeSpec();
     let defaultValue: Expression | undefined;
     const constraints: ColumnConstraint[] = [];
 
