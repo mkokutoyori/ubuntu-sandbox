@@ -109,8 +109,15 @@ export class CiscoSwitch extends Switch {
     this.agents.startAll();
   }
 
-  private applyDot1xAuth(_portName: string, _authorized: boolean): void {
-    void _portName; void _authorized;
+  /**
+   * React to an 802.1X authorization change. When a port loses
+   * authorization, purge the MAC addresses it learned while authorized so a
+   * newly-blocked device cannot keep being reached through stale dynamic
+   * entries (real switches flush the port on de-authorization). Ingress
+   * enforcement itself is done by `isPortAuthorized` in handleFrame.
+   */
+  private applyDot1xAuth(portName: string, authorized: boolean): void {
+    if (!authorized) this.flushDynamicMacsOnPort(portName, 'dot1x-unauthorized');
   }
 
   private applyUdldErrDisable(portName: string): void {

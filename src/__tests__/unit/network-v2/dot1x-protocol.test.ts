@@ -277,6 +277,44 @@ describe('dot1x — held quiet-period timer (IEEE 802.1X §8.2)', () => {
   });
 });
 
+describe('dot1x — de-authorization flushes the port MAC table', () => {
+  it('an EAPOL-Logoff purges the dynamic MACs learned while authorized', () => {
+    const bus = new EventBus();
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    const sup = new CiscoSwitch('switch-cisco', 'SUP', 4);
+    sw.setEventBus(bus); sup.setEventBus(bus);
+    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, sup.getPort('FastEthernet0/0')!);
+    const ag = sw.getDot1xAgent();
+    ag.setSystemAuthControl(true);
+    ag.setPortMode('FastEthernet0/0', 'auto');
+    ag.addLocalUser('alice', 'wonderland');
+    const mac = sup.getPort('FastEthernet0/0')!.getMAC().toString();
+
+    sup.getPort('FastEthernet0/0')!.sendFrame(buildEapolStart(mac));
+    const rt = ag.getPortRuntime('FastEthernet0/0')!;
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'alice'));
+    expect(ag.isPortAuthorized('FastEthernet0/0')).toBe(true);
+
+    // Learn a dynamic MAC on the now-authorized port.
+    sup.getPort('FastEthernet0/0')!.sendFrame({
+      srcMAC: new MACAddress('00:de:ad:be:ef:01'),
+      dstMAC: MACAddress.broadcast(),
+      etherType: 0x0800, payload: undefined as never,
+    });
+    expect(sw.getMACTable().some((e) => e.mac === '00:de:ad:be:ef:01')).toBe(true);
+
+    // Logoff de-authorizes the port → its learned MACs are flushed.
+    const flushed: number[] = [];
+    bus.subscribe('switch.mac.flushed', (e) => flushed.push((e.payload as { count: number }).count));
+    sup.getPort('FastEthernet0/0')!.sendFrame(buildEapolLogoff(mac));
+
+    expect(ag.isPortAuthorized('FastEthernet0/0')).toBe(false);
+    expect(sw.getMACTable().some((e) => e.mac === '00:de:ad:be:ef:01')).toBe(false);
+    expect(flushed.reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+  });
+});
+
 describe('dot1x — port enforcement against data frames', () => {
   it('an unauthorized auto port silently drops non-EAPOL frames at the switch ingress', () => {
     const bus = new EventBus();

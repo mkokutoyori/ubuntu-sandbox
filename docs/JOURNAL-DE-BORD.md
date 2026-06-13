@@ -2503,3 +2503,39 @@ lint propre.
   Sa migration vers de vrais paquets ISAKMP UDP/500 est un chantier à
   part entière (analogue à BGP, mais plus volumineux), à planifier
   isolément. (DPD est déjà réel depuis l'entrée 17.)
+
+---
+
+## Entrée 35 — dot1x : la dé-autorisation purge la table MAC du port (hook mort réanimé)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §2.4)
+
+1. **Hook `applyDot1xAuth` mort.** `CiscoSwitch` câblait
+   `onDot1xPortAuthorized → applyDot1xAuth`, mais la méthode était un stub
+   vide (`void _portName; void _authorized;`). L'enforcement réel se fait
+   via `isPortAuthorized` à l'ingress ; le hook dédié ne faisait rien.
+
+### Correction (réanimation utile, réutilisation de l'existant)
+
+- `flushDynamicMacsOnPort` passe `private → protected` (déjà utilisé pour
+  link-down / err-disable).
+- `applyDot1xAuth(port, authorized)` : à la **dé-autorisation**, purge les
+  entrées MAC dynamiques apprises sur le port — un équipement qui perd son
+  autorisation 802.1X ne doit plus être joignable via des entrées
+  apprises périmées (comportement réel d'un commutateur). Aucune nouvelle
+  surface : on réutilise le mécanisme de flush existant et l'événement
+  `switch.mac.flushed`.
+
+### Fichiers
+
+- `src/network/devices/Switch.ts` (visibilité), `src/network/devices/CiscoSwitch.ts`
+- `src/__tests__/unit/network-v2/dot1x-protocol.test.ts` (+1 test)
+
+### Validation
+
+- `dot1x-protocol` : 14 tests verts (EAPOL-Logoff → port non autorisé →
+  MAC apprise purgée, événement `switch.mac.flushed` émis). `tsc` propre ;
+  lint : 4 `any` préexistants dans `Switch.ts` (hors de mes lignes,
+  vérifié par `git stash`), aucun introduit.

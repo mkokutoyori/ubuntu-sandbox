@@ -846,8 +846,9 @@ export abstract class Switch extends Equipment {
     });
   }
 
-  /** Purge dynamic entries learned on a port (link-down, err-disable). */
-  private flushDynamicMacsOnPort(portName: string, reason: string): void {
+  /** Purge dynamic entries learned on a port (link-down, err-disable,
+   *  802.1X de-authorization). */
+  protected flushDynamicMacsOnPort(portName: string, reason: string): void {
     let flushed = 0;
     for (const [key, entry] of this.macTable) {
       if (entry.port === portName && entry.type === 'dynamic') {
