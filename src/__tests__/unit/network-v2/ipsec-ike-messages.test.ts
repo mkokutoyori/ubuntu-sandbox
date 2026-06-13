@@ -1,9 +1,3 @@
-/**
- * IKE wire message vocabulary (UDP/500). Pure data + the structural guard
- * that distinguishes IKE negotiation messages from DPD notifies on the
- * same port. This is the foundation for moving IKE negotiation off
- * god-mode (direct peer-engine reads) onto real datagrams over the cable.
- */
 import { describe, it, expect } from 'vitest';
 import {
   isIkeMessage,
@@ -36,7 +30,7 @@ describe('IKE wire messages', () => {
     expect(isIkeMessage(reject)).toBe(true);
   });
 
-  it('isIkeMessage rejects DPD notifies and foreign payloads (same UDP/500)', () => {
+  it('isIkeMessage rejects DPD notifies and foreign payloads', () => {
     expect(isIkeMessage(dpd)).toBe(false);
     expect(isIkeMessage(null)).toBe(false);
     expect(isIkeMessage({ type: 'ike', step: 'hello' })).toBe(false);

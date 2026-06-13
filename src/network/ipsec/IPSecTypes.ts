@@ -188,17 +188,6 @@ export interface IsakmpDpdMessage {
   seq: number;
 }
 
-// ─── IKE negotiation messages on the wire (UDP/500) ──────────────────
-//
-// Real ISAKMP/IKE negotiation modelled as datagrams that traverse the
-// cable, replacing the god-mode peer-engine reads. Crypto is simulated, so
-// these carry the *decisions* a real exchange would reach: the initiator
-// proposes (Phase 1 policies + Phase 2 transforms + a PSK-derived proof +
-// its inbound SPI), and the responder selects from ITS OWN config and
-// replies — exactly what a Cisco IKE responder does. The synchronous cable
-// makes the offer→accept round-trip complete in one send (like DPD).
-
-/** One IKE Phase 1 (ISAKMP) policy proposal carried on the wire. */
 export interface IkePolicyProposal {
   priority: number;
   encryption: string;
@@ -208,52 +197,42 @@ export interface IkePolicyProposal {
   lifetime: number;
 }
 
-/** One IPSec Phase 2 transform-set proposal carried on the wire. */
 export interface IkeTransformProposal {
   name: string;
   transforms: string[];
   mode: 'tunnel' | 'transport';
 }
 
-/** Initiator → responder: combined Phase 1 + Phase 2 offer. */
 export interface IkeOfferMessage {
   type: 'ike';
   step: 'offer';
   version: 1 | 2;
   exchangeMode: 'main' | 'aggressive';
-  /** Initiator ISAKMP cookie (hex SPI). */
   initiatorSpi: string;
-  /** Initiator identity = its apparent source IP. */
   identity: string;
-  /** Deterministic PSK-derived proof so the responder can authenticate. */
   pskProof: string;
   policies: IkePolicyProposal[];
   transforms: IkeTransformProposal[];
   pfsGroup?: number;
   lifetimeSec: number;
   lifetimeKB: number;
-  /** Initiator's inbound IPSec SPI (responder uses it as outbound). */
   ipsecSpiIn: number;
   natTHint: boolean;
 }
 
-/** Responder → initiator: the selected parameters. */
 export interface IkeAcceptMessage {
   type: 'ike';
   step: 'accept';
-  /** Responder ISAKMP cookie (hex SPI). */
   responderSpi: string;
   pskProof: string;
   chosenPolicy: IkePolicyProposal;
   chosenTransform: IkeTransformProposal;
-  /** Responder's inbound IPSec SPI (initiator uses it as outbound). */
   ipsecSpiIn: number;
   lifetimeSec: number;
   lifetimeKB: number;
   natT: boolean;
 }
 
-/** Either direction: negotiation refused (no common policy/transform, PSK, …). */
 export interface IkeRejectMessage {
   type: 'ike';
   step: 'reject';
@@ -262,10 +241,8 @@ export interface IkeRejectMessage {
 
 export type IkeMessage = IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage;
 
-/** Any payload an IPSec engine exchanges on UDP/500. */
 export type IkeWirePayload = IsakmpDpdMessage | IkeMessage;
 
-/** Structural guard for an IKE negotiation message off the wire. */
 export function isIkeMessage(p: unknown): p is IkeMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; step?: unknown };
