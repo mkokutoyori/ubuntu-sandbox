@@ -209,15 +209,13 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 ### 2.7 Disparité Cisco/Huawei
 
-- **Constat** : `HuaweiSwitch` ne câble que trois agents protocolaires (LLDP, STP, LACP) alors que `CiscoSwitch` en câble dix (CDP, LLDP, DTP, STP, LACP, VTP, UDLD, IGMP-snooping, Syslog, dot1x). Or UDLD, IGMP-snooping, 802.1X et le port-security sont des fonctionnalités standards sur les commutateurs Huawei S-series réels (et VTP/DTP sont légitimement absents car propriétaires Cisco).
-- **Preuve** : `src/network/devices/HuaweiSwitch.ts:14-43` (3 agents seulement) vs `src/network/devices/CiscoSwitch.ts:39-108` (10 agents).
-- **Sévérité** : Majeure
-- **Recommandation** : Ajouter au minimum `UdldAgent`, `IgmpSnoopingAgent`, `Dot1xAgent` et `SyslogAgent` à `HuaweiSwitch` (le câblage est trivial vu le pattern `hostBase` déjà en place), et exposer les commandes `display`/`stp`/`dot1x` correspondantes côté `HuaweiSwitchShell`.
+- **Constat (origine)** : `HuaweiSwitch` ne câblait que LLDP/STP/LACP/IGMP-snooping, sans 802.1X.
+- **Sévérité** : Majeure.
+- **✅ CORRIGÉ (partiel)** (2026-06-13, entrée 41) : `Dot1xAgent` vendor-neutre câblé sur `HuaweiSwitch` (dispatch EAPOL, enforcement, purge MAC) + CLI Huawei `dot1x enable` / `dot1x port-control {auto|authorized-force|unauthorized-force}`. **UDLD volontairement écarté** : Huawei utilise DLDP (protocole distinct), pas UDLD — l'ajouter serait irréaliste. `SyslogAgent` non câblé (info-center déjà géré via le service de management) — reste possible.
 
-- **Constat** : Le mot-clé `port-security` apparaît uniquement comme entrée d'auto-complétion dans `HuaweiSwitchShell` (listes de complétion d'interface), sans aucun gestionnaire de commande associé — contrairement à Cisco où `port-security` dispose d'un sous-système complet (`PortSecurity`, `show port-security*`).
-- **Preuve** : `src/network/devices/shells/HuaweiSwitchShell.ts:762,1231` (apparaît seulement dans des tableaux de mots-clés de complétion `['loopback-detect', 'port-security', ...]`) ; aucune occurrence de `getSecurityService`/`PortSecurity` dans ce fichier.
-- **Sévérité** : Majeure
-- **Recommandation** : Implémenter `port-security` côté Huawei (la classe `PortSecurity`/`SwitchSecurityService` est déjà vendor-neutre dans `Switch.ts`) — actuellement la complétion Tab suggère une commande qui échoue ou ne fait rien à l'exécution, ce qui est trompeur pour l'utilisateur.
+- **Constat (origine)** : `port-security` Huawei n'apparaissait qu'en auto-complétion, sans gestionnaire (commande trompeuse).
+- **Sévérité** : Majeure.
+- **✅ CORRIGÉ** (2026-06-13, entrée 40) : commandes Huawei `port-security enable`/`max-mac-num`/`protect-action`/`mac-address sticky` câblées sur le `PortSecurity` vendor-neutre par port (le même que Cisco) ; `display port-security` rend l'état vivant ; le stub figé partagé a été supprimé.
 
 - **Constat** : Aucune suite de transcript "debug" Huawei n'exerce spanning-tree, LACP, CDP/LLDP, dot1x, VTP/DTP ou UDLD (`grep` sur `_huawei-suite.ts` et les fichiers `huawei-*.debug.test.ts` ne renvoie aucun résultat pour ces protocoles), alors que côté Cisco `cisco-stp-security.debug.test.ts` couvre au moins STP/sécurité.
 - **Preuve** : recherche vide dans `src/__tests__/debug/huawei/` pour les motifs `lacp|cdp|lldp|dot1x|vtp|dtp|udld|spanning-tree`.
