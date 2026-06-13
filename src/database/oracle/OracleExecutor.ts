@@ -2829,11 +2829,33 @@ export class OracleExecutor extends BaseExecutor {
     for (const action of stmt.actions) {
       if (action.action === 'ADD_COLUMN') {
         const col = action.column;
+        const colNameU = col.name.toUpperCase();
+        const meta = this.requireTableMeta(schema, tableName);
+        const notNull = col.constraints.some(c => c.constraintType === 'NOT_NULL');
+        const hasDefault = col.defaultValue !== undefined;
+        // NOT NULL without a default needs an empty table (ORA-01758) —
+        // existing rows would otherwise violate the new constraint.
+        if (notNull && !hasDefault && this.storage.getRows(schema, tableName).length > 0) {
+          throw new OracleError(1758, 'table must be empty to add mandatory (NOT NULL) column');
+        }
+        // The DEFAULT fills existing rows once (evaluated now) and is kept
+        // as an expression for future per-row inserts.
+        const defaultVal = hasDefault
+          ? this.evaluateExpression(col.defaultValue as Expression, [], []) as CellValue
+          : undefined;
         this.storage.addColumn(schema, tableName, {
-          name: col.name.toUpperCase(),
+          name: colNameU,
           dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
-          ordinalPosition: this.storage.getTableMeta(schema, tableName)!.columns.length,
+          ordinalPosition: meta.columns.length,
+          defaultValue: defaultVal,
+          defaultExpr: col.defaultValue,
         });
+        if (notNull) {
+          meta.constraints.push({
+            name: `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`,
+            type: 'NOT_NULL', columns: [colNameU],
+          });
+        }
       } else if (action.action === 'MODIFY_COLUMN') {
         const col = action.column;
         const meta = this.storage.getTableMeta(schema, tableName);

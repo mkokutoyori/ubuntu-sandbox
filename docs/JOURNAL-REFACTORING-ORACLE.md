@@ -1699,6 +1699,21 @@ préservé, DEFAULT SYSDATE par ligne, NOT NULL+DEFAULT) ; non-régression
 parser + `unit/database/` (2888) + `unit/terminal/` (380) ; tsc + ESLint
 propres.
 
+### 2026-06-13 — ALTER TABLE ADD COLUMN : DEFAULT et NOT NULL effectifs
+**Défaillance :** suite du bug DEFAULT. `ADD_COLUMN` construisait la
+ColumnMeta sans `defaultValue` ni `defaultExpr` ni contrainte — donc
+`ALTER TABLE t ADD (col DEFAULT x)` laissait les lignes existantes à NULL,
+n'appliquait pas le défaut aux futurs INSERT, et un `ADD (col NOT NULL)`
+n'était pas enforced.
+**Correction :** `ADD_COLUMN` évalue le DEFAULT une fois (remplit les
+lignes existantes), conserve l'AST (`defaultExpr`) pour l'évaluation
+par-ligne des futurs INSERT, ajoute la contrainte NOT_NULL, et lève
+ORA-01758 pour un `NOT NULL` sans défaut sur table non vide.
+**Validation :** nouvelle suite `oracle-add-column-default.test.ts` (4
+tests : backfill des lignes existantes, défaut sur nouvel INSERT, NOT NULL
++ DEFAULT, ORA-01758) ; non-régression `unit/database/` (2891) +
+`unit/terminal/` + `debug/oracle/` (394) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
