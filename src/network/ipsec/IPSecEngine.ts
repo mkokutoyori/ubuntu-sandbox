@@ -27,7 +27,7 @@ import {
   IkeMessage, IkeOfferMessage, IkeAcceptMessage,
   IkePolicyProposal, IkeTransformProposal,
   IkeV2ProposalWire, IkeV2Chosen,
-  isIkeMessage,
+  GdoiMessage, isIkeMessage, isGdoiMessage,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -1209,6 +1209,10 @@ export class IPSecEngine implements IProtocolEngine {
       this.handleIkeMessage(srcIp, ipPkt.destinationIP.toString(), payload);
       return;
     }
+    if (isGdoiMessage(payload)) {
+      this.handleGdoiMessage(payload);
+      return;
+    }
     const msg = payload as IsakmpDpdMessage | undefined;
     if (!msg || msg.type !== 'isakmp-dpd') return;
 
@@ -1357,22 +1361,7 @@ export class IPSecEngine implements IProtocolEngine {
     };
     this.ikeSADB.set(peerIP, newSA);
 
-    // Rekey on peer side too
-    const peerRouter = IPSecEngine.findRouterByIP(peerIP);
-    if (peerRouter) {
-      const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
-      const peerSA = peerEngine?.ikeSADB.get(oldSA.localIP);
-      if (peerEngine && peerSA) {
-        const newPeerSA: IKE_SA = {
-          ...peerSA,
-          spi: spiHex(randomSPI()),
-          created: Date.now(),
-          lastDPDActivity: Date.now(),
-          dpdTimeouts: 0,
-        };
-        peerEngine.ikeSADB.set(oldSA.localIP, newPeerSA);
-      }
-    }
+    this.router._sendIkeUdp(peerIP, { type: 'ike', step: 'rekey' });
 
     Logger.info(this.router.id, 'ipsec:rekey-ike',
       `${this.router.name}: IKE SA with ${peerIP} rekeyed successfully`);
@@ -1568,14 +1557,7 @@ export class IPSecEngine implements IProtocolEngine {
         msa.receivers.push(receiverIP);
       }
 
-      // Install the SA on the receiver's engine so it can decapsulate
-      const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
-      if (receiverRouter) {
-        const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
-        if (receiverEngine) {
-          receiverEngine.installMulticastReceiverSA(msa);
-        }
-      }
+      this.router._sendIkeUdp(receiverIP, { type: 'gdoi', op: 'install', msa });
     }
 
     if (this.debugIpsec) {
@@ -1596,15 +1578,7 @@ export class IPSecEngine implements IProtocolEngine {
       const msa = this.multicastSADB.get(key);
       if (!msa) continue;
       msa.receivers = msa.receivers.filter(r => r !== receiverIP);
-
-      // Remove from receiver's engine
-      const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
-      if (receiverRouter) {
-        const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
-        if (receiverEngine) {
-          receiverEngine.removeMulticastReceiverSA(msa.spi, groupAddress);
-        }
-      }
+      this.router._sendIkeUdp(receiverIP, { type: 'gdoi', op: 'remove', spi: msa.spi, groupAddress });
     }
     return true;
   }
@@ -1662,15 +1636,8 @@ export class IPSecEngine implements IProtocolEngine {
       const msa = this.multicastSADB.get(key);
       if (!msa) continue;
 
-      // Remove from all receivers
       for (const receiverIP of msa.receivers) {
-        const receiverRouter = IPSecEngine.findRouterByIP(receiverIP);
-        if (receiverRouter) {
-          const receiverEngine = (receiverRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
-          if (receiverEngine) {
-            receiverEngine.removeMulticastReceiverSA(msa.spi, groupAddress);
-          }
-        }
+        this.router._sendIkeUdp(receiverIP, { type: 'gdoi', op: 'remove', spi: msa.spi, groupAddress });
       }
 
       this.multicastSADB.delete(key);
@@ -2873,6 +2840,21 @@ export class IPSecEngine implements IProtocolEngine {
     if (msg.step === 'offer') this.handleIkeOffer(srcIp, dstIp, msg);
     else if (msg.step === 'accept') this.handleIkeAccept(srcIp, msg);
     else if (msg.step === 'reject') this.createFailedIKESA(srcIp, '', msg.reason);
+    else if (msg.step === 'rekey') this.refreshIkeSAFromWire(srcIp);
+  }
+
+  private refreshIkeSAFromWire(srcIp: string): void {
+    const sa = this.ikeSADB.get(srcIp);
+    if (!sa) return;
+    sa.spi = spiHex(randomSPI());
+    sa.created = Date.now();
+    sa.lastDPDActivity = Date.now();
+    sa.dpdTimeouts = 0;
+  }
+
+  private handleGdoiMessage(msg: GdoiMessage): void {
+    if (msg.op === 'install') this.installMulticastReceiverSA(msg.msa);
+    else this.removeMulticastReceiverSA(msg.spi, msg.groupAddress);
   }
 
   private handleIkeOffer(srcIp: string, dstIp: string, offer: IkeOfferMessage): void {

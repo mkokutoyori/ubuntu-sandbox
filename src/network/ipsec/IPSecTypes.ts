@@ -257,15 +257,42 @@ export interface IkeRejectMessage {
   reason: string;
 }
 
-export type IkeMessage = IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage;
+export interface IkeRekeyMessage {
+  type: 'ike';
+  step: 'rekey';
+}
 
-export type IkeWirePayload = IsakmpDpdMessage | IkeMessage;
+export type IkeMessage =
+  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage;
+
+export interface GdoiGroupSaInstall {
+  type: 'gdoi';
+  op: 'install';
+  msa: MulticastIPSecSA;
+}
+
+export interface GdoiGroupSaRemove {
+  type: 'gdoi';
+  op: 'remove';
+  spi: number;
+  groupAddress: string;
+}
+
+export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove;
+
+export function isGdoiMessage(p: unknown): p is GdoiMessage {
+  if (!p || typeof p !== 'object') return false;
+  const c = p as { type?: unknown; op?: unknown };
+  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove');
+}
+
+export type IkeWirePayload = IsakmpDpdMessage | IkeMessage | GdoiMessage;
 
 export function isIkeMessage(p: unknown): p is IkeMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; step?: unknown };
   return c.type === 'ike'
-    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject');
+    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey');
 }
 
 export interface IKEv2_SA {

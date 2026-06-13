@@ -2679,3 +2679,53 @@ locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
 - Rekey IKE/IPSec (`rekeyIKESA` écrit le `ikeSADB` du pair) et install/
   retrait des SA multicast (`peerEngine.installMulticastReceiverSA`…)
   encore god-mode — dernier volet.
+
+---
+
+## Entrée 39 — IPSec : rekey et distribution de SA multicast sur le câble (god-mode SA éliminé)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §4.14, volet D — dernier god-mode SA)
+
+1. **Rekey god-mode** : `rekeyIKESA` rafraîchissait le SPI/timestamp de la
+   SA IKE locale puis **écrivait directement** la SA du pair
+   (`peerEngine.ikeSADB.set`).
+2. **Distribution de SA multicast god-mode** : `addMulticastReceiver` /
+   `removeMulticastReceiver` / `clearMulticastSAs` installaient/retiraient
+   la Group SA sur le moteur de chaque récepteur via `findRouterByIP` +
+   `receiverEngine.installMulticastReceiverSA` (modèle GETVPN/GDOI).
+
+### Correction (sur le câble, réalisme préservé)
+
+- **Rekey** : la SA locale est rafraîchie puis un message `ike`
+  step `rekey` est émis (`_sendIkeUdp`) ; le pair rafraîchit SA PROPRE
+  SA à la réception (`refreshIkeSAFromWire`). Plus d'écriture croisée.
+- **Multicast (GDOI sur UDP/500)** : nouveau message `gdoi`
+  (install/remove) portant la `MulticastIPSecSA` ; le serveur de groupe
+  pousse la SA à chaque récepteur via `_sendIkeUdp(receiverIP, …)`, et le
+  récepteur l'installe dans SON propre `multicastSADB`
+  (`handleGdoiMessage`). `installMulticastReceiverSA`/
+  `removeMulticastReceiverSA` ne sont plus appelés en reaching-in mais par
+  le handler filaire du récepteur.
+
+### État final du chantier IPSec
+
+- **Aucune écriture/lecture out-of-bande de SA du pair** : toute la
+  machine d'état IPSec (négociation IKEv1/IKEv2, rekey, distribution
+  multicast) communique par de vrais datagrammes UDP/500 sur le câble,
+  exactement comme DPD (entrée 17). Les seuls `findRouterByIP` restants
+  sont des **introspections topologiques en lecture seule** (sélection de
+  pair joignable, détection NAT pour l'apparent-source) — pas de
+  communication protocolaire hors-bande.
+
+### Fichiers
+
+- `src/network/ipsec/IPSecTypes.ts`, `src/network/ipsec/IPSecEngine.ts`
+
+### Validation
+
+- IPSec/VPN/parité : 250 tests verts.
+- Non-régression : **network-v2 complet — 7041 tests verts**. `tsc`
+  propre ; aucun `any` introduit ; aucune écriture de SA pair god-mode
+  restante (vérifié par grep).
