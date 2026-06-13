@@ -1487,6 +1487,22 @@ sur `unit/database/` (2849) + `unit/terminal/` + `debug/oracle/` (394) — le
 test data Oracle étant majoritairement en majuscules, le changement est
 invisible ailleurs ; tsc + ESLint propres.
 
+### 2026-06-13 — `top` lit la mémoire vivante (cohérent avec `free`, voit la SGA)
+**Défaillance :** la ligne mémoire de `top` (`MiB Mem`) utilisait des
+valeurs **codées en dur** (3981/1258/1468/1254), déconnectées du
+`MemoryProfile` que `free` et `/proc/meminfo` lisent — `top` et `free`
+pouvaient déjà se contredire, et `top` ignorait la réservation SGA
+ajoutée juste avant.
+**Correction :** `ProcessCmdContext` reçoit le `MemoryProfile` du device
+(même source que `free`) ; `top` calcule total/used/free/buff-cache en MiB
+depuis lui (repli sur les anciennes constantes si absent).
+**Validation :** nouvelle suite `oracle-top-memory-coherence.test.ts` (2
+tests : `top` et `free` d'accord sur total/used/free, la SGA fait monter
+`top` used de ~512M puis redescend à SHUTDOWN) ; non-régression
+process/hardware network-v2 (60) ; tsc propre (les 3 erreurs ESLint
+`no-duplicate-case` de LinuxCommandExecutor.ts sont préexistantes et hors
+périmètre).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

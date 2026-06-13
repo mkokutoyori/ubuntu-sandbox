@@ -1116,6 +1116,7 @@ export class LinuxCommandExecutor {
       shellPid: this.shellPid,
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
+      memory: this.hardware.memory,
     };
   }
 
