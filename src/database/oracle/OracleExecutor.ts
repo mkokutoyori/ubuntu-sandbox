@@ -1542,6 +1542,26 @@ export class OracleExecutor extends BaseExecutor {
     return Array.from(groupMap.values());
   }
 
+  private inferGroupedColumnType(
+    expr: Expression,
+    columns: StorageColMeta[],
+  ): import('../engine/catalog/DataType').ColumnDataType {
+    const colType = (name: string) =>
+      columns.find(c => c.name.toUpperCase() === name.toUpperCase())?.dataType;
+    if (expr.type === 'FunctionCall') {
+      const fn = expr.name.toUpperCase();
+      if (fn === 'COUNT' || fn === 'SUM' || fn === 'AVG') return parseOracleType('NUMBER');
+      if (fn === 'MIN' || fn === 'MAX') {
+        const arg = expr.args[0];
+        if (arg?.type === 'Identifier') return colType(arg.name) ?? parseOracleType('VARCHAR2', 4000);
+      }
+    }
+    if (expr.type === 'Identifier') {
+      return colType(expr.name) ?? parseOracleType('VARCHAR2', 4000);
+    }
+    return parseOracleType('VARCHAR2', 4000);
+  }
+
   private projectGroupedRows(
     groups: { key: CellValue[]; rows: StorageRow[] }[],
     columns: StorageColMeta[],
@@ -1553,7 +1573,7 @@ export class OracleExecutor extends BaseExecutor {
     // Build column metadata from first call
     for (const item of stmt.columns) {
       const name = item.alias || this.exprToString(item.expr);
-      resultColumns.push({ name, dataType: parseOracleType('VARCHAR2') });
+      resultColumns.push({ name, dataType: this.inferGroupedColumnType(item.expr, columns) });
     }
 
     for (const group of groups) {

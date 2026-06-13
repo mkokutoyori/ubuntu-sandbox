@@ -1457,6 +1457,19 @@ réussite en OPEN, ALTER DATABASE OPEN toujours permis depuis MOUNT) ;
 non-régression `unit/database/` 2840 + `unit/terminal/` + `debug/oracle/` +
 `debug/rman/` 399 ; tsc + ESLint propres.
 
+### 2026-06-13 — Type des colonnes d'agrégats (GROUP BY) inféré, plus VARCHAR2
+**Défaillance :** `projectGroupedRows` typait **toutes** les colonnes d'une
+requête GROUP BY en VARCHAR2, quel que soit l'agrégat. Conséquence visible :
+un CTAS depuis une requête groupée (`CREATE TABLE t AS SELECT dept,
+COUNT(*) … GROUP BY dept`) créait des colonnes VARCHAR2 là où Oracle donne
+NUMBER, et la métadonnée de colonne mentait dans DBA_TAB_COLUMNS.
+**Correction :** `inferGroupedColumnType` — COUNT/SUM/AVG → NUMBER,
+MIN/MAX → type de la colonne argument, colonne de GROUP BY → son type
+source, sinon VARCHAR2.
+**Validation :** nouvelle suite `oracle-grouped-column-types.test.ts` (3
+tests via CTAS + DBA_TAB_COLUMNS : COUNT/SUM/AVG en NUMBER, colonne GROUP BY
+en VARCHAR2, MIN/MAX sur NUMBER en NUMBER) ; `unit/database/` : 2849 verts.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
