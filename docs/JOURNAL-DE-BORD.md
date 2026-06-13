@@ -2554,3 +2554,73 @@ supprimés du type et du constructeur par défaut. La config dot1x ne
 décrit plus que ce qui est réellement supporté (modes de port, users
 locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
 `tsc` propre ; `dot1x-protocol` 14 tests verts.
+
+---
+
+## Entrée 37 — IPSec : la négociation IKEv1 passe par de vrais paquets UDP/500 (backlog IPSec, volet IKEv1)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §4.14)
+
+1. **Négociation god-mode.** `negotiateTunnel` → `negotiateIKEv1` →
+   `negotiateIPSecSA` atteignaient directement le moteur du pair via
+   `findRouterByIP` + `_getIPSecEngineInternal()` : lecture de ses
+   politiques ISAKMP, de sa PSK, de ses transform-sets, puis **écriture
+   synchrone dans son `ikeSADB`/`ipsecSADB`**. Aucun paquet ISAKMP ne
+   traversait le réseau pour l'établissement (seul le DPD était sur le
+   fil depuis l'entrée 17). Dernier plan de contrôle hors-bande.
+
+### Correction (migration sur le câble, calquée sur BGP/DPD)
+
+- **Vocabulaire de messages** (entrée précédente) : `IkeMessage`
+  (offer/accept/reject) transportant les décisions d'un vrai échange.
+- **Initiateur** (`initiateIKEv1Wire`) : construit l'offre depuis SA
+  PROPRE config (politiques Phase 1, transform-sets Phase 2, preuve
+  dérivée de la PSK, SPI entrant, sélecteurs de trafic, PFS, lifetimes),
+  l'émet via `router._sendIkeUdp(peerIP, offer)` (UDP/500 réel à travers
+  la FIB), puis lit le résultat — la livraison câble étant synchrone,
+  l'accept du répondeur a déjà installé la SA quand l'envoi retourne.
+- **Répondeur** (`handleIkeOffer`, branché dans `handleIkeUdp`) : décide
+  depuis SA PROPRE config — sélection de politique, vérification de la
+  preuve PSK, sélection du transform-set préféré commun (ordre de l'offre),
+  contrôle PFS, négociation de lifetime min — installe SES SA (IKE +
+  IPSec, QM_IDLE) et répond `accept` (ou `reject`). KEYMAT dérivé d'une
+  graine symétrique (PSK + SPIs triés + transforms) ⇒ clés identiques des
+  deux côtés sans échange de clé.
+- **NAT-T réel sans `findRouterBehindNAT`** : l'offre porte la
+  destination adressée ; le répondeur détecte qu'il est derrière un NAT
+  quand la destination reçue (DNAT) diffère de la destination adressée
+  (ou la source de la source NAT-D), et l'annonce dans l'accept.
+- **god-mode supprimé pour IKEv1** : `negotiateIKEv1` (méthode morte)
+  retirée ; `negotiateTunnel` route IKEv1 → wire, IKEv2 conserve son
+  chemin god-mode (volet suivant). `findRouterByIP`/`peerEngine` n'est
+  plus utilisé que par IKEv2 et le rekey/multicast (volets C/D).
+
+### Comportements réels gagnés
+
+- Établissement IKEv1 PSK (main/aggressive) + Quick Mode sur de vrais
+  datagrammes UDP/500 ; SA QM_IDLE des deux côtés, plan de données ESP
+  fonctionnel (compteurs encaps/decaps exacts), traversée d'un vrai NAT
+  pour NAT-T. Échec honnête (pas de politique/transform/PSK communs →
+  reject sur le fil → pas de SA fabriquée).
+
+### Fichiers
+
+- `src/network/ipsec/IPSecTypes.ts`, `src/network/ipsec/IPSecEngine.ts`
+- `src/__tests__/unit/network-v2/ipsec-ike-messages.test.ts` (3)
+
+### Validation
+
+- IPSec/VPN/GRE/parité : 263 tests verts (ikev1-psk, ikev2-psk,
+  modes-pfs, algorithms, failures, esp-confidentiality, esp-icv, advanced,
+  dpd-wire, nat-dpd, wan-vpn, huawei-ospf-ipsec-parity, gre).
+- Non-régression : **network-v2 complet — 305 fichiers / 7041 tests
+  verts**. `tsc` propre ; lint : aucun `any` introduit (58 → 56, la
+  méthode morte retirée).
+
+### Reste (volets suivants documentés)
+
+- **IKEv2** (`negotiateIKEv2`) encore god-mode — volet C.
+- **Rekey IKE/IPSec** et **install SA multicast** sur le pair encore
+  god-mode (`peerEngine.ikeSADB/ipsecSADB`, multicastSADB) — volet D.

@@ -210,6 +210,7 @@ export interface IkeOfferMessage {
   exchangeMode: 'main' | 'aggressive';
   initiatorSpi: string;
   identity: string;
+  destination: string;
   pskProof: string;
   policies: IkePolicyProposal[];
   transforms: IkeTransformProposal[];
@@ -228,6 +229,7 @@ export interface IkeAcceptMessage {
   chosenPolicy: IkePolicyProposal;
   chosenTransform: IkeTransformProposal;
   ipsecSpiIn: number;
+  ikeLifetimeSec: number;
   lifetimeSec: number;
   lifetimeKB: number;
   natT: boolean;

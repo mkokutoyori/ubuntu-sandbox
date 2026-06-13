@@ -24,6 +24,9 @@ import {
   SecurityPolicy, SPDAction, SPDDirection,
   SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
   MulticastIPSecSA,
+  IkeMessage, IkeOfferMessage, IkeAcceptMessage,
+  IkePolicyProposal, IkeTransformProposal,
+  isIkeMessage,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -463,6 +466,10 @@ export class IPSecEngine implements IProtocolEngine {
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
+  private pendingIke = new Map<string, {
+    entry: CryptoMapEntry; egressIface: string; localIP: string;
+    apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
+  }>();
   private natKeepaliveInterval: number = 0;
   private dpdConfig: DPDConfig | null = null;
   private globalSALifetimeSeconds: number = 3600;
@@ -1195,9 +1202,14 @@ export class IPSecEngine implements IProtocolEngine {
 
   /** ISAKMP on UDP 500 — DPD R-U-THERE/ACK notifies (RFC 3706). */
   handleIkeUdp(_inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
-    const msg = udp.payload as IsakmpDpdMessage | undefined;
-    if (!msg || msg.type !== 'isakmp-dpd') return;
+    const payload = udp.payload;
     const srcIp = ipPkt.sourceIP.toString();
+    if (isIkeMessage(payload)) {
+      this.handleIkeMessage(srcIp, ipPkt.destinationIP.toString(), payload);
+      return;
+    }
+    const msg = payload as IsakmpDpdMessage | undefined;
+    if (!msg || msg.type !== 'isakmp-dpd') return;
 
     if (msg.notify === 'R-U-THERE') {
       const sa = this.ikeSADB.get(srcIp);
@@ -2732,6 +2744,255 @@ export class IPSecEngine implements IProtocolEngine {
    * Initiate IKEv1/IKEv2 tunnel establishment with a peer.
    * Synchronous — completes immediately by directly calling the peer's engine.
    */
+  private ikePskProof(psk: string): string {
+    if (!psk) return '';
+    let h = 0;
+    for (let i = 0; i < psk.length; i++) h = (h * 31 + psk.charCodeAt(i)) >>> 0;
+    return `psk-${h.toString(16)}`;
+  }
+
+  private buildIkeSAStruct(p: {
+    peerIP: string; localIP: string; role: 'initiator' | 'responder';
+    policy: IkePolicyProposal; lifetime: number; natT: boolean;
+    exchangeMode: 'main' | 'aggressive';
+  }): IKE_SA {
+    const now = Date.now();
+    return {
+      peerIP: p.peerIP, localIP: p.localIP, status: 'QM_IDLE',
+      encryption: p.policy.encryption, hash: p.policy.hash, group: p.policy.group,
+      lifetime: p.lifetime, created: now, spi: spiHex(randomSPI()), role: p.role,
+      natT: p.natT, dpdEnabled: this.dpdConfig !== null,
+      lastDPDActivity: now, dpdTimeouts: 0, exchangeMode: p.exchangeMode,
+    };
+  }
+
+  private buildIpsecSAStruct(p: {
+    peerIP: string; localIP: string; spiIn: number; spiOut: number;
+    cryptoKeys: SACryptoKeys; lifetime: number; lifetimeKB: number;
+    mode: 'Tunnel' | 'Transport'; trafficSelectors: SATrafficSelector[];
+    transforms: string[]; aclName: string; pfsGroup?: number; natT: boolean;
+    outIface: string; hasESP: boolean; hasAH: boolean;
+  }): IPSec_SA {
+    const now = Date.now();
+    const overhead = p.mode === 'Tunnel'
+      ? computeIPSecOverhead(p.hasESP, p.hasAH)
+      : (p.hasESP ? ESP_OVERHEAD_BASE : 0) + (p.hasAH ? AH_OVERHEAD_BASE : 0);
+    const pathMTU = DEFAULT_PATH_MTU;
+    return {
+      peerIP: p.peerIP, localIP: p.localIP, spiIn: p.spiIn, spiOut: p.spiOut,
+      outboundSeqNum: 0, seqOverflowFlag: true,
+      replayWindowSize: this.replayWindowSize,
+      replayBitmap: createReplayBitmap(this.replayWindowSize),
+      replayWindowLastSeq: 0, esnEnabled: this.esnDefault,
+      outboundSeqNumHigh: 0, replayWindowLastSeqHigh: 0,
+      cryptoKeys: p.cryptoKeys, created: now,
+      lifetime: p.lifetime, lifetimeKB: p.lifetimeKB,
+      mode: p.mode, trafficSelectors: p.trafficSelectors,
+      statefulFragCheck: p.mode === 'Tunnel',
+      dfBitPolicy: 'copy', dscpEcnConfig: defaultDscpEcnConfig(),
+      pathMTU, ipMTU: pathMTU - overhead, pathMTULastUpdated: now,
+      transforms: p.transforms, aclName: p.aclName,
+      pktsEncaps: 0, pktsDecaps: 0, sendErrors: 0, recvErrors: 0,
+      pktsReplay: 0, bytesEncaps: 0, bytesDecaps: 0,
+      pfsGroup: p.pfsGroup, natT: p.natT, outIface: p.outIface,
+      hasESP: p.hasESP, hasAH: p.hasAH,
+    };
+  }
+
+  private installIpsecSALocal(peerKey: string, sa: IPSec_SA): void {
+    const existing = this.ipsecSADB.get(peerKey) || [];
+    for (const oldSa of existing) this.spiToSA.delete(oldSa.spiIn);
+    this.ipsecSADB.set(peerKey, [sa]);
+    this.spiToSA.set(sa.spiIn, sa);
+    this.getBus().publish({
+      topic: 'ipsec.sa.installed',
+      payload: {
+        ...this.deviceRef(),
+        peerIp: peerKey, spiInbound: sa.spiIn, spiOutbound: sa.spiOut,
+        protocol: sa.hasESP ? 'esp' : 'ah',
+        mode: sa.mode === 'Tunnel' ? 'tunnel' : 'transport',
+        encryption: String(sa.encryption ?? ''),
+        integrity: String(sa.authentication ?? ''),
+        lifetimeSec: sa.lifetime, lifetimeKB: sa.lifetimeKB,
+      },
+    });
+  }
+
+  private rejectIke(destIp: string, reason: string): void {
+    this.router._sendIkeUdp(destIp, { type: 'ike', step: 'reject', reason });
+  }
+
+  private initiateIKEv1Wire(
+    peerIP: string, entry: CryptoMapEntry,
+    localIP: string, apparentSrcIP: string, egressIface: string,
+  ): boolean {
+    const policies: IkePolicyProposal[] = [...this.isakmpPolicies.values()]
+      .sort((a, b) => a.priority - b.priority)
+      .map((p) => ({ priority: p.priority, encryption: p.encryption, hash: p.hash, group: p.group, auth: p.auth, lifetime: p.lifetime }));
+    const transforms: IkeTransformProposal[] = entry.transformSets
+      .map((n) => this.transformSets.get(n))
+      .filter(Boolean)
+      .map((t) => ({ name: t!.name, transforms: t!.transforms, mode: t!.mode }));
+    if (policies.length === 0 || transforms.length === 0) {
+      this.createFailedIKESA(peerIP, egressIface, 'No local policy/transform');
+      return false;
+    }
+    const myPSK = this.preSharedKeys.get(peerIP) || this.preSharedKeys.get('0.0.0.0') || '';
+    const spiInitIn = randomSPI();
+    const offer: IkeOfferMessage = {
+      type: 'ike', step: 'offer', version: 1,
+      exchangeMode: this.aggressiveMode ? 'aggressive' : 'main',
+      initiatorSpi: spiHex(randomSPI()), identity: apparentSrcIP,
+      destination: peerIP,
+      pskProof: this.ikePskProof(myPSK),
+      policies, transforms, pfsGroup: entry.pfsGroup,
+      lifetimeSec: entry.saLifetimeSeconds ?? this.globalSALifetimeSeconds,
+      lifetimeKB: this.globalSALifetimeKB,
+      ipsecSpiIn: spiInitIn,
+      natTHint: apparentSrcIP !== localIP,
+    };
+    this.pendingIke.set(peerIP, { entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer });
+    this.router._sendIkeUdp(peerIP, offer);
+    this.pendingIke.delete(peerIP);
+    const ike = this.ikeSADB.get(peerIP);
+    if (ike && ike.status === 'QM_IDLE') return true;
+    this.createFailedIKESA(peerIP, egressIface, 'IKE negotiation failed');
+    return false;
+  }
+
+  private handleIkeMessage(srcIp: string, dstIp: string, msg: IkeMessage): void {
+    if (msg.step === 'offer') this.handleIkeOffer(srcIp, dstIp, msg);
+    else if (msg.step === 'accept') this.handleIkeAccept(srcIp, msg);
+    else if (msg.step === 'reject') this.createFailedIKESA(srcIp, '', msg.reason);
+  }
+
+  private handleIkeOffer(srcIp: string, dstIp: string, offer: IkeOfferMessage): void {
+    if (this.ifaceCryptoMap.size === 0 && this.tunnelProtection.size === 0) return;
+
+    const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
+    let chosenPolicy: IkePolicyProposal | null = null;
+    let ikeLifetime = 0;
+    for (const mp of myPolicies) {
+      for (const off of offer.policies) {
+        if (this.policiesCompatible(mp, { priority: off.priority, encryption: off.encryption, hash: off.hash, auth: off.auth, group: off.group, lifetime: off.lifetime })) {
+          chosenPolicy = { priority: mp.priority, encryption: mp.encryption, hash: mp.hash, group: mp.group, auth: mp.auth, lifetime: mp.lifetime };
+          ikeLifetime = Math.min(mp.lifetime, off.lifetime);
+          break;
+        }
+      }
+      if (chosenPolicy) break;
+    }
+    if (!chosenPolicy) { this.rejectIke(srcIp, 'No matching policy'); this.createFailedIKESA(srcIp, '', 'No matching policy'); return; }
+
+    const myPSK = this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || '';
+    if (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof) {
+      this.rejectIke(srcIp, 'PSK mismatch'); this.createFailedIKESA(srcIp, '', 'PSK mismatch'); return;
+    }
+
+    const peerEntry = this.findEntryForPeer(offer.identity, null) || this.findEntryForPeer(srcIp, null);
+    const myTSets = peerEntry
+      ? peerEntry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[]
+      : [...this.transformSets.values()];
+    let chosenTransform: IkeTransformProposal | null = null;
+    for (const off of offer.transforms) {
+      for (const mts of myTSets) {
+        if (this.transformSetsCompatible(mts, { name: off.name, transforms: off.transforms, mode: off.mode })) {
+          chosenTransform = { name: off.name, transforms: off.transforms, mode: off.mode };
+          break;
+        }
+      }
+      if (chosenTransform) break;
+    }
+    if (!chosenTransform) { this.rejectIke(srcIp, 'No matching transform'); return; }
+
+    if (offer.pfsGroup && peerEntry?.pfsGroup && offer.pfsGroup !== peerEntry.pfsGroup) {
+      if ((this.ipsecSADB.get(srcIp)?.length ?? 0) > 0) { this.rejectIke(srcIp, 'PFS mismatch'); return; }
+    }
+
+    const lifetimeSec = Math.min(offer.lifetimeSec, peerEntry?.saLifetimeSeconds ?? this.globalSALifetimeSeconds);
+    const lifetimeKB = Math.min(offer.lifetimeKB, this.globalSALifetimeKB);
+    const natT = offer.natTHint || srcIp !== offer.identity || dstIp !== offer.destination;
+    const spiRespIn = randomSPI();
+    const transforms = chosenTransform.transforms;
+    const loSpi = Math.min(offer.ipsecSpiIn, spiRespIn);
+    const hiSpi = Math.max(offer.ipsecSpiIn, spiRespIn);
+    const keymatSeed = `ipsec-keymat|${myPSK}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+    const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
+    const saMode = chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
+    const hasESP = transforms.some((t) => t.startsWith('esp'));
+    const hasAH = transforms.some((t) => t.startsWith('ah'));
+    const egress = this.findInterfaceForPeer(srcIp) || '';
+    const localIP = this.getLocalIP(egress) || '';
+    const trafficSelectors = this.buildTrafficSelectorsFromACL(peerEntry?.aclName || '');
+
+    const sa = this.buildIpsecSAStruct({
+      peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
+      cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
+      trafficSelectors, transforms, aclName: peerEntry?.aclName || '',
+      pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
+    });
+    this.installIpsecSALocal(srcIp, sa);
+
+    const useAggr = offer.exchangeMode === 'aggressive' || this.aggressiveMode;
+    this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
+      peerIP: srcIp, localIP, role: 'responder', policy: chosenPolicy,
+      lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
+    }));
+    this.getBus().publish({
+      topic: 'ipsec.ike.sa-installed',
+      payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: 1, lifetimeSec: ikeLifetime },
+    });
+    Logger.info(this.router.id, 'ipsec:sa-up',
+      `${this.router.name}: IPSec SA UP with ${srcIp} [${transforms.join(',')}]`);
+
+    const accept: IkeAcceptMessage = {
+      type: 'ike', step: 'accept', responderSpi: spiHex(randomSPI()),
+      pskProof: this.ikePskProof(myPSK), chosenPolicy, chosenTransform,
+      ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
+      lifetimeSec, lifetimeKB, natT,
+    };
+    this.router._sendIkeUdp(srcIp, accept);
+  }
+
+  private handleIkeAccept(srcIp: string, accept: IkeAcceptMessage): void {
+    const pending = this.pendingIke.get(srcIp);
+    if (!pending) return;
+    const myPSK = this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '';
+    if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
+      this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
+    }
+    const spiInitIn = pending.spiInitIn;
+    const transforms = accept.chosenTransform.transforms;
+    const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);
+    const hiSpi = Math.max(spiInitIn, accept.ipsecSpiIn);
+    const keymatSeed = `ipsec-keymat|${myPSK}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+    const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
+    const saMode = accept.chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
+    const hasESP = transforms.some((t) => t.startsWith('esp'));
+    const hasAH = transforms.some((t) => t.startsWith('ah'));
+    const trafficSelectors = this.buildTrafficSelectorsFromACL(pending.entry.aclName);
+
+    const sa = this.buildIpsecSAStruct({
+      peerIP: srcIp, localIP: pending.localIP, spiIn: spiInitIn, spiOut: accept.ipsecSpiIn,
+      cryptoKeys, lifetime: accept.lifetimeSec, lifetimeKB: accept.lifetimeKB, mode: saMode,
+      trafficSelectors, transforms, aclName: pending.entry.aclName,
+      pfsGroup: pending.entry.pfsGroup, natT: accept.natT, outIface: pending.egressIface, hasESP, hasAH,
+    });
+    this.installIpsecSALocal(srcIp, sa);
+
+    this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
+      peerIP: srcIp, localIP: pending.localIP, role: 'initiator', policy: accept.chosenPolicy,
+      lifetime: accept.ikeLifetimeSec, natT: accept.natT,
+      exchangeMode: pending.offer.exchangeMode,
+    }));
+    this.getBus().publish({
+      topic: 'ipsec.ike.sa-installed',
+      payload: { ...this.deviceRef(), peerIp: srcIp, localIp: pending.localIP, version: 1, lifetimeSec: accept.ikeLifetimeSec },
+    });
+    Logger.info(this.router.id, 'ipsec:sa-up',
+      `${this.router.name}: IPSec SA UP with ${srcIp} [${transforms.join(',')}]`);
+  }
+
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
     // Check if egress port is actually up (cable connected)
     // Skip this check for virtual interfaces (Tunnel, Loopback) which have no cable
@@ -2745,190 +3006,38 @@ export class IPSecEngine implements IProtocolEngine {
       return false;
     }
 
-    // Find peer router (may be directly reachable or behind NAT)
-    let peerRouter = IPSecEngine.findRouterByIP(peerIP);
-    let forceNatT = false;
+    const localIP = this.getLocalIP(egressIface) || '';
+    const apparentSrcIP = this.getApparentSourceIP(localIP, peerIP);
 
-    // NAT-T: if peerIP is not a Router, check if it's a NAT device with DNAT rules
-    if (!peerRouter) {
-      const natResult = IPSecEngine.findRouterBehindNAT(peerIP);
-      if (natResult) {
-        peerRouter = natResult.router;
-        forceNatT = true; // Peer is behind NAT — force NAT-T
-      }
+    const useIKEv2 = entry.ikev2ProfileName
+      ? this.ikev2Profiles.has(entry.ikev2ProfileName)
+      : this.ikev2Policies.size > 0 && this.ikev2Keyrings.size > 0 && this.ikev2Profiles.size > 0;
+
+    if (!useIKEv2) {
+      return this.initiateIKEv1Wire(peerIP, entry, localIP, apparentSrcIP, egressIface);
     }
 
+    let peerRouter = IPSecEngine.findRouterByIP(peerIP);
+    let forceNatT = false;
+    if (!peerRouter) {
+      const natResult = IPSecEngine.findRouterBehindNAT(peerIP);
+      if (natResult) { peerRouter = natResult.router; forceNatT = true; }
+    }
     if (!peerRouter) {
       Logger.info(this.router.id, 'ipsec:no-peer',
         `${this.router.name}: IKE peer ${peerIP} unreachable`);
-      // Create stub IKE SA in failed state for display purposes
       this.createFailedIKESA(peerIP, egressIface, 'Peer unreachable');
       return false;
     }
-
     const peerEngine = (peerRouter as any)._getIPSecEngineInternal?.() as IPSecEngine | null;
     if (!peerEngine) return false;
-
-    // Peer must have a crypto map applied to at least one interface (or tunnel protection)
-    // to act as an IKE responder — just like a real Cisco router
     if (peerEngine.ifaceCryptoMap.size === 0 && peerEngine.tunnelProtection.size === 0) {
       Logger.info(this.router.id, 'ipsec:no-peer-crypto',
         `${this.router.name}: Peer ${peerIP} has no crypto map applied`);
       this.createFailedIKESA(peerIP, egressIface, 'Peer no crypto map');
       return false;
     }
-
-    // Determine my local IP (on egress interface)
-    const localIP = this.getLocalIP(egressIface) || '';
-    // Compute apparent source IP (may differ if NAT is on path)
-    const apparentSrcIP = this.getApparentSourceIP(localIP, peerIP);
-
-    // Check IKEv2 profile
-    const useIKEv2 = entry.ikev2ProfileName
-      ? this.ikev2Profiles.has(entry.ikev2ProfileName)
-      : this.ikev2Policies.size > 0 && this.ikev2Keyrings.size > 0 && this.ikev2Profiles.size > 0;
-
-    if (useIKEv2) {
-      return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
-    }
-    return this.negotiateIKEv1(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
-  }
-
-  // ── IKEv1 ──────────────────────────────────────────────────────
-
-  private negotiateIKEv1(
-    peerIP: string, peerEngine: IPSecEngine, entry: CryptoMapEntry,
-    localIP: string, apparentSrcIP: string, egressIface: string,
-    forceNatT: boolean = false,
-  ): boolean {
-    // Phase 1: find matching ISAKMP policy
-    const myPolicies = [...this.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
-    const peerPolicies = [...peerEngine.isakmpPolicies.values()].sort((a, b) => a.priority - b.priority);
-
-    let matchedPolicy: ISAKMPPolicy | null = null;
-    let matchedPeerPolicy: ISAKMPPolicy | null = null;
-    for (const mp of myPolicies) {
-      for (const pp of peerPolicies) {
-        if (this.policiesCompatible(mp, pp)) { matchedPolicy = mp; matchedPeerPolicy = pp; break; }
-      }
-      if (matchedPolicy) break;
-    }
-
-    // Determine exchange mode: aggressive if either side has it enabled
-    const useAggressive = this.aggressiveMode || peerEngine.aggressiveMode;
-    const modeName = useAggressive ? 'Aggressive' : 'Main';
-
-    if (this.debugIsakmp) {
-      Logger.info(this.router.id, 'debug:isakmp',
-        `ISAKMP: begin IKE ${modeName} Mode exchange with ${peerIP}`);
-      for (const mp of myPolicies) {
-        Logger.info(this.router.id, 'debug:isakmp',
-          `ISAKMP: sending policy ${mp.priority} enc=${mp.encryption} hash=${mp.hash} auth=${mp.auth} group=${mp.group}`);
-      }
-    }
-
-    if (!matchedPolicy) {
-      if (this.debugIsakmp) {
-        Logger.info(this.router.id, 'debug:isakmp',
-          `ISAKMP: (0:0): phase 1 SA policy not acceptable! (local:${myPolicies.length} remote:${peerPolicies.length})`);
-      }
-      Logger.info(this.router.id, 'ipsec:no-policy', `${this.router.name}: No common IKE policy with ${peerIP}`);
-      this.createFailedIKESA(peerIP, egressIface, 'No matching policy');
-      peerEngine.createFailedIKESA(apparentSrcIP, '', 'No matching policy');
-      return false;
-    }
-
-    // Verify PSK
-    const myPSK = this.preSharedKeys.get(peerIP) || this.preSharedKeys.get('0.0.0.0');
-    const peerPSK = peerEngine.preSharedKeys.get(apparentSrcIP) || peerEngine.preSharedKeys.get('0.0.0.0');
-
-    if (!myPSK || !peerPSK || myPSK !== peerPSK) {
-      if (this.debugIsakmp) {
-        Logger.info(this.router.id, 'debug:isakmp',
-          `ISAKMP: (0:0): pre-shared key authentication FAILED with ${peerIP}`);
-      }
-      Logger.info(this.router.id, 'ipsec:psk-fail', `${this.router.name}: PSK mismatch with ${peerIP}`);
-      this.createFailedIKESA(peerIP, egressIface, 'PSK mismatch');
-      peerEngine.createFailedIKESA(apparentSrcIP, '', 'PSK mismatch');
-      return false;
-    }
-
-    if (this.debugIsakmp) {
-      Logger.info(this.router.id, 'debug:isakmp',
-        `ISAKMP: (${spiHex(0)}:0): SA matched policy ${matchedPolicy.priority}, enc=${matchedPolicy.encryption} hash=${matchedPolicy.hash} group=${matchedPolicy.group}`);
-      Logger.info(this.router.id, 'debug:isakmp',
-        `ISAKMP: (${spiHex(0)}:0): pre-shared key authentication passed with ${peerIP}`);
-    }
-
-    const natT = forceNatT || ((this.natKeepaliveInterval > 0 || peerEngine.natKeepaliveInterval > 0)
-      && apparentSrcIP !== localIP);
-
-    // Create IKE SA on both sides
-    // RFC 2409 §5.5: negotiate IKE lifetime as min(initiator, responder)
-    const negotiatedIKELifetime = Math.min(
-      matchedPolicy.lifetime,
-      matchedPeerPolicy!.lifetime,
-    );
-
-    const spi = randomSPI();
-    const now = Date.now();
-    const ikeSA: IKE_SA = {
-      peerIP, localIP,
-      status: useAggressive ? 'AM_ACTIVE' : 'QM_IDLE',
-      encryption: matchedPolicy.encryption,
-      hash: matchedPolicy.hash,
-      group: matchedPolicy.group,
-      lifetime: negotiatedIKELifetime,
-      created: now,
-      spi: spiHex(spi),
-      role: 'initiator',
-      natT,
-      dpdEnabled: this.dpdConfig !== null,
-      lastDPDActivity: now,
-      dpdTimeouts: 0,
-      exchangeMode: useAggressive ? 'aggressive' : 'main',
-    };
-    // Aggressive mode transitions immediately to QM_IDLE after 3 messages (vs 6 in main)
-    if (useAggressive) {
-      ikeSA.status = 'QM_IDLE';
-      if (this.debugIsakmp) {
-        Logger.info(this.router.id, 'debug:isakmp',
-          `ISAKMP: Aggressive Mode completed in 3 exchanges (vs 6 for Main Mode)`);
-      }
-    }
-    this.ikeSADB.set(peerIP, ikeSA);
-    this.getBus().publish({
-      topic: 'ipsec.ike.sa-installed',
-      payload: {
-        ...this.deviceRef(),
-        peerIp: peerIP,
-        localIp: localIP,
-        version: 1,
-        lifetimeSec: negotiatedIKELifetime,
-      },
-    });
-
-    const peerLocalIP = peerEngine.getLocalIP('') || peerIP;
-    const peerIkeSA: IKE_SA = {
-      peerIP: apparentSrcIP, localIP: peerLocalIP,
-      status: 'QM_IDLE',
-      encryption: matchedPolicy.encryption,
-      hash: matchedPolicy.hash,
-      group: matchedPolicy.group,
-      lifetime: negotiatedIKELifetime,
-      created: now,
-      spi: spiHex(randomSPI()),
-      role: 'responder',
-      natT,
-      dpdEnabled: peerEngine.dpdConfig !== null,
-      lastDPDActivity: now,
-      dpdTimeouts: 0,
-      exchangeMode: useAggressive ? 'aggressive' : 'main',
-    };
-    peerEngine.ikeSADB.set(apparentSrcIP, peerIkeSA);
-
-    // Phase 2: find matching transform set
-    return this.negotiateIPSecSA(peerIP, peerEngine, entry, apparentSrcIP, egressIface, natT);
+    return this.negotiateIKEv2(peerIP, peerEngine, entry, localIP, apparentSrcIP, egressIface, forceNatT);
   }
 
   private negotiateIPSecSA(
