@@ -1640,6 +1640,24 @@ l'enfant non référencé droppe sans cascade) ; **zéro régression** sur
 les tests droppent en ordre de dépendance ou avec CASCADE ; tsc + ESLint
 propres.
 
+### 2026-06-13 — ALTER TABLE ADD/DROP CONSTRAINT enforce réellement (était un no-op)
+**Défaillance :** `executeAlterTable` ne gérait **ni** `ADD_CONSTRAINT` **ni**
+`DROP_CONSTRAINT` — ces actions étaient parsées puis jetées, retournant
+« Table altered. » sans rien faire. Ajouter une PK/UNIQUE/FK/CHECK via
+ALTER n'avait aucun effet : les INSERT violant la contrainte réussissaient.
+**Correction :** nouveau `addTableConstraint` (réutilise le mapping de
+CREATE TABLE, refTable normalisé) : valide les lignes **existantes** avant
+d'activer (ORA-00001/02290/02291…), pousse la contrainte sur la meta et crée
+l'index PK/UNIQUE. `DROP_CONSTRAINT` retire la contrainte (et l'index
+associé), ORA-02443 si inconnue, ORA-02264 sur doublon de nom à l'ajout.
+**Validation :** nouvelle suite `oracle-alter-add-constraint.test.ts` (6
+tests : UNIQUE/CHECK/FK ajoutées puis enforced, validation des lignes
+existantes, DROP CONSTRAINT lève l'enforcement, ORA-02443) ; un test
+« comprehensive » corrigé (il insérait des valeurs violant une FK
+severity→departments qui ne « passait » que via le no-op) ; non-régression
+`unit/database/` + `unit/terminal/` (3263) + `debug/oracle/` (14) ; tsc +
+ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

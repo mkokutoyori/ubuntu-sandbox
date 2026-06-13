@@ -647,8 +647,10 @@ describe('10. Object lifecycle in HR schema', () => {
     { sql: "SELECT COUNT(*) FROM dba_constraints WHERE table_name = 'TEST_AUDIT' AND constraint_type IN ('P','C','R');",      want: /^\s*[1-9]\s*$/m },
     { sql: "SELECT comments FROM dba_tab_comments WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                         want: /Audit harness/ },
     // DML round-trip.
-    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (1, 5, 'first');",                                   want: /1 row created\./i },
-    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (2, 1, 'second');",                                  want: /1 row created\./i },
+    // severity is constrained by CHECK (0..10) AND a FK to departments;
+    // department_id 10 satisfies both (the FK is now really enforced).
+    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (1, 10, 'first');",                                  want: /1 row created\./i },
+    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (2, 10, 'second');",                                 want: /1 row created\./i },
     { sql: 'COMMIT;',                                                                                                          want: /Commit complete\./i },
     { sql: 'SELECT COUNT(*) FROM hr.test_audit;',                                                                              want: /^\s*2\s*$/m },
     { sql: 'TRUNCATE TABLE hr.test_audit;',                                                                                    want: /Table truncated\./i },

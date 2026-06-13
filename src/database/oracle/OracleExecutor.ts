@@ -2909,6 +2909,19 @@ export class OracleExecutor extends BaseExecutor {
           case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
           case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
         }
+      } else if (action.action === 'ADD_CONSTRAINT') {
+        this.addTableConstraint(schema, tableName, action.constraint);
+      } else if (action.action === 'DROP_CONSTRAINT') {
+        const meta = this.requireTableMeta(schema, tableName);
+        const cname = action.constraintName.toUpperCase();
+        const idx = meta.constraints.findIndex(c => c.name === cname);
+        if (idx < 0) {
+          throw new OracleError(2443, 'Cannot drop constraint - nonexistent constraint');
+        }
+        const removed = meta.constraints.splice(idx, 1)[0];
+        if (removed.type === 'PRIMARY_KEY' || removed.type === 'UNIQUE') {
+          this.storage.dropIndex(schema, cname);
+        }
       } else if (
         action.action === 'FLASHBACK_ARCHIVE' || action.action === 'NO_FLASHBACK_ARCHIVE'
         || action.action === 'INMEMORY' || action.action === 'NO_INMEMORY'
@@ -2918,6 +2931,44 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     return emptyResult('Table altered.');
+  }
+
+  /**
+   * Add a table constraint via ALTER TABLE … ADD CONSTRAINT — used to be a
+   * silent no-op (the constraint was parsed and dropped on the floor, so
+   * it never enforced anything). Validates the existing rows before
+   * enabling it and creates the PK/UNIQUE backing index.
+   */
+  private addTableConstraint(schema: string, tableName: string, tc: import('../engine/parser/ASTNode').TableConstraint): void {
+    const meta = this.requireTableMeta(schema, tableName);
+    const cname = (tc.constraintName
+      || `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`).toUpperCase();
+    if (meta.constraints.some(c => c.name === cname)) {
+      throw new OracleError(2264, 'name already used by an existing constraint');
+    }
+    const newC: ConstraintMeta = {
+      name: cname,
+      type: tc.constraintType,
+      columns: tc.columns.map(c => c.toUpperCase()),
+      refTable: tc.refTable?.toUpperCase().split('.').pop(),
+      refColumns: tc.refColumns?.map(c => c.toUpperCase()),
+      onDelete: tc.onDelete,
+      checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
+    };
+    // Real Oracle validates current data before enabling the constraint
+    // (ORA-02437 / ORA-00001 / ORA-02298 / ORA-02293).
+    const probeMeta: TableMeta = { ...meta, constraints: [newC] };
+    for (const row of this.storage.getRows(schema, tableName)) {
+      this.constraints.validateConstraints(schema, tableName, probeMeta, row, row);
+    }
+    meta.constraints.push(newC);
+    if ((newC.type === 'PRIMARY_KEY' || newC.type === 'UNIQUE')
+      && !this.storage.getIndexes(schema).some(i => i.name === newC.name)) {
+      this.storage.createIndex(schema, {
+        name: newC.name, tableName, columns: newC.columns, unique: true,
+        tablespace: meta.tablespace,
+      });
+    }
   }
 
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
