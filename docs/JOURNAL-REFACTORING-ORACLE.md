@@ -1326,6 +1326,21 @@ Note de style : à la demande de l'auteur, les commentaires de code ajoutés
 au cours de cette série ont été retirés (le rationnel vit ici, dans le
 journal, pas dans le code).
 
+### 2026-06-13 — ALTER SYSTEM KILL SESSION libère le processus serveur dédié
+**Défaillance :** suite directe du travail sur les processus serveur dédiés.
+`ALTER SYSTEM KILL SESSION 'sid,serial'` retirait la session du tracker
+(donc de V$SESSION) mais **ne libérait pas le processus serveur dédié** :
+`ps` et V$PROCESS continuaient d'afficher le `oracleSID (LOCAL=…)` d'une
+session pourtant tuée — deux vues du même fait en désaccord.
+**Correction :** le handler KILL/DISCONNECT SESSION appelle
+`instance.releaseServerProcess(sid)` après le retrait du tracker — l'événement
+`server-process-stopped` retire le process de `ps` (via la FS sync) et de
+V$PROCESS, comme PMON nettoie le serveur dédié sur le vrai Oracle.
+**Validation :** nouvelle suite `oracle-kill-session-process.test.ts` (4
+tests : process libéré au niveau instance, absent de V$PROCESS, session
+absente de V$SESSION, kill d'une session inconnue rejeté) ;
+`unit/database/` : **2822/2822** ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -86,6 +86,7 @@ export class InstanceAdminExecutor {
           throw new OracleError(31, `no such session: ${sessionId}`);
         }
       }
+      this.instance.releaseServerProcess(sid);
       return emptyResult('System altered.');
     }
     if (stmt.action === 'ARCHIVE LOG') {
