@@ -1246,6 +1246,36 @@ actor` : 22/22, toutes leurs connexions sont SYSDBA donc mandatory) ;
 `unit/database/` : **2812/2812** ; `debug/oracle/` : 14/14 ; tsc + ESLint
 propres.
 
+### 2026-06-13 — DBMS_SCHEDULER : les jobs s'exécutent enfin tout seuls (CJQ0)
+**Défaillance :** incohérence majeure entre la couche scheduler et le cycle
+de vie de l'instance. `reattachRefreshActor()` — appelé par le câblage de
+boot via `setEventBus()` puis `setDeviceId()`, tous deux **après** le
+`attachScheduler()` du constructeur — stoppait le `SchedulerSweepActor`
+(CJQ0) **et le mettait à `null`**, mais, contrairement à tous les autres
+acteurs reconstruits juste en dessous, **ne le recréait jamais**. Sur un
+vrai device, le sweeper finissait donc nul : un job créé via
+`DBMS_SCHEDULER.CREATE_JOB` ne s'exécutait **jamais** automatiquement, seul
+`RUN_JOB` manuel le déclenchait. Un cycle SHUTDOWN/STARTUP perdait aussi le
+sweeper définitivement. Les tests moteur purs (`new OracleDatabase()` sans
+`setDeviceId`) gardaient le sweeper du constructeur vivant → la régression
+n'était pas visible côté moteur.
+**Correction :** le cycle de vie du sweeper est aligné sur la sémantique
+réelle de CJQ0 (actif seulement quand la base est OPEN), via un helper
+idempotent `ensureSchedulerSweep()` :
+- `reattachRefreshActor` recrée le sweeper s'il était actif (état OPEN) ;
+- `markOpen()` le (re)démarre à chaque ouverture — y compris après un
+  cycle SHUTDOWN/STARTUP qui le démontait sans le relancer ;
+- `attachScheduler` ne le démarre qu'en OPEN (sinon `markOpen` s'en charge),
+  et le passe à `null` proprement pour que `reattach` ne le laisse pas
+  tomber dans le vide.
+**Validation :** nouvelle suite `oracle-scheduler-autorun.test.ts` (3 tests
+pilotant le tick CJQ0 via un `VirtualTimeScheduler` injecté comme scheduler
+par défaut, donc déterministe sans attente d'horloge réelle : un job une
+fois s'exécute au prochain balayage **sans `RUN_JOB`**, un job désactivé
+n'est pas balayé, le sweeper survit à un SHUTDOWN/STARTUP) ;
+`unit/database/` : **2815/2815** ; `unit/terminal/` + `debug/oracle/` :
+394/394 ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

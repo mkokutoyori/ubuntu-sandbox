@@ -160,8 +160,10 @@ export class OracleInstance {
   attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
     this.scheduler = s;
     this._schedulerSweepActor?.stop();
-    this._schedulerSweepActor = new SchedulerSweepActor(s);
-    this._schedulerSweepActor.start();
+    this._schedulerSweepActor = null;
+    // CJQ0 only runs while open; if the DB is already open, start now,
+    // otherwise markOpen() will (and reattach won't drop it on the floor).
+    if (this._state === 'OPEN') this.ensureSchedulerSweep();
   }
   attachStatistics(storage: OracleStorage): StatisticsManager {
     if (!this.statistics) this.statistics = new StatisticsManager(storage);
@@ -417,6 +419,26 @@ export class OracleInstance {
       this._indexUsage = new IndexUsageMonitor(this.getBus(), this._deviceId, this._indexUsageStorage);
       this._indexUsage.start();
     }
+    // The CJQ0 scheduler sweeper was torn down above with the other
+    // actors but — unlike them — used to never be recreated here. The
+    // boot wiring calls setEventBus()/setDeviceId() (both reattach) AFTER
+    // the constructor's attachScheduler(), so on a real device the
+    // sweeper ended up null and DBMS_SCHEDULER jobs never auto-ran.
+    // CJQ0 only runs while the database is open (markOpen() starts it
+    // otherwise), so only revive it here when already open.
+    if (this._state === 'OPEN') this.ensureSchedulerSweep();
+  }
+
+  /**
+   * Start the CJQ0-style job sweeper (idempotent). The real coordinator
+   * job queue process runs only while the database is open.
+   */
+  private ensureSchedulerSweep(): void {
+    if (!this.scheduler) return;
+    if (!this._schedulerSweepActor) {
+      this._schedulerSweepActor = new SchedulerSweepActor(this.scheduler);
+    }
+    this._schedulerSweepActor.start();
   }
 
   /** Read-only handle to the security audit journal. */
@@ -556,6 +578,9 @@ export class OracleInstance {
     this._redoLogGroups[0].status = 'CURRENT';
     this.performCheckpoint();
     this.logAlert('Database opened');
+    // CJQ0 starts at open — and resumes after a SHUTDOWN/STARTUP cycle,
+    // which tore the actor down without restarting it.
+    this.ensureSchedulerSweep();
     for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND']) {
       this.getBus().publish({
         topic: 'oracle.service.event',
