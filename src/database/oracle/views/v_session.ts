@@ -148,7 +148,7 @@ registerView({
         s.resourceConsumerGroup, 'DISABLED', 'ENABLED', 'ENABLED',
         0, s.event, 6, s.waitClass, 0, s.secondsInWait, s.state,
         blocker === null ? 'NO HOLDER' : 'VALID',
-        blocker, 'DISABLED', s.service, 1,
+        blocker, 'DISABLED', s.service, live?.containerId ?? 1,
       ];
       });
       return queryResult(cols, [...bgRows, ...userRows]);

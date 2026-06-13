@@ -160,6 +160,12 @@ export class OracleExecutor extends BaseExecutor {
   /** Bind this executor to a session id for the oracle.session.* / tx events. */
   setSessionId(sessionId: string): void { this._sessionId = sessionId; }
 
+  /** Current container of the bound session (CDB$ROOT by default). */
+  getCurrentContainer(): { name: string; id: number } {
+    const sess = this.context.session as { containerName?: string; containerId?: number } | undefined;
+    return { name: sess?.containerName ?? 'CDB$ROOT', id: sess?.containerId ?? 1 };
+  }
+
   /** Inject the OracleDatabase delegate for manager-backed SQL commands. */
   setCommandHost(host: import('./SqlCommandHost').SqlCommandHost): void { this.commandHost = host; }
 

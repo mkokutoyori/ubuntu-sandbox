@@ -802,6 +802,30 @@ export class OracleDatabase implements SqlCommandHost {
     }
   }
 
+  /**
+   * ALTER SESSION SET CONTAINER = <name> — move the session into a PDB (or
+   * back to CDB$ROOT). Validates existence (ORA-65011) and that the PDB is
+   * open (ORA-65040). Data isolation across containers is not modelled; the
+   * session context (CON_NAME / CON_ID / V$SESSION) is what switches.
+   */
+  private switchSessionContainer(ctx: ExecutionContext, target: string): ResultSet {
+    const name = (target ?? '').toUpperCase();
+    const sess = ctx.session as { setContainer?: (n: string, id: number) => void } | undefined;
+    if (name === 'CDB$ROOT') {
+      sess?.setContainer?.('CDB$ROOT', 1);
+      return emptyResult('Session altered.');
+    }
+    const pdb = this.instance.multitenant.findByName(name);
+    if (!pdb || pdb.name === 'PDB$SEED') {
+      return emptyResult(`ORA-65011: Pluggable database ${name} does not exist.`);
+    }
+    if (pdb.openMode === 'MOUNTED') {
+      return emptyResult(`ORA-65040: unable to do the operation inside a pluggable database`);
+    }
+    sess?.setContainer?.(pdb.name, pdb.conId);
+    return emptyResult('Session altered.');
+  }
+
   execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
     if (stmt.param && stmt.value !== undefined) {
       if (stmt.param === 'SERVEROUTPUT') {
@@ -813,6 +837,8 @@ export class OracleDatabase implements SqlCommandHost {
         ctx.currentSchema = stmt.value;
         const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
         sess?.setCurrentSchema?.(stmt.value);
+      } else if (stmt.param === 'CONTAINER') {
+        return this.switchSessionContainer(ctx, stmt.value);
       }
     }
     return emptyResult('Session altered.');

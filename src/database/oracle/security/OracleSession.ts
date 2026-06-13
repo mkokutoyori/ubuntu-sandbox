@@ -78,6 +78,10 @@ export class OracleSession {
   readonly sessionUser: string;
   /** Schema in effect right now (mutated by ALTER SESSION SET CURRENT_SCHEMA). */
   currentSchema: string;
+  /** Container the session is in (CDB$ROOT or a PDB), set by
+   *  ALTER SESSION SET CONTAINER or a PDB-service connection. */
+  containerName: string = 'CDB$ROOT';
+  containerId: number = 1;
   /** User whose privileges are in effect — typically `sessionUser`,
    *  differs under definer-rights PL/SQL invocation. */
   currentUser: string;
@@ -266,8 +270,8 @@ export class OracleSession {
       case 'DB_DOMAIN':                      return this.dbDomain;
       case 'INSTANCE':                       return this.instanceId;
       case 'INSTANCE_NAME':                  return this.instanceName;
-      case 'CON_NAME':                       return 'CDB$ROOT';
-      case 'CON_ID':                         return 1;
+      case 'CON_NAME':                       return this.containerName;
+      case 'CON_ID':                         return this.containerId;
 
       // Application info
       case 'MODULE':                         return this.module;
@@ -335,6 +339,11 @@ export class OracleSession {
 
   setCurrentSchema(schema: string): void {
     this.currentSchema = schema.toUpperCase();
+  }
+
+  setContainer(name: string, id: number): void {
+    this.containerName = name.toUpperCase();
+    this.containerId = id;
   }
 
   touch(): void { this.lastCallAt = new Date(); }

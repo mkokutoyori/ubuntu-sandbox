@@ -1724,6 +1724,29 @@ upsert était déjà correct).
 message total sans découpage, upsert toujours correct) ; non-régression
 `unit/database/` (2897) ; tsc + ESLint propres.
 
+### 2026-06-13 — Conteneur de session multitenant : ALTER SESSION SET CONTAINER + connexion par service PDB
+**Défaillance :** la simulation était mono-conteneur factice :
+`SYS_CONTEXT('USERENV','CON_NAME'/'CON_ID')` renvoyait toujours
+`CDB$ROOT`/1, `ALTER SESSION SET CONTAINER` était ignoré, et une connexion
+à un service PDB atterrissait dans CDB$ROOT. Un DBA multitenant ne pouvait
+pas savoir ni changer dans quel conteneur il se trouvait.
+**Correction :** la session porte un conteneur courant (`OracleSession.
+containerName/containerId`, défaut CDB$ROOT/1).
+- `ALTER SESSION SET CONTAINER = <pdb>` déplace la session (ORA-65011 si
+  inconnu/PDB$SEED, ORA-65040 si MOUNTED) ; retour via `CDB$ROOT`.
+- `SYS_CONTEXT`/`USERENV` CON_NAME/CON_ID, `SHOW CON_NAME`/`CON_ID` et
+  V$SESSION.CON_ID reflètent le conteneur vivant.
+- Connexion `sqlplus user/pass@//host/ORCLPDB1` (service PDB ouvert) →
+  la session démarre dans la PDB ; le service CDB reste en CDB$ROOT.
+**Limite assumée :** l'isolation des **données** entre conteneurs n'est pas
+modélisée (schémas/tables partagés) — c'est le **contexte** de session
+(CON_NAME/CON_ID/V$SESSION) qui bascule, ce qu'un DBA inspecte.
+**Validation :** nouvelle suite `oracle-pdb-container-session.test.ts` (9
+tests : départ CDB$ROOT, switch ORCLPDB1↔root, SHOW, V$SESSION.CON_ID,
+ORA-65011/65040, connexion par service PDB vs CDB) ; non-régression
+`unit/database/` + `unit/terminal/` (3286) + `debug/oracle/` (34) ; tsc +
+ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

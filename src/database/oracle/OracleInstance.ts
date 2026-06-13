@@ -214,6 +214,7 @@ export class OracleInstance {
     listContextEntries(): Array<{ namespace: string; attribute: string; value: string }>;
     module: string | null; action: string | null;
     clientInfo: string | null; clientIdentifier: string | null;
+    containerId: number;
   }>) | null = null;
   setLiveSessionProvider(fn: NonNullable<typeof this._liveSessionProvider>): void {
     this._liveSessionProvider = fn;

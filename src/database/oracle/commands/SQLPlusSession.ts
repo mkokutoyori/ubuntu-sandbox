@@ -175,6 +175,16 @@ export class SQLPlusSession {
     this.osCtx = ctx;
   }
 
+  /** Enter the named container after connecting if it is an open PDB of
+   *  the bound database (a PDB-service connection lands there). */
+  enterContainerIfPdb(service: string): void {
+    if (!this.connected || !this.executor) return;
+    const pdb = this.db.instance.multitenant.findByName(service);
+    if (pdb && pdb.name !== 'PDB$SEED' && pdb.openMode !== 'MOUNTED') {
+      this.processLine(`ALTER SESSION SET CONTAINER = ${pdb.name};`);
+    }
+  }
+
   setTransport(transport: import('../OracleDatabase').ConnectTransport): void {
     this.transport = transport;
   }
@@ -909,6 +919,14 @@ export class SQLPlusSession {
     switch (option) {
       case 'USER':
         output.push(`USER is "${this.currentUser}"`);
+        break;
+      case 'CON_NAME':
+        output.push(`CON_NAME`, '------------------------------',
+          this.executor ? this.executor.getCurrentContainer().name : 'CDB$ROOT');
+        break;
+      case 'CON_ID':
+        output.push(`CON_ID`, '------------------------------',
+          String(this.executor ? this.executor.getCurrentContainer().id : 1));
         break;
       case 'LINESIZE': case 'LIN':
         output.push(`linesize ${this.settings.linesize}`);

@@ -15,7 +15,7 @@ import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
-import { resolveOracleConnectTarget } from './oracleNet';
+import { resolveOracleConnectTarget, parseConnectIdentifier } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
@@ -196,6 +196,12 @@ export function createSQLPlusSession(
   } else {
     // No credentials — just show banner, user can CONNECT later
     loginOutput = ['Not connected.'];
+  }
+
+  // Connecting through a PDB service lands the session in that container.
+  if (connectIdentifier && localDevice && loginOutput.includes('Connected.')) {
+    const service = parseConnectIdentifier(localDevice, connectIdentifier)?.service;
+    if (service) session.enterContainerIfPdb(service);
   }
 
   return { session, banner, loginOutput };
