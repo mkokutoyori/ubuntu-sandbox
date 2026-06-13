@@ -2133,10 +2133,9 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    const parts: string[] = [];
-    if (updatedCount > 0) parts.push(`${updatedCount} row${updatedCount !== 1 ? 's' : ''} merged (updated)`);
-    if (insertedCount > 0) parts.push(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} merged (inserted)`);
-    return emptyResult(parts.join(', ') || 'Merge complete.', updatedCount + insertedCount);
+    // Real SQL*Plus reports a single total, not a per-clause breakdown.
+    const total = updatedCount + insertedCount;
+    return emptyResult(`${total} row${total !== 1 ? 's' : ''} merged.`, total);
   }
 
   private applySelectClauses(result: ResultSet, stmt: SelectStatement): ResultSet {

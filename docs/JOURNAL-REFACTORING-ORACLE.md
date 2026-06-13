@@ -1714,6 +1714,16 @@ tests : backfill des lignes existantes, défaut sur nouvel INSERT, NOT NULL
 + DEFAULT, ORA-01758) ; non-régression `unit/database/` (2891) +
 `unit/terminal/` + `debug/oracle/` (394) ; tsc + ESLint propres.
 
+### 2026-06-13 — MERGE : message « N rows merged. » conforme à SQL*Plus
+**Défaillance :** `MERGE` retournait un message non conforme découpé par
+clause (« 1 row merged (updated), 1 row merged (inserted) ») au lieu du
+total unique « N rows merged. » du vrai SQL*Plus.
+**Correction :** message unique `${total} row(s) merged.` (le comportement
+upsert était déjà correct).
+**Validation :** nouvelle suite `oracle-merge-message.test.ts` (2 tests :
+message total sans découpage, upsert toujours correct) ; non-régression
+`unit/database/` (2897) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
