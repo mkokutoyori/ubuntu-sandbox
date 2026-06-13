@@ -67,6 +67,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (ag) fn(ag);
   }
 
+  private applyToDot1xAgent(fn: (a: import('@/network/dot1x/Dot1xAgent').Dot1xAgent) => void): void {
+    const ag = (this.swRef as unknown as { getDot1xAgent?: () => import('@/network/dot1x/Dot1xAgent').Dot1xAgent } | null)?.getDot1xAgent?.();
+    if (ag) fn(ag);
+  }
+
   private applyToLacpAgent(fn: (a: import('@/network/lacp/LacpAgent').LacpAgent) => void): void {
     const ag = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
     if (ag) fn(ag);
@@ -308,6 +313,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     this.systemTrie.register('undo lldp enable', 'Disable LLDP globally', () => {
       this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.systemTrie.register('dot1x enable', 'Enable 802.1X globally', () => {
+      this.applyToDot1xAgent(a => a.setSystemAuthControl(true));
+      return '';
+    });
+    this.systemTrie.register('undo dot1x enable', 'Disable 802.1X globally', () => {
+      this.applyToDot1xAgent(a => a.setSystemAuthControl(false));
       return '';
     });
     this.systemTrie.registerGreedy('lldp message-transmission interval', 'Hello period (sec)', (args) => {
@@ -573,6 +586,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       });
     }
     this.registerPortSecurity();
+    this.registerDot1x();
 
     // Interface-view L2 security: DHCP snooping / IP source guard /
     // ARP anti-attack — recorded for `display this` (L2-only: no L3).
@@ -1506,6 +1520,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
     } catch {
       return null;
     }
+  }
+
+  private registerDot1x(): void {
+    const it = this.interfaceTrie;
+    const portModeMap: Record<string, import('@/network/dot1x/types').Dot1xPortMode> = {
+      auto: 'auto',
+      'authorized-force': 'force-authorized',
+      'unauthorized-force': 'force-unauthorized',
+    };
+    it.register('dot1x enable', 'Enable 802.1X on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, 'auto'));
+      this.recordIfCfg('dot1x enable');
+      return '';
+    });
+    it.register('undo dot1x enable', 'Disable 802.1X on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, 'disabled'));
+      return '';
+    });
+    it.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const mode = portModeMap[(args[0] ?? '').toLowerCase()];
+      if (!mode) return 'Error: Wrong parameter.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, mode));
+      this.recordIfCfg(`dot1x port-control ${args[0].toLowerCase()}`);
+      return '';
+    });
   }
 
   private registerPortSecurity(): void {

@@ -11,6 +11,8 @@ import { ETHERTYPE_STP } from '../stp/types';
 import { LacpAgent } from '../lacp/LacpAgent';
 import { ETHERTYPE_LACP } from '../lacp/types';
 import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
+import { Dot1xAgent } from '../dot1x/Dot1xAgent';
+import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -20,6 +22,7 @@ export class HuaweiSwitch extends Switch {
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
+  private readonly dot1xAgent: Dot1xAgent;
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -45,10 +48,19 @@ export class HuaweiSwitch extends Switch {
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
     }, () => this.getBus());
+    this.dot1xAgent = new Dot1xAgent({
+      ...hostBase,
+      onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
+    }, () => this.getBus());
     this.agents.registerAll(
       this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent,
+      this.dot1xAgent,
     );
     this.agents.startAll();
+  }
+
+  private applyDot1xAuth(portName: string, authorized: boolean): void {
+    if (!authorized) this.flushDynamicMacsOnPort(portName, 'dot1x-unauthorized');
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState): void {
@@ -78,6 +90,13 @@ export class HuaweiSwitch extends Switch {
       this.lacpAgent.handleFrame(portName, frame);
       return;
     }
+    if (frame.etherType === ETHERTYPE_EAPOL) {
+      this.dot1xAgent.handleFrame(portName, frame);
+      return;
+    }
+    if (!this.dot1xAgent.isPortAuthorized(portName)) {
+      return;
+    }
     this.igmpSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
@@ -91,6 +110,7 @@ export class HuaweiSwitch extends Switch {
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
+  getDot1xAgent(): Dot1xAgent { return this.dot1xAgent; }
 
   protected getPortName(index: number, _total: number): string {
     return `GigabitEthernet0/0/${index}`;

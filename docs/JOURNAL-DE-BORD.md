@@ -2776,3 +2776,53 @@ locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
   debug acl-security + huawei-security-mgmt : verts.
 - Non-régression : **network-v2 complet — 7046 tests verts**. `tsc` et
   lint propres ; aucun commentaire ajouté dans le code.
+
+---
+
+## Entrée 41 — Huawei : 802.1X (dot1x) réel sur HuaweiSwitch (parité L2)
+
+**Date** : 2026-06-13
+
+### Constat (GAP §2.7, sous l'angle réalisme)
+
+`HuaweiSwitch` ne câblait que LLDP/STP/LACP/IGMP-snooping ; 802.1X
+(protocole standard, EAPOL) était absent côté Huawei. (La recommandation
+GAP citait aussi « UDLD » — **écarté volontairement** : Huawei n'utilise
+pas UDLD mais **DLDP**, un protocole distinct ; ajouter l'UDLD Cisco à un
+switch Huawei serait irréaliste.)
+
+### Correction (réutilisation de l'agent vendor-neutre)
+
+- `HuaweiSwitch` instancie et enregistre le `Dot1xAgent` vendor-neutre
+  (le même que Cisco) : dispatch des trames `ETHERTYPE_EAPOL`,
+  enforcement à l'ingress (`isPortAuthorized`), purge des MAC dynamiques à
+  la dé-autorisation (`applyDot1xAuth` → `flushDynamicMacsOnPort`),
+  accesseur `getDot1xAgent()`.
+- **CLI Huawei réaliste** : système `dot1x enable` / `undo dot1x enable`
+  → `setSystemAuthControl` ; interface `dot1x enable` (mode auto) /
+  `undo dot1x enable` (disabled) / `dot1x port-control
+  {auto|authorized-force|unauthorized-force}` → `setPortMode`
+  (mappé sur auto/force-authorized/force-unauthorized). Enregistré pour
+  `display this`.
+
+### Comportement réel gagné
+
+- Un commutateur Huawei traite réellement EAPOL : un supplicant
+  s'authentifie (handshake EAPOL-Start → Identity → Success), le port
+  passe authorized ; `authorized-force`/`unauthorized-force` forcent
+  l'état ; la dé-autorisation purge la table MAC du port. Interopère avec
+  un supplicant d'un autre vendeur (test Huawei↔Cisco).
+
+### Fichiers
+
+- `src/network/devices/HuaweiSwitch.ts`
+- `src/network/devices/shells/HuaweiSwitchShell.ts`
+- `src/__tests__/unit/network-v2/huawei-dot1x.test.ts` (+4)
+
+### Validation
+
+- `huawei-dot1x` : 4 tests verts (CLI → agent, force-auth, handshake EAPOL
+  réel Huawei↔Cisco, undo). Suites Huawei + dot1x-protocol +
+  ping-through-switch : 161 verts.
+- Non-régression : **network-v2 complet — 7050 tests verts**. `tsc` et
+  lint propres ; aucun commentaire ajouté.
