@@ -1276,6 +1276,27 @@ n'est pas balayé, le sweeper survit à un SHUTDOWN/STARTUP) ;
 `unit/database/` : **2815/2815** ; `unit/terminal/` + `debug/oracle/` :
 394/394 ; tsc + ESLint propres.
 
+### 2026-06-13 — CREATE PFILE/SPFILE : ORA-01565 quand la source manque
+**Défaillance :** `CREATE PFILE FROM SPFILE` (et `CREATE SPFILE FROM
+PFILE='…'`) lisait le fichier source sur le VFS, mais quand celui-ci était
+absent (`readDeviceFile` → null) le code **retombait silencieusement sur le
+jeu de paramètres live** et retournait « File created. ». Un DBA croyant
+générer un pfile depuis un ancien spfile obtenait en réalité les paramètres
+courants, sans le moindre avertissement — là où le vrai Oracle échoue avec
+ORA-01565. Incohérence directe avec le filesystem : `rm spfileORCL.ora`
+n'avait aucun effet observable sur la commande.
+**Correction :** quand la lecture de la source rend null **et** qu'un
+filesystem device est câblé (`OracleInstance.hasDeviceFilesystem()`, nouveau,
+qui distingue « fichier réellement absent » de « pas de filesystem » des
+tests moteur purs), la commande lève
+`ORA-01565: error in identifying file '…'` + `ORA-27037: unable to obtain
+file status`, l'échelle exacte du vrai Oracle. Les tests moteur sans device
+gardent le fallback live (aucun disque d'où le fichier pourrait manquer).
+**Validation :** `oracle-stubs-to-real.test.ts` étendu (+1 : `rm` du spfile
+→ ORA-01565 sans « File created », et chemin source bidon → ORA-01565) ;
+cas nominaux préservés (les fichiers seedés au boot existent) ;
+`unit/database/` + `debug/oracle/` : **2830/2830** ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

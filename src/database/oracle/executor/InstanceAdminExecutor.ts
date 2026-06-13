@@ -322,10 +322,20 @@ export class InstanceAdminExecutor {
         : `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`;
       const src = stmt.sourcePath ?? srcDefault;
       const content = this.instance.readDeviceFile(src);
+      // A null read means the source parameter file is not on disk. Real
+      // Oracle does NOT silently fall back to the live parameter set —
+      // it fails with ORA-01565. Only skip the check when there is no
+      // device filesystem at all (engine-only tests: readDeviceFile is
+      // unset and returns null for everything, so requiring the file
+      // would break those — the live snapshot is the sensible fallback).
       if (content !== null) {
         for (const [k, v] of parseInitParameters(content)) {
           this.instance.setParameter(k, v, 'BOTH');
         }
+      } else if (this.instance.hasDeviceFilesystem()) {
+        throw new OracleError(1565,
+          `error in identifying file '${src}'\n`
+          + 'ORA-27037: unable to obtain file status');
       }
     }
     const params: Record<string, string> = {};

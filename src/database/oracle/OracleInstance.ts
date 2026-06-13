@@ -245,6 +245,16 @@ export class OracleInstance {
   readDeviceFile(path: string): string | null {
     return this._deviceFileReader?.(path) ?? null;
   }
+  /**
+   * Whether a host device filesystem is wired. Lets callers tell "file
+   * genuinely missing" (a device is attached, the path just isn't there)
+   * apart from "no filesystem at all" (engine-only tests), which need
+   * different fidelity — e.g. ORA-01565 vs a benign live-parameter
+   * fallback for CREATE PFILE/SPFILE.
+   */
+  hasDeviceFilesystem(): boolean {
+    return this._deviceFileReader !== null;
+  }
 
   /**
    * Datafile enumeration injected by OracleDatabase (the instance does

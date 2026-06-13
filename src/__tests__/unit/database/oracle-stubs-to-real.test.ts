@@ -77,6 +77,19 @@ describe('CREATE PFILE FROM SPFILE writes a real pfile to the VFS', () => {
     expect(cat).toMatch(/compatible=/i);
     sh.dispose();
   });
+
+  it('raises ORA-01565 when the source spfile is gone (no silent fallback)', () => {
+    const sh = s('pfile-missing');
+    // Remove the spfile the instance would read from.
+    run(sh, 'HOST rm /u01/app/oracle/product/19c/dbhome_1/dbs/spfileORCL.ora');
+    const out = run(sh, "CREATE PFILE='/tmp/pf2.ora' FROM SPFILE;");
+    expect(out).toMatch(/ORA-01565/);
+    expect(out).not.toMatch(/File created/);
+    // …and an explicitly bogus source path errors the same way.
+    const bogus = run(sh, "CREATE PFILE='/tmp/pf3.ora' FROM PFILE='/tmp/nope.ora';");
+    expect(bogus).toMatch(/ORA-01565/);
+    sh.dispose();
+  });
 });
 
 describe('CREATE SPFILE FROM PFILE imports parameters', () => {
