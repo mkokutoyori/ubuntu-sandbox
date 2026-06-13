@@ -2735,6 +2735,28 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(942, `table or view does not exist`);
     }
 
+    // A parent referenced by enabled foreign keys needs CASCADE
+    // CONSTRAINTS (ORA-02449); with it, the referencing FKs are dropped.
+    const fkChildren: Array<{ table: string; constraint: string }> = [];
+    for (const child of this.storage.getTableNames(schema)) {
+      if (child === tableName) continue;
+      const childMeta = this.storage.getTableMeta(schema, child);
+      for (const c of childMeta?.constraints ?? []) {
+        if (c.type === 'FOREIGN_KEY' && c.refTable?.toUpperCase().split('.').pop() === tableName) {
+          fkChildren.push({ table: child, constraint: c.name });
+        }
+      }
+    }
+    if (fkChildren.length > 0) {
+      if (!stmt.cascade) {
+        throw new OracleError(2449, 'unique/primary keys in table referenced by foreign keys');
+      }
+      for (const { table, constraint } of fkChildren) {
+        const childMeta = this.storage.getTableMeta(schema, table)!;
+        childMeta.constraints = childMeta.constraints.filter(c => c.name !== constraint);
+      }
+    }
+
     // Unless PURGE is specified, soft-drop into the recyclebin so
     // FLASHBACK TABLE … TO BEFORE DROP can restore it.
     if (!stmt.purge) {

@@ -1625,6 +1625,21 @@ ORA-02291 sur INSERT d'un parent absent via ref qualifiée, ORA-02292 sur
 DELETE du parent) ; non-régression `unit/database/` 2874 ; tsc + ESLint
 propres.
 
+### 2026-06-13 — DROP TABLE d'un parent référencé exige CASCADE CONSTRAINTS (ORA-02449)
+**Défaillance :** `executeDropTable` supprimait toujours la table, sans
+vérifier les FK enfants. Le vrai Oracle refuse de dropper un parent
+référencé par une FK (ORA-02449) sauf `DROP TABLE … CASCADE CONSTRAINTS`,
+qui supprime alors les FK référençantes.
+**Correction :** scan des FK enfants pointant vers la table ; sans
+`stmt.cascade` → ORA-02449 ; avec → retrait des contraintes FK des tables
+enfants avant le drop. Comparaison robuste au préfixe schéma du refTable.
+**Validation :** nouvelle suite `oracle-drop-table-fk.test.ts` (3 tests :
+DROP nu → ORA-02449, CASCADE CONSTRAINTS droppe parent + FK enfant,
+l'enfant non référencé droppe sans cascade) ; **zéro régression** sur
+`unit/database/` (2874) + `unit/terminal/` + `unit/shell/` + debug (915) —
+les tests droppent en ordre de dépendance ou avec CASCADE ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
