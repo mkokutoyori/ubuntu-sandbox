@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
@@ -200,6 +200,80 @@ describe('dot1x — EAPOL-Logoff', () => {
     const after = sw.getDot1xAgent().getPortRuntime('FastEthernet0/0')!;
     expect(after.state).toBe('unauthorized');
     expect(after.identity).toBeNull();
+  });
+});
+
+describe('dot1x — held quiet-period timer (IEEE 802.1X §8.2)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('a held port returns to unauthorized after holdMs, re-authenticable', () => {
+    vi.useFakeTimers();
+    const bus = new EventBus();
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    const sup = new CiscoSwitch('switch-cisco', 'SUP', 4);
+    sw.setEventBus(bus); sup.setEventBus(bus);
+    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, sup.getPort('FastEthernet0/0')!);
+    const ag = sw.getDot1xAgent();
+    ag.setSystemAuthControl(true);
+    ag.setPortMode('FastEthernet0/0', 'auto');
+    // No local user for 'mallory' ⇒ every attempt is rejected.
+    const mac = sup.getPort('FastEthernet0/0')!.getMAC().toString();
+
+    const reasons: string[] = [];
+    bus.subscribe('dot1x.port.state.changed', (e) => {
+      reasons.push((e.payload as { reason: string; newState: string }).reason
+        + ':' + (e.payload as { newState: string }).newState);
+    });
+
+    // Fail maxReauthReq (2) times in one session to reach held.
+    sup.getPort('FastEthernet0/0')!.sendFrame(buildEapolStart(mac));
+    const rt = ag.getPortRuntime('FastEthernet0/0')!;
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'mallory'));
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'mallory'));
+    expect(ag.getPortRuntime('FastEthernet0/0')?.state).toBe('held');
+
+    // Before the quiet period elapses it is still held.
+    vi.advanceTimersByTime(59_000);
+    expect(ag.getPortRuntime('FastEthernet0/0')?.state).toBe('held');
+
+    // After holdMs (60s) the port auto-recovers to unauthorized.
+    vi.advanceTimersByTime(2_000);
+    expect(ag.getPortRuntime('FastEthernet0/0')?.state).toBe('unauthorized');
+    expect(reasons).toContain('hold-expired:unauthorized');
+    expect(ag.getPortRuntime('FastEthernet0/0')?.reauthCount).toBe(0);
+  });
+
+  it('a successful auth before the quiet period elapses cancels the held timer', () => {
+    vi.useFakeTimers();
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    const sup = new CiscoSwitch('switch-cisco', 'SUP', 4);
+    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, sup.getPort('FastEthernet0/0')!);
+    const ag = sw.getDot1xAgent();
+    ag.setSystemAuthControl(true);
+    ag.setPortMode('FastEthernet0/0', 'auto');
+    ag.addLocalUser('alice', 'wonderland');
+    const mac = sup.getPort('FastEthernet0/0')!.getMAC().toString();
+
+    sup.getPort('FastEthernet0/0')!.sendFrame(buildEapolStart(mac));
+    let rt = ag.getPortRuntime('FastEthernet0/0')!;
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'mallory'));
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'mallory'));
+    expect(ag.getPortRuntime('FastEthernet0/0')?.state).toBe('held');
+
+    // Authenticate successfully (force the held timer to be cancelled).
+    rt.holdUntilMs = 0;        // allow a fresh EAPOL-Start during the quiet period
+    sup.getPort('FastEthernet0/0')!.sendFrame(buildEapolStart(mac));
+    rt = ag.getPortRuntime('FastEthernet0/0')!;
+    sup.getPort('FastEthernet0/0')!
+      .sendFrame(buildEapResponseIdentity(mac, rt.pendingEapId!, 'alice'));
+    expect(ag.isPortAuthorized('FastEthernet0/0')).toBe(true);
+
+    vi.advanceTimersByTime(120_000);
+    expect(ag.getPortRuntime('FastEthernet0/0')?.state).toBe('authorized');
   });
 });
 

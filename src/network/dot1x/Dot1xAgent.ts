@@ -1,4 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 import {
   type Dot1xConfig, type Dot1xPortRuntime, type Dot1xPortMode, type Dot1xPortState,
   type EapolPacket, type EapPacket,
@@ -30,14 +32,24 @@ export class Dot1xAgent {
   private radius: Dot1xRadiusBackend | null = null;
   private running = false;
   private nextEapId = 1;
+  /** Per-port quiet-period timer (held → unauthorized, IEEE 802.1X). */
+  private readonly heldTimers = new Map<string, symbol>();
+  private readonly timers: TimerSet;
 
   constructor(
     private readonly host: Dot1xHost,
     private readonly getBus: () => IEventBus,
-  ) {}
+    getScheduler: () => IScheduler = () => getDefaultScheduler(),
+  ) {
+    this.timers = new TimerSet(getScheduler);
+  }
 
   start(): void { if (!this.running) this.running = true; }
-  stop(): void { this.running = false; }
+  stop(): void {
+    this.running = false;
+    for (const h of this.heldTimers.values()) this.timers.clear(h);
+    this.heldTimers.clear();
+  }
 
   getConfig(): Readonly<Dot1xConfig> { return this.config; }
 
@@ -240,6 +252,27 @@ export class Dot1xAgent {
     if (this.host.onDot1xPortAuthorized) {
       this.host.onDot1xPortAuthorized(rt.port, isAuthorizedState(newState));
     }
+    this.armOrClearHeldTimer(rt);
+  }
+
+  /**
+   * Quiet-period timer (IEEE 802.1X-2004 §8.2 held state): after the
+   * authenticator fails a supplicant `maxReauthReq` times it stays in
+   * `held` for `holdMs`, then the port returns to `unauthorized` so the
+   * supplicant may try again. Previously the port left `held` only if a
+   * new EAPOL-Start happened to arrive — it could be wedged indefinitely.
+   */
+  private armOrClearHeldTimer(rt: Dot1xPortRuntime): void {
+    const existing = this.heldTimers.get(rt.port);
+    if (existing) { this.timers.clear(existing); this.heldTimers.delete(rt.port); }
+    if (rt.state !== 'held') return;
+    const handle = this.timers.setTimeout(() => {
+      this.heldTimers.delete(rt.port);
+      rt.reauthCount = 0;
+      rt.holdUntilMs = 0;
+      this.transition(rt, 'unauthorized', 'hold-expired');
+    }, rt.holdMs);
+    this.heldTimers.set(rt.port, handle);
   }
 
   private ensurePort(portName: string, mode: Dot1xPortMode): Dot1xPortRuntime {

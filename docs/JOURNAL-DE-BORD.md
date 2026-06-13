@@ -2448,3 +2448,58 @@ lint propre.
 - Cohérence « eventually consistent » entre convergences (modèle pull
   paresseux commun au simulateur, cf. EIGRP entrée 27) — atténuée par le
   hook `onRibChange` qui pousse les routes apprises hors convergence locale.
+
+---
+
+## Entrée 34 — dot1x : période de silence (held) réellement temporisée (IEEE 802.1X §8.2)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §2.4)
+
+1. **État `held` jamais relâché par un timer.** Après `maxReauthReq`
+   échecs d'authentification, le port passait en `held` avec
+   `holdUntilMs = now + holdMs`, mais **aucun timer** ne le ramenait à
+   `unauthorized`. Le seul contrôle (`if (rt.holdUntilMs > Date.now())
+   return`) était fait à la réception d'un nouvel EAPOL-Start : un
+   supplicant qui n'en renvoyait pas restait **bloqué indéfiniment**,
+   contrairement à un vrai commutateur qui rouvre le port à la fin de la
+   quiet-period. La raison de transition `'hold-expired'` était déjà
+   déclarée dans le type mais **jamais émise** — un point d'extension
+   anticipé puis oublié.
+
+### Correction (réactive, pattern Scheduler/TimerSet du projet)
+
+- `Dot1xAgent` reçoit un `getScheduler` (défaut `getDefaultScheduler`,
+  comme `StpAgent`) et un `TimerSet`. À l'entrée en `held`, un timer
+  `holdMs` est armé (`armOrClearHeldTimer`) ; à son échéance le port
+  revient à `unauthorized` (raison `'hold-expired'`, `reauthCount`
+  remis à 0 → ré-authentifiable). Tout changement d'état hors `held`
+  annule le timer ; `stop()` purge tous les timers.
+
+### Comportement réel gagné
+
+- Un port `held` se rouvre automatiquement après la quiet-period (60 s
+  par défaut) et redevient ré-authentifiable, observable via
+  `dot1x.port.state.changed` (raison `hold-expired`). Une
+  authentification réussie pendant la quiet-period annule proprement le
+  timer.
+
+### Fichiers
+
+- `src/network/dot1x/Dot1xAgent.ts`
+- `src/__tests__/unit/network-v2/dot1x-protocol.test.ts` (+2 tests, temps virtuel)
+
+### Validation
+
+- `dot1x-protocol` : 13 tests verts (held → unauthorized après holdMs,
+  annulation sur auth réussie). `tsc --noEmit` propre ; lint propre.
+
+### Backlog (gros item de câble documenté, non traité cette session)
+
+- **IPSec IKE** (`IPSecEngine`, ~4200 lignes) négocie encore ses SA en
+  « engine-to-engine » via `findRouterByIP` + accès direct à `ikeSADB`
+  du pair (GAP §4.14) — dernière conversation de contrôle hors-bande.
+  Sa migration vers de vrais paquets ISAKMP UDP/500 est un chantier à
+  part entière (analogue à BGP, mais plus volumineux), à planifier
+  isolément. (DPD est déjà réel depuis l'entrée 17.)
