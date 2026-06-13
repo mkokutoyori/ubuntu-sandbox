@@ -203,6 +203,20 @@ export interface IkeTransformProposal {
   mode: 'tunnel' | 'transport';
 }
 
+export interface IkeV2ProposalWire {
+  name: string;
+  encryption: string[];
+  integrity: string[];
+  dhGroup: number[];
+}
+
+export interface IkeV2Chosen {
+  enc: string;
+  int: string;
+  grp: number;
+  propName: string;
+}
+
 export interface IkeOfferMessage {
   type: 'ike';
   step: 'offer';
@@ -213,6 +227,7 @@ export interface IkeOfferMessage {
   destination: string;
   pskProof: string;
   policies: IkePolicyProposal[];
+  ikev2Proposals?: IkeV2ProposalWire[];
   transforms: IkeTransformProposal[];
   pfsGroup?: number;
   lifetimeSec: number;
@@ -226,7 +241,8 @@ export interface IkeAcceptMessage {
   step: 'accept';
   responderSpi: string;
   pskProof: string;
-  chosenPolicy: IkePolicyProposal;
+  chosenPolicy?: IkePolicyProposal;
+  chosenIkev2?: IkeV2Chosen;
   chosenTransform: IkeTransformProposal;
   ipsecSpiIn: number;
   ikeLifetimeSec: number;

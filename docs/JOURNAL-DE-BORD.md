@@ -2624,3 +2624,58 @@ locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
 - **IKEv2** (`negotiateIKEv2`) encore god-mode — volet C.
 - **Rekey IKE/IPSec** et **install SA multicast** sur le pair encore
   god-mode (`peerEngine.ikeSADB/ipsecSADB`, multicastSADB) — volet D.
+
+---
+
+## Entrée 38 — IPSec : IKEv2 sur le câble — god-mode éliminé de toute la négociation
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §4.14, volet C)
+
+1. **IKEv2 encore god-mode.** Après l'entrée 37 (IKEv1 sur le fil),
+   `negotiateIKEv2` lisait toujours `peerEngine.ikev2Proposals` /
+   `findIKEv2PSK` du pair et écrivait son `ikev2SADB` directement, puis
+   appelait `negotiateIPSecSA` (lui aussi god-mode) pour la CHILD_SA.
+
+### Correction
+
+- **Échange unifié offer/accept** étendu à IKEv2 : `initiateIkeWire(…,
+  version)` porte des propositions IKEv2 (enc/int/dh) et une preuve PSK du
+  keyring ; le répondeur (`handleIkeOffer`) sélectionne la proposition
+  commune depuis SA PROPRE config, installe son `IKEv2_SA` (READY,
+  Responder) + la CHILD_SA IPSec, et répond `accept` (chosenIkev2 + SPIs).
+  L'initiateur installe son `IKEv2_SA` (Initiator) à la réception.
+- **KEYMAT cohérent par version** : la graine de clé de la CHILD_SA
+  utilise la même PSK des deux côtés (keyring pour v2, preSharedKeys pour
+  v1) ⇒ clés ESP identiques, ICV vérifiables.
+- **`negotiateTunnel` n'a plus aucun god-mode** : il route v1/v2 vers le
+  wire. `negotiateIKEv2` et `negotiateIPSecSA` (méthodes mortes, avec
+  leurs écritures `peerEngine.*`) supprimées. `findRouterByIP` ne survit
+  plus que pour le rekey et l'install SA multicast (volet D).
+
+### Comportements réels gagnés
+
+- Établissement IKEv2 PSK (IKE_SA_INIT/IKE_AUTH/CHILD_SA) sur de vrais
+  datagrammes UDP/500 ; `IKEv2_SA` READY des deux côtés (rôles
+  Initiator/Responder corrects, SPIs locaux/distants croisés), plan ESP
+  fonctionnel, NAT-T détecté sur le fil. Échec honnête sans proposition,
+  PSK ou transform commun.
+
+### Fichiers
+
+- `src/network/ipsec/IPSecTypes.ts`, `src/network/ipsec/IPSecEngine.ts`
+
+### Validation
+
+- IPSec/VPN/parité : 250 tests verts (ikev1-psk, ikev2-psk, modes-pfs,
+  algorithms, failures, esp-confidentiality, esp-icv, advanced, dpd-wire,
+  nat-dpd, wan-vpn, huawei-ospf-ipsec-parity).
+- Non-régression : **network-v2 complet — 7041 tests verts**. `tsc`
+  propre ; aucun `any` introduit.
+
+### Reste (volet D)
+
+- Rekey IKE/IPSec (`rekeyIKESA` écrit le `ikeSADB` du pair) et install/
+  retrait des SA multicast (`peerEngine.installMulticastReceiverSA`…)
+  encore god-mode — dernier volet.
