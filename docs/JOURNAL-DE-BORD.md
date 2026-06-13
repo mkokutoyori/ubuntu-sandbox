@@ -2207,3 +2207,94 @@ lint propre.
 
 - `autoDiscoverDHCPServers` (repli hors-bande pour topologies non
   câblées) demeure — toujours tracé au backlog #17.
+
+---
+
+## Entrée 31 — STP : rôle Backup réel (802.1D-2004 §17.7) + coût de port piloté par la vitesse
+
+**Date** : 2026-06-13
+
+### Défaillances constatées
+
+1. **Rôle Backup inexistant.** `StpPortRole` ne connaissait que
+   `root | designated | alternate | disabled` : tout port bloqué était
+   étiqueté `alternate`, y compris le cas canonique du **port Backup**
+   (802.1D-2004 §17.7) — un port bloqué parce que *notre propre* pont
+   émet une BPDU supérieure sur le **même segment partagé** (deux ports
+   du pont sur un hub). Un vrai commutateur distingue :
+   - **Alternate** : meilleure information reçue d'un **autre** pont
+     (chemin alternatif vers la racine, secours du root port) ;
+   - **Backup** : meilleure information reçue de **soi-même** sur le
+     segment (secours d'un port désigné local).
+   Cisco (`Altn`/`Back`) comme Huawei (`ALTE`/`BACK`) les affichent
+   séparément, même en mode legacy ; le simulateur les fusionnait.
+2. **Coût de port faux — bug d'unité kbps/Mbps.** Les trois sites
+   appelant `defaultPathCost(port.getSpeed())` passaient des **Mbps**
+   (`getSpeed()` renvoie 10/100/1000/10000) à une fonction dont le
+   contrat (paramètre `speedKbps`, test unitaire à l'appui) attend des
+   **kbps**. Conséquence : *tout* coût STP calculé était erroné — un lien
+   Gigabit valait **200** au lieu de 4, FastEthernet 200 au lieu de 19,
+   10 GbE 100 au lieu de 2. Les élections entre liens de même vitesse
+   restaient correctes (coûts égaux), mais toute topologie à vitesses
+   mixtes mal-élisait, et les valeurs affichées étaient fausses.
+3. **`show spanning-tree` mentait sur le coût.** Le coût par interface
+   était **codé en dur à `19`** dans `showSpanningTree`, masquant le bug
+   d'unité du moteur (le moteur disait 200, l'écran disait 19, le vrai
+   coût d'un port Gigabit est 4).
+
+### Correction (structurelle)
+
+- **`StpPortRole`** étendu à `backup` (types.ts, documenté). `runElection`
+  discrimine désormais à la sortie d'élection : une BPDU supérieure
+  **sourcée par notre propre BridgeId** (`bridgeEquals(info.designatedBridge,
+  own)`) → `backup`, sinon → `alternate`. Les deux restent en
+  `blocking` (`applyRole`). Le chemin root-guard (`alternate` forcé) et
+  toutes les topologies point-à-point entre ponts distincts sont
+  inchangés — le Backup ne peut naître que d'une BPDU auto-sourcée,
+  c.-à-d. d'un segment partagé.
+- **Bug d'unité corrigé au bon endroit** : la fonction partagée
+  `defaultPathCost` (contrat kbps, couverte par un test) est conservée ;
+  les appelants convergent vers un **point de conversion unique**, le
+  nouveau helper privé `costForPort(port)` = `defaultPathCost(speedMbps ×
+  1000)`. Les trois sites (réception BPDU, `applyRole`, `getPortCost`)
+  l'utilisent — fin de la triplication et des replis incohérents
+  (`19` vs `defaultPathCost(0)`).
+- **Accesseur public `getPortCost(portName)`** : coût mémorisé du port,
+  sinon coût live dérivé de la vitesse.
+- **CLI** : `show spanning-tree` (Cisco) rend `Back` et le **vrai coût**
+  via `agent.getPortCost()` (plus de `19` en dur) ; `display stp brief`
+  (Huawei) rend `BACK`.
+
+### Comportements réels gagnés
+
+- Deux ports d'un même commutateur sur un hub : l'un Désigné/forwarding,
+  l'autre **Backup**/blocking — observable via `getPortRole` et
+  `show spanning-tree` (`Back`).
+- Coût de port conforme à la Table 17-3 IEEE : Gigabit 4, FastEthernet
+  19, 10 GbE 2 — moteur **et** affichage cohérents.
+
+### Fichiers
+
+- `src/network/stp/types.ts`, `src/network/stp/StpAgent.ts`
+- `src/network/devices/shells/CiscoSwitchShell.ts`
+- `src/network/devices/shells/HuaweiSwitchShell.ts`
+- `src/__tests__/unit/network-v2/stp-rstp.test.ts` (+4 tests)
+
+### Validation
+
+- `stp-rstp` : 10 tests verts (Backup sur segment partagé, Alternate
+  préservé en point-à-point, coût dérivé de la vitesse, rendu
+  `show spanning-tree` réel).
+- Non-régression : 9 suites L2 (stp-rstp, stp-protocol, cisco-stp,
+  huawei-stp, stp-guards, stp-tcn, stp-show-subcommands, vlan-advanced,
+  huawei-vrp) — **156 tests verts**. `tsc --noEmit` propre ; lint propre
+  sur les fichiers touchés.
+
+### Limites restantes (documentées)
+
+- RSTP « sync » (proposal/agreement avec mise en discarding en cascade
+  des ports désignés non-edge avant l'agreement, §17.10) reste partiel :
+  le modèle de livraison synchrone du simulateur rend la course de
+  convergence inobservable ; la transition rapide root-port et le
+  handshake proposal/agreement existants suffisent au réalisme actuel.
+- MSTP (802.1s, régions/MSTI/CIST) toujours absent (tracé GAP §2.1).

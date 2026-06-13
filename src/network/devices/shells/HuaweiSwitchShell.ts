@@ -1493,7 +1493,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         : st === 'blocking' ? 'DISCARDING'
         : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
       const r = ag?.getPortRole(p) ?? 'designated';
-      const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE' : r === 'disabled' ? 'DISA' : 'DESI';
+      const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE'
+        : r === 'backup' ? 'BACK' : r === 'disabled' ? 'DISA' : 'DESI';
       rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
     }
     if (only && rows.length === 0) {

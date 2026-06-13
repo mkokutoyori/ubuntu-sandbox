@@ -2,7 +2,19 @@ export const ETHERTYPE_STP = 0x4242;
 export const STP_BRIDGE_MAC = '01:80:c2:00:00:00';
 
 export type StpBpduType = 'config' | 'tcn';
-export type StpPortRole = 'root' | 'designated' | 'alternate' | 'disabled';
+/**
+ * Port roles per IEEE 802.1D-2004 §17.7. Classic 802.1D only names
+ * root/designated/blocked, but the rapid (802.1w) role taxonomy
+ * distinguishes the two kinds of blocked port — and Cisco/Huawei show
+ * commands report them separately even in legacy mode:
+ *  - `alternate`: blocked because a *different* bridge offers a better
+ *    path to the root (an alternate path to the root port);
+ *  - `backup`: blocked because *our own* bridge offers a superior BPDU
+ *    on the same shared segment (backs up a local designated port).
+ * Both are in the Discarding/Blocking forwarding state.
+ */
+export type StpPortRole =
+  | 'root' | 'designated' | 'alternate' | 'backup' | 'disabled';
 
 export interface BridgeId {
   priority: number;

@@ -1885,6 +1885,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const role =
         stpRole === 'root' ? 'Root'
         : stpRole === 'alternate' ? 'Altn'
+        : stpRole === 'backup' ? 'Back'
         : stpRole === 'disabled' ? 'Disa'
         : 'Desg';
       const sts = state === 'forwarding' ? 'FWD'
@@ -1892,7 +1893,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : state === 'listening' ? 'LIS'
         : state === 'learning' ? 'LRN'
         : 'DIS';
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
+      const portCost = agent?.getPortCost(portName) ?? 19;
+      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
     }
     return lines.join('\n');
   }

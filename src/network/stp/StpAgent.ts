@@ -105,6 +105,27 @@ export class StpAgent extends ReactiveAgentBase {
     return this.portInfo.get(portName)?.role ?? 'disabled';
   }
 
+  /**
+   * Path cost of a port (IEEE 802.1D-2004 Table 17-3), derived from the
+   * live link speed. Used by `show spanning-tree` so the displayed cost
+   * tracks the real interface speed instead of a hard-coded constant.
+   */
+  getPortCost(portName: string): number {
+    const known = this.portInfo.get(portName)?.cost;
+    if (known !== undefined) return known;
+    return this.costForPort(this.host.getPort(portName));
+  }
+
+  /**
+   * Speed-derived path cost (IEEE 802.1D-2004 Table 17-3). `Port.getSpeed()`
+   * is in Mbps; {@link defaultPathCost} works in kbps, so convert here — the
+   * single conversion point keeps every STP cost consistent (a Gigabit link
+   * is 4, FastEthernet 19, 10 GbE 2, not the 200 a raw Mbps value yields).
+   */
+  private costForPort(port: import('../hardware/Port').Port | undefined): number {
+    return defaultPathCost((port?.getSpeed() ?? 0) * 1000);
+  }
+
   /** TC flag currently carried in our config BPDUs (root tcWhile or mirrored). */
   isTopologyChangeActive(): boolean { return this.tcFlagActive; }
 
@@ -279,7 +300,7 @@ export class StpAgent extends ReactiveAgentBase {
         rootMac: payload.rootBridge.mac,
       },
     });
-    const cost = defaultPathCost(port.getSpeed());
+    const cost = this.costForPort(port);
     const info: StpPortInfo = {
       role: 'disabled',
       cost,
@@ -658,8 +679,14 @@ export class StpAgent extends ReactiveAgentBase {
         bridge: info.designatedBridge, port: info.designatedPort,
       };
       const mine = this.bpduSuperiority(myAdvertised, theirs);
-      if (mine <= 0) this.applyRole(name, 'designated');
-      else this.applyRole(name, 'alternate');
+      if (mine <= 0) { this.applyRole(name, 'designated'); continue; }
+      // Non-designated, non-root: distinguish Alternate from Backup
+      // (802.1D-2004 §17.7). A superior BPDU sourced by our OWN bridge —
+      // only possible on a shared segment carrying another of our
+      // designated ports — makes this a Backup port; a superior BPDU from
+      // any other bridge makes it an Alternate (alternate path to root).
+      const fromSelf = bridgeEquals(info.designatedBridge, own);
+      this.applyRole(name, fromSelf ? 'backup' : 'alternate');
     }
 
     if (rootChanged) {
@@ -710,7 +737,7 @@ export class StpAgent extends ReactiveAgentBase {
     let info = this.portInfo.get(portName);
     if (!info) {
       const port = this.host.getPort(portName);
-      const cost = port ? defaultPathCost(port.getSpeed()) : 19;
+      const cost = this.costForPort(port);
       info = {
         role: 'disabled', cost,
         designatedRoot: this.ownBridgeId(),
@@ -734,7 +761,7 @@ export class StpAgent extends ReactiveAgentBase {
     }
     if (role === 'disabled') {
       this.applyForwardState(portName, 'disabled');
-    } else if (role === 'alternate') {
+    } else if (role === 'alternate' || role === 'backup') {
       this.applyForwardState(portName, 'blocking');
     } else {
       this.requestForwarding(portName);
