@@ -64,6 +64,16 @@ export interface StpConfig {
   bpduGuardGlobal: boolean;
 }
 
+export interface MstRegion {
+  name: string;
+  revision: number;
+  instances: Map<number, string>;
+}
+
+export function createDefaultMstRegion(): MstRegion {
+  return { name: '', revision: 0, instances: new Map() };
+}
+
 export interface StpPortInfo {
   role: StpPortRole;
   cost: number;

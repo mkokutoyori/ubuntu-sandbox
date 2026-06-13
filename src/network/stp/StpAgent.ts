@@ -3,9 +3,9 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
-  type StpPortGuards,
+  type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost,
-  defaultPortGuards,
+  defaultPortGuards, createDefaultMstRegion,
   ETHERTYPE_STP, STP_BRIDGE_MAC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
@@ -32,6 +32,7 @@ export interface StpHost {
 
 export class StpAgent extends ReactiveAgentBase {
   private config: StpConfig;
+  private readonly mstRegion: MstRegion = createDefaultMstRegion();
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
@@ -139,6 +140,16 @@ export class StpAgent extends ReactiveAgentBase {
 
   private isPointToPoint(portName: string): boolean {
     return this.getPortLinkType(portName) === 'p2p';
+  }
+
+  getMstRegion(): MstRegion { return this.mstRegion; }
+  setMstName(name: string): void { this.mstRegion.name = name; }
+  setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
+  mapMstInstance(instanceId: number, vlans: string): void {
+    this.mstRegion.instances.set(instanceId, vlans);
+  }
+  unmapMstInstance(instanceId: number): void {
+    this.mstRegion.instances.delete(instanceId);
   }
 
   /** TC flag currently carried in our config BPDUs (root tcWhile or mirrored). */

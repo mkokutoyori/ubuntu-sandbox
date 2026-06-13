@@ -2826,3 +2826,49 @@ switch Huawei serait irréaliste.)
   ping-through-switch : 161 verts.
 - Non-régression : **network-v2 complet — 7050 tests verts**. `tsc` et
   lint propres ; aucun commentaire ajouté.
+
+---
+
+## Entrée 42 — STP/MSTP : la région MST appartient au moteur du pont (SSOT), plus à la session CLI
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §2.1)
+
+La configuration de la région MST (nom, révision, mapping VLAN→instance)
+n'existait **que dans la mémoire locale du `CiscoSwitchShell`**
+(`this.mstRegion`), jamais transmise au `StpAgent`. La région
+appartenait à la session CLI et non au pont — non réaliste (elle devrait
+survivre indépendamment de la session et être la source de vérité du
+moteur).
+
+### Correction (fondation MSTP, SSOT)
+
+- `StpAgent` possède désormais la région MST (`MstRegion` :
+  nom/révision/instances) avec `setMstName`/`setMstRevision`/
+  `mapMstInstance`/`unmapMstInstance`/`getMstRegion`.
+- `CiscoSwitchShell` délègue toute la sous-config `config-mst` au moteur ;
+  `show spanning-tree mst configuration` lit la région du moteur. Champ
+  `mstRegion` local au shell supprimé.
+
+### Fichiers
+
+- `src/network/stp/types.ts`, `src/network/stp/StpAgent.ts`
+- `src/network/devices/shells/CiscoSwitchShell.ts`
+- `src/__tests__/unit/network-v2/cisco-stp.test.ts` (+2)
+
+### Validation
+
+- `cisco-stp` : 6 tests verts (région backed par le moteur, no name/no
+  instance reviennent). Suites STP + debug stp/cisco-stp-security : 42
+  verts. Non-régression : **network-v2 complet — 7052 tests verts**.
+  `tsc`/lint propres ; aucun commentaire ajouté.
+
+### Limite / suite (volet MSTP majeur)
+
+- Ceci est la **fondation** : la région est maintenant dans le moteur,
+  mais le calcul de **N arbres par instance (CIST + MSTI)** avec états de
+  port par-VLAN n'est pas encore réalisé — c'est une refonte multi-
+  instance du `StpAgent` (et du plan de données par-VLAN), à mener comme
+  un chantier dédié. L'instance 0 (CIST) reste l'arbre STP/RSTP unique
+  existant.

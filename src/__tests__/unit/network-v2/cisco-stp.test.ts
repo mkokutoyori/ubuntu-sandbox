@@ -59,6 +59,34 @@ describe('Cisco STP — MST sub-mode', () => {
     expect(await sw.executeCommand('do show spanning-tree mst configuration'))
       .not.toMatch(/Invalid input/);
   });
+
+  it('the MST region is owned by the bridge engine (SSOT), not the CLI session', async () => {
+    const sw = await cfgSwitch();
+    for (const c of ['spanning-tree mst configuration', 'name LAB',
+      'revision 7', 'instance 1 vlan 10,20', 'exit']) {
+      await sw.executeCommand(c);
+    }
+    const region = sw.getStpAgent().getMstRegion();
+    expect(region.name).toBe('LAB');
+    expect(region.revision).toBe(7);
+    expect(region.instances.get(1)).toBe('vlan 10,20');
+
+    const show = await sw.executeCommand('do show spanning-tree mst configuration');
+    expect(show).toContain('Name      [LAB]');
+    expect(show).toContain('Revision  7');
+    expect(show).toMatch(/1\s+vlan 10,20/);
+  });
+
+  it('no name / no instance revert the region in the engine', async () => {
+    const sw = await cfgSwitch();
+    for (const c of ['spanning-tree mst configuration', 'name LAB',
+      'instance 3 vlan 30', 'no name', 'no instance 3', 'exit']) {
+      await sw.executeCommand(c);
+    }
+    const region = sw.getStpAgent().getMstRegion();
+    expect(region.name).toBe('');
+    expect(region.instances.has(3)).toBe(false);
+  });
 });
 
 describe('Cisco STP — interface config', () => {
