@@ -126,6 +126,21 @@ export class StpAgent extends ReactiveAgentBase {
     return defaultPathCost((port?.getSpeed() ?? 0) * 1000);
   }
 
+  /**
+   * RSTP operPointToPoint (IEEE 802.1D-2004 §6.4.3), inferred from the
+   * operational duplex: a full-duplex link is point-to-point (eligible for
+   * the rapid proposal/agreement transition), a half-duplex link is shared
+   * (a hub segment) and must fall back to the timed listening/learning walk.
+   */
+  getPortLinkType(portName: string): 'p2p' | 'shared' {
+    return this.host.getPort(portName)?.getDuplex() === 'half'
+      ? 'shared' : 'p2p';
+  }
+
+  private isPointToPoint(portName: string): boolean {
+    return this.getPortLinkType(portName) === 'p2p';
+  }
+
   /** TC flag currently carried in our config BPDUs (root tcWhile or mirrored). */
   isTopologyChangeActive(): boolean { return this.tcFlagActive; }
 
@@ -517,6 +532,7 @@ export class StpAgent extends ReactiveAgentBase {
       version: this.config.mode === 'rstp' ? 2 : 0,
       flags: 0,
       proposal: this.config.mode === 'rstp'
+        && this.isPointToPoint(portName)
         && this.portInfo.get(portName)?.role === 'designated'
         && this.forwardStates.get(portName) !== 'forwarding',
       agreement: this.pendingAgreement.delete(portName),
@@ -788,13 +804,20 @@ export class StpAgent extends ReactiveAgentBase {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
-    if (this.config.mode === 'rstp' && portName === this.rootPort) {
+    // RSTP rapid root-port transition is only safe on a point-to-point
+    // link; on a shared segment the root port walks the timers (§17.10).
+    if (this.config.mode === 'rstp' && portName === this.rootPort
+      && this.isPointToPoint(portName)) {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
     this.applyForwardState(portName, 'listening');
     this.scheduleTransition(portName, 'learning');
-    if (this.config.mode === 'rstp') this.sendBpdu(portName);
+    // A designated port proposes only on point-to-point links (the
+    // proposal flag in sendBpdu is gated the same way).
+    if (this.config.mode === 'rstp' && this.isPointToPoint(portName)) {
+      this.sendBpdu(portName);
+    }
   }
 
   private scheduleTransition(portName: string, next: 'learning' | 'forwarding'): void {

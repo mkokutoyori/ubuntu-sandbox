@@ -2298,3 +2298,63 @@ lint propre.
   convergence inobservable ; la transition rapide root-port et le
   handshake proposal/agreement existants suffisent au réalisme actuel.
 - MSTP (802.1s, régions/MSTI/CIST) toujours absent (tracé GAP §2.1).
+
+---
+
+## Entrée 32 — STP : type de lien RSTP (P2p/Shr) réel et fonctionnel (802.1D-2004 §6.4.3)
+
+**Date** : 2026-06-13
+
+### Défaillances constatées
+
+1. **Type de lien décoratif et faux.** `show spanning-tree` affichait
+   `P2p` **en dur** pour toute interface, quel que soit le duplex. Or le
+   `operPointToPoint` de RSTP (802.1D-2004 §6.4.3) se déduit du duplex :
+   full-duplex ⇒ point-à-point (éligible à la transition rapide
+   proposal/agreement), half-duplex ⇒ segment partagé (hub) qui doit
+   retomber sur la marche temporisée listening/learning.
+2. **Transitions rapides RSTP non conditionnées au lien.** La transition
+   instantanée du root port et l'émission de proposal sur les ports
+   désignés se faisaient sur **n'importe quel** lien, y compris un segment
+   partagé — où RSTP interdit la transition rapide (risque de boucle).
+
+### Correction (structurelle)
+
+- **Accesseur `getPortLinkType(portName): 'p2p' | 'shared'`** dérivé du
+  duplex réel du port (`getDuplex() === 'half'` ⇒ shared).
+- **Type de lien rendu fonctionnel** (pas seulement affiché) :
+  - `requestForwarding` ne fait la transition rapide du root port que si
+    le lien est p2p ; sur un lien partagé, le port marche les timers ;
+  - le drapeau `proposal` d'une BPDU désignée n'est posé que sur p2p
+    (gardé identiquement dans `requestForwarding` et `sendBpdu`).
+- **CLI** : `show spanning-tree` (Cisco) rend `Shr` pour un lien partagé,
+  `P2p` sinon, suivi de ` Edge` pour un port PortFast opérationnel —
+  conforme à la colonne *Type* d'un vrai IOS (`P2p`, `Shr`, `P2p Edge`).
+
+### Comportements réels gagnés
+
+- Un port half-duplex apparaît `Shr` ; un port PortFast `P2p Edge`.
+- Sur un segment partagé, un port désigné qui (re)transitionne après le
+  bring-up marche listening→learning au lieu de forwarder instantanément
+  — la transition rapide reste réservée aux liens point-à-point.
+
+### Note (limite assumée, déjà documentée)
+
+- Le bring-up initial forwarde instantanément dans **tous** les modes
+  (raccourci d'utilisabilité global, déjà present : le test legacy STP
+  force une re-transition post-bring-up pour observer listening). Le
+  gating de type de lien s'applique donc aux re-transitions, pas au
+  premier câblage — cohérent avec l'existant, testé comme tel.
+
+### Fichiers
+
+- `src/network/stp/StpAgent.ts`
+- `src/network/devices/shells/CiscoSwitchShell.ts`
+- `src/__tests__/unit/network-v2/stp-rstp.test.ts` (+3 tests)
+
+### Validation
+
+- `stp-rstp` : 13 tests verts (type de lien p2p/shared, rendu `Shr`/
+  `P2p Edge`, marche temporisée sur lien partagé post-bring-up).
+- Non-régression : 8 suites L2 + ping-through-switch — **87 tests verts**.
+  `tsc --noEmit` propre ; lint propre.

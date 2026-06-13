@@ -1894,7 +1894,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : state === 'learning' ? 'LRN'
         : 'DIS';
       const portCost = agent?.getPortCost(portName) ?? 19;
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
+      const linkType = agent?.getPortLinkType(portName) === 'shared' ? 'Shr' : 'P2p';
+      const edge = agent?.isPortFastOperational(portName) ? ' Edge' : '';
+      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}${linkType}${edge}`);
     }
     return lines.join('\n');
   }

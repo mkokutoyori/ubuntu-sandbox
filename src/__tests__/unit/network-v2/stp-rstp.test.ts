@@ -193,3 +193,51 @@ describe('STP port path cost reflects link speed (Table 17-3)', () => {
     expect(out).not.toMatch(/\b19\b/);         // the constant is gone
   });
 });
+
+describe('STP link type (RSTP operPointToPoint, 802.1D-2004 §6.4.3)', () => {
+  it('getPortLinkType is p2p on full duplex and shared on half duplex', () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const ag = sw.getStpAgent();
+    expect(ag.getPortLinkType('FastEthernet0/0')).toBe('p2p');
+    sw.getPort('FastEthernet0/0')!.setDuplex('half');
+    expect(ag.getPortLinkType('FastEthernet0/0')).toBe('shared');
+  });
+
+  it('show spanning-tree renders Shr for shared links and P2p Edge for portfast', async () => {
+    const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    root.getStpAgent().setBridgePriority(0);
+    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    sw2.getPort('FastEthernet0/0')!.setDuplex('half');
+    sw2.getStpAgent().setPortFast('FastEthernet0/1', true);
+    await sw2.executeCommand('enable');
+
+    const out = await sw2.executeCommand('show spanning-tree');
+    expect(out).toMatch(/Fa0\/0.*Shr/);        // half-duplex link is shared
+    expect(out).toMatch(/Fa0\/1.*P2p Edge/);   // portfast edge port
+  });
+
+  it('a shared designated port walks the timers; the rstp proposal is suppressed', async () => {
+    // The initial bring-up forwards instantly in every mode (a documented
+    // usability shortcut), so — like the legacy-STP test — we force a
+    // re-transition AFTER bring-up to observe the link-type behaviour.
+    vi.useFakeTimers();
+    const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    await setRapidPvst(root);
+    await setRapidPvst(sw2);
+    await makeRoot(root);
+    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw2.getPort('FastEthernet0/1')!.setDuplex('half');   // shared segment
+    expect(sw2.getStpAgent().getForwardState('FastEthernet0/1')).toBe('blocking');
+
+    // SW2 becomes root: its blocked FE0/1 turns designated and re-transitions.
+    sw2.getStpAgent().setBridgePriority(0);
+
+    expect(sw2.getStpAgent().isRoot()).toBe(true);
+    // On a p2p link this would rapid-forward via proposal/agreement; on a
+    // shared link RSTP must fall back to the timed listening walk.
+    expect(sw2.getStpAgent().getForwardState('FastEthernet0/1')).toBe('listening');
+  });
+});
