@@ -23,6 +23,9 @@ export interface ColumnMeta {
   dataType: ColumnDataType;
   ordinalPosition: number;
   defaultValue?: CellValue;
+  /** Parsed DEFAULT expression (AST), evaluated per-row for omitted columns
+   *  on INSERT. Typed loosely to avoid a parser→storage dependency. */
+  defaultExpr?: object;
 }
 
 export interface ConstraintMeta {

@@ -1852,8 +1852,12 @@ export abstract class BaseParser {
       return { type: 'IsNullExpr', position: pos, expr: left, negated };
     }
 
-    // [NOT] BETWEEN
-    const notBetween = this.matchKeyword('NOT');
+    // [NOT] BETWEEN / IN / LIKE — only consume NOT when one of these
+    // actually follows, so a trailing column constraint (… DEFAULT 0
+    // NOT NULL) is left for the constraint parser instead of erroring.
+    const afterNot = this.checkKeyword('NOT') ? this.peekNext()?.value?.toUpperCase() : undefined;
+    const notBetween = afterNot === 'BETWEEN' || afterNot === 'IN' || afterNot === 'LIKE';
+    if (notBetween) this.advance();
     if (this.matchKeyword('BETWEEN')) {
       const low = this.parseAddition();
       this.expectKeyword('AND');

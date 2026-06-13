@@ -2292,16 +2292,20 @@ export class OracleExecutor extends BaseExecutor {
       }
       for (const subRow of subResult.rows) {
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+        const provided = new Set<number>();
         if (stmt.columns) {
           for (let i = 0; i < stmt.columns.length; i++) {
             const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
-            if (colIdx >= 0) row[colIdx] = subRow[i] as CellValue;
+            if (colIdx >= 0) { row[colIdx] = subRow[i] as CellValue; provided.add(colIdx); }
           }
         } else {
           for (let i = 0; i < subResult.columns.length && i < tableMeta.columns.length; i++) {
             row[i] = subRow[i] as CellValue;
+            provided.add(i);
           }
         }
+        // Columns the SELECT did not supply fall back to their DEFAULT.
+        this.applyColumnDefaults(tableMeta, row, provided);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
@@ -2315,30 +2319,49 @@ export class OracleExecutor extends BaseExecutor {
 
   private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {
     const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+    const provided = new Set<number>();
 
     if (columns) {
       for (const colName of columns) this.requireColumnIndex(tableMeta, colName);
       if (values.length > columns.length) throw new OracleError(913, 'too many values');
       if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
-        row[this.requireColumnIndex(tableMeta, columns[i])] = this.evaluateExpression(values[i], [], []);
+        const idx = this.requireColumnIndex(tableMeta, columns[i]);
+        row[idx] = this.evaluateExpression(values[i], [], []);
+        provided.add(idx);
       }
     } else {
       if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
       if (values.length < tableMeta.columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < values.length && i < tableMeta.columns.length; i++) {
         row[i] = this.evaluateExpression(values[i], [], []);
+        provided.add(i);
       }
     }
 
-    // Apply defaults for missing values
-    for (let i = 0; i < tableMeta.columns.length; i++) {
-      if (row[i] === null && tableMeta.columns[i].defaultValue !== undefined) {
-        row[i] = tableMeta.columns[i].defaultValue!;
-      }
-    }
-
+    this.applyColumnDefaults(tableMeta, row, provided);
     return row;
+  }
+
+  /**
+   * Evaluate the DEFAULT expression of every column the INSERT did not
+   * supply (an explicit NULL keeps NULL; only omitted columns default).
+   * The DEFAULT is evaluated per row, so DEFAULT SYSDATE / sequences work.
+   */
+  private applyColumnDefaults(
+    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
+    row: StorageRow,
+    provided: Set<number>,
+  ): void {
+    for (let i = 0; i < tableMeta.columns.length; i++) {
+      if (provided.has(i)) continue;
+      const col = tableMeta.columns[i];
+      if (col.defaultExpr) {
+        row[i] = this.evaluateExpression(col.defaultExpr as Expression, [], []);
+      } else if (col.defaultValue !== undefined) {
+        row[i] = col.defaultValue;
+      }
+    }
   }
 
   // ── UPDATE ────────────────────────────────────────────────────────
@@ -2638,6 +2661,7 @@ export class OracleExecutor extends BaseExecutor {
       name: col.name.toUpperCase(),
       dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
       ordinalPosition: i,
+      defaultExpr: col.defaultValue,
     }));
 
     const constraints: ConstraintMeta[] = [];

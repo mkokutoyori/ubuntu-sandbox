@@ -1677,6 +1677,28 @@ NULL rejeté après NOT NULL, ORA-02296 sur données existantes NULL, NULL
 relève la contrainte) ; non-régression parser + `unit/database/` +
 `unit/terminal/` (3266) + `debug/oracle/` (20) ; tsc + ESLint propres.
 
+### 2026-06-13 — Les DEFAULT de colonne fonctionnent (CREATE ne les stockait pas) + bug parser `NOT NULL`
+**Défaillance :** double bug majeur. (1) `executeCreateTable` ne transférait
+**jamais** le DEFAULT analysé (`col.defaultValue`) vers la `ColumnMeta` —
+aucune colonne n'avait de défaut, donc `INSERT` (VALUES **et** SELECT) ne
+remplissait jamais les colonnes omises avec leur DEFAULT (resté NULL). (2)
+Exposé au passage : `DEFAULT 0 NOT NULL` ne **parsait** même pas —
+l'analyseur d'expression consommait `NOT` après `0` puis exigeait
+BETWEEN/IN/LIKE (ORA-00900).
+**Correction :**
+- `ColumnMeta.defaultExpr` (AST, typé `object` pour éviter la dépendance
+  parser→storage) ; CREATE TABLE le renseigne.
+- `applyColumnDefaults` évalue le DEFAULT **par ligne** (donc SYSDATE /
+  séquences corrects) pour les seules colonnes **omises** — un NULL
+  explicite reste NULL ; partagé par les chemins VALUES et INSERT…SELECT.
+- Parser : le `NOT` postfixe n'est consommé que si BETWEEN/IN/LIKE suit
+  (lookahead), laissant `NOT NULL` à l'analyseur de contraintes.
+**Validation :** nouvelle suite `oracle-insert-select-defaults.test.ts` (5
+tests : DEFAULT appliqué via VALUES et INSERT…SELECT, NULL explicite
+préservé, DEFAULT SYSDATE par ligne, NOT NULL+DEFAULT) ; non-régression
+parser + `unit/database/` (2888) + `unit/terminal/` (380) ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
