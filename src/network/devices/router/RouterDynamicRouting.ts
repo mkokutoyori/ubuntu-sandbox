@@ -10,7 +10,6 @@
  * resolves its peers through the locator (object-level — its
  * TCP/179 migration is a separate, documented work item).
  */
-import { Equipment } from '../../equipment/Equipment';
 import type { Port } from '../../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
@@ -28,9 +27,7 @@ import { BGPEngine, type BgpPeerLink } from '../../bgp/BGPEngine';
 import type { BgpTransport } from '../../bgp/BgpSession';
 import { BGP_PORT, isBgpMessage, type BgpMessage } from '../../bgp/messages';
 import type { TcpStack, TcpSocket } from '../../tcp/TcpStack';
-import type {
-  RoutingPeer, RibRoute,
-} from '../../routing/types';
+import type { RibRoute } from '../../routing/types';
 import type {
   ConnectedNetwork,
 } from '../../routing/RoutingPeerLocator';
@@ -80,10 +77,10 @@ export class RouterDynamicRouting {
         network: r.network, mask: r.mask, type: r.type,
       })),
     };
-    const peerLocator = { locatePeers: () => this.peers() };
+    // Both engines now converse on the wire (EIGRP proto-88 frames, BGP
+    // TCP/179): neither reads a peer engine, so no peer locator is wired.
     for (const e of [this.eigrp, this.bgp]) {
       e.setDeviceContext(deviceContext);
-      e.setPeerLocator(peerLocator);
     }
     this.eigrp.setWire({
       send: (iface, destIp, packet) =>
@@ -156,16 +153,6 @@ export class RouterDynamicRouting {
       IRoutingProtocolEngine<unknown>[];
   }
 
-  /** Engine accessor used by a peer's locator + uniform lookup. */
-  engineFor(protocol: string):
-    EIGRPEngine | BGPEngine | RipEngineAdapter | OspfEngineAdapter | null {
-    if (protocol === 'eigrp') return this.eigrp;
-    if (protocol === 'bgp') return this.bgp;
-    if (protocol === 'rip') return this.rip;
-    if (protocol === 'ospf') return this.ospf;
-    return null;
-  }
-
   // ── EIGRP wire transport ──────────────────────────────────────────
 
   /**
@@ -209,37 +196,6 @@ export class RouterDynamicRouting {
         network: networkOf(ip, mask), mask, iface: name, localIp: ip,
         bandwidthKbps: port.getEffectiveBandwidthKbps(),
         delayUsec: port.getDelayUs(),
-      });
-    }
-    return out;
-  }
-
-  private peers(): RoutingPeer[] {
-    const out: RoutingPeer[] = [];
-    for (const [name, port] of this.ctx.getPorts()) {
-      if (!port.getIsUp()) continue;
-      const cable = port.getCable();
-      if (!cable) continue;
-      const a = cable.getPortA();
-      const b = cable.getPortB();
-      const peerPort = a === port ? b : a;
-      if (!peerPort) continue;
-      const dev = Equipment.getById(peerPort.getEquipmentId()) as unknown as {
-        getDynamicRouting?(): RouterDynamicRouting;
-      } | undefined;
-      const peerDR = dev?.getDynamicRouting?.();
-      if (!peerDR) continue;
-      out.push({
-        deviceId: peerPort.getEquipmentId(),
-        hostname: (Equipment.getById(peerPort.getEquipmentId())
-          ?.getHostname()) ?? peerPort.getEquipmentId(),
-        localIface: name,
-        localIp: port.getIPAddress(),
-        remoteIface: peerPort.getName(),
-        remoteIp: peerPort.getIPAddress(),
-        linkBandwidthKbps: port.getEffectiveBandwidthKbps(),
-        linkDelayUsec: port.getDelayUs(),
-        peerEngineFor: (proto) => peerDR.engineFor(proto),
       });
     }
     return out;
