@@ -1040,6 +1040,12 @@ export class OracleExecutor extends BaseExecutor {
       rows = filtered;
     }
 
+    // ── Step 2a: FOR UPDATE row-level locking (single table) ───────
+    if (stmt.forUpdate && stmt.from!.length === 1 && stmt.from![0].type === 'TableRef'
+        && (!stmt.joins || stmt.joins.length === 0)) {
+      rows = this.lockForUpdateRows(stmt.from![0], rows, stmt.forUpdate);
+    }
+
     // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
     if (stmt.connectBy) {
       rows = this.executeConnectBy(rows, columns, stmt.connectBy);
@@ -1223,6 +1229,50 @@ export class OracleExecutor extends BaseExecutor {
       if (candidates) return candidates;
     }
     return null;
+  }
+
+  /**
+   * Acquire row-level TX locks for a `… FOR UPDATE` over a single table.
+   * NOWAIT on a row another session holds raises ORA-00054; SKIP LOCKED
+   * drops those rows from the result; a plain FOR UPDATE returns the row
+   * (the synchronous simulator cannot block-and-wait). Rows are keyed by
+   * primary key when present, else by full content. Self re-locks are fine.
+   */
+  private lockForUpdateRows(
+    ref: import('../engine/parser/ASTNode').TableRef,
+    rows: StorageRow[],
+    forUpdate: NonNullable<SelectStatement['forUpdate']>,
+  ): StorageRow[] {
+    const schema = this.resolveSchema(ref.schema);
+    const table = ref.name.toUpperCase();
+    const meta = this.storage.getTableMeta(schema, table);
+    if (!meta) return rows; // view / dictionary row source — nothing to lock
+    const sessionId = this._sessionId || '0';
+    const lm = this.instance.lockManager;
+    const pk = meta.constraints.find(c => c.type === 'PRIMARY_KEY');
+    const pkIdx = pk?.columns.map(cn => meta.columns.findIndex(c => c.name === cn.toUpperCase())) ?? null;
+    const keyOf = (row: StorageRow): string =>
+      pkIdx ? pkIdx.map(i => (i >= 0 ? String(row[i]) : '')).join(String.fromCharCode(1)) : JSON.stringify(row);
+
+    const out: StorageRow[] = [];
+    for (const row of rows) {
+      const key = keyOf(row);
+      const holder = lm.rowLockHolder(schema, table, key);
+      if (holder !== undefined && holder !== sessionId) {
+        if (forUpdate.wait === 'SKIP_LOCKED') continue;
+        if (forUpdate.wait === 'NOWAIT') {
+          throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
+        }
+        out.push(row); // plain FOR UPDATE: cannot block — return without stealing the lock
+        continue;
+      }
+      // FOR UPDATE opens a transaction; COMMIT/ROLLBACK is what releases
+      // the row locks (via the transaction.* events the lock actor hears).
+      this.txn.begin();
+      lm.acquireRowLock(sessionId, schema, table, key);
+      out.push(row);
+    }
+    return out;
   }
 
   private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {

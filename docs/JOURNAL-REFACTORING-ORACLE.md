@@ -1747,6 +1747,29 @@ ORA-65011/65040, connexion par service PDB vs CDB) ; non-régression
 `unit/database/` + `unit/terminal/` (3286) + `debug/oracle/` (34) ; tsc +
 ESLint propres.
 
+### 2026-06-13 — Verrouillage niveau ligne : SELECT … FOR UPDATE [NOWAIT|SKIP LOCKED] (ORA-00054)
+**Défaillance :** `FOR UPDATE` ne posait qu'un verrou **TABLE** (TM mode 3,
+Row-Exclusive) compatible entre sessions — donc deux sessions verrouillant
+**la même ligne** ne se voyaient jamais, et `FOR UPDATE NOWAIT` ne levait
+jamais ORA-00054. Aucune granularité ligne.
+**Correction :** verrous de ligne (`LockManager.rowLocks`, clé PK ou contenu),
+acquis dans l'exécuteur sur les lignes filtrées d'un SELECT mono-table :
+- une ligne tenue par une autre session → `NOWAIT` lève ORA-00054,
+  `SKIP LOCKED` l'exclut du résultat, un `FOR UPDATE` simple la renvoie
+  sans voler le verrou (le sim synchrone ne peut pas bloquer-et-attendre) ;
+- re-verrou par la même session : ré-entrant ;
+- `FOR UPDATE` ouvre une transaction → COMMIT/ROLLBACK (via les événements
+  transaction.* écoutés par le LockActor) libèrent les verrous ligne.
+  `connect`/`connectAsSysdba` posent désormais le sessionId sur l'exécuteur
+  (sinon deux sessions partageaient le même id → faux ré-entrant).
+**Limite assumée :** verrou ligne sur SELECT mono-table ; jointures/DML
+gardent le verrou TM table.
+**Validation :** nouvelle suite `oracle-for-update-row-lock.test.ts` (6
+tests : même ligne → ORA-00054, ligne différente OK, SKIP LOCKED, libération
+au COMMIT et au ROLLBACK, ré-entrance) ; non-régression `unit/database/`
+(2906) + `oracle-lock-manager` (11) + `unit/terminal/` (380) +
+`debug/oracle/` ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -442,6 +442,7 @@ export class OracleDatabase implements SqlCommandHost {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
@@ -519,6 +520,7 @@ export class OracleDatabase implements SqlCommandHost {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
@@ -569,6 +571,7 @@ export class OracleDatabase implements SqlCommandHost {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };

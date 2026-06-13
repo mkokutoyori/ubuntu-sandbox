@@ -51,6 +51,33 @@ export class ResourceBusyError extends Error {
 export class LockManager {
   private held: HeldLock[] = [];
   private waits = new Map<string, string>();
+  /** Row-level TX locks: "SCHEMA.TABLE:rowKey" → owning sessionId. */
+  private rowLocks = new Map<string, string>();
+
+  private rowKeyFor(schema: string, table: string, key: string): string {
+    return `${schema.toUpperCase()}.${table.toUpperCase()}:${key}`;
+  }
+
+  /** Who holds the row lock (undefined = free). */
+  rowLockHolder(schema: string, table: string, key: string): string | undefined {
+    return this.rowLocks.get(this.rowKeyFor(schema, table, key));
+  }
+
+  /** Acquire a row lock (re-entrant for the same session). */
+  acquireRowLock(sessionId: string, schema: string, table: string, key: string): boolean {
+    const k = this.rowKeyFor(schema, table, key);
+    const holder = this.rowLocks.get(k);
+    if (holder !== undefined && holder !== sessionId) return false;
+    this.rowLocks.set(k, sessionId);
+    return true;
+  }
+
+  /** Release every row lock held by a session (commit / rollback / logoff). */
+  releaseRowLocks(sessionId: string): void {
+    for (const [k, holder] of this.rowLocks) {
+      if (holder === sessionId) this.rowLocks.delete(k);
+    }
+  }
   private objectIdSeq = 50000;
   private objectIds = new Map<string, number>();
 
@@ -123,12 +150,14 @@ export class LockManager {
 
   releaseSession(sessionId: string): void {
     this.held = this.held.filter(l => l.sessionId !== sessionId);
+    this.releaseRowLocks(sessionId);
     this.clearWait(sessionId);
     this.wakeWaiters();
   }
 
   releaseTransaction(sessionId: string, txId: number): void {
     this.held = this.held.filter(l => !(l.sessionId === sessionId && l.txId === txId));
+    this.releaseRowLocks(sessionId);
     this.clearWait(sessionId);
     this.wakeWaiters();
   }
