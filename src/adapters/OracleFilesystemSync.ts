@@ -196,10 +196,18 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.audit.recorded', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
+        // Honour audit_trail. Under DB / DB,EXTENDED the record lives in
+        // the database trail (DBA_AUDIT_TRAIL) only — writing an .aud
+        // file too was a lie. The exception is SYS operations
+        // (audit_sys_operations is TRUE by default in 19c): a session
+        // connected AS SYSDBA is always audited to the OS trail
+        // regardless of audit_trail.
+        const isSysOperation = (e.payload.username ?? '').toUpperCase() === 'SYS';
+        if (!isSysOperation && !this.auditsToOs(e.payload.deviceId)) return;
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           `${ORACLE_CONFIG.AUDIT_DIR}/${fname}`,
           renderAuditEntry(e.payload),
         );
@@ -243,7 +251,15 @@ export class OracleFilesystemSync {
       // Oracle 19c install. No simulator-specific files are written.
       this.bus.subscribe('oracle.security.connection-traced', (e) => {
         // Each connection trace becomes a real adump/.aud file just
-        // like a logon/logoff audited by Oracle's OS auditor.
+        // like a logon/logoff audited by Oracle's OS auditor — but only
+        // when real Oracle would write one. Mandatory auditing always
+        // writes to the OS trail: privileged (SYSDBA/SYSOPER) logons and
+        // every FAILED logon attempt. A successful NORMAL logon/logoff
+        // goes to DBA_AUDIT_SESSION (the DB trail) unless audit_trail is
+        // OS / XML.
+        const privileged = e.payload.role === 'SYSDBA' || e.payload.role === 'SYSOPER';
+        const failedLogon = e.payload.outcome === 'FAILURE';
+        if (!privileged && !failedLogon && !this.auditsToOs(e.payload.deviceId)) return;
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
@@ -317,6 +333,17 @@ export class OracleFilesystemSync {
     const eq = this.ctx.resolveDevice(deviceId) as unknown as FsEquipment | null;
     if (!eq || typeof eq.writeFileFromEditor !== 'function') return null;
     return eq;
+  }
+
+  /**
+   * Whether the live `audit_trail` parameter directs (non-mandatory)
+   * audit records to OS files. DB / DB,EXTENDED / NONE keep them in the
+   * database trail; OS and XML write `.aud` / `.xml` under adump/.
+   */
+  private auditsToOs(deviceId: string): boolean {
+    const mode = (this.ctx.resolveDatabase(deviceId)?.instance.getParameter('audit_trail') ?? 'DB')
+      .toUpperCase();
+    return mode === 'OS' || mode === 'XML';
   }
 
   private writeSpfile(deviceId: string, sid: string, params: Map<string, string>): void {

@@ -1214,6 +1214,38 @@ s.paddr=p.addr résolue, connexion `tcp` trackée LOCAL=NO en moteur et via
 maintenant que la session de l'installeur ne fuite plus) ; `unit/terminal/`
 + `unit/shell/` + `debug/oracle/` : 910/910 ; tsc + ESLint propres.
 
+### 2026-06-13 — `audit_trail` piloté : les `.aud` apparaissent comme en vrai
+**Défaillance :** incohérence paramètre ↔ filesystem. Le paramètre seedé
+est `audit_trail=DB` (défaut dbca), sous lequel les enregistrements d'audit
+vivent dans la **base** (DBA_AUDIT_TRAIL) et **pas** sur disque. Pourtant
+`OracleFilesystemSync` écrivait un fichier `adump/*.aud` pour **chaque**
+action auditée (`oracle.audit.recorded`) et **chaque** connexion
+(`oracle.security.connection-traced`) — un DBA lisant `SHOW PARAMETER
+audit_trail` (=DB) ne s'attendrait à aucun fichier d'audit OS pour
+l'activité utilisateur ordinaire, et flipper le paramètre vers OS ne
+changeait rien (il était ignoré).
+**Correction :** le sync honore le paramètre live, avec les règles
+d'**audit obligatoire** du 19c qui écrivent toujours sur l'OS quel que
+soit `audit_trail` :
+- `oracle.audit.recorded` : écrit un `.aud` seulement si l'opération est
+  une opération SYS (`audit_sys_operations` = TRUE par défaut → toute
+  session AS SYSDBA est auditée OS) **ou** si `audit_trail` ∈ {OS, XML} ;
+  sinon l'enregistrement reste dans le trail base.
+- `oracle.security.connection-traced` : écrit un `.aud` si le logon est
+  privilégié (SYSDBA/SYSOPER) **ou** s'il a échoué (tout échec de logon
+  est en mandatory auditing) **ou** si `audit_trail` ∈ {OS, XML} ; un
+  logon NORMAL réussi va dans DBA_AUDIT_SESSION (base).
+- nouveau helper `auditsToOs(deviceId)` lit `audit_trail` via le
+  `resolveDatabase` déjà injecté (aucune nouvelle dépendance).
+**Validation :** nouvelle suite `oracle-audit-trail-coherence.test.ts` (4
+tests : sous DB un logon NORMAL ne crée pas de `.aud` à son nom, les
+opérations SYS en créent toujours, un logon échoué est audité OS ;
+sous OS un logon NORMAL crée bien son `.aud`) ; suites existantes
+préservées (`oracle-audit-filesystem-coherence`, `oracle-security-audit-
+actor` : 22/22, toutes leurs connexions sont SYSDBA donc mandatory) ;
+`unit/database/` : **2812/2812** ; `debug/oracle/` : 14/14 ; tsc + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
