@@ -298,6 +298,8 @@ export class LinuxCommandExecutor {
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
+  /** Optional Oracle TNS hook — backs `tnsping`. */
+  _oracleTnsping: ((args: string[]) => string) | null = null;
 
   constructor(
     isServer = false,
@@ -2527,6 +2529,10 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
       case 'tnsping': {
+        if (this.isServer && this._oracleTnsping) {
+          const output = this._oracleTnsping(args);
+          return { output, exitCode: /TNS-\d|TNS:/.test(output) ? 1 : 0 };
+        }
         const target = args[0] || '';
         return {
           output:

@@ -1503,6 +1503,28 @@ process/hardware network-v2 (60) ; tsc propre (les 3 erreurs ESLint
 `no-duplicate-case` de LinuxCommandExecutor.ts sont préexistantes et hors
 périmètre).
 
+### 2026-06-13 — `lsnrctl`/`tnsping` shell : un seul handler, plus de divergence
+**Défaillance :** duplication + divergence entre les deux chemins
+d'invocation. Le terminal interactif (`LinuxTerminalSession`) routait
+`lsnrctl`/`tnsping` vers les vrais handlers (`OracleCommands.handleLsnrctl/
+handleTnsping`, basés sur le `ListenerControl` réel — port live, services
+PDB, état). Mais le chemin programmatique (`executeShellCommandSync`, SSH,
+scripts) tombait sur : un `_oracleListener` **réimplémenté en dur** dans
+LinuxServer (status simplifié, « Service ORCL » figé, port 1521 codé, pas
+de PDB) et un `tnsping` **stub** qui répondait toujours TNS-03505. Même
+commande, deux résultats selon la voie.
+**Correction :** le hook `_oracleListener` délègue désormais à
+`handleLsnrctl` (collecte des lignes), et un nouveau hook `_oracleTnsping`
+délègue à `handleTnsping` ; l'exécuteur route `tnsping` dessus (comme
+`lsnrctl`). Les deux chemins partagent une seule logique — fin de la
+duplication et de la divergence.
+**Validation :** nouvelle suite
+`oracle-shell-lsnrctl-tnsping-coherence.test.ts` (3 tests : `lsnrctl
+status` shell liste les services PDB, reflète l'arrêt du listener,
+`tnsping` résout le service local au lieu de TNS-03505) ; non-régression
+`unit/database/` 2853 + suites SSH/LAN network-v2 (251) + linux-oracle-tools
++ debug/oracle ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

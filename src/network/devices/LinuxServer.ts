@@ -13,6 +13,8 @@ import type { DeviceType } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase } from '@/terminal/commands/database';
+import { handleLsnrctl, handleTnsping } from '@/terminal/commands/OracleCommands';
+import type { HostCapableDevice } from '@/network';
 
 export class LinuxServer extends LinuxMachine {
   constructor(
@@ -59,27 +61,18 @@ export class LinuxServer extends LinuxMachine {
       }
       return null;
     };
+    // Both the interactive terminal and the programmatic shell path
+    // (executeShellCommandSync / SSH / scripts) go through the same real
+    // handlers so lsnrctl/tnsping never diverge.
     this.executor._oracleListener = (args: string[]) => {
-      const db = getOracleDatabase(this.id);
-      const running = db.instance.state === 'OPEN' || db.instance.state === 'MOUNT';
-      if (args[0] === 'status') {
-        return [
-          'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-          '',
-          'Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521)))',
-          'STATUS of the LISTENER',
-          '------------------------',
-          'Alias                     LISTENER',
-          'Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production',
-          'Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora',
-          'Listener Log File         /u01/app/oracle/diag/tnslsnr/srv1/listener/alert/log.xml',
-          'Listening Endpoints Summary...',
-          '  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))',
-          running ? 'Services Summary...\n  Service "ORCL" has 1 instance(s).\n    Instance "ORCL", status READY, has 1 handler(s) for this service...' : 'The listener supports no services',
-          'The command completed successfully',
-        ].join('\n');
-      }
-      return 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production';
+      const lines: string[] = [];
+      handleLsnrctl(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
+    };
+    this.executor._oracleTnsping = (args: string[]) => {
+      const lines: string[] = [];
+      handleTnsping(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
     };
   }
 
