@@ -2729,3 +2729,50 @@ locaux, `maxReauthReq`, `holdMs` désormais temporisé — entrée 34).
 - Non-régression : **network-v2 complet — 7041 tests verts**. `tsc`
   propre ; aucun `any` introduit ; aucune écriture de SA pair god-mode
   restante (vérifié par grep).
+
+---
+
+## Entrée 40 — Huawei : port-security réel (parité L2), fin du gabarit figé (GAP §2.7)
+
+**Date** : 2026-06-13
+
+### Défaillance constatée (GAP §2.7)
+
+1. **`port-security` Huawei trompeur** : le mot-clé apparaissait en
+   auto-complétion d'interface mais **aucun gestionnaire** ne le traitait
+   à l'exécution — la commande ne faisait rien.
+2. **`display port-security` = gabarit figé** : un stub partagé
+   (`HuaweiCommonSecurity.displayPortSecurity`) renvoyait toujours
+   « Port-security is enabled on the following interfaces: » sans lire
+   l'état réel.
+
+### Correction (réutilisation du service vendor-neutre, zéro duplication)
+
+- Commandes d'interface Huawei câblées sur le **`PortSecurity`
+  vendor-neutre par port** (le même que Cisco, `port.getPortSecurity()`) :
+  `port-security enable` / `undo …` → `enable/disable` ; `max-mac-num <n>`
+  → `setMaxMACAddresses` ; `protect-action {protect|restrict|shutdown}` →
+  `setViolationMode` ; `mac-address sticky [<mac> vlan <id>]` →
+  `enableSticky`/`addStickyMAC` ; `undo … sticky` → `disableSticky`.
+  Parseur MAC Huawei (`xxxx-xxxx-xxxx`).
+- `display port-security` rend désormais l'**état vivant** par port
+  (enabled/max/action/sticky/secure-count/violations), et les lignes sont
+  enregistrées pour `display this`.
+- **Stub figé supprimé** : `displayPortSecurity` + son enregistrement
+  retirés de `HuaweiCommonSecurity` (fonctionnalité commutateur ; le
+  routeur ne fait pas de port-security).
+
+### Fichiers
+
+- `src/network/devices/shells/HuaweiSwitchShell.ts`
+- `src/network/devices/shells/huawei/HuaweiCommonSecurity.ts` (stub retiré)
+- `src/__tests__/unit/network-v2/huawei-port-security.test.ts` (+5)
+
+### Validation
+
+- `huawei-port-security` : 5 tests verts (enable/max/action pilotent le
+  vrai PortSecurity, sticky + MAC apprise, undo, display vivant, running-
+  config). Suites Huawei (stp/vrp/switch-shell/acl/eth-trunk) : 141 verts ;
+  debug acl-security + huawei-security-mgmt : verts.
+- Non-régression : **network-v2 complet — 7046 tests verts**. `tsc` et
+  lint propres ; aucun commentaire ajouté dans le code.

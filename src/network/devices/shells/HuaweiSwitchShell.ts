@@ -16,6 +16,7 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import { MACAddress, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -571,6 +572,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       });
     }
+    this.registerPortSecurity();
+
     // Interface-view L2 security: DHCP snooping / IP source guard /
     // ARP anti-attack — recorded for `display this` (L2-only: no L3).
     for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
@@ -960,6 +963,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       return this.displayVersion(this.swRef);
     });
+    trie.register('display port-security', 'Display port-security status', () =>
+      this.displayPortSecurity());
 
     // display vlan [summary | <id>]
     trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {
@@ -1478,6 +1483,102 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const names = this.swRef?.getPortNames() ?? [];
     const idx = names.indexOf(portName);
     return `128.${idx >= 0 ? idx + 1 : 0}`;
+  }
+
+  private psecPort() {
+    if (!this.swRef || !this.selectedInterface) return null;
+    return this.swRef.getPort(this.selectedInterface)?.getPortSecurity() ?? null;
+  }
+
+  private recordIfCfg(line: string): void {
+    if (!this.selectedInterface) return;
+    const list = this.ifCfg.get(this.selectedInterface) ?? [];
+    list.push(line);
+    this.ifCfg.set(this.selectedInterface, list);
+  }
+
+  private parsePsecMac(s: string): MACAddress | null {
+    const m = s.match(/^([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})$/);
+    try {
+      if (!m) return new MACAddress(s);
+      const octets = (m[1] + m[2] + m[3]).match(/.{2}/g)!.map((h) => parseInt(h, 16));
+      return new MACAddress(octets);
+    } catch {
+      return null;
+    }
+  }
+
+  private registerPortSecurity(): void {
+    const it = this.interfaceTrie;
+    it.register('port-security enable', 'Enable port security', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.enable();
+      this.recordIfCfg('port-security enable');
+      return '';
+    });
+    it.register('undo port-security enable', 'Disable port security', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.disable();
+      return '';
+    });
+    it.registerGreedy('port-security max-mac-num', 'Max secure MAC count', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 1) return 'Error: Wrong parameter.';
+      sec.setMaxMACAddresses(n);
+      this.recordIfCfg(`port-security max-mac-num ${n}`);
+      return '';
+    });
+    it.registerGreedy('port-security protect-action', 'Violation action', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      const a = (args[0] ?? '').toLowerCase();
+      if (a !== 'protect' && a !== 'restrict' && a !== 'shutdown') return 'Error: Wrong parameter.';
+      sec.setViolationMode(a as PortViolationMode);
+      this.recordIfCfg(`port-security protect-action ${a}`);
+      return '';
+    });
+    it.registerGreedy('port-security mac-address sticky', 'Sticky secure MAC', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      if (args.length === 0) {
+        sec.enableSticky();
+        this.recordIfCfg('port-security mac-address sticky');
+        return '';
+      }
+      const mac = this.parsePsecMac(args[0]);
+      if (!mac) return 'Error: Wrong parameter.';
+      const vlanIdx = args.indexOf('vlan');
+      const vlan = vlanIdx >= 0 ? parseInt(args[vlanIdx + 1] ?? '1', 10) : 1;
+      sec.addStickyMAC(mac, isNaN(vlan) ? 1 : vlan);
+      return '';
+    });
+    it.register('undo port-security mac-address sticky', 'Disable sticky', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.disableSticky();
+      return '';
+    });
+  }
+
+  private displayPortSecurity(): string {
+    if (!this.swRef) return '';
+    const header = 'Port-security    MaxMac  Action     Sticky  Secure  Violations  Port';
+    const rows: string[] = [];
+    for (const name of this.swRef.getPortNames()) {
+      const sec = this.swRef.getPort(name)?.getPortSecurity();
+      if (!sec || !sec.isEnabled()) continue;
+      const action = sec.getViolationMode().padEnd(10);
+      const sticky = (sec.isStickyEnabled() ? 'Yes' : 'No').padEnd(6);
+      const secure = String(sec.getEntries().length).padEnd(7);
+      const viol = String(sec.getViolationCount()).padEnd(11);
+      rows.push(`Enabled          ${String(sec.getMaxMACAddresses()).padEnd(7)} ${action} ${sticky}  ${secure} ${viol} ${name}`);
+    }
+    if (rows.length === 0) return 'Port-security is not enabled on any interface.';
+    return [header, ...rows].join('\n');
   }
 
   private displayStpBrief(only?: string, mstid = 0): string {

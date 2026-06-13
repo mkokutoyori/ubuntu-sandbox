@@ -73,13 +73,6 @@ export function displayDhcpSnooping(): string {
   ].join('\n');
 }
 
-export function displayPortSecurity(): string {
-  return [
-    'Port-security is enabled on the following interfaces:',
-    ' (configuration is recorded per interface; see display this)',
-  ].join('\n');
-}
-
 /**
  * Register the recognised (acknowledged) management commands shared by
  * both the switch and the router. Wired into the system-view trie of
@@ -126,6 +119,4 @@ export function registerHuaweiCommonSecurityDisplay(
     displayNtpStatus());
   trie.registerGreedy('display dhcp', 'Display DHCP snooping', () =>
     displayDhcpSnooping());
-  trie.register('display port-security', 'Display port security', () =>
-    displayPortSecurity());
 }
