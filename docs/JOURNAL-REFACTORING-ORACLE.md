@@ -1429,6 +1429,14 @@ tests : `free` montre ~512M de plus à l'ouverture, libéré à SHUTDOWN, pas de
 double-comptage sur un cycle) ; non-régression `unit/database/` +
 `unit/terminal/` : **3218** verts ; tsc + ESLint propres.
 
+### 2026-06-13 — ARCHIVE LOG LIST : ligne « Next log sequence » conforme
+**Défaillance :** `ARCHIVE LOG LIST` affichait toujours la ligne
+`Next log sequence to archive`, y compris en mode NOARCHIVELOG où le vrai
+SQL*Plus l'omet (rien n'est archivé).
+**Correction :** la ligne n'est émise qu'en mode ARCHIVELOG.
+**Validation :** `oracle-journalization-views.test.ts` étendu (+2 : omise en
+NOARCHIVELOG, présente en ARCHIVELOG) ; `unit/database/` : 2840 verts.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

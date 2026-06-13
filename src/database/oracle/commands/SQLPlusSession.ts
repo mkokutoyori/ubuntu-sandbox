@@ -1437,9 +1437,11 @@ export class SQLPlusSession {
       `Archive destination            ${dest}`,
       `Archive format                 ${format}`,
       `Oldest online log sequence     ${Math.max(1, currentSeq - groups.length + 1)}`,
-      `Next log sequence to archive   ${currentSeq}`,
-      `Current log sequence           ${currentSeq}`,
     ];
+    if (inst.archiveLogMode) {
+      lines.push(`Next log sequence to archive   ${currentSeq}`);
+    }
+    lines.push(`Current log sequence           ${currentSeq}`);
     return { output: lines, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
