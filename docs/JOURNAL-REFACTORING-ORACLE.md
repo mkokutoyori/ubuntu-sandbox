@@ -1341,6 +1341,20 @@ tests : process libéré au niveau instance, absent de V$PROCESS, session
 absente de V$SESSION, kill d'une session inconnue rejeté) ;
 `unit/database/` : **2822/2822** ; tsc + ESLint propres.
 
+### 2026-06-13 — DROP USER libère les processus serveur des sessions tuées
+**Défaillance :** même classe que KILL SESSION. `DROP USER` appelle
+`dropUserCleanup` → `killUserSessions`, qui retirait les sessions de
+l'utilisateur du tracker (donc de V$SESSION) mais **laissait leurs
+processus serveur dédiés** dans `ps` et V$PROCESS.
+**Correction :** `killUserSessions` retourne désormais les SID tués,
+remontés par `dropUserCleanup` ; `executeDropUser` appelle
+`instance.releaseServerProcess(sid)` pour chacun — les processus serveur
+disparaissent de `ps`/V$PROCESS comme à la déconnexion.
+**Validation :** nouvelle suite `oracle-drop-user-process.test.ts` (2
+tests : process libéré + absent de V$PROCESS après DROP USER, sessions des
+autres utilisateurs intactes) ; `unit/database/` : **2824/2824** ; tsc +
+ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

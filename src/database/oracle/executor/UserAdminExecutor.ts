@@ -206,7 +206,8 @@ export class UserAdminExecutor {
     if (!catalog.userExists(username)) {
       throw new OracleError(1918, `user '${username}' does not exist`);
     }
-    catalog.getSecurityEngine()?.dropUserCleanup(username);
+    const killedSids = catalog.getSecurityEngine()?.dropUserCleanup(username) ?? [];
+    for (const sid of killedSids) this.deps.instance.releaseServerProcess(sid);
     catalog.dropUser(username);
     this.emitUserActivity(username, 'DROPPED', {});
     return emptyResult('User dropped.');

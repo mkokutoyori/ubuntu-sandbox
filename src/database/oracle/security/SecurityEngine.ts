@@ -198,10 +198,10 @@ export class SecurityEngine {
     }
   }
 
-  dropUserCleanup(username: string): void {
+  dropUserCleanup(username: string): number[] {
     this.quotas.dropUserQuotas(username);
     this.loginTracker.dropUser(username);
     this.passwords.dropUser(username);
-    this.sessions.killUserSessions(username);
+    return this.sessions.killUserSessions(username);
   }
 }
