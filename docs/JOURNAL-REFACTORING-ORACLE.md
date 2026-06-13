@@ -1411,6 +1411,24 @@ dynamiques et DBA_SERVICES racontent la même histoire.
 CLOSE le retire) ; non-régression `unit/database/` + `debug/oracle/` :
 **2849** verts ; `unit/terminal/` : 380 ; tsc + ESLint propres.
 
+### 2026-06-13 — La SGA apparaît en mémoire partagée de l'hôte (`free`)
+**Défaillance :** V$SGA / SHOW SGA rapportaient la mémoire de l'instance,
+mais `free`/`/proc/meminfo` sur l'hôte ne reflétaient **rien** : un DBA
+lançant `free -m` avant/après un STARTUP ne voyait aucune mémoire partagée
+allouée, alors qu'une vraie SGA est un segment de mémoire partagée visible
+dans la colonne `shared` / `Shmem`.
+**Correction :** `MemoryProfile.reserveShared/releaseShared` (segment de
+mémoire partagée : monte `shared`+`used`, baisse `free`+`available`,
+clampé). `OracleFilesystemSync` réserve la SGA (taille = `getSGAInfo()`,
+512M par défaut) quand l'instance passe OPEN et la libère à l'arrêt, avec
+suivi idempotent par device (pas de double-comptage sur STARTUP/SHUTDOWN).
+Comme pour les datafiles, l'OPEN de boot précède l'enregistrement de la
+base, donc `primeSgaMemory` amorce la réservation juste après le boot.
+**Validation :** nouvelle suite `oracle-sga-memory-coherence.test.ts` (3
+tests : `free` montre ~512M de plus à l'ouverture, libéré à SHUTDOWN, pas de
+double-comptage sur un cycle) ; non-régression `unit/database/` +
+`unit/terminal/` : **3218** verts ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -27,6 +27,7 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { parseSize } from '@/database/oracle/views/_fileSize';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */
@@ -68,6 +69,8 @@ export class OracleFilesystemSync {
   private auditCounters: Map<string, number> = new Map();
   /** Datafile paths already materialised per device — see syncDatafiles. */
   private materializedDatafiles: Map<string, Set<string>> = new Map();
+  /** SGA KiB currently reserved in each device's host memory (0 = none). */
+  private reservedSgaKib: Map<string, number> = new Map();
 
   constructor(
     private readonly bus: IEventBus,
@@ -109,6 +112,7 @@ export class OracleFilesystemSync {
         if (newState === 'MOUNT' || newState === 'OPEN') {
           this.syncDatafiles(deviceId);
         }
+        this.syncSgaMemory(deviceId, newState === 'OPEN');
       }),
 
       this.bus.subscribe('oracle.instance.background-process-started', (e) => {
@@ -325,9 +329,37 @@ export class OracleFilesystemSync {
     this.subs.length = 0;
     this.spfileParams.clear();
     this.auditCounters.clear();
+    this.reservedSgaKib.clear();
+  }
+
+  /** Reserve the SGA for an already-open instance — the boot startup
+   *  fired its state-changed before the database was registered. */
+  primeSgaMemory(deviceId: string): void {
+    if (this.ctx.resolveDatabase(deviceId)?.instance.state === 'OPEN') {
+      this.syncSgaMemory(deviceId, true);
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
+
+  private syncSgaMemory(deviceId: string, open: boolean): void {
+    const memory = (this.ctx.resolveDevice(deviceId) as unknown as
+      { getHardware?: () => { memory?: { reserveShared(k: number): void; releaseShared(k: number): void } } } | null)
+      ?.getHardware?.().memory;
+    if (!memory) return;
+    const db = this.ctx.resolveDatabase(deviceId);
+    const current = this.reservedSgaKib.get(deviceId) ?? 0;
+    if (open && db && current === 0) {
+      const kib = Math.round(parseSize(db.instance.getSGAInfo().totalSize) / 1024);
+      if (kib > 0) {
+        memory.reserveShared(kib);
+        this.reservedSgaKib.set(deviceId, kib);
+      }
+    } else if (!open && current > 0) {
+      memory.releaseShared(current);
+      this.reservedSgaKib.set(deviceId, 0);
+    }
+  }
 
   private dev(deviceId: string): FsEquipment | null {
     const eq = this.ctx.resolveDevice(deviceId) as unknown as FsEquipment | null;

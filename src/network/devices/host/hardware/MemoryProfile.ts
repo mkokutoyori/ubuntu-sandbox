@@ -99,6 +99,25 @@ export class MemoryProfile {
     return this.buffersKib + this.cacheKib;
   }
 
+  /** Reserve `kib` of shared memory (e.g. an SGA segment): it shows up in
+   *  `free`'s shared + used columns and shrinks free/available. */
+  reserveShared(kib: number): void {
+    const amount = Math.max(0, Math.min(kib, this.freeKib + this.availableKib));
+    this.sharedKib += amount;
+    this.usedKib += amount;
+    this.freeKib = Math.max(0, this.freeKib - amount);
+    this.availableKib = Math.max(0, this.availableKib - amount);
+  }
+
+  /** Release a previously reserved shared-memory segment. */
+  releaseShared(kib: number): void {
+    const amount = Math.max(0, Math.min(kib, this.sharedKib));
+    this.sharedKib -= amount;
+    this.usedKib = Math.max(0, this.usedKib - amount);
+    this.freeKib += amount;
+    this.availableKib += amount;
+  }
+
   /** Free swap. */
   get swapFreeKib(): number {
     return this.swapTotalKib - this.swapUsedKib;

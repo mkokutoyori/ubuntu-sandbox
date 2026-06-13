@@ -100,6 +100,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // datafiles before the database existed — tell the FS sync they are
     // materialised so it never recreates a file the user later deletes.
     sync.primeDatafiles(deviceId);
+    sync.primeSgaMemory(deviceId);
   }
   return db;
 }
