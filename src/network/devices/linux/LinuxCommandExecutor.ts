@@ -2491,9 +2491,6 @@ export class LinuxCommandExecutor {
         }
         return { output: '', exitCode: 0 };
       }
-      case 'clear':
-      case 'reset':
-        return { output: '', exitCode: 0 };
       case 'sqlplus': {
         if (args.includes('-V') || args.includes('-version')) {
           return {
@@ -2529,19 +2526,6 @@ export class LinuxCommandExecutor {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
           exitCode: 0,
         };
-      case 'lsnrctl': {
-        if (args[0] === 'version') {
-          return {
-            output:
-              'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-            exitCode: 0,
-          };
-        }
-        return {
-          output: 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-          exitCode: 0,
-        };
-      }
       case 'tnsping': {
         const target = args[0] || '';
         return {
