@@ -12,7 +12,7 @@
 import type { DeviceType } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
-import { getOracleDatabase } from '@/terminal/commands/database';
+import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
 import { handleLsnrctl, handleTnsping } from '@/terminal/commands/OracleCommands';
 import type { HostCapableDevice } from '@/network';
 
@@ -54,10 +54,24 @@ export class LinuxServer extends LinuxMachine {
       if (args.length === 0 || args.join(' ').match(/^\s*\/\s*as\s+sysdba\s*$/i)) {
         return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
       }
-      // -s user/pass@SID "SELECT 1 FROM DUAL" → run the query and return rows.
-      const sqlText = args.find(a => /select|insert|update|delete/i.test(a));
-      if (sqlText && db.instance.state === 'OPEN') {
-        return `\n         1\n----------\n         1\n\n1 row selected.`;
+      // -s user/pass@conn "SQL" — run the SQL through the real engine
+      // (used to return a hardcoded "1 row selected" regardless of query).
+      const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
+      const sqlRe = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate)\b/i;
+      const sqlSource = [
+        ...args.filter(a => a !== connectArg && !a.startsWith('-') && sqlRe.test(a)),
+        stdin ?? '',
+      ].join('\n').trim();
+      if (connectArg && sqlSource && db.instance.state === 'OPEN') {
+        const { session, loginOutput } = createSQLPlusSession(this.id, [connectArg]);
+        if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
+        const out: string[] = [];
+        for (const raw of sqlSource.split(';')) {
+          const stmt = raw.trim();
+          if (stmt) out.push(...session.processLine(`${stmt};`).output);
+        }
+        session.disconnect();
+        return out.join('\n');
       }
       return null;
     };

@@ -1525,6 +1525,26 @@ status` shell liste les services PDB, reflète l'arrêt du listener,
 `unit/database/` 2853 + suites SSH/LAN network-v2 (251) + linux-oracle-tools
 + debug/oracle ; tsc + ESLint propres.
 
+### 2026-06-13 — `sqlplus -s` shell exécute la vraie requête (plus de résultat factice)
+**Défaillance :** le hook `_oracleBootstrap` (sqlplus depuis bash/SSH/script)
+répondait à `sqlplus -s user/pass@conn "SELECT …"` par un résultat **codé
+en dur** — toujours `1 row selected` avec une valeur `1` — quelle que soit
+la requête. Un script DBA (`sqlplus -s … "SELECT COUNT(*) …"`) recevait un
+mensonge constant, alors que le terminal interactif (SqlPlusSubShell) passe
+par le vrai moteur.
+**Correction :** la branche SELECT route désormais vers une vraie
+`SQLPlusSession` (réutilisation de `createSQLPlusSession` — login,
+résolution TNS, moteur SQL identiques au terminal) : extraction de
+l'identifiant de connexion et du SQL (args + stdin), exécution
+statement par statement, déconnexion en fin (pas de fuite de session),
+et remontée de l'erreur réelle de login (ORA-01017) au lieu d'une fausse
+ligne. Les chemins SHUTDOWN/STARTUP/`/ as sysdba` restent inchangés.
+**Validation :** nouvelle suite `oracle-shell-sqlplus-real-query.test.ts`
+(4 tests : SUM/COUNT/MAX réels via args et via stdin, mauvais mot de passe
+→ ORA-01017) ; le test SSH existant `sqlplus -s … "SELECT 1 FROM DUAL"`
+reste vert (1 est le vrai résultat) ; non-régression `unit/database/` +
+`unit/shell/` (3376) + SSH/LAN network-v2 (317) ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
