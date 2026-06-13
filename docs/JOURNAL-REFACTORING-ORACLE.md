@@ -1437,6 +1437,26 @@ SQL*Plus l'omet (rien n'est archivé).
 **Validation :** `oracle-journalization-views.test.ts` étendu (+2 : omise en
 NOARCHIVELOG, présente en ARCHIVELOG) ; `unit/database/` : 2840 verts.
 
+### 2026-06-13 — DML/DDL schéma exigent une base OPEN (ORA-01109)
+**Défaillance :** aucune opération objet/DML ne vérifiait l'état de
+l'instance. Une session SYSDBA en MOUNT/NOMOUNT (le seul moyen d'obtenir un
+exécuteur avant l'ouverture) pouvait `CREATE TABLE`, `INSERT`,
+`CREATE TABLESPACE`, etc. — le vrai Oracle refuse (ORA-01109 « database not
+open »), le dictionnaire de données n'étant pas monté. Violation de la
+machine d'état (cf. rapport d'exploration, défauts #2-#10).
+**Correction :** garde unique dans `executeStatement` : un set
+`REQUIRES_OPEN_DATABASE` (DML + DDL objet : tables, index, séquences, vues,
+MV, triggers, synonymes, tablespaces, types, comments, analyze, db links)
+lève ORA-01109 si `instance.state !== 'OPEN'`. Exclus volontairement : les
+statements de contrôle d'instance (STARTUP/SHUTDOWN, ALTER SYSTEM/DATABASE,
+ALTER PLUGGABLE DATABASE), TCL, ALTER SESSION et SELECT (les vues V$/GV$
+restent interrogeables en MOUNT, comme le vrai Oracle).
+**Validation :** nouvelle suite `oracle-not-open-guard.test.ts` (6 tests :
+CREATE TABLE/INSERT/CREATE INDEX/CREATE TABLESPACE refusés hors OPEN,
+réussite en OPEN, ALTER DATABASE OPEN toujours permis depuis MOUNT) ;
+non-régression `unit/database/` 2840 + `unit/terminal/` + `debug/oracle/` +
+`debug/rman/` 399 ; tsc + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

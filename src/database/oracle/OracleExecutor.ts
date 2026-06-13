@@ -69,6 +69,21 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'AlterDatabaseStatement', 'PluggableDatabaseStatement',
 ]);
 
+const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
+  'InsertStatement', 'UpdateStatement', 'DeleteStatement', 'MergeStatement',
+  'CreateTableStatement', 'DropTableStatement', 'AlterTableStatement', 'TruncateTableStatement',
+  'CreateIndexStatement', 'DropIndexStatement', 'AlterIndexStatement',
+  'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
+  'CreateViewStatement', 'DropViewStatement',
+  'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'CreateMviewLogStatement', 'DropMviewLogStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateSynonymStatement', 'DropSynonymStatement',
+  'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
+  'CreateTypeStatement', 'CommentStatement', 'AnalyzeStatement',
+  'CreateDbLinkStatement', 'DropDbLinkStatement',
+]);
+
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
@@ -482,6 +497,9 @@ export class OracleExecutor extends BaseExecutor {
     // after success (SQL Language Reference, "Types of SQL Statements").
     // System/session control statements (ALTER SYSTEM / ALTER SESSION),
     // STARTUP/SHUTDOWN and TCL never commit.
+    if (REQUIRES_OPEN_DATABASE.has(statement.type) && this.instance.state !== 'OPEN') {
+      throw new OracleError(1109, 'database not open');
+    }
     const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
     if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     const out = this.dispatchStatement(statement);
