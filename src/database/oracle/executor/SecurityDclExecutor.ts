@@ -90,6 +90,19 @@ export class SecurityDclExecutor {
     const grantees = this.granteesOf(stmt);
     // Oracle refuses the entire statement with ORA-01917 if any name is wrong.
     this.privileges.assertGranteesExist(grantees);
+    if (stmt.objectType === 'DIRECTORY') {
+      const dirName = stmt.objectName!.toUpperCase();
+      if (!this.catalog.getDirectory(dirName)) {
+        throw new OracleError(4043, `object ${dirName} does not exist`);
+      }
+      this.privileges.requireGrantableObjectPrivileges('SYS', dirName, stmt.privileges);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          this.catalog.grantTablePrivilege(grantee, priv, 'SYS', dirName, stmt.withGrantOption);
+        }
+      }
+      return emptyResult('Grant succeeded.');
+    }
     // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
@@ -145,6 +158,15 @@ export class SecurityDclExecutor {
     const grantees = this.granteesOf(stmt);
     // ORA-01917 stops the whole statement before any mutation, matching Oracle.
     this.privileges.assertGranteesExist(grantees);
+    if (stmt.objectType === 'DIRECTORY') {
+      const dirName = stmt.objectName!.toUpperCase();
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          catalog.revokeTablePrivilege(grantee, priv, 'SYS', dirName);
+        }
+      }
+      return emptyResult('Revoke succeeded.');
+    }
     // REVOKE {ADMIN|GRANT} OPTION FOR — only strip the option flag,
     // keep the underlying privilege row.
     if (stmt.strippingOption) {

@@ -1652,9 +1652,15 @@ export abstract class BaseParser {
     const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
+    let objectType: string | undefined;
     if (this.matchKeyword('ON')) {
-      objectName = this.expectIdentifier();
-      if (this.match(TokenType.DOT)) { objectSchema = objectName; objectName = this.expectIdentifier(); }
+      if (this.matchKeyword('DIRECTORY')) {
+        objectType = 'DIRECTORY';
+        objectName = this.expectIdentifier();
+      } else {
+        objectName = this.expectIdentifier();
+        if (this.match(TokenType.DOT)) { objectSchema = objectName; objectName = this.expectIdentifier(); }
+      }
     }
     this.expectKeyword('TO');
     const grantees = this.parseIdentifierList();
@@ -1681,7 +1687,7 @@ export abstract class BaseParser {
         withAdminOption = true;
       }
     }
-    return { type: 'GrantStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0], withGrantOption: withGrantOption || undefined, withAdminOption: withAdminOption || undefined };
+    return { type: 'GrantStatement', position: pos, privileges, privilegeColumns, objectType, objectSchema, objectName, grantees, grantee: grantees[0], withGrantOption: withGrantOption || undefined, withAdminOption: withAdminOption || undefined };
   }
 
   protected parseRevoke(): import('./ASTNode').RevokeStatement {
@@ -1703,13 +1709,19 @@ export abstract class BaseParser {
     const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
+    let objectType: string | undefined;
     if (this.matchKeyword('ON')) {
-      objectName = this.expectIdentifier();
-      if (this.match(TokenType.DOT)) { objectSchema = objectName; objectName = this.expectIdentifier(); }
+      if (this.matchKeyword('DIRECTORY')) {
+        objectType = 'DIRECTORY';
+        objectName = this.expectIdentifier();
+      } else {
+        objectName = this.expectIdentifier();
+        if (this.match(TokenType.DOT)) { objectSchema = objectName; objectName = this.expectIdentifier(); }
+      }
     }
     this.expectKeyword('FROM');
     const grantees = this.parseIdentifierList();
-    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0], strippingOption };
+    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectType, objectSchema, objectName, grantees, grantee: grantees[0], strippingOption };
   }
 
   /**

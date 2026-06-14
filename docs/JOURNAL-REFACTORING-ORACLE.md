@@ -1919,6 +1919,29 @@ retire. Code sans commentaire (consigne).
 SYS/DIRECTORY, DATA_PUMP_DIR Oracle-maintained, retrait au DROP) ;
 non-régression `unit/database/` ; `tsc` + ESLint propres.
 
+### 2026-06-14 — Privilèges objet sur répertoires : GRANT/REVOKE READ|WRITE ON DIRECTORY (1/2)
+**Défaillance :** `GRANT READ|WRITE ON DIRECTORY x TO user` ne **parsait même
+pas** (le mot-clé `DIRECTORY` était consommé comme nom d'objet, puis échec sur
+`TO`). Aucun privilège de répertoire ne pouvait donc être accordé — préalable à
+toute application d'accès (accès × filesystem) sur UTL_FILE / tables externes /
+Data Pump.
+**Correction :** sans nouvelle structure de catalogue — réutilisation du registre
+de privilèges objet existant (`tabPrivileges`), qui gère déjà rôles/PUBLIC/DBA via
+`hasObjectPrivilege` :
+- `BaseParser.parseGrant`/`parseRevoke` reconnaissent `ON DIRECTORY nom`
+  (`objectType='DIRECTORY'`, AST déjà prévu).
+- `SecurityDclExecutor` : branche DIRECTORY → ORA-04043 si le répertoire
+  n'existe pas, autorisation de grant déléguée à
+  `requireGrantableObjectPrivileges('SYS', dir, …)` (SYS/DBA/WITH GRANT OPTION),
+  stockage via `grantTablePrivilege(grantee, priv, 'SYS', dir, grantable)` ;
+  REVOKE symétrique.
+- `DBA_TAB_PRIVS.resolveType` rapporte `DIRECTORY` (OWNER=SYS) pour ces grants.
+**Validation :** nouvelle suite `oracle-directory-privileges.test.ts` (7 tests :
+READ visible en DBA_TAB_PRIVS type DIRECTORY, READ+WRITE, GRANTABLE, REVOKE,
+ORA-04043, ORA-01031 sans grant option, propagation WITH GRANT OPTION) ;
+non-régression `unit/database/` (2961) ; `tsc` + ESLint propres. (2/2 :
+application dans UTL_FILE/tables externes/Data Pump — entrée suivante.)
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
