@@ -1847,6 +1847,42 @@ FREMOVE/FRENAME/FCOPY) ; `oracle-remaining-features` mis à jour (le test qui
 figeait le stub `/tmp` valide maintenant ORA-29280) ; non-régression
 `unit/database/` ; `tsc --noEmit` + ESLint propres.
 
+### 2026-06-14 — Tables externes lisant le vrai fichier hôte (ORACLE_LOADER, read-on-query)
+**Défaillance :** `CREATE TABLE … ORGANIZATION EXTERNAL` n'enregistrait que
+des **métadonnées de catalogue** (DBA_EXTERNAL_TABLES/LOCATIONS) : aucune
+table de stockage n'était créée et le fichier de données sur le filesystem
+hôte n'était **jamais lu**. `SELECT * FROM table_externe` → ORA-00942. La
+brique DIRECTORY + accès filesystem (entrées précédentes) rendait enfin
+possible la vraie cohérence Oracle ↔ fichier hôte pour ce cas.
+**Correction :** table externe réellement interrogeable, adossée au fichier :
+- `createExternalTable` crée la table de stockage en **réutilisant le chemin
+  CREATE TABLE standard** sur la seule liste de colonnes (préfixe avant
+  `ORGANIZATION EXTERNAL`, extrait par appariement de parenthèses) — zéro
+  duplication de la logique DDL/types — puis enregistre les métadonnées
+  externes et fait un premier chargement.
+- `loadExternalTableData` résout chaque LOCATION via l'objet DIRECTORY
+  (`catalog.getDirectory`) + le VFS hôte (`instance.readDeviceFile`), parse
+  selon les ACCESS PARAMETERS (FIELDS TERMINATED BY, OPTIONALLY ENCLOSED BY,
+  SKIP n), coerce les colonnes numériques, et remplace les lignes du
+  storage.
+- **read-on-query** : `OracleExecutor.loadTable` appelle
+  `commandHost.reloadExternalTable` avant le scan, donc une modification
+  ultérieure du fichier hôte est reflétée au SELECT suivant (comportement
+  réel d'une table externe).
+- `DROP TABLE` purge aussi `ExternalTableRegistry` (cohérence
+  DBA_EXTERNAL_TABLES). Fichier absent → table vide, sans erreur.
+- Helpers libres testables (`extractBalancedParens`,
+  `parseExternalAccessParameters`, `splitExternalRecord` enclosure-aware,
+  `coerceExternalField`).
+**Limite assumée :** colonnes DATE laissées en texte (pas de format de champ
+DATE), ORACLE_DATAPUMP/HIVE/HDFS non lus (métadonnées seulement).
+**Validation :** nouvelle suite `oracle-external-table.test.ts` (9 tests :
+lecture+typage CSV, SUM sur colonne numérique, read-on-query, SKIP,
+enclosure avec délimiteur embarqué, WHERE, fichier absent = vide,
+DBA_EXTERNAL_TABLES, purge au DROP) ; `oracle-structural-views`
+(enregistrement externe) toujours vert ; non-régression `unit/database/` ;
+`tsc --noEmit` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

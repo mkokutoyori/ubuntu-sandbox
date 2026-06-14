@@ -1316,6 +1316,11 @@ export class OracleExecutor extends BaseExecutor {
       return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
     }
 
+    // File-backed external table: re-read its location file(s) from the
+    // host filesystem before scanning, so SELECT reflects the current file
+    // content (read-on-query). No-op for ordinary tables.
+    this.commandHost?.reloadExternalTable(schema, tableName);
+
     // Check if it's a view first
     const viewMeta = this.storage.getViewMeta(schema, tableName);
     if (viewMeta) {
@@ -2891,6 +2896,9 @@ export class OracleExecutor extends BaseExecutor {
       });
     }
     this.storage.dropTable(schema, tableName);
+    // Drop any external-table metadata so DBA_EXTERNAL_TABLES/LOCATIONS
+    // stay coherent with the table actually existing.
+    this.instance.externalTables.drop(schema, tableName);
     return emptyResult('Table dropped.');
   }
 

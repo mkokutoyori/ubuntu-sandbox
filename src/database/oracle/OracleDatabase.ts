@@ -1218,6 +1218,19 @@ export class OracleDatabase implements SqlCommandHost {
     const defDir = sql.match(/DEFAULT\s+DIRECTORY\s+(\w+)/i);
     const accessParams = sql.match(/ACCESS\s+PARAMETERS\s*\(([\s\S]*?)\)\s*LOCATION/i);
     const locs = sql.match(/LOCATION\s*\(([^)]+)\)/i);
+
+    // Create the backing storage table by reusing the standard CREATE TABLE
+    // path on just the column list (the prefix before ORGANIZATION EXTERNAL).
+    // This is what makes `SELECT * FROM ext_table` resolve and type its
+    // columns — no duplicated DDL/type logic. The external metadata below
+    // turns it into a file-backed (read-on-query) table.
+    const colList = extractBalancedParens(sql, head[0].length);
+    if (colList) {
+      const plain = `CREATE TABLE ${head[1] ? `${head[1]}.` : ''}${head[2]} ${colList}`;
+      const stmts = new OracleParser().parseMultiple(this.lexer.tokenize(plain));
+      if (stmts.length) executor.execute(stmts[0]);
+    }
+
     this.instance.externalTables.registerTable({
       owner, tableName: name, typeName: type,
       defaultDirectoryName: defDir?.[1] ?? 'DATA_PUMP_DIR',
@@ -1229,7 +1242,54 @@ export class OracleDatabase implements SqlCommandHost {
         if (cleaned) this.instance.externalTables.addLocation(owner, name, cleaned);
       }
     }
+    // Eager first load so the rows are queryable immediately; subsequent
+    // SELECTs re-read the file (reloadExternalTable) for read-on-query
+    // freshness.
+    this.loadExternalTableData(owner, name);
     return emptyResult('Table created.');
+  }
+
+  /**
+   * Re-read an external table's location file(s) from the host filesystem
+   * (via the directory object) and replace the backing storage rows — the
+   * read-on-query behaviour of a real ORACLE_LOADER external table. A
+   * no-op for non-external tables, and tolerant of a missing directory or
+   * file (the table simply reads as empty, like a real one whose file is
+   * absent until queried with stricter settings).
+   */
+  reloadExternalTable(schema: string, table: string): void {
+    if (this.instance.externalTables.isExternal(schema, table)) {
+      this.loadExternalTableData(schema.toUpperCase(), table.toUpperCase());
+    }
+  }
+
+  private loadExternalTableData(owner: string, name: string): void {
+    const meta = this.instance.externalTables.getTables()
+      .find(t => t.owner === owner && t.tableName === name);
+    const tableMeta = this.storage.getTableMeta(owner, name);
+    if (!meta || !tableMeta) return;
+    const locations = this.instance.externalTables.getLocations()
+      .filter(l => l.owner === owner && l.tableName === name);
+    const { terminator, skip, enclosure } = parseExternalAccessParameters(meta.accessParameters);
+
+    const rows: import('../engine/storage/BaseStorage').CellValue[][] = [];
+    for (const loc of locations) {
+      const dir = this.catalog.getDirectory(loc.directoryName);
+      if (!dir) continue;
+      const path = `${dir.path.replace(/\/+$/, '')}/${loc.location}`;
+      const content = this.instance.readDeviceFile(path);
+      if (content === null) continue;
+      const lines = content.split('\n');
+      for (let i = skip; i < lines.length; i++) {
+        const line = lines[i];
+        // A trailing newline yields a final empty line that is not a record.
+        if (line === '' && i === lines.length - 1) continue;
+        rows.push(splitExternalRecord(line, terminator, enclosure)
+          .map((field, idx) => coerceExternalField(field, tableMeta.columns[idx]?.dataType.baseType)));
+      }
+    }
+    this.storage.deleteRows(owner, name, () => true);
+    if (rows.length) this.storage.insertRows(owner, name, rows);
   }
 
   /** Parse and store a CREATE [OR REPLACE] PROCEDURE */
@@ -1986,4 +2046,68 @@ export class OracleDatabase implements SqlCommandHost {
     if (body.includes('=>')) return []; // Named-arg call — use parseNamedArgs.
     return body.split(',').map(p => OracleDatabase.unquote(p));
   }
+}
+
+// ── External-table helpers (file-backed ORACLE_LOADER) ────────────────
+
+/** First balanced `( … )` group at/after `fromIndex`, or null. */
+function extractBalancedParens(sql: string, fromIndex: number): string | null {
+  const start = sql.indexOf('(', fromIndex);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < sql.length; i++) {
+    if (sql[i] === '(') depth++;
+    else if (sql[i] === ')') { depth--; if (depth === 0) return sql.slice(start, i + 1); }
+  }
+  return null;
+}
+
+/**
+ * Parse the ORACLE_LOADER ACCESS PARAMETERS the loader honours: the field
+ * terminator, an optional enclosure character, and a header SKIP count.
+ * Defaults to comma-separated, matching the common CSV lab case.
+ */
+function parseExternalAccessParameters(params: string): { terminator: string; skip: number; enclosure: string | null } {
+  const term = params.match(/(?:FIELDS\s+)?TERMINATED\s+BY\s+'([^']*)'/i);
+  const skipM = params.match(/SKIP\s+(\d+)/i);
+  const enc = params.match(/(?:OPTIONALLY\s+)?ENCLOSED\s+BY\s+'([^']*)'/i);
+  return {
+    terminator: term ? term[1].replace(/\\t/g, '\t').replace(/\\n/g, '\n') || ',' : ',',
+    skip: skipM ? parseInt(skipM[1], 10) : 0,
+    enclosure: enc ? enc[1] : null,
+  };
+}
+
+/** Split one record into fields, honouring an optional enclosure character. */
+function splitExternalRecord(line: string, terminator: string, enclosure: string | null): string[] {
+  if (!enclosure) return line.split(terminator);
+  const out: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuote) {
+      if (ch === enclosure) {
+        if (line[i + 1] === enclosure) { cur += enclosure; i++; } // doubled = literal
+        else inQuote = false;
+      } else cur += ch;
+    } else if (ch === enclosure) {
+      inQuote = true;
+    } else if (line.startsWith(terminator, i)) {
+      out.push(cur); cur = ''; i += terminator.length - 1;
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** Coerce a raw text field to the target column's category (numbers parsed). */
+function coerceExternalField(raw: string, baseType?: string): string | number | null {
+  const v = raw.trim();
+  if (v === '') return null;
+  if (baseType === 'NUMERIC' || baseType === 'FLOAT' || baseType === 'DOUBLE') {
+    const n = Number(v);
+    return Number.isNaN(n) ? null : n;
+  }
+  return v;
 }

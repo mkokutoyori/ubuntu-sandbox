@@ -39,4 +39,9 @@ export interface SqlCommandHost {
     stmt: import('../engine/parser/ASTNode').Statement): ResultSet;
   /** COMMIT/ROLLBACK every remote transaction opened through a link. */
   settleDbLinkTransactions(mode: 'COMMIT' | 'ROLLBACK'): void;
+  /**
+   * Re-read a file-backed external table's location file(s) into its
+   * backing storage rows (read-on-query). No-op for ordinary tables.
+   */
+  reloadExternalTable(schema: string, table: string): void;
 }
