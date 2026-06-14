@@ -148,6 +148,16 @@ export class SessionLimitTracker {
     return false;
   }
 
+  killBySid(sid: number): boolean {
+    for (const [key, s] of this.sessions.entries()) {
+      if (s.sid === sid) {
+        this.sessions.delete(key);
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Kill all sessions for a user (used when locking / dropping user). Returns the killed SIDs. */
   killUserSessions(username: string): number[] {
     const upper = username.toUpperCase();

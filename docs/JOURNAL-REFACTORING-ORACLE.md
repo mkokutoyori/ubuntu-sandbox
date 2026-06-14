@@ -2016,6 +2016,27 @@ stocké/relu, FILEEXISTS 1/0, GETLENGTH fichier, GETLENGTH CLOB inchangé,
 ORA-22285 répertoire inconnu, pont PL/SQL, refus sans READ, succès après GRANT) ;
 non-régression `unit/database/` ; `tsc` + ESLint propres.
 
+### 2026-06-14 — Cohérence process : tuer le serveur dédié au niveau OS termine la session
+**Défaillance :** `ALTER SYSTEM KILL SESSION` libérait bien le processus serveur
+(disparaît de `ps`), mais le sens **inverse** manquait : un `kill`/`pkill` du
+processus serveur dédié (`oracleORCL`) depuis le shell Linux ne tuait pas la
+session Oracle — `ps` perdait le process mais V$SESSION et l'OracleDatabase
+gardaient la session vivante. Incohérence process OS ↔ session.
+**Correction :** symétrique de KILL SESSION→ps, via l'événement
+`linux.process.signalled` déjà émis par le `LinuxProcessManager` :
+- `OracleFilesystemSync` s'y abonne ; sur signal terminant (TERM/KILL/INT/QUIT/
+  HUP) effectivement délivré, il remonte la chaîne de pid : `dev.externalPidForOsPid`
+  (osPid → pid Oracle, via la map interne `registerProcess`), puis
+  `instance.getServerProcessByPid` (pid → sessionSid).
+- `OracleDatabase.endSessionByOsKill(sid)` tue V$SESSION (`SessionLimitTracker.
+  killBySid`), purge la connexion et ferme la session (`closeSession` →
+  `releaseServerProcess`), avec entrée alert log. Les processus d'arrière-plan
+  (PMON/SMON…) ne sont pas des server processes → no-op naturel.
+**Validation :** nouvelle suite `oracle-process-kill.test.ts` (2 tests : `pkill`
+du serveur → session absente + `ps` nettoyé ; SIGCONT non terminant → session
+intacte) ; non-régression `unit/database/` + `linux-commands-and-oracle-tools` ;
+`tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

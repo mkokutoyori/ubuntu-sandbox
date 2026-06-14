@@ -128,6 +128,10 @@ export class LinuxServer extends LinuxMachine {
     this.executor.unregisterProcess(pid);
   }
 
+  externalPidForOsPid(osPid: number): number | undefined {
+    return this.executor.externalPidForOsPid(osPid);
+  }
+
   /** Clear all externally registered processes. */
   clearSystemProcesses(): void {
     this.executor.clearSystemProcesses();

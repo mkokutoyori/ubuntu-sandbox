@@ -1095,6 +1095,13 @@ export class LinuxCommandExecutor {
     }
   }
 
+  externalPidForOsPid(osPid: number): number | undefined {
+    for (const [ext, os] of this._externalToOsPid.entries()) {
+      if (os === osPid) return ext;
+    }
+    return undefined;
+  }
+
   /** Unregister a previously externally-registered process. */
   unregisterProcess(externalPid: number): boolean {
     const osPid = this._externalToOsPid.get(externalPid);

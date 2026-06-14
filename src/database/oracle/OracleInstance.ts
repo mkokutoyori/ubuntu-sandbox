@@ -749,6 +749,13 @@ export class OracleInstance {
     return this._serverProcesses.get(sessionSid);
   }
 
+  getServerProcessByPid(pid: number): ServerProcess | undefined {
+    for (const p of this._serverProcesses.values()) {
+      if (p.pid === pid) return p;
+    }
+    return undefined;
+  }
+
   // ── Redo logs ────────────────────────────────────────────────────
 
   private initRedoLogs(): void {

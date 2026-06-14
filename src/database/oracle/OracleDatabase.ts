@@ -221,6 +221,15 @@ export class OracleDatabase implements SqlCommandHost {
     this.instance.releaseServerProcess(sid);
   }
 
+  endSessionByOsKill(sid: number): void {
+    if (!this.connections.has(sid) && !this.sessions.has(sid)) return;
+    this.securityEngine.sessions.killBySid(sid);
+    this.connections.delete(sid);
+    this.closeSession(sid);
+    this.instance.logAlertEvent(
+      `Dedicated server process for session sid=${sid} killed at the OS level; session terminated`);
+  }
+
   /** All currently-open sessions. */
   getOpenSessions(): readonly OracleSession[] {
     return [...this.sessions.values()];

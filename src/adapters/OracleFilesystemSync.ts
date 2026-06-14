@@ -47,7 +47,12 @@ interface FsEquipment {
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
   clearSystemProcesses?: () => void;
+  externalPidForOsPid?: (osPid: number) => number | undefined;
 }
+
+const TERMINATING_SIGNALS: ReadonlySet<string> = new Set([
+  'SIGTERM', 'SIGKILL', 'SIGINT', 'SIGQUIT', 'SIGHUP',
+]);
 
 const ORACLE_OS_UID = 54321;
 const ORACLE_OS_GID = 54321;
@@ -141,6 +146,18 @@ export class OracleFilesystemSync {
         const dev = this.dev(e.payload.deviceId);
         if (!dev?.unregisterProcess) return;
         dev.unregisterProcess(e.payload.pid);
+      }),
+
+      this.bus.subscribe('linux.process.signalled', (e) => {
+        const { deviceId, pid, signal, delivered } = e.payload;
+        if (!delivered || !TERMINATING_SIGNALS.has(signal)) return;
+        const dev = this.dev(deviceId);
+        const externalPid = dev?.externalPidForOsPid?.(pid);
+        if (externalPid === undefined) return;
+        const db = this.ctx.resolveDatabase(deviceId);
+        const sp = db?.instance.getServerProcessByPid(externalPid);
+        if (!db || !sp) return;
+        db.endSessionByOsKill(sp.sessionSid);
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
