@@ -65,6 +65,11 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
       return typeof rm === 'function' ? !!rm.call(dev, path) : false;
     });
+    db.instance.setOsCommandRunner((cmd) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const run = (dev as unknown as { runSshCommandSync?: (u: string, c: string) => { output: string; exitCode: number } | null } | null)?.runSshCommandSync;
+      return typeof run === 'function' ? run.call(dev, 'oracle', cmd) : null;
+    });
     // Existence probe for the MOUNT-time control file check and the
     // OPEN-time datafile check. Returns null (= skip the checks) when no
     // device with a filesystem backs this database — files can only go

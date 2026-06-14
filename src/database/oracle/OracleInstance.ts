@@ -270,6 +270,15 @@ export class OracleInstance {
     return this._deviceFileRemover?.(path) ?? false;
   }
 
+  private _osCommandRunner: ((cmd: string) => { output: string; exitCode: number } | null) | null = null;
+  setOsCommandRunner(fn: (cmd: string) => { output: string; exitCode: number } | null): void {
+    this._osCommandRunner = fn;
+  }
+  /** Run an OS command on the host (DBMS_SCHEDULER EXECUTABLE jobs). */
+  runOsCommand(cmd: string): { output: string; exitCode: number } | null {
+    return this._osCommandRunner?.(cmd) ?? null;
+  }
+
   /**
    * Datafile enumeration injected by OracleDatabase (the instance does
    * not own the storage layer). Combined with the existence probe, it

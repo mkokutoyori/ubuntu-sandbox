@@ -2037,6 +2037,25 @@ du serveur → session absente + `ps` nettoyé ; SIGCONT non terminant → sessi
 intacte) ; non-régression `unit/database/` + `linux-commands-and-oracle-tools` ;
 `tsc` + ESLint propres.
 
+### 2026-06-14 — DBMS_SCHEDULER jobs EXECUTABLE : exécution réelle sur l'hôte
+**Défaillance :** `SchedulerManager.runJob` exécutait **toujours** `job_action`
+comme du SQL/PLSQL, en ignorant `job_type`. Un job `EXECUTABLE` (dont
+`job_action` est une commande OS) échouait donc au lieu de lancer le programme
+sur le serveur — le `extjob`/external job daemon n'était pas modélisé.
+**Correction :** runner de commande OS injecté dans l'instance
+(`setOsCommandRunner`/`runOsCommand`, comme `setDeviceFileReader`), câblé dans
+`terminal/commands/database.ts` vers `device.runSshCommandSync('oracle', cmd)`
+(exécution en tant qu'utilisateur OS oracle, retour `{output, exitCode}`).
+`runJob` branche sur `jobType` : `EXECUTABLE` → exécution hôte réelle, sortie
+capturée, `STATUS=SUCCEEDED` si exit 0, sinon `FAILED` + `ORA-27369` (exit code) ;
+`ORA-27370` si le runner est absent. PLSQL_BLOCK/STORED_PROCEDURE conservent le
+chemin SQL. La sortie/erreur remonte dans `DBA_SCHEDULER_JOB_RUN_DETAILS`.
+**Validation :** nouvelle suite `oracle-scheduler-executable.test.ts` (4 tests :
+echo → SUCCEEDED + output capturé, commande inexistante → FAILED/ORA-27369,
+fichier écrit par le job visible via `cat` (preuve d'exécution hôte réelle),
+PLSQL_BLOCK toujours en SQL) ; non-régression `unit/database/` ; `tsc` + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
