@@ -38,6 +38,8 @@ import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator'
 import { MetadataExtractor } from './metadata/MetadataExtractor';
 import { builtinPackageRegistry } from './packages';
 import { UtlFileEngine } from './UtlFileEngine';
+import type { UtlFileApi } from './plsql/PlsqlValue';
+import { OracleError } from '../engine/types/DatabaseError';
 import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
@@ -929,9 +931,38 @@ export class OracleDatabase implements SqlCommandHost {
       resolvePackage: (name: string) => this.resolvePackageHandle(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
-      utlFile: this.utlFile,
+      utlFile: this.makeAuthorizingUtlFile(executor),
     };
     return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
+  }
+
+  private canAccessDirectory(user: string, dirName: string, access: 'READ' | 'WRITE'): boolean {
+    return this.securityEngine.privileges.hasObjectPrivilege(user, access, 'SYS', dirName.toUpperCase());
+  }
+
+  private makeAuthorizingUtlFile(executor: OracleExecutor): UtlFileApi {
+    const engine = this.utlFile;
+    const authorize = (dir: string, access: 'READ' | 'WRITE'): void => {
+      const user = (executor as { context: ExecutionContext }).context.currentUser;
+      if (!this.canAccessDirectory(user, dir, access)) {
+        throw new OracleError(29289, 'access denied');
+      }
+    };
+    const writeMode = (mode: string): 'READ' | 'WRITE' => /^[WA]/i.test(mode.trim()) ? 'WRITE' : 'READ';
+    return {
+      fopen: (dir, file, mode, max) => { authorize(dir, writeMode(mode)); return engine.fopen(dir, file, mode, max); },
+      isOpen: (h) => engine.isOpen(h),
+      getLine: (h) => engine.getLine(h),
+      putLine: (h, t) => engine.putLine(h, t),
+      put: (h, t) => engine.put(h, t),
+      newLine: (h, n) => engine.newLine(h, n),
+      fflush: (h) => engine.fflush(h),
+      fclose: (h) => engine.fclose(h),
+      fcloseAll: () => engine.fcloseAll(),
+      fremove: (dir, file) => { authorize(dir, 'WRITE'); engine.fremove(dir, file); },
+      frename: (sd, sf, dd, df, ov) => { authorize(sd, 'WRITE'); authorize(dd, 'WRITE'); engine.frename(sd, sf, dd, df, ov); },
+      fcopy: (sd, sf, dd, df) => { authorize(sd, 'READ'); authorize(dd, 'WRITE'); engine.fcopy(sd, sf, dd, df); },
+    };
   }
 
   /**

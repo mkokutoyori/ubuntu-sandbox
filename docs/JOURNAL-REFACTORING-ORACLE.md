@@ -1942,6 +1942,25 @@ ORA-04043, ORA-01031 sans grant option, propagation WITH GRANT OPTION) ;
 non-régression `unit/database/` (2961) ; `tsc` + ESLint propres. (2/2 :
 application dans UTL_FILE/tables externes/Data Pump — entrée suivante.)
 
+### 2026-06-14 — UTL_FILE applique les privilèges READ/WRITE de répertoire (2/2)
+**Défaillance :** UTL_FILE n'imposait **aucun contrôle d'accès** : n'importe quel
+utilisateur pouvait lire/écrire dans n'importe quel répertoire, alors qu'Oracle
+exige le privilège objet READ/WRITE sur le DIRECTORY (ORA-29289 sinon). Écart de
+cohérence accès × filesystem.
+**Correction :** enveloppe `makeAuthorizingUtlFile(executor)` construite par bloc
+dans `buildPlsqlHost` : avant `FOPEN`/`FREMOVE`/`FRENAME`/`FCOPY`, elle vérifie
+l'accès via `securityEngine.privileges.hasObjectPrivilege(user, 'READ'|'WRITE',
+'SYS', dir)` — le **même** mécanisme que les privilèges de table, donc
+SYS/owner/DBA/rôles/PUBLIC gérés gratuitement. Mode W/A → WRITE, R → READ ; échec
+→ ORA-29289. L'`UtlFileEngine` reste pur (I/O), l'autorisation vit dans la couche
+DB avec l'utilisateur courant lu en direct sur le contexte de l'exécuteur.
+**Limite assumée :** appels imbriqués definer-rights → contrôle sur l'utilisateur
+courant du contexte (invoker dans les blocs anonymes), suffisant pour le cas commun.
+**Validation :** nouvelle suite `oracle-utl-file-privileges.test.ts` (8 tests :
+ORA-29289 sans grant, WRITE autorise l'écriture, READ la lecture, READ seul refuse
+l'écriture, grant à PUBLIC, REVOKE re-refuse, SYS sans grant, FREMOVE exige WRITE) ;
+non-régression `unit/database/` ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
