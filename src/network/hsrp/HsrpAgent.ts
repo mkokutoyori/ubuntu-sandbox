@@ -79,7 +79,16 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   override setVip(iface: string, id: number, vip: string): void {
     const g = this.ensureGroup(iface, id);
     g.vip = vip;
+    g.vipLearn = false;
     this.probeThenClaim(g);
+  }
+
+  setVipLearn(iface: string, id: number): void {
+    const g = this.ensureGroup(iface, id);
+    g.vipLearn = true;
+    g.vip = null;
+    this.recompute(g, 'config');
+    this.advertiseIfDue(g);
   }
 
   /** Unconfiguring an active group resigns first, like real IOS. */
@@ -179,6 +188,13 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       g.standbyRouterPriority = payload.priority;
       g.lastHeardStandbyMs = now;
     }
+    if (g.vipLearn && !g.vip && payload.vip && payload.vip !== '0.0.0.0') {
+      g.vip = payload.vip;
+      this.getBus().publish({
+        topic: 'hsrp.vip.learned',
+        payload: { ...this.deviceRef(), iface: inPort, group: g.group, vip: g.vip },
+      });
+    }
     if (payload.opcode === 'resign' && payload.senderIp === g.activeRouterIp) {
       g.activeRouterIp = null;
       g.activeRouterPriority = 0;
@@ -253,8 +269,10 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
     const oldActiveIp = g.activeRouterIp;
     const { myIp, linkUp } = this.linkContext(g);
 
-    if (!linkUp || !g.vip) {
+    if (!linkUp) {
       g.state = 'init';
+    } else if (!g.vip) {
+      g.state = g.vipLearn ? 'learn' : 'init';
     } else {
       const myPriority = effectivePriority(g);
       const me = { priority: myPriority, ip: myIp };

@@ -2872,3 +2872,41 @@ moteur).
   instance du `StpAgent` (et du plan de données par-VLAN), à mener comme
   un chantier dédié. L'instance 0 (CIST) reste l'arbre STP/RSTP unique
   existant.
+
+---
+
+## Entrée 43 — HSRP : état Learn réel (RFC 2281 §5) — VIP appris depuis les hellos
+
+**Date** : 2026-06-14
+
+### Constat (GAP §5.1)
+
+L'état `learn` de `HsrpState` était déclaré mais **jamais atteint** : un
+groupe sans VIP configuré tombait en `init` au lieu d'apprendre l'adresse
+virtuelle. (À noter : `speak`/`listen`, aussi cités au GAP, étaient déjà
+atteints — constat partiellement périmé.)
+
+### Correction (réaliste, RFC 2281 §5)
+
+- `standby <grp> ip` **sans adresse** active désormais le mode
+  apprentissage : `HsrpAgent.setVipLearn` pose `vipLearn=true`, le groupe
+  passe en **`learn`** (lien up, VIP inconnu) au lieu de `init`.
+- À la réception d'un hello porteur d'un VIP (depuis le routeur actif), le
+  groupe en apprentissage **adopte le VIP** (`g.vip = payload.vip`, event
+  `hsrp.vip.learned`) puis recompute → quitte `learn` (listen/standby/
+  active selon l'élection). `setVip` (adresse explicite) annule le mode
+  learn.
+
+### Fichiers
+
+- `src/network/hsrp/types.ts`, `src/network/hsrp/HsrpAgent.ts`
+- `src/network/devices/shells/cisco/CiscoHsrpCommands.ts`
+- `src/__tests__/unit/network-v2/hsrp-protocol.test.ts` (+2)
+
+### Validation
+
+- `hsrp-protocol` : 24 tests verts (groupe en `learn` sans adresse ;
+  apprentissage du VIP depuis l'actif puis sortie de `learn`).
+  cisco-hsrp + fhrp-dataplane : 11 verts.
+- Non-régression : **network-v2 complet — 7054 tests verts**. `tsc`/lint
+  propres ; aucun commentaire ajouté.
