@@ -247,6 +247,30 @@ export class OracleInstance {
   }
 
   /**
+   * Host-filesystem writer / remover, injected by the same wiring as the
+   * reader. They let UTL_FILE (and any future server-side file producer)
+   * materialise files on the device VFS so the OS shell sees exactly what
+   * PL/SQL wrote — without the database layer importing network/Equipment.
+   */
+  private _deviceFileWriter: ((path: string, content: string) => boolean) | null = null;
+  setDeviceFileWriter(fn: (path: string, content: string) => boolean): void {
+    this._deviceFileWriter = fn;
+  }
+  /** Write (create/overwrite) a file on the host device VFS. */
+  writeDeviceFile(path: string, content: string): boolean {
+    return this._deviceFileWriter?.(path, content) ?? false;
+  }
+
+  private _deviceFileRemover: ((path: string) => boolean) | null = null;
+  setDeviceFileRemover(fn: (path: string) => boolean): void {
+    this._deviceFileRemover = fn;
+  }
+  /** Remove a file from the host device VFS. */
+  removeDeviceFile(path: string): boolean {
+    return this._deviceFileRemover?.(path) ?? false;
+  }
+
+  /**
    * Datafile enumeration injected by OracleDatabase (the instance does
    * not own the storage layer). Combined with the existence probe, it
    * lets the open-time header check verify each datafile still exists

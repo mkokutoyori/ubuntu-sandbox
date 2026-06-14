@@ -1803,6 +1803,50 @@ ORA-01031 sans privilège, création après GRANT) ; non-régression
 `unit/database/` (116 fichiers, 2922 tests) ; `tsc --noEmit` + ESLint
 propres.
 
+### 2026-06-14 — UTL_FILE réel : I/O serveur sur le filesystem hôte (cohérence Oracle ↔ OS)
+**Défaillance :** `UTL_FILE` était un **stub intégral** — `FOPEN`/`PUT_LINE`/
+`GET_LINE`/`FCLOSE` renvoyaient tous `null` (deux emplacements :
+`ScalarFunctionEvaluator` pour le contexte SQL, swallow `UTL_FILE.*` dans
+`routeBuiltinPackageCall` pour le contexte procédural, plus des entrées
+mortes dans `packageFunctions`). Un PL/SQL qui exporte un rapport ou lit un
+fichier d'entrée ne faisait **rien**, et il n'existait aucune cohérence entre
+la base et le filesystem hôte que le reste du simulateur modélise pourtant
+(c'est précisément la couche « cohérence Oracle ↔ filesystem » visée).
+**Correction :** `UtlFileEngine` de première classe, adossé aux objets
+DIRECTORY (entrée précédente) et au VFS de l'hôte :
+- résolution 19c stricte : le 1er argument de `FOPEN` est un **objet
+  DIRECTORY** (la forme `utl_file_dir`/chemin, désupportée, est rejetée par
+  ORA-29280), résolu via `catalog.getDirectory`.
+- accès filesystem synchrone injecté dans `OracleInstance`
+  (`setDeviceFileWriter`/`setDeviceFileRemover`, symétriques du
+  `setDeviceFileReader` existant) ; câblé dans `terminal/commands/database.ts`
+  vers `writeFileFromEditor`/`deleteFileFromEditor` du device. Un fichier
+  écrit par `UTL_FILE.PUT_LINE` est donc **immédiatement visible par `cat`**
+  dans le shell Linux du serveur, et réciproquement.
+- table de handles opaques (le `FILE_TYPE` d'Oracle est un record que le
+  PL/SQL ne fait que transporter) ; modes R/W/A (variantes byte RB/WB/AB
+  repliées) ; `FOPEN`/`IS_OPEN`/`GET_LINE`/`PUT`/`PUT_LINE`/`PUTF`/
+  `NEW_LINE`/`FFLUSH`/`FCLOSE`/`FCLOSE_ALL`/`FREMOVE`/`FRENAME`/`FCOPY`.
+- intégration interpréteur : `FOPEN`/`IS_OPEN` (fonctions) dans `evalCall`
+  avant le fallback SQL ; les procédures dans `execCall` avant le routage
+  builtin générique. **`GET_LINE` réécrit la ligne lue dans la variable OUT
+  de l'appelant** via le même chemin `exprToTarget`/`execAssign` que les
+  paramètres OUT d'un sous-programme.
+- exceptions aux codes canoniques (ORA-29280 répertoire invalide, 29281 mode
+  invalide, 29282 handle invalide, 29283 opération invalide / fichier
+  absent, **01403 NO_DATA_FOUND** en fin de fichier — rattrapable par
+  `WHEN NO_DATA_FOUND` dans les boucles de lecture).
+- stubs supprimés (`ScalarFunctionEvaluator`, `packageFunctions`, swallow
+  `routeBuiltinPackageCall`) : `UTL_FILE` en SQL est désormais un
+  identifiant invalide (ORA-00904), conforme à Oracle (package PL/SQL-only).
+**Validation :** nouvelle suite `oracle-utl-file.test.ts` (16 tests :
+écriture visible sur le VFS hôte, PUT+NEW_LINE, append, troncature W,
+GET_LINE depuis un fichier du shell, NO_DATA_FOUND rattrapable, round-trip
+écriture↔lecture, IS_OPEN, ORA-29280/29281/29283, filename avec séparateur,
+FREMOVE/FRENAME/FCOPY) ; `oracle-remaining-features` mis à jour (le test qui
+figeait le stub `/tmp` valide maintenant ORA-29280) ; non-régression
+`unit/database/` ; `tsc --noEmit` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

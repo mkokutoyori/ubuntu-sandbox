@@ -102,9 +102,13 @@ describe('Built-in PL/SQL Packages', () => {
   });
 
   describe('UTL_FILE', () => {
-    test('UTL_FILE.FOPEN executes without error', () => {
+    // 19c semantics: the first FOPEN argument is a directory OBJECT, not a
+    // path. A path-style location (the desupported utl_file_dir form) does
+    // not resolve and raises ORA-29280. Full behaviour is covered by
+    // oracle-utl-file.test.ts.
+    test('UTL_FILE.FOPEN rejects a path-style location with ORA-29280', () => {
       const result = exec(`BEGIN UTL_FILE.FOPEN('/tmp', 'test.txt', 'W'); END`);
-      expect(result.message).toContain('PL/SQL');
+      expect(result.message).toMatch(/29280|invalid directory/i);
     });
   });
 

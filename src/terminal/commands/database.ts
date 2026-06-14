@@ -52,6 +52,19 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
       return typeof read === 'function' ? read.call(dev, path) ?? null : null;
     });
+    // Writer / remover for UTL_FILE: server-side PL/SQL file I/O lands on
+    // the same host VFS the OS shell reads, so a file written by
+    // UTL_FILE.PUT_LINE is immediately visible to `cat` and vice versa.
+    db.instance.setDeviceFileWriter((path, content) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const write = (dev as unknown as { writeFileFromEditor?: (p: string, c: string) => boolean } | null)?.writeFileFromEditor;
+      return typeof write === 'function' ? !!write.call(dev, path, content) : false;
+    });
+    db.instance.setDeviceFileRemover((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
+      return typeof rm === 'function' ? !!rm.call(dev, path) : false;
+    });
     // Existence probe for the MOUNT-time control file check and the
     // OPEN-time datafile check. Returns null (= skip the checks) when no
     // device with a filesystem backs this database — files can only go

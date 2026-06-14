@@ -58,7 +58,7 @@ function padOracle(str: string, targetLength: number, padText: string, left: boo
 /** Built-in packages whose members this evaluator implements inline. */
 const BUILTIN_PACKAGES = new Set([
   'DBMS_RANDOM', 'DBMS_LOCK', 'DBMS_UTILITY', 'DBMS_METADATA',
-  'DBMS_STATS', 'DBMS_LOB', 'UTL_FILE',
+  'DBMS_STATS', 'DBMS_LOB',
 ]);
 
 export class ScalarFunctionEvaluator {
@@ -485,13 +485,10 @@ export class ScalarFunctionEvaluator {
         return null;
       }
 
-      // UTL_FILE stubs
-      case 'FOPEN':
-      case 'FCLOSE':
-      case 'GET_LINE': {
-        if (expr.schema?.toUpperCase() === 'UTL_FILE') return null;
-        return null;
-      }
+      // UTL_FILE is a PL/SQL-only package (file handles cannot cross into
+      // SQL): it is served by UtlFileEngine through the PL/SQL interpreter,
+      // not here. A UTL_FILE.* reference inside SQL is an invalid identifier
+      // (handled by the default case → ORA-00904), exactly like real Oracle.
 
       // COUNT(*) and other aggregates return a single value for a column evaluation context
       // Real aggregation is handled at the query level — here we just return the scalar value

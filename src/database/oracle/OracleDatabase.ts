@@ -37,6 +37,7 @@ import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer'
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
 import { MetadataExtractor } from './metadata/MetadataExtractor';
 import { builtinPackageRegistry } from './packages';
+import { UtlFileEngine } from './UtlFileEngine';
 import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
@@ -228,6 +229,9 @@ export class OracleDatabase implements SqlCommandHost {
     return this.sessions.get(sid);
   }
 
+  /** Real UTL_FILE backed by directory objects and the host filesystem. */
+  private readonly utlFile: UtlFileEngine;
+
   readonly sodEvaluator: SodEvaluator;
   readonly dormantAnalyzer: DormantAccountAnalyzer;
   readonly fraudSimulator: FraudScenarioSimulator;
@@ -251,6 +255,16 @@ export class OracleDatabase implements SqlCommandHost {
     // own the storage layer — give it the canonical V$DATAFILE list.
     this.instance.setDatafileLister(() => this.storage.listDatafiles());
     this.catalog = new OracleCatalog(this.storage, this.instance);
+    // UTL_FILE resolves directory objects from the catalog and reads/writes
+    // through the instance's host-VFS hooks (wired by the terminal layer).
+    this.utlFile = new UtlFileEngine(
+      (name) => this.catalog.getDirectory(name),
+      {
+        read: (p) => this.instance.readDeviceFile(p),
+        write: (p, c) => this.instance.writeDeviceFile(p, c),
+        remove: (p) => this.instance.removeDeviceFile(p),
+      },
+    );
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
     this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
     this.securityEngine = new SecurityEngine(this.catalog);
@@ -915,6 +929,7 @@ export class OracleDatabase implements SqlCommandHost {
       resolvePackage: (name: string) => this.resolvePackageHandle(executor, name),
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
+      utlFile: this.utlFile,
     };
     return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
   }
@@ -1100,7 +1115,6 @@ export class OracleDatabase implements SqlCommandHost {
     if (
       upper.startsWith('DBMS_AUDIT_MGMT.')
       || upper.startsWith('DBMS_METADATA.')
-      || upper.startsWith('UTL_FILE.')
       || upper.startsWith('DBMS_LOB.')
       || upper.startsWith('DBMS_FLASHBACK.')
       || upper.startsWith('DBMS_SPACE.')
