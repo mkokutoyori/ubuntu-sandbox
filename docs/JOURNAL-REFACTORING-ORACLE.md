@@ -1770,6 +1770,39 @@ au COMMIT et au ROLLBACK, ré-entrance) ; non-régression `unit/database/`
 (2906) + `oracle-lock-manager` (11) + `unit/terminal/` (380) +
 `debug/oracle/` ; tsc + ESLint propres.
 
+### 2026-06-14 — Objets DIRECTORY réels (catalogue + DDL + dictionnaire vivant)
+**Défaillance :** `DBA_DIRECTORIES` était une vue **cannée** renvoyant
+toujours une unique ligne `DATA_PUMP_DIR` codée en dur ; `CREATE DIRECTORY`
+/ `DROP DIRECTORY` n'étaient **ni parsés ni exécutés** nulle part (le
+privilège `CREATE ANY DIRECTORY` existait pourtant déjà). Conséquence : aucun
+objet répertoire ne pouvait être créé, et donc aucune fondation pour la
+cohérence Oracle ↔ filesystem hôte (UTL_FILE, tables externes, Data Pump
+résolvent tous leurs chemins via un objet DIRECTORY). C'est le pré-requis
+structurel à une vraie implémentation d'UTL_FILE.
+**Correction :** objet répertoire de première classe, sur le patron exact
+des database links (déjà branchés au catalogue vivant en 10.7) :
+- `OracleCatalog` : `DirectoryMeta` + `registerDirectory`/`getDirectory`/
+  `getDirectories`/`dropDirectory`, Map ensemencée avec `DATA_PUMP_DIR`
+  (chemin dérivé d'`ORACLE_CONFIG`, plus de littéral codé en dur dans la
+  vue). Espace de noms global, propriétaire toujours `SYS` (fidèle à Oracle).
+- AST `CreateDirectoryStatement`/`DropDirectoryStatement` ;
+  `OracleParser` : `CREATE [OR REPLACE] DIRECTORY nom AS 'chemin'` et
+  `DROP DIRECTORY nom`.
+- `OracleExecutor` : `executeCreateDirectory`/`executeDropDirectory`
+  enregistrés dans le switch et dans `DDL_STATEMENT_TYPES` (DDL =
+  commit implicite) + `REQUIRES_OPEN_DATABASE`. Privilèges réels
+  (`CREATE ANY DIRECTORY` → ORA-01031 sinon, `DROP ANY DIRECTORY`),
+  ORA-00955 sans `OR REPLACE` sur un nom existant, ORA-04043 au DROP
+  d'un inconnu. `CREATE OR REPLACE` rebinde le chemin en place.
+- `DBA_DIRECTORIES` **et** `ALL_DIRECTORIES` rebranchées sur
+  `catalog.getDirectories()` (OWNER = SYS), la vue cannée supprimée.
+**Validation :** nouvelle suite `oracle-directory-objects.test.ts` (10
+tests : création/visibilité DBA_DIRECTORIES, DATA_PUMP_DIR par défaut,
+uppercase, ORA-00955, OR REPLACE, DROP + ORA-04043, ALL_DIRECTORIES,
+ORA-01031 sans privilège, création après GRANT) ; non-régression
+`unit/database/` (116 fichiers, 2922 tests) ; `tsc --noEmit` + ESLint
+propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

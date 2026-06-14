@@ -509,6 +509,7 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, true); }
     }
     if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, false); }
+    if (this.matchKeyword('DIRECTORY')) return this.parseCreateDirectory(pos, orReplace);
     if (this.matchKeyword('MATERIALIZED')) {
       this.expectKeyword('VIEW');
       if (this.matchKeyword('LOG')) return this.parseCreateMviewLog(pos);
@@ -791,6 +792,10 @@ export class OracleParser extends BaseParser {
       this.expectKeyword('LINK');
       const name = this.expectIdentifier();
       return { type: 'DropDbLinkStatement', position: pos, isPublic: false, name };
+    }
+    if (this.matchKeyword('DIRECTORY')) {
+      const name = this.expectIdentifier();
+      return { type: 'DropDirectoryStatement', position: pos, name } as import('../engine/parser/ASTNode').DropDirectoryStatement;
     }
     if (this.matchKeyword('MATERIALIZED')) {
       this.expectKeyword('VIEW');
@@ -1302,6 +1307,18 @@ export class OracleParser extends BaseParser {
       usingAlias = raw.startsWith("'") ? raw.slice(1, -1) : raw;
     }
     return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, connectPassword, usingAlias };
+  }
+
+  // ── CREATE DIRECTORY ───────────────────────────────────────────────
+
+  private parseCreateDirectory(
+    pos: SourcePosition, orReplace: boolean,
+  ): import('../engine/parser/ASTNode').CreateDirectoryStatement {
+    const name = this.expectIdentifier();
+    this.expectKeyword('AS');
+    const raw = this.expect(TokenType.STRING_LITERAL).value;
+    const path = raw.startsWith("'") || raw.startsWith('"') ? raw.slice(1, -1) : raw;
+    return { type: 'CreateDirectoryStatement', position: pos, orReplace, name, path };
   }
 
   // ── CREATE MATERIALIZED VIEW ───────────────────────────────────────

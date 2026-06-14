@@ -60,6 +60,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
   'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
   'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateDirectoryStatement', 'DropDirectoryStatement',
   'CreateTypeStatement', 'AlterCompileStatement',
   'CreateFlashbackArchiveStatement', 'DropFlashbackArchiveStatement',
   'CreateAuditPolicyStatement', 'DropAuditPolicyStatement', 'AuditPolicyStatement',
@@ -82,6 +83,7 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateTypeStatement', 'CommentStatement', 'AnalyzeStatement',
   'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateDirectoryStatement', 'DropDirectoryStatement',
 ]);
 
 export class OracleExecutor extends BaseExecutor {
@@ -669,6 +671,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterIndexStatement': return this.executeAlterIndex(statement);
       case 'CreateDbLinkStatement': return this.executeCreateDbLink(statement);
       case 'DropDbLinkStatement': return this.executeDropDbLink(statement);
+      case 'CreateDirectoryStatement': return this.executeCreateDirectory(statement);
+      case 'DropDirectoryStatement': return this.executeDropDirectory(statement);
       case 'CreateMaterializedViewStatement': return this.executeCreateMaterializedView(statement);
       case 'DropMaterializedViewStatement': return this.executeDropMaterializedView(statement);
       case 'CreateMviewLogStatement': return this.executeCreateMviewLog(statement);
@@ -2519,6 +2523,41 @@ export class OracleExecutor extends BaseExecutor {
     }
     this.emitDdl('DROP DATABASE LINK', `${owner}.${name}`);
     return emptyResult('Database link dropped.');
+  }
+
+  /**
+   * CREATE [OR REPLACE] DIRECTORY name AS 'path' — registers a directory
+   * object (always SYS-owned) binding a SQL name to a host filesystem
+   * path. Requires CREATE ANY DIRECTORY, the only privilege that grants
+   * it (there is no schema-local "CREATE DIRECTORY" — directories live in
+   * a single global namespace). Without OR REPLACE an existing name is
+   * ORA-00955; with it, the binding is silently replaced (Oracle does not
+   * version directory objects).
+   */
+  private executeCreateDirectory(
+    stmt: import('../engine/parser/ASTNode').CreateDirectoryStatement,
+  ): ResultSet {
+    this.privileges.requireSystemPrivilege('CREATE ANY DIRECTORY');
+    const name = stmt.name.toUpperCase();
+    if (!stmt.orReplace && this.catalog.getDirectory(name)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+    this.catalog.registerDirectory({ name, path: stmt.path, created: new Date() });
+    this.emitDdl('CREATE DIRECTORY', `SYS.${name}`);
+    return emptyResult('Directory created.');
+  }
+
+  private executeDropDirectory(
+    stmt: import('../engine/parser/ASTNode').DropDirectoryStatement,
+  ): ResultSet {
+    this.privileges.requireSystemPrivilege('DROP ANY DIRECTORY');
+    const name = stmt.name.toUpperCase();
+    if (!this.catalog.dropDirectory(name)) {
+      // Oracle reports the generic object-does-not-exist error here.
+      throw new OracleError(4043, `object ${name} does not exist`);
+    }
+    this.emitDdl('DROP DIRECTORY', `SYS.${name}`);
+    return emptyResult('Directory dropped.');
   }
 
   /**

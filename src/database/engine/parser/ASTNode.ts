@@ -1086,6 +1086,24 @@ export interface DropDbLinkStatement extends ASTNode {
   name: string;
 }
 
+/**
+ * CREATE [OR REPLACE] DIRECTORY name AS 'path' — a directory object maps a
+ * SQL name to a path on the database server's host filesystem. Directory
+ * objects are always owned by SYS; access is granted via READ/WRITE
+ * privileges and consumed by UTL_FILE, external tables, and Data Pump.
+ */
+export interface CreateDirectoryStatement extends ASTNode {
+  type: 'CreateDirectoryStatement';
+  orReplace: boolean;
+  name: string;
+  path: string;
+}
+
+export interface DropDirectoryStatement extends ASTNode {
+  type: 'DropDirectoryStatement';
+  name: string;
+}
+
 export interface CreateMaterializedViewStatement extends ASTNode {
   type: 'CreateMaterializedViewStatement';
   schema?: string;
@@ -1160,6 +1178,8 @@ export type Statement =
   | CreateTypeStatement
   | AlterSessionStatement | AlterCompileStatement
   | CommentStatement
+  // Directory objects
+  | CreateDirectoryStatement | DropDirectoryStatement
   // Database links / materialized views (stubs)
   | CreateDbLinkStatement | DropDbLinkStatement
   | CreateMaterializedViewStatement | DropMaterializedViewStatement

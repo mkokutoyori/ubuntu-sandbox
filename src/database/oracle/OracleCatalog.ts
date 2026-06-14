@@ -92,6 +92,19 @@ export interface DbLinkMeta {
   created: Date;
 }
 
+/**
+ * One directory object — a SQL name bound to a path on the database
+ * server's host filesystem. Always owned by SYS in Oracle (the dictionary
+ * reports OWNER = 'SYS' regardless of who issued CREATE DIRECTORY).
+ */
+export interface DirectoryMeta {
+  /** Uppercased object name (the namespace is global, not schema-scoped). */
+  name: string;
+  /** Host filesystem path exactly as written in the AS clause. */
+  path: string;
+  created: Date;
+}
+
 export interface MviewLogMeta {
   owner: string;
   master: string;
@@ -622,6 +635,35 @@ export class OracleCatalog extends BaseCatalog {
 
   dropDbLink(owner: string, name: string): boolean {
     return this.dbLinks.delete(OracleCatalog.mvKey(owner, name));
+  }
+
+  // ── Directory objects ─────────────────────────────────────────────
+  // Seeded with DATA_PUMP_DIR, the directory every Oracle install ships
+  // with (the former hardcoded DBA_DIRECTORIES row, now a real object).
+
+  private directories: Map<string, DirectoryMeta> = new Map([
+    ['DATA_PUMP_DIR', {
+      name: 'DATA_PUMP_DIR',
+      path: `${ORACLE_CONFIG.BASE}/admin/${ORACLE_CONFIG.SID}/dpdump/`,
+      created: new Date(),
+    }],
+  ]);
+
+  /** CREATE [OR REPLACE] DIRECTORY — replaces any existing binding. */
+  registerDirectory(meta: DirectoryMeta): void {
+    this.directories.set(meta.name.toUpperCase(), meta);
+  }
+
+  getDirectory(name: string): DirectoryMeta | undefined {
+    return this.directories.get(name.toUpperCase());
+  }
+
+  getDirectories(): readonly DirectoryMeta[] {
+    return [...this.directories.values()];
+  }
+
+  dropDirectory(name: string): boolean {
+    return this.directories.delete(name.toUpperCase());
   }
 
   private mviewLogs: Map<string, MviewLogMeta> = new Map();
