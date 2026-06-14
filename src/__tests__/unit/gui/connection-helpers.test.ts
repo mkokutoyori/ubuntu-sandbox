@@ -43,9 +43,8 @@ describe('connection-helpers', () => {
         {
           id: 'conn-1', type: 'ethernet',
           sourceDeviceId: 'device-1', sourceInterfaceId: 'eth0',
-          targetDeviceId: 'device-2', targetInterfaceId: 'eth0',
-          isActive: true
-        }
+          targetDeviceId: 'device-2', targetInterfaceId: 'eth0'
+                  }
       ];
       const result = getAvailableInterfaces(deviceId, interfaces, connections);
       expect(result).toHaveLength(4);
@@ -57,9 +56,8 @@ describe('connection-helpers', () => {
         {
           id: 'conn-1', type: 'ethernet',
           sourceDeviceId: 'device-2', sourceInterfaceId: 'eth0',
-          targetDeviceId: 'device-1', targetInterfaceId: 'eth1',
-          isActive: true
-        }
+          targetDeviceId: 'device-1', targetInterfaceId: 'eth1'
+                  }
       ];
       const result = getAvailableInterfaces(deviceId, interfaces, connections);
       expect(result).toHaveLength(4);
@@ -71,15 +69,13 @@ describe('connection-helpers', () => {
         {
           id: 'conn-1', type: 'ethernet',
           sourceDeviceId: 'device-1', sourceInterfaceId: 'eth0',
-          targetDeviceId: 'device-2', targetInterfaceId: 'eth0',
-          isActive: true
-        },
+          targetDeviceId: 'device-2', targetInterfaceId: 'eth0'
+                  },
         {
           id: 'conn-2', type: 'ethernet',
           sourceDeviceId: 'device-3', sourceInterfaceId: 'eth0',
-          targetDeviceId: 'device-1', targetInterfaceId: 'eth1',
-          isActive: true
-        }
+          targetDeviceId: 'device-1', targetInterfaceId: 'eth1'
+                  }
       ];
       const result = getAvailableInterfaces(deviceId, interfaces, connections);
       expect(result).toHaveLength(3);
@@ -90,9 +86,8 @@ describe('connection-helpers', () => {
       const connections: Connection[] = interfaces.map((iface, i) => ({
         id: `conn-${i}`, type: 'ethernet' as ConnectionType,
         sourceDeviceId: 'device-1', sourceInterfaceId: iface.id,
-        targetDeviceId: `device-${i + 2}`, targetInterfaceId: 'eth0',
-        isActive: true
-      }));
+        targetDeviceId: `device-${i + 2}`, targetInterfaceId: 'eth0'
+              }));
       const result = getAvailableInterfaces(deviceId, interfaces, connections);
       expect(result).toHaveLength(0);
     });
@@ -232,9 +227,8 @@ describe('connection-helpers', () => {
     const connection: Connection = {
       id: 'conn-1', type: 'ethernet',
       sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-      targetDeviceId: 'dev-2', targetInterfaceId: 'eth1',
-      isActive: true
-    };
+      targetDeviceId: 'dev-2', targetInterfaceId: 'eth1'
+          };
 
     it('should return source interface name for source endpoint', () => {
       const label = getConnectionEndpointLabel(connection, 'source');

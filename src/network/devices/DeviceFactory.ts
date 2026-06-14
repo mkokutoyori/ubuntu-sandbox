@@ -3,6 +3,7 @@
  */
 
 import { DeviceType } from '../core/types';
+import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { Equipment } from '../equipment/Equipment';
 import { LinuxPC } from './LinuxPC';
 import { LinuxServer } from './LinuxServer';
@@ -23,50 +24,51 @@ function nextName(prefix: string): string {
 }
 
 export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Equipment {
+  const name = nextName(DEVICE_CATALOG[type]?.namePrefix ?? type);
   switch (type) {
     // Computers
     case 'linux-pc':
-      return new LinuxPC('linux-pc', nextName('PC'), x, y);
+      return new LinuxPC('linux-pc', name, x, y);
     case 'windows-pc':
-      return new WindowsPC('windows-pc', nextName('PC'), x, y);
+      return new WindowsPC('windows-pc', name, x, y);
     case 'mac-pc':
-      return new LinuxPC('mac-pc', nextName('Mac'), x, y);
+      return new LinuxPC('mac-pc', name, x, y);
 
     // Servers
     case 'linux-server':
-      return new LinuxServer('linux-server', nextName('Server'), x, y);
+      return new LinuxServer('linux-server', name, x, y);
     case 'windows-server':
-      return new WindowsPC('windows-server', nextName('WinServer'), x, y);
+      return new WindowsPC('windows-server', name, x, y);
 
     // Switches
     case 'switch-cisco':
-      return new CiscoSwitch('switch-cisco', nextName('Switch'), 24, x, y);
+      return new CiscoSwitch('switch-cisco', name, 24, x, y);
     case 'switch-huawei':
-      return new HuaweiSwitch('switch-huawei', nextName('Switch'), 24, x, y);
+      return new HuaweiSwitch('switch-huawei', name, 24, x, y);
     case 'switch-generic':
-      return new GenericSwitch('switch-generic', nextName('Switch'), 24, x, y);
+      return new GenericSwitch('switch-generic', name, 24, x, y);
     case 'hub':
-      return new Hub(nextName('Hub'), 8, x, y);
+      return new Hub(name, 8, x, y);
 
     // Routers
     case 'router-cisco':
-      return new CiscoRouter(nextName('Router'), x, y);
+      return new CiscoRouter(name, x, y);
     case 'router-huawei':
-      return new HuaweiRouter(nextName('Router'), x, y);
+      return new HuaweiRouter(name, x, y);
 
     // Firewalls (stub as LinuxPC for now)
     case 'firewall-cisco':
-      return new LinuxPC('firewall-cisco', nextName('FW'), x, y);
+      return new LinuxPC('firewall-cisco', name, x, y);
     case 'firewall-fortinet':
-      return new LinuxPC('firewall-fortinet', nextName('FW'), x, y);
+      return new LinuxPC('firewall-fortinet', name, x, y);
     case 'firewall-paloalto':
-      return new LinuxPC('firewall-paloalto', nextName('FW'), x, y);
+      return new LinuxPC('firewall-paloalto', name, x, y);
 
     // Other
     case 'access-point':
-      return new Hub(nextName('AP'), 4, x, y);
+      return new Hub(name, 4, x, y);
     case 'cloud':
-      return new LinuxPC('cloud', nextName('Cloud'), x, y);
+      return new LinuxPC('cloud', name, x, y);
 
     default:
       throw new Error(`Unknown device type: ${type}`);
@@ -74,49 +76,11 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 }
 
 export function hasTerminalSupport(type: DeviceType): boolean {
-  switch (type) {
-    case 'linux-pc':
-    case 'windows-pc':
-    case 'mac-pc':
-    case 'linux-server':
-    case 'windows-server':
-    case 'switch-cisco':
-    case 'switch-huawei':
-    case 'switch-generic':
-    case 'router-cisco':
-    case 'router-huawei':
-    case 'firewall-cisco':
-    case 'firewall-fortinet':
-    case 'firewall-paloalto':
-      return true;
-    default:
-      return false;
-  }
+  return DEVICE_CATALOG[type]?.hasTerminal ?? false;
 }
 
-/**
- * True when the device type behaves like the real equipment it depicts.
- * Types stubbed onto another implementation (mac-pc → Ubuntu Linux,
- * firewall-* → Linux PC, access-point → Hub, cloud → Linux PC) return
- * false so the UI can disclose the limitation instead of advertising a
- * vendor behaviour that is not simulated.
- */
 export function isFullyImplemented(type: DeviceType): boolean {
-  switch (type) {
-    case 'linux-pc':
-    case 'windows-pc':
-    case 'linux-server':
-    case 'windows-server':
-    case 'switch-cisco':
-    case 'switch-huawei':
-    case 'switch-generic':
-    case 'hub':
-    case 'router-cisco':
-    case 'router-huawei':
-      return true;
-    default:
-      return false;
-  }
+  return DEVICE_CATALOG[type]?.fullyImplemented ?? false;
 }
 
 export function resetDeviceCounters(): void {

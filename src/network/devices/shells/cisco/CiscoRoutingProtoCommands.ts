@@ -180,12 +180,29 @@ export function buildRoutingProtoConfig(
       }
       ctx.r().ripSetRedistribution(source, metric);
       repo.rip.redistribute.push(line);
-    } else if (p === 'eigrp') eigrp().redistribute.push(line);
-    else bgp()?.redistribute.push(line);
+    } else if (p === 'eigrp') {
+      eigrp().redistribute.push(line);
+      const source = parseRipRedistSource(a[0]) ?? (a[0]?.toLowerCase() === 'rip' ? 'rip' : undefined);
+      if (source && source !== 'eigrp') {
+        eigrpEng().setRedistribution(source as 'static' | 'connected' | 'rip' | 'ospf' | 'bgp');
+        converge();
+      }
+    } else bgp()?.redistribute.push(line);
     return '';
   });
   routerTrie.registerGreedy('no redistribute', 'Stop redistributing routes', (a) => {
     const p = curProto(ctx).proto;
+    if (p === 'eigrp') {
+      const source = (a[0] ?? '').toLowerCase();
+      if (source === 'static' || source === 'connected' || source === 'rip'
+        || source === 'ospf' || source === 'bgp') {
+        eigrpEng().removeRedistribution(source);
+        eigrp().redistribute = eigrp().redistribute.filter(
+          (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+        converge();
+      }
+      return '';
+    }
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
       if (!source) return '% Invalid input detected.';

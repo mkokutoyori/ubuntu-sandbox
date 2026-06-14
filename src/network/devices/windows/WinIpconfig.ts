@@ -154,7 +154,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
       lines.push(`   Connection-specific DNS Suffix  . :`);
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
-      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'Yes'}`);
+      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
     } else {
       lines.push(`   Connection-specific DNS Suffix  . :`);

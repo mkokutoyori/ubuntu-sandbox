@@ -13,6 +13,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { formatTable as renderTable, formatList as renderList } from '@/network/devices/windows/PSPipeline';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -662,6 +663,11 @@ export class FormatTableCmdlet implements ICmdlet {
   readonly parameters = ['Property', 'AutoSize', 'Wrap', 'GroupBy', 'HideTableHeaders', 'InputObject', 'Force', 'RepeatHeader'] as const;
   readonly aliases = ['ft'] as const;
 
+  /**
+   * Format-Table delegates to the canonical renderer in PSPipeline. Column
+   * widths are computed from actual content (not a hard-coded 15) so output
+   * matches what a real PowerShell session prints.
+   */
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
     if (items.length === 0) return '';
@@ -669,20 +675,25 @@ export class FormatTableCmdlet implements ICmdlet {
     const rawProps = flattenProps(ctx.named['property'] !== undefined
       ? toArray(ctx.named['property'])
       : ctx.positional);
-    let cols = resolveColumns(rawProps, sample, ctx);
-    if (cols.length === 0) {
-      const keys = sample !== null && typeof sample === 'object' && !Array.isArray(sample)
-        ? Object.keys(sample as Record<string, PSValue>)
-        : ['Value'];
-      cols = keys.map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
+    const cols = resolveColumns(rawProps, sample, ctx);
+    // Project through the resolved columns (covers calculated properties and
+    // `*`), then hand plain records to the canonical renderer.
+    const objects = cols.length > 0
+      ? items.map(item => {
+          const rec: Record<string, PSValue> = {};
+          for (const c of cols) rec[c.name] = c.get(item) ?? '';
+          return rec;
+        })
+      : items.map(it =>
+          it && typeof it === 'object' && !Array.isArray(it)
+            ? it as Record<string, PSValue>
+            : { Value: it } as Record<string, PSValue>);
+    const autoSize = ctx.named['autosize'] === true || ctx.named['autosize'] === 'true';
+    const rendered = renderTable(objects as Array<Record<string, unknown>>, autoSize ? '-AutoSize' : '');
+    if (ctx.named['hidetableheaders'] === true) {
+      return rendered.split('\n').slice(2).join('\n');
     }
-    const hideHeaders = ctx.named['hidetableheaders'] === true;
-    const colWidth = 15;
-    const header = cols.map(c => c.name.padEnd(colWidth)).join(' ');
-    const sep    = cols.map(() => '-'.repeat(colWidth)).join(' ');
-    const rows   = items.map(item =>
-      cols.map(c => psValueToString(c.get(item) ?? '').padEnd(colWidth)).join(' '));
-    return (hideHeaders ? rows : [header, sep, ...rows]).join('\n');
+    return rendered;
   }
 }
 
@@ -691,22 +702,31 @@ export class FormatListCmdlet implements ICmdlet {
   readonly parameters = ['Property', 'GroupBy', 'InputObject', 'Force', 'Expand'] as const;
   readonly aliases = ['fl'] as const;
 
+  /**
+   * Format-List delegates to the canonical renderer in PSPipeline so the
+   * `Key : Value` rows are right-padded to the longest key name (real PS
+   * alignment) instead of a single literal space before the colon.
+   */
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
+    if (items.length === 0) return '';
     const rawProps = flattenProps(ctx.named['property'] !== undefined
       ? toArray(ctx.named['property'])
       : ctx.positional);
-    return items.map(item => {
-      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
-        const src = item as Record<string, PSValue>;
-        let cols = resolveColumns(rawProps, item, ctx);
-        if (cols.length === 0) {
-          cols = Object.keys(src).map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
-        }
-        return cols.map(c => `${c.name} : ${psValueToString(c.get(item) ?? '')}`).join('\n');
-      }
-      return psValueToString(item);
-    }).join('\n\n');
+    const scalars = items.filter(it => it === null || typeof it !== 'object' || Array.isArray(it));
+    if (scalars.length === items.length) return items.map(psValueToString).join('\n');
+    // Project through resolveColumns (covers calculated properties and `*`),
+    // then delegate to the canonical renderer for real `Key : Value` padding.
+    const objects = items
+      .filter(it => it !== null && typeof it === 'object' && !Array.isArray(it))
+      .map(item => {
+        const cols = resolveColumns(rawProps, item, ctx);
+        if (cols.length === 0) return item as Record<string, PSValue>;
+        const rec: Record<string, PSValue> = {};
+        for (const c of cols) rec[c.name] = c.get(item) ?? '';
+        return rec;
+      });
+    return renderList(objects as Array<Record<string, unknown>>, '');
   }
 }
 

@@ -148,13 +148,16 @@ export class SessionLimitTracker {
     return false;
   }
 
-  /** Kill all sessions for a user (used when locking / dropping user). */
-  killUserSessions(username: string): void {
+  /** Kill all sessions for a user (used when locking / dropping user). Returns the killed SIDs. */
+  killUserSessions(username: string): number[] {
     const upper = username.toUpperCase();
+    const killed: number[] = [];
     for (const [key, s] of this.sessions.entries()) {
       if (s.username === upper && s.type === 'USER') {
+        killed.push(s.sid);
         this.sessions.delete(key);
       }
     }
+    return killed;
   }
 }

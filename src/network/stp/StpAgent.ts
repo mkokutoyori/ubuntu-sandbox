@@ -3,9 +3,9 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
-  type StpPortGuards,
+  type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost,
-  defaultPortGuards,
+  defaultPortGuards, createDefaultMstRegion,
   ETHERTYPE_STP, STP_BRIDGE_MAC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
@@ -32,6 +32,7 @@ export interface StpHost {
 
 export class StpAgent extends ReactiveAgentBase {
   private config: StpConfig;
+  private readonly mstRegion: MstRegion = createDefaultMstRegion();
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
@@ -52,6 +53,7 @@ export class StpAgent extends ReactiveAgentBase {
   private tcFlagActive = false;
   /** Ports owed a one-shot Topology Change Ack on their next config BPDU. */
   private readonly pendingTcAck = new Set<string>();
+  private readonly pendingAgreement = new Set<string>();
   private tcWhileTimer: TimerHandle | null = null;
   private fastAgingActive = false;
 
@@ -87,6 +89,7 @@ export class StpAgent extends ReactiveAgentBase {
     this.tcnPending = false;
     this.tcFlagActive = false;
     this.pendingTcAck.clear();
+    this.pendingAgreement.clear();
     this.setFastAging(false);
   }
 
@@ -101,6 +104,52 @@ export class StpAgent extends ReactiveAgentBase {
 
   getPortRole(portName: string): StpPortRole {
     return this.portInfo.get(portName)?.role ?? 'disabled';
+  }
+
+  /**
+   * Path cost of a port (IEEE 802.1D-2004 Table 17-3), derived from the
+   * live link speed. Used by `show spanning-tree` so the displayed cost
+   * tracks the real interface speed instead of a hard-coded constant.
+   */
+  getPortCost(portName: string): number {
+    const known = this.portInfo.get(portName)?.cost;
+    if (known !== undefined) return known;
+    return this.costForPort(this.host.getPort(portName));
+  }
+
+  /**
+   * Speed-derived path cost (IEEE 802.1D-2004 Table 17-3). `Port.getSpeed()`
+   * is in Mbps; {@link defaultPathCost} works in kbps, so convert here — the
+   * single conversion point keeps every STP cost consistent (a Gigabit link
+   * is 4, FastEthernet 19, 10 GbE 2, not the 200 a raw Mbps value yields).
+   */
+  private costForPort(port: import('../hardware/Port').Port | undefined): number {
+    return defaultPathCost((port?.getSpeed() ?? 0) * 1000);
+  }
+
+  /**
+   * RSTP operPointToPoint (IEEE 802.1D-2004 §6.4.3), inferred from the
+   * operational duplex: a full-duplex link is point-to-point (eligible for
+   * the rapid proposal/agreement transition), a half-duplex link is shared
+   * (a hub segment) and must fall back to the timed listening/learning walk.
+   */
+  getPortLinkType(portName: string): 'p2p' | 'shared' {
+    return this.host.getPort(portName)?.getDuplex() === 'half'
+      ? 'shared' : 'p2p';
+  }
+
+  private isPointToPoint(portName: string): boolean {
+    return this.getPortLinkType(portName) === 'p2p';
+  }
+
+  getMstRegion(): MstRegion { return this.mstRegion; }
+  setMstName(name: string): void { this.mstRegion.name = name; }
+  setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
+  mapMstInstance(instanceId: number, vlans: string): void {
+    this.mstRegion.instances.set(instanceId, vlans);
+  }
+  unmapMstInstance(instanceId: number): void {
+    this.mstRegion.instances.delete(instanceId);
   }
 
   /** TC flag currently carried in our config BPDUs (root tcWhile or mirrored). */
@@ -130,6 +179,14 @@ export class StpAgent extends ReactiveAgentBase {
       this.armTimers();
     }
   }
+
+  setMode(mode: import('./types').StpProtocolMode): void {
+    if (this.config.mode === mode) return;
+    this.config.mode = mode;
+    this.recomputeOnTopologyChange();
+  }
+
+  getMode(): import('./types').StpProtocolMode { return this.config.mode; }
 
   setMaxAgeSec(sec: number): void {
     if (sec < 6 || sec > 40) return;
@@ -269,7 +326,7 @@ export class StpAgent extends ReactiveAgentBase {
         rootMac: payload.rootBridge.mac,
       },
     });
-    const cost = defaultPathCost(port.getSpeed());
+    const cost = this.costForPort(port);
     const info: StpPortInfo = {
       role: 'disabled',
       cost,
@@ -313,6 +370,25 @@ export class StpAgent extends ReactiveAgentBase {
 
     // ── Topology change processing (802.1D-1998 §8.6.14) ──────────
     // The designated bridge acked our TCNs: stop retransmitting.
+    if (this.config.mode === 'rstp' && payload.version === 2) {
+      if (payload.proposal && portName === this.rootPort) {
+        this.pendingAgreement.add(portName);
+        this.cancelTransition(portName);
+        this.applyForwardState(portName, 'forwarding');
+        this.sendBpdu(portName);
+      }
+      if (payload.agreement && this.portInfo.get(portName)?.role === 'designated') {
+        this.cancelTransition(portName);
+        this.applyForwardState(portName, 'forwarding');
+      }
+      if (payload.topologyChange && !this.tcFlagActive) {
+        this.startTcWhile();
+      }
+      if (!payload.topologyChange && portName === this.rootPort) {
+        this.setFastAging(false);
+      }
+      return;
+    }
     if (payload.topologyChangeAck && portName === this.rootPort) {
       this.stopTcnRetransmission();
     }
@@ -363,7 +439,7 @@ export class StpAgent extends ReactiveAgentBase {
         isRoot: this.isRoot(),
       },
     });
-    if (this.isRoot()) {
+    if (this.config.mode === 'rstp' || this.isRoot()) {
       this.startTcWhile();
     } else {
       this.startTcnRetransmission();
@@ -449,8 +525,9 @@ export class StpAgent extends ReactiveAgentBase {
       if (!port.getIsUp() || !port.isConnected()) continue;
       const role = this.portInfo.get(name)?.role;
       if (role !== 'designated' && !this.isRoot()) {
-        if (name === this.rootPort) continue;
-        if (role === 'alternate') continue;
+        if (name === this.rootPort) {
+          if (!(this.config.mode === 'rstp' && this.tcFlagActive)) continue;
+        } else if (role === 'alternate') continue;
       }
       this.sendBpdu(name);
     }
@@ -462,8 +539,14 @@ export class StpAgent extends ReactiveAgentBase {
     if (this.advertising.has(portName)) return;
     const bpdu: StpBpdu = {
       type: 'stp', bpduType: 'config',
-      protocolId: 0x0000, version: 0,
+      protocolId: 0x0000,
+      version: this.config.mode === 'rstp' ? 2 : 0,
       flags: 0,
+      proposal: this.config.mode === 'rstp'
+        && this.isPointToPoint(portName)
+        && this.portInfo.get(portName)?.role === 'designated'
+        && this.forwardStates.get(portName) !== 'forwarding',
+      agreement: this.pendingAgreement.delete(portName),
       rootBridge: { ...this.rootBridge },
       rootPathCost: this.rootPathCost,
       senderBridge: this.ownBridgeId(),
@@ -623,8 +706,14 @@ export class StpAgent extends ReactiveAgentBase {
         bridge: info.designatedBridge, port: info.designatedPort,
       };
       const mine = this.bpduSuperiority(myAdvertised, theirs);
-      if (mine <= 0) this.applyRole(name, 'designated');
-      else this.applyRole(name, 'alternate');
+      if (mine <= 0) { this.applyRole(name, 'designated'); continue; }
+      // Non-designated, non-root: distinguish Alternate from Backup
+      // (802.1D-2004 §17.7). A superior BPDU sourced by our OWN bridge —
+      // only possible on a shared segment carrying another of our
+      // designated ports — makes this a Backup port; a superior BPDU from
+      // any other bridge makes it an Alternate (alternate path to root).
+      const fromSelf = bridgeEquals(info.designatedBridge, own);
+      this.applyRole(name, fromSelf ? 'backup' : 'alternate');
     }
 
     if (rootChanged) {
@@ -675,7 +764,7 @@ export class StpAgent extends ReactiveAgentBase {
     let info = this.portInfo.get(portName);
     if (!info) {
       const port = this.host.getPort(portName);
-      const cost = port ? defaultPathCost(port.getSpeed()) : 19;
+      const cost = this.costForPort(port);
       info = {
         role: 'disabled', cost,
         designatedRoot: this.ownBridgeId(),
@@ -699,7 +788,7 @@ export class StpAgent extends ReactiveAgentBase {
     }
     if (role === 'disabled') {
       this.applyForwardState(portName, 'disabled');
-    } else if (role === 'alternate') {
+    } else if (role === 'alternate' || role === 'backup') {
       this.applyForwardState(portName, 'blocking');
     } else {
       this.requestForwarding(portName);
@@ -726,8 +815,20 @@ export class StpAgent extends ReactiveAgentBase {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
+    // RSTP rapid root-port transition is only safe on a point-to-point
+    // link; on a shared segment the root port walks the timers (§17.10).
+    if (this.config.mode === 'rstp' && portName === this.rootPort
+      && this.isPointToPoint(portName)) {
+      this.applyForwardState(portName, 'forwarding');
+      return;
+    }
     this.applyForwardState(portName, 'listening');
     this.scheduleTransition(portName, 'learning');
+    // A designated port proposes only on point-to-point links (the
+    // proposal flag in sendBpdu is gated the same way).
+    if (this.config.mode === 'rstp' && this.isPointToPoint(portName)) {
+      this.sendBpdu(portName);
+    }
   }
 
   private scheduleTransition(portName: string, next: 'learning' | 'forwarding'): void {

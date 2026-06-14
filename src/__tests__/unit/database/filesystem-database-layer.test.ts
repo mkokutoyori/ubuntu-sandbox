@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { OracleInstance } from '@/database/oracle/OracleInstance';
-import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS, ORACLE_BANNER } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS, ORACLE_BANNER } from '@/database/oracle/OracleConfig';
 import {
   getOracleDatabase,
   removeOracleDatabase,

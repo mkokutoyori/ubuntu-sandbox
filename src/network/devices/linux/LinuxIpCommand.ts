@@ -9,6 +9,7 @@
 
 import { findHostByAddress } from './network/HostLookup';
 import { IPAddress, SubnetMask } from '../../core/types';
+import { broadcastAddress } from '../../core/ip';
 
 // ─── Network Context Interface ──────────────────────────────────────
 
@@ -23,6 +24,13 @@ export interface IpInterfaceInfo {
   isConnected: boolean;
   isDHCP: boolean;
   counters: { framesIn: number; framesOut: number; bytesIn: number; bytesOut: number };
+  ipv6?: IpInterfaceV6Address[];
+}
+
+export interface IpInterfaceV6Address {
+  address: string;
+  prefixLength: number;
+  scope: 'host' | 'link' | 'global';
 }
 
 export interface IpRouteEntry {
@@ -43,12 +51,22 @@ export interface IpNeighborEntry {
   state: string;
 }
 
+export interface IpV6RouteEntry {
+  prefix: string;
+  prefixLength: number;
+  nextHop: string | null;
+  iface: string;
+  type: 'connected' | 'static' | 'default' | 'ra';
+  metric: number;
+}
+
 export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
   configureInterface(ifName: string, ip: string, cidr: number): string;
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(): IpRouteEntry[];
+  getIPv6RoutingTable?(): IpV6RouteEntry[];
   addDefaultRoute(gateway: string): string;
   addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string;
   deleteDefaultRoute(): string;
@@ -218,17 +236,29 @@ TYPE := { bareudp | bond | bond_slave | bridge | bridge_slave |
 
 // ─── Main Entry Point ───────────────────────────────────────────────
 
+type IpFamily = 'any' | 'inet' | 'inet6';
+
 export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string {
   // Parse global options
   let brief = false;
   let stats = false;
+  let family: IpFamily = 'any';
   const filteredArgs: string[] = [];
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg === '-br' || arg === '-brief') {
       brief = true;
     } else if (arg === '-s' || arg === '-statistics') {
       stats = true;
+    } else if (arg === '-4') {
+      family = 'inet';
+    } else if (arg === '-6') {
+      family = 'inet6';
+    } else if (arg === '-f' || arg === '-family') {
+      const fam = args[++i];
+      if (fam === 'inet') family = 'inet';
+      else if (fam === 'inet6') family = 'inet6';
     } else if (arg === '-h' || arg === '--help') {
       return IP_HELP;
     } else if (!arg.startsWith('-')) {
@@ -249,7 +279,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'addr':
     case 'address':
     case 'a':
-      return brief ? ipAddrBrief(ctx, subArgs) : ipAddr(ctx, subArgs);
+      return brief ? ipAddrBrief(ctx, subArgs) : ipAddr(ctx, subArgs, family);
 
     case 'link':
     case 'l':
@@ -257,7 +287,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
     case 'route':
     case 'r':
-      return ipRoute(ctx, subArgs);
+      return family === 'inet6' ? ipRoute6(ctx, subArgs) : ipRoute(ctx, subArgs);
 
     case 'neigh':
     case 'neighbor':
@@ -276,9 +306,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
 // ─── ip addr ────────────────────────────────────────────────────────
 
-function ipAddr(ctx: IpNetworkContext, args: string[]): string {
+function ipAddr(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
   if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
-    return ipAddrShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0));
+    return ipAddrShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), family);
   }
   if (args[0] === 'add') return ipAddrAdd(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipAddrDel(ctx, args.slice(1));
@@ -300,7 +330,7 @@ function ipAddrFlush(ctx: IpNetworkContext, args: string[]): string {
   return ctx.removeInterfaceIP(devName);
 }
 
-function ipAddrShow(ctx: IpNetworkContext, args: string[]): string {
+function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
   // Parse "dev <name>" filter
   let filterDev: string | null = null;
   for (let i = 0; i < args.length; i++) {
@@ -315,7 +345,7 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[]): string {
     if (!info) return `Device "${filterDev}" does not exist.`;
     const names = ctx.getInterfaceNames();
     const idx = names.indexOf(filterDev) + 1;
-    return formatAddrInterface(info, idx);
+    return formatAddrInterface(info, idx, family);
   }
 
   const names = ctx.getInterfaceNames();
@@ -324,12 +354,12 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[]): string {
     const info = ctx.getInterfaceInfo(names[i]);
     if (!info) continue;
     if (lines.length > 0) lines.push('');
-    lines.push(formatAddrInterface(info, i + 1));
+    lines.push(formatAddrInterface(info, i + 1, family));
   }
   return lines.join('\n');
 }
 
-function formatAddrInterface(info: IpInterfaceInfo, idx: number): string {
+function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamily = 'any'): string {
   const isLoopback = info.name === 'lo';
   const flags: string[] = [];
 
@@ -358,29 +388,22 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number): string {
   lines.push(`${idx}: ${info.name}: <${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${state} group ${group}${qlen}`);
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
 
-  if (info.ip && info.cidr !== null) {
+  if (family !== 'inet6' && info.ip && info.cidr !== null) {
     const dynFlag = info.isDHCP ? ' dynamic' : '';
     const scope = isLoopback ? 'host' : 'global';
-    const brd = computeBroadcast(info.ip, info.cidr);
+    const brd = broadcastAddress(info.ip, info.cidr);
     const brdStr = brd ? ` brd ${brd}` : '';
     lines.push(`    inet ${info.ip}/${info.cidr}${brdStr}${dynFlag} scope ${scope} ${info.name}`);
   }
 
-  return lines.join('\n');
-}
+  if (family !== 'inet') {
+    for (const v6 of info.ipv6 ?? []) {
+      lines.push(`    inet6 ${v6.address}/${v6.prefixLength} scope ${v6.scope}`);
+      lines.push(`       valid_lft forever preferred_lft forever`);
+    }
+  }
 
-function computeBroadcast(ip: string, cidr: number): string | null {
-  if (cidr >= 31) return null;
-  const parts = ip.split('.').map(Number);
-  const ipInt = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
-  const hostBits = 32 - cidr;
-  const brd = (ipInt | ((1 << hostBits) - 1)) >>> 0;
-  return [
-    (brd >>> 24) & 0xFF,
-    (brd >>> 16) & 0xFF,
-    (brd >>> 8) & 0xFF,
-    brd & 0xFF,
-  ].join('.');
+  return lines.join('\n');
 }
 
 function ipAddrBrief(ctx: IpNetworkContext, args: string[]): string {
@@ -580,6 +603,23 @@ function ipRouteShow(ctx: IpNetworkContext): string {
     }
   }
 
+  return lines.join('\n');
+}
+
+function ipRoute6(ctx: IpNetworkContext, args: string[]): string {
+  if (args.length > 0 && args[0] !== 'show' && args[0] !== 'list') {
+    if (args[0] === 'help') return IP_ROUTE_HELP;
+    return `Command "${args[0]}" is unknown, try "ip route help".`;
+  }
+  const table = ctx.getIPv6RoutingTable?.() ?? [];
+  const lines: string[] = [];
+  for (const route of table) {
+    const proto = route.type === 'connected' ? 'kernel'
+      : route.type === 'ra' ? 'ra' : 'static';
+    const dest = route.type === 'default' ? 'default' : `${route.prefix}/${route.prefixLength}`;
+    const via = route.nextHop ? ` via ${route.nextHop}` : '';
+    lines.push(`${dest}${via} dev ${route.iface} proto ${proto} metric ${route.metric} pref medium`);
+  }
   return lines.join('\n');
 }
 

@@ -1091,3 +1091,214 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
 ### Validation (ciblée)
 
 - Suite GRE : 13 tests verts.
+
+---
+
+## Clôture de campagne — 2026-06-11 — Régression complète à l'échelle du projet
+
+- `npm run test:run` (projet entier) : **649 fichiers, 13 738 tests verts,
+  9 échecs, 93 skipped**.
+- Les 9 échecs sont concentrés dans deux suites PowerShell
+  (`ps-fifth-pass.test.ts` : DateTime/Push-Location/switch-scriptblock ;
+  `format-rendering-fixes.test.ts` : Get-ChildItem) et **préexistent à la
+  campagne** : reproduits à l'identique sur un worktree propre du commit de
+  départ (91fd5b4), avant toute modification de cette campagne. Sans lien
+  avec les protocoles réseau ; probablement sensibles à la date système.
+- Périmètre final de la campagne : entrées n°9 à n°21 — 13 itérations
+  poussées individuellement, chacune validée par ses suites ciblées, et
+  l'ensemble par cette régression globale.
+
+---
+
+## Entrée n°22 — 2026-06-11 — RSTP (802.1w) : le mode rapid-pvst n'était qu'un libellé
+
+### Défaillances constatées
+
+1. **`spanning-tree mode rapid-pvst` purement décoratif** — le shell Cisco
+   mémorisait la chaîne pour l'affichage ; le `stp mode rstp` Huawei
+   validait la syntaxe puis ne faisait rien. L'agent STP n'avait aucun
+   concept de mode : convergence 802.1D à 30 s (2 × forward delay) dans
+   tous les cas.
+
+### Correction (sous-ensemble 802.1w fonctionnel)
+
+- **Mode protocole** dans `StpConfig` (`stp` | `rstp`, défaut `stp` —
+  aucun changement pour l'existant) + API `setMode`/`getMode`, câblée aux
+  deux CLI (`rapid-pvst`/`mst` → rstp côté Cisco ; `rstp`/`mstp` côté VRP).
+- **Proposal/agreement** : BPDU v2 avec flags `proposal`/`agreement` ;
+  un port désigné non-forwarding propose (à l'entrée en listening et à
+  chaque hello) ; le pair dont c'est le root port répond agreement
+  (one-shot) et passe forwarding ; le désigné qui reçoit l'agreement
+  passe forwarding immédiatement. Face à un port alternate (pas
+  d'agreement) ou un voisin 802.1D (BPDU v0), retombée propre sur la
+  marche temporisée — interopérabilité préservée.
+- **Root port immédiat** : en rstp, le nouveau root port passe forwarding
+  sans attendre (failover sub-seconde au lieu de 30 s).
+- **Topology change à la RSTP** : plus de TCN vers la racine — le pont
+  détecteur arme tcWhile lui-même et le flag TC se propage de proche en
+  proche (garde anti-rebond : un TC reçu n'arme tcWhile que s'il n'est
+  pas déjà actif) ; le TC sort aussi par le root port (l'émission
+  legacy ne couvrait que les ports désignés, le TC ne remontait jamais).
+
+### Fichiers
+
+- `src/network/stp/types.ts`, `src/network/stp/StpAgent.ts`
+- `src/network/devices/shells/CiscoSwitchShell.ts`,
+  `src/network/devices/shells/HuaweiSwitchShell.ts`
+- `src/__tests__/unit/network-v2/stp-rstp.test.ts` (nouveau, 6 tests)
+
+### Validation (ciblée)
+
+- 6 tests RSTP : bascule de mode (2 CLI), handshake proposal/agreement
+  (port désigné forwarding sans timers, l'alternate du pair bloque),
+  contraste mode legacy (listening), failover root port immédiat,
+  propagation TC sans aucun TCN avec fast aging bout en bout.
+- Suites STP complètes : 48 tests verts ; suites commutation connexes
+  (switch shells, switchport, VTP, LACP, DTP, ping) : 248 tests verts.
+
+---
+
+## Entrée n°23 — 2026-06-11 — Dédup : `resolveSnoopingVlan` remontée dans la base Switch
+
+### Défaillances constatées
+
+1. **Duplication verbatim** — `resolveSnoopingVlan()` (résolution du VLAN
+   d'entrée : access → VLAN d'accès, trunk → VLAN natif) était implémentée
+   à l'identique dans `CiscoSwitch` et `HuaweiSwitch` (constat d'audit L2
+   n°9, jamais traité). Toute évolution de la résolution (sous-interfaces,
+   VLAN voice…) aurait dû être faite deux fois.
+
+### Correction
+
+- Méthode unique sur la base `Switch` (publique — elle sert de hook aux
+  agents IGMP-snooping et CDP des deux vendeurs) ; suppression des deux
+  copies privées.
+
+### Fichiers
+
+- `src/network/devices/Switch.ts`, `CiscoSwitch.ts`, `HuaweiSwitch.ts`
+
+### Validation (ciblée)
+
+- igmp-snooping, cdp-protocol, huawei-switch-shell : 83 tests verts.
+
+---
+
+## Entrée n°24 — 2026-06-11 — EIGRP : `redistribute` stocké mais jamais lu
+
+### Défaillances constatées
+
+1. **`redistribute` EIGRP décoratif** — sous `router eigrp`, la commande
+   poussait une chaîne brute dans le repo de `show running-config` ; le
+   champ `redistribute: string[]` du moteur n'était lu nulle part. Aucun
+   moyen d'injecter des statiques ou des connectées hors `network` dans
+   un AS EIGRP.
+2. **Pas de notion d'externe** — toutes les routes EIGRP étaient
+   installées en AD 90 ; les redistribuées doivent être externes (AD 170,
+   D EX sur un vrai IOS).
+
+### Correction
+
+- **`RoutingDeviceContext`** : seam optionnel `ribRoutes()` (réseau,
+  masque, type) fourni par `RouterDynamicRouting` depuis le RIB réel —
+  les moteurs sur la fondation commune peuvent désormais voir les routes
+  des autres protocoles sans couplage au Router.
+- **`EIGRPEngine`** : `redistributeSources` (Set) + API
+  `setRedistribution`/`removeRedistribution` ; `originatedPrefixes()`
+  ajoute les connectées hors instruction `network` (si
+  `redistribute connected`) et les routes RIB des sources configurées
+  (static/rip/ospf/bgp), marquées `external` ; `computeRoutes` installe
+  les externes en **AD 170** chez les voisins.
+- **CLI** : `redistribute <proto>` et `no redistribute <proto>` sous
+  `router eigrp` câblés au moteur + convergence.
+
+### Fichiers
+
+- `src/network/routing/RoutingPeerLocator.ts`
+- `src/network/eigrp/EIGRPEngine.ts`
+- `src/network/devices/router/RouterDynamicRouting.ts`
+- `src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`
+- `src/__tests__/unit/network-v2/eigrp-engine.test.ts` (+2 tests)
+
+### Validation (ciblée)
+
+- Moteur : statique non annoncée sans redistribute, annoncée en AD 170
+  avec ; connectée hors `network` idem. Suites connexes : eigrp-engine
+  (14), eigrp-bgp-cli-integration, cisco-routing-proto,
+  routing-engine-consistency, rip (39), redistribution (3) — toutes
+  vertes.
+
+---
+
+## Entrée n°25 — 2026-06-11 — DHCP sur le câble + relais Option 82 (RFC 3046)
+
+### Défaillances constatées
+
+1. **DHCP hors-bande** — le DORA ne traversait jamais le réseau simulé :
+   le client découvrait les serveurs par traversée du graphe de topologie
+   (duck-typing sur les équipements) et appelait `processDiscover()`
+   directement sur l'objet serveur. Le routeur jetait les UDP 67/68
+   (« Other UDP ports silently dropped »), `ip helper-address` ne relayait
+   rien, et l'Option 82 était inimplémentable faute de chemin relais réel.
+2. **Broadcast limité refusé sur interface non configurée** — un EndHost
+   sans IP n'acceptait jamais 255.255.255.255 (le test exigeait
+   `myIP && mask`), en violation de RFC 1122 §3.3.6 — exactement le paquet
+   dont dépend un client DHCP (l'OFFER broadcast). C'était le verrou
+   structurel qui rendait le DHCP sur câble impossible.
+3. **`ip dhcp relay information option` no-op** — la commande existait,
+   posait un flag privé jamais lu.
+
+### Correction
+
+- **Client sur câble** (`EndHost.requestLeaseOnWire`) : DISCOVER broadcast
+  réel (0.0.0.0 → 255.255.255.255, UDP 68→67, flag broadcast RFC 2131),
+  écoute UDP 68, REQUEST sur OFFER (Option 54 écho), application du bail
+  sur ACK (IP/masque/passerelle via le même chemin de configuration que le
+  client historique), gestion NAK. Le câble synchrone fait aboutir le DORA
+  complet dans l'appel.
+- **Routeur** : dispatch UDP 67 dans la livraison locale —
+  (a) **serveur** : DISCOVER/REQUEST → moteur DHCPServer existant
+  (sélection de pool par giaddr déjà supportée) → OFFER/ACK/NAK réels,
+  unicast vers giaddr ou broadcast sur l'interface d'entrée, écho de
+  l'Option 82 (RFC 3046 §2.2) ;
+  (b) **relais** : requête reçue sur une interface à `ip helper-address` →
+  giaddr posé (seulement si 0.0.0.0, conforme RFC), **insertion Option 82**
+  (circuit-id = interface d'entrée, remote-id = hostname) si activée,
+  routage vers chaque helper ;
+  (c) **retour relais** : BOOTREPLY dont le giaddr est une de nos
+  interfaces → **strip de l'Option 82** puis broadcast vers le client.
+  Événements : `dhcp.relay.forwarded`, `dhcp.relay.reply-forwarded`,
+  `dhcp.server.option82-received`.
+- **EndHost** : acceptation inconditionnelle du broadcast limité
+  255.255.255.255 (RFC 1122 §3.3.6).
+- **CLI** : le handler existant `ip dhcp relay information option` câblé au
+  flag du serveur (un doublon que j'avais introduit était écrasé par
+  l'enregistrement existant — supprimé, l'existant enrichi) + variante `no`.
+- `DHCPPacket.removeOption()` ajouté (strip propre côté relais).
+
+### Fichiers
+
+- `src/network/devices/EndHost.ts`, `src/network/devices/Router.ts`
+- `src/network/dhcp/DHCPPacket.ts`, `DHCPServer.ts`, `types.ts`
+- `src/network/devices/shells/cisco/CiscoConfigCommands.ts`
+- `src/__tests__/unit/network-v2/dhcp-relay-wire.test.ts` (nouveau, 5 tests)
+
+### Validation (ciblée)
+
+- 5 tests de bout en bout : DORA broadcast direct (bail + ping passerelle),
+  relais inter-subnets avec sélection de pool par giaddr (bail distant +
+  ping du serveur), Option 82 absente par défaut, circuit-id/remote-id/giaddr
+  reçus par le serveur quand activée, Option 82 strippée avant le client.
+- Suites connexes : dhcp_complete, dhcp_fixes, dhcp_cli_gaps,
+  ping-through-switch, acl-icmp-type, host-model-loopback, fhrp-dataplane —
+  **100 tests verts** (le client hors-bande historique reste intact).
+
+### Limite connue
+
+- ~~Le client câble est exposé via `requestLeaseOnWire()` (nouvelle API) ;
+  le flux `dhclient`/UI historique reste sur le chemin hors-bande — la
+  bascule par défaut demanderait une migration des suites existantes.~~
+  **Soldée** : `dhclient` passe par le câble depuis l'entrée 15 du
+  JOURNAL-DE-BORD (canal `WireDhcpChannel` essayé en premier), et la
+  surface parallèle `requestLeaseOnWire` a été fusionnée dans le
+  `DHCPClient` (JOURNAL-DE-BORD, entrée 30).

@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_HIST_BASELINE',
   comment: 'AWR baselines',
-  query() {
+  query({ instance }) {
     return queryResult(
       [
         col.num('DBID'),
@@ -22,7 +22,7 @@ registerView({
         col.date('END_SNAP_TIME'),
       ],
       [
-        [1234567890, 0, 'SYSTEM_MOVING_WINDOW', 'MOVING_WINDOW',
+        [instance.getDbId(), 0, 'SYSTEM_MOVING_WINDOW', 'MOVING_WINDOW',
           null as unknown as number, null as unknown as string,
           null as unknown as number, null as unknown as string],
       ]

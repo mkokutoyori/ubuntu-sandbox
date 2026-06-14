@@ -28,6 +28,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask } from '../../core/types';
+import { isValidIPv4 } from '../../core/ip';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 
 // ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
@@ -1355,20 +1356,45 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'renew') {
     const ifName = args[1] || '';
+    const targets: string[] = [];
     if (ifName) {
       const portName = resolveAdapterName(ifName, ctx.ports);
       if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      targets.push(portName);
+    } else {
+      targets.push(...ctx.ports.keys());
+    }
+    ctx.autoDiscoverDHCPServers();
+    for (const portName of targets) {
       st.releasedIfaces.delete(portName);
+      ctx.requestLease(portName, { verbose: false });
+      const state = ctx.getDHCPState(portName);
+      if (state?.lease) {
+        ctx.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${portName}`);
+      }
     }
     return `Renewal of interface(s) completed.`;
   }
 
   if (sub === 'release') {
     const ifName = args[1] || '';
+    const targets: string[] = [];
     if (ifName) {
       const portName = resolveAdapterName(ifName, ctx.ports);
       if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      targets.push(portName);
+    } else {
+      targets.push(...ctx.ports.keys());
+    }
+    for (const portName of targets) {
       st.releasedIfaces.add(portName);
+      const state = ctx.getDHCPState(portName);
+      if (state?.lease) {
+        const oldIP = state.lease.ipAddress;
+        ctx.releaseLease(portName);
+        ctx.addDHCPEvent('RELEASE', `Released IP ${oldIP} on ${portName}`);
+      }
+      if (state) state.state = 'INIT';
     }
     return `Release of interface(s) completed.`;
   }
@@ -2715,11 +2741,6 @@ show           - Displays information.
 To view help for a command, type the command, followed by a space, and then
  type ?.`;
 
-const IP4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-function isValidIPv4(s: string): boolean {
-  if (!IP4_RE.test(s)) return false;
-  return s.split('.').every(o => parseInt(o, 10) <= 255);
-}
 
 function handleNetshHttp(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {

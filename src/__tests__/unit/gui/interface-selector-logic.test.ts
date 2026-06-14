@@ -52,9 +52,8 @@ describe('interface-selector-logic', () => {
       const connections: Connection[] = [{
         id: 'conn-1', type: 'ethernet',
         sourceDeviceId: 'router-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'switch-1', targetInterfaceId: 'eth0',
-        isActive: true
-      }];
+        targetDeviceId: 'switch-1', targetInterfaceId: 'eth0'
+              }];
 
       const list = buildInterfaceList('router-1', routerInterfaces, connections);
       const eth0 = list.find(item => item.id === 'eth0')!;
@@ -70,9 +69,8 @@ describe('interface-selector-logic', () => {
       const connections: Connection[] = [{
         id: 'conn-1', type: 'ethernet',
         sourceDeviceId: 'router-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'switch-1', targetInterfaceId: 'eth0',
-        isActive: true
-      }];
+        targetDeviceId: 'switch-1', targetInterfaceId: 'eth0'
+              }];
 
       const list = buildInterfaceList('router-1', routerInterfaces, connections);
       const eth0 = list.find(item => item.id === 'eth0')!;
@@ -125,9 +123,8 @@ describe('interface-selector-logic', () => {
       const connections: Connection[] = [{
         id: 'conn-1', type: 'ethernet',
         sourceDeviceId: 'switch-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'pc-1', targetInterfaceId: 'eth0',
-        isActive: true
-      }];
+        targetDeviceId: 'pc-1', targetInterfaceId: 'eth0'
+              }];
 
       const list = buildInterfaceList('switch-1', switchInterfaces, connections);
       const groups = groupInterfacesByType(list);

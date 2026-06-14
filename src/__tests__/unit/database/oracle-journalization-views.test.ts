@@ -154,4 +154,22 @@ describe('ARCHIVE LOG LIST SQL*Plus command', () => {
     expect(out).toMatch(/Current log sequence/i);
     sh.dispose();
   });
+
+  it('omits "Next log sequence to archive" in NOARCHIVELOG mode', () => {
+    const { subShell } = s('archlist-noarc');
+    const out = run(subShell, 'ARCHIVE LOG LIST;');
+    expect(out).toMatch(/No Archive Mode/);
+    expect(out).not.toMatch(/Next log sequence to archive/);
+    subShell.dispose();
+  });
+
+  it('shows "Next log sequence to archive" in ARCHIVELOG mode', () => {
+    const { subShell, srv } = s('archlist-arc');
+    const db = getOracleDatabase(srv.getId());
+    (db.instance as unknown as { _archiveLogMode: boolean })._archiveLogMode = true;
+    const out = run(subShell, 'ARCHIVE LOG LIST;');
+    expect(out).toMatch(/Archive Mode/);
+    expect(out).toMatch(/Next log sequence to archive/);
+    subShell.dispose();
+  });
 });

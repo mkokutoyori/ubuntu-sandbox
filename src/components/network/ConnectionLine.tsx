@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import { Connection } from '@/store/networkStore';
+import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
   computeConnectionPath,
@@ -85,7 +85,7 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
         strokeDasharray={dash}
         className={cn(
           "transition-all cursor-pointer",
-          !connection.isActive && "opacity-30",
+          !isConnectionActive(connection) && "opacity-30",
           "group-hover:stroke-[3px]"
         )}
         onClick={() => selectConnection(connection.id)}

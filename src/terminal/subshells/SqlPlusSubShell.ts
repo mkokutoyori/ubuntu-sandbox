@@ -5,11 +5,12 @@
  * decoupling Oracle database concerns from LinuxTerminalSession.
  */
 
-import type { Equipment } from '@/network';
+import type { Equipment, HostCapableDevice } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
+import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
 
 interface SyncShellHost {
@@ -19,6 +20,33 @@ interface SyncShellHost {
 function asSyncShellHost(device: Equipment): SyncShellHost | null {
   const d = device as unknown as Partial<SyncShellHost>;
   return typeof d.executeShellCommandSync === 'function' ? (d as SyncShellHost) : null;
+}
+
+/**
+ * Snapshot the launching shell's OS identity — like a real sqlplus
+ * process inherits the uid/groups of the shell that exec'd it. The dba
+ * group membership read here is what gates `/ AS SYSDBA` (bequeath
+ * authentication); OSUSER/MACHINE/TERMINAL feed V$SESSION and the audit
+ * trail. Returns undefined on devices without a POSIX identity surface,
+ * letting the engine fall back to its default context.
+ */
+function captureOsContext(device: Equipment, host: SyncShellHost | null): OsSecurityContext | undefined {
+  const capable = device as HostCapableDevice;
+  const osUser = capable.getCurrentUser?.()
+    ?? host?.executeShellCommandSync('whoami').trim();
+  if (!osUser) return undefined;
+
+  const groups = (host?.executeShellCommandSync(`id -Gn ${osUser}`) ?? '')
+    .trim().split(/\s+/).filter(Boolean);
+  const hostname = (host?.executeShellCommandSync('hostname') ?? '').trim() || 'localhost';
+  return {
+    osUser,
+    osGroup: groups[0] ?? osUser,
+    isDbaGroup: groups.includes('dba'),
+    hostname,
+    terminal: 'pts/0',
+    program: `sqlplus@${hostname}`,
+  };
 }
 
 export class SqlPlusSubShell implements ISubShell {
@@ -45,9 +73,9 @@ export class SqlPlusSubShell implements ISubShell {
   ): { subShell: SqlPlusSubShell; banner: string[]; loginOutput: string[] } {
     initOracleFilesystem(device);
     const deviceId = device.getId();
-    const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
-
     const host = asSyncShellHost(device);
+    const osCtx = captureOsContext(device, host);
+    const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args, osCtx);
     if (host) {
       const runner: HostCommandRunner = {
         execute(cmd: string): string[] {
@@ -57,6 +85,26 @@ export class SqlPlusSubShell implements ISubShell {
       };
       session.setHostCommandRunner(runner);
     }
+
+    // SPOOL / @script filesystem surface. Relative paths resolve against
+    // the launching shell's cwd (like a real sqlplus process); reads and
+    // writes go through the device's stable editor file surface.
+    const fsDevice = device as unknown as {
+      writeFileFromEditor?: (p: string, c: string) => boolean;
+      readFileForEditor?: (p: string) => string | null;
+    };
+    session.setFileIO({
+      resolve: (path: string): string => {
+        if (path.startsWith('/')) return path;
+        const pwd = host?.executeShellCommandSync('pwd').trim();
+        const baseDir = pwd && pwd.startsWith('/') ? pwd : '/root';
+        return `${baseDir}/${path}`.replace(/\/{2,}/g, '/');
+      },
+      read: (path: string): string | null =>
+        fsDevice.readFileForEditor?.(path) ?? null,
+      write: (path: string, content: string): boolean =>
+        fsDevice.writeFileFromEditor?.(path, content) ?? false,
+    });
 
     return {
       subShell: new SqlPlusSubShell(session, session.getPrompt()),

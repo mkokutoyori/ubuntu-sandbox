@@ -6,7 +6,7 @@
  * lives in the session/flow layer. The view never interprets raw strings.
  */
 
-import type { Equipment } from '@/network';
+import type { HostCapableDevice } from '@/network';
 
 // ─── Text styling (pre-parsed, no ANSI in the view) ──────────────────
 
@@ -245,8 +245,8 @@ export interface FlowContext {
   /** Collected user inputs, keyed by InteractiveStep.storeAs */
   values: Map<string, string>;
 
-  /** The device being operated on */
-  device: Equipment;
+  /** The device being operated on — host capabilities are optional. */
+  device: HostCapableDevice;
 
   /** Current user at flow start */
   currentUser: string;

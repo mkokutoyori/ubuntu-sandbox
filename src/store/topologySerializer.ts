@@ -16,7 +16,7 @@ import {
   Logger,
   EndHost, Router,
 } from '@/network';
-import type { Connection } from './networkStore';
+import { buildConnection, type Connection } from './networkStore';
 
 // ── Export schema ──
 
@@ -216,24 +216,12 @@ export function importTopology(json: TopologyExport): ImportResult {
     const targetDevice = idMap.get(connData.targetDeviceId);
     if (!sourceDevice || !targetDevice) continue;
 
-    const sourcePort = sourceDevice.getPort(connData.sourceInterfaceId);
-    const targetPort = targetDevice.getPort(connData.targetInterfaceId);
-    if (!sourcePort || !targetPort) continue;
-
-    const connId = generateId();
-    const cable = new Cable(connId);
-    cable.connect(sourcePort, targetPort);
-
-    connections.push({
-      id: connId,
-      type: connData.type,
-      sourceDeviceId: sourceDevice.getId(),
-      sourceInterfaceId: connData.sourceInterfaceId,
-      targetDeviceId: targetDevice.getId(),
-      targetInterfaceId: connData.targetInterfaceId,
-      isActive: true,
-      cable,
-    });
+    const connection = buildConnection(
+      sourceDevice, connData.sourceInterfaceId,
+      targetDevice, connData.targetInterfaceId,
+      connData.type,
+    );
+    if (connection) connections.push(connection);
   }
 
   return {

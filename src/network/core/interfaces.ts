@@ -20,7 +20,7 @@ export interface IFileSystemCapable {
   readFileForEditor(path: string): string | null;
   /** Write file content from editor */
   writeFileFromEditor(path: string, content: string): boolean;
-  installSystemFile?(path: string, content: string): boolean;
+  installSystemFile?(path: string, content: string, uid?: number, gid?: number): boolean;
   /** Resolve absolute path from relative path + cwd */
   resolveAbsolutePath(path: string): string;
   /** Get current working directory */

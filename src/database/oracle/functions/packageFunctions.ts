@@ -46,9 +46,7 @@ export const packageFunctions: SqlFunctionBundle = {
 
   'DBMS_LOB.GETLENGTH': ([v]) => (v != null ? String(v).length : null),
 
-  'UTL_FILE.FOPEN': () => null,
-
-  'UTL_FILE.FCLOSE': () => null,
-
-  'UTL_FILE.GET_LINE': () => null,
+  // UTL_FILE is intentionally absent: it is a PL/SQL-only package served by
+  // UtlFileEngine through the interpreter, and is an invalid identifier in
+  // SQL (ORA-00904), matching real Oracle.
 };

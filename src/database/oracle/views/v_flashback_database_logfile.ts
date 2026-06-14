@@ -7,7 +7,7 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
-import { ORACLE_CONFIG } from '../../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '../OracleConfig';
 
 registerView({
   name: 'V$FLASHBACK_DATABASE_LOGFILE',

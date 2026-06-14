@@ -185,6 +185,7 @@ export interface TableRef extends ASTNode {
   name: string;
   alias?: string;
   dbLink?: string;
+  asOf?: { kind: 'TIMESTAMP' | 'SCN'; expr: Expression };
 }
 
 export interface SubqueryTableRef extends ASTNode {
@@ -735,6 +736,8 @@ export interface FlashbackStatement extends ASTNode {
   name?: string;
   /** Raw SCN / TIMESTAMP / RESTORE POINT / BEFORE DROP clause. */
   to: string;
+  toKind?: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW';
+  toExpr?: Expression;
 }
 
 export interface PurgeStatement extends ASTNode {
@@ -1073,6 +1076,7 @@ export interface CreateDbLinkStatement extends ASTNode {
   isPublic: boolean;
   name: string;
   connectUser?: string;
+  connectPassword?: string;
   usingAlias?: string;
 }
 
@@ -1082,11 +1086,49 @@ export interface DropDbLinkStatement extends ASTNode {
   name: string;
 }
 
+/**
+ * CREATE [OR REPLACE] DIRECTORY name AS 'path' — a directory object maps a
+ * SQL name to a path on the database server's host filesystem. Directory
+ * objects are always owned by SYS; access is granted via READ/WRITE
+ * privileges and consumed by UTL_FILE, external tables, and Data Pump.
+ */
+export interface CreateDirectoryStatement extends ASTNode {
+  type: 'CreateDirectoryStatement';
+  orReplace: boolean;
+  name: string;
+  path: string;
+}
+
+export interface DropDirectoryStatement extends ASTNode {
+  type: 'DropDirectoryStatement';
+  name: string;
+}
+
 export interface CreateMaterializedViewStatement extends ASTNode {
   type: 'CreateMaterializedViewStatement';
   schema?: string;
   name: string;
   query: SelectStatement;
+  /** Approximate source text of the defining query (DBA_MVIEWS.QUERY). */
+  queryText?: string;
+  buildMode?: 'IMMEDIATE' | 'DEFERRED';
+  refreshMethod?: 'COMPLETE' | 'FORCE' | 'FAST';
+  refreshMode?: 'DEMAND' | 'COMMIT';
+}
+
+export interface CreateMviewLogStatement extends ASTNode {
+  type: 'CreateMviewLogStatement';
+  schema?: string;
+  table: string;
+  withRowid: boolean;
+  withPrimaryKey: boolean;
+  withSequence: boolean;
+}
+
+export interface DropMviewLogStatement extends ASTNode {
+  type: 'DropMviewLogStatement';
+  schema?: string;
+  table: string;
 }
 
 export interface DropMaterializedViewStatement extends ASTNode {
@@ -1136,8 +1178,11 @@ export type Statement =
   | CreateTypeStatement
   | AlterSessionStatement | AlterCompileStatement
   | CommentStatement
+  // Directory objects
+  | CreateDirectoryStatement | DropDirectoryStatement
   // Database links / materialized views (stubs)
   | CreateDbLinkStatement | DropDbLinkStatement
   | CreateMaterializedViewStatement | DropMaterializedViewStatement
+  | CreateMviewLogStatement | DropMviewLogStatement
   // PL/SQL
   | PLSQLBlock;

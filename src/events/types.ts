@@ -289,6 +289,12 @@ export type DomainEvent =
   | { topic: 'port.security.errdisable.cleared'; payload: PortSecurityRecoveredPayload }
   | { topic: 'port.security.sticky-saved'; payload: PortSecurityStickySavedPayload }
   | { topic: 'port.security.mac-aged'; payload: PortSecurityMacAgedPayload }
+  // Switch L2 forwarding table
+  | { topic: 'switch.mac.learned'; payload: SwitchMacEntryPayload }
+  | { topic: 'switch.mac.moved'; payload: SwitchMacMovedPayload }
+  | { topic: 'switch.mac.aged'; payload: SwitchMacEntryPayload }
+  | { topic: 'switch.mac.flushed'; payload: SwitchMacFlushedPayload }
+  | { topic: 'switch.mac.cleared'; payload: { deviceId: string; hostname: string } }
   // Cable
   | { topic: 'cable.connected'; payload: CableConnectedPayload }
   | { topic: 'cable.disconnected'; payload: CableDisconnectedPayload }
@@ -348,6 +354,26 @@ export type DomainEvent =
   // Windows device: services, accounts, groups, processes
   // (sub-union, see src/network/devices/windows/events.ts)
   | WindowsDomainEvent;
+
+export interface SwitchMacEntryPayload {
+  deviceId: string;
+  hostname: string;
+  mac: string;
+  vlan: number;
+  port: string;
+}
+
+export interface SwitchMacMovedPayload extends SwitchMacEntryPayload {
+  fromPort: string;
+}
+
+export interface SwitchMacFlushedPayload {
+  deviceId: string;
+  hostname: string;
+  port: string;
+  reason: string;
+  count: number;
+}
 
 export type DomainEventTopic = DomainEvent['topic'];
 

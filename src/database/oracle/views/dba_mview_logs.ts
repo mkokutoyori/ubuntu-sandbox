@@ -1,5 +1,5 @@
 /**
- * DBA_MVIEW_LOGS — materialised view logs.
+ * DBA_MVIEW_LOGS — materialised view logs, read from the live registry.
  */
 
 import { col } from './_columns';
@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_MVIEW_LOGS',
   comment: 'Materialised view logs',
-  query() {
+  query({ catalog }) {
     return queryResult(
       [
         col.str('LOG_OWNER', 30),
@@ -20,7 +20,12 @@ registerView({
         col.str('PRIMARY_KEY', 3),
         col.str('OBJECT_ID', 3),
       ],
-      []
+      catalog.getMviewLogs().map(l => [
+        l.owner, l.master, l.logTable, null,
+        l.withRowid ? 'YES' : 'NO',
+        l.withPrimaryKey ? 'YES' : 'NO',
+        'NO',
+      ]),
     );
   },
 });

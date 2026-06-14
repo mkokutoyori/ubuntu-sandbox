@@ -173,8 +173,126 @@ export interface IKE_SA {
   lastDPDActivity?: number;
   /** Number of consecutive DPD timeouts */
   dpdTimeouts?: number;
+  /** Monotonic R-U-THERE sequence number (RFC 3706 §5.4) */
+  dpdSeq?: number;
+  /** True between sending R-U-THERE and receiving the matching ACK */
+  dpdAwaitingAck?: boolean;
   /** IKE exchange mode: main (default) or aggressive */
   exchangeMode?: 'main' | 'aggressive';
+}
+
+/** DPD notify carried over UDP 500 — the ACK must echo the probe's seq (RFC 3706). */
+export interface IsakmpDpdMessage {
+  type: 'isakmp-dpd';
+  notify: 'R-U-THERE' | 'R-U-THERE-ACK';
+  seq: number;
+}
+
+export interface IkePolicyProposal {
+  priority: number;
+  encryption: string;
+  hash: string;
+  group: number;
+  auth: string;
+  lifetime: number;
+}
+
+export interface IkeTransformProposal {
+  name: string;
+  transforms: string[];
+  mode: 'tunnel' | 'transport';
+}
+
+export interface IkeV2ProposalWire {
+  name: string;
+  encryption: string[];
+  integrity: string[];
+  dhGroup: number[];
+}
+
+export interface IkeV2Chosen {
+  enc: string;
+  int: string;
+  grp: number;
+  propName: string;
+}
+
+export interface IkeOfferMessage {
+  type: 'ike';
+  step: 'offer';
+  version: 1 | 2;
+  exchangeMode: 'main' | 'aggressive';
+  initiatorSpi: string;
+  identity: string;
+  destination: string;
+  pskProof: string;
+  policies: IkePolicyProposal[];
+  ikev2Proposals?: IkeV2ProposalWire[];
+  transforms: IkeTransformProposal[];
+  pfsGroup?: number;
+  lifetimeSec: number;
+  lifetimeKB: number;
+  ipsecSpiIn: number;
+  natTHint: boolean;
+}
+
+export interface IkeAcceptMessage {
+  type: 'ike';
+  step: 'accept';
+  responderSpi: string;
+  pskProof: string;
+  chosenPolicy?: IkePolicyProposal;
+  chosenIkev2?: IkeV2Chosen;
+  chosenTransform: IkeTransformProposal;
+  ipsecSpiIn: number;
+  ikeLifetimeSec: number;
+  lifetimeSec: number;
+  lifetimeKB: number;
+  natT: boolean;
+}
+
+export interface IkeRejectMessage {
+  type: 'ike';
+  step: 'reject';
+  reason: string;
+}
+
+export interface IkeRekeyMessage {
+  type: 'ike';
+  step: 'rekey';
+}
+
+export type IkeMessage =
+  | IkeOfferMessage | IkeAcceptMessage | IkeRejectMessage | IkeRekeyMessage;
+
+export interface GdoiGroupSaInstall {
+  type: 'gdoi';
+  op: 'install';
+  msa: MulticastIPSecSA;
+}
+
+export interface GdoiGroupSaRemove {
+  type: 'gdoi';
+  op: 'remove';
+  spi: number;
+  groupAddress: string;
+}
+
+export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove;
+
+export function isGdoiMessage(p: unknown): p is GdoiMessage {
+  if (!p || typeof p !== 'object') return false;
+  const c = p as { type?: unknown; op?: unknown };
+  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove');
+}
+
+export type IkeWirePayload = IsakmpDpdMessage | IkeMessage | GdoiMessage;
+
+export function isIkeMessage(p: unknown): p is IkeMessage {
+  if (!p || typeof p !== 'object') return false;
+  const c = p as { type?: unknown; step?: unknown };
+  return c.type === 'ike'
+    && (c.step === 'offer' || c.step === 'accept' || c.step === 'reject' || c.step === 'rekey');
 }
 
 export interface IKEv2_SA {

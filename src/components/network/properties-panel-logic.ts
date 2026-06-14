@@ -3,7 +3,7 @@
  */
 
 import type { ConnectionType } from '@/network';
-import type { Connection } from '@/store/networkStore';
+import { isConnectionActive, type Connection } from '@/store/networkStore';
 
 /**
  * Formats bandwidth in human-readable form.
@@ -71,6 +71,6 @@ export function getConnectionDetails(connection: Connection): ConnectionDetails 
     latency,
     sourceInterface: connection.sourceInterfaceId,
     targetInterface: connection.targetInterfaceId,
-    isActive: connection.isActive
+    isActive: isConnectionActive(connection)
   };
 }

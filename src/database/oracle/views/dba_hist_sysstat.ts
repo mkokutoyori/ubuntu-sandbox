@@ -41,7 +41,7 @@ registerView({
     for (let b = 0; b < buckets; b++) {
       const snapId = elapsedHours - b;
       SYSSTAT_DEFINITIONS.forEach((def, idx) => {
-        rows.push([snapId, 1234567890, 1, idx, def.name, def.value(runtime)]);
+        rows.push([snapId, instance.getDbId(), 1, idx, def.name, def.value(runtime)]);
       });
     }
     return queryResult(cols, rows);

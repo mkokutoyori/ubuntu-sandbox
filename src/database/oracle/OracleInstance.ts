@@ -7,7 +7,10 @@
 
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
-import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
+import { parseSize } from './views/_fileSize';
+import { OracleError } from '../engine/types/DatabaseError';
+import { ListenerControl } from './listener/ListenerControl';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   OracleSignalStore,
@@ -52,6 +55,15 @@ export interface BackgroundProcess {
   description: string;
 }
 
+export interface ServerProcess {
+  pid: number;
+  sessionSid: number;
+  serial: number;
+  username: string;
+  osUser: string;
+  local: boolean;
+}
+
 export interface RedoLogGroup {
   group: number;
   status: 'CURRENT' | 'ACTIVE' | 'INACTIVE' | 'UNUSED';
@@ -82,6 +94,18 @@ export class OracleInstance {
   private _archiveLogMode: boolean;
   private _pidCounter: number = 1000;
 
+  // ── Database identity & SCN ──────────────────────────────────────
+  /** DBID — computed once per database like CREATE DATABASE does (lazy
+   *  so the deviceId injected after construction participates, giving
+   *  every device a distinct, stable identifier). */
+  private _dbid: number | null = null;
+  /** System Change Number — one monotonic stream per database. Every
+   *  commit advances it; checkpoints stamp the current value into the
+   *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
+  private _currentScn = 1_000_000;
+  private _checkpointScn = 1_000_000;
+  private _checkpointTime = new Date();
+
   // ── Reactive (Phase 7) ───────────────────────────────────────────
   /** Bus override; defaults to the global singleton at publish time. */
   private _bus: IEventBus | null = null;
@@ -101,8 +125,10 @@ export class OracleInstance {
   /** Real ASM machinery — empty by default; CREATE DISKGROUP populates it. */
   readonly asm: AsmManager = new AsmManager();
   /** Security audit journal — fed by the SecurityAuditActor on bus events.
-   *  Surfaces forensic data through the DBA_* security views. */
-  private readonly _auditJournal = new AuditJournal();
+   *  Surfaces forensic data through the DBA_* security views. Shares the
+   *  instance SCN stream so DDL/DML history SCNs are coherent with
+   *  V$DATABASE.CURRENT_SCN instead of running a private counter. */
+  private readonly _auditJournal = new AuditJournal(undefined, () => this.advanceScn());
   private _securityAuditActor: SecurityAuditActor | null = null;
   private _userActivity: UserActivityTracker | null = null;
   /** Database-level event-trigger catalogue + executor. */
@@ -132,8 +158,8 @@ export class OracleInstance {
   attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
     this.scheduler = s;
     this._schedulerSweepActor?.stop();
-    this._schedulerSweepActor = new SchedulerSweepActor(s);
-    this._schedulerSweepActor.start();
+    this._schedulerSweepActor = null;
+    if (this._state === 'OPEN') this.ensureSchedulerSweep();
   }
   attachStatistics(storage: OracleStorage): StatisticsManager {
     if (!this.statistics) this.statistics = new StatisticsManager(storage);
@@ -188,6 +214,7 @@ export class OracleInstance {
     listContextEntries(): Array<{ namespace: string; attribute: string; value: string }>;
     module: string | null; action: string | null;
     clientInfo: string | null; clientIdentifier: string | null;
+    containerId: number;
   }>) | null = null;
   setLiveSessionProvider(fn: NonNullable<typeof this._liveSessionProvider>): void {
     this._liveSessionProvider = fn;
@@ -199,6 +226,148 @@ export class OracleInstance {
   setDeviceId(deviceId: string): void {
     this._deviceId = deviceId;
     this.reattachRefreshActor();
+  }
+
+  /**
+   * Host-filesystem reader injected by the layer that owns the device
+   * (terminal wiring). Lets SQL like CREATE SPFILE FROM PFILE read
+   * init.ora files from the device VFS without the database layer
+   * importing network/Equipment (dependency inversion).
+   */
+  private _deviceFileReader: ((path: string) => string | null) | null = null;
+  setDeviceFileReader(fn: (path: string) => string | null): void {
+    this._deviceFileReader = fn;
+  }
+  /** Read a file from the host device VFS, or null when unavailable. */
+  readDeviceFile(path: string): string | null {
+    return this._deviceFileReader?.(path) ?? null;
+  }
+  hasDeviceFilesystem(): boolean {
+    return this._deviceFileReader !== null;
+  }
+
+  /**
+   * Host-filesystem writer / remover, injected by the same wiring as the
+   * reader. They let UTL_FILE (and any future server-side file producer)
+   * materialise files on the device VFS so the OS shell sees exactly what
+   * PL/SQL wrote — without the database layer importing network/Equipment.
+   */
+  private _deviceFileWriter: ((path: string, content: string) => boolean) | null = null;
+  setDeviceFileWriter(fn: (path: string, content: string) => boolean): void {
+    this._deviceFileWriter = fn;
+  }
+  /** Write (create/overwrite) a file on the host device VFS. */
+  writeDeviceFile(path: string, content: string): boolean {
+    return this._deviceFileWriter?.(path, content) ?? false;
+  }
+
+  private _deviceFileRemover: ((path: string) => boolean) | null = null;
+  setDeviceFileRemover(fn: (path: string) => boolean): void {
+    this._deviceFileRemover = fn;
+  }
+  /** Remove a file from the host device VFS. */
+  removeDeviceFile(path: string): boolean {
+    return this._deviceFileRemover?.(path) ?? false;
+  }
+
+  /**
+   * Datafile enumeration injected by OracleDatabase (the instance does
+   * not own the storage layer). Combined with the existence probe, it
+   * lets the open-time header check verify each datafile still exists
+   * on the host filesystem — like DBWR identifying/locking the files
+   * when the database opens.
+   */
+  private _datafileLister: (() => { fileNo: number; path: string }[]) | null = null;
+  setDatafileLister(fn: () => { fileNo: number; path: string }[]): void {
+    this._datafileLister = fn;
+  }
+
+  private _hostFileProbe: ((path: string) => boolean | null) | null = null;
+  setHostFileProbe(fn: (path: string) => boolean | null): void {
+    this._hostFileProbe = fn;
+  }
+
+  /**
+   * Datafiles missing from the host filesystem. A file deleted while
+   * the instance is up does NOT affect a running database (the OS
+   * keeps the open inode, as on a real host); the check only runs at
+   * OPEN time.
+   */
+  private missingDatafiles(): { fileNo: number; path: string }[] {
+    if (!this._datafileLister || !this._hostFileProbe) return [];
+    const missing: { fileNo: number; path: string }[] = [];
+    for (const df of this._datafileLister()) {
+      const exists = this._hostFileProbe(df.path);
+      if (exists === null) return []; // no host filesystem — nothing to check
+      if (!exists) missing.push(df);
+    }
+    return missing;
+  }
+
+  getControlFilePaths(): string[] {
+    return (this.getParameter('control_files') ?? '')
+      .split(',')
+      .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean);
+  }
+
+  private missingControlFiles(): string[] {
+    if (!this._hostFileProbe) return [];
+    const missing: string[] = [];
+    for (const path of this.getControlFilePaths()) {
+      const exists = this._hostFileProbe(path);
+      if (exists === null) return []; // no host filesystem — nothing to check
+      if (!exists) missing.push(path);
+    }
+    return missing;
+  }
+
+  // ── DBID / SCN accessors ──────────────────────────────────────────
+
+  /**
+   * Database identifier, as shown by V$DATABASE.DBID and RMAN's
+   * `connected to target database: X (DBID=n)`. Real Oracle derives it
+   * from the database name and creation timestamp at CREATE DATABASE
+   * time; the simulator hashes deviceId+SID so every device gets a
+   * distinct but reproducible DBID.
+   */
+  getDbId(): number {
+    if (this._dbid === null) {
+      // FNV-1a 32-bit over "deviceId:SID".
+      let h = 0x811c9dc5;
+      for (const ch of `${this._deviceId}:${this.config.sid}`) {
+        h ^= ch.charCodeAt(0);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      // Map into the 1.0–4.0 billion range typical of real DBIDs.
+      this._dbid = 1_000_000_000 + (h % 3_000_000_000);
+    }
+    return this._dbid;
+  }
+
+  /** Current SCN (V$DATABASE.CURRENT_SCN). */
+  getCurrentScn(): number { return this._currentScn; }
+
+  /** Advance the SCN (commits, checkpoints) and return the new value. */
+  advanceScn(delta: number = 1): number {
+    this._currentScn += delta;
+    return this._currentScn;
+  }
+
+  /** SCN stamped into every datafile header at the last checkpoint. */
+  getCheckpointScn(): number { return this._checkpointScn; }
+  getCheckpointTime(): Date { return this._checkpointTime; }
+
+  /**
+   * Complete a checkpoint: advance the SCN and stamp it (with the wall
+   * clock) into the shared header state every datafile view reads.
+   * Triggered by ALTER SYSTEM CHECKPOINT, log switches, OPEN and clean
+   * shutdowns — the same events as real Oracle.
+   */
+  performCheckpoint(): void {
+    this._checkpointScn = this.advanceScn();
+    this._checkpointTime = new Date();
+    this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
   }
 
   /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */
@@ -257,6 +426,15 @@ export class OracleInstance {
       this._indexUsage = new IndexUsageMonitor(this.getBus(), this._deviceId, this._indexUsageStorage);
       this._indexUsage.start();
     }
+    if (this._state === 'OPEN') this.ensureSchedulerSweep();
+  }
+
+  private ensureSchedulerSweep(): void {
+    if (!this.scheduler) return;
+    if (!this._schedulerSweepActor) {
+      this._schedulerSweepActor = new SchedulerSweepActor(this.scheduler);
+    }
+    this._schedulerSweepActor.start();
   }
 
   /** Read-only handle to the security audit journal. */
@@ -321,48 +499,62 @@ export class OracleInstance {
     }
 
     this._startupTime = now;
-    this.logAlert(`Starting ORACLE instance (normal)`);
+    // STARTUP RESTRICT opens with RESTRICTED SESSION enabled; any other
+    // startup begins unrestricted (ALTER SYSTEM can toggle it later).
+    this._restrictedSession = mode === 'RESTRICT';
+    this.logAlert(`Starting ORACLE instance (${mode === 'RESTRICT' ? 'restrict' : 'normal'})`);
     output.push(`ORACLE instance started.`);
     output.push('');
 
     // NOMOUNT
     this.transitionTo('NOMOUNT');
     this.startBackgroundProcesses();
-    output.push(`Total System Global Area  ${this.config.sgaTarget} bytes`);
-    output.push(`Fixed Size                  2.0M bytes`);
-    output.push(`Variable Size             256.0M bytes`);
-    output.push(`Database Buffers          128.0M bytes`);
-    output.push(`Redo Buffers               16.0M bytes`);
+    {
+      // Real startup banner prints exact byte counts derived from the
+      // live sga_target, not canned figures.
+      const sga = this.getSGAInfo();
+      const b = (spec: string): number => parseSize(spec);
+      const fixed = 2 * 1024 * 1024;
+      const variable = b(sga.sharedPool) + b(sga.largePool) + b(sga.javaPool);
+      output.push(`Total System Global Area ${String(b(sga.totalSize)).padStart(10)} bytes`);
+      output.push(`Fixed Size               ${String(fixed).padStart(10)} bytes`);
+      output.push(`Variable Size            ${String(variable).padStart(10)} bytes`);
+      output.push(`Database Buffers         ${String(b(sga.bufferCache)).padStart(10)} bytes`);
+      output.push(`Redo Buffers             ${String(b(sga.redoLogBuffer)).padStart(10)} bytes`);
+    }
 
     if (mode === 'NOMOUNT') {
       this.logAlert('Instance started in NOMOUNT mode');
       return output;
     }
 
-    // MOUNT
+    const missingCtl = this.missingControlFiles();
+    if (missingCtl.length > 0) {
+      this.logAlert('ORA-00210: cannot open the specified control file');
+      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+      output.push('ORA-00205: error in identifying control file, check alert log for more info');
+      return output;
+    }
     this.transitionTo('MOUNT');
     output.push(`Database mounted.`);
     this.logAlert('Database mounted');
 
     if (mode === 'MOUNT') return output;
 
-    // OPEN
-    this.transitionTo('OPEN');
-    this._redoLogGroups[0].status = 'CURRENT';
+    // OPEN — DBWR must identify/lock every datafile first. A file
+    // deleted from the host filesystem surfaces here (not while the
+    // database was running), exactly like the real ORA-01157 ladder;
+    // the instance stays MOUNTed for RESTORE/RECOVER.
+    const missing = this.missingDatafiles();
+    if (missing.length > 0) {
+      const m = missing[0];
+      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+      output.push(`ORA-01157: cannot identify/lock data file ${m.fileNo} - see DBWR trace file`);
+      output.push(`ORA-01110: data file ${m.fileNo}: '${m.path}'`);
+      return output;
+    }
+    this.markOpen();
     output.push(`Database opened.`);
-    this.logAlert('Database opened');
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$USERS', kind: 'started' },
-    });
-    this.getBus().publish({
-      topic: 'oracle.service.event',
-      payload: { ...this.ref(), name: 'SYS$BACKGROUND', kind: 'started' },
-    });
 
     if (mode === 'RESTRICT') {
       output.push('Database opened in restricted mode.');
@@ -370,6 +562,69 @@ export class OracleInstance {
     }
 
     return output;
+  }
+
+  /** Shared OPEN transition: redo state, alert log, service events. */
+  private markOpen(): void {
+    this.transitionTo('OPEN');
+    this._redoLogGroups[0].status = 'CURRENT';
+    this.performCheckpoint();
+    this.logAlert('Database opened');
+    this.ensureSchedulerSweep();
+    const openPdbServices = this.multitenant.getAll()
+      .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
+      .map(p => p.name);
+    for (const name of [this.config.sid, 'SYS$USERS', 'SYS$BACKGROUND', ...openPdbServices]) {
+      this.getBus().publish({
+        topic: 'oracle.service.event',
+        payload: { ...this.ref(), name, kind: 'started' },
+      });
+    }
+  }
+
+  /** Publish a PDB service registration/deregistration (LREG), matching the listener. */
+  publishPdbServiceEvent(name: string, kind: 'started' | 'stopped'): void {
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: name.toUpperCase(), kind },
+    });
+  }
+
+  /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
+  mountDatabase(): void {
+    if (this._state === 'MOUNT' || this._state === 'OPEN') {
+      throw new OracleError(1100, 'database already mounted');
+    }
+    if (this._state !== 'NOMOUNT') {
+      throw new OracleError(1034, 'ORACLE not available');
+    }
+    const missingCtl = this.missingControlFiles();
+    if (missingCtl.length > 0) {
+      this.logAlert('ORA-00210: cannot open the specified control file');
+      this.logAlert(`ORA-00202: control file: '${missingCtl[0]}'`);
+      throw new OracleError(205, 'error in identifying control file, check alert log for more info');
+    }
+    this.transitionTo('MOUNT');
+    this.logAlert('Database mounted');
+  }
+
+  /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
+  openDatabase(): void {
+    if (this._state === 'OPEN') {
+      throw new OracleError(1531, 'a database already open by the instance');
+    }
+    if (this._state !== 'MOUNT') {
+      throw new OracleError(1507, 'database not mounted');
+    }
+    const missing = this.missingDatafiles();
+    if (missing.length > 0) {
+      const m = missing[0];
+      this.logAlert(`Errors in file dbw0 trace: ORA-01157: cannot identify/lock data file ${m.fileNo}`);
+      throw new OracleError(1157,
+        `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
+        `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
+    }
+    this.markOpen();
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {
@@ -383,6 +638,9 @@ export class OracleInstance {
     this.logAlert(`Shutting down instance (${effectiveMode.toLowerCase()})`);
 
     if (this._state === 'OPEN') {
+      // Clean shutdowns checkpoint before closing (ABORT skips it, which
+      // is what makes the subsequent startup need instance recovery).
+      if (effectiveMode !== 'ABORT') this.performCheckpoint();
       output.push('Database closed.');
       this.logAlert('Database closed');
     }
@@ -402,8 +660,12 @@ export class OracleInstance {
         payload: { ...this.ref(), name: p.name, pid: p.pid },
       });
     }
+    for (const sp of [...this._serverProcesses.keys()]) {
+      this.releaseServerProcess(sp);
+    }
     this.transitionTo('SHUTDOWN');
     this._startupTime = null;
+    this._restrictedSession = false;
     this._backgroundProcesses = [];
     for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
 
@@ -446,6 +708,47 @@ export class OracleInstance {
     return [...this._backgroundProcesses];
   }
 
+  private _serverProcesses = new Map<number, ServerProcess>();
+
+  serverProcessCommand(local: boolean): string {
+    return local
+      ? `oracle${this.config.sid} (DESCRIPTION=(LOCAL=YES)(ADDRESS=(PROTOCOL=beq)))`
+      : `oracle${this.config.sid} (LOCAL=NO)`;
+  }
+
+  spawnServerProcess(args: {
+    sessionSid: number; serial: number; username: string; osUser: string; local: boolean;
+  }): ServerProcess {
+    const proc: ServerProcess = { pid: this._pidCounter++, ...args };
+    this._serverProcesses.set(args.sessionSid, proc);
+    this.getBus().publish({
+      topic: 'oracle.instance.server-process-started',
+      payload: {
+        ...this.ref(), pid: proc.pid, sessionSid: proc.sessionSid,
+        username: proc.username, command: this.serverProcessCommand(proc.local),
+      },
+    });
+    return proc;
+  }
+
+  releaseServerProcess(sessionSid: number): void {
+    const proc = this._serverProcesses.get(sessionSid);
+    if (!proc) return;
+    this._serverProcesses.delete(sessionSid);
+    this.getBus().publish({
+      topic: 'oracle.instance.server-process-stopped',
+      payload: { ...this.ref(), pid: proc.pid, sessionSid },
+    });
+  }
+
+  getServerProcesses(): ServerProcess[] {
+    return [...this._serverProcesses.values()];
+  }
+
+  getServerProcess(sessionSid: number): ServerProcess | undefined {
+    return this._serverProcesses.get(sessionSid);
+  }
+
   // ── Redo logs ────────────────────────────────────────────────────
 
   private initRedoLogs(): void {
@@ -459,6 +762,8 @@ export class OracleInstance {
 
   switchLogfile(): string {
     if (this._state !== 'OPEN') return ORACLE_ERRORS.ORA_01034;
+    // A log switch triggers a (media-recovery) checkpoint in real Oracle.
+    this.performCheckpoint();
     const currentGroup = this._redoLogGroups.find(g => g.status === 'CURRENT');
     if (currentGroup) {
       currentGroup.status = 'ACTIVE';
@@ -635,14 +940,32 @@ export class OracleInstance {
 
   // ── SGA Info ─────────────────────────────────────────────────────
 
+  /**
+   * SGA component sizes derived from the live `sga_target` parameter —
+   * `ALTER SYSTEM SET sga_target=…` immediately reshapes the breakdown,
+   * like ASMM on a real instance. Components are granule-rounded
+   * (4M granules below 1G of SGA, 16M above, like real Oracle).
+   */
   getSGAInfo(): SGAInfo {
+    const ONE_MB = 1024 * 1024;
+    const total = parseSize(this.getParameter('sga_target') ?? this.config.sgaTarget)
+      || parseSize(this.config.sgaTarget);
+    const granule = total > 1024 * ONE_MB ? 16 * ONE_MB : 4 * ONE_MB;
+    const round = (b: number): number => Math.max(granule, Math.round(b / granule) * granule);
+    const asMb = (b: number): string => `${Math.round(b / ONE_MB)}M`;
+    // Typical ASMM steady-state split of a 19c instance.
+    const bufferCache = round(total * 0.50);
+    const sharedPool = round(total * 0.25);
+    const largePool = round(total * 0.03);
+    const javaPool = round(total * 0.03);
+    const redoBuffer = total >= 1024 * ONE_MB ? 16 * ONE_MB : 8 * ONE_MB;
     return {
-      totalSize: this.config.sgaTarget,
-      sharedPool: '256M',
-      bufferCache: '128M',
-      redoLogBuffer: '16M',
-      javaPool: '64M',
-      largePool: '32M',
+      totalSize: asMb(total),
+      sharedPool: asMb(sharedPool),
+      bufferCache: asMb(bufferCache),
+      redoLogBuffer: asMb(redoBuffer),
+      javaPool: asMb(javaPool),
+      largePool: asMb(largePool),
     };
   }
 
@@ -714,27 +1037,47 @@ export class OracleInstance {
 
   // ── Listener ────────────────────────────────────────────────────
 
-  private _listenerState: 'running' | 'stopped' = 'stopped';
+  /** Stateful listener: lifecycle, LREG service registration derived
+   *  from the live instance state, connection counters, transcripts. */
+  private readonly _listener = new ListenerControl({
+    sid: () => this.config.sid,
+    instanceState: () => this._state,
+    pdbServices: () => this.multitenant.getAll()
+      .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
+      .map(p => p.name),
+  });
 
-  get listenerStatus(): 'running' | 'stopped' { return this._listenerState; }
+  get listener(): ListenerControl { return this._listener; }
+
+  get listenerStatus(): 'running' | 'stopped' {
+    return this._listener.running ? 'running' : 'stopped';
+  }
+
+  private readListenerOraPort(): number | null {
+    const content = this._deviceFileReader?.(`${ORACLE_CONFIG.HOME}/network/admin/listener.ora`);
+    if (!content) return null;
+    const m = /LISTENER\s*=[\s\S]*?\(\s*PORT\s*=\s*(\d+)\s*\)/i.exec(content);
+    return m ? Number.parseInt(m[1], 10) : null;
+  }
 
   startListener(): string {
-    if (this._listenerState === 'running') {
+    const configuredPort = this.readListenerOraPort();
+    if (configuredPort !== null) this._listener.setPort(configuredPort);
+    if (!this._listener.start()) {
       return TNS_ERRORS.TNS_01106;
     }
-    this._listenerState = 'running';
     this.logAlert('Listener LISTENER started successfully');
-    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT}))`;
+    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'running', endpoint },
+      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
       payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
     });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._listener.port;
     const sid = this.config.sid;
     return [
       `LSNRCTL for Linux: Version ${ver} - Production`,
@@ -746,44 +1089,27 @@ export class OracleInstance {
       `Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
       '',
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      `STATUS of the LISTENER`,
-      `------------------------`,
-      `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version ${ver}`,
-      `Start Date                ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
-      `Uptime                    0 days 0 hr. 0 min. 0 sec`,
-      `Trace Level               off`,
-      `Security                  ON: Local OS Authentication`,
-      `SNMP                      OFF`,
-      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
-      `Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/alert/log.xml`,
-      `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
-      `Services Summary...`,
-      `Service "${sid}" has 1 instance(s).`,
-      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
-      `The command completed successfully`,
+      ...this._listener.statusBody(),
       '',
       'Listener started successfully.',
     ].join('\n');
   }
 
   stopListener(): string {
-    if (this._listenerState === 'stopped') {
+    if (!this._listener.stop()) {
       return TNS_ERRORS.TNS_12541;
     }
-    this._listenerState = 'stopped';
     this.logAlert('Listener LISTENER stopped');
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'stopped', endpoint: '' },
+      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
       payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
     });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
+    const port = this._listener.port;
     return [
       `LSNRCTL for Linux: Version ${ver} - Production`,
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
@@ -795,38 +1121,15 @@ export class OracleInstance {
 
   getListenerStatus(): string {
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
-    const port = ORACLE_CONFIG.PORT;
-    const sid = this.config.sid;
-
-    if (this._listenerState === 'stopped') {
-      return [
-        `LSNRCTL for Linux: Version ${ver} - Production`,
-        `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-        TNS_ERRORS.TNS_12541,
-        ` ${TNS_ERRORS.TNS_12560}`,
-        `  ${TNS_ERRORS.TNS_00511}`,
-      ].join('\n');
-    }
-    return [
+    const port = this._listener.port;
+    const header = [
       `LSNRCTL for Linux: Version ${ver} - Production`,
       `Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${port})))`,
-      `STATUS of the LISTENER`,
-      `------------------------`,
-      `Alias                     LISTENER`,
-      `Version                   TNSLSNR for Linux: Version ${ver}`,
-      `Start Date                ${(this._startupTime || new Date()).toISOString().slice(0, 19).replace('T', ' ')}`,
-      `Uptime                    0 days 0 hr. 5 min. 0 sec`,
-      `Trace Level               off`,
-      `Security                  ON: Local OS Authentication`,
-      `SNMP                      OFF`,
-      `Listener Parameter File   ${ORACLE_CONFIG.HOME}/network/admin/listener.ora`,
-      `Listening Endpoints Summary...`,
-      `  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${port})))`,
-      `Services Summary...`,
-      `Service "${sid}" has 1 instance(s).`,
-      `  Instance "${sid}", status READY, has 1 handler(s) for this service...`,
-      `The command completed successfully`,
-    ].join('\n');
+    ];
+    const body = this._listener.running
+      ? this._listener.statusBody()
+      : this._listener.notRunningBody();
+    return [...header, ...body].join('\n');
   }
 
   // ── Configuration file content ─────────────────────────────────

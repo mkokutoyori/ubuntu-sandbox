@@ -19,7 +19,7 @@ import {
 import { IPAddress, SubnetMask, MACAddress } from '../../../../core/types';
 import { getNUDState } from '../../../EndHost';
 
-function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext {
+export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
   return {
     getInterfaceNames(): string[] {
       return [...net.getPorts().keys()];
@@ -46,7 +46,22 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
           bytesIn: counters.bytesIn,
           bytesOut: counters.bytesOut,
         },
+        ipv6: port.getIPv6Addresses().map(entry => ({
+          address: entry.address.toString(),
+          prefixLength: entry.prefixLength,
+          scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
+        })),
       };
+    },
+    getIPv6RoutingTable() {
+      return net.getIPv6RoutingTable().map(r => ({
+        prefix: r.prefix.toString(),
+        prefixLength: r.prefixLength,
+        nextHop: r.nextHop ? r.nextHop.toString() : null,
+        iface: r.iface,
+        type: r.type,
+        metric: r.metric,
+      }));
     },
     configureInterface(ifName: string, ip: string, cidr: number): string {
       const port = net.getPorts().get(ifName);
@@ -55,8 +70,8 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
         const mask = SubnetMask.fromCIDR(cidr);
         net.configureInterface(ifName, new IPAddress(ip), mask);
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
     removeInterfaceIP(ifName: string): string {
@@ -84,8 +99,8 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
       try {
         net.setDefaultGateway(new IPAddress(gateway));
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
     addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
@@ -95,8 +110,8 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
           return 'RTNETLINK answers: Network is unreachable';
         }
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
     deleteDefaultRoute(): string {
@@ -111,8 +126,8 @@ function buildIpCtx(net: LinuxNetKernel, xfrm: IpXfrmContext): IpNetworkContext 
           return 'RTNETLINK answers: No such process';
         }
         return '';
-      } catch (e: any) {
-        return `Error: ${e.message}`;
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
     getNeighborTable(): IpNeighborEntry[] {

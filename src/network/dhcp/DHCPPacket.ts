@@ -15,7 +15,7 @@ import type { DHCPMessageType } from './types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 /** DHCP Option codes (RFC 2132) */
-const DHCP_OPTION = {
+export const DHCP_OPTION = {
   SUBNET_MASK: 1,
   ROUTER: 3,
   DNS: 6,
@@ -102,6 +102,10 @@ export class DHCPPacket implements NetworkPdu {
 
   setOption(code: number, value: unknown): void {
     this.options.set(code, value);
+  }
+
+  removeOption(code: number): void {
+    this.options.delete(code);
   }
 
   /** Get DHCP message type name from Option 53 */

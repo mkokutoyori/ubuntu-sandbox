@@ -23,6 +23,7 @@ function buildStoreState(overrides?: Partial<ReturnType<typeof buildStoreState>>
 
 vi.mock('@/store/networkStore', () => ({
   useNetworkStore: () => storeState,
+  isConnectionActive: () => true,
 }));
 
 vi.mock('@/network', () => ({

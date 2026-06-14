@@ -40,6 +40,8 @@ export interface PackageServices {
   readonly statistics?: StatisticsManager;
   readonly scheduler?: SchedulerManager;
   readonly storage?: OracleStorage;
+  /** Materialized-view maintenance (DBMS_MVIEW) — owner-resolved refresh. */
+  readonly materializedViews?: { refresh(owner: string, name: string): void };
 }
 
 /** Runtime context passed to every routine call. */

@@ -16,6 +16,7 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import { MACAddress, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -63,6 +64,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
     const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent } | null)?.getLldpAgent?.();
+    if (ag) fn(ag);
+  }
+
+  private applyToDot1xAgent(fn: (a: import('@/network/dot1x/Dot1xAgent').Dot1xAgent) => void): void {
+    const ag = (this.swRef as unknown as { getDot1xAgent?: () => import('@/network/dot1x/Dot1xAgent').Dot1xAgent } | null)?.getDot1xAgent?.();
     if (ag) fn(ag);
   }
 
@@ -307,6 +313,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     this.systemTrie.register('undo lldp enable', 'Disable LLDP globally', () => {
       this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.systemTrie.register('dot1x enable', 'Enable 802.1X globally', () => {
+      this.applyToDot1xAgent(a => a.setSystemAuthControl(true));
+      return '';
+    });
+    this.systemTrie.register('undo dot1x enable', 'Disable 802.1X globally', () => {
+      this.applyToDot1xAgent(a => a.setSystemAuthControl(false));
       return '';
     });
     this.systemTrie.registerGreedy('lldp message-transmission interval', 'Hello period (sec)', (args) => {
@@ -571,6 +585,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       });
     }
+    this.registerPortSecurity();
+    this.registerDot1x();
+
     // Interface-view L2 security: DHCP snooping / IP source guard /
     // ARP anti-attack — recorded for `display this` (L2-only: no L3).
     for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
@@ -960,6 +977,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       return this.displayVersion(this.swRef);
     });
+    trie.register('display port-security', 'Display port-security status', () =>
+      this.displayPortSecurity());
 
     // display vlan [summary | <id>]
     trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {
@@ -1202,6 +1221,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
             return 'Error: Wrong parameter found at \'^\' position.';
           }
           this.stp.mode = m;
+          this.applyToStpAgent(ag => ag.setMode(m === 'stp' ? 'stp' : 'rstp'));
           return '';
         }
         case 'priority': {
@@ -1479,6 +1499,133 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return `128.${idx >= 0 ? idx + 1 : 0}`;
   }
 
+  private psecPort() {
+    if (!this.swRef || !this.selectedInterface) return null;
+    return this.swRef.getPort(this.selectedInterface)?.getPortSecurity() ?? null;
+  }
+
+  private recordIfCfg(line: string): void {
+    if (!this.selectedInterface) return;
+    const list = this.ifCfg.get(this.selectedInterface) ?? [];
+    list.push(line);
+    this.ifCfg.set(this.selectedInterface, list);
+  }
+
+  private parsePsecMac(s: string): MACAddress | null {
+    const m = s.match(/^([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})$/);
+    try {
+      if (!m) return new MACAddress(s);
+      const octets = (m[1] + m[2] + m[3]).match(/.{2}/g)!.map((h) => parseInt(h, 16));
+      return new MACAddress(octets);
+    } catch {
+      return null;
+    }
+  }
+
+  private registerDot1x(): void {
+    const it = this.interfaceTrie;
+    const portModeMap: Record<string, import('@/network/dot1x/types').Dot1xPortMode> = {
+      auto: 'auto',
+      'authorized-force': 'force-authorized',
+      'unauthorized-force': 'force-unauthorized',
+    };
+    it.register('dot1x enable', 'Enable 802.1X on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, 'auto'));
+      this.recordIfCfg('dot1x enable');
+      return '';
+    });
+    it.register('undo dot1x enable', 'Disable 802.1X on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, 'disabled'));
+      return '';
+    });
+    it.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const mode = portModeMap[(args[0] ?? '').toLowerCase()];
+      if (!mode) return 'Error: Wrong parameter.';
+      const iface = this.selectedInterface;
+      this.applyToDot1xAgent(a => a.setPortMode(iface, mode));
+      this.recordIfCfg(`dot1x port-control ${args[0].toLowerCase()}`);
+      return '';
+    });
+  }
+
+  private registerPortSecurity(): void {
+    const it = this.interfaceTrie;
+    it.register('port-security enable', 'Enable port security', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.enable();
+      this.recordIfCfg('port-security enable');
+      return '';
+    });
+    it.register('undo port-security enable', 'Disable port security', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.disable();
+      return '';
+    });
+    it.registerGreedy('port-security max-mac-num', 'Max secure MAC count', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 1) return 'Error: Wrong parameter.';
+      sec.setMaxMACAddresses(n);
+      this.recordIfCfg(`port-security max-mac-num ${n}`);
+      return '';
+    });
+    it.registerGreedy('port-security protect-action', 'Violation action', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      const a = (args[0] ?? '').toLowerCase();
+      if (a !== 'protect' && a !== 'restrict' && a !== 'shutdown') return 'Error: Wrong parameter.';
+      sec.setViolationMode(a as PortViolationMode);
+      this.recordIfCfg(`port-security protect-action ${a}`);
+      return '';
+    });
+    it.registerGreedy('port-security mac-address sticky', 'Sticky secure MAC', (args) => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      if (args.length === 0) {
+        sec.enableSticky();
+        this.recordIfCfg('port-security mac-address sticky');
+        return '';
+      }
+      const mac = this.parsePsecMac(args[0]);
+      if (!mac) return 'Error: Wrong parameter.';
+      const vlanIdx = args.indexOf('vlan');
+      const vlan = vlanIdx >= 0 ? parseInt(args[vlanIdx + 1] ?? '1', 10) : 1;
+      sec.addStickyMAC(mac, isNaN(vlan) ? 1 : vlan);
+      return '';
+    });
+    it.register('undo port-security mac-address sticky', 'Disable sticky', () => {
+      const sec = this.psecPort();
+      if (!sec) return 'Error: Incomplete command.';
+      sec.disableSticky();
+      return '';
+    });
+  }
+
+  private displayPortSecurity(): string {
+    if (!this.swRef) return '';
+    const header = 'Port-security    MaxMac  Action     Sticky  Secure  Violations  Port';
+    const rows: string[] = [];
+    for (const name of this.swRef.getPortNames()) {
+      const sec = this.swRef.getPort(name)?.getPortSecurity();
+      if (!sec || !sec.isEnabled()) continue;
+      const action = sec.getViolationMode().padEnd(10);
+      const sticky = (sec.isStickyEnabled() ? 'Yes' : 'No').padEnd(6);
+      const secure = String(sec.getEntries().length).padEnd(7);
+      const viol = String(sec.getViolationCount()).padEnd(11);
+      rows.push(`Enabled          ${String(sec.getMaxMACAddresses()).padEnd(7)} ${action} ${sticky}  ${secure} ${viol} ${name}`);
+    }
+    if (rows.length === 0) return 'Port-security is not enabled on any interface.';
+    return [header, ...rows].join('\n');
+  }
+
   private displayStpBrief(only?: string, mstid = 0): string {
     if (!this.swRef) return '';
     const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent }).getStpAgent?.();
@@ -1492,7 +1639,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         : st === 'blocking' ? 'DISCARDING'
         : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
       const r = ag?.getPortRole(p) ?? 'designated';
-      const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE' : r === 'disabled' ? 'DISA' : 'DESI';
+      const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE'
+        : r === 'backup' ? 'BACK' : r === 'disabled' ? 'DISA' : 'DESI';
       rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
     }
     if (only && rows.length === 0) {

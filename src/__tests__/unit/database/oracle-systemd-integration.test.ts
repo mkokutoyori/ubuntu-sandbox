@@ -21,7 +21,7 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { getOracleDatabase, resetAllOracleInstances } from '@/terminal/commands/database';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 
 beforeEach(() => {
   resetCounters();
@@ -59,18 +59,18 @@ describe('oracle-database-<SID>.service tracks the instance lifecycle', () => {
 });
 
 describe('oracle-listener-<SID>.service tracks the listener', () => {
-  it('is active only after the listener is started', async () => {
+  it('tracks listener stop/start (provisioning boots it like dbstart)', async () => {
     const srv = new LinuxServer('linux-server', 'ora-l', 100, 100);
     const db = getOracleDatabase(srv.getId());
-    // Default state: listener stopped
-    expect((await ssh(srv, `systemctl is-active oracle-listener-${ORACLE_CONFIG.SID}`)).trim())
-      .toMatch(/inactive|failed/);
-    db.instance.startListener();
+    // Provisioning auto-starts the listener (dbstart/systemd behavior).
     expect((await ssh(srv, `systemctl is-active oracle-listener-${ORACLE_CONFIG.SID}`)).trim())
       .toBe('active');
     db.instance.stopListener();
     expect((await ssh(srv, `systemctl is-active oracle-listener-${ORACLE_CONFIG.SID}`)).trim())
       .toMatch(/inactive|failed/);
+    db.instance.startListener();
+    expect((await ssh(srv, `systemctl is-active oracle-listener-${ORACLE_CONFIG.SID}`)).trim())
+      .toBe('active');
   });
 });
 

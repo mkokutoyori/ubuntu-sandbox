@@ -202,7 +202,14 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   trie.registerGreedy('ip dhcp compatibility', 'DHCP compatibility tweaks', (_args) => '');
 
   trie.register('ip dhcp relay information option', 'Enable option-82 insertion', () => {
-    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true; return '';
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true;
+    ctx.r()._getDHCPServerInternal().setRelayInformationOption(true);
+    return '';
+  });
+  trie.register('no ip dhcp relay information option', 'Disable option-82 insertion', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = false;
+    ctx.r()._getDHCPServerInternal().setRelayInformationOption(false);
+    return '';
   });
   trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
     (ctx.r() as any)._ciscoDhcpRelayInfoPolicy = args[0]?.toLowerCase() ?? 'replace'; return '';

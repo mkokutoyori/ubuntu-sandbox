@@ -20,7 +20,9 @@ import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './Li
 import {
   runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
+  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
+  type ArchiveCtx,
 } from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
@@ -127,7 +129,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
   // Archives / packages
-  'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
+  'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
 ];
 
@@ -215,6 +217,8 @@ export class LinuxCommandExecutor {
    * source override.
    */
   private readonly filesNss: FilesNssSource;
+  /** Shared `dns` source — the owning machine injects its wire resolver. */
+  readonly dnsNss = new DnsNssSource();
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -294,6 +298,12 @@ export class LinuxCommandExecutor {
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
+  /** Optional Oracle TNS hook — backs `tnsping`. */
+  _oracleTnsping: ((args: string[]) => string) | null = null;
+  /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
+  _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
+  /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
+  _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
 
   constructor(
     isServer = false,
@@ -333,7 +343,7 @@ export class LinuxCommandExecutor {
       this.vfs,
       new Map([
         ['files', this.filesNss],
-        ['dns',   new DnsNssSource()],
+        ['dns',   this.dnsNss],
       ]),
     );
     this.nss.seedConfigIfMissing();
@@ -577,7 +587,7 @@ export class LinuxCommandExecutor {
       this.vfs,
       new Map([
         ['files', this.filesNss],
-        ['dns',   new DnsNssSource()],
+        ['dns',   this.dnsNss],
       ]),
       bus,
       deviceId,
@@ -1112,6 +1122,7 @@ export class LinuxCommandExecutor {
       shellPid: this.shellPid,
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
+      memory: this.hardware.memory,
     };
   }
 
@@ -2335,9 +2346,9 @@ export class LinuxCommandExecutor {
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
-        const target = args.filter(a => !a.startsWith('-'))[0];
-        if (!target) return { output: 'Usage: file [-options] file...', exitCode: 1 };
-        return { output: `${target}: ASCII text`, exitCode: 0 };
+        const targets = args.filter(a => !a.startsWith('-'));
+        if (!targets.length) return { output: 'Usage: file [-options] file...', exitCode: 1 };
+        return { output: targets.map(t => this.describeFile(t)).join('\n'), exitCode: 0 };
       }
       case 'md5sum':
       case 'sha256sum':
@@ -2373,79 +2384,12 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: 0 };
       }
-      case 'tar': {
-        const createMode = args.includes('-c') || args.includes('--create');
-        const extractMode = args.includes('-x') || args.includes('--extract');
-        const fIdx = args.findIndex(a => a === '-f' || a === '--file');
-        const archivePath = fIdx !== -1 ? args[fIdx + 1] : args.find(a => !a.startsWith('-'));
-        if (createMode && archivePath) {
-          const sources = args.filter((a, i) => !a.startsWith('-') && i !== fIdx + 1);
-          const manifest = sources.map(s => {
-            const content = this.vfs.readFile(this.vfs.normalizePath(s, this.cwd));
-            return content !== null ? `${s}: ${content.length} bytes` : `${s}: (not found)`;
-          }).join('\n');
-          const resolved = this.vfs.normalizePath(archivePath, this.cwd);
-          this.vfs.writeFile(resolved, `TAR_ARCHIVE\n${manifest}`, 0, 0, 0o644);
-        } else if (extractMode && archivePath) {
-          const resolved = this.vfs.normalizePath(archivePath, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content === null) return { output: `tar: ${archivePath}: Cannot open: No such file or directory`, exitCode: 1 };
-        }
-        return { output: '', exitCode: 0 };
-      }
-      case 'gzip': {
-        const target = args.filter(a => !a.startsWith('-'))[0];
-        if (target) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content !== null) {
-            const compressed = this.vfs.normalizePath(target + '.gz', this.cwd);
-            this.vfs.writeFile(compressed, `GZIP:${content.length}`, 0, 0, 0o644);
-            if (!args.includes('-k') && !args.includes('--keep')) this.vfs.deleteFile(resolved);
-          }
-        }
-        return { output: '', exitCode: 0 };
-      }
-      case 'gunzip': {
-        const target = args.filter(a => !a.startsWith('-'))[0];
-        if (target) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content !== null && content.startsWith('GZIP:')) {
-            const outPath = target.endsWith('.gz')
-              ? this.vfs.normalizePath(target.slice(0, -3), this.cwd)
-              : this.vfs.normalizePath(target + '.ungz', this.cwd);
-            this.vfs.writeFile(outPath, `(decompressed from ${target})`, 0, 0, 0o644);
-            if (!args.includes('-k') && !args.includes('--keep')) this.vfs.deleteFile(resolved);
-          }
-        }
-        return { output: '', exitCode: 0 };
-      }
-      case 'zip': {
-        const zipArgs = args.filter(a => !a.startsWith('-'));
-        const archivePath = zipArgs[0];
-        if (archivePath) {
-          const sources = zipArgs.slice(1);
-          const manifest = sources.map(s => {
-            const content = this.vfs.readFile(this.vfs.normalizePath(s, this.cwd));
-            return content !== null ? `  adding: ${s} (stored 0%)` : `zip: ${s}: No such file or directory`;
-          }).join('\n');
-          const resolved = this.vfs.normalizePath(archivePath.endsWith('.zip') ? archivePath : archivePath + '.zip', this.cwd);
-          this.vfs.writeFile(resolved, `ZIP_ARCHIVE\n${manifest}`, 0, 0, 0o644);
-          return { output: manifest, exitCode: 0 };
-        }
-        return { output: '', exitCode: 0 };
-      }
-      case 'unzip': {
-        const target = args.filter(a => !a.startsWith('-'))[0];
-        if (target) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content === null) return { output: `unzip: cannot find or open ${target}`, exitCode: 1 };
-          return { output: `Archive:  ${target}\n  inflating: (simulated)`, exitCode: 0 };
-        }
-        return { output: '', exitCode: 0 };
-      }
+      case 'tar': return cmdTar(this.archiveCtx(), args);
+      case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
+      case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
+      case 'zcat': return cmdGzip(this.archiveCtx(), args, 'zcat');
+      case 'zip': return cmdZip(this.archiveCtx(), args);
+      case 'unzip': return cmdUnzip(this.archiveCtx(), args);
       case 'scp':
       case 'sftp':
       case 'rsync': {
@@ -2553,9 +2497,6 @@ export class LinuxCommandExecutor {
         }
         return { output: '', exitCode: 0 };
       }
-      case 'clear':
-      case 'reset':
-        return { output: '', exitCode: 0 };
       case 'sqlplus': {
         if (args.includes('-V') || args.includes('-version')) {
           return {
@@ -2586,25 +2527,21 @@ export class LinuxCommandExecutor {
         }
         return { output: 'LSNRCTL: command not found on this host', exitCode: 1 };
       }
-      case 'rman':
+      case 'rman': {
+        if (this.isServer && this._oracleRman) {
+          const output = this._oracleRman(args, stdin);
+          if (output !== null) return { output, exitCode: /RMAN-\d|ORA-\d/.test(output) ? 1 : 0 };
+        }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
           exitCode: 0,
         };
-      case 'lsnrctl': {
-        if (args[0] === 'version') {
-          return {
-            output:
-              'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-            exitCode: 0,
-          };
-        }
-        return {
-          output: 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-          exitCode: 0,
-        };
       }
       case 'tnsping': {
+        if (this.isServer && this._oracleTnsping) {
+          const output = this._oracleTnsping(args);
+          return { output, exitCode: /TNS-\d|TNS:/.test(output) ? 1 : 0 };
+        }
         const target = args[0] || '';
         return {
           output:
@@ -2613,9 +2550,20 @@ export class LinuxCommandExecutor {
           exitCode: target ? 1 : 0,
         };
       }
+      case 'expdp':
+      case 'impdp':
+      case 'adrci': {
+        if (this.isServer && this._oracleUtil) {
+          const output = this._oracleUtil(cmd, args);
+          if (output !== null) return { output, exitCode: /ORA-\d|error/i.test(output) ? 1 : 0 };
+        }
+        return {
+          output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
+          exitCode: 0,
+        };
+      }
       case 'dbca':
       case 'orapwd':
-      case 'adrci':
         return {
           output: `${cmd}: interactive Oracle utility — non-interactive batch mode not supported in this simulator`,
           exitCode: 0,
@@ -3874,6 +3822,47 @@ export class LinuxCommandExecutor {
     }
 
     return matches.sort();
+  }
+
+  /** Caller-identity seam for the archive coreutils (tar/gzip/zip…). */
+  private archiveCtx(): ArchiveCtx {
+    // Mid-script `cd` lives in the interpreter's PWD until the script
+    // ends; honour it so `cd /x && tar xf …` extracts where bash says.
+    const envPwd = this._cmdEnv?.['PWD'];
+    const cwd = envPwd &&
+      this.vfs.resolveInode(envPwd)?.type === 'directory'
+      ? envPwd : this.cwd;
+    return {
+      fs: this.vfs, cwd,
+      uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
+      umask: this.umask,
+    };
+  }
+
+  /** `file` — classify from the REAL inode/content, never canned. */
+  private describeFile(target: string): string {
+    const abs = this.vfs.normalizePath(target, this.cwd);
+    const lstat = this.vfs.resolveInode(abs, false);
+    if (!lstat) {
+      return `${target}: cannot open \`${target}' (No such file or directory)`;
+    }
+    if (lstat.type === 'symlink') {
+      return `${target}: symbolic link to ${lstat.target}`;
+    }
+    if (lstat.type === 'directory') return `${target}: directory`;
+    if (lstat.type === 'chardev') return `${target}: character special`;
+    const content = this.vfs.readFile(abs) ?? lstat.content;
+    if (content.length === 0) return `${target}: empty`;
+    const archive = describeArchiveContent(content);
+    if (archive) return `${target}: ${archive}`;
+    if (content.startsWith('#!')) {
+      const interp = content.slice(2, content.indexOf('\n') > 0
+        ? content.indexOf('\n') : undefined).trim();
+      return `${target}: ${interp} script, ASCII text executable`;
+    }
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
+    return `${target}: ASCII text`;
   }
 }
 

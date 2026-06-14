@@ -303,8 +303,16 @@ export abstract class BaseParser {
       dbLink = this.expectIdentifier();
     }
 
+    let asOf: import('./ASTNode').TableRef['asOf'];
+    if (this.checkKeyword('AS') && this.peekNext()?.value?.toUpperCase() === 'OF') {
+      this.advance();
+      this.advance();
+      const kind = this.matchKeyword('SCN') ? 'SCN' : (this.expectKeyword('TIMESTAMP'), 'TIMESTAMP');
+      asOf = { kind: kind as 'SCN' | 'TIMESTAMP', expr: this.parseExpression() };
+    }
+
     const alias = this.parseOptionalAlias();
-    return { type: 'TableRef', position: pos, schema, name, alias, dbLink };
+    return { type: 'TableRef', position: pos, schema, name, alias, dbLink, asOf };
   }
 
   protected tryParseJoin(): JoinClause | null {
@@ -664,7 +672,16 @@ export abstract class BaseParser {
   protected parseColumnDefinition(): ColumnDefinition {
     const pos = this.current().position;
     const name = this.expectIdentifier();
-    const dataType = this.parseTypeSpec();
+    // ALTER TABLE MODIFY (col NOT NULL) carries no type — only a
+    // constraint change. A constraint keyword right after the name means
+    // there is no type to parse (otherwise 'NOT' would be read as one).
+    const typeless = this.checkKeyword('NOT') || this.checkKeyword('NULL')
+      || this.checkKeyword('CONSTRAINT') || this.checkKeyword('UNIQUE')
+      || this.checkKeyword('PRIMARY') || this.checkKeyword('CHECK')
+      || this.checkKeyword('REFERENCES') || this.checkKeyword('DEFAULT');
+    const dataType: TypeSpec = typeless
+      ? { type: 'TypeSpec', position: pos, name: '' }
+      : this.parseTypeSpec();
     let defaultValue: Expression | undefined;
     const constraints: ColumnConstraint[] = [];
 
@@ -1558,14 +1575,28 @@ export abstract class BaseParser {
     } else {
       this.matchKeyword('DATABASE');
     }
-    // Capture the trailing TO TIMESTAMP / TO SCN / TO BEFORE DROP / TO
-    // RESTORE POINT … clause verbatim — the simulator can't time-travel
-    // but we keep the textual record so audit dumps make sense.
+    let toKind: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW' = 'RAW';
+    let toExpr: import('./ASTNode').Expression | undefined;
+    if (this.matchKeyword('TO')) {
+      if (this.matchKeyword('BEFORE')) {
+        this.expectKeyword('DROP');
+        toKind = 'BEFORE_DROP';
+      } else if (this.matchKeyword('SCN')) {
+        toKind = 'SCN';
+        toExpr = this.parseExpression();
+      } else if (this.matchKeyword('TIMESTAMP')) {
+        toKind = 'TIMESTAMP';
+        toExpr = this.parseExpression();
+      }
+    }
     const parts: string[] = [];
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       parts.push(this.advance().value);
     }
-    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: parts.join(' ') };
+    const toText = toKind === 'RAW'
+      ? `TO ${parts.join(' ')}`.trim()
+      : `TO ${toKind.replace('_', ' ')}${toExpr ? ' …' : ''}`;
+    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: toText, toKind, toExpr };
   }
 
   protected parsePurge(): import('./ASTNode').PurgeStatement {
@@ -1821,8 +1852,12 @@ export abstract class BaseParser {
       return { type: 'IsNullExpr', position: pos, expr: left, negated };
     }
 
-    // [NOT] BETWEEN
-    const notBetween = this.matchKeyword('NOT');
+    // [NOT] BETWEEN / IN / LIKE — only consume NOT when one of these
+    // actually follows, so a trailing column constraint (… DEFAULT 0
+    // NOT NULL) is left for the constraint parser instead of erroring.
+    const afterNot = this.checkKeyword('NOT') ? this.peekNext()?.value?.toUpperCase() : undefined;
+    const notBetween = afterNot === 'BETWEEN' || afterNot === 'IN' || afterNot === 'LIKE';
+    if (notBetween) this.advance();
     if (this.matchKeyword('BETWEEN')) {
       const low = this.parseAddition();
       this.expectKeyword('AND');
@@ -2256,8 +2291,10 @@ export abstract class BaseParser {
     let schema: string | undefined;
     let name = this.expectIdentifier();
     if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    let dbLink: string | undefined;
+    if (this.match(TokenType.AT)) dbLink = this.expectIdentifier();
     const alias = this.parseOptionalAlias();
-    return { type: 'TableRef', position: pos, schema, name, alias };
+    return { type: 'TableRef', position: pos, schema, name, alias, dbLink };
   }
 
   protected parseOptionalAlias(): string | undefined {

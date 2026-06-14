@@ -26,7 +26,8 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { ORACLE_CONFIG } from '@/terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { parseSize } from '@/database/oracle/views/_fileSize';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */
@@ -41,10 +42,23 @@ export interface OracleFilesystemSyncCtx {
  */
 interface FsEquipment {
   writeFileFromEditor(path: string, content: string): void;
+  installSystemFile?: (path: string, content: string, uid?: number, gid?: number) => boolean;
   deleteFileFromEditor?: (path: string) => boolean;
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
   clearSystemProcesses?: () => void;
+}
+
+const ORACLE_OS_UID = 54321;
+const ORACLE_OS_GID = 54321;
+
+function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
+  if (!dev.installSystemFile) {
+    dev.writeFileFromEditor(path, content);
+    return;
+  }
+  if (path.startsWith('/u01')) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+  else dev.installSystemFile(path, content);
 }
 
 export class OracleFilesystemSync {
@@ -53,6 +67,10 @@ export class OracleFilesystemSync {
   private spfileParams: Map<string, Map<string, string>> = new Map();
   /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
   private auditCounters: Map<string, number> = new Map();
+  /** Datafile paths already materialised per device — see syncDatafiles. */
+  private materializedDatafiles: Map<string, Set<string>> = new Map();
+  /** SGA KiB currently reserved in each device's host memory (0 = none). */
+  private reservedSgaKib: Map<string, number> = new Map();
 
   constructor(
     private readonly bus: IEventBus,
@@ -81,10 +99,10 @@ export class OracleFilesystemSync {
         // the adapter doesn't keep history itself).
         const db = this.ctx.resolveDatabase(deviceId);
         if (db) {
-          dev.writeFileFromEditor(path, db.instance.getAlertLog().join('\n') + '\n');
+          writeAsOracle(dev, path, db.instance.getAlertLog().join('\n') + '\n');
         } else {
           // No DB available — best effort, write just this line.
-          dev.writeFileFromEditor(path, line + '\n');
+          writeAsOracle(dev, path, line + '\n');
         }
       }),
 
@@ -94,6 +112,7 @@ export class OracleFilesystemSync {
         if (newState === 'MOUNT' || newState === 'OPEN') {
           this.syncDatafiles(deviceId);
         }
+        this.syncSgaMemory(deviceId, newState === 'OPEN');
       }),
 
       this.bus.subscribe('oracle.instance.background-process-started', (e) => {
@@ -109,12 +128,28 @@ export class OracleFilesystemSync {
         dev.unregisterProcess(e.payload.pid);
       }),
 
+      // Dedicated server processes: one oracleSID (LOCAL=…) per user
+      // session, so `ps` agrees with V$PROCESS/V$SESSION while the
+      // session lives.
+      this.bus.subscribe('oracle.instance.server-process-started', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.registerProcess) return;
+        dev.registerProcess(e.payload.pid, 'oracle', e.payload.command);
+      }),
+
+      this.bus.subscribe('oracle.instance.server-process-stopped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.unregisterProcess) return;
+        dev.unregisterProcess(e.payload.pid);
+      }),
+
       this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         for (const df of e.payload.datafiles) {
-          dev.writeFileFromEditor(
+          this.markDatafileMaterialized(e.payload.deviceId, df.path);
+          writeAsOracle(dev, 
             df.path,
             `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
           );
@@ -125,7 +160,8 @@ export class OracleFilesystemSync {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
-        dev.writeFileFromEditor(
+        this.markDatafileMaterialized(e.payload.deviceId, e.payload.path);
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
         );
@@ -134,7 +170,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ASM DISK ${e.payload.diskName} - diskgroup ${e.payload.diskgroup} - ${e.payload.sizeMb}M]`,
         );
@@ -155,7 +191,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.outputPath,
           renderParameterFile(e.payload.target, e.payload.params),
         );
@@ -164,10 +200,18 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.audit.recorded', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
+        // Honour audit_trail. Under DB / DB,EXTENDED the record lives in
+        // the database trail (DBA_AUDIT_TRAIL) only — writing an .aud
+        // file too was a lie. The exception is SYS operations
+        // (audit_sys_operations is TRUE by default in 19c): a session
+        // connected AS SYSDBA is always audited to the OS trail
+        // regardless of audit_trail.
+        const isSysOperation = (e.payload.username ?? '').toUpperCase() === 'SYS';
+        if (!isSysOperation && !this.auditsToOs(e.payload.deviceId)) return;
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev,
           `${ORACLE_CONFIG.AUDIT_DIR}/${fname}`,
           renderAuditEntry(e.payload),
         );
@@ -176,7 +220,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
         );
@@ -198,7 +242,7 @@ export class OracleFilesystemSync {
         const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
         const ts = storage?.getTablespace(e.payload.tablespace);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
         );
@@ -211,15 +255,24 @@ export class OracleFilesystemSync {
       // Oracle 19c install. No simulator-specific files are written.
       this.bus.subscribe('oracle.security.connection-traced', (e) => {
         // Each connection trace becomes a real adump/.aud file just
-        // like a logon/logoff audited by Oracle's OS auditor.
+        // like a logon/logoff audited by Oracle's OS auditor — but only
+        // when real Oracle would write one. Mandatory auditing always
+        // writes to the OS trail: privileged (SYSDBA/SYSOPER) logons and
+        // every FAILED logon attempt. A successful NORMAL logon/logoff
+        // goes to DBA_AUDIT_SESSION (the DB trail) unless audit_trail is
+        // OS / XML.
+        const privileged = e.payload.role === 'SYSDBA' || e.payload.role === 'SYSOPER';
+        const failedLogon = e.payload.outcome === 'FAILURE';
+        if (!privileged && !failedLogon && !this.auditsToOs(e.payload.deviceId)) return;
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
-        dev.writeFileFromEditor(
+        const dbid = this.ctx.resolveDatabase(e.payload.deviceId)?.instance.getDbId() ?? 0;
+        writeAsOracle(dev, 
           `${ORACLE_CONFIG.BASE}/admin/${e.payload.sid}/adump/${fname}`,
-          renderConnectionAud(e.payload),
+          renderConnectionAud(e.payload, dbid),
         );
       }),
 
@@ -262,7 +315,7 @@ export class OracleFilesystemSync {
         const df = ts?.datafiles.find(d => d.path === e.payload.newPath);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const size = df?.size ?? '0M';
-        dev.writeFileFromEditor(
+        writeAsOracle(dev, 
           e.payload.newPath,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${size}]`,
         );
@@ -276,14 +329,53 @@ export class OracleFilesystemSync {
     this.subs.length = 0;
     this.spfileParams.clear();
     this.auditCounters.clear();
+    this.reservedSgaKib.clear();
+  }
+
+  /** Reserve the SGA for an already-open instance — the boot startup
+   *  fired its state-changed before the database was registered. */
+  primeSgaMemory(deviceId: string): void {
+    if (this.ctx.resolveDatabase(deviceId)?.instance.state === 'OPEN') {
+      this.syncSgaMemory(deviceId, true);
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
+
+  private syncSgaMemory(deviceId: string, open: boolean): void {
+    const memory = (this.ctx.resolveDevice(deviceId) as unknown as
+      { getHardware?: () => { memory?: { reserveShared(k: number): void; releaseShared(k: number): void } } } | null)
+      ?.getHardware?.().memory;
+    if (!memory) return;
+    const db = this.ctx.resolveDatabase(deviceId);
+    const current = this.reservedSgaKib.get(deviceId) ?? 0;
+    if (open && db && current === 0) {
+      const kib = Math.round(parseSize(db.instance.getSGAInfo().totalSize) / 1024);
+      if (kib > 0) {
+        memory.reserveShared(kib);
+        this.reservedSgaKib.set(deviceId, kib);
+      }
+    } else if (!open && current > 0) {
+      memory.releaseShared(current);
+      this.reservedSgaKib.set(deviceId, 0);
+    }
+  }
 
   private dev(deviceId: string): FsEquipment | null {
     const eq = this.ctx.resolveDevice(deviceId) as unknown as FsEquipment | null;
     if (!eq || typeof eq.writeFileFromEditor !== 'function') return null;
     return eq;
+  }
+
+  /**
+   * Whether the live `audit_trail` parameter directs (non-mandatory)
+   * audit records to OS files. DB / DB,EXTENDED / NONE keep them in the
+   * database trail; OS and XML write `.aud` / `.xml` under adump/.
+   */
+  private auditsToOs(deviceId: string): boolean {
+    const mode = (this.ctx.resolveDatabase(deviceId)?.instance.getParameter('audit_trail') ?? 'DB')
+      .toUpperCase();
+    return mode === 'OS' || mode === 'XML';
   }
 
   private writeSpfile(deviceId: string, sid: string, params: Map<string, string>): void {
@@ -294,7 +386,37 @@ export class OracleFilesystemSync {
       const needsQuote = /[a-zA-Z]/.test(value) && !value.startsWith("'");
       lines.push(`*.${name}=${needsQuote ? `'${value}'` : value}`);
     }
-    dev.writeFileFromEditor(`${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+    writeAsOracle(dev, `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+  }
+
+  /** Remember that a datafile path has been written once on a device. */
+  private markDatafileMaterialized(deviceId: string, path: string): void {
+    const seen = this.materializedDatafiles.get(deviceId) ?? new Set<string>();
+    seen.add(path);
+    this.materializedDatafiles.set(deviceId, seen);
+  }
+
+  /**
+   * Mark every database file the instance currently knows (datafiles,
+   * redo log members, control files) as already materialised. Called
+   * once by the boot wiring, whose provisioning (initOracleFilesystem)
+   * wrote the seed files before the database was registered — without
+   * this, the first post-boot MOUNT would treat them as never-written
+   * and resurrect any file the user deleted in between.
+   */
+  primeDatafiles(deviceId: string): void {
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    for (const ts of storage.getAllTablespaces()) {
+      for (const df of ts.datafiles) this.markDatafileMaterialized(deviceId, df.path);
+    }
+    for (const group of db.instance.getRedoLogGroups()) {
+      for (const member of group.members) this.markDatafileMaterialized(deviceId, member);
+    }
+    for (const ctl of db.instance.getControlFilePaths()) {
+      this.markDatafileMaterialized(deviceId, ctl);
+    }
   }
 
   private syncDatafiles(deviceId: string): void {
@@ -303,25 +425,41 @@ export class OracleFilesystemSync {
     if (!dev || !db) return;
 
     const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    const seen = this.materializedDatafiles.get(deviceId) ?? new Set<string>();
+    this.materializedDatafiles.set(deviceId, seen);
     for (const ts of storage.getAllTablespaces()) {
       for (const df of ts.datafiles) {
+        // Materialise each datafile ONCE. After that the VFS is the
+        // authority on existence: an `rm` from bash must not be undone
+        // by the next state-change sync — the hole it leaves is what
+        // the instance's ORA-01157 open check (and RMAN RESTORE, which
+        // rewrites the file) are about.
+        if (seen.has(df.path)) continue;
+        seen.add(df.path);
         const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-        dev.writeFileFromEditor(df.path, content);
+        writeAsOracle(dev, df.path, content);
       }
     }
 
+    // Redo log members and control files follow the same once-only
+    // doctrine as datafiles: after the first materialisation the VFS is
+    // the authority on existence. Re-writing them on every state change
+    // used to resurrect an `rm control01.ctl` — making the MOUNT-time
+    // ORA-00205 check impossible to ever trip.
     for (const group of db.instance.getRedoLogGroups()) {
       for (const member of group.members) {
+        if (seen.has(member)) continue;
+        seen.add(member);
         const sizeMB = Math.round(group.sizeBytes / 1048576);
-        dev.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+        writeAsOracle(dev, member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
       }
     }
 
-    const ctlFiles = (db.instance.getParameter('control_files') ?? '')
-      .split(',').map(f => f.trim()).filter(f => f);
-    ctlFiles.forEach((f, i) => {
-      dev.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+    db.instance.getControlFilePaths().forEach((f, i) => {
+      if (seen.has(f)) return;
+      seen.add(f);
+      writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }
 }
@@ -351,26 +489,40 @@ function renderParameterFile(target: 'PFILE' | 'SPFILE', params: Record<string, 
  * it for a logon. Same header banner as audit entries so an `ls` of
  * `adump/` shows a coherent set of files.
  */
-function renderConnectionAud(p: import('@/database/oracle/events').OracleConnectionTracedPayload): string {
-  const lines: string[] = [];
-  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
-  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
-  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
-  lines.push(`System name:    Linux`);
-  lines.push(`Node name:      ${p.userhost}`);
-  lines.push(`Instance name:  ${p.sid}`);
-  lines.push(`Redo thread mounted by this instance: 1`);
-  lines.push(`Oracle process number: ${p.sessionId}`);
-  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
-  lines.push('');
-  lines.push(p.timestamp.toISOString());
+/**
+ * Common `.aud` banner written by `audit_trail=os`: file path, release
+ * banner, host identity, process identity, then the timestamp. Shared by
+ * connection traces and audit entries so the two file families can never
+ * drift apart again.
+ */
+function renderAudHeader(sid: string, sessionId: number | string, userhost: string, timestamp: Date): string[] {
+  return [
+    `Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${sid.toLowerCase()}_ora_${sessionId}.aud`,
+    `Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`,
+    `ORACLE_HOME = ${ORACLE_CONFIG.HOME}`,
+    `System name:    Linux`,
+    `Node name:      ${userhost}`,
+    `Instance name:  ${sid}`,
+    `Redo thread mounted by this instance: 1`,
+    `Oracle process number: ${sessionId}`,
+    `Unix process pid: ${sessionId}, image: oracle@${userhost}`,
+    '',
+    timestamp.toISOString(),
+  ];
+}
+
+function renderConnectionAud(
+  p: import('@/database/oracle/events').OracleConnectionTracedPayload,
+  dbid: number,
+): string {
+  const lines: string[] = renderAudHeader(p.sid, p.sessionId, p.userhost, p.timestamp);
   lines.push(`ACTION : ${p.outcome === 'LOGOFF' ? 'LOGOFF' : 'LOGON'}`);
   lines.push(`DATABASE USER: ${p.username}`);
   lines.push(`PRIVILEGE: ${p.role === 'SYSDBA' ? 'SYSDBA' : p.role === 'SYSOPER' ? 'SYSOPER' : '--'}`);
   lines.push(`CLIENT USER: ${p.osUser}`);
   lines.push(`CLIENT TERMINAL: ${p.terminal}`);
   lines.push(`STATUS: ${p.returncode}`);
-  lines.push(`DBID: 0`);
+  lines.push(`DBID: ${dbid}`);
   lines.push(`SESSIONID: ${p.sessionId}`);
   lines.push(`USERHOST: ${p.userhost}`);
   lines.push(`CLIENT ADDRESS: (ADDRESS=(PROTOCOL=${p.networkProtocol})(HOST=${p.ipAddress || p.userhost}))`);
@@ -379,18 +531,7 @@ function renderConnectionAud(p: import('@/database/oracle/events').OracleConnect
 }
 
 function renderAuditEntry(p: import('@/database/oracle/events').OracleAuditRecordedPayload): string {
-  const lines: string[] = [];
-  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
-  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
-  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
-  lines.push(`System name:    Linux`);
-  lines.push(`Node name:      ${p.userhost}`);
-  lines.push(`Instance name:  ${p.sid}`);
-  lines.push(`Redo thread mounted by this instance: 1`);
-  lines.push(`Oracle process number: ${p.sessionId}`);
-  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
-  lines.push('');
-  lines.push(p.timestamp.toISOString());
+  const lines: string[] = renderAudHeader(p.sid, p.sessionId, p.userhost, p.timestamp);
   lines.push(`LENGTH : '${(p.sqlText ?? '').length}'`);
   lines.push(`ACTION : ${p.actionName}`);
   lines.push(`DATABASE USER: ${p.username}`);

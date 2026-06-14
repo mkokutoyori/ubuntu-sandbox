@@ -444,8 +444,10 @@ export interface OSPFPacketHeader extends NetworkPdu {
   routerId: string;
   /** Area ID */
   areaId: string;
-  /** Authentication type (v2 only) */
+  /** Authentication type (v2 only — 0 null, 1 simple password, 2 cryptographic) */
   authType?: number;
+  /** Auth data — stamped at egress, validated at ingress (RFC 2328 §8.2). */
+  authKey?: string;
 }
 
 /** Type 1: Hello Packet (RFC 2328 §A.3.2) */

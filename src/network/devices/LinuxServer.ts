@@ -12,7 +12,10 @@
 import type { DeviceType } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
-import { getOracleDatabase } from '@/terminal/commands/database';
+import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
+import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
+import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
+import type { HostCapableDevice } from '@/network';
 
 export class LinuxServer extends LinuxMachine {
   constructor(
@@ -49,37 +52,69 @@ export class LinuxServer extends LinuxMachine {
         return `${banner}\nSQL> ${lines.join('\n')}\nSQL> Disconnected from Oracle Database 19c.`;
       }
 
-      if (args.length === 0 || args.join(' ').match(/^\s*\/\s*as\s+sysdba\s*$/i)) {
-        return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
+      // Run piped/arg SQL through the real engine — for both
+      // `user/pass@conn "SQL"` and `… | sqlplus / as sysdba` (used to
+      // drop the SQL on the sysdba path and fake "1 row selected" on the
+      // password path).
+      const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
+      const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
+      const sqlRe = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate|grant|revoke)\b/i;
+      const sqlSource = [
+        ...args.filter(a => a !== connectArg && !a.startsWith('-') && sqlRe.test(a)),
+        stdin ?? '',
+      ].join('\n').trim();
+      const connArgs = isSysdba ? ['/', 'as', 'sysdba'] : connectArg ? [connectArg] : null;
+      if (sqlSource && connArgs && db.instance.state === 'OPEN') {
+        const { session, loginOutput } = createSQLPlusSession(this.id, connArgs);
+        if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
+        const out: string[] = [];
+        for (const raw of sqlSource.split(';')) {
+          const stmt = raw.trim();
+          if (stmt) out.push(...session.processLine(`${stmt};`).output);
+        }
+        session.disconnect();
+        return out.join('\n');
       }
-      // -s user/pass@SID "SELECT 1 FROM DUAL" → run the query and return rows.
-      const sqlText = args.find(a => /select|insert|update|delete/i.test(a));
-      if (sqlText && db.instance.state === 'OPEN') {
-        return `\n         1\n----------\n         1\n\n1 row selected.`;
+      if (args.length === 0 || isSysdba) {
+        return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
       }
       return null;
     };
+    // Both the interactive terminal and the programmatic shell path
+    // (executeShellCommandSync / SSH / scripts) go through the same real
+    // handlers so lsnrctl/tnsping never diverge.
     this.executor._oracleListener = (args: string[]) => {
-      const db = getOracleDatabase(this.id);
-      const running = db.instance.state === 'OPEN' || db.instance.state === 'MOUNT';
-      if (args[0] === 'status') {
-        return [
-          'LSNRCTL for Linux: Version 19.0.0.0.0 - Production',
-          '',
-          'Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521)))',
-          'STATUS of the LISTENER',
-          '------------------------',
-          'Alias                     LISTENER',
-          'Version                   TNSLSNR for Linux: Version 19.0.0.0.0 - Production',
-          'Listener Parameter File   /u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora',
-          'Listener Log File         /u01/app/oracle/diag/tnslsnr/srv1/listener/alert/log.xml',
-          'Listening Endpoints Summary...',
-          '  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=1521)))',
-          running ? 'Services Summary...\n  Service "ORCL" has 1 instance(s).\n    Instance "ORCL", status READY, has 1 handler(s) for this service...' : 'The listener supports no services',
-          'The command completed successfully',
-        ].join('\n');
+      const lines: string[] = [];
+      handleLsnrctl(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
+    };
+    this.executor._oracleTnsping = (args: string[]) => {
+      const lines: string[] = [];
+      handleTnsping(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
+    };
+    this.executor._oracleUtil = (cmd: string, args: string[]) => {
+      const handler = cmd === 'expdp' ? handleExpdp
+        : cmd === 'impdp' ? handleImpdp
+        : cmd === 'adrci' ? handleAdrci : null;
+      if (!handler) return null;
+      const lines: string[] = [];
+      handler(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
+      return lines.join('\n');
+    };
+    // `rman target / <<EOF … EOF` and `echo "BACKUP …;" | rman target /`
+    // drive the real reactive RMAN engine, not a banner-only stub.
+    this.executor._oracleRman = (args: string[], stdin?: string) => {
+      const { subShell, banner } = ReactiveRmanSubShell.create(this, args);
+      const out = [...banner];
+      const script = (stdin ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of script) {
+        const res = subShell.processLine(line);
+        out.push(...res.output);
+        if (res.exit) break;
       }
-      return 'LSNRCTL for Linux: Version 19.0.0.0.0 - Production';
+      subShell.dispose();
+      return out.join('\n');
     };
   }
 

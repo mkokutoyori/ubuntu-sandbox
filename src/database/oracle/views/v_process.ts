@@ -1,15 +1,38 @@
-/**
- * V$PROCESS — background/server processes, from the live instance.
- */
-
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+import { processAddr } from './_processAddr';
 
 registerView({
   name: 'V$PROCESS',
   comment: 'Background and server processes',
   query({ instance }) {
+    const bgRows = instance.getBackgroundProcesses().map(p => [
+      processAddr(p.pid),
+      p.pid, p.pid,
+      p.name,
+      'oracle',
+      `oracle@${instance.config.sid} (${p.name})`,
+      'localhost',
+      'pts/0',
+      'oracle',
+      instance.state === 'OPEN' ? 'ACTIVE' : 'INACTIVE',
+      '1',
+      p.description,
+    ]);
+    const serverRows = instance.getServerProcesses().map(p => [
+      processAddr(p.pid),
+      p.pid, p.pid,
+      null,
+      'oracle',
+      `oracle@${instance.config.sid}`,
+      'localhost',
+      p.local ? 'pts/0' : null,
+      p.osUser,
+      'ACTIVE',
+      null,
+      null,
+    ]);
     return queryResult(
       [
         { name: 'ADDR', dataType: oracleVarchar2(16) },
@@ -25,23 +48,7 @@ registerView({
         { name: 'BACKGROUND', dataType: oracleVarchar2(1) },
         { name: 'DESCRIPTION', dataType: oracleVarchar2(64) },
       ],
-      instance.getBackgroundProcesses().map((p, idx) => [
-        addrOf(idx),
-        p.pid, p.pid,
-        p.name,
-        'oracle',
-        `oracle@${instance.config.sid} (${p.name})`,
-        'localhost',
-        'pts/0',
-        'oracle',
-        instance.state === 'OPEN' ? 'ACTIVE' : 'INACTIVE',
-        '1',
-        p.description,
-      ])
+      [...bgRows, ...serverRows],
     );
   },
 });
-
-function addrOf(idx: number): string {
-  return `0x${(0x7f0000 + idx * 0x100).toString(16).toUpperCase()}`;
-}

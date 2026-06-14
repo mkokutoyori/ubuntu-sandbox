@@ -27,6 +27,8 @@ export interface ProcessCmdContext {
   jobs?: LinuxJobTable;
   /** Seconds since boot, for `top`'s header. Same source as `uptime`. */
   uptimeSeconds?: number;
+  /** Host memory model — same source as `free` / `/proc/meminfo`. */
+  memory?: import('../host/hardware').MemoryProfile;
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
@@ -47,10 +49,12 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const procs = ctx.pm.list();
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
-  const totalMem = 3981;
-  const usedMem = 1258;
-  const freeMem = 1468;
-  const bufCache = 1254;
+  const mib = (kib: number) => Math.round(kib / 1024);
+  const mem = ctx.memory;
+  const totalMem = mem ? mib(mem.totalKib) : 3981;
+  const usedMem = mem ? mib(mem.usedKib) : 1258;
+  const freeMem = mem ? mib(mem.freeKib) : 1468;
+  const bufCache = mem ? mib(mem.buffCacheKib) : 1254;
 
   const sleeping = procs.filter(p => p.state === 'S').length;
   const running = procs.filter(p => p.state === 'R').length;

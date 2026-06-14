@@ -14,6 +14,8 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
+import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
 import type { IShell, ShellLineResult } from './IShell';
@@ -351,11 +353,10 @@ function formatLoginDate(d: Date): string {
 function verifyCredentials(
   device: Equipment, user: string, password: string,
 ): boolean {
+  if (isCredentialAuthenticator(device)) return device.checkPassword(user, password);
   const dev = device as unknown as {
-    checkPassword?: (u: string, p: string) => boolean;
     userMgr?: { checkPassword?: (u: string, p: string) => boolean };
   };
-  if (typeof dev.checkPassword === 'function') return dev.checkPassword(user, password);
   if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
   return true;
 }
@@ -375,35 +376,7 @@ export async function runSshExec(
   }
 }
 
-// ─── Equipment lookup helpers ────────────────────────────────────────
-
-function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] }).getAllEquipment();
-  for (const eq of all) {
-    const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
-    if (!portsObj) continue;
-    for (const port of portsObj.values()) {
-      const ip = port.getIPAddress?.();
-      if (ip && ip.toString() === targetIp) {
-        if (typeof (eq as unknown as { executeCommand?: unknown }).executeCommand === 'function') {
-          return eq;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function findEquipmentByHostname(hostname: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] }).getAllEquipment();
-  for (const eq of all) {
-    const dev = eq as unknown as { getHostname?: () => string };
-    if (typeof dev.getHostname === 'function' && dev.getHostname() === hostname) {
-      return eq;
-    }
-  }
-  return null;
-}
+// ─── Equipment lookup helpers (shared with the Oracle Net client) ────
 
 function pickPrimaryShellKind(dev: Equipment): string {
   return primaryShellKindFor(dev);

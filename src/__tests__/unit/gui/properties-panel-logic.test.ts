@@ -12,8 +12,14 @@ import {
   formatBandwidth,
   formatLatency
 } from '@/components/network/properties-panel-logic';
-import { Cable } from '@/network';
+import { Cable, Port } from '@/network';
 import type { Connection } from '@/store/networkStore';
+
+function makeConnectedCable(id: string): Cable {
+  const cable = new Cable('cable-' + id);
+  cable.connect(new Port('eth0'), new Port('eth0'));
+  return cable;
+}
 
 function makeConnection(overrides: Partial<Connection> & { id: string; type: Connection['type'] }): Connection {
   return {
@@ -21,8 +27,7 @@ function makeConnection(overrides: Partial<Connection> & { id: string; type: Con
     sourceInterfaceId: 'eth0',
     targetDeviceId: 'dev-2',
     targetInterfaceId: 'eth0',
-    isActive: true,
-    cable: new Cable('cable-' + overrides.id),
+    cable: makeConnectedCable(overrides.id),
     ...overrides,
   };
 }
@@ -121,7 +126,7 @@ describe('properties-panel-logic', () => {
     it('should handle inactive connection', () => {
       const connection = makeConnection({
         id: 'conn-4', type: 'ethernet',
-        isActive: false,
+        cable: new Cable('cable-conn-4'),
       });
 
       const details = getConnectionDetails(connection);

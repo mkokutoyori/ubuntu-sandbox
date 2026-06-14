@@ -509,7 +509,12 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, true); }
     }
     if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, false); }
-    if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); return this.parseCreateMaterializedView(pos, orReplace); }
+    if (this.matchKeyword('DIRECTORY')) return this.parseCreateDirectory(pos, orReplace);
+    if (this.matchKeyword('MATERIALIZED')) {
+      this.expectKeyword('VIEW');
+      if (this.matchKeyword('LOG')) return this.parseCreateMviewLog(pos);
+      return this.parseCreateMaterializedView(pos, orReplace);
+    }
     if (this.matchKeyword('AUDIT')) {
       this.expectKeyword('POLICY');
       return this.parseCreateAuditPolicy(pos);
@@ -788,8 +793,18 @@ export class OracleParser extends BaseParser {
       const name = this.expectIdentifier();
       return { type: 'DropDbLinkStatement', position: pos, isPublic: false, name };
     }
+    if (this.matchKeyword('DIRECTORY')) {
+      const name = this.expectIdentifier();
+      return { type: 'DropDirectoryStatement', position: pos, name } as import('../engine/parser/ASTNode').DropDirectoryStatement;
+    }
     if (this.matchKeyword('MATERIALIZED')) {
       this.expectKeyword('VIEW');
+      if (this.matchKeyword('LOG')) {
+        this.expectKeyword('ON');
+        const schema = this.parseSchemaPrefix();
+        const table = this.expectIdentifier();
+        return { type: 'DropMviewLogStatement', position: pos, schema, table } as import('../engine/parser/ASTNode').DropMviewLogStatement;
+      }
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();
       return { type: 'DropMaterializedViewStatement', position: pos, schema, name };
@@ -1268,38 +1283,98 @@ export class OracleParser extends BaseParser {
     throw this.error('Expected REBUILD or RENAME after ALTER INDEX');
   }
 
-  // ── CREATE DATABASE LINK (stub) ────────────────────────────────────
+  // ── CREATE DATABASE LINK ───────────────────────────────────────────
 
   private parseCreateDbLink(pos: SourcePosition, isPublic: boolean): import('../engine/parser/ASTNode').CreateDbLinkStatement {
     const name = this.expectIdentifier();
     // Consume CONNECT TO user IDENTIFIED BY password USING 'tns_alias'
     let connectUser: string | undefined;
+    let connectPassword: string | undefined;
     let usingAlias: string | undefined;
     if (this.matchKeyword('CONNECT')) {
       this.expectKeyword('TO');
       connectUser = this.expectIdentifier();
       this.expectKeyword('IDENTIFIED');
       this.expectKeyword('BY');
-      this.advance(); // skip password
+      // The password authenticates the link's remote session at query
+      // time (SELECT … FROM t@link) — it must be kept, not skipped.
+      const rawPwd = this.advance().value;
+      connectPassword = rawPwd.startsWith("'") || rawPwd.startsWith('"')
+        ? rawPwd.slice(1, -1) : rawPwd;
     }
     if (this.matchKeyword('USING')) {
-      usingAlias = this.expect(TokenType.STRING_LITERAL).value;
+      const raw = this.expect(TokenType.STRING_LITERAL).value;
+      usingAlias = raw.startsWith("'") ? raw.slice(1, -1) : raw;
     }
-    return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, usingAlias };
+    return { type: 'CreateDbLinkStatement', position: pos, isPublic, name, connectUser, connectPassword, usingAlias };
   }
 
-  // ── CREATE MATERIALIZED VIEW (stub) ────────────────────────────────
+  // ── CREATE DIRECTORY ───────────────────────────────────────────────
+
+  private parseCreateDirectory(
+    pos: SourcePosition, orReplace: boolean,
+  ): import('../engine/parser/ASTNode').CreateDirectoryStatement {
+    const name = this.expectIdentifier();
+    this.expectKeyword('AS');
+    const raw = this.expect(TokenType.STRING_LITERAL).value;
+    const path = raw.startsWith("'") || raw.startsWith('"') ? raw.slice(1, -1) : raw;
+    return { type: 'CreateDirectoryStatement', position: pos, orReplace, name, path };
+  }
+
+  // ── CREATE MATERIALIZED VIEW ───────────────────────────────────────
 
   private parseCreateMaterializedView(pos: SourcePosition, _orReplace: boolean): import('../engine/parser/ASTNode').CreateMaterializedViewStatement {
     const schema = this.parseSchemaPrefix();
     const name = this.expectIdentifier();
-    // Skip optional BUILD, REFRESH clauses
+    // BUILD IMMEDIATE|DEFERRED and REFRESH COMPLETE|FORCE [ON DEMAND|COMMIT]
+    // are recorded for the dictionary; unrecognised storage clauses are
+    // still tolerated (script compatibility) and skipped.
+    let buildMode: 'IMMEDIATE' | 'DEFERRED' | undefined;
+    let refreshMethod: 'COMPLETE' | 'FORCE' | 'FAST' | undefined;
+    let refreshMode: 'DEMAND' | 'COMMIT' | undefined;
     while (!this.check(TokenType.EOF) && !this.checkKeyword('AS')) {
+      if (this.matchKeyword('BUILD')) {
+        if (this.matchKeyword('IMMEDIATE')) buildMode = 'IMMEDIATE';
+        else if (this.matchKeyword('DEFERRED')) buildMode = 'DEFERRED';
+        continue;
+      }
+      if (this.matchKeyword('REFRESH')) {
+        if (this.matchKeyword('COMPLETE')) refreshMethod = 'COMPLETE';
+        else if (this.matchKeyword('FORCE')) refreshMethod = 'FORCE';
+        else if (this.matchKeyword('FAST')) refreshMethod = 'FAST';
+        if (this.matchKeyword('ON')) {
+          if (this.matchKeyword('DEMAND')) refreshMode = 'DEMAND';
+          else if (this.matchKeyword('COMMIT')) refreshMode = 'COMMIT';
+        }
+        continue;
+      }
       this.advance();
     }
     this.expectKeyword('AS');
+    const queryStart = this.pos;
     const query = this.parseSelect();
-    return { type: 'CreateMaterializedViewStatement', position: pos, schema, name, query };
+    const queryText = this.tokens.slice(queryStart, this.pos)
+      .map(t => t.type === TokenType.STRING_LITERAL ? `'${t.value}'` : t.value)
+      .join(' ');
+    return {
+      type: 'CreateMaterializedViewStatement', position: pos, schema, name,
+      query, queryText, buildMode, refreshMethod, refreshMode,
+    };
+  }
+
+  private parseCreateMviewLog(pos: SourcePosition): import('../engine/parser/ASTNode').CreateMviewLogStatement {
+    this.expectKeyword('ON');
+    const schema = this.parseSchemaPrefix();
+    const table = this.expectIdentifier();
+    let withRowid = false, withPrimaryKey = false, withSequence = false;
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('WITH')) continue;
+      if (this.matchKeyword('ROWID')) { withRowid = true; continue; }
+      if (this.matchKeyword('PRIMARY')) { this.matchKeyword('KEY'); withPrimaryKey = true; continue; }
+      if (this.matchKeyword('SEQUENCE')) { withSequence = true; continue; }
+      this.advance();
+    }
+    return { type: 'CreateMviewLogStatement', position: pos, schema, table, withRowid, withPrimaryKey, withSequence };
   }
 
   // ── Unified audit policies ─────────────────────────────────────

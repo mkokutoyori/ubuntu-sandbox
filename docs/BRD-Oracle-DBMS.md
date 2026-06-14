@@ -1,7 +1,7 @@
 # BRD — Implementation Oracle DBMS (Simulateur)
 
-**Version** : 1.1
-**Date** : 2026-03-23 (mise à jour statut)
+**Version** : 1.2
+**Date** : 2026-06-12 (resynchronisation des statuts avec le code — voir docs/JOURNAL-REFACTORING-ORACLE.md)
 **Projet** : Ubuntu Sandbox — Module SGBD Oracle
 **Auteur** : Claude Code
 
@@ -14,9 +14,9 @@
 | Phase 1 | Fondations (Core SQL Engine + Oracle Base) | ✅ COMPLÈTE | 7/7 |
 | Phase 2 | DDL + Contraintes | ✅ COMPLÈTE | 7/7 |
 | Phase 3 | DML Avancé + Fonctions | ✅ COMPLÈTE | 9/8 (+ROWNUM) |
-| Phase 4 | PL/SQL + Packages | 🟡 PARTIELLE | 6/7 (curseurs manquants) |
-| Phase 5 | Administration + Sécurité | ✅ QUASI-COMPLÈTE | 7/9 (RMAN, audit partiel) |
-| Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 5/8 (EXPLAIN PLAN + stubs MV/DB Links/synonymes) |
+| Phase 4 | PL/SQL + Packages | ✅ COMPLÈTE | 7/7 (packages utilisateur + curseurs réels) |
+| Phase 5 | Administration + Sécurité | ✅ COMPLÈTE | 9/9 (RMAN réel, audit vivant, auth OS bequeath) |
+| Phase 6 | Optimisation + Avancé | 🟡 PARTIELLE | 7/8 (MV et DB Links réels ; flashback temporel absent) |
 
 **Vues système** : 70 vues implémentées (36 V$ + 34 DBA_/ALL_/USER_ + SYS.$)
 **Codes erreur** : 60+ codes ORA- implémentés
@@ -96,7 +96,7 @@ src/database/
 │   └── commands/
 │       ├── SQLPlusSession.ts    # Session SQL*Plus complète
 │       ├── LsnrctlSession.ts    # Session lsnrctl
-│       └── RmanSession.ts       # Session RMAN (stub)
+│       └── RmanSession.ts       # Session RMAN (moteur de jobs réactif réel — src/terminal/subshells/rman/)
 │
 ├── postgres/                    # (Futur) Implémentation PostgreSQL
 ├── mysql/                       # (Futur) Implémentation MySQL
@@ -442,7 +442,7 @@ ORCL:/u01/app/oracle/product/19c/dbhome_1:Y
 | `DBA_SEGMENTS` | Segments | P2 | ✅ |
 | `DBA_EXTENTS` | Extents | P2 | ✅ |
 | `DBA_JOBS` / `DBA_SCHEDULER_JOBS` | Jobs planifiés | P2 | ✅ |
-| `DBA_AUDIT_TRAIL` | Trail d'audit | P1 | 🟡 (données statiques) |
+| `DBA_AUDIT_TRAIL` | Trail d'audit | P1 | ✅ (branchée sur catalog.getAuditTrail()) |
 | `DBA_DB_LINKS` / `ALL_DB_LINKS` | DB Links | P2 | ✅ |
 | `DBA_DIRECTORIES` | Objets DIRECTORY | P2 | ✅ |
 | `DBA_PROFILES` | Profils de sécurité | P1 | ✅ |
@@ -1340,7 +1340,8 @@ CREATE [OR REPLACE] [FORCE | NOFORCE] VIEW view_name AS
 CREATE [OR REPLACE] MATERIALIZED VIEW mv_name
   [BUILD {IMMEDIATE | DEFERRED}]
   [REFRESH {FAST | COMPLETE | FORCE} ON {DEMAND | COMMIT}]
-  AS select_statement;                       -- ✅ (stub — parsing + message de succès)
+  AS select_statement;                       -- ✅ Implémenté (conteneur réel, DBA_MVIEWS vivante,
+                                             --    staleness sur DML, DBMS_MVIEW.REFRESH, refresh ON COMMIT)
 ```
 
 ### 15.4 Synonymes ✅
@@ -1350,16 +1351,19 @@ CREATE [OR REPLACE] [PUBLIC] SYNONYM syn_name FOR schema.object_name;  -- ✅
 DROP [PUBLIC] SYNONYM syn_name;                                         -- ✅
 ```
 
-### 15.5 DB Links ✅ (stubs)
+### 15.5 DB Links ✅
 
 ```sql
 CREATE [PUBLIC] DATABASE LINK link_name
   CONNECT TO user IDENTIFIED BY password
-  USING 'tns_alias';                         -- ✅ (stub)
+  USING 'tns_alias';                         -- ✅ Implémenté (catalogue + DBA_DB_LINKS, ORA-02011)
 
-SELECT * FROM table_name@link_name;          -- ❌ (requête cross-link non supportée)
-DROP [PUBLIC] DATABASE LINK link_name;       -- ✅ (stub)
+SELECT * FROM table_name@link_name;          -- ✅ Implémenté (session distante réelle comme l'utilisateur
+                                             --    du lien, à travers le réseau simulé — lecture seule)
+DROP [PUBLIC] DATABASE LINK link_name;       -- ✅ Implémenté (ORA-02024 si absent)
 ```
+
+> Limites assumées : pas de DML over link, pas de two-phase commit.
 
 ### 15.6 Flashback ❌
 
@@ -1404,12 +1408,12 @@ FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);   --
 8. ✅ `WITH` (CTE - Common Table Expressions)
 9. ✅ `ROWNUM` (incrémentation correcte par ligne, `WHERE ROWNUM <= N`)
 
-### Phase 4 — PL/SQL + Packages 🟡 PARTIELLE
+### Phase 4 — PL/SQL + Packages ✅ COMPLÈTE
 
 1. ✅ Blocs anonymes PL/SQL (DECLARE/BEGIN/END, variables, IF/ELSIF/ELSE, FOR..LOOP, WHILE, assignments)
 2. ✅ Procédures et fonctions stockées (CREATE [OR REPLACE] PROCEDURE/FUNCTION, paramètres IN/OUT/IN OUT, EXEC, DROP)
-3. ❌ Packages (spec + body) — non implémenté
-4. ❌ Curseurs (implicites et explicites) — mots-clés lexer OK, pas d'exécution
+3. ✅ Packages (spec + body) — runtime utilisateur réel (état par session, PLS-00302/00363, ORA-04067/04068)
+4. ✅ Curseurs (implicites et explicites) — exécution réelle via PlsqlInterpreter
 5. ✅ Gestion d'exceptions (EXCEPTION WHEN...THEN dans blocs PL/SQL)
 6. ✅ `DBMS_OUTPUT` (PUT_LINE, PUT, ENABLE, DISABLE), `DBMS_RANDOM` (VALUE, STRING, NORMAL), `DBMS_LOCK` (SLEEP ✅)
 7. ✅ Triggers (CREATE [OR REPLACE] TRIGGER — BEFORE/AFTER/INSTEAD OF, INSERT/UPDATE/DELETE, FOR EACH ROW, DROP TRIGGER)
@@ -1418,23 +1422,23 @@ FLASHBACK TABLE table_name TO TIMESTAMP (SYSTIMESTAMP - INTERVAL '1' HOUR);   --
 
 1. ✅ Gestion des utilisateurs (CREATE/ALTER/DROP USER — password, account lock/unlock, default tablespace)
 2. ✅ Rôles et privilèges (GRANT/REVOKE — table privs, system privs, roles, WITH GRANT/ADMIN OPTION)
-3. 🟡 Profils de sécurité — DBA_PROFILES view existe mais retourne données statiques
+3. ✅ Profils de sécurité — DBA_PROFILES branchée sur SecurityEngine.profiles (état vivant)
 4. ✅ Instance lifecycle (STARTUP NOMOUNT/MOUNT/OPEN/RESTRICT/FORCE, SHUTDOWN NORMAL/IMMEDIATE/TRANSACTIONAL/ABORT)
 5. ✅ Listener (lsnrctl start/stop/status/services/reload/version)
 6. ✅ Configuration (init.ora/spfile — paramètres SGA/PGA/etc., tnsnames.ora, listener.ora, sqlnet.ora)
 7. ✅ Alert log simulation (startup/shutdown events loggés)
-8. 🟡 Audit trail — DBA_AUDIT_TRAIL view définie, données statiques
-9. ❌ Backup/Recovery concepts (RMAN stub) — non implémenté
+8. ✅ Audit trail — DBA_AUDIT_TRAIL/USER_/ALL_ branchées sur le trail réel (logons, DDL, refus SYSDBA)
+9. ✅ Backup/Recovery — moteur RMAN réactif réel (BACKUP/RESTORE/RECOVER/DUPLICATE/CROSSCHECK, catalogue, canaux)
 
 ### Phase 6 — Optimisation + Avancé 🟡 PARTIELLE
 
 1. ✅ `EXPLAIN PLAN` (FOR SELECT/INSERT/UPDATE/DELETE — plan simulé avec TABLE ACCESS FULL, HASH JOIN, SORT ORDER BY)
 2. ✅ Statistiques de table (DBMS_STATS.GATHER_TABLE_STATS/GATHER_SCHEMA_STATS — stubs)
-3. 🟡 Transactions et verrouillage — COMMIT/ROLLBACK/SAVEPOINT reconnus (stubs, pas de vrai rollback)
+3. ✅ Transactions et verrouillage — COMMIT/ROLLBACK/SAVEPOINT réels par snapshot (limite : pas de MVCC multi-session)
 4. ❌ Niveaux d'isolation — non implémenté
 5. ❌ Flashback query — non implémenté
-6. ✅ Materialized views — CREATE/DROP (stubs, parsing complet)
-7. ✅ DB Links — CREATE/DROP (stubs, parsing complet)
+6. ✅ Materialized views — conteneur réel, staleness, refresh ON DEMAND/ON COMMIT, DBA_MVIEWS
+7. ✅ DB Links — catalogue réel + requêtes cross-link à travers le réseau simulé
 8. ❌ Partitionnement (stub) — non implémenté
 
 ---
