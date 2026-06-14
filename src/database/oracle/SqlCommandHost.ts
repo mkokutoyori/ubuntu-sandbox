@@ -42,6 +42,7 @@ export interface SqlCommandHost {
   /**
    * Re-read a file-backed external table's location file(s) into its
    * backing storage rows (read-on-query). No-op for ordinary tables.
+   * The requesting user must hold READ on the directory (ORA-29913).
    */
-  reloadExternalTable(schema: string, table: string): void;
+  reloadExternalTable(schema: string, table: string, requestingUser: string): void;
 }

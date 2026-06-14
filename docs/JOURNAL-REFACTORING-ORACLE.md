@@ -1961,6 +1961,21 @@ ORA-29289 sans grant, WRITE autorise l'écriture, READ la lecture, READ seul ref
 l'écriture, grant à PUBLIC, REVOKE re-refuse, SYS sans grant, FREMOVE exige WRITE) ;
 non-régression `unit/database/` ; `tsc` + ESLint propres.
 
+### 2026-06-14 — Tables externes : READ de répertoire exigé à l'interrogation
+**Défaillance :** un `SELECT` sur une table externe lisait le fichier hôte sans
+vérifier que l'utilisateur détient READ sur le DIRECTORY (un vrai Oracle lève
+ORA-29913/KUP/ORA-29289).
+**Correction :** `reloadExternalTable(schema, table, requestingUser)` transmet
+l'utilisateur courant depuis `OracleExecutor.loadTable` ; `loadExternalTableData`
+vérifie `canAccessDirectory(user, dir, 'READ')` pour chaque LOCATION et lève
+`ORA-29913` (enveloppant ORA-29289) en cas de refus. Le chargement *eager* au
+CREATE ne contrôle pas (contexte de création, pas d'utilisateur). SYS/owner/DBA/
+rôles/PUBLIC gérés par le même `hasObjectPrivilege`.
+**Validation :** nouvelle suite `oracle-external-table-privileges.test.ts` (4
+tests : refus sans READ, succès après GRANT, owner SYS sans grant, refus après
+REVOKE) ; base `oracle-external-table` (SYS) inchangée ; non-régression
+`unit/database/` ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

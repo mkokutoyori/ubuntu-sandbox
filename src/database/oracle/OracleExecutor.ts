@@ -1319,7 +1319,7 @@ export class OracleExecutor extends BaseExecutor {
     // File-backed external table: re-read its location file(s) from the
     // host filesystem before scanning, so SELECT reflects the current file
     // content (read-on-query). No-op for ordinary tables.
-    this.commandHost?.reloadExternalTable(schema, tableName);
+    this.commandHost?.reloadExternalTable(schema, tableName, this.context.currentUser);
 
     // Check if it's a view first
     const viewMeta = this.storage.getViewMeta(schema, tableName);

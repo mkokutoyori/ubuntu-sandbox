@@ -1288,13 +1288,13 @@ export class OracleDatabase implements SqlCommandHost {
    * file (the table simply reads as empty, like a real one whose file is
    * absent until queried with stricter settings).
    */
-  reloadExternalTable(schema: string, table: string): void {
+  reloadExternalTable(schema: string, table: string, requestingUser: string): void {
     if (this.instance.externalTables.isExternal(schema, table)) {
-      this.loadExternalTableData(schema.toUpperCase(), table.toUpperCase());
+      this.loadExternalTableData(schema.toUpperCase(), table.toUpperCase(), requestingUser);
     }
   }
 
-  private loadExternalTableData(owner: string, name: string): void {
+  private loadExternalTableData(owner: string, name: string, requestingUser?: string): void {
     const meta = this.instance.externalTables.getTables()
       .find(t => t.owner === owner && t.tableName === name);
     const tableMeta = this.storage.getTableMeta(owner, name);
@@ -1305,6 +1305,10 @@ export class OracleDatabase implements SqlCommandHost {
 
     const rows: import('../engine/storage/BaseStorage').CellValue[][] = [];
     for (const loc of locations) {
+      if (requestingUser && !this.canAccessDirectory(requestingUser, loc.directoryName, 'READ')) {
+        throw new OracleError(29913,
+          'error in executing ODCIEXTTABLEOPEN callout\nORA-29289: directory access denied');
+      }
       const dir = this.catalog.getDirectory(loc.directoryName);
       if (!dir) continue;
       const path = `${dir.path.replace(/\/+$/, '')}/${loc.location}`;
