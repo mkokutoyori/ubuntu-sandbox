@@ -335,6 +335,17 @@ export function handleExpdp(
   const tables = params.get('TABLES')?.toUpperCase().split(',');
   const full = params.get('FULL')?.toUpperCase() === 'Y';
 
+  const directory = (params.get('DIRECTORY') || 'DATA_PUMP_DIR').toUpperCase();
+  const dir = db.catalog.getDirectory(directory);
+  if (!dir) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-39070: Unable to open the log file.');
+    addLine(`ORA-39087: directory name ${directory} is invalid`);
+    return;
+  }
+  const dumpPath = joinDirectoryPath(dir.path, dumpfile);
+  const logPath = joinDirectoryPath(dir.path, logfile);
+
   const jobName = `SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01`;
   addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
   addLine(`Starting "${schemas[0]}"."${jobName}":`);
@@ -348,12 +359,9 @@ export function handleExpdp(
   addLine(`Master table "${schemas[0]}"."${jobName}" successfully loaded/unloaded`);
   addLine('******************************************************************************');
   addLine(`Dump file set for ${schemas[0]}.${jobName} is:`);
-  addLine(`  /u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`);
+  addLine(`  ${dumpPath}`);
   addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
-  // The dump file IS the transport: impdp reads it back and restores.
-  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
-  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
   device.writeFileFromEditor?.(dumpPath, JSON.stringify(dump));
   device.writeFileFromEditor?.(logPath, [
     `Export: Release ${ORACLE_CONFIG.VERSION}.0`,
@@ -411,8 +419,15 @@ export function handleImpdp(
   const remap = params.get('REMAP_SCHEMA');
   const existsAction = (params.get('TABLE_EXISTS_ACTION')?.toUpperCase() ?? 'SKIP') as TableExistsAction;
 
-  // Check if dump file exists on VFS
-  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
+  const directory = (params.get('DIRECTORY') || 'DATA_PUMP_DIR').toUpperCase();
+  const dir = db.catalog.getDirectory(directory);
+  if (!dir) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-39070: Unable to open the log file.');
+    addLine(`ORA-39087: directory name ${directory} is invalid`);
+    return;
+  }
+  const dumpPath = joinDirectoryPath(dir.path, dumpfile);
   const fileContent = device.readFileForEditor?.(dumpPath);
   if (!fileContent) {
     addLine(`ORA-39001: invalid argument value`);
@@ -450,8 +465,7 @@ export function handleImpdp(
   addLine('');
   addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
-  // Write log file
-  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
+  const logPath = joinDirectoryPath(dir.path, logfile);
   device.writeFileFromEditor?.(logPath, [
     `Import: Release ${ORACLE_CONFIG.VERSION}.0`,
     ...report.lines,
@@ -471,5 +485,9 @@ function parseDataPumpParams(args: string[]): Map<string, string> {
     }
   }
   return params;
+}
+
+function joinDirectoryPath(base: string, file: string): string {
+  return `${base.replace(/\/+$/, '')}/${file}`;
 }
 

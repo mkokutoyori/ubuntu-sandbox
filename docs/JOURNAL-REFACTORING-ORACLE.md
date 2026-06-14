@@ -1883,6 +1883,28 @@ DBA_EXTERNAL_TABLES, purge au DROP) ; `oracle-structural-views`
 (enregistrement externe) toujours vert ; non-régression `unit/database/` ;
 `tsc --noEmit` + ESLint propres.
 
+### 2026-06-14 — Data Pump résout DIRECTORY= contre le vrai objet répertoire
+**Défaillance :** `expdp`/`impdp` **ignoraient totalement le paramètre
+`DIRECTORY=`** et codaient en dur le chemin
+`/u01/app/oracle/admin/ORCL/dpdump/`. Donc `expdp … DIRECTORY=MON_DIR` écrivait
+quand même dans le dpdump par défaut, et un répertoire inexistant ne levait
+aucune erreur. Incohérent maintenant que les objets DIRECTORY sont réels : Data
+Pump doit résoudre `DIRECTORY=` contre le même catalogue que UTL_FILE et les
+tables externes.
+**Correction :** `handleExpdp`/`handleImpdp` résolvent
+`DIRECTORY=` (défaut DATA_PUMP_DIR) via `db.catalog.getDirectory` et construisent
+le chemin du `.dmp`/`.log` à partir du chemin réel de l'objet (`joinDirectoryPath`).
+Répertoire inconnu → fail-fast `ORA-39002` + `ORA-39070` + `ORA-39087: directory
+name X is invalid` (avant tout export/import). Le dump écrit dans un répertoire
+custom est donc lisible par `cat` au bon chemin et par UTL_FILE. Rétro-compatible :
+DATA_PUMP_DIR (seedé au catalogue) pointe vers le même dpdump qu'avant. Conforme
+à la consigne « zéro commentaire » pour le code produit.
+**Validation :** nouvelle suite `oracle-datapump-directory.test.ts` (5 tests :
+chemin custom résolu + `cat`, round-trip expdp→drop→impdp via répertoire custom,
+ORA-39087 expdp et impdp sur répertoire inconnu, défaut DATA_PUMP_DIR inchangé) ;
+non-régression `oracle-shell-datapump-adrci`, `oracle-linux-filesystem`,
+`linux-commands-and-oracle-tools` (111) + `unit/database/` ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
