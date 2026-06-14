@@ -936,7 +936,7 @@ export class OracleDatabase implements SqlCommandHost {
     return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
   }
 
-  private canAccessDirectory(user: string, dirName: string, access: 'READ' | 'WRITE'): boolean {
+  canAccessDirectory(user: string, dirName: string, access: 'READ' | 'WRITE'): boolean {
     return this.securityEngine.privileges.hasObjectPrivilege(user, access, 'SYS', dirName.toUpperCase());
   }
 

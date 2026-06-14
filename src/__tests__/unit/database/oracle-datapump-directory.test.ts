@@ -71,3 +71,49 @@ describe('Data Pump resolves DIRECTORY= against the real directory object', () =
     expect(sh(srv, 'cat /u01/app/oracle/admin/ORCL/dpdump/hr.dmp')).toContain('ORACLE-SIM-DATAPUMP');
   });
 });
+
+describe('Data Pump enforces directory privileges', () => {
+  it('expdp as a user without WRITE on the directory is denied', () => {
+    const srv = boot('dp-priv-1');
+    sh(srv, 'mkdir -p /home/oracle/dp');
+    runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
+    runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
+    runSql(srv, 'GRANT CREATE SESSION TO dpu;');
+    const out = sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    expect(out).toMatch(/29289|access denied/i);
+    expect(out).not.toContain('successfully completed');
+  });
+
+  it('granting WRITE lets the user run expdp', () => {
+    const srv = boot('dp-priv-2');
+    sh(srv, 'mkdir -p /home/oracle/dp');
+    runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
+    runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
+    runSql(srv, 'GRANT CREATE SESSION TO dpu;');
+    runSql(srv, 'GRANT WRITE ON DIRECTORY my_dp TO dpu;');
+    const out = sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    expect(out).toContain('successfully completed');
+  });
+
+  it('impdp requires READ on the directory', () => {
+    const srv = boot('dp-priv-3');
+    sh(srv, 'mkdir -p /home/oracle/dp');
+    runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
+    runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
+    runSql(srv, 'GRANT CREATE SESSION TO dpu;');
+    sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const denied = sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
+    expect(denied).toMatch(/29289|access denied/i);
+    runSql(srv, 'GRANT READ ON DIRECTORY my_dp TO dpu;');
+    const ok = sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
+    expect(ok).not.toMatch(/29289/);
+  });
+
+  it('SYS runs Data Pump without an explicit directory grant', () => {
+    const srv = boot('dp-priv-4');
+    sh(srv, 'mkdir -p /home/oracle/dp');
+    runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
+    const out = sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    expect(out).toContain('successfully completed');
+  });
+});

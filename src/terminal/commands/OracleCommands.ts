@@ -343,6 +343,11 @@ export function handleExpdp(
     addLine(`ORA-39087: directory name ${directory} is invalid`);
     return;
   }
+  if (!db.canAccessDirectory(connectUserOf(args), directory, 'WRITE')) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-29289: directory access denied');
+    return;
+  }
   const dumpPath = joinDirectoryPath(dir.path, dumpfile);
   const logPath = joinDirectoryPath(dir.path, logfile);
 
@@ -427,6 +432,11 @@ export function handleImpdp(
     addLine(`ORA-39087: directory name ${directory} is invalid`);
     return;
   }
+  if (!db.canAccessDirectory(connectUserOf(args), directory, 'READ')) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-29289: directory access denied');
+    return;
+  }
   const dumpPath = joinDirectoryPath(dir.path, dumpfile);
   const fileContent = device.readFileForEditor?.(dumpPath);
   if (!fileContent) {
@@ -489,5 +499,13 @@ function parseDataPumpParams(args: string[]): Map<string, string> {
 
 function joinDirectoryPath(base: string, file: string): string {
   return `${base.replace(/\/+$/, '')}/${file}`;
+}
+
+function connectUserOf(args: string[]): string {
+  const first = args[0];
+  if (first && !first.includes('=') && first.includes('/')) {
+    return first.split('/')[0].split('@')[0].toUpperCase();
+  }
+  return 'SYS';
 }
 

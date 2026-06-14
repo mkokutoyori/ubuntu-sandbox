@@ -1976,6 +1976,24 @@ tests : refus sans READ, succès après GRANT, owner SYS sans grant, refus aprè
 REVOKE) ; base `oracle-external-table` (SYS) inchangée ; non-régression
 `unit/database/` ; `tsc` + ESLint propres.
 
+### 2026-06-14 — Data Pump applique les privilèges de répertoire (expdp WRITE, impdp READ)
+**Défaillance :** `expdp`/`impdp` ne vérifiaient pas que l'utilisateur connecté
+détient WRITE (export) / READ (import) sur le DIRECTORY — n'importe qui pouvait
+écrire/lire le dump.
+**Correction :** `canAccessDirectory` exposée publiquement ; `handleExpdp`/
+`handleImpdp` extraient l'utilisateur de `user/pass` (`connectUserOf`) et
+vérifient WRITE/READ sur le répertoire après le contrôle d'existence — refus →
+`ORA-39002` + `ORA-29289`. SYS/DBA/rôles/PUBLIC gérés par le même
+`hasObjectPrivilege` ; rétro-compatible (`sys/oracle` bypass owner).
+**Limite assumée :** les handlers ne valident pas le mot de passe ni les rôles
+DATAPUMP_*_FULL_DATABASE — seul l'accès répertoire est imposé.
+**Validation :** +4 tests dans `oracle-datapump-directory.test.ts` (expdp refusé
+sans WRITE, autorisé après GRANT WRITE, impdp exige READ, SYS sans grant) ;
+suites datapump existantes (`sys/oracle`) inchangées ; non-régression
+`unit/database/` + `linux-commands-and-oracle-tools` ; `tsc` + ESLint propres.
+Ceci clôt l'application des privilèges DIRECTORY (UTL_FILE + tables externes +
+Data Pump).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
