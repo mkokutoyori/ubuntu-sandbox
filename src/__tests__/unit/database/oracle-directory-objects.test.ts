@@ -82,6 +82,27 @@ describe('ALL_DIRECTORIES', () => {
   });
 });
 
+describe('Directory objects in DBA_OBJECTS', () => {
+  test('a created directory appears as a SYS-owned DIRECTORY object', () => {
+    exec("CREATE DIRECTORY obj_dir AS '/srv/obj'");
+    const rows = exec("SELECT OWNER, OBJECT_TYPE FROM DBA_OBJECTS WHERE OBJECT_NAME = 'OBJ_DIR'").rows;
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toEqual(['SYS', 'DIRECTORY']);
+  });
+
+  test('DATA_PUMP_DIR is reported as Oracle-maintained', () => {
+    const rows = exec("SELECT ORACLE_MAINTAINED FROM DBA_OBJECTS WHERE OBJECT_NAME = 'DATA_PUMP_DIR' AND OBJECT_TYPE = 'DIRECTORY'").rows;
+    expect(rows[0][0]).toBe('Y');
+  });
+
+  test('DROP DIRECTORY removes it from DBA_OBJECTS', () => {
+    exec("CREATE DIRECTORY temp_obj_dir AS '/srv/tmp'");
+    exec('DROP DIRECTORY temp_obj_dir');
+    const rows = exec("SELECT COUNT(*) FROM DBA_OBJECTS WHERE OBJECT_NAME = 'TEMP_OBJ_DIR'").rows;
+    expect(rows[0][0]).toBe(0);
+  });
+});
+
 describe('Directory DDL privileges', () => {
   test('a user without CREATE ANY DIRECTORY gets ORA-01031', () => {
     exec("CREATE USER dirless IDENTIFIED BY pass");

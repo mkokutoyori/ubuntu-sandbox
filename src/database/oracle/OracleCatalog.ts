@@ -1526,6 +1526,17 @@ export class OracleCatalog extends BaseCatalog {
       });
     }
 
+    for (const d of this.getDirectories()) {
+      out.push({
+        owner: 'SYS', name: d.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: 'DIRECTORY', created: d.created, lastDdl: d.created,
+        timestamp: ts(d.created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 4, oracleMaintained: d.name === 'DATA_PUMP_DIR' ? 'Y' : 'N',
+      });
+    }
+
     // Triggers.
     for (const t of this.storage.getAllTriggers()) {
       const created = new Date();
