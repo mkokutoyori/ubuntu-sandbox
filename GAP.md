@@ -517,7 +517,7 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 - **Recommandation** : aligner le type sur les états réellement modélisés ou compléter la FSM pour traverser `listen`/`speak` durant la phase d'élection (utile pour la temporisation `helloSec`/`holdSec`).
 - **Correction appliquée** : type aligné sur la FSM réellement modélisée — `GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active'` (`src/network/glbp/types.ts:5`). Les promesses non tenues `'listen'`/`'speak'` sont retirées du type pour ne pas induire l'utilisateur en erreur. `npx tsc --noEmit` propre, 0 régression sur la suite GLBP.
 
-- **Constat** : pas de tracking objects pour GLBP non plus (même lacune que HSRP/VRRP) — `weighting`/`preempt` sont configurables manuellement mais aucun objet suivi ne module dynamiquement la pondération.
+- **Constat (origine)** : pas de tracking objects pour GLBP — aucun objet suivi ne modulait la pondération. **✅ CORRIGÉ** (entrée 44) : `glbp <grp> weighting track <iface> [decrement <n>]` câblé sur `GlbpAgent.addTrack` ; `effectiveWeighting(g)` retranche les décréments des interfaces suivies down, l'AVF annonce/utilise cette pondération effective (sortie de la répartition de charge quand elle tombe à 0), et les transitions de lien (`onLinkUp/onLinkDown`) la recalculent.
 - **Preuve** : aucune occurrence de `track`/`decrement` dans `src/network/glbp/GlbpAgent.ts` ni `types.ts`.
 - **Sévérité** : Mineure
 - **Recommandation** : cohérent avec HSRP/VRRP — à traiter de façon transverse si le suivi est ajouté.

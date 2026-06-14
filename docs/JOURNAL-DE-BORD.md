@@ -2910,3 +2910,39 @@ atteints — constat partiellement périmé.)
   cisco-hsrp + fhrp-dataplane : 11 verts.
 - Non-régression : **network-v2 complet — 7054 tests verts**. `tsc`/lint
   propres ; aucun commentaire ajouté.
+
+---
+
+## Entrée 44 — GLBP : tracking objects (pondération suivie) — parité FHRP
+
+**Date** : 2026-06-14
+
+### Constat (GAP §5.3)
+
+GLBP n'avait pas de tracking objects (contrairement à HSRP/VRRP désormais
+corrigés) : `weighting` était fixe, aucun objet suivi ne la modulait — pas
+de bascule d'AVF sur perte d'une interface suivie.
+
+### Correction (réaliste, parallèle à HSRP)
+
+- `GlbpTrackEntry` + `tracks[]` sur le groupe ; helper `effectiveWeighting(g)`
+  = `weighting − Σ décréments des interfaces suivies down` (borné à 0).
+- `GlbpAgent.addTrack/removeTrack` ; `onLinkUp/onLinkDown` (surchargés en
+  conservant le comportement de base iface-down→init) basculent
+  `track.down` et resynchronisent la pondération du forwarder local.
+- L'AVF **annonce et utilise la pondération effective** : quand elle tombe
+  à 0, le forwarder sort de la répartition de charge (filtre `weighting>0`).
+- CLI `glbp <grp> weighting track <iface> [decrement <n>]` (défaut 10).
+
+### Fichiers
+
+- `src/network/glbp/types.ts`, `src/network/glbp/GlbpAgent.ts`
+- `src/network/devices/shells/cisco/CiscoVrrpGlbpCommands.ts`
+- `src/__tests__/unit/network-v2/glbp-protocol.test.ts` (+1)
+
+### Validation
+
+- `glbp-protocol` + `cisco-vrrp-glbp` : 17 tests verts (pondération
+  effective baissée quand le lien suivi est down, restaurée à up ; le
+  comportement iface-down→init préservé). Non-régression : **network-v2
+  complet — 7055 tests verts**. `tsc`/lint propres ; aucun commentaire.

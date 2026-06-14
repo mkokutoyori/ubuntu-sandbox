@@ -7,6 +7,12 @@ export type GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active';
 export type GlbpAvfState = 'disabled' | 'init' | 'listen' | 'active';
 export type GlbpLoadBalancing = 'round-robin' | 'weighted' | 'host-dependent';
 
+export interface GlbpTrackEntry {
+  target: string;
+  decrement: number;
+  down: boolean;
+}
+
 export interface GlbpForwarder {
   forwarderNumber: number;
   vmac: string;
@@ -67,6 +73,12 @@ export interface GlbpGroupRuntime {
   forwarders: Map<number, GlbpForwarder>;
   rrCursor: number;
   hostMap: Map<string, number>;
+  tracks: GlbpTrackEntry[];
+}
+
+export function effectiveWeighting(g: GlbpGroupRuntime): number {
+  const lost = g.tracks.reduce((s, t) => s + (t.down ? t.decrement : 0), 0);
+  return Math.max(0, g.weighting - lost);
 }
 
 export interface GlbpConfig {
@@ -94,6 +106,7 @@ export function defaultGroupRuntime(iface: string, group: number): GlbpGroupRunt
     forwarders: new Map(),
     rrCursor: 0,
     hostMap: new Map(),
+    tracks: [],
   };
 }
 

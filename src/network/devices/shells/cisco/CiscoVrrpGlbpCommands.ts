@@ -95,6 +95,13 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
       return '';
     }
     case 'weighting':
+      if (rest[0] === 'track') {
+        const target = rest[1];
+        const decrement = rest.indexOf('decrement') >= 0
+          ? parseInt(rest[rest.indexOf('decrement') + 1], 10) || 10 : 10;
+        if (target) agent?.addTrack(iface, group, target, decrement);
+        return '';
+      }
       if (/^\d+$/.test(rest[0] || '')) {
         g.weighting = parseInt(rest[0], 10);
         agent?.setWeighting(iface, group, g.weighting);
