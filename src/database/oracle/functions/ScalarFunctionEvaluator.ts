@@ -23,6 +23,16 @@ export interface ScalarFunctionHost {
   getContext(): ExecutionContext;
   /** Optional SQL→PL/SQL bridge for stored functions (SELECT pkg.fn(…)). */
   callStoredFunction?(qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
+  /** Read a BFILE's host content (directory + filename); null when the file is absent. */
+  readBfile?(directory: string, filename: string): string | null;
+}
+
+function parseBfileLocator(v: CellValue): { dir: string; file: string } | null {
+  if (typeof v !== 'string' || !v.startsWith('BFILE:')) return null;
+  const rest = v.slice('BFILE:'.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return null;
+  return { dir: rest.slice(0, slash), file: rest.slice(slash + 1) };
 }
 
 /** Return a mutable Date copy of the value, or null if not a date. */
@@ -477,10 +487,29 @@ export class ScalarFunctionEvaluator {
         return this.resolveNonBuiltin(name, args);
       }
 
+      case 'BFILENAME': {
+        if (args[0] == null || args[1] == null) return null;
+        return `BFILE:${String(args[0]).toUpperCase()}/${String(args[1])}`;
+      }
+
       // DBMS_LOB functions
       case 'GETLENGTH': {
         if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
+          const loc = parseBfileLocator(args[0]);
+          if (loc) {
+            const content = this.host.readBfile?.(loc.dir, loc.file) ?? null;
+            return content === null ? null : content.length;
+          }
           return args[0] != null ? String(args[0]).length : null;
+        }
+        return null;
+      }
+
+      case 'FILEEXISTS': {
+        if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
+          const loc = parseBfileLocator(args[0]);
+          if (!loc) return 0;
+          return (this.host.readBfile?.(loc.dir, loc.file) ?? null) !== null ? 1 : 0;
         }
         return null;
       }

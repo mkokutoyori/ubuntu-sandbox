@@ -1994,6 +1994,28 @@ suites datapump existantes (`sys/oracle`) inchangées ; non-régression
 Ceci clôt l'application des privilèges DIRECTORY (UTL_FILE + tables externes +
 Data Pump).
 
+### 2026-06-14 — BFILE / BFILENAME : locators LOB vers fichiers hôtes via répertoires
+**Défaillance :** le type `BFILE` était reconnu (lexer, DataType, DBA_LOBS) mais
+`BFILENAME` et les fonctions DBMS_LOB sur BFILE n'existaient pas — une colonne
+BFILE ne pouvait pas réellement pointer un fichier hôte ni en lire la
+taille/présence. Brique manquante de la cohérence répertoire → fichier hôte.
+**Correction :** réutilise objets DIRECTORY + VFS hôte + privilège READ déjà en
+place :
+- `BFILENAME('DIR','file')` (fonction scalaire) → locator `BFILE:DIR/file`,
+  stockable dans une colonne BFILE et relisible.
+- `DBMS_LOB.FILEEXISTS` (1/0) et `DBMS_LOB.GETLENGTH` reconnaissent un locator
+  BFILE et résolvent le fichier via `host.readBfile` (DIRECTORY + readDeviceFile) ;
+  GETLENGTH garde le calcul de longueur CLOB pour les chaînes (rétro-compat).
+- `readBfileContent` (exécuteur) impose l'existence du répertoire et le privilège
+  READ (`hasObjectPrivilege`) → `ORA-22285` sinon ; fonctionne en SQL et en PL/SQL
+  (le bloc PL/SQL passe par le pont SQL).
+**Limite assumée :** `DBMS_LOB.FILEGETNAME` (OUT) et la lecture de contenu
+(`READ`/`LOADCLOBFROMFILE`) non implémentées — présence/taille seulement.
+**Validation :** nouvelle suite `oracle-bfile.test.ts` (9 tests : locator
+stocké/relu, FILEEXISTS 1/0, GETLENGTH fichier, GETLENGTH CLOB inchangé,
+ORA-22285 répertoire inconnu, pont PL/SQL, refus sans READ, succès après GRANT) ;
+non-régression `unit/database/` ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -99,6 +99,7 @@ export class OracleExecutor extends BaseExecutor {
     getContext: () => this.context,
     callStoredFunction: (n, a) =>
       this.commandHost ? this.commandHost.execScalarFunctionCall(this, n, a) : { handled: false, value: null },
+    readBfile: (dir, file) => this.readBfileContent(dir, file),
   });
   private _currentRowNum: number = 0;
   /** Implicit-transaction lifecycle (undo snapshots, savepoints, tx ids). */
@@ -174,6 +175,17 @@ export class OracleExecutor extends BaseExecutor {
   private requireCommandHost(): import('./SqlCommandHost').SqlCommandHost {
     if (!this.commandHost) throw new OracleError(900, 'command host not configured');
     return this.commandHost;
+  }
+
+  private readBfileContent(dir: string, file: string): string | null {
+    const d = this.catalog.getDirectory(dir);
+    const engine = this.catalog.getSecurityEngine();
+    const allowed = !!d && (!engine
+      || engine.privileges.hasObjectPrivilege(this.context.currentUser, 'READ', 'SYS', dir.toUpperCase()));
+    if (!d || !allowed) {
+      throw new OracleError(22285, 'non-existent directory or file for FILEOPEN operation');
+    }
+    return this.instance.readDeviceFile(`${d.path.replace(/\/+$/, '')}/${file}`);
   }
 
   private get bus() { return this.instance.getBus(); }
