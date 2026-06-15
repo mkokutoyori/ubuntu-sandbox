@@ -1079,8 +1079,14 @@ export class LinuxCommandExecutor {
     // The OS-managed PID differs from the caller-supplied one, so we
     // remember the mapping for unregisterProcess to clean up later.
     if (!this._externalToOsPid.has(pid)) {
-      const uid = user === 'root' ? 0 : 1;
-      const proc = this.processMgr.spawn({ command, user, uid, gid: uid });
+      // Resolve the real uid/gid from the account database so daemon
+      // processes (e.g. Oracle's, owned by `oracle`) carry their genuine
+      // credentials instead of a hardcoded daemon uid. Fall back to the
+      // old heuristic only for users with no /etc/passwd entry.
+      const account = this.userMgr.getUser(user);
+      const uid = account?.uid ?? (user === 'root' ? 0 : 1);
+      const gid = account?.gid ?? uid;
+      const proc = this.processMgr.spawn({ command, user, uid, gid });
       this._externalToOsPid.set(pid, proc.pid);
     }
   }

@@ -43,11 +43,37 @@ Roadmap d'implémentation (un push par item) :
 
 - [x] 1. Listener TNS : binding TCP réel (socket 1521) piloté par l'état du listener.
 - [x] 2. Provisioning utilisateur OS `oracle` + groupe `dba` sur l'hôte.
-- [ ] 3. Process d'arrière-plan Oracle sous l'UID oracle réel.
+- [x] 3. Process d'arrière-plan Oracle sous l'UID oracle réel.
 - [ ] 4. Variables d'environnement ORACLE_* exportées (`/etc/profile.d`).
 - [ ] 5. Stubs `dbstart`/`dbshut`/`lsnrctl` pour des unités systemd valides.
 - [ ] 6. Centralisation des codes d'erreur ORA- (DRY).
 - [ ] 7. Décomposition du god class `OracleExecutor` (strategy/handlers).
+
+---
+
+## Incrément 4 — Process Oracle sous les vraies credentials OS
+
+### Défaillance corrigée
+
+`LinuxCommandExecutor.registerProcess` stampait un UID codé en dur
+(`user === 'root' ? 0 : 1`). Les process d'arrière-plan Oracle, enregistrés
+en tant qu'`oracle`, héritaient donc de l'**UID 1 (compte `daemon`)** :
+`ps` affichait le propriétaire « oracle » mais avec un UID appartenant à un
+autre compte — incohérent avec `/etc/passwd`.
+
+### Correctif
+
+`registerProcess` résout désormais l'uid/gid réels depuis la base de
+comptes (`userMgr.getUser(user)`). Les process Oracle portent l'uid 54321
+(oracle) ; repli sur l'ancienne heuristique uniquement pour un utilisateur
+sans entrée `/etc/passwd`. Correctif générique (vaut pour tout démon
+enregistré).
+
+### Tests
+
+- Nouveau `oracle-process-ownership.test.ts` (`ora_pmon` possédé par
+  oracle/uid 54321 ; concordance avec `id -u oracle`).
+- Database (2642) + process/ps network (312) : **OK**, 0 régression.
 
 ---
 
