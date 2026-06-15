@@ -10,7 +10,7 @@
  */
 
 import type { Router } from '../../Router';
-import { inSameSubnet } from '../../../core/ip';
+import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -168,6 +168,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
 
   trie.registerGreedy('router-id', 'Set OSPF Router ID', (args) => {
     if (args.length < 1) return '% Incomplete command.';
+    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return '% OSPF is not enabled.';
     ospf.setRouterId(args[0]);
@@ -288,6 +289,8 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     if (args.length < 1) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
     const protocol = args[0].toLowerCase();
+    const knownProtocols = ['connected', 'static', 'rip', 'eigrp', 'bgp', 'isis', 'ospf'];
+    if (!knownProtocols.includes(protocol)) return "% Invalid input detected at '^' marker.";
     if (protocol === 'static') {
       const subnets = args.some(a => a.toLowerCase() === 'subnets');
       let metricType = 2; // default E2

@@ -2995,3 +2995,19 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   cisco-hostname-dry, cisco-enable-password). Non-régression : **network-v2
   complet — 7067 tests verts** à chaque incrément. `tsc` propre ; aucun
   commentaire ajouté.
+
+### Mode config-router (OSPF / EIGRP / BGP / RIP)
+
+- `router-id` acceptait une IP invalide (`router-id 999.1.1.1` → "")
+  pour OSPF, EIGRP et BGP. Désormais validé via `isValidIPv4` (helper
+  existant réutilisé) → `% Invalid input detected at '^' marker.` ; un
+  argument manquant → `% Incomplete command.` (EIGRP/BGP n'imposaient pas
+  l'argument).
+- `redistribute <proto-inconnu>` était accepté silencieusement
+  (`redistribute bogus` → "") pour OSPF, EIGRP et BGP, et le message RIP
+  était non-IOS (`% Invalid input detected.`). Validation unifiée contre
+  l'ensemble connu (connected/static/rip/ospf/eigrp/bgp/isis) → message
+  IOS standard ; argument manquant → `% Incomplete command.`
+- +1 fichier de tests (cisco-router-protocol-validation). Non-régression :
+  **network-v2 complet — 7080 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.

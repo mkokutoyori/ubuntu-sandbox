@@ -8,6 +8,7 @@
  * neighbours stay Idle and EIGRP shows 0 neighbours — the true state.
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
+import { isValidIPv4 } from '../../../core/ip';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
@@ -166,12 +167,15 @@ export function buildRoutingProtoConfig(
   const RIP_REDIST_SOURCES = ['static', 'connected', 'ospf', 'eigrp', 'bgp'] as const;
   const parseRipRedistSource = (token: string | undefined) =>
     RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
+  const REDIST_PROTOCOLS = ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {
+    if (!a[0]) return '% Incomplete command.';
+    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
     const line = raw ?? `redistribute ${a.join(' ')}`;
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
-      if (!source) return '% Invalid input detected.';
+      if (!source) return "% Invalid input detected at '^' marker.";
       let metric: number | undefined;
       const mIdx = a.findIndex((t) => t.toLowerCase() === 'metric');
       if (mIdx >= 0 && a[mIdx + 1] !== undefined) {
@@ -286,6 +290,8 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
+    if (!a[0]) return '% Incomplete command.';
+    if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
     const p = curProto(ctx).proto;
     if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
     else if (p === 'bgp') {
