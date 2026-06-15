@@ -149,6 +149,13 @@ describe('debug-dump: cisco-l2-08-mac-forwarding', () => {
     s.push({ on: 'core', cmd: 'show mac address-table' });
     s.push({ on: 'sw1', cmd: 'show running-config' });
 
+    s.push({ section: 'extended cross-switch interface inspection appendix' });
+    for (const on of ['sw1', 'sw2', 'core']) {
+      for (let i = 0; i <= 23; i++) {
+        s.push({ on, cmd: `show interfaces FastEthernet0/${i}` });
+      }
+    }
+
     await dumpL2('cisco-l2-08-mac-forwarding', topology, s,
       'focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix');
   }, 180000);

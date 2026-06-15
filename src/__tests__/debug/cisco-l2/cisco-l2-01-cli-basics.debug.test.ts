@@ -169,6 +169,13 @@ describe('debug-dump: cisco-l2-01-cli-basics', () => {
     s.push({ on: 'l1', cmd: 'arp -a' });
     s.push('show mac address-table');
 
+    s.push({ section: 'extended cross-switch interface inspection appendix' });
+    for (const on of ['sw1', 'sw2', 'core']) {
+      for (let i = 0; i <= 23; i++) {
+        s.push({ on, cmd: `show interfaces FastEthernet0/${i}` });
+      }
+    }
+
     await dumpL2('cisco-l2-01-cli-basics', topology, s,
       'focus=CLI parsing, help, prompts, mode navigation, show family, host inspection');
   });

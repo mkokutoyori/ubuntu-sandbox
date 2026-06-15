@@ -149,6 +149,13 @@ describe('debug-dump: cisco-l2-05-etherchannel', () => {
     s.push({ on: 'l1', cmd: 'ping -c 2 192.168.1.13' });
     s.push({ on: 'sw1', cmd: 'show running-config' });
 
+    s.push({ section: 'extended cross-switch interface inspection appendix' });
+    for (const on of ['sw1', 'sw2', 'core']) {
+      for (let i = 0; i <= 23; i++) {
+        s.push({ on, cmd: `show interfaces FastEthernet0/${i}` });
+      }
+    }
+
     await dumpL2('cisco-l2-05-etherchannel', topology, s,
       'focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown');
   }, 180000);

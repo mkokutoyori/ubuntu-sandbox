@@ -159,6 +159,13 @@ describe('debug-dump: cisco-l2-03-trunk-dtp-vtp', () => {
     s.push({ on: 'w2', cmd: 'arp -a' });
     s.push({ on: 'sw1', cmd: 'show running-config' });
 
+    s.push({ section: 'extended cross-switch interface inspection appendix' });
+    for (const on of ['sw1', 'sw2', 'core']) {
+      for (let i = 0; i <= 23; i++) {
+        s.push({ on, cmd: `show interfaces FastEthernet0/${i}` });
+      }
+    }
+
     await dumpL2('cisco-l2-03-trunk-dtp-vtp', topology, s,
       'focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation');
   }, 180000);
