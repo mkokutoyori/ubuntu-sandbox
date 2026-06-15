@@ -58,4 +58,30 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
     expect(await r.executeCommand('router-id 300.1.1.1')).toBe(INVALID);
     expect(await r.executeCommand('router-id 3.3.3.3')).toBe('');
   });
+
+  it('validates BGP neighbor arguments without crashing convergence', async () => {
+    const r = await router();
+    await r.executeCommand('router bgp 65000');
+    expect(await r.executeCommand('neighbor')).toBe(INCOMPLETE);
+    expect(await r.executeCommand('neighbor 1.1.1.1')).toBe(INCOMPLETE);
+    expect(await r.executeCommand('neighbor 999.1.1.1 remote-as 100')).toBe(INVALID);
+    expect(await r.executeCommand('neighbor 1.1.1.1 remote-as')).toBe(INCOMPLETE);
+    expect(await r.executeCommand('neighbor 1.1.1.1 remote-as abc')).toBe(INVALID);
+    expect(await r.executeCommand('neighbor 1.1.1.1 remote-as 100')).toBe('');
+  });
+
+  it('still supports BGP peer-group definitions by name', async () => {
+    const r = await router();
+    await r.executeCommand('router bgp 65000');
+    expect(await r.executeCommand('neighbor IBGP peer-group')).toBe('');
+    expect(await r.executeCommand('neighbor 10.0.0.10 peer-group IBGP')).toBe('');
+  });
+
+  it('rejects an invalid EIGRP/BGP network statement', async () => {
+    const r = await router();
+    await r.executeCommand('router eigrp 100');
+    expect(await r.executeCommand('network')).toBe(INCOMPLETE);
+    expect(await r.executeCommand('network 999.0.0.0')).toBe(INVALID);
+    expect(await r.executeCommand('network 10.0.0.0')).toBe('');
+  });
 });

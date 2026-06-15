@@ -85,6 +85,8 @@ export function buildRoutingProtoConfig(
         return `% Invalid input: ${e instanceof Error ? e.message : e}`;
       }
     }
+    if (args.length < 1) return '% Incomplete command.';
+    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     if (proto === 'eigrp') {
       eigrp().networks.push(args.join(' '));
       eigrpEng().getConfig().networks.push({
@@ -261,8 +263,20 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
     const { proto } = curProto(ctx);
-    if (proto === 'rip') { repo.rip.neighbors.push(a[0]); return ''; }
+    if (!a[0]) return '% Incomplete command.';
+    if (proto === 'rip') {
+      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      repo.rip.neighbors.push(a[0]); return '';
+    }
     if (proto === 'bgp') {
+      const isPeerGroupDef = a[1] === 'peer-group' && !a[2];
+      if (!isPeerGroupDef && !isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      if (!a[1]) return '% Incomplete command.';
+      if (a[1] === 'remote-as') {
+        if (!a[2]) return '% Incomplete command.';
+        const as = parseInt(a[2], 10);
+        if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
+      }
       const b = bgp();
       if (!b) return '';
       const n = repo.ensureBgpNeighbor(a[0]);

@@ -3008,6 +3008,16 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   était non-IOS (`% Invalid input detected.`). Validation unifiée contre
   l'ensemble connu (connected/static/rip/ospf/eigrp/bgp/isis) → message
   IOS standard ; argument manquant → `% Incomplete command.`
+- `neighbor` (BGP) sans argument, ou avec une IP invalide, **plantait la
+  convergence** (`tryIpToUint32(undefined).split` → crash) car un voisin
+  au pair indéfini était poussé dans le moteur BGP. Désormais : argument
+  manquant → `% Incomplete command.` ; `neighbor <ip>` sans sous-commande
+  → `% Incomplete command.` ; IP invalide → message IOS ; `remote-as` sans
+  AS → incomplet ; AS non numérique / hors plage (1-4294967295) → message
+  IOS. Les définitions de peer-group par nom (`neighbor IBGP peer-group`)
+  restent acceptées.
+- `network` (EIGRP/BGP) acceptait n'importe quoi en silence (y compris une
+  IP invalide ou aucun argument). Validé via `isValidIPv4` + incomplet.
 - +1 fichier de tests (cisco-router-protocol-validation). Non-régression :
-  **network-v2 complet — 7080 tests verts**. `tsc` propre ; aucun
+  **network-v2 complet — 7083 tests verts**. `tsc` propre ; aucun
   commentaire ajouté.
