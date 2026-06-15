@@ -1,0 +1,2096 @@
+============================================================
+Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
+Generated: 2026-06-15T18:31:54.666Z
+Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
+focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
+Total steps: 421
+============================================================
+
+
+--- [1] § baseline security state ---
+[1/421] sw1 SW1> enable
+<empty>
+
+[2/421] sw1 SW1# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+
+[3/421] sw1 SW1# show port-security address
+            Secure Mac Address Table
+  ------------------------------------------------------------------------
+  Vlan    Mac Address       Type                          Ports   Remaining Age
+  ----    -----------       ----                          -----   -------------
+  
+  Total Addresses: 0
+
+[4/421] sw1 SW1# show errdisable recovery
+  ErrDisable Reason            Timer Status
+  -----------------            --------------
+  arp-inspection               Disabled
+  psecure-violation            Disabled
+  bpduguard                    Disabled
+  loopback                     Disabled
+  link-flap                    Disabled
+  
+  Timer interval: 300 seconds
+
+[5/421] sw1 SW1# show ip dhcp snooping
+  Switch DHCP snooping is disabled
+
+[6/421] sw1 SW1# show ip dhcp snooping binding
+  MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
+  ------------------  ----------------  ----------  -------------  ----  --------------------
+  Total number of bindings: 0
+
+[7/421] sw1 SW1# show ip arp inspection
+  Source Mac Validation      : Disabled
+  Destination Mac Validation : Disabled
+  IP Address Validation      : Disabled
+  
+   Vlan     Configuration    Operation   ACL Match          Static ACL
+   ----     -------------    ---------   ---------          ----------
+   (no VLANs enabled for ARP inspection)
+
+[8/421] sw1 SW1# show dot1x
+  % Invalid input detected at '^' marker.
+  show dot1x
+       ^
+
+[9/421] sw1 SW1# show dot1x all
+  % Invalid input detected at '^' marker.
+  show dot1x all
+       ^
+
+[10/421] sw1 SW1# show storm-control
+  % Invalid input detected at '^' marker.
+  show storm-control
+       ^
+
+[11/421] sw1 SW1# show storm-control broadcast
+  % Invalid input detected at '^' marker.
+  show storm-control broadcast
+       ^
+
+
+--- [12] § port-security config loop (Fa0/1..0/20) ---
+[12/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[13/421] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[14/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[15/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[16/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[17/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[18/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[19/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[20/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[21/421] sw1 SW1(config-if)# exit
+<empty>
+
+[22/421] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[23/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[24/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[25/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[26/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[27/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[28/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[29/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[30/421] sw1 SW1(config-if)# exit
+<empty>
+
+[31/421] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[32/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[33/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[34/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[35/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[36/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[37/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[38/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[39/421] sw1 SW1(config-if)# exit
+<empty>
+
+[40/421] sw1 SW1(config)# interface FastEthernet0/4
+<empty>
+
+[41/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[42/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[43/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[44/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[45/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[46/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[47/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[48/421] sw1 SW1(config-if)# exit
+<empty>
+
+[49/421] sw1 SW1(config)# interface FastEthernet0/5
+<empty>
+
+[50/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[51/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[52/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[53/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[54/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[55/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[56/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[57/421] sw1 SW1(config-if)# exit
+<empty>
+
+[58/421] sw1 SW1(config)# interface FastEthernet0/6
+<empty>
+
+[59/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[60/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[61/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[62/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[63/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[64/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[65/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[66/421] sw1 SW1(config-if)# exit
+<empty>
+
+[67/421] sw1 SW1(config)# interface FastEthernet0/7
+<empty>
+
+[68/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[69/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[70/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[71/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[72/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[73/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[74/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[75/421] sw1 SW1(config-if)# exit
+<empty>
+
+[76/421] sw1 SW1(config)# interface FastEthernet0/8
+<empty>
+
+[77/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[78/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[79/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[80/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[81/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[82/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[83/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[84/421] sw1 SW1(config-if)# exit
+<empty>
+
+[85/421] sw1 SW1(config)# interface FastEthernet0/9
+<empty>
+
+[86/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[87/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[88/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[89/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[90/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[91/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[92/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[93/421] sw1 SW1(config-if)# exit
+<empty>
+
+[94/421] sw1 SW1(config)# interface FastEthernet0/10
+<empty>
+
+[95/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[96/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[97/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[98/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[99/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[100/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[101/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[102/421] sw1 SW1(config-if)# exit
+<empty>
+
+[103/421] sw1 SW1(config)# interface FastEthernet0/11
+<empty>
+
+[104/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[105/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[106/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[107/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[108/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[109/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[110/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[111/421] sw1 SW1(config-if)# exit
+<empty>
+
+[112/421] sw1 SW1(config)# interface FastEthernet0/12
+<empty>
+
+[113/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[114/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[115/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[116/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[117/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[118/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[119/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[120/421] sw1 SW1(config-if)# exit
+<empty>
+
+[121/421] sw1 SW1(config)# interface FastEthernet0/13
+<empty>
+
+[122/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[123/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[124/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[125/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[126/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[127/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[128/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[129/421] sw1 SW1(config-if)# exit
+<empty>
+
+[130/421] sw1 SW1(config)# interface FastEthernet0/14
+<empty>
+
+[131/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[132/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[133/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[134/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[135/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[136/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[137/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[138/421] sw1 SW1(config-if)# exit
+<empty>
+
+[139/421] sw1 SW1(config)# interface FastEthernet0/15
+<empty>
+
+[140/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[141/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[142/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[143/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[144/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[145/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[146/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[147/421] sw1 SW1(config-if)# exit
+<empty>
+
+[148/421] sw1 SW1(config)# interface FastEthernet0/16
+<empty>
+
+[149/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[150/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[151/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[152/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[153/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[154/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[155/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[156/421] sw1 SW1(config-if)# exit
+<empty>
+
+[157/421] sw1 SW1(config)# interface FastEthernet0/17
+<empty>
+
+[158/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[159/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[160/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[161/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[162/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[163/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[164/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[165/421] sw1 SW1(config-if)# exit
+<empty>
+
+[166/421] sw1 SW1(config)# interface FastEthernet0/18
+<empty>
+
+[167/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[168/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[169/421] sw1 SW1(config-if)# switchport port-security maximum 1
+<empty>
+
+[170/421] sw1 SW1(config-if)# switchport port-security violation shutdown
+<empty>
+
+[171/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[172/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[173/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[174/421] sw1 SW1(config-if)# exit
+<empty>
+
+[175/421] sw1 SW1(config)# interface FastEthernet0/19
+<empty>
+
+[176/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[177/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[178/421] sw1 SW1(config-if)# switchport port-security maximum 2
+<empty>
+
+[179/421] sw1 SW1(config-if)# switchport port-security violation restrict
+<empty>
+
+[180/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[181/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[182/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[183/421] sw1 SW1(config-if)# exit
+<empty>
+
+[184/421] sw1 SW1(config)# interface FastEthernet0/20
+<empty>
+
+[185/421] sw1 SW1(config-if)# switchport mode access
+<empty>
+
+[186/421] sw1 SW1(config-if)# switchport port-security
+<empty>
+
+[187/421] sw1 SW1(config-if)# switchport port-security maximum 3
+<empty>
+
+[188/421] sw1 SW1(config-if)# switchport port-security violation protect
+<empty>
+
+[189/421] sw1 SW1(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[190/421] sw1 SW1(config-if)# switchport port-security aging time 5
+<empty>
+
+[191/421] sw1 SW1(config-if)# switchport port-security aging type inactivity
+<empty>
+
+[192/421] sw1 SW1(config-if)# exit
+<empty>
+
+[193/421] sw1 SW1(config)# end
+<empty>
+
+[194/421] sw1 SW1# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+  Fa0/1        2              0            0                  restrict
+  Fa0/2        3              0            0                  protect
+  Fa0/3        1              0            0                  shutdown
+  Fa0/4        2              0            0                  restrict
+  Fa0/5        3              0            0                  protect
+  Fa0/6        1              0            0                  shutdown
+  Fa0/7        2              0            0                  restrict
+  Fa0/8        3              0            0                  protect
+  Fa0/9        1              0            0                  shutdown
+  Fa0/10       2              0            0                  restrict
+  Fa0/11       3              0            0                  protect
+  Fa0/12       1              0            0                  shutdown
+  Fa0/13       2              0            0                  restrict
+  Fa0/14       3              0            0                  protect
+  Fa0/15       1              0            0                  shutdown
+  Fa0/16       2              0            0                  restrict
+  Fa0/17       3              0            0                  protect
+  Fa0/18       1              0            0                  shutdown
+  Fa0/19       2              0            0                  restrict
+  Fa0/20       3              0            0                  protect
+
+
+--- [195] § static secure MAC entries ---
+[195/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[196/421] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[197/421] sw1 SW1(config-if)# switchport port-security mac-address 0000.1111.2222
+<empty>
+
+[198/421] sw1 SW1(config-if)# switchport port-security mac-address 0000.1111.3333
+<empty>
+
+[199/421] sw1 SW1(config-if)# exit
+<empty>
+
+[200/421] sw1 SW1(config)# end
+<empty>
+
+[201/421] sw1 SW1# show port-security address
+            Secure Mac Address Table
+  ------------------------------------------------------------------------
+  Vlan    Mac Address       Type                          Ports   Remaining Age
+  ----    -----------       ----                          -----   -------------
+  1       0000.1111.2222    SecureConfigured              Fa0/2   5m
+  1       0000.1111.3333    SecureConfigured              Fa0/2   5m
+  
+  Total Addresses: 2
+
+[202/421] sw1 SW1# show port-security interface FastEthernet0/2
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 2
+  Configured MAC Addresses   : 2
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.1111.3333:1
+  Security Violation Count   : 0
+
+
+--- [203] § errdisable recovery ---
+[203/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[204/421] sw1 SW1(config)# errdisable recovery cause psecure-violation
+<empty>
+
+[205/421] sw1 SW1(config)# errdisable recovery cause bpduguard
+  % Invalid input detected at '^' marker.
+  errdisable recovery cause bpduguard
+                            ^
+
+[206/421] sw1 SW1(config)# errdisable recovery cause arp-inspection
+<empty>
+
+[207/421] sw1 SW1(config)# errdisable recovery interval 60
+<empty>
+
+[208/421] sw1 SW1(config)# do show errdisable recovery
+  ErrDisable Reason            Timer Status
+  -----------------            --------------
+  arp-inspection               Enabled
+  psecure-violation            Enabled
+  bpduguard                    Disabled
+  loopback                     Disabled
+  link-flap                    Disabled
+  
+  Timer interval: 60 seconds
+
+[209/421] sw1 SW1(config)# end
+<empty>
+
+
+--- [210] § trigger port-security violation (L1 traffic on a max-1 sticky port) ---
+[210/421] sw1 SW1# show port-security interface FastEthernet0/1
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[211/421] l1 l1$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.874 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.384 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.384/1.129/1.874/0.745 ms
+
+[212/421] sw1 SW1# show port-security interface FastEthernet0/1
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 1
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 1
+  Last Source Address:Vlan   : 0200.0000.004f:1
+  Security Violation Count   : 0
+
+[213/421] sw1 SW1# show port-security address
+            Secure Mac Address Table
+  ------------------------------------------------------------------------
+  Vlan    Mac Address       Type                          Ports   Remaining Age
+  ----    -----------       ----                          -----   -------------
+  1       0200.0000.004f    SecureSticky                  Fa0/1   5m
+  1       0000.1111.2222    SecureConfigured              Fa0/2   5m
+  1       0000.1111.3333    SecureConfigured              Fa0/2   5m
+  1       0200.0000.0057    SecureSticky                  Fa0/3   5m
+  
+  Total Addresses: 4
+
+[214/421] sw1 SW1# show mac address-table secure
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[215/421] sw1 SW1# show interfaces status err-disabled
+  % Invalid input detected at '^' marker.
+  show interfaces status err-disabled
+                         ^
+
+
+--- [216] § 802.1X (dot1x) configuration ---
+[216/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[217/421] sw1 SW1(config)# aaa new-model
+<empty>
+
+[218/421] sw1 SW1(config)# aaa authentication dot1x default group radius
+<empty>
+
+[219/421] sw1 SW1(config)# dot1x system-auth-control
+  % Invalid input detected at '^' marker.
+  dot1x system-auth-control
+  ^
+
+[220/421] sw1 SW1(config)# do show dot1x
+  % Invalid input detected at '^' marker.
+  show dot1x
+       ^
+
+[221/421] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[222/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[223/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[224/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[225/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[226/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[227/421] sw1 SW1(config-if)# exit
+<empty>
+
+[228/421] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[229/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[230/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[231/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[232/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[233/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[234/421] sw1 SW1(config-if)# exit
+<empty>
+
+[235/421] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[236/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[237/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[238/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[239/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[240/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[241/421] sw1 SW1(config-if)# exit
+<empty>
+
+[242/421] sw1 SW1(config)# interface FastEthernet0/4
+<empty>
+
+[243/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[244/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[245/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[246/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[247/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[248/421] sw1 SW1(config-if)# exit
+<empty>
+
+[249/421] sw1 SW1(config)# interface FastEthernet0/5
+<empty>
+
+[250/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[251/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[252/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[253/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[254/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[255/421] sw1 SW1(config-if)# exit
+<empty>
+
+[256/421] sw1 SW1(config)# interface FastEthernet0/6
+<empty>
+
+[257/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[258/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[259/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[260/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[261/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[262/421] sw1 SW1(config-if)# exit
+<empty>
+
+[263/421] sw1 SW1(config)# interface FastEthernet0/7
+<empty>
+
+[264/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[265/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[266/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[267/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[268/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[269/421] sw1 SW1(config-if)# exit
+<empty>
+
+[270/421] sw1 SW1(config)# interface FastEthernet0/8
+<empty>
+
+[271/421] sw1 SW1(config-if)# dot1x pae authenticator
+  % Invalid input detected at '^' marker.
+  dot1x pae authenticator
+  ^
+
+[272/421] sw1 SW1(config-if)# dot1x port-control auto
+  % Invalid input detected at '^' marker.
+  dot1x port-control auto
+  ^
+
+[273/421] sw1 SW1(config-if)# dot1x host-mode single-host
+  % Invalid input detected at '^' marker.
+  dot1x host-mode single-host
+  ^
+
+[274/421] sw1 SW1(config-if)# dot1x reauthentication
+  % Invalid input detected at '^' marker.
+  dot1x reauthentication
+  ^
+
+[275/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
+  % Invalid input detected at '^' marker.
+  dot1x timeout quiet-period 60
+  ^
+
+[276/421] sw1 SW1(config-if)# exit
+<empty>
+
+[277/421] sw1 SW1(config)# end
+<empty>
+
+[278/421] sw1 SW1# show dot1x all
+  % Invalid input detected at '^' marker.
+  show dot1x all
+       ^
+
+[279/421] sw1 SW1# show dot1x interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  show dot1x interface FastEthernet0/1
+       ^
+
+
+--- [280] § DHCP snooping ---
+[280/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[281/421] sw1 SW1(config)# ip dhcp snooping
+<empty>
+
+[282/421] sw1 SW1(config)# ip dhcp snooping vlan 1,10,20
+<empty>
+
+[283/421] sw1 SW1(config)# ip dhcp snooping information option
+  % Invalid input detected at '^' marker.
+  ip dhcp snooping information option
+                   ^
+
+[284/421] sw1 SW1(config)# interface GigabitEthernet0/1
+<empty>
+
+[285/421] sw1 SW1(config-if)# ip dhcp snooping trust
+<empty>
+
+[286/421] sw1 SW1(config-if)# exit
+<empty>
+
+[287/421] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[288/421] sw1 SW1(config-if)# ip dhcp snooping limit rate 15
+<empty>
+
+[289/421] sw1 SW1(config-if)# exit
+<empty>
+
+[290/421] sw1 SW1(config)# do show ip dhcp snooping
+  Switch DHCP snooping is enabled
+  DHCP snooping is configured on following VLANs:
+  1,10,20
+  Trusted ports: Gi0/1
+    Fa0/1: rate limit 15 pps
+
+[291/421] sw1 SW1(config)# end
+<empty>
+
+[292/421] sw1 SW1# show ip dhcp snooping binding
+  MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
+  ------------------  ----------------  ----------  -------------  ----  --------------------
+  Total number of bindings: 0
+
+
+--- [293] § Dynamic ARP Inspection ---
+[293/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[294/421] sw1 SW1(config)# ip arp inspection vlan 1,10,20
+<empty>
+
+[295/421] sw1 SW1(config)# ip arp inspection validate src-mac dst-mac ip
+<empty>
+
+[296/421] sw1 SW1(config)# arp access-list TRUST-HOSTS
+<empty>
+
+[297/421] sw1 SW1(config-ext-nacl)# permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
+<empty>
+
+[298/421] sw1 SW1(config-ext-nacl)# exit
+<empty>
+
+[299/421] sw1 SW1(config)# ip arp inspection filter TRUST-HOSTS vlan 1
+<empty>
+
+[300/421] sw1 SW1(config)# interface GigabitEthernet0/1
+<empty>
+
+[301/421] sw1 SW1(config-if)# ip arp inspection trust
+<empty>
+
+[302/421] sw1 SW1(config-if)# exit
+<empty>
+
+[303/421] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[304/421] sw1 SW1(config-if)# ip arp inspection limit rate 15
+<empty>
+
+[305/421] sw1 SW1(config-if)# exit
+<empty>
+
+[306/421] sw1 SW1(config)# do show ip arp inspection
+  Source Mac Validation      : Enabled
+  Destination Mac Validation : Enabled
+  IP Address Validation      : Enabled
+  
+   Vlan     Configuration    Operation   ACL Match          Static ACL
+   ----     -------------    ---------   ---------          ----------
+   1        Enabled          Active      TRUST-HOSTS        No
+   10       Enabled          Active                         No
+   20       Enabled          Active                         No
+
+[307/421] sw1 SW1(config)# do show ip arp inspection vlan 1
+   Vlan     Configuration    Operation   ACL Match          Static ACL
+   ----     -------------    ---------   ---------          ----------
+   1        Enabled          Active      TRUST-HOSTS        No
+
+[308/421] sw1 SW1(config)# end
+<empty>
+
+
+--- [309] § storm-control loop (Fa0/1..0/12) ---
+[309/421] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[310/421] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[311/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[312/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[313/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[314/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[315/421] sw1 SW1(config-if)# exit
+<empty>
+
+[316/421] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[317/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[318/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[319/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[320/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[321/421] sw1 SW1(config-if)# exit
+<empty>
+
+[322/421] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[323/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[324/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[325/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[326/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[327/421] sw1 SW1(config-if)# exit
+<empty>
+
+[328/421] sw1 SW1(config)# interface FastEthernet0/4
+<empty>
+
+[329/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[330/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[331/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[332/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[333/421] sw1 SW1(config-if)# exit
+<empty>
+
+[334/421] sw1 SW1(config)# interface FastEthernet0/5
+<empty>
+
+[335/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[336/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[337/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[338/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[339/421] sw1 SW1(config-if)# exit
+<empty>
+
+[340/421] sw1 SW1(config)# interface FastEthernet0/6
+<empty>
+
+[341/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[342/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[343/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[344/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[345/421] sw1 SW1(config-if)# exit
+<empty>
+
+[346/421] sw1 SW1(config)# interface FastEthernet0/7
+<empty>
+
+[347/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[348/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[349/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[350/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[351/421] sw1 SW1(config-if)# exit
+<empty>
+
+[352/421] sw1 SW1(config)# interface FastEthernet0/8
+<empty>
+
+[353/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[354/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[355/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[356/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[357/421] sw1 SW1(config-if)# exit
+<empty>
+
+[358/421] sw1 SW1(config)# interface FastEthernet0/9
+<empty>
+
+[359/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[360/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[361/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[362/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[363/421] sw1 SW1(config-if)# exit
+<empty>
+
+[364/421] sw1 SW1(config)# interface FastEthernet0/10
+<empty>
+
+[365/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[366/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[367/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[368/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[369/421] sw1 SW1(config-if)# exit
+<empty>
+
+[370/421] sw1 SW1(config)# interface FastEthernet0/11
+<empty>
+
+[371/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[372/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[373/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[374/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[375/421] sw1 SW1(config-if)# exit
+<empty>
+
+[376/421] sw1 SW1(config)# interface FastEthernet0/12
+<empty>
+
+[377/421] sw1 SW1(config-if)# storm-control broadcast level 20.00
+<empty>
+
+[378/421] sw1 SW1(config-if)# storm-control multicast level 30.00
+<empty>
+
+[379/421] sw1 SW1(config-if)# storm-control unicast level pps 1000
+<empty>
+
+[380/421] sw1 SW1(config-if)# storm-control action shutdown
+<empty>
+
+[381/421] sw1 SW1(config-if)# exit
+<empty>
+
+[382/421] sw1 SW1(config)# end
+<empty>
+
+[383/421] sw1 SW1# show storm-control
+  % Invalid input detected at '^' marker.
+  show storm-control
+       ^
+
+[384/421] sw1 SW1# show storm-control broadcast
+  % Invalid input detected at '^' marker.
+  show storm-control broadcast
+       ^
+
+
+--- [385] § per-interface port-security inspection loop ---
+[385/421] sw1 SW1# undefined
+<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
+
+[386/421] sw1 SW1# show port-security interface FastEthernet0/1
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 1
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 1
+  Last Source Address:Vlan   : 0200.0000.004f:1
+  Security Violation Count   : 0
+
+[387/421] sw1 SW1# show port-security interface FastEthernet0/2
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 2
+  Configured MAC Addresses   : 2
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.1111.3333:1
+  Security Violation Count   : 0
+
+[388/421] sw1 SW1# show port-security interface FastEthernet0/3
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 1
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 1
+  Last Source Address:Vlan   : 0200.0000.0057:1
+  Security Violation Count   : 0
+
+[389/421] sw1 SW1# show port-security interface FastEthernet0/4
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[390/421] sw1 SW1# show port-security interface FastEthernet0/5
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[391/421] sw1 SW1# show port-security interface FastEthernet0/6
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[392/421] sw1 SW1# show port-security interface FastEthernet0/7
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[393/421] sw1 SW1# show port-security interface FastEthernet0/8
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[394/421] sw1 SW1# show port-security interface FastEthernet0/9
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[395/421] sw1 SW1# show port-security interface FastEthernet0/10
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[396/421] sw1 SW1# show port-security interface FastEthernet0/11
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[397/421] sw1 SW1# show port-security interface FastEthernet0/12
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[398/421] sw1 SW1# show port-security interface FastEthernet0/13
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[399/421] sw1 SW1# show port-security interface FastEthernet0/14
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[400/421] sw1 SW1# show port-security interface FastEthernet0/15
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[401/421] sw1 SW1# show port-security interface FastEthernet0/16
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[402/421] sw1 SW1# show port-security interface FastEthernet0/17
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[403/421] sw1 SW1# show port-security interface FastEthernet0/18
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[404/421] sw1 SW1# show port-security interface FastEthernet0/19
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[405/421] sw1 SW1# show port-security interface FastEthernet0/20
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Protect
+  Aging Time                 : 5 mins
+  Aging Type                 : Inactivity
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 3
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+
+--- [406] § DAI generates traffic (host ARP) ---
+[406/421] l1 l1$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.516 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.307 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.307/0.412/0.516/0.105 ms
+
+[407/421] srv1 srv1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[408/421] sw1 SW1# show ip arp inspection statistics
+   Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops
+   ----  ---------     -------       ----------    ---------
+   (all) 6             0             0             0
+  
+   Interface          Packets Received  Permitted  Dropped
+   ----------------   ----------------  ---------  -------
+   Fa0/1              1                 1          0
+   Fa0/2              1                 1          0
+   Fa0/3              1                 1          0
+   Gi0/1              3                 3          0
+
+[409/421] sw1 SW1# show ip dhcp snooping binding
+  MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
+  ------------------  ----------------  ----------  -------------  ----  --------------------
+  Total number of bindings: 0
+
+
+--- [410] § host verification ---
+[410/421] sw1 SW1# undefined
+<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
+
+[411/421] l1 l1$ ip -br addr
+  eth0            UP            192.168.1.11/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[412/421] l1 l1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[413/421] srv1 srv1$ ip -br addr
+  eth0            UP            192.168.1.13/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[414/421] srv1 srv1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[415/421] l2 l2$ ip -br addr
+  eth0            UP            192.168.1.21/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[416/421] l2 l2$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[417/421] srv2 srv2$ ip -br addr
+  eth0            UP            192.168.1.23/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[418/421] srv2 srv2$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[419/421] w1 w1$ arp -a
+  
+  Interface: 192.168.1.12 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.1.11          02-00-00-00-00-4f     dynamic
+    192.168.1.13          02-00-00-00-00-57     dynamic
+    192.168.1.21          02-00-00-00-00-5b     dynamic
+    192.168.1.23          02-00-00-00-00-63     dynamic
+    192.168.1.22          02-00-00-00-00-5f     dynamic
+
+[420/421] w2 w2$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 192.168.1.22
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[421/421] sw1 SW1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW1
+  !
+  arp access-list TRUST-HOSTS
+   permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
+  !
+  ip arp inspection vlan 1,10,20
+  ip arp inspection validate src-mac dst-mac ip
+  ip arp inspection filter TRUST-HOSTS vlan 1
+  errdisable recovery cause arp-inspection
+  errdisable recovery interval 60
+  errdisable recovery cause psecure-violation
+  !
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   ip arp inspection limit rate 15
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security mac-address sticky 0200.0000.004f
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/2
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security mac-address 0000.1111.2222
+   switchport port-security mac-address 0000.1111.3333
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/3
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security mac-address sticky 0200.0000.0057
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/4
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/5
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/6
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/7
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/8
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/9
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/10
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/11
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/12
+   switchport mode access
+   storm-control broadcast level 20.00
+   storm-control multicast level 30.00
+   storm-control unicast level pps 1000
+   storm-control action shutdown
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/13
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/14
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/15
+   switchport mode access
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/16
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/17
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/18
+   switchport mode access
+   switchport port-security
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/19
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 2
+   switchport port-security violation restrict
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/20
+   switchport mode access
+   switchport port-security
+   switchport port-security maximum 3
+   switchport port-security violation protect
+   switchport port-security mac-address sticky
+   switchport port-security aging time 5
+   switchport port-security aging type inactivity
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode access
+   ip arp inspection trust
+  !
+  end
