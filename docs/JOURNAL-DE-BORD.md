@@ -3126,3 +3126,30 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   et configure/no/show/sntp/cdp/lldp/ip/ipv6/mac/errdisable/vtp/enable/
   router/key/security/event/flow/parameter-map/zone/zone-pair en config.
 - Non-régression : **network-v2 complet — 7099 tests verts**. `tsc` propre.
+
+### Commandes manquantes au `?` + EXEC privilégié = sur-ensemble de l'EXEC utilisateur (DRY)
+
+- Constat : sur le switch, `ping` n'était dispo qu'en mode utilisateur, pas
+  en mode privilégié (en IOS réel, le privilégié inclut tout l'EXEC
+  utilisateur). Le routeur, lui, **dupliquait** l'enregistrement de
+  `ping`/`traceroute` dans les deux tries — exactement le « deux fois » à
+  éviter.
+- Correctif DRY structurel : `CommandTrie.importMissingFrom` ; le shell de
+  base importe les commandes de l'EXEC utilisateur absentes de l'EXEC
+  privilégié (sans réenregistrer, les surcharges privilégiées priment). Le
+  routeur n'enregistre plus `ping`/`traceroute` qu'une seule fois (mode
+  utilisateur) ; ils restent disponibles et fonctionnels en privilégié
+  (vérifié : ping 100% en mode privilégié). S'applique à tous les
+  équipements Cisco.
+- `clear mac address-table [dynamic] [vlan N | interface IF]` : commande L2
+  **propre au switch** (le routeur n'a pas de table MAC) — implémentée une
+  seule fois sur le switch via `clearDynamicMACEntries` (n'efface que les
+  entrées dynamiques, garde les statiques ; filtre vlan/interface ; rejette
+  une interface inconnue).
+- Limite connue (non corrigée — vrai L2) : le `ping` du switch reste
+  « % Ping not yet implemented on switch. » (un switch L2 pingue depuis une
+  SVI de management, non modélisée ici) ; message honnête, pas un faux
+  succès.
+- +1 fichier de tests (cisco-switch-exec-commands). Non-régression :
+  **network-v2 complet — 7103 tests verts** + suites shell/terminal (967)
+  vertes. `tsc` propre ; aucun commentaire ajouté.

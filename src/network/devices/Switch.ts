@@ -845,6 +845,19 @@ export abstract class Switch extends Equipment {
     });
   }
 
+  clearDynamicMACEntries(filter?: { vlan?: number; port?: string }): void {
+    for (const [key, entry] of this.macTable) {
+      if (entry.type !== 'dynamic') continue;
+      if (filter?.vlan !== undefined && entry.vlan !== filter.vlan) continue;
+      if (filter?.port !== undefined && entry.port !== filter.port) continue;
+      this.macTable.delete(key);
+    }
+    this.getBus().publish({
+      topic: 'switch.mac.cleared',
+      payload: { deviceId: this.id, hostname: this.getHostname() },
+    });
+  }
+
   /** Purge dynamic entries learned on a port (link-down, err-disable,
    *  802.1X de-authorization). */
   protected flushDynamicMacsOnPort(portName: string, reason: string): void {

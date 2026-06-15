@@ -87,6 +87,19 @@ export class CommandTrie {
     this.canonicalDescriptions.set(keyword.toLowerCase(), description);
   }
 
+  /**
+   * Import top-level commands from another trie that this trie does not
+   * already define. Models Cisco's "privileged EXEC is a superset of user
+   * EXEC": user commands become available in privileged mode without
+   * duplicating their registration, while privileged-specific overrides
+   * (same keyword) are preserved.
+   */
+  importMissingFrom(other: CommandTrie): void {
+    for (const [kw, node] of other.root.children) {
+      if (!this.root.children.has(kw)) this.root.children.set(kw, node);
+    }
+  }
+
   private resolveDescription(node: CommandNode): string {
     if (node.description === node.keyword) {
       return this.canonicalDescriptions.get(node.keyword) ?? node.description;

@@ -253,6 +253,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonPrivilegedCommands();
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
+    this.privilegedTrie.importMissingFrom(this.userTrie);
     this.applyCanonicalDescriptions();
   }
 

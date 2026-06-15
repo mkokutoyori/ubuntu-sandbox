@@ -1122,6 +1122,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return full;
     });
 
+    this.privilegedTrie.registerGreedy('clear mac address-table', 'Clear MAC address table entries', (args) => {
+      const a = args.map(x => x.toLowerCase());
+      let i = 0;
+      if (a[i] === 'dynamic') i++;
+      const filter: { vlan?: number; port?: string } = {};
+      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) {
+        filter.vlan = parseInt(a[i + 1], 10);
+      } else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args[i + 1]);
+        if (!pn) return `% Invalid interface name "${args[i + 1]}"`;
+        filter.port = pn;
+      }
+      this.d().clearDynamicMACEntries(Object.keys(filter).length ? filter : undefined);
+      return '';
+    });
+
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
       const rows = ['Port      Mode  Encapsulation  Status   Native vlan'];
       for (const p of this.d().getPortNames()) {

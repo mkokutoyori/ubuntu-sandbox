@@ -539,12 +539,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
-    this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => {
-      return this._handlePing(args);
-    });
-    this.privilegedTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
-      return this._handleTraceroute(args);
-    });
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
