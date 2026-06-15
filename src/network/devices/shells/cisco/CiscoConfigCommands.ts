@@ -794,42 +794,60 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     cursor += 2;
   }
   if (args.length - cursor < 3) return '% Incomplete command.';
-  try {
-    const network = new IPAddress(args[cursor]);
-    const mask = new SubnetMask(args[cursor + 1]);
-    const remaining = args.slice(cursor + 2);
-    let outIface: string | null = null;
-    let nextHopStr: string | null = null;
-    if (looksLikeInterfaceName(remaining[0])) {
-      outIface = remaining[0];
-      if (remaining[1] && isDottedIp(remaining[1])) nextHopStr = remaining[1];
-    } else {
-      nextHopStr = remaining[0];
-    }
-    if (vrfName) {
-      const r = router as any;
-      const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
-      const list = vrfs.get(vrfName) ?? [];
-      list.push({ network: args[cursor], mask: args[cursor + 1], nextHop: nextHopStr, iface: outIface });
-      vrfs.set(vrfName, list);
-      return '';
-    }
-    if (outIface) {
-      // Interface (and optional next-hop) form — install a real RIB entry.
-      const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
-      return router.addStaticRoute(network, mask, nextHop, 0, { iface: outIface }) ? '' : '% Invalid route';
-    }
-    if (nextHopStr) {
-      const nextHop = new IPAddress(nextHopStr);
-      if (args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0') {
-        return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
-      }
-      return router.addStaticRoute(network, mask, nextHop) ? '' : '% Next-hop is not reachable';
-    }
-    return '% Incomplete command.';
-  } catch (e: any) {
-    return `% Invalid input: ${e.message}`;
+  const netStr = args[cursor];
+  const maskStr = args[cursor + 1];
+  if (!isValidIPv4(netStr) || !isValidSubnetMask(maskStr)) {
+    return "% Invalid input detected at '^' marker.";
   }
+  const network = new IPAddress(netStr);
+  const mask = new SubnetMask(maskStr);
+  const remaining = args.slice(cursor + 2);
+  let outIface: string | null = null;
+  let nextHopStr: string | null = null;
+  let rest: string[];
+  if (looksLikeInterfaceName(remaining[0])) {
+    outIface = remaining[0];
+    if (remaining[1] && isDottedIp(remaining[1])) { nextHopStr = remaining[1]; rest = remaining.slice(2); }
+    else rest = remaining.slice(1);
+  } else {
+    nextHopStr = remaining[0];
+    rest = remaining.slice(1);
+  }
+  if (nextHopStr && !isValidIPv4(nextHopStr)) {
+    return "% Invalid input detected at '^' marker.";
+  }
+  // Optional administrative distance (RFC: 1-255).
+  let ad: number | undefined;
+  const adTok = rest.find((t) => /^\d+$/.test(t));
+  if (adTok !== undefined) {
+    const n = parseInt(adTok, 10);
+    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
+    ad = n;
+  }
+  if (vrfName) {
+    const r = router as any;
+    const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
+    const list = vrfs.get(vrfName) ?? [];
+    list.push({ network: netStr, mask: maskStr, nextHop: nextHopStr, iface: outIface });
+    vrfs.set(vrfName, list);
+    return '';
+  }
+  const opts: { preference?: number; iface?: string } = {};
+  if (ad !== undefined) opts.preference = ad;
+  if (outIface) {
+    opts.iface = outIface;
+    const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
+    return router.addStaticRoute(network, mask, nextHop, 0, opts) ? '' : '% Invalid route';
+  }
+  if (nextHopStr) {
+    const nextHop = new IPAddress(nextHopStr);
+    if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
+      return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
+    }
+    return router.addStaticRoute(network, mask, nextHop, 0, ad !== undefined ? opts : undefined)
+      ? '' : '% Next-hop is not reachable';
+  }
+  return '% Incomplete command.';
 }
 
 function looksLikeInterfaceName(token: string | undefined): boolean {
