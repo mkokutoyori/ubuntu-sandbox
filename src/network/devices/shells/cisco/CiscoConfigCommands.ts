@@ -332,17 +332,25 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
       return "% Invalid input detected at '^' marker.";
     }
+    const secondary = args[2]?.toLowerCase() === 'secondary';
+    if (args[2] !== undefined && !secondary) {
+      return "% Invalid input detected at '^' marker.";
+    }
     try {
-      ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]));
+      ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]), secondary);
       return '';
     } catch (e: any) {
       return `% Invalid input: ${e.message}`;
     }
   });
 
-  trie.register('no ip address', 'Remove interface IP address', () => {
+  trie.registerGreedy('no ip address', 'Remove interface IP address', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
+    if (args[2]?.toLowerCase() === 'secondary' && isValidIPv4(args[0]) && isValidSubnetMask(args[1])) {
+      ctx.r().removeSecondaryAddress(ifName, new IPAddress(args[0]), new SubnetMask(args[1]));
+      return '';
+    }
     ctx.r().unconfigureInterface(ifName);
     return '';
   });

@@ -3048,3 +3048,29 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   câblés, vérifie l'effet réel via show logging / running-config / show
   hosts). Non-régression : **network-v2 complet — 7088 tests verts**.
   `tsc` propre ; aucun commentaire ajouté.
+
+### Mode config-if — adresses IPv4 secondaires (fonctionnalité réelle)
+
+- Détecté en **contexte LAN** (deux routeurs câblés) : `ip address X Y
+  secondary` **écrasait l'adresse primaire** au lieu d'ajouter une
+  secondaire — la connectivité tombait silencieusement (ping 0%). Le
+  mot-clé `secondary` était purement ignoré.
+- Implémentation complète (pas un stub), vérifiée par ping bout-en-bout
+  sur les deux sous-réseaux :
+  - `Port` : stockage `secondaryIPs[]` + `addSecondaryIP`/`removeSecondaryIP`/
+    `getSecondaryIPs`/`ownsIPv4` ; `clearIP` purge aussi les secondaires.
+  - `Router.configureInterface(..., secondary)` : ajoute l'adresse + une
+    route connectée sans toucher la primaire ; `removeSecondaryAddress`
+    pour le retrait ciblé.
+  - Plan de données : réponse ARP sur primaire **et** secondaires
+    (`ownsIPv4`, senderIP = IP demandée), livraison locale ICMP, sélection
+    d'interface (`findInterfaceForIP`/`peerOnSameSubnet`) sur les
+    sous-réseaux secondaires.
+  - running-config (global et par interface) émet `ip address X Y secondary`.
+  - CLI : mot-clé `secondary` câblé ; un mot-clé invalide en 3e position →
+    message IOS ; `no ip address X Y secondary` retire une secondaire en
+    gardant la primaire.
+- +1 fichier de tests (cisco-secondary-address, contexte LAN : running-config,
+  table de routage, ping primaire+secondaire, retrait). Non-régression :
+  **network-v2 complet — 7093 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.

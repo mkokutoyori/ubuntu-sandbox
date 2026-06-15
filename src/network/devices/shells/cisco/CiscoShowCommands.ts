@@ -237,6 +237,7 @@ export function showRunningConfig(router: Router): string {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+    for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     lines.push(port.getIsUp() ? ` no shutdown` : ` shutdown`);
     const helpers = dhcp.getHelperAddresses(name);
     for (const h of helpers) {
@@ -486,6 +487,7 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
   ];
   if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
+    for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     lines.push(` no shutdown`);
   } else {
     lines.push(` shutdown`);
