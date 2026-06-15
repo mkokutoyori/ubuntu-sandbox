@@ -161,34 +161,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-    let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
-    let secret: string;
-    if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
-    else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
-    else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
-    else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
-    else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
-    else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) { secret = args.slice(2).join(' '); }
-    else { secret = args.join(' '); }
-    sec().enableSecret = secret;
-    const r = ctx.r() as unknown as { _setEnableSecret?: (s: string, a: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
-    r._setEnableSecret?.(secret, algo);
-    return '';
-  });
-
-  trie.registerGreedy('enable password', 'Set enable password', (args) => {
-    let algo: 'plain' | 'type-7' = 'plain';
-    let password: string;
-    if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
-    else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-    else { password = args.join(' '); }
-    sec().enableSecret = password;
-    const r = ctx.r() as unknown as { _setEnablePassword?: (p: string, a: 'plain' | 'type-7') => void };
-    r._setEnablePassword?.(password, algo);
-    return '';
-  });
-
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
     const r = ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
@@ -228,24 +200,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
   trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
-
-  trie.registerGreedy('hostname', 'Set hostname', (args) => {
-    if (args[0]) {
-      sec().hostname = args[0];
-      try { (ctx.r() as any).setHostname?.(args[0]); } catch { /* ignore */ }
-    }
-    return '';
-  });
-
-  trie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
-    if (args[0]) sec().domainName = args[0];
-    return '';
-  });
-
-  trie.registerGreedy('ip domain name', 'Set domain name', (args) => {
-    if (args[0]) sec().domainName = args[0];
-    return '';
-  });
 
   trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
     let modulus = 1024;

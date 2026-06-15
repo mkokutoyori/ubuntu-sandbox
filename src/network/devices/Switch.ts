@@ -159,7 +159,6 @@ export abstract class Switch extends Equipment {
   private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
   private snoopingBindings: DHCPSnoopingBinding[] = [];
   private snoopingLog: string[] = [];
-  private syslogServer: string | null = null;
 
   // ─── Interface Descriptions ──────────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
@@ -1297,8 +1296,6 @@ export abstract class Switch extends Equipment {
   _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
   _getSnoopingBindings(): DHCPSnoopingBinding[] { return this.snoopingBindings; }
   _getSnoopingLog(): string[] { return this.snoopingLog; }
-  _getSyslogServer(): string | null { return this.syslogServer; }
-  _setSyslogServer(ip: string): void { this.syslogServer = ip; }
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
 

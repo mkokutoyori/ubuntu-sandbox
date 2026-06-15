@@ -22,6 +22,7 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter } from './cli-utils';
+import { isValidIPv4 } from '../../core/ip';
 import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
@@ -690,14 +691,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         dev._scheduleReload?.('cancel');
         return 'Reload cancelled.';
       }
-      if (args[0]?.toLowerCase() === 'in' && args[1]) {
+      if (args[0]?.toLowerCase() === 'in') {
+        if (!args[1]) return '% Incomplete command.';
+        if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
-        if (!isNaN(min)) {
-          dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
-          return `Reload scheduled in ${min} minutes`;
-        }
+        dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
+        return `Reload scheduled in ${min} minutes`;
       }
-      if (args[0]?.toLowerCase() === 'at' && args[1]) {
+      if (args[0]?.toLowerCase() === 'at') {
+        if (!args[1]) return '% Incomplete command.';
         return `Reload scheduled for ${args[1]}`;
       }
       dev._scheduleReload?.('immediate');
@@ -1078,6 +1080,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
+      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
       const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
@@ -1179,9 +1183,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
-      if (mgmt && args[0]) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
       return '';
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
@@ -1231,6 +1236,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
+      const head = (args[0] ?? '').toLowerCase();
+      if (head === 'host') {
+        if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+        if (!isValidIPv4(args[1])) return CISCO_ERRORS.INVALID_INPUT;
+      } else if (/^\d+\.\d+\.\d+\.\d+$/.test(head) && !isValidIPv4(head)) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
       this.attachLoggingToDevice(this.d());
       this.logging.apply(args, false);
       this.syncSyslogAgent();
@@ -1243,6 +1255,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
       const a = args.map(s => s.toLowerCase());
+      if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+      if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
       const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
       if (!agent) return '';
       if (a[0] === 'server' && a[1]) {
@@ -1348,6 +1362,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
         secret = args.slice(2).join(' ');
       } else { secret = args.join(' '); }
+      if (secret === '') return '% Incomplete command.';
       dev._setEnableSecret?.(secret, algo);
       return '';
     });
@@ -1358,6 +1373,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
       else { password = args.join(' '); }
+      if (password === '') return '% Incomplete command.';
       dev._setEnablePassword?.(password, algo);
       return '';
     });
@@ -1488,6 +1504,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
         if (!range) return '';
+        if (kw === 'password' && !args[0]) return '% Incomplete command.';
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
@@ -1534,11 +1551,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
       const range = this.selectedVtyRange;
       if (!range) return '';
+      if (args.length === 0) return '% Incomplete command.';
+      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
+        return "% Invalid input detected at '^' marker.";
+      }
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       dev._getVtyLineConfig?.().upsert({
         first: range.first, last: range.last,
-        execTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
-        execTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+        execTimeoutMinutes: parseInt(args[0], 10),
+        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
       });
       return '';
     });
@@ -1546,8 +1567,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
       const range = this.selectedVtyRange;
       if (!range) return '';
+      if (!args[0] || !args[1]) return '% Incomplete command.';
+      const dir = args[1].toLowerCase();
+      if (dir !== 'in' && dir !== 'out') return "% Invalid input detected at '^' marker.";
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      const dir = (args[1] ?? 'in').toLowerCase();
       const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
       dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
       return '';
@@ -1561,13 +1584,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void;
         _getVtyLineConfig?: () => { upsert: (p: object) => void };
       };
-      if (args[0]?.toLowerCase() === 'input' && typeof dev._setVtyTransportInput === 'function') {
-        const proto = (args[1] ?? '').toLowerCase();
-        if (proto === 'all' || proto === 'ssh' || proto === 'telnet' || proto === 'none') {
-          dev._setVtyTransportInput(proto);
-          const range = this.selectedVtyRange;
-          if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
-        }
+      const dir = args[0]?.toLowerCase();
+      if (dir !== 'input' && dir !== 'output') return "% Invalid input detected at '^' marker.";
+      const proto = (args[1] ?? '').toLowerCase();
+      if (!proto) return '% Incomplete command.';
+      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (dir === 'input' && typeof dev._setVtyTransportInput === 'function') {
+        dev._setVtyTransportInput(proto);
+        const range = this.selectedVtyRange;
+        if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
       }
       return '';
     });

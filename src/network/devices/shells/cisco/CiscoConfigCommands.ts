@@ -9,6 +9,7 @@
  */
 
 import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
+import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
@@ -82,12 +83,6 @@ export interface CiscoShellContext {
 // ─── Global Config Mode Commands ─────────────────────────────────────
 
 export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('hostname', 'Set system hostname', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._setHostnameInternal(args[0]);
-    return '';
-  });
-
   trie.register('service dhcp', 'Enable DHCP service', () => {
     ctx.r()._getDHCPServerInternal().enable();
     return '';
@@ -334,6 +329,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';
+    if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
+      return "% Invalid input detected at '^' marker.";
+    }
     try {
       ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]));
       return '';
@@ -352,15 +350,20 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('mtu', 'Set MTU', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; } }
+    if (!port) return '';
+    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
+    try { port.setMTU(parseInt(args[0], 10)); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; }
     return '';
   });
   trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setBandwidthKbps(n);
+    if (!/^\d+$/.test(args[0] ?? '') || n < 1 || n > 10000000) {
+      return "% Invalid input detected at '^' marker.";
+    }
+    port.setBandwidthKbps(n);
     return '';
   });
   trie.registerGreedy('delay', 'Set interface delay (10us)', (args) => {
@@ -380,8 +383,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
     const a = (args[0] ?? '').toLowerCase();
-    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as 'full' | 'half' | 'auto');
+    if (a !== 'full' && a !== 'half' && a !== 'auto') return "% Invalid input detected at '^' marker.";
+    port.setDuplex(a as 'full' | 'half' | 'auto');
     return '';
   });
   trie.registerGreedy('speed', 'Set interface speed', (args) => {
@@ -389,8 +394,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (!port) return '';
     if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
+    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
+    try { port.setSpeed(parseInt(args[0], 10)); } catch { return "% Invalid input detected at '^' marker."; }
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
@@ -783,42 +788,60 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     cursor += 2;
   }
   if (args.length - cursor < 3) return '% Incomplete command.';
-  try {
-    const network = new IPAddress(args[cursor]);
-    const mask = new SubnetMask(args[cursor + 1]);
-    const remaining = args.slice(cursor + 2);
-    let outIface: string | null = null;
-    let nextHopStr: string | null = null;
-    if (looksLikeInterfaceName(remaining[0])) {
-      outIface = remaining[0];
-      if (remaining[1] && isDottedIp(remaining[1])) nextHopStr = remaining[1];
-    } else {
-      nextHopStr = remaining[0];
-    }
-    if (vrfName) {
-      const r = router as any;
-      const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
-      const list = vrfs.get(vrfName) ?? [];
-      list.push({ network: args[cursor], mask: args[cursor + 1], nextHop: nextHopStr, iface: outIface });
-      vrfs.set(vrfName, list);
-      return '';
-    }
-    if (outIface) {
-      // Interface (and optional next-hop) form — install a real RIB entry.
-      const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
-      return router.addStaticRoute(network, mask, nextHop, 0, { iface: outIface }) ? '' : '% Invalid route';
-    }
-    if (nextHopStr) {
-      const nextHop = new IPAddress(nextHopStr);
-      if (args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0') {
-        return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
-      }
-      return router.addStaticRoute(network, mask, nextHop) ? '' : '% Next-hop is not reachable';
-    }
-    return '% Incomplete command.';
-  } catch (e: any) {
-    return `% Invalid input: ${e.message}`;
+  const netStr = args[cursor];
+  const maskStr = args[cursor + 1];
+  if (!isValidIPv4(netStr) || !isValidSubnetMask(maskStr)) {
+    return "% Invalid input detected at '^' marker.";
   }
+  const network = new IPAddress(netStr);
+  const mask = new SubnetMask(maskStr);
+  const remaining = args.slice(cursor + 2);
+  let outIface: string | null = null;
+  let nextHopStr: string | null = null;
+  let rest: string[];
+  if (looksLikeInterfaceName(remaining[0])) {
+    outIface = remaining[0];
+    if (remaining[1] && isDottedIp(remaining[1])) { nextHopStr = remaining[1]; rest = remaining.slice(2); }
+    else rest = remaining.slice(1);
+  } else {
+    nextHopStr = remaining[0];
+    rest = remaining.slice(1);
+  }
+  if (nextHopStr && !isValidIPv4(nextHopStr)) {
+    return "% Invalid input detected at '^' marker.";
+  }
+  // Optional administrative distance (RFC: 1-255).
+  let ad: number | undefined;
+  const adTok = rest.find((t) => /^\d+$/.test(t));
+  if (adTok !== undefined) {
+    const n = parseInt(adTok, 10);
+    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
+    ad = n;
+  }
+  if (vrfName) {
+    const r = router as any;
+    const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
+    const list = vrfs.get(vrfName) ?? [];
+    list.push({ network: netStr, mask: maskStr, nextHop: nextHopStr, iface: outIface });
+    vrfs.set(vrfName, list);
+    return '';
+  }
+  const opts: { preference?: number; iface?: string } = {};
+  if (ad !== undefined) opts.preference = ad;
+  if (outIface) {
+    opts.iface = outIface;
+    const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
+    return router.addStaticRoute(network, mask, nextHop, 0, opts) ? '' : '% Invalid route';
+  }
+  if (nextHopStr) {
+    const nextHop = new IPAddress(nextHopStr);
+    if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
+      return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
+    }
+    return router.addStaticRoute(network, mask, nextHop, 0, ad !== undefined ? opts : undefined)
+      ? '' : '% Next-hop is not reachable';
+  }
+  return '% Incomplete command.';
 }
 
 function looksLikeInterfaceName(token: string | undefined): boolean {

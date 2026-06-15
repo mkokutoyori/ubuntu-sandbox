@@ -243,8 +243,6 @@ export class CiscoSecurityConfig {
   legacyHosts: AaaLegacyServerHost[] = [];
 
   ssh: SshConfig = { version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false };
-  hostname?: string;
-  domainName?: string;
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
   servicePasswordEncryption = false;
@@ -341,7 +339,6 @@ export class CiscoSecurityConfig {
     if (this.login.delay) lines.push(`login delay ${this.login.delay}`);
     if (this.login.onFailureLog) lines.push('login on-failure log');
     if (this.login.onSuccessLog) lines.push('login on-success log');
-    if (this.domainName) lines.push(`ip domain-name ${this.domainName}`);
     if (!this.ipCef) lines.push('no ip cef');
     if (this.ssh.version !== 1) lines.push(`ip ssh version ${this.ssh.version}`);
     if (this.ssh.timeoutSec !== 120) lines.push(`ip ssh time-out ${this.ssh.timeoutSec}`);

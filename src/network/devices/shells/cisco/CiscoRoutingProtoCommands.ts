@@ -8,6 +8,7 @@
  * neighbours stay Idle and EIGRP shows 0 neighbours — the true state.
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
+import { isValidIPv4 } from '../../../core/ip';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
@@ -84,6 +85,8 @@ export function buildRoutingProtoConfig(
         return `% Invalid input: ${e instanceof Error ? e.message : e}`;
       }
     }
+    if (args.length < 1) return '% Incomplete command.';
+    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     if (proto === 'eigrp') {
       eigrp().networks.push(args.join(' '));
       eigrpEng().getConfig().networks.push({
@@ -166,12 +169,15 @@ export function buildRoutingProtoConfig(
   const RIP_REDIST_SOURCES = ['static', 'connected', 'ospf', 'eigrp', 'bgp'] as const;
   const parseRipRedistSource = (token: string | undefined) =>
     RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
+  const REDIST_PROTOCOLS = ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {
+    if (!a[0]) return '% Incomplete command.';
+    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
     const line = raw ?? `redistribute ${a.join(' ')}`;
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
-      if (!source) return '% Invalid input detected.';
+      if (!source) return "% Invalid input detected at '^' marker.";
       let metric: number | undefined;
       const mIdx = a.findIndex((t) => t.toLowerCase() === 'metric');
       if (mIdx >= 0 && a[mIdx + 1] !== undefined) {
@@ -257,8 +263,20 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
     const { proto } = curProto(ctx);
-    if (proto === 'rip') { repo.rip.neighbors.push(a[0]); return ''; }
+    if (!a[0]) return '% Incomplete command.';
+    if (proto === 'rip') {
+      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      repo.rip.neighbors.push(a[0]); return '';
+    }
     if (proto === 'bgp') {
+      const isPeerGroupDef = a[1] === 'peer-group' && !a[2];
+      if (!isPeerGroupDef && !isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      if (!a[1]) return '% Incomplete command.';
+      if (a[1] === 'remote-as') {
+        if (!a[2]) return '% Incomplete command.';
+        const as = parseInt(a[2], 10);
+        if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
+      }
       const b = bgp();
       if (!b) return '';
       const n = repo.ensureBgpNeighbor(a[0]);
@@ -286,6 +304,8 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
+    if (!a[0]) return '% Incomplete command.';
+    if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
     const p = curProto(ctx).proto;
     if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
     else if (p === 'bgp') {

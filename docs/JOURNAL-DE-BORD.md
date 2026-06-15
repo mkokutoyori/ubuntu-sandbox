@@ -2946,3 +2946,105 @@ de bascule d'AVF sur perte d'une interface suivie.
   effective baissée quand le lien suivi est down, restaurée à up ; le
   comportement iface-down→init préservé). Non-régression : **network-v2
   complet — 7055 tests verts**. `tsc`/lint propres ; aucun commentaire.
+
+---
+
+## Entrée 45 — Audit des commandes Cisco (mode par mode) : validation d'arguments + DRY
+
+**Date** : 2026-06-15
+
+Audit systématique des commandes Cisco demandé (argument, message
+d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
+
+### Mode interface (config-if)
+
+- `ip address` acceptait silencieusement un masque invalide
+  (`999.0.0.0`, non contigu `255.0.255.0`) et configurait l'interface.
+  Désormais validé (`isValidIPv4` + nouveau `isValidSubnetMask` partagé
+  dans `core/ip.ts` — vérifié inexistant avant ajout) → `% Invalid input
+  detected at '^' marker.`, état inchangé.
+- `speed` **avalait** l'erreur de `Port.setSpeed` (`catch {}`) ;
+  `duplex`/`mtu`/`bandwidth` ignoraient silencieusement les valeurs
+  invalides. Désormais ils renvoient l'erreur IOS et réutilisent la
+  validation existante de `Port` (setSpeed/setMTU lèvent déjà).
+
+### Mode global config
+
+- `ip route` : même trou de masque (routes boguées installées) ; message
+  d'erreur non-IOS pour un next-hop invalide ; **distance administrative
+  ignorée** (statiques flottantes impossibles). Validé (réutilise les
+  helpers), AD 1-255 honorée → `addStaticRoute` mappe la distance sur
+  `ad` (la distance d'une statique EST son AD).
+- `enable secret`/`enable password` acceptaient une valeur vide.
+  → `% Incomplete command.`
+
+### DRY (une seule implémentation)
+
+- `hostname` était enregistré **4 fois** ; sur le routeur la copie
+  sécurité gagnait et n'utilisait que `setHostname` (laissait `this.name`
+  périmé — bug réel affectant logs/affichages), alors que le switch
+  mettait à jour les deux. Doublons retirés → handler unique du base
+  (`_setHostnameInternal`, met à jour hostname **et** name) partagé.
+- `enable secret`/`password` dédupliqués (base unique ; la copie sécurité
+  écrivait `sec().enableSecret`, jamais lu — `show running-config` lit
+  `getEnableSecret`).
+
+### Validation
+
+- +4 fichiers de tests (cisco-interface-validation, cisco-ip-route-validation,
+  cisco-hostname-dry, cisco-enable-password). Non-régression : **network-v2
+  complet — 7067 tests verts** à chaque incrément. `tsc` propre ; aucun
+  commentaire ajouté.
+
+### Mode config-router (OSPF / EIGRP / BGP / RIP)
+
+- `router-id` acceptait une IP invalide (`router-id 999.1.1.1` → "")
+  pour OSPF, EIGRP et BGP. Désormais validé via `isValidIPv4` (helper
+  existant réutilisé) → `% Invalid input detected at '^' marker.` ; un
+  argument manquant → `% Incomplete command.` (EIGRP/BGP n'imposaient pas
+  l'argument).
+- `redistribute <proto-inconnu>` était accepté silencieusement
+  (`redistribute bogus` → "") pour OSPF, EIGRP et BGP, et le message RIP
+  était non-IOS (`% Invalid input detected.`). Validation unifiée contre
+  l'ensemble connu (connected/static/rip/ospf/eigrp/bgp/isis) → message
+  IOS standard ; argument manquant → `% Incomplete command.`
+- `neighbor` (BGP) sans argument, ou avec une IP invalide, **plantait la
+  convergence** (`tryIpToUint32(undefined).split` → crash) car un voisin
+  au pair indéfini était poussé dans le moteur BGP. Désormais : argument
+  manquant → `% Incomplete command.` ; `neighbor <ip>` sans sous-commande
+  → `% Incomplete command.` ; IP invalide → message IOS ; `remote-as` sans
+  AS → incomplet ; AS non numérique / hors plage (1-4294967295) → message
+  IOS. Les définitions de peer-group par nom (`neighbor IBGP peer-group`)
+  restent acceptées.
+- `network` (EIGRP/BGP) acceptait n'importe quoi en silence (y compris une
+  IP invalide ou aucun argument). Validé via `isValidIPv4` + incomplet.
+- +1 fichier de tests (cisco-router-protocol-validation). Non-régression :
+  **network-v2 complet — 7083 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.
+
+### Mode global config — services partagés (logging / NTP / DNS) + DRY
+
+- `logging` : le switch avait **sa propre implémentation** (`_setSyslogServer`,
+  une seule chaîne, sans la richesse du moteur). DRY appliqué : handler
+  unique du base (LoggingConfig + vrai SyslogAgent, déjà compatible switch
+  via `getSyslogAgent`). Le doublon switch est retiré ; `show logging` et
+  `show running-config` du switch lisent désormais la config unifiée
+  (`this.logging.hosts` / `asRunningConfigLines`). Champs morts
+  `syslogServer`/`_getSyslogServer`/`_setSyslogServer` supprimés de
+  `Switch.ts`. Validation ajoutée (routeur ET switch) : `logging host`
+  sans IP → incomplet ; IP invalide → message IOS.
+- `ntp server`/`ntp peer` sans cible renvoyaient "" → `% Incomplete command.`
+- `ip name-server` : sans arg → incomplet ; IP invalide acceptée en
+  silence → message IOS (réutilise `isValidIPv4`).
+- `ip domain-name` : **split-brain réel** — un doublon dans
+  CiscoSecurityCommands gagnait et écrivait `sec().domainName` (lu seulement
+  par la section running-config sécurité), si bien que `show hosts` lisait
+  `mgmt.domainName` resté vide → « Default domain is not set » alors que la
+  running-config affichait le domaine. Doublons retirés → handler base
+  unique (écrit `mgmt.domainName`) ; running-config et `show hosts`
+  cohérents ; sans arg → incomplet. Champs morts `hostname`/`domainName`
+  + émetteur retirés de `CiscoSecurityConfig`.
+- +1 fichier de tests (cisco-logging-validation, contexte LAN routeur+switch
+  câblés, vérifie l'effet réel via show logging / running-config / show
+  hosts). Non-régression : **network-v2 complet — 7088 tests verts**.
+  `tsc` propre ; aucun commentaire ajouté.

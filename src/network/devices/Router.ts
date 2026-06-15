@@ -660,7 +660,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       network, mask, nextHop,
       iface: ifaceName,
       type: 'static',
-      ad: 1,
+      ad: opts?.preference ?? 1,
       metric,
       preference: opts?.preference,
       tag: opts?.tag,

@@ -84,6 +84,13 @@ export function isValidIPv4(ip: string): boolean {
   return tryIpToUint32(ip) !== null;
 }
 
+export function isValidSubnetMask(mask: string): boolean {
+  const v = tryIpToUint32(mask);
+  if (v === null) return false;
+  const inverted = (~v) >>> 0;
+  return ((inverted + 1) & inverted) === 0;
+}
+
 /**
  * RFC 1112 §6.4 — map an IPv4 multicast group to its Ethernet MAC:
  * 01:00:5e + the low-order 23 bits of the group address.

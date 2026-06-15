@@ -1392,11 +1392,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
 
-    this.configTrie.registerGreedy('logging', 'Configure syslog server', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      this.d()._setSyslogServer(args[0]);
-      return '';
-    });
   }
 
   // ─── Config-if Commands ───────────────────────────────────────────
@@ -1767,6 +1762,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('!');
     }
 
+    for (const l of this.logging.asRunningConfigLines()) lines.push(l);
+
     lines.push('end');
     return lines.join('\n');
   }
@@ -2053,12 +2050,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showLogging(sw: Switch): string {
     const logs = sw._getSnoopingLog();
-    const syslog = sw._getSyslogServer();
     const lines: string[] = [];
 
-    lines.push(`Syslog logging: enabled`);
-    if (syslog) {
-      lines.push(`  Logging to ${syslog}`);
+    lines.push(`Syslog logging: ${this.logging.enabled ? 'enabled' : 'disabled'}`);
+    for (const h of this.logging.hosts) {
+      lines.push(`  Logging to ${h}`);
     }
     lines.push('');
 
