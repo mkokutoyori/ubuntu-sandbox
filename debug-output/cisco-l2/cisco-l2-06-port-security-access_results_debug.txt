@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-06-15T18:57:05.054Z
+Generated: 2026-06-15T19:13:12.884Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -740,12 +740,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.028 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.448 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.688 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.449 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.448/1.238/2.028/0.790 ms
+  rtt min/avg/max/mdev = 0.449/1.068/1.688/0.619 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -1704,12 +1704,12 @@ Total steps: 421
 --- [406] § DAI generates traffic (host ARP) ---
 [406/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.494 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.346 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.427 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.397 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.346/0.420/0.494/0.074 ms
+  rtt min/avg/max/mdev = 0.397/0.412/0.427/0.015 ms
 
 [407/421] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface

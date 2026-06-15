@@ -3205,3 +3205,27 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   des sessions sortantes. À noter pour un éventuel chantier.
 - Non-régression : **network-v2 — 7126 verts** ; 9 dumps L2 régénérés.
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 47 — `show sessions` / `where` / telnet : vraie fonctionnalité (zéro hardcode)
+
+- Refus du stub `() => '% No connections open'`. Implémentation réelle :
+  `OutgoingSessionRegistry` (état réel des connexions sortantes : conn#,
+  hôte, adresse, protocole, user, idle, octets) — classe réutilisable,
+  partagée routeur+switch via `CiscoShellBase`, réutilisable par d'autres
+  vendors.
+- `ssh` (client réel `runSshClient`) enregistre une session sur connexion
+  interactive réussie (exit 0, sans commande inline) ; un échec d'auth ne
+  crée **aucune** session (comportement réel vérifié).
+- `telnet` n'est plus un stub « % Connection refused » figé : il résout la
+  cible (`ip host`), choisit une interface source, vérifie l'accessibilité
+  réelle (`findHostByAddress` + `isPathReachable`) et n'ouvre une session
+  que si un service Telnet (équipement réseau CLI avec transport telnet/all,
+  port 23) répond. Sinon : message réel selon la cause (timeout si éteint/
+  injoignable, refused si pas de service Telnet).
+- `show sessions` / `where` rendent le **registre réel** ; vide → « % No
+  connections open » calculé (pas codé en dur). `disconnect [n]` ferme une
+  session réelle ; `resume [n]` la réactive.
+- Vérifié bout-en-bout : telnet R1→R2 (joignable) → « Open » + session
+  listée dans `show sessions` ; `disconnect 1` → fermée → registre vide.
+- Non-régression : **network-v2 — 7126 verts** ; `tsc` propre ; aucun
+  commentaire dans le code.

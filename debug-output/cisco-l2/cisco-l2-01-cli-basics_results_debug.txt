@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-06-15T18:56:43.675Z
+Generated: 2026-06-15T19:12:51.661Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -9,20 +9,24 @@ Total steps: 366
 
 --- [1] § user EXEC help & prompt ---
 [1/366] sw1 SW1> ?
-    enable    Enter privileged EXEC mode
-    show      Show running system information
-    terminal  Set terminal parameters
-    copy      Copy file/configuration
-    ssh       Open an SSH connection to a remote host
-    telnet    Open a Telnet session
-    ping      Send echo messages
-    debug     Enable debugging
-    undebug   Disable debugging
-    no        Negate a command or set its defaults
+    enable      Enter privileged EXEC mode
+    show        Show running system information
+    where       List open outgoing connections
+    disconnect  Close an outgoing connection
+    resume      Resume an outgoing connection
+    terminal    Set terminal parameters
+    copy        Copy file/configuration
+    ssh         Open an SSH connection to a remote host
+    telnet      Open a Telnet session
+    ping        Send echo messages
+    debug       Enable debugging
+    undebug     Disable debugging
+    no          Negate a command or set its defaults
 
 [2/366] sw1 SW1> show ?
     clock           Display the system clock
     users           Display active lines
+    sessions        Display open outgoing connections
     inventory       Display hardware inventory
     processes       processes
     memory          Display memory statistics
@@ -101,7 +105,7 @@ Total steps: 366
   SW1 uptime is 0 days, 0 hours
 
 [10/366] sw1 SW1> show clock
-  *18:56:43.000 UTC Mon Jun 15 2026
+  *19:12:51.000 UTC Mon Jun 15 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -122,14 +126,10 @@ Total steps: 366
   History is enabled, history size is 20.
 
 [14/366] sw1 SW1> where
-  % Invalid input detected at '^' marker.
-  where
-  ^
+  % No connections open
 
 [15/366] sw1 SW1> show sessions
-  % Invalid input detected at '^' marker.
-  show sessions
-       ^
+  % No connections open
 
 [16/366] sw1 SW1> show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
@@ -167,27 +167,31 @@ Total steps: 366
 <empty>
 
 [18/366] sw1 SW1# ?
-    enable     Enter privileged EXEC mode (already in)
-    configure  Enter configuration mode
-    disable    Return to user EXEC mode
-    copy       Copy file/configuration
-    write      Save running-config to startup-config
-    erase      Erase persistent storage
-    reload     Reload the device
-    debug      Enable debugging
-    no         Negate a command or set its defaults
-    clear      Reset functions
-    sntp       Configure SNTP
-    show       Show running system information
-    terminal   Set terminal parameters
-    ssh        Open an SSH connection to a remote host
-    telnet     Open a Telnet session
-    undebug    Disable debugging
-    ping       Send echo messages
+    enable      Enter privileged EXEC mode (already in)
+    configure   Enter configuration mode
+    disable     Return to user EXEC mode
+    copy        Copy file/configuration
+    write       Save running-config to startup-config
+    erase       Erase persistent storage
+    reload      Reload the device
+    debug       Enable debugging
+    no          Negate a command or set its defaults
+    clear       Reset functions
+    sntp        Configure SNTP
+    show        Show running system information
+    where       List open outgoing connections
+    disconnect  Close an outgoing connection
+    resume      Resume an outgoing connection
+    terminal    Set terminal parameters
+    ssh         Open an SSH connection to a remote host
+    telnet      Open a Telnet session
+    undebug     Disable debugging
+    ping        Send echo messages
 
 [19/366] sw1 SW1# show ?
     clock           Display the system clock
     users           Display active lines
+    sessions        Display open outgoing connections
     inventory       Display hardware inventory
     processes       processes
     memory          Display memory statistics
@@ -733,7 +737,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *18:56:43.000 UTC Mon Jun 15 2026
+  *19:12:51.000 UTC Mon Jun 15 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -6374,7 +6378,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:12:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -6454,7 +6458,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 6:56:43 PM
+  System Boot Time:          6/15/2026, 7:12:51 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -6509,7 +6513,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:12:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -6540,7 +6544,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:12:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -6620,7 +6624,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 6:56:43 PM
+  System Boot Time:          6/15/2026, 7:12:51 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -6675,27 +6679,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:12:51 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.728 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.435 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.763 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.337 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.435/1.082/1.728/0.647 ms
+  rtt min/avg/max/mdev = 0.337/1.050/1.763/0.713 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.482 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.549 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.478 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.409 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.482/0.515/0.549/0.033 ms
+  rtt min/avg/max/mdev = 0.409/0.444/0.478/0.035 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

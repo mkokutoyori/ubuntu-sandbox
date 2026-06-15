@@ -41,6 +41,8 @@ import {
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
+import { isPathReachable } from '../linux/network/HostLookup';
+import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -64,6 +66,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
+  protected readonly outgoingSessions = new OutgoingSessionRegistry();
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   private scheduledReloadAtMs: number | null = null;
 
@@ -510,6 +513,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private registerCommonShowCommands(trie: CommandTrie): void {
     trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers());
+    trie.register('show sessions', 'Display open outgoing connections', () => renderSessions(this.outgoingSessions));
+    trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
+    trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
+      if (!args[0]) {
+        const last = this.outgoingSessions.list().slice(-1)[0];
+        if (!last) return '% No connections open';
+        this.outgoingSessions.close(last.conn);
+        return '';
+      }
+      const n = parseInt(args[0], 10);
+      if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
+      const target = this.outgoingSessions.get(n)!;
+      this.outgoingSessions.close(n);
+      return `Closing connection to ${target.host} [confirm]`;
+    });
+    trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
+      const list = this.outgoingSessions.list();
+      const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
+      const s = this.outgoingSessions.get(n);
+      if (!s) return '% No connection open';
+      this.outgoingSessions.touch(n);
+      return `[Resuming connection ${n} to ${s.host} ... ]`;
+    });
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
@@ -909,14 +935,61 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
       return this.runOutboundSshClient(args);
     });
-    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
-    });
-    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
-    });
+    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
+    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
+  }
+
+  /**
+   * Outbound Telnet driven by the real topology: resolve the target,
+   * pick a source interface, and verify L2/L3 reachability. A session is
+   * recorded only when a Telnet listener (network CLI device with telnet
+   * transport) actually accepts the connection.
+   */
+  private runOutboundTelnet(args: string[]): string {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    if (positional.length === 0) return '% Incomplete command.';
+    const display = positional[0];
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    const router = this.d() as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    };
+    let host = display;
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
+
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return `Trying ${display} ...\n% No usable interface for outbound Telnet`;
+
+    const remote = findHostByAddress(host);
+    if (!remote || remote.poweredOff || remote.interfaceDown) {
+      return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
+    }
+    if (!isPathReachable(sourceIp, remote.ip)) {
+      return `Trying ${display} ...\n% Destination unreachable; gateway or route not found`;
+    }
+    if (!this.remoteAcceptsTelnet(remote.device, port)) {
+      return `Trying ${display} ...\n% Connection refused by remote host`;
+    }
+    this.outgoingSessions.open({ host: display, address: remote.ip, protocol: 'telnet', user: '' });
+    return `Trying ${display} ... Open\n`;
+  }
+
+  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
+    if (port !== 23) return false;
+    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
+    const cls = d.constructor?.name ?? '';
+    const type = (d.getDeviceType?.() ?? '').toLowerCase();
+    const isNetworkCli =
+      /Router|Switch/.test(cls) || /router|switch/.test(type);
+    if (!isNetworkCli) return false;
+    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
+    if (transport === undefined) return true;
+    return transport === 'telnet' || transport === 'all';
   }
 
   /**
@@ -981,6 +1054,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const remoteHk = this.lookupRemoteSshHostKey(host);
       if (remoteHk) {
         dev._getSshKnownHosts?.().add({ host, ...remoteHk });
+      }
+      if (!cmd) {
+        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
       }
     }
     return result.output;
