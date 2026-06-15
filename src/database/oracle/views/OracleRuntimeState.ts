@@ -39,6 +39,17 @@ export interface RuntimeWaitRecord {
   timestamp: number;
 }
 
+export interface RuntimePlanLine {
+  lineId: number;
+  depth: number;
+  operation: string;
+  options: string;
+  objectOwner: string | null;
+  objectName: string | null;
+  cardinality: number;
+  cost: number;
+}
+
 export interface RuntimeSqlRecord {
   sqlId: string;
   text: string;
@@ -143,6 +154,8 @@ export class OracleRuntimeState {
   readonly sessions = new Map<string, RuntimeSessionRecord>();
   readonly waitHistory: RuntimeWaitRecord[] = [];
   readonly sqlCache = new Map<string, RuntimeSqlRecord>();
+
+  planProvider: ((sqlText: string, parsingSchema: string) => RuntimePlanLine[] | null) | null = null;
   readonly transactions = new Map<number, RuntimeTransactionRecord>();
   readonly locks: RuntimeLockRecord[] = [];
   readonly archivedLogs: RuntimeArchivedLogRecord[] = [];

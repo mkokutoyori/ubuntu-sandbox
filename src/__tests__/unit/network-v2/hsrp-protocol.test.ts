@@ -137,6 +137,49 @@ describe('HSRP — two-speaker election', () => {
     expect(g1?.state).toBe('active');
     expect(g2?.state).toBe('standby');
   });
+});
+
+describe('HSRP — Learn state (RFC 2281 §5, VIP learned from hellos)', () => {
+  async function configLearn(r: CiscoRouter, ip: string, group: number): Promise<void> {
+    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress(ip), new SubnetMask('255.255.255.0'));
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand(`standby ${group} ip`);
+    await r.executeCommand('no shutdown');
+    await r.executeCommand('end');
+  }
+
+  it('standby <grp> ip with no address puts the group in Learn (VIP unknown)', async () => {
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configLearn(r2, '10.0.0.2', 1);
+
+    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g2?.state).toBe('learn');
+    expect(g2?.vip).toBeNull();
+  });
+
+  it('a Learn router adopts the VIP from the active router and leaves Learn', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+
+    await configLearn(r2, '10.0.0.2', 1);
+    expect(r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('learn');
+
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 110, true);
+
+    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g2?.vip).toBe('10.0.0.254');
+    expect(g2?.state).not.toBe('learn');
+    expect(g2?.state).not.toBe('init');
+  });
 
   it('without preempt, a later higher-priority router does NOT displace the incumbent (IOS default)', async () => {
     const bus = new EventBus();

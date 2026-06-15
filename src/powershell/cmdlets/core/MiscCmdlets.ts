@@ -405,6 +405,44 @@ export class SetLocationCmdlet implements ICmdlet {
   }
 }
 
+export class PushLocationCmdlet implements ICmdlet {
+  readonly name = 'push-location';
+  readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
+  readonly aliases = ['pushd'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const fs = ctx.providers.filesystem;
+    const stack = (ctx.runtime.getVariable('__locationStack__') as PSValue[] | null) ?? [];
+    stack.push((fs ? fs.getCwd() : 'C:\\') as PSValue);
+    ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (fs && path) fs.setCwd(path);
+    if (path) {
+      ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
+    }
+    return null;
+  }
+}
+
+export class PopLocationCmdlet implements ICmdlet {
+  readonly name = 'pop-location';
+  readonly parameters = ['PassThru', 'StackName'] as const;
+  readonly aliases = ['popd'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const fs = ctx.providers.filesystem;
+    const stack = (ctx.runtime.getVariable('__locationStack__') as PSValue[] | null) ?? [];
+    const prev = stack.pop();
+    ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
+    if (prev !== undefined && prev !== null) {
+      const path = psValueToString(prev);
+      if (fs) fs.setCwd(path);
+      ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
+    }
+    return null;
+  }
+}
+
 export class GetLocationCmdlet implements ICmdlet {
   readonly name = 'get-location';
   readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;

@@ -133,10 +133,9 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 - **Sévérité** : Mineure
 - **Recommandation** : Supprimer le `+1` et afficher `root.priority` tel quel (le system-id-extension Cisco est encodé séparément, pas additionné à la priorité affichée).
 
-- **Constat** : `defaultPathCost`/`portIdFor` sont corrects pour 802.1D, mais le coût de port affiché dans `show spanning-tree` (`showSpanningTree`) est **codé en dur à `19`** pour toutes les interfaces, indépendamment de leur vitesse réelle (`defaultPathCost` retournerait 4 pour Gigabit, 2 pour 10G).
-- **Preuve** : `src/network/devices/shells/CiscoSwitchShell.ts:1767` (`...19        128.${portName...`).
-- **Sévérité** : Mineure
-- **Recommandation** : Réutiliser `agent.getPortInfo(portName)?.cost` (ou exposer un accesseur dédié) au lieu de la constante `19`.
+- **Constat** : coût de port affiché **codé en dur à `19`** ; de plus le moteur calculait un coût faux (bug d'unité kbps/Mbps : `defaultPathCost(getSpeed())` recevait des Mbps → Gigabit valait 200, pas 4). Rôle **Backup** (802.1D-2004 §17.7) et type de lien **P2p/Shr** également absents/décoratifs.
+- **Sévérité** : Mineure (cost) / Majeure (backup, link type).
+- **✅ CORRIGÉ** (2026-06-13, JOURNAL-DE-BORD entrées 31-32) : accesseur `getPortCost()` dérivant le coût de la vitesse réelle via un point de conversion unique `costForPort()` (bug d'unité corrigé : Gigabit 4 / FastEthernet 19 / 10 GbE 2) ; rôle `backup` ajouté à `StpPortRole` (BPDU supérieure auto-sourcée sur segment partagé → Backup, sinon Alternate) ; `getPortLinkType()` (full-duplex⇒p2p, half⇒shared) **fonctionnel** (transition rapide RSTP et proposal réservées au p2p) ; `show spanning-tree` rend coût réel + `Back`/`P2p`/`Shr`/`P2p Edge` ; Huawei `display stp brief` rend `BACK`. Validé : 156 tests L2.
 
 ### 2.2 LACP (IEEE 802.3ad / 802.1AX)
 
@@ -167,18 +166,16 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 - **Constat** : `Dot1xAgent` implémente un véritable échange EAP (Identity request/response, succès/échec, comptage de réessais, état `held`), mais le callback d'autorisation transmis par `CiscoSwitch` est un **stub vide qui « voile » ses paramètres** sans aucun effet de bord, alors que `isPortAuthorized` est consultée ailleurs pour bloquer le trafic.
 - **Preuve** : `src/network/devices/CiscoSwitch.ts:110-112` (`private applyDot1xAuth(_portName: string, _authorized: boolean): void { void _portName; void _authorized; }`) — le hook ne fait littéralement rien, alors qu'il est branché en ligne 96.
-- **Sévérité** : Majeure (l'autorisation de port n'a aucun effet visible côté device au-delà du filtre déjà fait par `isPortAuthorized` au frame-handling — cf. ligne 193 — donc la fonctionnalité fonctionne malgré tout via une autre voie, mais le hook dédié est mort).
-- **Recommandation** : Supprimer ce hook mort ou l'utiliser réellement (p.ex. déclencher un changement d'état STP/err-disable, journaliser, basculer vers le VLAN invité).
+- **Sévérité** : Majeure.
+- **✅ CORRIGÉ** (2026-06-13, entrée 35) : `applyDot1xAuth` réanimé — à la dé-autorisation, purge des MAC dynamiques apprises sur le port (`flushDynamicMacsOnPort`, passé `protected`), comportement réel d'un commutateur ; l'enforcement ingress reste dans `isPortAuthorized`.
 
-- **Constat** : Les champs `guestVlan` et `reauthIntervalSec` de `Dot1xConfig` sont déclarés et initialisés mais **jamais lus** par `Dot1xAgent` — pas de bascule vers un VLAN invité après échec d'authentification, pas de ré-authentification périodique programmée.
-- **Preuve** : `src/network/dot1x/types.ts:99-101` (déclaration) vs absence totale de référence dans `src/network/dot1x/Dot1xAgent.ts` (seul `holdUntilMs`/`holdMs` sont utilisés, lignes 126/179).
+- **Constat** : Les champs `guestVlan` et `reauthIntervalSec` de `Dot1xConfig` étaient déclarés mais **jamais lus ni configurables** (aucun setter CLI) — config décorative.
 - **Sévérité** : Mineure
-- **Recommandation** : Implémenter la bascule VLAN invité (`guestVlan`) et un timer de ré-authentification pilotable par `Scheduler`, ou retirer ces champs du type pour éviter toute confusion sur ce qui est réellement supporté.
+- **✅ CORRIGÉ** (2026-06-13, entrée 36) : champs morts supprimés du type et du constructeur par défaut (la config ne décrit plus que le supporté).
 
-- **Constat** : L'état `held` n'est jamais réévalué par un timer — un supplicant qui ne renvoie pas d'`EAPOL-Start` reste bloqué indéfiniment au-delà de `holdMs`, alors que sur un vrai commutateur le port redevient automatiquement `unauthorized`/réessayable à l'expiration du hold-timer.
-- **Preuve** : `src/network/dot1x/Dot1xAgent.ts:126` (`if (rt.holdUntilMs > Date.now()) return;` — le contrôle n'a lieu qu'à la réception d'un nouvel `EAPOL-Start`, pas via un timer programmé).
+- **Constat** : L'état `held` n'était jamais réévalué par un timer — un supplicant restait bloqué indéfiniment au-delà de `holdMs`.
 - **Sévérité** : Mineure
-- **Recommandation** : Ajouter un `setTimeout`/`Scheduler.setTimeout` à l'entrée en état `held` qui ramène le port à `unauthorized` à l'expiration de `holdMs`.
+- **✅ CORRIGÉ** (2026-06-13, entrée 34) : `Dot1xAgent` reçoit un `Scheduler`/`TimerSet` ; à l'entrée en `held`, un timer `holdMs` ramène le port à `unauthorized` (raison `hold-expired`, déjà déclarée), `reauthCount` remis à 0 ; toute autre transition annule le timer.
 
 - **Constat** : `PortSecurity` (hardware/PortSecurity.ts) est riche (sticky/static/dynamic, aging absolu/inactivité, modes de violation shutdown/restrict/protect) et `show port-security` semble dérivé de cet état réel — c'est l'un des sous-systèmes de sécurité L2 les plus aboutis.
 - **Preuve** : `src/network/hardware/PortSecurity.ts:34-49` (modèle `SecureMacEntry`/`SecurityVerdict`).
@@ -212,15 +209,13 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 ### 2.7 Disparité Cisco/Huawei
 
-- **Constat** : `HuaweiSwitch` ne câble que trois agents protocolaires (LLDP, STP, LACP) alors que `CiscoSwitch` en câble dix (CDP, LLDP, DTP, STP, LACP, VTP, UDLD, IGMP-snooping, Syslog, dot1x). Or UDLD, IGMP-snooping, 802.1X et le port-security sont des fonctionnalités standards sur les commutateurs Huawei S-series réels (et VTP/DTP sont légitimement absents car propriétaires Cisco).
-- **Preuve** : `src/network/devices/HuaweiSwitch.ts:14-43` (3 agents seulement) vs `src/network/devices/CiscoSwitch.ts:39-108` (10 agents).
-- **Sévérité** : Majeure
-- **Recommandation** : Ajouter au minimum `UdldAgent`, `IgmpSnoopingAgent`, `Dot1xAgent` et `SyslogAgent` à `HuaweiSwitch` (le câblage est trivial vu le pattern `hostBase` déjà en place), et exposer les commandes `display`/`stp`/`dot1x` correspondantes côté `HuaweiSwitchShell`.
+- **Constat (origine)** : `HuaweiSwitch` ne câblait que LLDP/STP/LACP/IGMP-snooping, sans 802.1X.
+- **Sévérité** : Majeure.
+- **✅ CORRIGÉ (partiel)** (2026-06-13, entrée 41) : `Dot1xAgent` vendor-neutre câblé sur `HuaweiSwitch` (dispatch EAPOL, enforcement, purge MAC) + CLI Huawei `dot1x enable` / `dot1x port-control {auto|authorized-force|unauthorized-force}`. **UDLD volontairement écarté** : Huawei utilise DLDP (protocole distinct), pas UDLD — l'ajouter serait irréaliste. `SyslogAgent` non câblé (info-center déjà géré via le service de management) — reste possible.
 
-- **Constat** : Le mot-clé `port-security` apparaît uniquement comme entrée d'auto-complétion dans `HuaweiSwitchShell` (listes de complétion d'interface), sans aucun gestionnaire de commande associé — contrairement à Cisco où `port-security` dispose d'un sous-système complet (`PortSecurity`, `show port-security*`).
-- **Preuve** : `src/network/devices/shells/HuaweiSwitchShell.ts:762,1231` (apparaît seulement dans des tableaux de mots-clés de complétion `['loopback-detect', 'port-security', ...]`) ; aucune occurrence de `getSecurityService`/`PortSecurity` dans ce fichier.
-- **Sévérité** : Majeure
-- **Recommandation** : Implémenter `port-security` côté Huawei (la classe `PortSecurity`/`SwitchSecurityService` est déjà vendor-neutre dans `Switch.ts`) — actuellement la complétion Tab suggère une commande qui échoue ou ne fait rien à l'exécution, ce qui est trompeur pour l'utilisateur.
+- **Constat (origine)** : `port-security` Huawei n'apparaissait qu'en auto-complétion, sans gestionnaire (commande trompeuse).
+- **Sévérité** : Majeure.
+- **✅ CORRIGÉ** (2026-06-13, entrée 40) : commandes Huawei `port-security enable`/`max-mac-num`/`protect-action`/`mac-address sticky` câblées sur le `PortSecurity` vendor-neutre par port (le même que Cisco) ; `display port-security` rend l'état vivant ; le stub figé partagé a été supprimé.
 
 - **Constat** : Aucune suite de transcript "debug" Huawei n'exerce spanning-tree, LACP, CDP/LLDP, dot1x, VTP/DTP ou UDLD (`grep` sur `_huawei-suite.ts` et les fichiers `huawei-*.debug.test.ts` ne renvoie aucun résultat pour ces protocoles), alors que côté Cisco `cisco-stp-security.debug.test.ts` couvre au moins STP/sécurité.
 - **Preuve** : recherche vide dans `src/__tests__/debug/huawei/` pour les motifs `lacp|cdp|lldp|dot1x|vtp|dtp|udld|spanning-tree`.
@@ -271,11 +266,10 @@ L'OSPF (v2) est de loin le sous-système le plus mature de cette famille — FSM
 - **Recommandation** : remplacer ce contournement par un véritable pipeline Hello→DD→LSR/LSU→SPF dans `OSPFv3Engine`, exposé et consommé via `getNeighbors()`/`getRoutes()`, à l'image de ce qui existe pour OSPFv2. En l'état, « OSPFv3 fonctionne dans le simulateur » au prix d'une duplication de logique ad-hoc qui n'est ni testée au niveau protocole ni cohérente avec l'engine déclaré.
 - **Correction appliquée** : `v3FormAdjacency()` (`src/network/devices/router/RouterOSPFIntegration.ts:892-921`) réécrit pour appeler `engine.processHello(localIface.name, remoteIP, helloPacket)` — un paquet Hello synthetique est construit avec `neighbors: [localRouterId]` (déclenchant immédiatement la transition TwoWay→ExStart→Full via la FSM du moteur) au lieu d'injecter un objet voisin codé en dur avec `state: 'Full'`. La DR/BDR election (et les events bus `ospf.neighbor.state-changed`) se produit désormais via la logique interne du moteur. Partiel : la traversée BFS (`v3ComputeRoutes`) reste en place — un vrai SPF Dijkstra OSPFv3 sur la LSDB nécessiterait une LSA-flooding complète (cf. §3.4) qui reste hors-scope. Validé (0 régression sur 160+ tests OSPF).
 
-### 3.7 BGP — moteur « léger » sans FSM RFC 4271, sans attributs de chemin ni algorithme de meilleur chemin
-- **Constat** : `BGPEngine` (141 lignes) ne modélise ni l'échange de messages OPEN/UPDATE/NOTIFICATION/KEEPALIVE, ni les états `Connect`/`OpenConfirm` du FSM (bien que le type `NeighborFsmState` les définisse), ni les attributs de chemin (AS_PATH, LOCAL_PREF, MED, NEXT_HOP, ORIGIN), ni l'algorithme de sélection du meilleur chemin, ni route-reflection/confédérations. L'état de session est dérivé de manière déterministe de la configuration (réciprocité de `neighbor`/AS) : `Idle` (pas de pair câblé), `Active` (pair non réciproque), `OpenSent` (utilisé en impasse permanente pour signaler une incompatibilité d'AS — jamais une vraie phase protocolaire), ou `Established`.
-- **Preuve** : `src/network/bgp/BGPEngine.ts:74-88` (`sessionState()` — les seuls états atteignables sont `Idle`/`Active`/`OpenSent`/`Established`, jamais `Connect`/`OpenConfirm`), `src/network/bgp/BGPEngine.ts:120-140` (`computeRoutes` n'attribue qu'une `metric: 0` fixe et une AD eBGP/iBGP figée — aucune sélection multi-chemins ni comparaison d'attributs), `src/network/routing/types.ts:27-29` (le type `NeighborFsmState` définit bien les 8 états RFC 4271 mais 4 d'entre eux ne sont jamais produits par BGPEngine).
+### 3.7 BGP — ✅ CORRIGÉ — sessions TCP/179 réelles, FSM RFC 4271 §8, attributs de chemin et best-path
+- **Constat (origine)** : `BGPEngine` ne modélisait ni l'échange de messages OPEN/UPDATE/NOTIFICATION/KEEPALIVE, ni les états `Connect`/`OpenConfirm`, ni les attributs de chemin, ni l'algorithme de meilleur chemin ; l'état de session était dérivé de la config (réciprocité `neighbor`/AS) sans aucune poignée de main réelle, et le moteur lisait directement l'objet moteur du pair (`peerEngineFor`) — god-mode hors-bande.
 - **Sévérité** : Majeure.
-- **Recommandation** : si l'objectif est de rester « léger », documenter explicitement (au niveau du module, pas seulement en commentaire de fichier) que BGP est un substitut simplifié sans FSM/attributs réels ; sinon, implémenter au minimum AS_PATH + sélection de meilleur chemin pour rendre `show ip bgp` crédible au-delà d'un simple « path i ».
+- **Correction appliquée (2026-06-13, JOURNAL-DE-BORD entrée 33)** : BGP converse désormais sur de **vraies sessions TCP/179** au-dessus de la `TcpStack` du routeur (3-way handshake sur le câble, comme SSH). `bgp/messages.ts` (vocabulaire OPEN/UPDATE/KEEPALIVE/NOTIFICATION + attributs + codes §6) ; `bgp/BgpSession.ts` (FSM RFC 4271 §8 sur seam `BgpTransport`, Hold/KEEPALIVE négociés, bufferisation des UPDATE reçus en OpenConfirm pour la livraison synchrone) ; `BGPEngine` réécrit sur Adj-RIB-In/Adj-RIB-Out (cache delta), best-path RFC 4271 §9.1.1 (`bestPath.ts`), prepend AS_PATH eBGP, split-horizon iBGP, anti-boucle §6.3, collision §6.8 ; transport injecté via `BgpWire` (DIP), connexions entrantes via `acceptInbound`, listener 179 + adaptateur `TcpSocket→BgpTransport` dans `RouterDynamicRouting`. `peerEngineFor` (plumbing god-mode) supprimé. Validé : 43 tests BGP + network-v2 complet (304 fichiers / 7035 tests). MP-BGP IPv6 (§3.17), route-refresh, communautés et route-maps restent hors périmètre.
 
 ### 3.8 EIGRP — DUAL totalement absent malgré une conception détaillée documentée (`docs/DESIGN-EIGRP.md`) — ✅ CORRIGÉ (partiel)
 - **Constat** : le document de conception décrit une architecture complète à plusieurs couches (DUAL avec successeurs/successeurs de secours, Topology Table, RTP fiable, dispatcher de 5 types de paquets Hello/Update/Query/Reply/Ack, métrique composite pondérée par K1..K5). L'implémentation réelle (`EIGRPEngine.ts`, 161 lignes) ne contient rien de tout cela : pas de Topology Table, pas de condition de faisabilité, pas de paquets, pas de coefficients K — uniquement une adjacence basée sur la correspondance d'AS et des routes fabriquées avec une métrique fixe `metric: 1` et une AD figée à 90.
@@ -445,11 +439,10 @@ L'ensemble forme une base solide et étonnamment riche (≈12 000 lignes) : DHCP
 - **Recommandation** : Ajouter le mode echo (paquets bouclés localement vers le voisin) si des labs BFD avancés sont prévus ; sinon documenter l'absence dans l'aide CLI `show bfd neighbors details`.
 - **Correction appliquée** : option « documenter l'absence » de la recommandation appliquée — ajout d'une ligne explicite dans la sortie `show bfd neighbors detail/details` (`src/network/devices/shells/cisco/CiscoBfdCommands.ts:69`) : `Type: single-hop, Mode: async (echo not supported)`. Un utilisateur observant la sortie comprend désormais immédiatement la portée fonctionnelle (mode asynchrone RFC 5880 standard, hors echo et hors multi-hop) au lieu de supposer que ces fonctionnalités sont actives mais inactives. Le mode echo réel (paquets bouclés via `UDP_PORT_BFD_ECHO = 3785`) reste à implémenter pour les labs avancés — il nécessite un mini state-tracker côté agent + une nouvelle commande d'activation `bfd echo` (effort non trivial, séparé de cette passe). Validé par `bfd-protocol.test.ts` (10/10), `npx tsc --noEmit` propre, 0 régression.
 
-### 4.14 IPSec — négociation IKE synchrone « engine-to-engine », pas de paquets réels
-- **Constat** : Le commentaire d'en-tête du fichier l'assume explicitement : « IKEv1/IKEv2 SA negotiation (direct engine-to-engine, synchronous) ». `negotiateIKEv1`/`negotiateIKEv2` manipulent directement les structures internes du moteur pair (`peerEngine.ikeSADB.set(...)`, `peerEngine.preSharedKeys.get(...)`, `peerEngine.transformSets`, `peerEngine.dpdConfig`) via des références obtenues par une recherche globale dans `Equipment.getAllEquipment()` (cast `as any`), au lieu d'échanger de vrais paquets ISAKMP/IKE_SA_INIT/IKE_AUTH traversant le plan de données simulé. Cela contredit le patron documenté pour les moteurs réactifs (Engine + types + events + observables + actors, cf. OSPF/DHCP/BGP) — il n'y a pas de FSM de négociation pilotée par minuteurs/événements pour la phase de contrôle (seul le plan de données ESP/AH transite par de vrais `IPv4Packet`/trames).
-- **Preuve** : `src/network/ipsec/IPSecEngine.ts:5` (« direct engine-to-engine, synchronous »), `src/network/ipsec/IPSecEngine.ts:3155-3163` (`findRouterByIP` — parcours `Equipment.getAllEquipment()` + cast `as any`), `src/network/ipsec/IPSecEngine.ts:2770,2785,2791,2813,2825,2829,2956-2959` (écritures directes dans les structures internes du moteur pair lors de `negotiateIKEv1`).
-- **Sévérité** : Majeure (architecture) — le résultat fonctionnel (SA installée des deux côtés) est correct, mais aucune trame IKE n'est jamais visible dans les captures réseau (`show crypto isakmp`/`debug crypto isakmp` reposent sur un état halluciné côté local plutôt que sur un échange observable), et la latence/perte/MITM ne peuvent pas être simulées sur la phase de contrôle.
-- **Recommandation** : Faire transiter au minimum les messages ISAKMP/IKE_SA_INIT/IKE_AUTH/CREATE_CHILD_SA comme de vrais paquets UDP/500 (et 4500 pour NAT-T) avec minuteurs de retransmission, à l'image du plan de données ESP/AH déjà bien intégré.
+### 4.14 IPSec — ✅ CORRIGÉ — négociation IKE sur de vrais paquets UDP/500 (god-mode éliminé)
+- **Constat (origine)** : `negotiateIKEv1`/`negotiateIKEv2` manipulaient directement les structures du moteur pair (`peerEngine.ikeSADB.set`, `peerEngine.preSharedKeys`, `peerEngine.transformSets`…) via `findRouterByIP` + cast `as any`, au lieu d'échanger de vrais paquets ISAKMP — phase de contrôle invisible sur le réseau.
+- **Sévérité** : Majeure (architecture).
+- **Correction appliquée (2026-06-13, JOURNAL-DE-BORD entrées 37-39)** : toute la machine d'état IPSec converse désormais par de vrais datagrammes UDP/500 sur le câble (`router._sendIkeUdp` / `handleIkeUdp`), comme le DPD. Vocabulaire `IkeMessage` (offer/accept/reject/rekey) + `GdoiMessage` (install/remove) ; l'initiateur propose depuis sa propre config, le répondeur **décide depuis SA PROPRE config** (politique/PSK/transform, PFS, lifetime) et installe ses SA, KEYMAT dérivé d'une graine symétrique (clés ESP identiques sans échange de clé). NAT-T détecté sur le fil (NAT-D par comparaison de destination), IKEv2 (IKE_SA_INIT/AUTH/CHILD), rekey et distribution de SA multicast (GETVPN/GDOI) tous filaires. `negotiateIKEv1`/`negotiateIKEv2`/`negotiateIPSecSA` (god-mode) supprimés. Reste uniquement des introspections topologiques en lecture seule (sélection de pair joignable, apparent-source NAT). Validé : 250 tests IPSec/VPN/parité + network-v2 complet (7041 tests).
 
 ### 4.15 IPSec — boucles de maintenance (rekey, DPD) écrites mais jamais ordonnancées — ✅ CORRIGÉ
 - **Constat** : `recheckIKESALifetimes()` (vérifie l'expiration de durée de vie et déclenche `rekeyIKESA`) et `runDPDCheck()` (sonde R-U-THERE périodique RFC 3706, déclare le pair mort après N timeouts et nettoie les SA) sont entièrement implémentées avec une logique correcte, mais **aucun appelant** n'existe dans le code de production (ni `setInterval`/`TimerSet`/actor ne les invoque) — seuls les tests les appellent directement. En l'absence d'appel périodique, une SA IKE ne se renouvellera jamais automatiquement à expiration de sa durée de vie via le déroulement normal de la simulation, et DPD ne détectera jamais un pair mort autrement que par l'événement `port.link.down` déjà géré ailleurs.
@@ -471,7 +464,7 @@ L'ensemble forme une base solide et étonnamment riche (≈12 000 lignes) : DHCP
 L'ensemble de cette famille de protocoles est implémenté sous une forme cohérente et relativement mature côté FHRP (HSRP/VRRP/GLBP) et IGMP/IGMP-snooping — moteurs `*Agent.ts` réels pilotés par `Scheduler`/`EventBus`, FSM fonctionnelle, `show`/`display` branchés sur l'état live. En revanche, PIM et VXLAN sont des moteurs « orphelins » : entièrement développés et testés unitairement, mais totalement absents de la surface CLI (aucune commande `show`/`display`/de configuration), ce qui les rend inutilisables par un utilisateur du simulateur. On note aussi une divergence architecturale par rapport au pattern documenté dans CLAUDE.md (`Engine + types + events + observables + actors/`) : ces sept familles n'ont que `*Agent.ts + types.ts + events.ts`, sans `observables.ts` ni `actors/`, contrairement à OSPF/DHCP/IPSec/BGP/routing/RIP. Plusieurs bugs concrets (précédence d'opérateur, FSM tronquée, incohérence Cisco/Huawei) ont par ailleurs été identifiés.
 
 ### 5.1 HSRP
-- **Constat** : la FSM implémentée ne couvre que 4 états effectifs (`init/listen/standby/active`) ; les états `speak` et `learn` du type `HsrpState` (RFC 2281 prévoit Initial/Learn/Listen/Speak/Standby/Active) ne sont **jamais atteints** — la transition se fait directement de `listen`/`init` vers `active`/`standby`.
+- **Constat (origine)** : les états `speak` et `learn` de `HsrpState` (RFC 2281) n'étaient jamais atteints. **✅ CORRIGÉ** : `speak` (phase d'élection « probe ») et `listen` sont désormais assignés ; `learn` l'est aussi (entrée 43) — `standby <grp> ip` sans adresse met le groupe en Learn et le VIP est appris depuis les hellos du routeur actif (RFC 2281 §5).
 - **Preuve** : `src/network/hsrp/types.ts:6-7` déclare `'init' | 'listen' | 'learn' | 'speak' | 'standby' | 'active'`, mais `src/network/hsrp/HsrpAgent.ts:236-263` n'assigne jamais `'speak'` ni `'learn'`.
 - **Sévérité** : Mineure
 - **Recommandation** : soit retirer `learn`/`speak` du type pour refléter le modèle simplifié réellement implémenté, soit ajouter les transitions intermédiaires (utiles pour simuler les délais de convergence et les tempos `hello`/`hold`).
@@ -524,7 +517,7 @@ L'ensemble de cette famille de protocoles est implémenté sous une forme cohér
 - **Recommandation** : aligner le type sur les états réellement modélisés ou compléter la FSM pour traverser `listen`/`speak` durant la phase d'élection (utile pour la temporisation `helloSec`/`holdSec`).
 - **Correction appliquée** : type aligné sur la FSM réellement modélisée — `GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active'` (`src/network/glbp/types.ts:5`). Les promesses non tenues `'listen'`/`'speak'` sont retirées du type pour ne pas induire l'utilisateur en erreur. `npx tsc --noEmit` propre, 0 régression sur la suite GLBP.
 
-- **Constat** : pas de tracking objects pour GLBP non plus (même lacune que HSRP/VRRP) — `weighting`/`preempt` sont configurables manuellement mais aucun objet suivi ne module dynamiquement la pondération.
+- **Constat (origine)** : pas de tracking objects pour GLBP — aucun objet suivi ne modulait la pondération. **✅ CORRIGÉ** (entrée 44) : `glbp <grp> weighting track <iface> [decrement <n>]` câblé sur `GlbpAgent.addTrack` ; `effectiveWeighting(g)` retranche les décréments des interfaces suivies down, l'AVF annonce/utilise cette pondération effective (sortie de la répartition de charge quand elle tombe à 0), et les transitions de lien (`onLinkUp/onLinkDown`) la recalculent.
 - **Preuve** : aucune occurrence de `track`/`decrement` dans `src/network/glbp/GlbpAgent.ts` ni `types.ts`.
 - **Sévérité** : Mineure
 - **Recommandation** : cohérent avec HSRP/VRRP — à traiter de façon transverse si le suivi est ajouté.
@@ -919,7 +912,7 @@ L'ensemble bash (`src/bash/`, ~6 200 lignes) est une implémentation sérieuse e
 
 - **Constat** : `tar`, `gzip`, `gunzip`, `zip`, `unzip` sont de purs no-ops renvoyant une sortie vide, sans aucun effet de bord sur le VFS (pas de création d'archive, pas de décompression, pas de modification de la taille/contenu des fichiers).
 - **Preuve** : `src/network/devices/linux/LinuxCommandExecutor.ts:2349-2354`.
-- **Sévérité** : Majeure
+- **Sévérité** : Majeure — ✅ CORRIGÉ (entrée 28 du journal : module `coreutils/ArchiveCommands.ts`, round-trips sans perte tar/gzip/zcat/zip + `file` réel ; suite `archive-commands.test.ts`, 16 cas)
 - **Recommandation** : à défaut d'implémenter un vrai format d'archive, simuler au minimum la création d'un fichier « archive » dans le VFS (avec une taille dérivée du contenu source) pour que les scripts de sauvegarde/déploiement testés dans les labs restent cohérents (`ls -la backup.tar.gz` doit montrer un fichier non vide après `tar czf`).
 
 - **Constat** : `apt`/`apt-get`/`dpkg` renvoient des transcriptions figées et identiques quel que soit le paquet demandé (toujours « is already the newest version », toujours la même liste `dpkg -l`), sans mise à jour d'un état « paquets installés » persistant ni d'effets sur le VFS/`LinuxServiceManager`.
@@ -1102,7 +1095,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Majeure — ✅ CORRIGÉ
 - **Correction appliquée** : `src/database/oracle/OracleExecutor.ts:executeExplainPlan` — quand `_db.planGenerator` est disponible (cas normal depuis `OracleDatabase.setDatabaseRef`), délègue directement à `PlanGenerator.generate(innerStmt, …)` — qui consulte réellement `storage.getIndexes()` pour choisir `TABLE ACCESS BY INDEX ROWID` + `INDEX RANGE SCAN` ou `TABLE ACCESS FULL` selon la présence d'un index utilisable sur les colonnes du WHERE. Les jointures utilisent `NESTED LOOPS` ou `HASH JOIN` selon le cardinalité. L'ancien code « toujours TABLE ACCESS FULL » est conservé uniquement comme fallback quand `_db` est absent (tests unitaires isolés).
 
-### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire
+### 10.3 Index — métadonnées de catalogue uniquement, scan linéaire — ✅ CORRIGÉ (2026-06-13 : RowIndexCache — index de hachage epoch-invalidés dans le storage, contraintes UNIQUE/PK/FK et SELECT mono-table par égalité sondent l'index ; PlanGenerator émet INDEX UNIQUE SCAN conforme)
 - **Constat** : `BaseStorage`/`OracleStorage` gèrent bien des `IndexMeta` (création/suppression/listing), mais aucune structure de données indexée n'accélère les lectures : toutes les requêtes passent par `storage.getRows(schema, table)` puis un filtrage JS linéaire. `getIndexes` n'est utilisé que pour vérifier l'unicité de noms ou alimenter les vues de catalogue.
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:2504,2962,4492` (seuls usages de `getIndexes`, tous orientés catalogue) vs. `:1173,2535,4769,4791,4876` (`getRows` + filtrage manuel pour SELECT/UPDATE/DELETE/contraintes FK).
 - **Sévérité** : Mineure
@@ -1119,7 +1112,7 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
   3. **Appels de packages intégrés cassés par la résolution stricte** : une fois (1) et (2) en place, `EXEC DBMS_OUTPUT.ENABLE(1000000)` échouait avec `PLS-00201: identifier 'DBMS_OUTPUT.ENABLE' must be declared`, car `callStoredUnit` ne cherche que dans `storedUnits` (unités définies par l'utilisateur), pas dans les packages intégrés (`DBMS_OUTPUT`, `DBMS_STATS`, `UTL_FILE`, …). Restructuration de `executeProcedureCall` : tente d'abord `resolveStoredUnit` (et emprunte alors le chemin `callStoredUnit` avec vérification de privilèges) ; sinon, enveloppe l'appel en bloc anonyme `BEGIN <call>; END;` délégué à `executePLSQL`, qui dispose déjà de la chaîne `lookupUnit → callBuiltin → PLS-00201` dans `PlsqlInterpreter`/`PlsqlHost` — évite de dupliquer la logique de dispatch des packages intégrés (conforme à la consigne « pas de duplicate »).
   - Validé par la suite complète `unit/database/` + `debug/oracle/` (79 fichiers, 2529 tests) — 0 régression.
 
-### 10.5 Double moteur PL/SQL (duplication / dette technique)
+### 10.5 Double moteur PL/SQL (duplication / dette technique) — ✅ CORRIGÉ (2026-06-10 : interpréteur legacy supprimé, cf. JOURNAL-REFACTORING-ORACLE itération 2)
 - **Constat** : Il existe deux interpréteurs PL/SQL coexistants : le nouveau `PlsqlInterpreter`/`PlsqlParser` (moderne, basé AST, gère curseurs/exceptions/boucles, ~2 100 lignes au total) et un interpréteur "legacy" basé sur des regex et de l'évaluation de chaînes directement dans `OracleDatabase` (`executePLSQLLegacy`/`executePLSQLStatements`/`evaluatePLSQLExpressionWithVars`, ~700 lignes). Le legacy n'est censé servir que de fallback en cas d'erreur de parsing du nouveau moteur, mais il représente une masse de code dupliqué et difficile à maintenir, silencieusement activé dès que `PlsqlParser` échoue.
 - **Preuve** : `src/database/oracle/OracleDatabase.ts:739-751` (`runAnonymousBlock` puis `if (!outcome.parseError) {…} return this.executePLSQLLegacy(executor, sql);`), bloc legacy `:794-1456` (`executePLSQLLegacy`, `executePLSQLStatements` ligne 1016, `evaluatePLSQLExpressionWithVars` ligne 1456).
 - **Sévérité** : Majeure
@@ -1131,13 +1124,15 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Majeure
 - **Recommandation** : Soit câbler réellement `CREATE PACKAGE [BODY]` dans `OracleExecutor`/`OracleParser` en s'appuyant sur le nouveau `PlsqlInterpreter`, soit faire échouer proprement avec `ORA-00900`/message explicite plutôt que de laisser la grammaire silencieusement non reconnue.
 
-### 10.7 Statements DDL "stub" — message de succès sans persistance d'état
+### 10.7 Statements DDL "stub" — message de succès sans persistance d'état — ✅ CORRIGÉ
 - **Constat** : `CREATE/DROP DATABASE LINK` et `CREATE/DROP MATERIALIZED VIEW` retournent un message de succès figé sans créer le moindre objet de catalogue ni autoriser la requête correspondante par la suite (`SELECT … FROM table@link` reste impossible, `SELECT * FROM mv_name` échouerait).
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:578-581` (`case 'CreateDbLinkStatement': return emptyResult('Database link created.');` … `case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');`); commentaires de stub côté parseur : `src/database/oracle/OracleParser.ts:1271` (`// ── CREATE DATABASE LINK (stub) ──`) et `:1291` (`// ── CREATE MATERIALIZED VIEW (stub) ──`).
 - **Sévérité** : Mineure (conforme au statut "stub" annoncé par le BRD §15.4-15.6, mais l'absence de toute trace en catalogue peut surprendre des scripts DBA qui font ensuite `SELECT … FROM DBA_DB_LINKS`).
 - **Recommandation** : Au minimum, persister le nom dans le catalogue pour que `DBA_DB_LINKS`/`DBA_MVIEWS` reflètent les objets créés (cohérence avec le reste du dictionnaire de données qui, lui, est branché sur l'état réel).
 
-### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive
+- **Correction appliquée (2026-06-12)** : vues matérialisées réelles (conteneur CTAS interrogeable, DBA_MVIEWS vivante, staleness sur DML, DBMS_MVIEW.REFRESH, ORA-00955/12003) et DB links persistés au catalogue (DBA_DB_LINKS vivante, ORA-02011/02024). Limites restantes documentées dans docs/JOURNAL-REFACTORING-ORACLE.md : pas de fast refresh / query rewrite, pas de requêtes cross-link (`SELECT … FROM t@link`).
+
+### 10.8 Flashback temporel — non implémenté malgré l'infrastructure d'archive — ✅ CORRIGÉ (2026-06-12 : AS OF SCN/TIMESTAMP + FLASHBACK TABLE TO SCN/TIMESTAMP sur historique de pré-images)
 - **Constat** : `FlashbackArchiveManager` gère un état réel (archives, rétention, tables activées), mais les requêtes `SELECT … AS OF TIMESTAMP` et `FLASHBACK TABLE … TO TIMESTAMP/SCN` sont des no-op loggés dans l'alert log ; seul `FLASHBACK TABLE … TO BEFORE DROP` (recyclebin) fonctionne réellement.
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:525-549` (commentaire explicite : `// DATABASE / TO TIMESTAMP / SCN are accepted but logical no-ops — the simulator has no undo/redo time machine.`) ; `BRD-Oracle-DBMS.md:1364-1369` confirme le statut ❌.
 - **Sévérité** : Mineure (déviation documentée et assumée)
@@ -1149,19 +1144,19 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure (assumé)
 - **Recommandation** : RAS si l'objectif reste la "tolérance de script" ; documenter dans le BRD que `DBA_TAB_PARTITIONS` ne sera jamais peuplée pour ces tables.
 
-### 10.10 Transactions / MVCC — snapshot complet plutôt que journal redo/undo réel
+### 10.10 Transactions / MVCC — snapshot complet plutôt que journal redo/undo réel — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : `COMMIT`/`ROLLBACK`/`SAVEPOINT` sont en réalité bien implémentés via une copie complète de l'état du storage (`captureSnapshot`/`restoreSnapshot`, Map<schema, Map<table, rows[]>>), ce qui dément le statut BRD "🟡 stubs, pas de vrai rollback" (ligne 1433) — le rollback fonctionne réellement. Il s'agit cependant d'un instantané "tout ou rien" en mémoire (pas de undo log par ligne, pas d'isolation entre sessions concurrentes, `SET TRANSACTION ISOLATION LEVEL …` est un simple acquiescement).
 - **Preuve** : `src/database/oracle/OracleExecutor.ts:143-175` (`captureSnapshot`/`restoreSnapshot`/`_txnSnapshot`), `:684-727` (`executeCommit`/`executeRollback`/`executeSavepoint` avec restauration réelle), `:495-498` (`case 'SetTransactionStatement': … // The simulator does not differentiate transaction isolation levels`).
 - **Sévérité** : Mineure (le BRD est *plus pessimiste* que le code réel sur ce point — dette de documentation)
 - **Recommandation** : Mettre à jour le BRD §16 (Phase 6.3-6.4) pour refléter que COMMIT/ROLLBACK/SAVEPOINT fonctionnent réellement par snapshot ; documenter explicitement la limite (pas de MVCC multi-session, pas d'isolation SERIALIZABLE réelle) pour fixer les attentes.
 
-### 10.11 V$ / data-dictionary — globalement bien câblées sur l'état vivant
+### 10.11 V$ / data-dictionary — globalement bien câblées sur l'état vivant — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : Contrairement à la crainte initiale de "vues canned", l'essentiel des vues `V/`DBA_*` interrogées (`V$SESSION`, `V$LOCK`, `V$TRANSACTION`, `DBA_AUDIT_TRAIL`, `DBA_PROFILES`, `DBA_TABLES`…) lisent l'état réel via `runtime`/`catalog`/`SecurityEngine`/`LockManager`. Le BRD est ici *en retard* sur le code : il qualifie encore `DBA_AUDIT_TRAIL` (ligne 445/1426) et `DBA_PROFILES` (ligne 1421) de "données statiques", alors que les deux lisent désormais respectivement `catalog.getAuditTrail()` et `SecurityEngine.profiles.getAllProfileRows()`.
 - **Preuve** : `src/database/oracle/views/v_session.ts` (lecture du `SecurityEngine session tracker`), `v_lock.ts:18-31` (`instance.lockManager.getHeldLocks()`), `v_transaction.ts:13-30` (`runtime.transactions`), `dba_audit_trail.ts:11-35` (`catalog.getAuditTrail()`), `dba_profiles.ts:39-46` (`catalog.getSecurityEngine()` puis `engine.profiles.getAllProfileRows()`).
 - **Sévérité** : Mineure (constat positif, mais documentation à corriger)
 - **Recommandation** : Mettre à jour le tableau récapitulatif du BRD (lignes 445, 1421, 1426) — ces deux vues sont passées de "stub statique" à "branchées sur l'état réel" ; ne pas laisser le document désynchronisé du code, au risque de fausser les futures évaluations de gap.
 
-### 10.12 Vues canned résiduelles (placeholders assumés)
+### 10.12 Vues canned résiduelles (placeholders assumés) — ✅ V$SQL_PLAN_MONITOR corrigée (2026-06-12 : lignes générées par le vrai PlanGenerator ; V$FIXED_VIEW_DEFINITION reste légitime)
 - **Constat** : Quelques vues restent volontairement synthétiques/placeholder, par construction du simulateur (équivalent réel Oracle = vues fixes opaques) :
   - `V$SQL_PLAN_MONITOR` génère une seule ligne `SELECT STATEMENT` factice par curseur surveillé, faute de vrais plans d'exécution.
   - `V$FIXED_VIEW_DEFINITION` synthétise `select * from x$<nom>` pour chaque vue enregistrée (l'équivalent réel n'expose pas non plus de vrai SQL).
@@ -1169,13 +1164,13 @@ Le module Oracle (`src/database/`, ~14 500 lignes pour le seul couple `OracleExe
 - **Sévérité** : Mineure
 - **Recommandation** : Aucune action urgente — `V$FIXED_VIEW_DEFINITION` est un cas légitime (Oracle réel ne révèle pas non plus le SQL des fixed views) ; pour `V$SQL_PLAN_MONITOR`, lier la sortie à `EXPLAIN PLAN` une fois 10.2 traité, pour cohérence inter-vues.
 
-### 10.13 RMAN — moteur réactif réel, au-delà du statut "stub" du BRD
+### 10.13 RMAN — moteur réactif réel, au-delà du statut "stub" du BRD — ✅ BRD resynchronisé (v1.2, 2026-06-12)
 - **Constat** : Contrairement au BRD (§3 ligne 99 : `RmanSession.ts # Session RMAN (stub)`, §16 ligne 1427 : "❌ Backup/Recovery concepts (RMAN stub) — non implémenté"), le sous-shell RMAN (`src/terminal/subshells/rman/`) est un sous-système conséquent : moteur de jobs (`RmanJobEngine`, 483 lignes) avec allocation de canaux, opérations BACKUP/RESTORE/RECOVER/DUPLICATE/CROSSCHECK/DELETE EXPIRED-OBSOLETE branchées sur un contexte réel (`IRmanOracleContext.getDatafiles()`), catalogue en mémoire (`InMemoryRmanCatalog`), bus d'événements réactif et suites de transcript dédiées (`debug/rman/*.debug.test.ts` : `rman-pitr-duplicate`, `rman-wan-disaster-recovery`, `rman-multi-server-lan`…). Seuls les messages d'étape de progression ("canned step messages") sont des chaînes pré-écrites — l'issue de l'opération (succès/échec, fichiers concernés) dépend de l'état réel.
 - **Preuve** : `src/terminal/subshells/rman/job/RmanJobEngine.ts:61` (commentaire `// 2. Stream the canned step messages`), `:98-111` (dispatch d'opérations réelles), `:113-129` (paramétrage réel `validate`/`compressed`/`encrypted`/`tag`/`incrementalLevel`) ; `BRD-Oracle-DBMS.md:99,1427` (statut documenté comme stub/non implémenté, désormais obsolète).
 - **Sévérité** : Mineure (constat positif — dette de documentation côté BRD)
 - **Recommandation** : Mettre à jour le BRD pour refléter le sous-système RMAN réel ; ne conserver l'étiquette "canned" que pour les libellés de progression d'étape, pas pour le résultat des opérations.
 
-### 10.14 Multitenant (CDB/PDB) — easter-egg "FAKED" dans un identifiant généré
+### 10.14 Multitenant (CDB/PDB) — easter-egg "FAKED" dans un identifiant généré — ✅ CORRIGÉ (2026-06-10 : GUID hexadécimal plausible, cf. JOURNAL-REFACTORING-ORACLE itération 7)
 - **Constat** : Le `MultitenantManager`/`PluggableDatabase` gère un état réel (création/ouverture/fermeture de PDB, conId, etc.), mais le GUID généré pour chaque PDB contient littéralement la chaîne `FAKED` en plein milieu — un artefact de génération laissé en production qui apparaîtrait tel quel dans `V$PDBS`/`DBA_PDBS`.
 - **Preuve** : `src/database/oracle/multitenant/PluggableDatabase.ts:27` — `this.guid = \`PDB${init.conId.toString(16)…}-CONS-OLE-OURO-FAKED${Math.random()…}\`;`
 - **Sévérité** : Mineure
@@ -1210,7 +1205,7 @@ La couche UI repose sur un store Zustand unique (`networkStore.ts`) qui détient
 - **Sévérité** : Mineure
 - **Recommandation** : RAS pour la logique métier ; voir 11.6 pour l'impact sur la réactivité du rendu (identité de `Map` recréée à chaque mutation).
 
-### 11.2 Canvas / rendu de topologie
+### 11.2 Canvas / rendu de topologie — ✅ CORRIGÉ (2026-06-12 : snapshots stabilisés référentiellement, moveDevice sans copie de Map, NetworkDevice sélecteurs + React.memo — voir docs/JOURNAL-DE-BORD.md entrée 24)
 - **Constat** : `getDevices()` est appelé directement dans le corps du composant à chaque rendu (`NetworkCanvas`, `NetworkDesigner`, `PropertiesPanel`). Cette fonction reconstruit un tableau complet de `NetworkDeviceUI` — en relisant tous les ports, IP, masques, MAC de **chaque** appareil — sans mémoïsation ni sélecteur Zustand dédié. Comme `useNetworkStore()` est appelé sans sélecteur, tout changement d'état (y compris `moveDevice`, qui recrée systématiquement la `Map` à `networkStore.ts:232`) force un nouveau calcul de `getDevices()` et un re-rendu de la totalité de la liste de devices/connexions — un risque réel de "re-render storm" lors d'un drag-and-drop sur une topologie de grande taille.
 - **Preuve** : `src/components/network/NetworkCanvas.tsx:41` (`const devices = getDevices();`), `src/store/networkStore.ts:227-234` (`moveDevice` → `new Map(state.deviceInstances)` à chaque pixel de déplacement).
 - **Sévérité** : Majeure

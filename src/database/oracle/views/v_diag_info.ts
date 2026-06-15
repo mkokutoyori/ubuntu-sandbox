@@ -5,7 +5,7 @@
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2 } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
-import { ORACLE_CONFIG } from '../../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from '../OracleConfig';
 
 registerView({
   name: 'V$DIAG_INFO',

@@ -44,7 +44,7 @@ export interface PasswordStepOptions {
  * ```ts
  * FlowSteps.password({
  *   prompt: 'Password:',
- *   validator: (pwd, ctx) => ctx.device.checkPassword(ctx.currentUser, pwd),
+ *   validator: (pwd, ctx) => ctx.device.checkPassword?.(ctx.currentUser, pwd) ?? false,
  *   errorMessage: 'Sorry, try again.',
  *   maxRetries: 2,
  * })
@@ -98,7 +98,7 @@ export function sudoPassword(currentUser?: string): InteractiveStep {
   return password({
     prompt: `[sudo] password for ${currentUser ?? 'user'}:`,
     storeAs: 'sudo_password',
-    validator: (pwd, ctx) => ctx.device.checkPassword(currentUser ?? ctx.currentUser, pwd),
+    validator: (pwd, ctx) => ctx.device.checkPassword?.(currentUser ?? ctx.currentUser, pwd) ?? false,
     maxRetries: MAX_SUDO_ATTEMPTS - 1,
     errorMessage: 'Sorry, try again.',
   });
@@ -113,7 +113,7 @@ export function suPassword(targetUser: string): InteractiveStep {
   return password({
     prompt: 'Password:',
     storeAs: 'su_password',
-    validator: (pwd, ctx) => ctx.device.checkPassword(targetUser, pwd),
+    validator: (pwd, ctx) => ctx.device.checkPassword?.(targetUser, pwd) ?? false,
     maxRetries: MAX_SU_ATTEMPTS - 1,
     errorMessage: 'su: Authentication failure',
   });
@@ -128,7 +128,7 @@ export function currentPassword(): InteractiveStep {
   return password({
     prompt: '(current) UNIX password:',
     storeAs: 'current_password',
-    validator: (pwd, ctx) => ctx.device.checkPassword(ctx.currentUser, pwd),
+    validator: (pwd, ctx) => ctx.device.checkPassword?.(ctx.currentUser, pwd) ?? false,
     maxRetries: 0,
     errorMessage: 'passwd: Authentication token manipulation error\npasswd: password unchanged',
   });

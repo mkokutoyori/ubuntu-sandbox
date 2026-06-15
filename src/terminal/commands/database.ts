@@ -7,13 +7,15 @@
 
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
-import { ORACLE_CONFIG } from './OracleConfig';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
+import { resolveOracleConnectTarget, parseConnectIdentifier } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
@@ -30,12 +32,66 @@ const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 export function getOracleDatabase(deviceId: string): OracleDatabase {
   let db = oracleInstances.get(deviceId);
   if (!db) {
+    // Provision the Oracle home / datafiles / OS identity on the host
+    // BEFORE the instance boots: the OPEN-time datafile check reads the
+    // device VFS, so the disk must exist first. Idempotent — callers
+    // that already ran initOracleFilesystem are unaffected.
+    const dev = EquipmentRegistry.getInstance().getById(deviceId);
+    if (dev) initOracleFilesystem(dev as import('@/network').HostCapableDevice);
+
     db = new OracleDatabase();
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
+    // Device VFS reader for CREATE PFILE/SPFILE FROM … — injected here so
+    // the database layer never imports network/Equipment directly.
+    db.instance.setDeviceFileReader((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
+      return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+    });
+    // Writer / remover for UTL_FILE: server-side PL/SQL file I/O lands on
+    // the same host VFS the OS shell reads, so a file written by
+    // UTL_FILE.PUT_LINE is immediately visible to `cat` and vice versa.
+    db.instance.setDeviceFileWriter((path, content) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const write = (dev as unknown as { writeFileFromEditor?: (p: string, c: string) => boolean } | null)?.writeFileFromEditor;
+      return typeof write === 'function' ? !!write.call(dev, path, content) : false;
+    });
+    db.instance.setDeviceFileRemover((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
+      return typeof rm === 'function' ? !!rm.call(dev, path) : false;
+    });
+    db.instance.setOsCommandRunner((cmd) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const run = (dev as unknown as { runSshCommandSync?: (u: string, c: string) => { output: string; exitCode: number } | null } | null)?.runSshCommandSync;
+      return typeof run === 'function' ? run.call(dev, 'oracle', cmd) : null;
+    });
+    // Existence probe for the MOUNT-time control file check and the
+    // OPEN-time datafile check. Returns null (= skip the checks) when no
+    // device with a filesystem backs this database — files can only go
+    // missing from a disk that exists.
+    db.instance.setHostFileProbe((path) => {
+      const dev = EquipmentRegistry.getInstance().getById(deviceId);
+      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
+      if (typeof read !== 'function') return null;
+      return read.call(dev, path) !== null;
+    });
+
+    // Database links resolve their USING clause through the same Oracle
+    // Net client as sqlplus@/tnsping — alias in this device's
+    // tnsnames.ora or EZConnect, possibly to a remote topology host.
+    db.setDbLinkResolver((connectString) => {
+      const local = EquipmentRegistry.getInstance().getById(deviceId);
+      if (!local) {
+        return { ok: false, error: 'ORA-12154: TNS:could not resolve the connect identifier specified' };
+      }
+      return resolveOracleConnectTarget(
+        local as import('@/network').HostCapableDevice, connectString, getOracleDatabase);
+    });
 
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
@@ -46,13 +102,23 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
 
     const systemd = new OracleSystemdSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);
 
     db.instance.startup('OPEN');
+    // A freshly provisioned server boots with the listener running
+    // (dbstart/systemd would have started it); `lsnrctl stop` still
+    // takes it down realistically (ORA-12541 on @connects).
+    db.instance.startListener();
     installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
+    // The boot provisioning (initOracleFilesystem) wrote the seed
+    // datafiles before the database existed — tell the FS sync they are
+    // materialised so it never recreates a file the user later deletes.
+    sync.primeDatafiles(deviceId);
+    sync.primeSgaMemory(deviceId);
   }
   return db;
 }
@@ -63,52 +129,97 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
  */
 export function createSQLPlusSession(
   deviceId: string,
-  args: string[]
+  args: string[],
+  osCtx?: OsSecurityContext
 ): { session: SQLPlusSession; banner: string[]; loginOutput: string[] } {
-  const db = getOracleDatabase(deviceId);
-  const session = new SQLPlusSession(db);
+  let db = getOracleDatabase(deviceId);
+  const localDevice = EquipmentRegistry.getInstance().getById(deviceId) as
+    import('@/network').HostCapableDevice | null;
 
-  const banner = session.getBanner();
-  let loginOutput: string[] = [];
-
-  // Parse sqlplus arguments:
-  //   sqlplus user/pass
-  //   sqlplus user/pass@tns
-  //   sqlplus / as sysdba
-  //   sqlplus -s user/pass  (silent mode)
-  //   sqlplus (no args — interactive login prompt, not supported yet)
-
+  // `user/pass@identifier` — resolve through Oracle Net like a real
+  // client (tnsnames.ora alias or EZConnect, possibly to a REMOTE host
+  // across the simulated network) instead of silently using local.
   let username = '';
   let password = '';
   let asSysdba = false;
+  let netError: string | null = null;
 
   const filtered = args.filter(a => !a.startsWith('-'));
-
   const asSysdbaIdx = filtered.findIndex(a => a.toUpperCase() === 'AS');
   if (asSysdbaIdx !== -1 && filtered[asSysdbaIdx + 1]?.toUpperCase() === 'SYSDBA') {
     asSysdba = true;
   }
 
   const connArg = filtered[0];
+  let connectIdentifier: string | null = null;
+  if (connArg && connArg !== '/' && connArg.includes('/')) {
+    const at = connArg.indexOf('@');
+    if (at >= 0) connectIdentifier = connArg.slice(at + 1);
+  }
+  let viaOracleNet = false;
+  if (connectIdentifier && localDevice) {
+    const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
+    if (res.ok) { db = res.db; viaOracleNet = true; }
+    else netError = res.error;
+  }
+
+  const session = new SQLPlusSession(db);
+  // A connect identifier means the session came in through the listener:
+  // its dedicated server process is forked LOCAL=NO, not bequeath.
+  if (viaOracleNet) session.setTransport('tcp');
+  // Bind the launching shell's OS identity so bequeath connections
+  // (`/ as sysdba`) are gated by real dba-group membership and the audit
+  // trail records the real OSUSER/MACHINE instead of a hardcoded default.
+  if (osCtx) session.setOsContext(osCtx);
+  // In-session CONNECT user/pass@X resolves through the same client.
+  if (localDevice) {
+    session.setTnsResolver((id) =>
+      resolveOracleConnectTarget(localDevice, id, getOracleDatabase));
+  }
+
+  const banner = session.getBanner();
+  let loginOutput: string[] = [];
+
+  // Parse sqlplus arguments:
+  //   sqlplus user/pass
+  //   sqlplus user/pass@tns        (alias or EZConnect, local or remote)
+  //   sqlplus / as sysdba
+  //   sqlplus -s user/pass  (silent mode)
+  //   sqlplus (no args — interactive login prompt, not supported yet)
+
   if (connArg) {
     if (connArg === '/' && asSysdba) {
       // sqlplus / as sysdba
     } else if (connArg.includes('/')) {
-      [username, password] = connArg.split('/', 2);
-      password = password.replace(/@.*$/, ''); // strip @tns_alias
+      // First slash only — EZConnect identifiers carry slashes
+      // (user/pass@//host:port/service); the @-part was already
+      // extracted above as the connect identifier.
+      const slash = connArg.indexOf('/');
+      username = connArg.slice(0, slash);
+      password = connArg.slice(slash + 1).replace(/@.*$/, '');
     } else if (connArg !== 'AS') {
       username = connArg;
       // Would need password prompt — default to empty for now
     }
   }
 
-  if (asSysdba || (connArg === '/' && asSysdba)) {
+  if (netError) {
+    // The Oracle Net layer refused before any credential was checked —
+    // exactly what a real client prints (ERROR: ORA-12541: …).
+    loginOutput = ['ERROR:', netError];
+  } else if (asSysdba || (connArg === '/' && asSysdba)) {
     loginOutput = session.login('SYS', '', true);
   } else if (username) {
     loginOutput = session.login(username, password);
   } else {
     // No credentials — just show banner, user can CONNECT later
     loginOutput = ['Not connected.'];
+  }
+
+  // Connecting through a PDB service lands the session in that container.
+  if (connectIdentifier && localDevice && loginOutput.includes('Connected.')) {
+    const service = parseConnectIdentifier(localDevice, connectIdentifier)?.service;
+    if (service) session.enterContainerIfPdb(service);
   }
 
   return { session, banner, loginOutput };
@@ -169,7 +280,7 @@ export function resetAllOracleInstances(): void {
  */
 const oracleFilesystemInitialized = new Set<string>();
 
-export function initOracleFilesystem(device: import('@/network').Equipment): void {
+export function initOracleFilesystem(device: import('@/network').HostCapableDevice): void {
   const deviceId = device.id || 'default';
   if (oracleFilesystemInitialized.has(deviceId)) return;
   oracleFilesystemInitialized.add(deviceId);
@@ -297,9 +408,9 @@ remote_login_passwordfile = EXCLUSIVE
 `export ORACLE_HOME=${oracleHome}
 export ORACLE_SID=${sid}
 export ORACLE_BASE=${oracleBase}
-export PATH=\$ORACLE_HOME/bin:\$PATH
-export LD_LIBRARY_PATH=\$ORACLE_HOME/lib
-export TNS_ADMIN=\$ORACLE_HOME/network/admin
+export PATH=$ORACLE_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib
+export TNS_ADMIN=$ORACLE_HOME/network/admin
 `,
 
     // ── Stub binaries ($ORACLE_HOME/bin/) ─────────────────────
@@ -430,12 +541,18 @@ Completed: ALTER DATABASE OPEN
   };
 
   const install = (device as unknown as {
-    installSystemFile?(path: string, content: string): boolean;
+    installSystemFile?(path: string, content: string, uid?: number, gid?: number): boolean;
   }).installSystemFile?.bind(device);
   for (const [path, content] of Object.entries(files)) {
-    if (install) install(path, content);
-    else device.writeFileFromEditor(path, content);
+    if (install) {
+      if (path.startsWith('/u01')) install(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
+      else install(path, content);
+    } else {
+      device.writeFileFromEditor?.(path, content);
+    }
   }
+
+  provisionOracleOsIdentity(device);
 
   // Register Oracle background processes so they appear in `ps aux`
   if (oracleInstances.has(deviceId)) {
@@ -444,9 +561,38 @@ Completed: ALTER DATABASE OPEN
 }
 
 /**
+ * Provision the OS identity a real Oracle installation requires
+ * (oracle-database-preinstall): the oinstall/dba groups and the oracle
+ * software owner. Runs through the device's own shell surface so
+ * /etc/passwd, /etc/group and IAM events stay coherent.
+ *
+ * The pre-seeded operator cast (root, alice, bob, carl, dave) is added to
+ * the dba group — this lab server is provisioned as if its admins were
+ * DBA staff, so existing topologies keep working. Any *new* account is
+ * outside dba and gets the real ORA-01031 on `sqlplus / as sysdba`.
+ */
+export const ORACLE_OS_UID = 54321;
+export const ORACLE_OS_GID = 54321;
+
+function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice): void {
+  const run = (device as unknown as {
+    executeShellCommandSync?(command: string): string;
+  }).executeShellCommandSync?.bind(device);
+  if (!run) return;
+
+  // Idempotent: groupadd/useradd answer "already exists" on re-init.
+  run('groupadd -g 54321 oinstall');
+  run('groupadd -g 54322 dba');
+  run('useradd -u 54321 -g oinstall -G dba -m -d /home/oracle -s /bin/bash oracle');
+  for (const u of ['root', 'alice', 'bob', 'carl', 'dave']) {
+    run(`usermod -aG dba ${u}`);
+  }
+}
+
+/**
  * Write updated spfile content to the VFS after ALTER SYSTEM SET ... SCOPE=SPFILE|BOTH.
  */
-export function updateSpfileOnDevice(device: import('@/network').Equipment, parameters: Map<string, string>): void {
+export function updateSpfileOnDevice(device: import('@/network').HostCapableDevice, parameters: Map<string, string>): void {
   const oracleHome = ORACLE_CONFIG.HOME;
   const sid = ORACLE_CONFIG.SID;
   const lines: string[] = [];
@@ -454,23 +600,23 @@ export function updateSpfileOnDevice(device: import('@/network').Equipment, para
     const needsQuote = /[a-zA-Z]/.test(value) && !value.startsWith("'");
     lines.push(`*.${name}=${needsQuote ? `'${value}'` : value}`);
   }
-  device.writeFileFromEditor(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
+  device.writeFileFromEditor?.(`${oracleHome}/dbs/spfile${sid}.ora`, lines.join('\n') + '\n');
 }
 
 /**
  * Write updated alert log to the VFS.
  */
-export function syncAlertLogToDevice(device: import('@/network').Equipment, alertLogEntries: string[]): void {
+export function syncAlertLogToDevice(device: import('@/network').HostCapableDevice, alertLogEntries: string[]): void {
   const sid = ORACLE_CONFIG.SID;
   const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
-  device.writeFileFromEditor(path, alertLogEntries.join('\n') + '\n');
+  device.writeFileFromEditor?.(path, alertLogEntries.join('\n') + '\n');
 }
 
 /**
  * Sync tablespace datafiles from the Oracle storage layer to the VFS.
  * Creates stub files for new datafiles, removes files for dropped tablespaces.
  */
-export function syncDatafilesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncDatafilesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
   const tablespaces = storage.getAllTablespaces();
 
@@ -479,7 +625,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
     for (const df of ts.datafiles) {
       const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
       const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-      device.writeFileFromEditor(df.path, content);
+      device.writeFileFromEditor?.(df.path, content);
     }
   }
 
@@ -488,14 +634,14 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
   for (const group of redoGroups) {
     for (const member of group.members) {
       const sizeMB = Math.round(group.sizeBytes / 1048576);
-      device.writeFileFromEditor(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
+      device.writeFileFromEditor?.(member, `[ORACLE REDO LOG - Group ${group.group} - ${sizeMB}M]`);
     }
   }
 
   // Sync control files from instance parameters
   const ctlFiles = (db.instance.getParameter('control_files') ?? '').split(',').map(f => f.trim()).filter(f => f);
   ctlFiles.forEach((f, i) => {
-    device.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+    device.writeFileFromEditor?.(f, `[ORACLE CONTROL FILE ${i + 1}]`);
   });
 }
 
@@ -503,7 +649,7 @@ export function syncDatafilesToDevice(device: import('@/network').Equipment, db:
  * Register Oracle background processes (PMON, SMON, etc.) in the device's process table
  * so they appear in `ps aux` output, like on a real Oracle server.
  */
-export function syncOracleProcessesToDevice(device: import('@/network').Equipment, db: OracleDatabase): void {
+export function syncOracleProcessesToDevice(device: import('@/network').HostCapableDevice, db: OracleDatabase): void {
   // Only register if the device supports it (LinuxServer)
   const dev = device as { registerProcess?: (pid: number, user: string, cmd: string) => void; clearSystemProcesses?: () => void };
   if (typeof dev.registerProcess !== 'function') return;

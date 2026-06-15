@@ -148,11 +148,23 @@ describe('SQL*Plus Commands', () => {
   });
 
   describe('SPOOL', () => {
-    test('SPOOL filename and SPOOL OFF work without error', () => {
+    test('SPOOL filename and SPOOL OFF write the capture through the file IO', () => {
+      const files: Record<string, string> = {};
+      session.setFileIO({
+        resolve: (p: string) => (p.startsWith('/') ? p : `/root/${p}`),
+        read: (p: string) => (p in files ? files[p] : null),
+        write: (p: string, c: string) => { files[p] = c; return true; },
+      });
       const result1 = session.processLine('SPOOL output.log');
       expect(result1.output).toEqual([]);
       const result2 = session.processLine('SPOOL OFF');
       expect(result2.output).toEqual([]);
+      expect(files['/root/output.log']).toContain('SPOOL OFF');
+    });
+
+    test('SPOOL without a wired filesystem fails with SP2-0606', () => {
+      const result = session.processLine('SPOOL output.log');
+      expect(result.output.some(l => l.includes('SP2-0606'))).toBe(true);
     });
   });
 

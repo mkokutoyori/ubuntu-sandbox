@@ -21,6 +21,8 @@ import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
 import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
+import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
 import { formatDefault } from '@/network/devices/windows/PSPipeline';
@@ -127,6 +129,10 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     get now()    { return new Date() as unknown as PSValue; },
     get utcnow() { return new Date() as unknown as PSValue; },
     get today()  { const d = new Date(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
+    new: (...a: PSValue[]) => {
+      const n = a.map(Number);
+      return new Date(n[0] ?? 1970, (n[1] ?? 1) - 1, n[2] ?? 1, n[3] ?? 0, n[4] ?? 0, n[5] ?? 0) as unknown as PSValue;
+    },
     parse:      (s: PSValue) => new Date(String(s)) as unknown as PSValue,
     parseexact: (s: PSValue) => new Date(String(s)) as unknown as PSValue,
     minvalue:   new Date(0) as unknown as PSValue,
@@ -313,7 +319,7 @@ export class PSRuntime {
       // Array of plain objects (all elements are non-null records with at
       // least one string-keyed field) → table format.
       const arr = result as PSValue[];
-      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v))) {
+      if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date))) {
         const formatted = formatDefault(arr as Array<Record<string, unknown>>);
         if (formatted) this.outputLines.push(formatted);
         return;
@@ -324,8 +330,10 @@ export class PSRuntime {
     // A single plain object (e.g. Measure-Object's result, Get-Item, a
     // custom [pscustomobject]) should render through the same default
     // formatter — ≤4 props → table, >4 props → list — instead of the
-    // inline `Key=Value; ...` form.
+    // inline `Key=Value; ...` form. Date instances are scalar; let them
+    // fall through to psValueToString.
     if (result !== null && typeof result === 'object' && !Array.isArray(result)
+        && !(result instanceof Date)
         && !this.isScriptBlock(result)
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
@@ -352,6 +360,10 @@ export class PSRuntime {
       const t = typeof v;
       if (t === 'string' || t === 'number' || t === 'boolean') continue;
       if (v instanceof Date) continue;
+      // Arrays render through renderObjectShort as `{a, b, c}` — that is a
+      // legitimate table cell, so allow them. Nested non-Date objects still
+      // disqualify the row (Get-Acl's Access keeps Format-List rendering).
+      if (Array.isArray(v)) continue;
       return false;
     }
     return true;
@@ -1218,7 +1230,10 @@ export class PSRuntime {
 
     switch (op) {
       case '+':  return this.applyPlus(left, right);
-      case '-':  return (left as number) - (right as number);
+      case '-':
+        if (left instanceof Date && right instanceof Date) return this.dateDifference(left, right);
+        if (left instanceof Date) return new Date(left.getTime() - Number(right)) as unknown as PSValue;
+        return (left as number) - (right as number);
       case '*':  return this.applyMultiply(left, right);
       case '/':  return (left as number) / (right as number);
       case '%':  return (left as number) % (right as number);
@@ -1604,6 +1619,11 @@ export class PSRuntime {
       try {
         const r = (test as (...a: PSValue[]) => PSValue)(subject);
         return this.isTruthy(r);
+      } catch { return false; }
+    }
+    if (this.isScriptBlock(test)) {
+      try {
+        return this.isTruthy(this.invokeBlockInScope(test as unknown as PSScriptBlock, env, subject));
       } catch { return false; }
     }
     const s = String(subject);
@@ -2691,6 +2711,10 @@ export class PSRuntime {
     }
   }
 
+  private dateDifference(a: Date, b: Date): PSValue {
+    return makeTimeSpan(a.getTime() - b.getTime()) as unknown as PSValue;
+  }
+
   private getDateMember(d: Date, member: string): PSValue {
     switch (member) {
       case 'year':        return d.getFullYear();
@@ -2704,7 +2728,9 @@ export class PSRuntime {
       case 'dayofyear':   return Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000);
       case 'ticks':       return d.getTime() * 10000;
       case 'date':        return new Date(d.getFullYear(), d.getMonth(), d.getDate()) as unknown as PSValue;
-      case 'tostring':    return () => d.toISOString();
+      case 'tostring':    return (fmt?: PSValue) =>
+        fmt !== undefined && fmt !== null && String(fmt) !== ''
+          ? formatDotNetDate(d, String(fmt)) : d.toISOString();
       case 'tolongdatestring': return () => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       case 'toshortdatestring': return () => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
       case 'adddays':     return (n: PSValue) => { const r = new Date(d); r.setDate(r.getDate() + Number(n)); return r as unknown as PSValue; };

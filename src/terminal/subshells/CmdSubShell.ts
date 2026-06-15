@@ -7,6 +7,7 @@
  * Supports executing .bat files (basic: REM/:: comments, @echo off, %n args).
  */
 
+import { splitCmdArgs } from '@/network/devices/windows/cmdline';
 import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
@@ -200,16 +201,7 @@ export class CmdSubShell implements ISubShell {
 
   /** Split a command line respecting double-quoted arguments. */
   private splitArgs(line: string): string[] {
-    const parts: string[] = [];
-    let cur = '';
-    let inQ = false;
-    for (const ch of line) {
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === ' ' && !inQ) { if (cur) { parts.push(cur); cur = ''; } }
-      else { cur += ch; }
-    }
-    if (cur) parts.push(cur);
-    return parts;
+    return splitCmdArgs(line);
   }
 
   dispose(): void {

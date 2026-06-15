@@ -17,8 +17,8 @@
  */
 
 import type { Port } from '../../hardware/Port';
-import type { IPAddress, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, PingResult } from '../EndHost';
+import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsWireResponse } from '../../dns/DnsWire';
 
@@ -66,6 +66,7 @@ export interface LinuxNetKernel {
 
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
+  getIPv6RoutingTable(): HostIPv6RouteEntry[];
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
   removeRoute(network: IPAddress, mask: SubnetMask): boolean;
   setDefaultGateway(gw: IPAddress): void;
@@ -84,6 +85,13 @@ export interface LinuxNetKernel {
     count: number,
     timeoutMs?: number,
     ttl?: number,
+  ): Promise<PingResult[]>;
+
+  /** ICMPv6 echo through the real NDP/route resolution path (`ping6`). */
+  ping6Sequence(
+    target: IPv6Address,
+    count: number,
+    timeoutMs?: number,
   ): Promise<PingResult[]>;
 
   traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;

@@ -37,6 +37,18 @@ export interface OracleBackgroundProcessStoppedPayload extends OracleDeviceRef {
   pid: number;
 }
 
+export interface OracleServerProcessStartedPayload extends OracleDeviceRef {
+  pid: number;
+  sessionSid: number;
+  username: string;
+  command: string;
+}
+
+export interface OracleServerProcessStoppedPayload extends OracleDeviceRef {
+  pid: number;
+  sessionSid: number;
+}
+
 export interface OracleAlertLogEntryAddedPayload extends OracleDeviceRef {
   line: string;
 }
@@ -181,6 +193,7 @@ export interface OracleServiceEventPayload extends OracleDeviceRef {
 export interface OracleListenerEventPayload extends OracleDeviceRef {
   state: 'running' | 'stopped';
   endpoint: string;
+  port?: number;
 }
 
 export interface OracleSessionLongopsPayload extends OracleSessionRef {
@@ -495,6 +508,8 @@ export type OracleDomainEvent =
   | { topic: 'oracle.instance.state-changed';            payload: OracleInstanceStateChangedPayload }
   | { topic: 'oracle.instance.background-process-started'; payload: OracleBackgroundProcessStartedPayload }
   | { topic: 'oracle.instance.background-process-stopped'; payload: OracleBackgroundProcessStoppedPayload }
+  | { topic: 'oracle.instance.server-process-started';     payload: OracleServerProcessStartedPayload }
+  | { topic: 'oracle.instance.server-process-stopped';     payload: OracleServerProcessStoppedPayload }
   | { topic: 'oracle.instance.alert-log-entry-added';    payload: OracleAlertLogEntryAddedPayload }
   | { topic: 'oracle.instance.parameter-changed';        payload: OracleParameterChangedPayload }
   | { topic: 'oracle.instance.redo-log-switched';        payload: OracleRedoLogSwitchedPayload }

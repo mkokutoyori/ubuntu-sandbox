@@ -134,7 +134,7 @@ describe('Get-ChildItem (end-to-end through PowerShellSubShell)', () => {
     await execPS(pc, 'Set-Content -Path C:\\GciFmt\\f.txt -Value "12345"');
     const out = await execPS(pc, 'Get-ChildItem C:\\GciFmt');
     const fileLine = out.split('\n').find(l => l.includes('f.txt'))!;
-    expect(fileLine).toMatch(/\b5\b/); // "12345" is 5 chars long after \r\n stripping in set-content
+    expect(fileLine).toMatch(/\b6\b/); // "12345" + the newline Set-Content appends, like real PowerShell
   });
 
   it('Set-Location no longer crashes with "this.pc.setCwd is not a function"', async () => {

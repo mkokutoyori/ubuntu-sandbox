@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
@@ -60,8 +61,9 @@ import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
-  UDP_PORT_RIP, UDP_PORT_IKE_NAT_T,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
+  IP_PROTO_EIGRP,
+  UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
@@ -72,6 +74,7 @@ import { Logger } from '../core/Logger';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
@@ -190,7 +193,7 @@ export interface IPv6ACL {
   entries: IPv6ACLEntry[];
 }
 
-export abstract class Router extends Equipment {
+export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
@@ -305,8 +308,11 @@ export abstract class Router extends Equipment {
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      getArpEntry: (ip) => this.arpTable.get(ip),
       getRipEngine: () => this.ripEngine,
       getOspfIntegration: () => this.ospfIntegration,
+      getTcpStack: () => this.tcpv2,
     });
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP) => {
@@ -715,10 +721,12 @@ export abstract class Router extends Equipment {
 
   /** Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
-    // Keep EIGRP/BGP-learned routes fresh for the data path: a real
-    // adjacency over the live topology installs/withdraws routes
-    // before every forwarding decision (config-driven, reactive).
-    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.converge();
+    // Keep EIGRP/BGP-learned routes fresh for the data path WITHOUT
+    // emitting protocol frames: routes already received from the wire
+    // are reflected into the RIB before every forwarding decision.
+    // Real Hello/Update rounds happen at config/show time (triggered
+    // updates) — a router does not hello on every packet it forwards.
+    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.refresh();
 
     let bestRoute: RouteEntry | null = null;
     let bestPrefix = -1;
@@ -1126,6 +1134,24 @@ export abstract class Router extends Equipment {
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
+    // OSPF runs directly over IP (proto 89, RFC 2328 §4.3).
+    if (ipPkt.protocol === IP_PROTO_OSPF) {
+      const ospfPkt = ipPkt.payload as { type?: string };
+      if (ospfPkt?.type === 'ospf' && this.ospfIntegration.isOSPFEnabled()) {
+        this.ospfIntegration.receivePacket(
+          inPort, ipPkt.sourceIP.toString(),
+          ipPkt.payload as import('../ospf/types').OSPFPacket,
+        );
+      }
+      return;
+    }
+
+    // EIGRP runs directly over IP (proto 88, RFC 7868 §4.2).
+    if (ipPkt.protocol === IP_PROTO_EIGRP) {
+      this.dynamicRouting.receiveEigrpPacket(inPort, ipPkt);
+      return;
+    }
+
     // IPSec inbound decapsulation
     if (ipPkt.protocol === IP_PROTO_ESP && this.ipsecEngine) {
       const inner = this.ipsecEngine.processInboundESP(ipPkt);
@@ -1269,9 +1295,38 @@ export abstract class Router extends Equipment {
         const rip = udp.payload as RIPPacket;
         if (!rip || rip.type !== 'rip') return;
         this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
+      } else if (udp.destinationPort === 67) {
+        this.handleDhcpUdp(inPort, ipPkt, udp);
+      } else if (udp.destinationPort === UDP_PORT_IKE) {
+        this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
       }
       // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
     }
+  }
+
+  /** @internal ISAKMP payload as a UDP 500→500 datagram through the FIB (DPD). */
+  _sendIkeUdp(destIp: string, payload: unknown): boolean {
+    const dst = new IPAddress(destIp);
+    const route = this.lookupRoute(dst);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const srcIp = egress?.getIPAddress();
+    if (!egress || !srcIp) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: UDP_PORT_IKE, destinationPort: UDP_PORT_IKE,
+      length: 8 + 64, checksum: 0, payload,
+    };
+    const ipPkt = createIPv4Packet(srcIp, dst, IP_PROTO_UDP, 64, udp, 8 + 64);
+    const arpHit = this.arpTable.get(
+      (route.nextHop ?? dst).toString(),
+    ) ?? this.arpTable.get(dst.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+    return true;
   }
 
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
@@ -1790,6 +1845,185 @@ export abstract class Router extends Equipment {
   _getNeighborCacheInternal() { return this.ipv6Engine.getNeighborCacheInternal(); }
   /** @internal Used by CLI shells */
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+
+  private handleDhcpUdp(inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
+    const pkt = udp.payload as DHCPPacket | undefined;
+    if (!pkt || !(pkt instanceof DHCPPacket)) return;
+    if (pkt.op === 1) {
+      const helpers = this.dhcpServer.getHelperAddresses(inPort);
+      if (helpers.length > 0) {
+        this.relayDhcpToHelpers(inPort, pkt, helpers);
+        return;
+      }
+      if (this.dhcpServer.isEnabled()) this.serveDhcpOnWire(inPort, pkt);
+      return;
+    }
+    if (pkt.op === 2) {
+      for (const [name, port] of this.ports) {
+        const ip = port.getIPAddress();
+        if (ip && pkt.giaddr === ip.toString()) {
+          pkt.removeOption(82);
+          this.sendDhcpFrameOnPort(name, pkt, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+          this.getBus().publish({
+            topic: 'dhcp.relay.reply-forwarded',
+            payload: {
+              deviceId: this.id, hostname: this.getHostname(),
+              iface: name, clientMac: pkt.chaddr, assignedIp: pkt.yiaddr,
+            },
+          });
+          return;
+        }
+      }
+    }
+  }
+
+  private relayDhcpToHelpers(inPort: string, pkt: DHCPPacket, helpers: string[]): void {
+    const inIp = this.ports.get(inPort)?.getIPAddress();
+    if (!inIp) return;
+    if (pkt.giaddr === '0.0.0.0') pkt.giaddr = inIp.toString();
+    let option82: { circuitId: string; remoteId: string } | null = null;
+    if (this.dhcpServer.isRelayInformationOptionEnabled()) {
+      option82 = { circuitId: inPort, remoteId: this.getHostname() };
+      pkt.setOption(82, option82);
+    }
+    for (const helper of helpers) {
+      const dst = new IPAddress(helper);
+      const route = this.lookupRoute(dst);
+      if (!route) continue;
+      const egress = this.ports.get(route.iface);
+      const srcIp = egress?.getIPAddress();
+      if (!egress || !srcIp) continue;
+      const udp: UDPPacket = {
+        type: 'udp', sourcePort: 67, destinationPort: 67,
+        length: 8 + 300, checksum: 0, payload: pkt,
+      };
+      const relayed = createIPv4Packet(new IPAddress(pkt.giaddr), dst, IP_PROTO_UDP, 64, udp, 8 + 300);
+      this.sendFrame(route.iface, {
+        srcMAC: egress.getMAC(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: relayed,
+      });
+    }
+    this.getBus().publish({
+      topic: 'dhcp.relay.forwarded',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        iface: inPort, giaddr: pkt.giaddr, helpers: [...helpers],
+        clientMac: pkt.chaddr,
+        circuitId: option82?.circuitId ?? null,
+        remoteId: option82?.remoteId ?? null,
+      },
+    });
+  }
+
+  private serveDhcpOnWire(inPort: string, pkt: DHCPPacket): void {
+    const giaddr = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
+    const option82 = pkt.getOption(82) as { circuitId: string; remoteId: string } | undefined;
+    const type = pkt.getMessageType();
+    if (option82) {
+      this.getBus().publish({
+        topic: 'dhcp.server.option82-received',
+        payload: {
+          deviceId: this.id, hostname: this.getHostname(),
+          messageType: type, clientMac: pkt.chaddr,
+          giaddr: giaddr ?? null,
+          circuitId: option82.circuitId, remoteId: option82.remoteId,
+        },
+      });
+    }
+    let reply: DHCPPacket | null = null;
+    if (type === 'DHCPDISCOVER') {
+      const offer = this.dhcpServer.processDiscover({
+        clientMAC: pkt.chaddr, xid: pkt.xid,
+        clientIdentifier: pkt.chaddr, parameterRequestList: [],
+        giaddr,
+      });
+      if (!offer) return;
+      reply = DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
+        offer.serverIdentifier, {
+          mask: offer.pool.mask ?? '255.255.255.0',
+          router: offer.pool.defaultRouter ?? '0.0.0.0',
+          dns: offer.pool.dnsServers,
+          domainName: offer.pool.domainName ?? undefined,
+          leaseDuration: offer.pool.leaseDuration ?? 86400,
+          renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
+        });
+    } else if (type === 'DHCPREQUEST') {
+      const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
+      const serverId = String(pkt.getOption(54) ?? '');
+      const result = this.dhcpServer.processRequestWithNak({
+        clientMAC: pkt.chaddr, xid: pkt.xid,
+        requestedIP: requested, clientIdentifier: pkt.chaddr,
+        serverIdentifier: serverId, giaddr,
+      } as never);
+      if (!result) return;
+      if (result.type === 'NAK' || !result.binding) {
+        reply = DHCPPacket.createNak(pkt.chaddr, pkt.xid,
+          result.serverIdentifier, result.message ?? 'requested address not available');
+      } else {
+        const pool = this.dhcpServer.getAllPools().values().next().value;
+        reply = DHCPPacket.createAck(pkt.chaddr, pkt.xid,
+          result.binding.ipAddress, result.serverIdentifier, {
+            mask: pool?.mask ?? '255.255.255.0',
+            router: pool?.defaultRouter ?? '0.0.0.0',
+            dns: pool?.dnsServers ?? [],
+            domainName: pool?.domainName ?? undefined,
+            leaseDuration: pool?.leaseDuration ?? 86400,
+            renewalTime: pool?.renewalTime,
+            rebindingTime: pool?.rebindingTime,
+          });
+      }
+    } else if (type === 'DHCPDECLINE') {
+      this.dhcpServer.processDecline({
+        clientMAC: pkt.chaddr,
+        declinedIP: String(pkt.getOption(50) ?? ''),
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return;
+    } else if (type === 'DHCPRELEASE') {
+      this.dhcpServer.processRelease({
+        clientMAC: pkt.chaddr,
+        clientIP: pkt.ciaddr,
+        serverIdentifier: String(pkt.getOption(54) ?? ''),
+        clientIdentifier: pkt.chaddr,
+      });
+      return;
+    }
+    if (!reply) return;
+    if (option82) reply.setOption(82, option82);
+    reply.giaddr = pkt.giaddr;
+    if (giaddr) {
+      const dst = new IPAddress(giaddr);
+      const route = this.lookupRoute(dst);
+      const egress = route ? this.ports.get(route.iface) : undefined;
+      if (!route || !egress) return;
+      this.sendDhcpFrameOnPort(route.iface, reply, dst, MACAddress.broadcast());
+    } else {
+      this.sendDhcpFrameOnPort(inPort, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+    }
+  }
+
+  private sendDhcpFrameOnPort(
+    portName: string,
+    pkt: DHCPPacket,
+    dstIp: IPAddress,
+    dstMac: MACAddress,
+  ): void {
+    const port = this.ports.get(portName);
+    const srcIp = port?.getIPAddress();
+    if (!port || !srcIp) return;
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort: 67,
+      destinationPort: dstIp.toString() === '255.255.255.255' ? 68 : 67,
+      length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: dstMac,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+  }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
 
@@ -2139,7 +2373,7 @@ export abstract class Router extends Equipment {
    * to — `device.checkPassword` is the single-call entry point that
    * the LinuxMachine / WindowsPC counterparts already expose.
    */
-  override checkPassword(username: string, password: string): boolean {
+  checkPassword(username: string, password: string): boolean {
     const authority = this.getSshHost().getAuthority();
     return authority.authenticate(username, password);
   }

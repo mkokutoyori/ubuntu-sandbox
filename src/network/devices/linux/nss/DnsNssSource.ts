@@ -1,39 +1,125 @@
 /**
  * DnsNssSource — the `dns` NSS source for hosts/ahosts lookups.
  *
- * Bridges NSS to the simulator's topology: walks the EquipmentRegistry
- * to translate a hostname into the IP(s) configured on the matching
- * device. This mirrors a real resolver that would send a query to a
- * recursive resolver — except here the "DNS" is the in-process
- * topology graph (faithful to a LAN simulation where the SOHO router
- * runs dnsmasq and the address space is local).
+ * With a wire resolver injected (the host's UDP/53 stub) and nameservers
+ * configured in /etc/resolv.conf, lookups travel the cable plant like a
+ * real stub resolver: NXDOMAIN is authoritative, all-servers-timeout
+ * yields TRYAGAIN (EAI_AGAIN).
  *
- * Faithful behaviour:
- *   - returns SUCCESS only for hostnames that resolve to *powered-on*
- *     devices — a powered-off host is mapped to NOTFOUND so `getent
- *     hosts pc2` after `pc2.powerOff()` mirrors the real "no answer".
- *   - aliases (multiple hostnames on the same device, e.g. via short
- *     name + FQDN) are kept in the alias list.
- *   - addressFamily is set per IP version.
- *
- * Not implemented (yet — left for future expansion when MX, SRV, TXT
- * records land on a real DNS server in the topology):
- *   - reverse lookup (`gethostbyaddr`) — fall through to UNAVAIL so the
- *     resolver tries the next source.
- *   - recursive lookups via a remote DNS server.
+ * Without nameservers (or without the injected resolver), falls back to
+ * the legacy topology scan — the historic "the LAN graph is the DNS"
+ * convenience kept for unconfigured boxes.
  */
 
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import type { DnsWireResponse } from '../../../dns/DnsWire';
 import type { INssSource } from './INssSource';
 import type { NssEnumResult, NssHostEntry, NssResult } from './types';
 
 const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
-const UNAVAIL = <T>(): NssResult<T> => ({ status: 'UNAVAIL' });
+
+export interface DnsWireStubResolver {
+  /** Usable `nameserver` entries from /etc/resolv.conf (loopback stubs excluded). */
+  nameservers(): string[];
+  query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsWireResponse | null;
+}
 
 export class DnsNssSource implements INssSource {
   readonly name = 'dns';
 
+  private wire: DnsWireStubResolver | null = null;
+
+  setWireResolver(resolver: DnsWireStubResolver | null): void {
+    this.wire = resolver;
+  }
+
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
+    const servers = this.wire?.nameservers() ?? [];
+    if (this.wire && servers.length > 0) {
+      return this.wireLookup(servers, name, family);
+    }
+    return this.legacyScanByName(name, family);
+  }
+
+  gethostbyaddr(addr: string): NssResult<NssHostEntry> {
+    const servers = this.wire?.nameservers() ?? [];
+    if (this.wire && servers.length > 0) {
+      return this.wirePtrLookup(servers, addr);
+    }
+    return this.legacyScanByAddr(addr);
+  }
+
+  /**
+   * `dns` has no enumeration semantics on real Linux (you cannot dump
+   * the entire DNS world). Returning UNAVAIL lets the resolver fall
+   * through to the next source for `getent hosts` with no key.
+   */
+  enumHosts(): NssEnumResult<NssHostEntry> {
+    return { status: 'UNAVAIL', entries: [] };
+  }
+
+  // ─── Wire path ────────────────────────────────────────────────────
+
+  private queryAny(
+    servers: string[], name: string, qtype: 'A' | 'AAAA' | 'PTR',
+  ): DnsWireResponse | null {
+    for (const server of servers) {
+      const resp = this.wire!.query(server, name, qtype);
+      if (resp) return resp;
+    }
+    return null;
+  }
+
+  private wireLookup(
+    servers: string[], name: string, family?: 2 | 10,
+  ): NssResult<NssHostEntry[]> {
+    const qtypes: Array<'A' | 'AAAA'> =
+      family === 10 ? ['AAAA'] : family === 2 ? ['A'] : ['A', 'AAAA'];
+    const matches: NssHostEntry[] = [];
+    let answered = false;
+
+    for (const qtype of qtypes) {
+      const resp = this.queryAny(servers, name, qtype);
+      if (!resp) continue;
+      answered = true;
+      if (resp.rcode === 'NXDOMAIN') return NOTFOUND();
+      if (resp.rcode !== 'NOERROR') return { status: 'TRYAGAIN' };
+      for (const answer of resp.answers) {
+        if (answer.type !== qtype) continue;
+        matches.push({
+          canonicalName: resp.name.toLowerCase(),
+          addressFamily: qtype === 'AAAA' ? 10 : 2,
+          address: answer.value,
+          aliases: [],
+        });
+      }
+    }
+
+    if (!answered) return { status: 'TRYAGAIN' };
+    if (matches.length) return { status: 'SUCCESS', entry: matches };
+    return NOTFOUND();
+  }
+
+  private wirePtrLookup(servers: string[], addr: string): NssResult<NssHostEntry> {
+    const resp = this.queryAny(servers, addr, 'PTR');
+    if (!resp) return { status: 'TRYAGAIN' };
+    if (resp.rcode !== 'NOERROR' || resp.answers.length === 0) return NOTFOUND();
+    const ptr = resp.answers.find(a => a.type === 'PTR');
+    if (!ptr) return NOTFOUND();
+    return {
+      status: 'SUCCESS',
+      entry: {
+        canonicalName: ptr.value,
+        addressFamily: addr.includes(':') ? 10 : 2,
+        address: addr,
+        aliases: [],
+      },
+    };
+  }
+
+  // ─── Legacy topology scan (no nameserver configured) ─────────────
+
+  private legacyScanByName(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const needle = name.toLowerCase();
     const short = needle.split('.')[0];
     const matches: NssHostEntry[] = [];
@@ -63,7 +149,7 @@ export class DnsNssSource implements INssSource {
     return NOTFOUND();
   }
 
-  gethostbyaddr(addr: string): NssResult<NssHostEntry> {
+  private legacyScanByAddr(addr: string): NssResult<NssHostEntry> {
     for (const dev of EquipmentRegistry.getInstance().getAll()) {
       if (!dev.getIsPoweredOn()) continue;
       const hostname = dev.getHostname?.();
@@ -85,14 +171,5 @@ export class DnsNssSource implements INssSource {
       }
     }
     return NOTFOUND();
-  }
-
-  /**
-   * `dns` has no enumeration semantics on real Linux (you cannot dump
-   * the entire DNS world). Returning UNAVAIL lets the resolver fall
-   * through to the next source for `getent hosts` with no key.
-   */
-  enumHosts(): NssEnumResult<NssHostEntry> {
-    return { status: 'UNAVAIL', entries: [] };
   }
 }

@@ -5,9 +5,10 @@
  * so the session class doesn't need to know about Oracle internals.
  */
 
-import type { Equipment } from '@/network';
+import type { HostCapableDevice } from '@/network';
 import { getOracleDatabase, initOracleFilesystem } from './database';
-import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from './OracleConfig';
+import { parseConnectIdentifier, resolveOracleConnectTarget } from './oracleNet';
+import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from '@/database/oracle/OracleConfig';
 import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
 
 /** Callback to append a line to the terminal. */
@@ -17,7 +18,7 @@ type OutputFn = (text: string, type?: string) => void;
  * Handle `lsnrctl <subcommand>` — Oracle Listener Control.
  */
 export function handleLsnrctl(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -33,76 +34,44 @@ export function handleLsnrctl(
   addLine(ORACLE_BANNER.COPYRIGHT);
   addLine('');
 
+  const listener = db.instance.listener;
   switch (subcommand) {
     case 'START': {
-      db.instance.startListener();
-      addLine(`Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`);
-      addLine('');
-      addLine(`TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-      addLine(`Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
-      addLine(`Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('');
-      addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('STATUS of the LISTENER');
-      addLine('------------------------');
-      addLine('Alias                     LISTENER');
-      addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-      addLine('Start Date                ' + new Date().toLocaleString());
-      addLine('Uptime                    0 days 0 hr. 0 min. 0 sec');
-      addLine('Trace Level               off');
-      addLine('Security                  ON: Local OS Authentication');
-      addLine('SNMP                      OFF');
-      addLine(`Listener Log File         ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
-      addLine('Listening Endpoints Summary...');
-      addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('The command completed successfully');
+      if (!listener.running) {
+        db.instance.startListener();
+        addLine(`Starting ${ORACLE_CONFIG.HOME}/bin/tnslsnr: please wait...`);
+        addLine('');
+        addLine(`TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
+        addLine(`Log messages written to ${ORACLE_CONFIG.BASE}/diag/tnslsnr/${hostname}/listener/alert/log.xml`);
+        addLine(`Listening on: (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
+        addLine('');
+        addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
+        for (const line of listener.statusBody()) addLine(line);
+      } else {
+        addLine(TNS_ERRORS.TNS_01106);
+      }
       break;
     }
     case 'STOP': {
-      db.instance.stopListener();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      addLine('The command completed successfully');
+      if (listener.running) {
+        db.instance.stopListener();
+        addLine('The command completed successfully');
+      } else {
+        addLine(TNS_ERRORS.TNS_12541);
+      }
       break;
     }
     case 'STATUS': {
-      const status = db.instance.getListenerStatus();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      if (status.running) {
-        addLine('STATUS of the LISTENER');
-        addLine('------------------------');
-        addLine('Alias                     LISTENER');
-        addLine(`Version                   TNSLSNR for Linux: Version ${ORACLE_CONFIG.VERSION}.0.0.0 - Production`);
-        addLine('Start Date                ' + (status.startedAt ? new Date(status.startedAt).toLocaleString() : 'N/A'));
-        addLine('Trace Level               off');
-        addLine('Security                  ON: Local OS Authentication');
-        addLine('SNMP                      OFF');
-        addLine('Listening Endpoints Summary...');
-        addLine(`  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-        addLine('Services Summary...');
-        addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
-        addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
-        addLine('The command completed successfully');
-      } else {
-        addLine(TNS_ERRORS.TNS_12541);
-        addLine(` ${TNS_ERRORS.TNS_12560}`);
-        addLine(`  ${TNS_ERRORS.TNS_00511}`);
-      }
+      const body = listener.running ? listener.statusBody() : listener.notRunningBody();
+      for (const line of body) addLine(line);
       break;
     }
     case 'SERVICES': {
-      const status = db.instance.getListenerStatus();
       addLine(`Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT})))`);
-      if (status.running) {
-        addLine('Services Summary...');
-        addLine(`  Service "${db.getSid()}" has 1 instance(s).`);
-        addLine(`    Instance "${db.getSid()}", status READY, has 1 handler(s) for this service...`);
-        addLine('      Handler(s):');
-        addLine('        "DEDICATED" established:0 refused:0 state:ready');
-        addLine('           LOCAL SERVER');
-        addLine('The command completed successfully');
-      } else {
-        addLine(TNS_ERRORS.TNS_12541);
-      }
+      const body = listener.running ? listener.servicesBody() : [TNS_ERRORS.TNS_12541];
+      for (const line of body) addLine(line);
       break;
     }
     case 'RELOAD': {
@@ -133,7 +102,7 @@ export function handleLsnrctl(
  * Handle `dbca` — Database Configuration Assistant (simplified stub).
  */
 export function handleDbca(
-  _device: Equipment,
+  _device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -173,7 +142,7 @@ export function handleDbca(
  * Handle `orapwd` — Oracle Password File Utility (stub).
  */
 export function handleOrapwd(
-  _device: Equipment,
+  _device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -208,7 +177,7 @@ export function handleOrapwd(
  * filesystem sync materialises under the diag home).
  */
 export function handleAdrci(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -259,7 +228,7 @@ export function handleAdrci(
  * Handle `tnsping <service>` — Oracle TNS connectivity test.
  */
 export function handleTnsping(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -282,24 +251,43 @@ export function handleTnsping(
     return;
   }
 
+  // Real client-side resolution: tnsnames.ora alias or EZConnect,
+  // local or across the simulated network. A bare SID name is also
+  // accepted for the local instance (historical convenience).
   const upper = serviceName.toUpperCase();
-  const status = db.instance.getListenerStatus();
-
-  if (upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase() || upper === 'LOCALHOST') {
-    const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = localhost)(PORT = ${ORACLE_CONFIG.PORT})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${db.getServiceName()})))`;
-    if (status.running) {
-      addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact ${connectDesc}`);
-      const latency = Math.floor(Math.random() * 5) + 1;
-      addLine(`OK (${latency} msec)`);
-    } else {
-      addLine('Used TNSNAMES adapter to resolve the alias');
-      addLine(`Attempting to contact ${connectDesc}`);
-      addLine(TNS_ERRORS.TNS_12541);
-      addLine(` ${TNS_ERRORS.TNS_12560}`);
-    }
-  } else {
+  const localShortcut =
+    upper === db.getSid().toUpperCase() || upper === db.getServiceName().toUpperCase();
+  const desc = parseConnectIdentifier(device, serviceName)
+    ?? (localShortcut || upper === 'LOCALHOST'
+      ? { host: 'localhost', port: ORACLE_CONFIG.PORT, service: db.getServiceName() }
+      : null);
+  if (!desc) {
     addLine(TNS_ERRORS.TNS_03505);
+    return;
+  }
+
+  const adapter = desc.alias || localShortcut || upper === 'LOCALHOST'
+    ? 'Used TNSNAMES adapter to resolve the alias'
+    : 'Used EZCONNECT adapter to resolve the alias';
+  const connectDesc = `(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = ${desc.host})(PORT = ${desc.port})) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = ${desc.service})))`;
+  addLine(adapter);
+  addLine(`Attempting to contact ${connectDesc}`);
+
+  // tnsping only checks that a listener answers at the endpoint — it
+  // does NOT validate the service (real tnsping says OK even for an
+  // unknown service, because it never sends a CONNECT_DATA probe).
+  const probe = resolveOracleConnectTarget(
+    device, `//${desc.host}:${desc.port}/${desc.service}`, getOracleDatabase);
+  if (probe.ok) {
+    const latency = Math.floor(Math.random() * 5) + 1;
+    addLine(`OK (${latency} msec)`);
+  } else if (/ORA-12514|ORA-12528/.test(probe.error)) {
+    // Listener answered; service-level refusals are invisible to tnsping.
+    const latency = Math.floor(Math.random() * 5) + 1;
+    addLine(`OK (${latency} msec)`);
+  } else {
+    addLine(TNS_ERRORS.TNS_12541);
+    addLine(` ${TNS_ERRORS.TNS_12560}`);
   }
 }
 
@@ -312,7 +300,7 @@ export function handleTnsping(
  *   expdp user/pass TABLES=HR.EMPLOYEES ...
  */
 export function handleExpdp(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -347,6 +335,22 @@ export function handleExpdp(
   const tables = params.get('TABLES')?.toUpperCase().split(',');
   const full = params.get('FULL')?.toUpperCase() === 'Y';
 
+  const directory = (params.get('DIRECTORY') || 'DATA_PUMP_DIR').toUpperCase();
+  const dir = db.catalog.getDirectory(directory);
+  if (!dir) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-39070: Unable to open the log file.');
+    addLine(`ORA-39087: directory name ${directory} is invalid`);
+    return;
+  }
+  if (!db.canAccessDirectory(connectUserOf(args), directory, 'WRITE')) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-29289: directory access denied');
+    return;
+  }
+  const dumpPath = joinDirectoryPath(dir.path, dumpfile);
+  const logPath = joinDirectoryPath(dir.path, logfile);
+
   const jobName = `SYS_EXPORT_${full ? 'FULL' : tables ? 'TABLE' : 'SCHEMA'}_01`;
   addLine(`Connected to: Oracle Database ${ORACLE_CONFIG.VERSION}c Enterprise Edition`);
   addLine(`Starting "${schemas[0]}"."${jobName}":`);
@@ -360,14 +364,11 @@ export function handleExpdp(
   addLine(`Master table "${schemas[0]}"."${jobName}" successfully loaded/unloaded`);
   addLine('******************************************************************************');
   addLine(`Dump file set for ${schemas[0]}.${jobName} is:`);
-  addLine(`  /u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`);
+  addLine(`  ${dumpPath}`);
   addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
-  // The dump file IS the transport: impdp reads it back and restores.
-  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
-  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(dumpPath, JSON.stringify(dump));
-  device.writeFileFromEditor(logPath, [
+  device.writeFileFromEditor?.(dumpPath, JSON.stringify(dump));
+  device.writeFileFromEditor?.(logPath, [
     `Export: Release ${ORACLE_CONFIG.VERSION}.0`,
     `Schemas: ${schemas.join(',')}`,
     ...report.lines,
@@ -386,7 +387,7 @@ export function handleExpdp(
  *   impdp user/pass FULL=Y ...
  */
 export function handleImpdp(
-  device: Equipment,
+  device: HostCapableDevice,
   args: string[],
   addLine: OutputFn,
 ): void {
@@ -423,9 +424,21 @@ export function handleImpdp(
   const remap = params.get('REMAP_SCHEMA');
   const existsAction = (params.get('TABLE_EXISTS_ACTION')?.toUpperCase() ?? 'SKIP') as TableExistsAction;
 
-  // Check if dump file exists on VFS
-  const dumpPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${dumpfile}`;
-  const fileContent = device.readFileForEditor(dumpPath);
+  const directory = (params.get('DIRECTORY') || 'DATA_PUMP_DIR').toUpperCase();
+  const dir = db.catalog.getDirectory(directory);
+  if (!dir) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-39070: Unable to open the log file.');
+    addLine(`ORA-39087: directory name ${directory} is invalid`);
+    return;
+  }
+  if (!db.canAccessDirectory(connectUserOf(args), directory, 'READ')) {
+    addLine('ORA-39002: invalid operation');
+    addLine('ORA-29289: directory access denied');
+    return;
+  }
+  const dumpPath = joinDirectoryPath(dir.path, dumpfile);
+  const fileContent = device.readFileForEditor?.(dumpPath);
   if (!fileContent) {
     addLine(`ORA-39001: invalid argument value`);
     addLine(`ORA-39000: bad dump file specification`);
@@ -462,9 +475,8 @@ export function handleImpdp(
   addLine('');
   addLine(`Job "${schemas[0]}"."${jobName}" successfully completed at ${new Date().toLocaleTimeString()}`);
 
-  // Write log file
-  const logPath = `/u01/app/oracle/admin/${ORACLE_CONFIG.SID}/dpdump/${logfile}`;
-  device.writeFileFromEditor(logPath, [
+  const logPath = joinDirectoryPath(dir.path, logfile);
+  device.writeFileFromEditor?.(logPath, [
     `Import: Release ${ORACLE_CONFIG.VERSION}.0`,
     ...report.lines,
     `Tables: ${report.tables}`,
@@ -483,5 +495,17 @@ function parseDataPumpParams(args: string[]): Map<string, string> {
     }
   }
   return params;
+}
+
+function joinDirectoryPath(base: string, file: string): string {
+  return `${base.replace(/\/+$/, '')}/${file}`;
+}
+
+function connectUserOf(args: string[]): string {
+  const first = args[0];
+  if (first && !first.includes('=') && first.includes('/')) {
+    return first.split('/')[0].split('@')[0].toUpperCase();
+  }
+  return 'SYS';
 }
 

@@ -656,6 +656,14 @@ export abstract class Switch extends Equipment {
 
   // ─── Switchport Configuration API ─────────────────────────────────
 
+  resolveSnoopingVlan(portName: string): number | undefined {
+    const cfg = this.getSwitchportConfig(portName);
+    if (!cfg) return undefined;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
+    return undefined;
+  }
+
   getSwitchportConfig(portName: string): SwitchportConfig | undefined {
     return this.switchportConfigs.get(portName);
   }
@@ -832,10 +840,15 @@ export abstract class Switch extends Equipment {
 
   clearMACTable(): void {
     this.macTable.clear();
+    this.getBus().publish({
+      topic: 'switch.mac.cleared',
+      payload: { deviceId: this.id, hostname: this.getHostname() },
+    });
   }
 
-  /** Purge dynamic entries learned on a port (link-down, err-disable). */
-  private flushDynamicMacsOnPort(portName: string, reason: string): void {
+  /** Purge dynamic entries learned on a port (link-down, err-disable,
+   *  802.1X de-authorization). */
+  protected flushDynamicMacsOnPort(portName: string, reason: string): void {
     let flushed = 0;
     for (const [key, entry] of this.macTable) {
       if (entry.port === portName && entry.type === 'dynamic') {
@@ -957,6 +970,7 @@ export abstract class Switch extends Equipment {
         Logger.warn(this.id, 'switch:mac-move',
           `${this.name}: MAC ${srcMAC} moved from ${existing.port} to ${portName} (VLAN ${ingressVlan})`);
       }
+      const isNew = !existing;
       this.macTable.set(macKey, {
         mac: srcMAC,
         vlan: ingressVlan,
@@ -966,6 +980,17 @@ export abstract class Switch extends Equipment {
         timestamp: Date.now(),
       });
       Logger.debug(this.id, 'switch:mac-learn', `${this.name}: learned ${srcMAC} VLAN ${ingressVlan} on ${portName}`);
+      if (isNew) {
+        this.getBus().publish({
+          topic: 'switch.mac.learned',
+          payload: { deviceId: this.id, hostname: this.getHostname(), mac: srcMAC.toString(), vlan: ingressVlan, port: portName },
+        });
+      } else if (existing.port !== portName) {
+        this.getBus().publish({
+          topic: 'switch.mac.moved',
+          payload: { deviceId: this.id, hostname: this.getHostname(), mac: srcMAC.toString(), vlan: ingressVlan, port: portName, fromPort: existing.port },
+        });
+      }
     }
 
     // ─── Step 3: Forwarding Decision ────────────────────────────
@@ -1152,6 +1177,10 @@ export abstract class Switch extends Equipment {
           if (entry.age <= 0) {
             this.macTable.delete(key);
             Logger.debug(this.id, 'switch:mac-age', `${this.name}: aged out ${entry.mac} VLAN ${entry.vlan}`);
+            this.getBus().publish({
+              topic: 'switch.mac.aged',
+              payload: { deviceId: this.id, hostname: this.getHostname(), mac: String(entry.mac), vlan: entry.vlan, port: entry.port },
+            });
           }
         }
       }

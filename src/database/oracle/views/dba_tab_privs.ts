@@ -13,10 +13,11 @@ registerView({
     const cat = catalog as unknown as {
       getTablePrivilegeGrants(): { grantee: string; objectSchema?: string; objectName?: string; privilege: string; grantable?: boolean }[];
       getStoredUnits?: () => { schema: string; name: string; type: string }[];
+      getDirectory?: (name: string) => unknown;
     };
     const storedUnits = cat.getStoredUnits?.() ?? [];
-    /** Resolve the runtime object type — TABLE / VIEW / SEQUENCE / PROCEDURE / FUNCTION / PACKAGE. */
     const resolveType = (schema: string, name: string): string => {
+      if (schema === 'SYS' && cat.getDirectory?.(name)) return 'DIRECTORY';
       if (storage.getTableMeta(schema, name)) return 'TABLE';
       if (storage.getViewMeta?.(schema, name)) return 'VIEW';
       if (storage.getSequence?.(schema, name)) return 'SEQUENCE';

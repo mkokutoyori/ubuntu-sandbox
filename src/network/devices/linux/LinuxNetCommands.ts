@@ -5,93 +5,102 @@
  * Network info comes from the IpNetworkContext when available.
  */
 
-import type { IpNetworkContext } from './LinuxIpCommand';
+import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry } from '../../core/SocketTable';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
+import { broadcastAddress } from '../../core/ip';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
+const IFF_UP = 0x1;
+const IFF_BROADCAST = 0x2;
+const IFF_LOOPBACK = 0x8;
+const IFF_RUNNING = 0x40;
+const IFF_MULTICAST = 0x1000;
+
 export function cmdIfconfig(args: string[], ctx: IpNetworkContext | null): string {
-  // Build interface list from network context
+  const showAll = args.includes('-a');
+  const positional = args.filter(a => !a.startsWith('-'));
   const interfaces = buildInterfaces(ctx);
-  const target = args[0];
+  const target = positional[0];
 
   if (target) {
     const iface = interfaces.find(i => i.name === target);
     if (!iface) return `${target}: error fetching interface information: Device not found`;
-    return formatInterface(iface);
+    return formatIfconfigInterface(iface);
   }
 
-  // Show all active interfaces
-  return interfaces.filter(i => i.up).map(formatInterface).join('\n');
+  return interfaces
+    .filter(i => showAll || i.isUp)
+    .map(formatIfconfigInterface)
+    .join('\n\n');
 }
 
-interface IfaceInfo {
-  name: string;
-  up: boolean;
-  ipv4: string;
-  netmask: string;
-  broadcast: string;
-  ipv6: string;
-  mac: string;
-  mtu: number;
-  rxPackets: number;
-  txPackets: number;
-  rxBytes: number;
-  txBytes: number;
-}
-
-function buildInterfaces(ctx: IpNetworkContext | null): IfaceInfo[] {
-  const lo: IfaceInfo = {
-    name: 'lo', up: true, ipv4: '127.0.0.1', netmask: '255.0.0.0',
-    broadcast: '0.0.0.0', ipv6: '::1', mac: '00:00:00:00:00:00', mtu: 65536,
-    rxPackets: 128, txPackets: 128, rxBytes: 10240, txBytes: 10240,
+function loopbackInterface(): IpInterfaceInfo {
+  return {
+    name: 'lo', mac: '00:00:00:00:00:00',
+    ip: '127.0.0.1', mask: '255.0.0.0', cidr: 8,
+    mtu: 65536, isUp: true, isConnected: true, isDHCP: false,
+    counters: { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 },
+    ipv6: [{ address: '::1', prefixLength: 128, scope: 'host' }],
   };
+}
 
-  if (!ctx) {
-    return [lo, {
-      name: 'eth0', up: true, ipv4: '10.0.0.1', netmask: '255.255.255.0',
-      broadcast: '10.0.0.255', ipv6: 'fe80::1', mac: '00:00:00:00:00:01', mtu: 1500,
-      rxPackets: 1024, txPackets: 512, rxBytes: 102400, txBytes: 51200,
-    }];
-  }
-
-  const ifaces: IfaceInfo[] = [lo];
-  const names = ctx.getInterfaceNames();
-  for (let i = 0; i < names.length; i++) {
-    const name = names[i];
+function buildInterfaces(ctx: IpNetworkContext | null): IpInterfaceInfo[] {
+  const ifaces: IpInterfaceInfo[] = [loopbackInterface()];
+  if (!ctx) return ifaces;
+  for (const name of ctx.getInterfaceNames()) {
     if (name === 'lo') continue; // already added
     const info = ctx.getInterfaceInfo(name);
-    if (!info) continue;
-    const ip = info.ip || '0.0.0.0';
-    const cidr = info.cidr ?? 24;
-    const maskBits = cidr > 0 ? (~0 << (32 - cidr)) >>> 0 : 0;
-    const mask = `${(maskBits >>> 24) & 0xff}.${(maskBits >>> 16) & 0xff}.${(maskBits >>> 8) & 0xff}.${maskBits & 0xff}`;
-    ifaces.push({
-      name: info.name, up: info.isUp && info.isConnected, ipv4: ip, netmask: mask,
-      broadcast: ip.replace(/\.\d+$/, '.255'), ipv6: `fe80::${i + 1}`,
-      mac: info.mac || `00:00:00:00:00:${String(i + 1).padStart(2, '0')}`,
-      mtu: info.mtu || 1500,
-      rxPackets: Math.floor(Math.random() * 5000), txPackets: Math.floor(Math.random() * 3000),
-      rxBytes: Math.floor(Math.random() * 500000), txBytes: Math.floor(Math.random() * 300000),
-    });
+    if (info) ifaces.push(info);
   }
   return ifaces;
 }
 
-function formatInterface(i: IfaceInfo): string {
-  const flags = i.up ? 'UP' : 'DOWN';
-  return [
-    `${i.name}: flags=4163<${flags},BROADCAST,RUNNING,MULTICAST>  mtu ${i.mtu}`,
-    `        inet ${i.ipv4}  netmask ${i.netmask}  broadcast ${i.broadcast}`,
-    `        inet6 ${i.ipv6}  prefixlen 64  scopeid 0x20<link>`,
-    `        ether ${i.mac}  txqueuelen 1000  (Ethernet)`,
-    `        RX packets ${i.rxPackets}  bytes ${i.rxBytes} (${(i.rxBytes / 1024).toFixed(1)} KiB)`,
-    `        RX errors 0  dropped 0  overruns 0  frame 0`,
-    `        TX packets ${i.txPackets}  bytes ${i.txBytes} (${(i.txBytes / 1024).toFixed(1)} KiB)`,
-    `        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0`,
-    '',
-  ].join('\n');
+function interfaceFlags(i: IpInterfaceInfo): { value: number; names: string[] } {
+  const isLoopback = i.name === 'lo';
+  let value = 0;
+  const names: string[] = [];
+  if (i.isUp) { value |= IFF_UP; names.push('UP'); }
+  if (isLoopback) {
+    value |= IFF_LOOPBACK; names.push('LOOPBACK');
+  } else {
+    value |= IFF_BROADCAST; names.push('BROADCAST');
+  }
+  if (i.isUp && i.isConnected) { value |= IFF_RUNNING; names.push('RUNNING'); }
+  if (!isLoopback) { value |= IFF_MULTICAST; names.push('MULTICAST'); }
+  return { value, names };
+}
+
+export function formatIfconfigInterface(i: IpInterfaceInfo): string {
+  const isLoopback = i.name === 'lo';
+  const flags = interfaceFlags(i);
+  const c = i.counters;
+  const lines = [
+    `${i.name}: flags=${flags.value}<${flags.names.join(',')}>  mtu ${i.mtu}`,
+  ];
+
+  if (i.ip) {
+    const mask = i.mask ?? '255.255.255.0';
+    const brd = i.cidr !== null ? broadcastAddress(i.ip, i.cidr) : null;
+    const brdStr = !isLoopback && brd ? `  broadcast ${brd}` : '';
+    lines.push(`        inet ${i.ip}  netmask ${mask}${brdStr}`);
+  }
+
+  for (const v6 of i.ipv6 ?? []) {
+    const scopeId = v6.scope === 'link' ? '0x20<link>'
+      : v6.scope === 'host' ? '0x10<host>' : '0x0<global>';
+    lines.push(`        inet6 ${v6.address}  prefixlen ${v6.prefixLength}  scopeid ${scopeId}`);
+  }
+
+  lines.push(isLoopback
+    ? `        loop  txqueuelen 1000  (Local Loopback)`
+    : `        ether ${i.mac}  txqueuelen 1000  (Ethernet)`);
+  lines.push(`        RX packets ${c.framesIn}  bytes ${c.bytesIn} (${(c.bytesIn / 1024).toFixed(1)} KiB)`);
+  lines.push(`        RX errors 0  dropped 0  overruns 0  frame 0`);
+  lines.push(`        TX packets ${c.framesOut}  bytes ${c.bytesOut} (${(c.bytesOut / 1024).toFixed(1)} KiB)`);
+  lines.push(`        TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0`);
+  return lines.join('\n');
 }
 
 // ─── netstat ────────────────────────────────────────────────────────
@@ -286,6 +295,32 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
+    // Real `ss -s`: counters derived from the live socket table — the
+    // canned figures below only survive as the degraded no-table path.
+    if (socketTable) {
+      const all = socketTable.getAll();
+      const tcp = all.filter(s => s.protocol === 'tcp');
+      const udp = all.filter(s => s.protocol === 'udp');
+      const estab = tcp.filter(s => s.state === 'ESTABLISHED').length;
+      const closed = tcp.filter(s => s.state === 'CLOSED').length;
+      const timewait = tcp.filter(s => s.state === 'TIME_WAIT').length;
+      const inet = tcp.length + udp.length;
+      const row = (name: string, total: number, ip: number): string =>
+        `${name.padEnd(10)}${String(total).padEnd(10)}` +
+        `${String(ip).padEnd(10)}0`;
+      return [
+        `Total: ${all.length}`,
+        `TCP:   ${tcp.length} (estab ${estab}, closed ${closed}, ` +
+          `orphaned 0, timewait ${timewait})`,
+        '',
+        'Transport Total     IP        IPv6',
+        row('RAW', 0, 0),
+        row('UDP', udp.length, udp.length),
+        row('TCP', tcp.length, tcp.length),
+        row('INET', inet, inet),
+        row('FRAG', 0, 0),
+      ].join('\n');
+    }
     return [
       'Total: 120',
       'TCP:   8 (estab 2, closed 0, orphaned 0, timewait 0)',

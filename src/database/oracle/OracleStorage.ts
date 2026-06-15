@@ -5,8 +5,11 @@
  */
 
 import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
+import type { IndexValueSemantics } from '../engine/storage/RowIndexCache';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from './OracleConfig';
+import { parseSize } from './views/_fileSize';
+import { implicitToDate } from './functions/valueUtils';
 
 export interface TablespaceMeta {
   name: string;
@@ -87,11 +90,15 @@ export class OracleStorage extends BaseStorage {
     for (const ts of seed) this.tablespaces.set(ts.name, normaliseTablespace(ts));
   }
 
+  protected override indexValueSemantics(): IndexValueSemantics {
+    return { toDate: implicitToDate };
+  }
+
   private initDual(): void {
     const dualCol: ColumnMeta = { name: 'DUMMY', dataType: oracleVarchar2(1), ordinalPosition: 0 };
-    const dualMeta: TableMeta = { schema: 'SYS', name: 'DUAL', columns: [dualCol], constraints: [], tablespace: 'SYSTEM', rowCount: 1 };
-    this.ensureSchema('SYS');
-    this.tables.get('SYS')!.set('DUAL', { meta: dualMeta, rows: [['X']] });
+    const dualMeta: TableMeta = { schema: 'SYS', name: 'DUAL', columns: [dualCol], constraints: [], tablespace: 'SYSTEM', rowCount: 0 };
+    this.createTable(dualMeta);
+    this.insertRow('SYS', 'DUAL', ['X']);
   }
 
   // ── Tablespace management ────────────────────────────────────────
@@ -116,6 +123,25 @@ export class OracleStorage extends BaseStorage {
 
   getAllTablespaces(): TablespaceMeta[] {
     return Array.from(this.tablespaces.values());
+  }
+
+  /**
+   * Canonical datafile enumeration — FILE# assigned sequentially in
+   * tablespace order with temp files excluded, exactly like V$DATAFILE.
+   * Single source of truth shared by the dictionary views, the RMAN
+   * context and the instance's open-time existence checks, so they all
+   * agree on file numbers and paths.
+   */
+  listDatafiles(): { fileNo: number; path: string; sizeBytes: number; tablespace: string }[] {
+    const out: { fileNo: number; path: string; sizeBytes: number; tablespace: string }[] = [];
+    let fileNo = 1;
+    for (const ts of this.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY') continue;
+      for (const df of ts.datafiles) {
+        out.push({ fileNo: fileNo++, path: df.path, sizeBytes: parseSize(df.size), tablespace: ts.name });
+      }
+    }
+    return out;
   }
 
   tablespaceExists(name: string): boolean {

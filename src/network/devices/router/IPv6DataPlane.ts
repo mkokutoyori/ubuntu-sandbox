@@ -21,6 +21,7 @@ import {
   IPV6_ALL_NODES_MULTICAST,
 } from '../../core/types';
 import { Logger } from '../../core/Logger';
+import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
 
@@ -35,15 +36,7 @@ export interface IPv6RouteEntry {
   [key: string]: any;
 }
 
-export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
-
-export interface NeighborCacheEntry {
-  mac: MACAddress;
-  iface: string;
-  state: NeighborState;
-  isRouter: boolean;
-  timestamp: number;
-}
+export type { NeighborState, NeighborCacheEntry } from '../host/NeighborCache';
 
 interface QueuedIPv6Packet {
   frame: IPv6Packet;
@@ -86,7 +79,12 @@ export interface IPv6RouterContext {
 
 export class IPv6DataPlane {
   private routingTable: IPv6RouteEntry[] = [];
-  private neighborCache: Map<string, NeighborCacheEntry> = new Map();
+  private readonly neighborCache = new NeighborCache(() => this.ctx.getScheduler(), {
+    onLearned: (ip, entry) => this.emitNdpLearned({
+      ip, mac: entry.mac.toString(), iface: entry.iface,
+    }),
+    sendUnicastSolicit: (ip, entry) => this.sendUnicastNeighborSolicit(ip, entry),
+  });
   /** Dedup signal for in-flight NDP solicitations (Phase 5.9, replaces
    *  the pendingNDPs Map which only carried the same dedup semantics). */
   private inFlightNDPs: Set<string> = new Set();
@@ -120,13 +118,9 @@ export class IPv6DataPlane {
   setRoutingTable(table: IPv6RouteEntry[]): void { this.routingTable = table; }
 
   getNeighborCache(): Map<string, NeighborCacheEntry> {
-    const copy = new Map<string, NeighborCacheEntry>();
-    for (const [k, v] of this.neighborCache) {
-      copy.set(k, { ...v });
-    }
-    return copy;
+    return this.neighborCache.snapshot();
   }
-  getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache; }
+  getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache.internalMap(); }
 
   configureInterface(portName: string, address: IPv6Address, prefixLength: number): boolean {
     const port = this.ctx.getPorts().get(portName);
@@ -334,18 +328,8 @@ export class IPv6DataPlane {
 
     const srcLLOpt = ns.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: inPort,
-        state: 'stale',
-        isRouter: false,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: inPort,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, inPort, false);
     }
 
     const na = createNeighborAdvertisement(ns.targetAddress, port.getMAC(), {
@@ -387,14 +371,11 @@ export class IPv6DataPlane {
     const mac = tgtLLOpt.address;
     const key = na.targetAddress.toString();
 
-    this.neighborCache.set(key, {
-      mac,
-      iface: inPort,
-      state: na.solicitedFlag ? 'reachable' : 'stale',
+    this.neighborCache.learnFromAdvertisement(key, mac, inPort, {
+      solicited: na.solicitedFlag,
       isRouter: na.routerFlag,
-      timestamp: Date.now(),
+      override: na.overrideFlag,
     });
-    this.emitNdpLearned({ ip: key, mac: mac.toString(), iface: inPort });
 
     this.inFlightNDPs.delete(key);
     this.flushPacketQueue(na.targetAddress, mac);
@@ -411,18 +392,8 @@ export class IPv6DataPlane {
 
     const srcLLOpt = rs.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: inPort,
-        state: 'stale',
-        isRouter: false,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: inPort,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, inPort, false);
     }
 
     this.sendRouterAdvertisement(inPort, ipv6.sourceIP.isUnspecified() ? null : ipv6.sourceIP);
@@ -566,7 +537,7 @@ export class IPv6DataPlane {
     const outPort = this.ctx.getPorts().get(route.iface);
     if (!outPort) return;
 
-    const cached = this.neighborCache.get(nextHopIP.toString());
+    const cached = this.neighborCache.markUsed(nextHopIP.toString());
     if (cached) {
       this.ctx.getCounters().ipForwDatagrams++;
       this.ctx.sendFrame(route.iface, {
@@ -578,6 +549,25 @@ export class IPv6DataPlane {
     } else {
       this.queueAndResolve(fwdPkt, route.iface, nextHopIP, outPort);
     }
+  }
+
+  private sendUnicastNeighborSolicit(ip: string, entry: NeighborCacheEntry): void {
+    const port = this.ctx.getPorts().get(entry.iface);
+    if (!port || !port.isIPv6Enabled()) return;
+    const targetIP = new IPv6Address(ip);
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return;
+
+    const ns = createNeighborSolicitation(targetIP, port.getMAC());
+    const nsPkt = createIPv6Packet(srcIP, targetIP, IP_PROTO_ICMPV6, 255, ns, 24);
+    this.ctx.sendFrame(entry.iface, {
+      srcMAC: port.getMAC(),
+      dstMAC: entry.mac,
+      etherType: ETHERTYPE_IPV6,
+      payload: nsPkt,
+    });
   }
 
   private sendICMPv6Error(

@@ -32,9 +32,9 @@ registerView({
           'AVAILABLE',                  // RECOVER
           parseSize(df.size),           // BYTES (numeric, like real Oracle)
           ts.blockSize || 8192,
-          100,                          // CHECKPOINT_CHANGE#
-          0,                            // CHECKPOINT_COUNT
-          SEED_TIME,                    // CHECKPOINT_TIME
+          instance.getCheckpointScn(),  // CHECKPOINT_CHANGE# — same SCN as V$DATAFILE
+          1,                            // CHECKPOINT_COUNT
+          instance.getCheckpointTime(), // CHECKPOINT_TIME
           SEED_TIME,                    // CREATION_TIME
           100,                          // CREATION_CHANGE#
         ]);

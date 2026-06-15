@@ -248,11 +248,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.679 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.601 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.679/0.679/0.679/0.000 ms
+  rtt min/avg/max/mdev = 0.601/0.601/0.601/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -338,7 +338,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -347,7 +347,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -356,7 +356,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -404,11 +404,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.318 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.658 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.318/0.318/0.318/0.000 ms
+  rtt min/avg/max/mdev = 0.658/0.658/0.658/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -494,7 +494,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-50
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -503,7 +503,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-51
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -512,7 +512,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-52
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -560,29 +560,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.343 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.373 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.343/0.343/0.343/0.000 ms
+  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.366 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.417 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.366/0.366/0.366/0.000 ms
+  rtt min/avg/max/mdev = 0.417/0.417/0.417/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.510 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.751 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.510/0.510/0.510/0.000 ms
+  rtt min/avg/max/mdev = 0.751/0.751/0.751/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -592,23 +592,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.974 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.609 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.974/0.974/0.974/0.000 ms
+  rtt min/avg/max/mdev = 0.609/0.609/0.609/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.493 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.628 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.493/0.493/0.493/0.000 ms
+  rtt min/avg/max/mdev = 0.628/0.628/0.628/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -626,7 +626,7 @@ Total steps: 300
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
   10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [83/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
@@ -657,7 +657,7 @@ Total steps: 300
 [85/300] rdc R-DC# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.3.3.11        02:00:00:00:00:5b       6/8/2026, 8:00:00 AM    automatic
+  10.3.3.11        02:00:00:00:00:5B       6/8/2026, 8:00:00 AM    automatic
 
 [86/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
@@ -694,7 +694,7 @@ Total steps: 300
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
   10.2.2.10        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.11        02:00:00:00:00:4f       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.11        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 
 --- [90] § DHCP — baux côté client ---
@@ -1022,7 +1022,7 @@ Total steps: 300
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
   10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [116/300] lhq lhq$ dhclient -r eth0
   released 10.1.1.10
@@ -1541,12 +1541,15 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:5b
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  No DHCPOFFERS received.
-  No working leases in persistent database - sleeping. expired.
+  DHCPOFFER of 10.3.3.1 from 10.3.3.1
+  DHCPREQUEST of 10.3.3.1 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.1 from 10.3.3.1
+  bound to 10.3.3.1 -- renewal in 43200 seconds.
 
 [198/300] ldc ldc$ ip addr show eth0
   1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
@@ -1563,7 +1566,7 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         4
+  DHCPDISCOVER         3
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
@@ -1578,25 +1581,26 @@ Total steps: 300
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
   10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
+  10.3.3.1         02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
 
 
 --- [201] § DHCP — statistiques & compteurs ---
 [201/300] rhq R-HQ# show ip dhcp server statistics
   Memory usage         36028
   Address pools        3
-  Automatic bindings   2
+  Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         7
-  DHCPREQUEST          7
+  DHCPDISCOVER         8
+  DHCPREQUEST          8
   DHCPINFORM           0
   DHCPRELEASE          2
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            7
-  DHCPACK              7
+  DHCPOFFER            8
+  DHCPACK              8
   DHCPNAK              0
 
 [202/300] rdc R-DC# show ip dhcp server statistics
@@ -1605,7 +1609,7 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         4
+  DHCPDISCOVER         3
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
@@ -1673,14 +1677,13 @@ Total steps: 300
 [207/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.3.3.11;
+    fixed-address 10.3.3.1;
     option subnet-mask 255.255.255.0;
     option routers 10.3.3.1;
-    option domain-name-servers 10.3.3.10;
     option dhcp-server-identifier 10.3.3.1;
-    renew 1780819200 Sunday 2026-06-07 08:00:00.000;
-    rebind 1780884000 Monday 2026-06-08 02:00:00.000;
-    expire 1780905600 Monday 2026-06-08 08:00:00.000;
+    renew 1780776000 Saturday 2026-06-06 20:00:00.000;
+    rebind 1780808400 Sunday 2026-06-07 05:00:00.000;
+    expire 1780761600 Saturday 2026-06-06 16:00:00.000;
   }
 
 [208/300] whq whq$ ipconfig /all
@@ -1715,7 +1718,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -1724,7 +1727,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -1733,7 +1736,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -1741,43 +1744,41 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.228 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.416 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.228/0.228/0.228/0.000 ms
+  rtt min/avg/max/mdev = 0.416/0.416/0.416/0.000 ms
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.159 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.310 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.159/0.159/0.159/0.000 ms
+  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.328 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.426 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.328/0.328/0.328/0.000 ms
+  rtt min/avg/max/mdev = 0.426/0.426/0.426/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.242 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.416 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.242/0.242/0.242/0.000 ms
+  rtt min/avg/max/mdev = 0.416/0.416/0.416/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.364 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
+  1 packets transmitted, 0 received, 100% packet loss
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1792,12 +1793,12 @@ Total steps: 300
 [215/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=2ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
@@ -1812,44 +1813,40 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Request timed out.
   
   Ping statistics for 10.3.3.10:
-      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
-  Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.248 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.635 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.248/0.248/0.248/0.000 ms
+  rtt min/avg/max/mdev = 0.635/0.635/0.635/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.188 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.171 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.188/0.188/0.188/0.000 ms
+  rtt min/avg/max/mdev = 0.171/0.171/0.171/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.195 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.549 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.195/0.195/0.195/0.000 ms
+  rtt min/avg/max/mdev = 0.549/0.549/0.549/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.426 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.426/0.426/0.426/0.000 ms
+  1 packets transmitted, 0 received, 100% packet loss
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1859,7 +1856,7 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [223/300] wbr wbr$ ping -n 1 10.2.2.1
   
@@ -1879,17 +1876,15 @@ Total steps: 300
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Request timed out.
   
   Ping statistics for 10.3.3.10:
-      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
-  Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
@@ -1905,15 +1900,19 @@ Total steps: 300
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 10.3.3.1 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.420 ms
   
   --- 10.3.3.10 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.420/0.420/0.420/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1955,7 +1954,7 @@ Total steps: 300
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
   10.2.2.10        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.11        02:00:00:00:00:4f       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.11        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 [236/300] rbr <R-BR> display current-configuration configuration dhcp
   dhcp enable
@@ -1978,7 +1977,7 @@ Total steps: 300
   default via 10.2.2.1 dev eth0 proto dhcp
 
 [239/300] ldc ldc$ ip route show default
-  10.3.3.0/24 dev eth0 proto kernel scope link metric 0
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.1 metric 0
   default via 10.3.3.1 dev eth0 proto dhcp
 
 
@@ -2122,7 +2121,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -2131,7 +2130,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -2140,7 +2139,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -2206,7 +2205,6 @@ Total steps: 300
 [270/300] lhq lhq$ ip -6 addr show eth0
   1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
@@ -2249,7 +2247,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -2258,7 +2256,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -2267,7 +2265,7 @@ Total steps: 300
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
-     DHCP Enabled. . . . . . . . . . . : Yes
+     DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -2349,8 +2347,9 @@ Total steps: 300
 [286/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
+  10.3.3.1         02:00:00:00:00:5B       6/7/2026, 8:00:00 AM    automatic
   10.1.1.10        02:00:00:00:00:47       6/6/2026, 4:00:00 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/6/2026, 4:00:00 PM    automatic
+  10.1.1.11        02:00:00:00:00:4B       6/6/2026, 4:00:00 PM    automatic
 
 [287/300] rbr <R-BR> display ip pool
   Pool-name      : LAN-BR
@@ -2391,7 +2390,7 @@ Total steps: 300
     DNS Server(s)    : not configured
     Domain Name      : not configured
     Lease Time       : 1 days
-    Current Bindings : 0
+    Current Bindings : 1
 
 [289/300] swhq SW-HQ# show ip dhcp snooping binding
   MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
@@ -2490,6 +2489,7 @@ Total steps: 300
 [295/300] ldc ldc$ ip -4 addr show eth0
   1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
   
   2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
@@ -2503,18 +2503,18 @@ Total steps: 300
 [296/300] rhq R-HQ# show ip dhcp server statistics
   Memory usage         36028
   Address pools        3
-  Automatic bindings   2
+  Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         11
-  DHCPREQUEST          11
+  DHCPDISCOVER         12
+  DHCPREQUEST          12
   DHCPINFORM           0
   DHCPRELEASE          4
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            11
-  DHCPACK              11
+  DHCPOFFER            12
+  DHCPACK              12
   DHCPNAK              0
 
 [297/300] rdc R-DC# show ip dhcp relay statistics
@@ -2523,7 +2523,7 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         4
+  DHCPDISCOVER         3
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1

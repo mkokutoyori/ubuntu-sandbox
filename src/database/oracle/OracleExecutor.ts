@@ -10,34 +10,81 @@ import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } f
 import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
   CreateTableStatement, DropTableStatement, TruncateTableStatement, AlterTableStatement,
   CreateIndexStatement, DropIndexStatement, CreateSequenceStatement, DropSequenceStatement,
-  CreateViewStatement, DropViewStatement, GrantStatement, RevokeStatement,
-  CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
-  CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
-  AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
-  AlterTablespaceStatement, AlterTablespaceAction, CreatePfileSpfileStatement,
-  CreateDiskgroupStatement, DropDiskgroupStatement, AlterDiskgroupStatement,
+  CreateViewStatement, DropViewStatement,
+  CommitStatement, RollbackStatement,
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
-  CreateProfileStatement, AlterProfileStatement, DropProfileStatement,
-  AuditStatement, NoauditStatement, OrderByItem,
+  OrderByItem,
   CreateSynonymStatement, DropSynonymStatement, AlterSequenceStatement, AlterIndexStatement,
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
-import { ORACLE_SYSTEM_PRIVILEGES } from './security/systemPrivileges';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
-import { Equipment } from '../../network/equipment/Equipment';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
+import { UserAdminExecutor } from './executor/UserAdminExecutor';
+import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
+import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
+
+/**
+ * Statement types Oracle classifies as DDL (SQL Language Reference,
+ * "Types of SQL Statements"): CREATE/ALTER/DROP/TRUNCATE plus GRANT,
+ * REVOKE, AUDIT, NOAUDIT, COMMENT, ANALYZE, FLASHBACK, PURGE. Each one
+ * issues an implicit COMMIT before and after execution. Deliberately
+ * excluded: ALTER SYSTEM (system control), ALTER SESSION (session
+ * control), STARTUP/SHUTDOWN, LOCK TABLE and all TCL — none of those
+ * end the current transaction in real Oracle.
+ */
+const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
+  'CreateTableStatement', 'DropTableStatement', 'AlterTableStatement',
+  'TruncateTableStatement',
+  'CreateIndexStatement', 'DropIndexStatement', 'AlterIndexStatement',
+  'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
+  'CreateViewStatement', 'DropViewStatement',
+  'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'CreateMviewLogStatement', 'DropMviewLogStatement',
+  'GrantStatement', 'RevokeStatement',
+  'CreateUserStatement', 'AlterUserStatement', 'DropUserStatement',
+  'CreateRoleStatement', 'DropRoleStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateSynonymStatement', 'DropSynonymStatement',
+  'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
+  'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
+  'CreateProfileStatement', 'AlterProfileStatement', 'DropProfileStatement',
+  'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateDirectoryStatement', 'DropDirectoryStatement',
+  'CreateTypeStatement', 'AlterCompileStatement',
+  'CreateFlashbackArchiveStatement', 'DropFlashbackArchiveStatement',
+  'CreateAuditPolicyStatement', 'DropAuditPolicyStatement', 'AuditPolicyStatement',
+  'AuditStatement', 'NoauditStatement',
+  'CommentStatement', 'AnalyzeStatement',
+  'FlashbackStatement', 'PurgeStatement',
+  'AlterDatabaseStatement', 'PluggableDatabaseStatement',
+]);
+
+const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
+  'InsertStatement', 'UpdateStatement', 'DeleteStatement', 'MergeStatement',
+  'CreateTableStatement', 'DropTableStatement', 'AlterTableStatement', 'TruncateTableStatement',
+  'CreateIndexStatement', 'DropIndexStatement', 'AlterIndexStatement',
+  'CreateSequenceStatement', 'DropSequenceStatement', 'AlterSequenceStatement',
+  'CreateViewStatement', 'DropViewStatement',
+  'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
+  'CreateMviewLogStatement', 'DropMviewLogStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateSynonymStatement', 'DropSynonymStatement',
+  'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
+  'CreateTypeStatement', 'CommentStatement', 'AnalyzeStatement',
+  'CreateDbLinkStatement', 'DropDbLinkStatement',
+  'CreateDirectoryStatement', 'DropDirectoryStatement',
+]);
 
 export class OracleExecutor extends BaseExecutor {
   private instance: OracleInstance;
@@ -52,6 +99,7 @@ export class OracleExecutor extends BaseExecutor {
     getContext: () => this.context,
     callStoredFunction: (n, a) =>
       this.commandHost ? this.commandHost.execScalarFunctionCall(this, n, a) : { handled: false, value: null },
+    readBfile: (dir, file) => this.readBfileContent(dir, file),
   });
   private _currentRowNum: number = 0;
   /** Implicit-transaction lifecycle (undo snapshots, savepoints, tx ids). */
@@ -60,14 +108,22 @@ export class OracleExecutor extends BaseExecutor {
   private readonly privileges: PrivilegeEnforcer;
   /** Row-level integrity enforcement (NOT NULL, PK/UNIQUE, FK, CHECK, types). */
   private readonly constraints: ConstraintValidator;
-  /** Track sequences that have had NEXTVAL called in this session */
-  private _nextvalCalled: Set<string> = new Set();
+  /** Last NEXTVAL obtained per sequence IN THIS SESSION. CURRVAL is a
+   *  session-scoped value in Oracle: another session's NEXTVAL must not
+   *  change what this session sees. */
+  private _sessionCurrval: Map<string, number> = new Map();
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
   private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
+  /** User/role/profile DCL handlers (extracted from this class — O7). */
+  private readonly userAdmin: UserAdminExecutor;
+  /** GRANT/REVOKE/AUDIT/TDE/COMMENT handlers (extracted — O7). */
+  private readonly securityDcl: SecurityDclExecutor;
+  /** Instance/tablespace/ASM administration handlers (extracted — O7). */
+  private readonly instanceAdmin: InstanceAdminExecutor;
 
   constructor(
     storage: OracleStorage,
@@ -79,16 +135,39 @@ export class OracleExecutor extends BaseExecutor {
     this.instance = instance;
     this.privileges = new PrivilegeEnforcer(catalog, context);
     this.constraints = new ConstraintValidator(storage,
-      (cond, row, columns) => this.evaluateCondition(cond, row, columns));
+      // CHECK semantics: a row violates only when the predicate is FALSE
+      // — UNKNOWN (NULL operands) passes, per the SQL standard / Oracle.
+      (cond, row, columns) => this.evaluateCondition3VL(cond, row, columns) !== false);
     this.txn = new TransactionManager(storage, {
       onBegin: txId => this.emitTxnStarted(txId),
-      onCommit: (txId, durationMs) => this.emitTxnCommitted(txId, durationMs),
+      onCommit: (txId, durationMs) => {
+        // Every commit advances the database SCN (V$DATABASE.CURRENT_SCN).
+        instance.advanceScn();
+        this.emitTxnCommitted(txId, durationMs);
+      },
       onRollback: txId => this.emitTxnRolledBack(txId),
+    });
+    this.userAdmin = new UserAdminExecutor({
+      storage, catalog, instance, context,
+      privileges: this.privileges,
+      getSessionId: () => parseInt(this._sessionId, 10) || 0,
+    });
+    this.securityDcl = new SecurityDclExecutor({
+      storage, catalog, context, privileges: this.privileges,
+    });
+    this.instanceAdmin = new InstanceAdminExecutor({
+      storage, catalog, instance, privileges: this.privileges,
     });
   }
 
   /** Bind this executor to a session id for the oracle.session.* / tx events. */
   setSessionId(sessionId: string): void { this._sessionId = sessionId; }
+
+  /** Current container of the bound session (CDB$ROOT by default). */
+  getCurrentContainer(): { name: string; id: number } {
+    const sess = this.context.session as { containerName?: string; containerId?: number } | undefined;
+    return { name: sess?.containerName ?? 'CDB$ROOT', id: sess?.containerId ?? 1 };
+  }
 
   /** Inject the OracleDatabase delegate for manager-backed SQL commands. */
   setCommandHost(host: import('./SqlCommandHost').SqlCommandHost): void { this.commandHost = host; }
@@ -96,6 +175,17 @@ export class OracleExecutor extends BaseExecutor {
   private requireCommandHost(): import('./SqlCommandHost').SqlCommandHost {
     if (!this.commandHost) throw new OracleError(900, 'command host not configured');
     return this.commandHost;
+  }
+
+  private readBfileContent(dir: string, file: string): string | null {
+    const d = this.catalog.getDirectory(dir);
+    const engine = this.catalog.getSecurityEngine();
+    const allowed = !!d && (!engine
+      || engine.privileges.hasObjectPrivilege(this.context.currentUser, 'READ', 'SYS', dir.toUpperCase()));
+    if (!d || !allowed) {
+      throw new OracleError(22285, 'non-existent directory or file for FILEOPEN operation');
+    }
+    return this.instance.readDeviceFile(`${d.path.replace(/\/+$/, '')}/${file}`);
   }
 
   private get bus() { return this.instance.getBus(); }
@@ -106,9 +196,15 @@ export class OracleExecutor extends BaseExecutor {
   private emitDml(stmt: Statement, rowsAffected: number): void {
     const kind = stmt.type;
     let table = '';
+    let tableSchema = this.context.currentSchema;
     if (kind === 'InsertStatement' || kind === 'UpdateStatement' || kind === 'DeleteStatement') {
-      const s = stmt as unknown as { table?: { name?: string }; tableName?: string };
+      const s = stmt as unknown as { table?: { name?: string; schema?: string }; tableName?: string };
       table = s.table?.name ?? s.tableName ?? '';
+      tableSchema = s.table?.schema ?? tableSchema;
+    }
+    // Materialized views reading this table are no longer fresh.
+    if (table && rowsAffected > 0) {
+      this.catalog.markMaterializedViewsStale(tableSchema, table);
     }
     this.bus.publish({
       topic: 'oracle.dml.executed',
@@ -416,7 +512,22 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeStatement(statement: Statement): ResultSet {
+    // Oracle wraps every DDL statement in implicit COMMITs: one before
+    // execution (it survives even when the DDL itself fails) and one
+    // after success (SQL Language Reference, "Types of SQL Statements").
+    // System/session control statements (ALTER SYSTEM / ALTER SESSION),
+    // STARTUP/SHUTDOWN and TCL never commit.
+    if (REQUIRES_OPEN_DATABASE.has(statement.type) && this.instance.state !== 'OPEN') {
+      throw new OracleError(1109, 'database not open');
+    }
+    const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
+    if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     const out = this.dispatchStatement(statement);
+    if (isDdl && this.txn.isActive) this.commitActiveTransaction();
+    // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
+    const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
+      || statement.type === 'DeleteStatement' || statement.type === 'MergeStatement';
+    if (isDml && this.context.autoCommit && this.txn.isActive) this.commitActiveTransaction();
     this.invalidateResultCacheForStatement(statement);
     return out;
   }
@@ -446,9 +557,14 @@ export class OracleExecutor extends BaseExecutor {
   private dispatchStatement(statement: Statement): ResultSet {
     switch (statement.type) {
       case 'SelectStatement': return this.executeSelect(statement);
-      case 'InsertStatement': return this.executeInsert(statement);
-      case 'UpdateStatement': return this.executeUpdate(statement);
-      case 'DeleteStatement': return this.executeDelete(statement);
+      case 'InsertStatement':
+      case 'UpdateStatement':
+      case 'DeleteStatement': {
+        if (statement.table.dbLink) return this.executeRemoteDml(statement);
+        if (statement.type === 'InsertStatement') return this.executeInsert(statement);
+        if (statement.type === 'UpdateStatement') return this.executeUpdate(statement);
+        return this.executeDelete(statement);
+      }
       case 'CreateTableStatement': return this.executeCreateTable(statement);
       case 'DropTableStatement': return this.executeDropTable(statement);
       case 'TruncateTableStatement': return this.executeTruncate(statement);
@@ -459,13 +575,13 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropSequenceStatement': return this.executeDropSequence(statement);
       case 'CreateViewStatement': return this.executeCreateView(statement);
       case 'DropViewStatement': return this.executeDropView(statement);
-      case 'GrantStatement': return this.executeGrant(statement);
-      case 'RevokeStatement': return this.executeRevoke(statement);
-      case 'CreateUserStatement': return this.executeCreateUser(statement);
-      case 'AlterUserStatement': return this.executeAlterUser(statement);
-      case 'DropUserStatement': return this.executeDropUser(statement);
-      case 'CreateRoleStatement': return this.executeCreateRole(statement);
-      case 'DropRoleStatement': return this.executeDropRole(statement);
+      case 'GrantStatement': return this.securityDcl.executeGrant(statement);
+      case 'RevokeStatement': return this.securityDcl.executeRevoke(statement);
+      case 'CreateUserStatement': return this.userAdmin.executeCreateUser(statement);
+      case 'AlterUserStatement': return this.userAdmin.executeAlterUser(statement);
+      case 'DropUserStatement': return this.userAdmin.executeDropUser(statement);
+      case 'CreateRoleStatement': return this.userAdmin.executeCreateRole(statement);
+      case 'DropRoleStatement': return this.userAdmin.executeDropRole(statement);
       case 'CommitStatement': return this.executeCommit();
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
@@ -473,13 +589,13 @@ export class OracleExecutor extends BaseExecutor {
         // The simulator does not differentiate transaction isolation
         // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
         return emptyResult('Transaction set.');
-      case 'StartupStatement': return this.executeStartup(statement);
-      case 'ShutdownStatement': return this.executeShutdown(statement);
-      case 'AlterSystemStatement': return this.executeAlterSystem(statement);
-      case 'AlterDatabaseStatement': return this.executeAlterDatabase(statement);
-      case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
-      case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
-      case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
+      case 'StartupStatement': return this.instanceAdmin.executeStartup(statement);
+      case 'ShutdownStatement': return this.instanceAdmin.executeShutdown(statement);
+      case 'AlterSystemStatement': return this.instanceAdmin.executeAlterSystem(statement);
+      case 'AlterDatabaseStatement': return this.instanceAdmin.executeAlterDatabase(statement);
+      case 'CreateTablespaceStatement': return this.instanceAdmin.executeCreateTablespace(statement);
+      case 'DropTablespaceStatement': return this.instanceAdmin.executeDropTablespace(statement);
+      case 'AlterTablespaceStatement': return this.instanceAdmin.executeAlterTablespace(statement);
       case 'AnalyzeStatement': {
         const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
         const schema = this.resolveSchema(s.schema);
@@ -505,7 +621,20 @@ export class OracleExecutor extends BaseExecutor {
         // real state (the recyclebin). DATABASE / TO TIMESTAMP / SCN
         // are accepted but logical no-ops — the simulator has no
         // undo/redo time machine.
-        if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
+        if (s.target === 'TABLE' && (s.toKind === 'SCN' || s.toKind === 'TIMESTAMP') && s.toExpr) {
+          const owner = this.resolveSchema(s.schema);
+          const name = s.name!.toUpperCase();
+          this.requireTableMeta(owner, name);
+          const past = this.flashbackRowsAt(owner, name, { kind: s.toKind, expr: s.toExpr });
+          if (past) {
+            this.captureFlashbackImage(owner, name);
+            this.storage.deleteRows(owner, name, () => true);
+            for (const row of past) this.storage.insertRow(owner, name, row);
+          }
+          this.instance.logAlert(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
+          return emptyResult('Flashback complete.');
+        }
+        if (s.target === 'TABLE' && (s.toKind === 'BEFORE_DROP' || /BEFORE\s+DROP/i.test(s.to))) {
           const owner = this.resolveSchema(s.schema);
           const name = s.name!.toUpperCase();
           const catalog = this.catalog as OracleCatalog;
@@ -540,10 +669,10 @@ export class OracleExecutor extends BaseExecutor {
         }
         return emptyResult('Recyclebin purged.');
       }
-      case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
-      case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);
-      case 'DropDiskgroupStatement': return this.executeDropDiskgroup(statement);
-      case 'AlterDiskgroupStatement': return this.executeAlterDiskgroup(statement);
+      case 'CreatePfileSpfileStatement': return this.instanceAdmin.executeCreatePfileSpfile(statement);
+      case 'CreateDiskgroupStatement': return this.instanceAdmin.executeCreateDiskgroup(statement);
+      case 'DropDiskgroupStatement': return this.instanceAdmin.executeDropDiskgroup(statement);
+      case 'AlterDiskgroupStatement': return this.instanceAdmin.executeAlterDiskgroup(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
@@ -552,19 +681,23 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropSynonymStatement': return this.executeDropSynonym(statement);
       case 'AlterSequenceStatement': return this.executeAlterSequence(statement);
       case 'AlterIndexStatement': return this.executeAlterIndex(statement);
-      case 'CreateDbLinkStatement': return emptyResult('Database link created.');
-      case 'DropDbLinkStatement': return emptyResult('Database link dropped.');
-      case 'CreateMaterializedViewStatement': return emptyResult('Materialized view created.');
-      case 'DropMaterializedViewStatement': return emptyResult('Materialized view dropped.');
-      case 'CreateProfileStatement': return this.executeCreateProfile(statement);
-      case 'AlterProfileStatement': return this.executeAlterProfile(statement);
-      case 'DropProfileStatement': return this.executeDropProfile(statement);
-      case 'AuditStatement': return this.executeAudit(statement);
-      case 'NoauditStatement': return this.executeNoaudit(statement);
-      case 'CreateAuditPolicyStatement': return this.executeCreateAuditPolicy(statement);
-      case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
-      case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
-      case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
+      case 'CreateDbLinkStatement': return this.executeCreateDbLink(statement);
+      case 'DropDbLinkStatement': return this.executeDropDbLink(statement);
+      case 'CreateDirectoryStatement': return this.executeCreateDirectory(statement);
+      case 'DropDirectoryStatement': return this.executeDropDirectory(statement);
+      case 'CreateMaterializedViewStatement': return this.executeCreateMaterializedView(statement);
+      case 'DropMaterializedViewStatement': return this.executeDropMaterializedView(statement);
+      case 'CreateMviewLogStatement': return this.executeCreateMviewLog(statement);
+      case 'DropMviewLogStatement': return this.executeDropMviewLog(statement);
+      case 'CreateProfileStatement': return this.userAdmin.executeCreateProfile(statement);
+      case 'AlterProfileStatement': return this.userAdmin.executeAlterProfile(statement);
+      case 'DropProfileStatement': return this.userAdmin.executeDropProfile(statement);
+      case 'AuditStatement': return this.securityDcl.executeAudit(statement);
+      case 'NoauditStatement': return this.securityDcl.executeNoaudit(statement);
+      case 'CreateAuditPolicyStatement': return this.securityDcl.executeCreateAuditPolicy(statement);
+      case 'DropAuditPolicyStatement': return this.securityDcl.executeDropAuditPolicy(statement);
+      case 'AuditPolicyStatement': return this.securityDcl.executeAuditPolicy(statement);
+      case 'AdministerKeyManagementStatement': return this.securityDcl.executeAdministerKeyManagement(statement);
       case 'LockTableStatement': return this.requireCommandHost().execLockTable(statement, this.context);
       case 'CreateFlashbackArchiveStatement': return this.requireCommandHost().execCreateFlashbackArchive(statement, this.context);
       case 'DropFlashbackArchiveStatement': return this.requireCommandHost().execDropFlashbackArchive(statement, this.context);
@@ -576,7 +709,7 @@ export class OracleExecutor extends BaseExecutor {
           : statement.objectKind === 'FUNCTION' ? 'Function' : 'Package';
         return emptyResult(`${label} altered.`);
       }
-      case 'CommentStatement': return this.executeComment(statement);
+      case 'CommentStatement': return this.securityDcl.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -585,8 +718,52 @@ export class OracleExecutor extends BaseExecutor {
   // ── Transaction control ──────────────────────────────────────────
 
   private executeCommit(): ResultSet {
-    this.txn.commit();
+    this.commitActiveTransaction();
     return emptyResult('Commit complete.');
+  }
+
+  private executeRemoteDml(
+    stmt: import('../engine/parser/ASTNode').InsertStatement
+      | import('../engine/parser/ASTNode').UpdateStatement
+      | import('../engine/parser/ASTNode').DeleteStatement,
+  ): ResultSet {
+    const { dbLink, ...table } = stmt.table;
+    return this.requireCommandHost().execDbLinkDml(
+      this.context.currentUser, dbLink!, { ...stmt, table });
+  }
+
+  private readonly flashbackCaptured = new Set<string>();
+
+  private captureFlashbackImage(schema: string, table: string): void {
+    const key = `${schema}.${table}`;
+    if (this.flashbackCaptured.has(key)) return;
+    this.flashbackCaptured.add(key);
+    (this.catalog as OracleCatalog).tableHistory.capture(
+      schema, table, this.instance.getCurrentScn(), this.storage.getRows(schema, table));
+  }
+
+  private flashbackRowsAt(schema: string, table: string,
+    asOf: NonNullable<import('../engine/parser/ASTNode').TableRef['asOf']>): StorageRow[] | null {
+    const value = this.evaluateExpression(asOf.expr, [], []);
+    const history = (this.catalog as OracleCatalog).tableHistory;
+    if (asOf.kind === 'SCN') {
+      const scn = Number(value);
+      if (!Number.isFinite(scn)) throw new OracleError(8181, 'specified number is not a valid system change number');
+      return history.stateAtScn(schema, table, scn);
+    }
+    const ms = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    if (!Number.isFinite(ms)) throw new OracleError(8186, 'invalid timestamp specified');
+    return history.stateAtTime(schema, table, ms);
+  }
+
+  private commitActiveTransaction(): void {
+    this.flashbackCaptured.clear();
+    this.commandHost?.settleDbLinkTransactions('COMMIT');
+    this.txn.commit();
+    for (const mv of this.catalog.getMaterializedViews()) {
+      if (mv.refreshMode !== 'COMMIT' || mv.staleness !== 'STALE') continue;
+      this.refreshMaterializedView(mv.owner, mv.name);
+    }
   }
 
   private executeRollback(savepoint?: string): ResultSet {
@@ -595,6 +772,8 @@ export class OracleExecutor extends BaseExecutor {
       this.txn.rollbackToSavepoint(savepoint);
       return emptyResult('Rollback complete.');
     }
+    this.flashbackCaptured.clear();
+    this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
   }
@@ -860,6 +1039,11 @@ export class OracleExecutor extends BaseExecutor {
     let rows = fromResult.rows;
     const columns = fromResult.columns;
 
+    if (stmt.where && stmt.from!.length === 1 && (!stmt.joins || stmt.joins.length === 0)) {
+      const narrowed = this.tryIndexAccessPath(stmt.from![0], stmt.where, rows);
+      if (narrowed) rows = narrowed;
+    }
+
     // ── Step 2: WHERE filter ───────────────────────────────────────
     if (stmt.where) {
       const filtered: StorageRow[] = [];
@@ -870,6 +1054,12 @@ export class OracleExecutor extends BaseExecutor {
         }
       }
       rows = filtered;
+    }
+
+    // ── Step 2a: FOR UPDATE row-level locking (single table) ───────
+    if (stmt.forUpdate && stmt.from!.length === 1 && stmt.from![0].type === 'TableRef'
+        && (!stmt.joins || stmt.joins.length === 0)) {
+      rows = this.lockForUpdateRows(stmt.from![0], rows, stmt.forUpdate);
     }
 
     // ── Step 2b: CONNECT BY (hierarchical query) ─────────────────
@@ -1003,6 +1193,104 @@ export class OracleExecutor extends BaseExecutor {
     return { rows, columns };
   }
 
+  private tryIndexAccessPath(
+    ref: import('../engine/parser/ASTNode').TableReference,
+    where: Expression,
+    loadedRows: StorageRow[],
+  ): StorageRow[] | null {
+    if (ref.type !== 'TableRef' || ref.dbLink || ref.asOf) return null;
+    const schema = this.resolveSchema(ref.schema);
+    const tableName = ref.name.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) return null;
+    if (loadedRows !== this.storage.getRows(schema, tableName)) return null;
+    const meta = this.storage.getTableMeta(schema, tableName);
+    if (!meta) return null;
+    const alias = ref.alias?.toUpperCase();
+
+    const qualifierMatches = (id: IdentifierExpr): boolean => {
+      if (id.schema && id.schema.toUpperCase() !== schema) return false;
+      if (id.table) {
+        const qualifier = id.table.toUpperCase();
+        if (qualifier !== tableName && qualifier !== alias) return false;
+      }
+      return true;
+    };
+    const equalities = new Map<number, CellValue>();
+    const collect = (expr: Expression): void => {
+      if (expr.type === 'ParenExpr') { collect(expr.expr); return; }
+      if (expr.type !== 'BinaryExpr') return;
+      if (expr.operator.toUpperCase() === 'AND') { collect(expr.left); collect(expr.right); return; }
+      if (expr.operator !== '=') return;
+      let id: IdentifierExpr | null = null;
+      let literal: LiteralExpr | null = null;
+      if (expr.left.type === 'Identifier' && expr.right.type === 'Literal') { id = expr.left; literal = expr.right; }
+      else if (expr.right.type === 'Identifier' && expr.left.type === 'Literal') { id = expr.right; literal = expr.left; }
+      if (!id || !literal || !qualifierMatches(id)) return;
+      const ordinal = meta.columns.findIndex(c => c.name.toUpperCase() === id!.name.toUpperCase());
+      if (ordinal < 0 || equalities.has(ordinal)) return;
+      equalities.set(ordinal, this.evaluateExpression(literal, [], []) as CellValue);
+    };
+    collect(where);
+    if (equalities.size === 0) return null;
+
+    const indexes = this.storage.getIndexes(schema, tableName)
+      .filter(ix => !ix.expressions?.some(e => e != null))
+      .sort((a, b) => Number(b.unique) - Number(a.unique));
+    for (const ix of indexes) {
+      const ordinals = ix.columns.map(cn => meta.columns.findIndex(c => c.name.toUpperCase() === cn.toUpperCase()));
+      if (ordinals.some(o => o < 0 || !equalities.has(o))) continue;
+      const values = ordinals.map(o => equalities.get(o)!);
+      if (values.some(v => v === null)) continue;
+      const candidates = this.storage.findRowsByKey(schema, tableName, ordinals, values);
+      if (candidates) return candidates;
+    }
+    return null;
+  }
+
+  /**
+   * Acquire row-level TX locks for a `… FOR UPDATE` over a single table.
+   * NOWAIT on a row another session holds raises ORA-00054; SKIP LOCKED
+   * drops those rows from the result; a plain FOR UPDATE returns the row
+   * (the synchronous simulator cannot block-and-wait). Rows are keyed by
+   * primary key when present, else by full content. Self re-locks are fine.
+   */
+  private lockForUpdateRows(
+    ref: import('../engine/parser/ASTNode').TableRef,
+    rows: StorageRow[],
+    forUpdate: NonNullable<SelectStatement['forUpdate']>,
+  ): StorageRow[] {
+    const schema = this.resolveSchema(ref.schema);
+    const table = ref.name.toUpperCase();
+    const meta = this.storage.getTableMeta(schema, table);
+    if (!meta) return rows; // view / dictionary row source — nothing to lock
+    const sessionId = this._sessionId || '0';
+    const lm = this.instance.lockManager;
+    const pk = meta.constraints.find(c => c.type === 'PRIMARY_KEY');
+    const pkIdx = pk?.columns.map(cn => meta.columns.findIndex(c => c.name === cn.toUpperCase())) ?? null;
+    const keyOf = (row: StorageRow): string =>
+      pkIdx ? pkIdx.map(i => (i >= 0 ? String(row[i]) : '')).join(String.fromCharCode(1)) : JSON.stringify(row);
+
+    const out: StorageRow[] = [];
+    for (const row of rows) {
+      const key = keyOf(row);
+      const holder = lm.rowLockHolder(schema, table, key);
+      if (holder !== undefined && holder !== sessionId) {
+        if (forUpdate.wait === 'SKIP_LOCKED') continue;
+        if (forUpdate.wait === 'NOWAIT') {
+          throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
+        }
+        out.push(row); // plain FOR UPDATE: cannot block — return without stealing the lock
+        continue;
+      }
+      // FOR UPDATE opens a transaction; COMMIT/ROLLBACK is what releases
+      // the row locks (via the transaction.* events the lock actor hears).
+      this.txn.begin();
+      lm.acquireRowLock(sessionId, schema, table, key);
+      out.push(row);
+    }
+    return out;
+  }
+
   private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
     if (ref.type === 'TableRef') {
       return this.loadTable(ref);
@@ -1024,6 +1312,26 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(ref.schema);
     const tableName = ref.name.toUpperCase();
     const alias = ref.alias?.toUpperCase();
+
+    // table@dblink — the rows live on ANOTHER database. Used to be
+    // silently ignored (the local table answered for the remote one).
+    if (ref.dbLink) {
+      const remote = this.requireCommandHost().fetchDbLinkRows(
+        this.context.currentUser, ref.dbLink, ref.schema, ref.name);
+      const prefix = alias || tableName;
+      const columns: StorageColMeta[] = remote.columns.map((c, i) => ({
+        name: c.name,
+        dataType: c.dataType,
+        ordinalPosition: i,
+        _qualifiedNames: [c.name, `${prefix}.${c.name}`],
+      } as StorageColMeta & { _qualifiedNames: string[] }));
+      return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
+    }
+
+    // File-backed external table: re-read its location file(s) from the
+    // host filesystem before scanning, so SELECT reflects the current file
+    // content (read-on-query). No-op for ordinary tables.
+    this.commandHost?.reloadExternalTable(schema, tableName, this.context.currentUser);
 
     // Check if it's a view first
     const viewMeta = this.storage.getViewMeta(schema, tableName);
@@ -1053,7 +1361,10 @@ export class OracleExecutor extends BaseExecutor {
     const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
-    const storageRows = this.storage.getRows(schema, tableName);
+    let storageRows = this.storage.getRows(schema, tableName);
+    if (ref.asOf) {
+      storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
+    }
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
@@ -1308,6 +1619,26 @@ export class OracleExecutor extends BaseExecutor {
     return Array.from(groupMap.values());
   }
 
+  private inferGroupedColumnType(
+    expr: Expression,
+    columns: StorageColMeta[],
+  ): import('../engine/catalog/DataType').ColumnDataType {
+    const colType = (name: string) =>
+      columns.find(c => c.name.toUpperCase() === name.toUpperCase())?.dataType;
+    if (expr.type === 'FunctionCall') {
+      const fn = expr.name.toUpperCase();
+      if (fn === 'COUNT' || fn === 'SUM' || fn === 'AVG') return parseOracleType('NUMBER');
+      if (fn === 'MIN' || fn === 'MAX') {
+        const arg = expr.args[0];
+        if (arg?.type === 'Identifier') return colType(arg.name) ?? parseOracleType('VARCHAR2', 4000);
+      }
+    }
+    if (expr.type === 'Identifier') {
+      return colType(expr.name) ?? parseOracleType('VARCHAR2', 4000);
+    }
+    return parseOracleType('VARCHAR2', 4000);
+  }
+
   private projectGroupedRows(
     groups: { key: CellValue[]; rows: StorageRow[] }[],
     columns: StorageColMeta[],
@@ -1319,7 +1650,7 @@ export class OracleExecutor extends BaseExecutor {
     // Build column metadata from first call
     for (const item of stmt.columns) {
       const name = item.alias || this.exprToString(item.expr);
-      resultColumns.push({ name, dataType: parseOracleType('VARCHAR2') });
+      resultColumns.push({ name, dataType: this.inferGroupedColumnType(item.expr, columns) });
     }
 
     for (const group of groups) {
@@ -1879,10 +2210,9 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    const parts: string[] = [];
-    if (updatedCount > 0) parts.push(`${updatedCount} row${updatedCount !== 1 ? 's' : ''} merged (updated)`);
-    if (insertedCount > 0) parts.push(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} merged (inserted)`);
-    return emptyResult(parts.join(', ') || 'Merge complete.', updatedCount + insertedCount);
+    // Real SQL*Plus reports a single total, not a per-clause breakdown.
+    const total = updatedCount + insertedCount;
+    return emptyResult(`${total} row${total !== 1 ? 's' : ''} merged.`, total);
   }
 
   private applySelectClauses(result: ResultSet, stmt: SelectStatement): ResultSet {
@@ -2014,6 +2344,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
     let insertedCount = 0;
 
@@ -2037,16 +2368,20 @@ export class OracleExecutor extends BaseExecutor {
       }
       for (const subRow of subResult.rows) {
         const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+        const provided = new Set<number>();
         if (stmt.columns) {
           for (let i = 0; i < stmt.columns.length; i++) {
             const colIdx = this.findColumnIndex(tableMeta, stmt.columns![i]);
-            if (colIdx >= 0) row[colIdx] = subRow[i] as CellValue;
+            if (colIdx >= 0) { row[colIdx] = subRow[i] as CellValue; provided.add(colIdx); }
           }
         } else {
           for (let i = 0; i < subResult.columns.length && i < tableMeta.columns.length; i++) {
             row[i] = subRow[i] as CellValue;
+            provided.add(i);
           }
         }
+        // Columns the SELECT did not supply fall back to their DEFAULT.
+        this.applyColumnDefaults(tableMeta, row, provided);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
@@ -2060,30 +2395,49 @@ export class OracleExecutor extends BaseExecutor {
 
   private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {
     const row: StorageRow = new Array(tableMeta.columns.length).fill(null);
+    const provided = new Set<number>();
 
     if (columns) {
       for (const colName of columns) this.requireColumnIndex(tableMeta, colName);
       if (values.length > columns.length) throw new OracleError(913, 'too many values');
       if (values.length < columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < columns.length && i < values.length; i++) {
-        row[this.requireColumnIndex(tableMeta, columns[i])] = this.evaluateExpression(values[i], [], []);
+        const idx = this.requireColumnIndex(tableMeta, columns[i]);
+        row[idx] = this.evaluateExpression(values[i], [], []);
+        provided.add(idx);
       }
     } else {
       if (values.length > tableMeta.columns.length) throw new OracleError(913, 'too many values');
       if (values.length < tableMeta.columns.length) throw new OracleError(947, 'not enough values');
       for (let i = 0; i < values.length && i < tableMeta.columns.length; i++) {
         row[i] = this.evaluateExpression(values[i], [], []);
+        provided.add(i);
       }
     }
 
-    // Apply defaults for missing values
-    for (let i = 0; i < tableMeta.columns.length; i++) {
-      if (row[i] === null && tableMeta.columns[i].defaultValue !== undefined) {
-        row[i] = tableMeta.columns[i].defaultValue!;
-      }
-    }
-
+    this.applyColumnDefaults(tableMeta, row, provided);
     return row;
+  }
+
+  /**
+   * Evaluate the DEFAULT expression of every column the INSERT did not
+   * supply (an explicit NULL keeps NULL; only omitted columns default).
+   * The DEFAULT is evaluated per row, so DEFAULT SYSDATE / sequences work.
+   */
+  private applyColumnDefaults(
+    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
+    row: StorageRow,
+    provided: Set<number>,
+  ): void {
+    for (let i = 0; i < tableMeta.columns.length; i++) {
+      if (provided.has(i)) continue;
+      const col = tableMeta.columns[i];
+      if (col.defaultExpr) {
+        row[i] = this.evaluateExpression(col.defaultExpr as Expression, [], []);
+      } else if (col.defaultValue !== undefined) {
+        row[i] = col.defaultValue;
+      }
+    }
   }
 
   // ── UPDATE ────────────────────────────────────────────────────────
@@ -2093,6 +2447,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
 
     for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
@@ -2128,6 +2483,7 @@ export class OracleExecutor extends BaseExecutor {
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
     // Validate FK constraints on rows to be deleted
@@ -2147,10 +2503,236 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── DDL ───────────────────────────────────────────────────────────
 
-  private executeCreateTable(stmt: CreateTableStatement): ResultSet {
-    // DDL auto-commits any open transaction (Oracle behavior)
-    if (this.txn.isActive) this.executeCommit();
+  /**
+   * CREATE [PUBLIC] DATABASE LINK — persists the link in the catalog so
+   * DBA_DB_LINKS reflects it and DROP has something real to remove. The
+   * simulator does not dispatch queries across links (documented limit);
+   * the dictionary, at least, must not lie about what exists.
+   */
+  private executeCreateDbLink(
+    stmt: import('../engine/parser/ASTNode').CreateDbLinkStatement,
+  ): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.context.currentUser;
+    const name = stmt.name.toUpperCase();
+    this.privileges.requireSystemPrivilege(
+      stmt.isPublic ? 'CREATE PUBLIC DATABASE LINK' : 'CREATE DATABASE LINK');
+    if (this.catalog.getDbLink(owner, name)) {
+      throw new OracleError(2011, 'duplicate database link name');
+    }
+    this.catalog.registerDbLink({
+      owner, name,
+      username: stmt.connectUser ? stmt.connectUser.toUpperCase() : null,
+      password: stmt.connectPassword ?? null,
+      host: stmt.usingAlias ?? null,
+      created: new Date(),
+    });
+    this.emitDdl('CREATE DATABASE LINK', `${owner}.${name}`);
+    return emptyResult('Database link created.');
+  }
 
+  private executeDropDbLink(
+    stmt: import('../engine/parser/ASTNode').DropDbLinkStatement,
+  ): ResultSet {
+    const owner = stmt.isPublic ? 'PUBLIC' : this.context.currentUser;
+    const name = stmt.name.toUpperCase();
+    if (!this.catalog.dropDbLink(owner, name)) {
+      throw new OracleError(2024, 'database link not found');
+    }
+    this.emitDdl('DROP DATABASE LINK', `${owner}.${name}`);
+    return emptyResult('Database link dropped.');
+  }
+
+  /**
+   * CREATE [OR REPLACE] DIRECTORY name AS 'path' — registers a directory
+   * object (always SYS-owned) binding a SQL name to a host filesystem
+   * path. Requires CREATE ANY DIRECTORY, the only privilege that grants
+   * it (there is no schema-local "CREATE DIRECTORY" — directories live in
+   * a single global namespace). Without OR REPLACE an existing name is
+   * ORA-00955; with it, the binding is silently replaced (Oracle does not
+   * version directory objects).
+   */
+  private executeCreateDirectory(
+    stmt: import('../engine/parser/ASTNode').CreateDirectoryStatement,
+  ): ResultSet {
+    this.privileges.requireSystemPrivilege('CREATE ANY DIRECTORY');
+    const name = stmt.name.toUpperCase();
+    if (!stmt.orReplace && this.catalog.getDirectory(name)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+    this.catalog.registerDirectory({ name, path: stmt.path, created: new Date() });
+    this.emitDdl('CREATE DIRECTORY', `SYS.${name}`);
+    return emptyResult('Directory created.');
+  }
+
+  private executeDropDirectory(
+    stmt: import('../engine/parser/ASTNode').DropDirectoryStatement,
+  ): ResultSet {
+    this.privileges.requireSystemPrivilege('DROP ANY DIRECTORY');
+    const name = stmt.name.toUpperCase();
+    if (!this.catalog.dropDirectory(name)) {
+      // Oracle reports the generic object-does-not-exist error here.
+      throw new OracleError(4043, `object ${name} does not exist`);
+    }
+    this.emitDdl('DROP DIRECTORY', `SYS.${name}`);
+    return emptyResult('Directory dropped.');
+  }
+
+  /**
+   * CREATE MATERIALIZED VIEW — a real object, not a success-message stub:
+   * the defining query is executed (BUILD IMMEDIATE) into a genuine
+   * storage table (which is what makes SELECT work afterwards) and the
+   * dictionary side (query, refresh metadata, staleness, base tables)
+   * is registered in the catalog for DBA_MVIEWS and DBMS_MVIEW.REFRESH.
+   */
+  private executeCreateMaterializedView(
+    stmt: import('../engine/parser/ASTNode').CreateMaterializedViewStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const name = stmt.name.toUpperCase();
+
+    if (owner === this.context.currentUser) {
+      this.privileges.requireSystemPrivilege('CREATE MATERIALIZED VIEW', 'CREATE ANY MATERIALIZED VIEW');
+    } else {
+      this.privileges.requireSystemPrivilege('CREATE ANY MATERIALIZED VIEW');
+    }
+    if (this.storage.tableExists(owner, name) || this.catalog.getMaterializedView(owner, name)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+
+    if (stmt.refreshMethod === 'FAST') {
+      for (const base of this.collectBaseTables(stmt.query)) {
+        if (!(this.catalog as OracleCatalog).getMviewLog(base.schema, base.table)) {
+          throw new OracleError(23413, `table "${base.schema}"."${base.table}" does not have a materialized view log`);
+        }
+      }
+    }
+
+    const result = this.executeSelect(stmt.query);
+    const columns: StorageColMeta[] = result.columns.map((col, i) => ({
+      name: col.name, dataType: col.dataType, ordinalPosition: i,
+    }));
+    this.storage.ensureSchema(owner);
+    this.storage.createTable({
+      schema: owner, name, columns, constraints: [],
+      tablespace: 'USERS', rowCount: 0,
+    });
+    // BUILD DEFERRED creates an empty (unusable until refreshed) container.
+    const deferred = stmt.buildMode === 'DEFERRED';
+    if (!deferred) {
+      for (const row of result.rows) this.storage.insertRow(owner, name, row as StorageRow);
+    }
+    this.catalog.registerMaterializedView({
+      owner, name,
+      queryAst: stmt.query,
+      queryText: stmt.queryText ?? '',
+      buildMode: stmt.buildMode ?? 'IMMEDIATE',
+      refreshMethod: stmt.refreshMethod ?? 'FORCE',
+      refreshMode: stmt.refreshMode ?? 'DEMAND',
+      baseTables: this.collectBaseTables(stmt.query),
+      lastRefresh: deferred ? null : new Date(),
+      staleness: deferred ? 'UNUSABLE' : 'FRESH',
+    });
+    this.emitDdl('CREATE MATERIALIZED VIEW', `${owner}.${name}`);
+    return emptyResult('Materialized view created.');
+  }
+
+  private executeDropMaterializedView(
+    stmt: import('../engine/parser/ASTNode').DropMaterializedViewStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const name = stmt.name.toUpperCase();
+    const meta = this.catalog.getMaterializedView(owner, name);
+    if (!meta) {
+      throw new OracleError(12003, `materialized view "${owner}"."${name}" does not exist`);
+    }
+    this.catalog.dropMaterializedView(owner, name);
+    if (this.storage.tableExists(owner, name)) this.storage.dropTable(owner, name);
+    this.emitDdl('DROP MATERIALIZED VIEW', `${owner}.${name}`);
+    return emptyResult('Materialized view dropped.');
+  }
+
+  /**
+   * Complete refresh: re-run the defining query and replace the container
+   * rows. Exposed for DBMS_MVIEW.REFRESH. ORA-12003 when unknown.
+   */
+  refreshMaterializedView(owner: string, name: string): void {
+    const o = owner.toUpperCase(); const n = name.toUpperCase();
+    const meta = this.catalog.getMaterializedView(o, n);
+    if (!meta) {
+      throw new OracleError(12003, `materialized view "${o}"."${n}" does not exist`);
+    }
+    if (meta.refreshMethod === 'FAST') {
+      for (const base of meta.baseTables) {
+        const log = (this.catalog as OracleCatalog).getMviewLog(base.schema, base.table);
+        if (!log) {
+          throw new OracleError(23413, `table "${base.schema}"."${base.table}" does not have a materialized view log`);
+        }
+        log.pendingChanges = 0;
+      }
+    }
+    const result = this.executeSelect(meta.queryAst as SelectStatement);
+    this.storage.deleteRows(o, n, () => true);
+    for (const row of result.rows) this.storage.insertRow(o, n, row as StorageRow);
+    meta.lastRefresh = new Date();
+    meta.staleness = 'FRESH';
+  }
+
+  private executeCreateMviewLog(
+    stmt: import('../engine/parser/ASTNode').CreateMviewLogStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const master = stmt.table.toUpperCase();
+    this.requireTableMeta(owner, master);
+    const catalog = this.catalog as OracleCatalog;
+    if (catalog.getMviewLog(owner, master)) {
+      throw new OracleError(12006, `a materialized view log already exists on table '${master}'`);
+    }
+    catalog.registerMviewLog({
+      owner, master,
+      logTable: `MLOG$_${master.slice(0, 25)}`,
+      withRowid: stmt.withRowid,
+      withPrimaryKey: stmt.withPrimaryKey || !stmt.withRowid,
+      withSequence: stmt.withSequence,
+      pendingChanges: 0,
+      created: new Date(),
+    });
+    this.emitDdl('CREATE MATERIALIZED VIEW LOG', `${owner}.${master}`);
+    return emptyResult('Materialized view log created.');
+  }
+
+  private executeDropMviewLog(
+    stmt: import('../engine/parser/ASTNode').DropMviewLogStatement,
+  ): ResultSet {
+    const owner = this.resolveSchema(stmt.schema);
+    const master = stmt.table.toUpperCase();
+    if (!(this.catalog as OracleCatalog).dropMviewLog(owner, master)) {
+      throw new OracleError(12002, `there is no materialized view log on table "${owner}"."${master}"`);
+    }
+    this.emitDdl('DROP MATERIALIZED VIEW LOG', `${owner}.${master}`);
+    return emptyResult('Materialized view log dropped.');
+  }
+
+  /** Base tables a SELECT reads — FROM list, JOINs, CTEs, FROM-subqueries. */
+  private collectBaseTables(query: SelectStatement): { schema: string; table: string }[] {
+    const out = new Map<string, { schema: string; table: string }>();
+    const visit = (q: SelectStatement): void => {
+      const refs = [...(q.from ?? []), ...(q.joins ?? []).map(j => j.table)];
+      for (const ref of refs) {
+        if (ref.type === 'TableRef') {
+          const schema = (ref.schema ?? this.context.currentSchema).toUpperCase();
+          const table = ref.name.toUpperCase();
+          out.set(`${schema}.${table}`, { schema, table });
+        } else if (ref.type === 'SubqueryTableRef') {
+          visit(ref.query);
+        }
+      }
+      for (const cte of q.withClause?.ctes ?? []) visit(cte.query);
+    };
+    visit(query);
+    return [...out.values()];
+  }
+
+  private executeCreateTable(stmt: CreateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2190,6 +2772,7 @@ export class OracleExecutor extends BaseExecutor {
       name: col.name.toUpperCase(),
       dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
       ordinalPosition: i,
+      defaultExpr: col.defaultValue,
     }));
 
     const constraints: ConstraintMeta[] = [];
@@ -2198,8 +2781,14 @@ export class OracleExecutor extends BaseExecutor {
     // Column-level constraints
     for (const col of stmt.columns) {
       for (const cc of col.constraints) {
-        const name = cc.constraintName || nextSysC();
-        if (cc.constraintType === 'NOT_NULL') {
+        // Unquoted identifiers are uppercase in the dictionary.
+        const name = (cc.constraintName || nextSysC()).toUpperCase();
+        if (cc.constraintType === 'CHECK' && cc.checkExpr) {
+          constraints.push({
+            name, type: 'CHECK', columns: [col.name.toUpperCase()],
+            checkExpression: this.serializeExpr(cc.checkExpr),
+          });
+        } else if (cc.constraintType === 'NOT_NULL') {
           constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
           const colMeta = columns.find(c => c.name === col.name.toUpperCase());
           if (colMeta) colMeta.dataType = { ...colMeta.dataType, nullable: false };
@@ -2210,21 +2799,22 @@ export class OracleExecutor extends BaseExecutor {
         } else if (cc.constraintType === 'UNIQUE') {
           constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
         } else if (cc.constraintType === 'REFERENCES') {
-          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
         }
       }
     }
 
     // Table-level constraints
     for (const tc of stmt.constraints) {
-      const name = tc.constraintName || nextSysC();
+      const name = (tc.constraintName || nextSysC()).toUpperCase();
       constraints.push({
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
         columns: tc.columns.map(c => c.toUpperCase()),
-        refTable: tc.refTable?.toUpperCase(),
+        refTable: tc.refTable?.toUpperCase().split('.').pop(),
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
+        checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
       });
     }
 
@@ -2269,7 +2859,6 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropTable(stmt: DropTableStatement): ResultSet {
-    if (this.txn.isActive) this.executeCommit();
     const schema = this.resolveSchema(stmt.schema);
     const tableName = stmt.name.toUpperCase();
 
@@ -2279,6 +2868,28 @@ export class OracleExecutor extends BaseExecutor {
     if (!this.storage.tableExists(schema, tableName)) {
       if (stmt.ifExists) return emptyResult('');
       throw new OracleError(942, `table or view does not exist`);
+    }
+
+    // A parent referenced by enabled foreign keys needs CASCADE
+    // CONSTRAINTS (ORA-02449); with it, the referencing FKs are dropped.
+    const fkChildren: Array<{ table: string; constraint: string }> = [];
+    for (const child of this.storage.getTableNames(schema)) {
+      if (child === tableName) continue;
+      const childMeta = this.storage.getTableMeta(schema, child);
+      for (const c of childMeta?.constraints ?? []) {
+        if (c.type === 'FOREIGN_KEY' && c.refTable?.toUpperCase().split('.').pop() === tableName) {
+          fkChildren.push({ table: child, constraint: c.name });
+        }
+      }
+    }
+    if (fkChildren.length > 0) {
+      if (!stmt.cascade) {
+        throw new OracleError(2449, 'unique/primary keys in table referenced by foreign keys');
+      }
+      for (const { table, constraint } of fkChildren) {
+        const childMeta = this.storage.getTableMeta(schema, table)!;
+        childMeta.constraints = childMeta.constraints.filter(c => c.name !== constraint);
+      }
     }
 
     // Unless PURGE is specified, soft-drop into the recyclebin so
@@ -2297,16 +2908,28 @@ export class OracleExecutor extends BaseExecutor {
       });
     }
     this.storage.dropTable(schema, tableName);
+    // Drop any external-table metadata so DBA_EXTERNAL_TABLES/LOCATIONS
+    // stay coherent with the table actually existing.
+    this.instance.externalTables.drop(schema, tableName);
     return emptyResult('Table dropped.');
   }
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    // TRUNCATE is DDL — implicit COMMIT before and after (like all DDL in Oracle)
-    if (this.txn.isActive) {
-      this.executeCommit();
+    const tableName = stmt.name.toUpperCase();
+    this.requireTableMeta(schema, tableName);
+    // An enabled FK from another table blocks TRUNCATE (ORA-02266) — even
+    // with no child rows, unlike DELETE; self-references do not block.
+    for (const child of this.storage.getTableNames(schema)) {
+      if (child === tableName) continue;
+      const childMeta = this.storage.getTableMeta(schema, child);
+      const referenced = childMeta?.constraints.some(
+        c => c.type === 'FOREIGN_KEY' && c.refTable?.toUpperCase().split('.').pop() === tableName);
+      if (referenced) {
+        throw new OracleError(2266, 'unique/primary keys in table referenced by enabled foreign keys');
+      }
     }
-    this.storage.truncateTable(schema, stmt.name.toUpperCase());
+    this.storage.truncateTable(schema, tableName);
     return emptyResult('Table truncated.');
   }
 
@@ -2320,23 +2943,64 @@ export class OracleExecutor extends BaseExecutor {
     for (const action of stmt.actions) {
       if (action.action === 'ADD_COLUMN') {
         const col = action.column;
+        const colNameU = col.name.toUpperCase();
+        const meta = this.requireTableMeta(schema, tableName);
+        const notNull = col.constraints.some(c => c.constraintType === 'NOT_NULL');
+        const hasDefault = col.defaultValue !== undefined;
+        // NOT NULL without a default needs an empty table (ORA-01758) —
+        // existing rows would otherwise violate the new constraint.
+        if (notNull && !hasDefault && this.storage.getRows(schema, tableName).length > 0) {
+          throw new OracleError(1758, 'table must be empty to add mandatory (NOT NULL) column');
+        }
+        // The DEFAULT fills existing rows once (evaluated now) and is kept
+        // as an expression for future per-row inserts.
+        const defaultVal = hasDefault
+          ? this.evaluateExpression(col.defaultValue as Expression, [], []) as CellValue
+          : undefined;
         this.storage.addColumn(schema, tableName, {
-          name: col.name.toUpperCase(),
+          name: colNameU,
           dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
-          ordinalPosition: this.storage.getTableMeta(schema, tableName)!.columns.length,
+          ordinalPosition: meta.columns.length,
+          defaultValue: defaultVal,
+          defaultExpr: col.defaultValue,
         });
+        if (notNull) {
+          meta.constraints.push({
+            name: `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`,
+            type: 'NOT_NULL', columns: [colNameU],
+          });
+        }
       } else if (action.action === 'MODIFY_COLUMN') {
         const col = action.column;
         const meta = this.storage.getTableMeta(schema, tableName);
         if (!meta) throw new OracleError(942, `table or view does not exist`);
         const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
         if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
-        // Update data type
-        existing.dataType = parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale);
-        // Apply NOT NULL from constraints
+        // Update data type (a typeless MODIFY — `(col NOT NULL)` — leaves it).
+        if (col.dataType.name) {
+          existing.dataType = parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale);
+        }
+        const colNameU = col.name.toUpperCase();
+        const colIdx = meta.columns.findIndex(c => c.name === colNameU);
+        // NOT NULL / NULL used to only flip the nullable flag (never
+        // enforced). Add/remove a real NOT_NULL constraint so INSERT
+        // actually checks it.
         for (const cc of col.constraints) {
           if (cc.constraintType === 'NOT_NULL') {
+            if (this.storage.getRows(schema, tableName).some(r => r[colIdx] === null)) {
+              throw new OracleError(2296, `cannot enable (${schema}.${colNameU}) - null values found`);
+            }
             existing.dataType = { ...existing.dataType, nullable: false };
+            if (!meta.constraints.some(c => c.type === 'NOT_NULL' && c.columns.includes(colNameU))) {
+              meta.constraints.push({
+                name: `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`,
+                type: 'NOT_NULL', columns: [colNameU],
+              });
+            }
+          } else if (cc.constraintType === 'NULL') {
+            existing.dataType = { ...existing.dataType, nullable: true };
+            meta.constraints = meta.constraints.filter(
+              c => !(c.type === 'NOT_NULL' && c.columns.includes(colNameU)));
           }
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {
@@ -2424,6 +3088,19 @@ export class OracleExecutor extends BaseExecutor {
           case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
           case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
         }
+      } else if (action.action === 'ADD_CONSTRAINT') {
+        this.addTableConstraint(schema, tableName, action.constraint);
+      } else if (action.action === 'DROP_CONSTRAINT') {
+        const meta = this.requireTableMeta(schema, tableName);
+        const cname = action.constraintName.toUpperCase();
+        const idx = meta.constraints.findIndex(c => c.name === cname);
+        if (idx < 0) {
+          throw new OracleError(2443, 'Cannot drop constraint - nonexistent constraint');
+        }
+        const removed = meta.constraints.splice(idx, 1)[0];
+        if (removed.type === 'PRIMARY_KEY' || removed.type === 'UNIQUE') {
+          this.storage.dropIndex(schema, cname);
+        }
       } else if (
         action.action === 'FLASHBACK_ARCHIVE' || action.action === 'NO_FLASHBACK_ARCHIVE'
         || action.action === 'INMEMORY' || action.action === 'NO_INMEMORY'
@@ -2435,13 +3112,82 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Table altered.');
   }
 
+  /**
+   * Add a table constraint via ALTER TABLE … ADD CONSTRAINT — used to be a
+   * silent no-op (the constraint was parsed and dropped on the floor, so
+   * it never enforced anything). Validates the existing rows before
+   * enabling it and creates the PK/UNIQUE backing index.
+   */
+  private addTableConstraint(schema: string, tableName: string, tc: import('../engine/parser/ASTNode').TableConstraint): void {
+    const meta = this.requireTableMeta(schema, tableName);
+    const cname = (tc.constraintName
+      || `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`).toUpperCase();
+    if (meta.constraints.some(c => c.name === cname)) {
+      throw new OracleError(2264, 'name already used by an existing constraint');
+    }
+    const newC: ConstraintMeta = {
+      name: cname,
+      type: tc.constraintType,
+      columns: tc.columns.map(c => c.toUpperCase()),
+      refTable: tc.refTable?.toUpperCase().split('.').pop(),
+      refColumns: tc.refColumns?.map(c => c.toUpperCase()),
+      onDelete: tc.onDelete,
+      checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
+    };
+    // Real Oracle validates current data before enabling the constraint
+    // (ORA-02437 / ORA-00001 / ORA-02298 / ORA-02293).
+    const probeMeta: TableMeta = { ...meta, constraints: [newC] };
+    for (const row of this.storage.getRows(schema, tableName)) {
+      this.constraints.validateConstraints(schema, tableName, probeMeta, row, row);
+    }
+    meta.constraints.push(newC);
+    if ((newC.type === 'PRIMARY_KEY' || newC.type === 'UNIQUE')
+      && !this.storage.getIndexes(schema).some(i => i.name === newC.name)) {
+      this.storage.createIndex(schema, {
+        name: newC.name, tableName, columns: newC.columns, unique: true,
+        tablespace: meta.tablespace,
+      });
+    }
+  }
+
   private executeCreateIndex(stmt: CreateIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
+    const indexName = stmt.name.toUpperCase();
+    const tableName = stmt.table.toUpperCase();
+    if (!this.storage.tableExists(schema, tableName)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    if (this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(955, 'name is already used by an existing object');
+    }
+    const meta = this.storage.getTableMeta(schema, tableName)!;
+    const tableCols = new Set(meta.columns.map(c => c.name.toUpperCase()));
+    for (const c of stmt.columns) {
+      if (!c.expression && !tableCols.has(c.name.toUpperCase())) {
+        throw new OracleError(904, `"${c.name.toUpperCase()}": invalid identifier`);
+      }
+    }
     const expressions = stmt.columns.map(c => c.expression ? c.expression.toUpperCase() : null);
     const hasExpressions = expressions.some(e => e !== null);
+    if (stmt.unique && !hasExpressions) {
+      // ORA-01452: a unique index cannot be built over duplicate keys.
+      // Entirely-NULL keys are not indexed by Oracle, so they never collide.
+      const colIdx = stmt.columns.map(c =>
+        meta.columns.findIndex(mc => mc.name.toUpperCase() === c.name.toUpperCase()));
+      const seen = new Set<string>();
+      for (const row of this.storage.getRows(schema, tableName)) {
+        const values = colIdx.map(i => row[i] ?? null);
+        if (values.every(v => v === null)) continue;
+        const key = JSON.stringify(values);
+        if (seen.has(key)) {
+          throw new OracleError(1452, 'cannot CREATE UNIQUE INDEX; duplicate keys found');
+        }
+        seen.add(key);
+      }
+    }
     this.storage.createIndex(schema, {
-      name: stmt.name.toUpperCase(),
-      tableName: stmt.table.toUpperCase(),
+      name: indexName,
+      tableName,
       columns: stmt.columns.map(c => c.name.toUpperCase()),
       unique: !!stmt.unique,
       bitmap: stmt.bitmap,
@@ -2452,7 +3198,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropIndex(stmt: DropIndexStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropIndex(schema, stmt.name.toUpperCase());
+    const indexName = stmt.name.toUpperCase();
+    if (!this.storage.getIndexes(schema).some(i => i.name === indexName)) {
+      throw new OracleError(1418, 'specified index does not exist');
+    }
+    this.storage.dropIndex(schema, indexName);
     return emptyResult('Index dropped.');
   }
 
@@ -2472,7 +3222,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSequence(stmt: DropSequenceStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropSequence(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.sequenceExists(schema, name)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    this.storage.dropSequence(schema, name);
     return emptyResult('Sequence dropped.');
   }
 
@@ -2501,7 +3255,11 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropView(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.viewExists(schema, name)) {
+      throw new OracleError(942, 'table or view does not exist');
+    }
+    this.storage.dropView(schema, name);
     return emptyResult('View dropped.');
   }
 
@@ -2545,6 +3303,25 @@ export class OracleExecutor extends BaseExecutor {
         const fn = expr as FunctionCallExpr;
         return `${fn.name}(${fn.args.map(a => this.serializeExpr(a)).join(', ')})`;
       }
+      case 'ParenExpr':
+        return `(${this.serializeExpr(expr.expr)})`;
+      case 'UnaryExpr':
+        return expr.operator === 'NOT'
+          ? `NOT (${this.serializeExpr(expr.operand)})`
+          : `${expr.operator}${this.serializeExpr(expr.operand)}`;
+      case 'IsNullExpr':
+        return `${this.serializeExpr(expr.expr)} IS${expr.negated ? ' NOT' : ''} NULL`;
+      case 'InExpr': {
+        if (!Array.isArray(expr.values)) return '?';
+        const list = expr.values.map(v => this.serializeExpr(v)).join(', ');
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} IN (${list})`;
+      }
+      case 'BetweenExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} BETWEEN `
+          + `${this.serializeExpr(expr.low)} AND ${this.serializeExpr(expr.high)}`;
+      case 'LikeExpr':
+        return `${this.serializeExpr(expr.expr)}${expr.negated ? ' NOT' : ''} LIKE `
+          + this.serializeExpr(expr.pattern);
       default: return '?';
     }
   }
@@ -2650,7 +3427,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
-    this.storage.dropTrigger(schema, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    const exists = this.storage.getAllTriggers()
+      .some(t => t.schema === schema && t.name === name);
+    if (!exists) {
+      throw new OracleError(4080, `trigger '${name}' does not exist`);
+    }
+    this.storage.dropTrigger(schema, name);
     return emptyResult('Trigger dropped.');
   }
 
@@ -2682,7 +3465,13 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeDropSynonym(stmt: DropSynonymStatement): ResultSet {
     const owner = stmt.isPublic ? 'PUBLIC' : this.resolveSchema(stmt.schema);
-    this.storage.dropSynonym(owner, stmt.name.toUpperCase());
+    const name = stmt.name.toUpperCase();
+    if (!this.storage.getSynonym(owner, name)) {
+      throw stmt.isPublic
+        ? new OracleError(1432, 'public synonym to be dropped does not exist')
+        : new OracleError(1434, 'private synonym to be dropped does not exist');
+    }
+    this.storage.dropSynonym(owner, name);
     return emptyResult('Synonym dropped.');
   }
 
@@ -2729,722 +3518,9 @@ export class OracleExecutor extends BaseExecutor {
   // ── DCL ───────────────────────────────────────────────────────────
 
   /** Resolve the grantee list shared by GRANT and REVOKE statements. */
-  private granteesOf(stmt: GrantStatement | RevokeStatement): string[] {
-    return stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
-  }
-
-  /**
-   * Expand the ALL PRIVILEGES shortcut into the full set of system
-   * privileges, matching real Oracle's DBA_SYS_PRIVS expansion. Entries
-   * keep whether they came from the shortcut (REVOKE must not raise
-   * ORA-01927 for individual misses of an ALL expansion).
-   */
-  private expandSystemPrivileges(privileges: string[]): { name: string; fromAll: boolean }[] {
-    const expanded: { name: string; fromAll: boolean }[] = [];
-    for (const priv of privileges) {
-      if (priv.toUpperCase() === 'ALL PRIVILEGES') {
-        for (const p of ORACLE_SYSTEM_PRIVILEGES) expanded.push({ name: p, fromAll: true });
-      } else {
-        expanded.push({ name: priv, fromAll: false });
-      }
-    }
-    return expanded;
-  }
-
-  /**
-   * Validate the object of a GRANT exists — granting on a missing table /
-   * schema must raise ORA-00942 (Oracle never silently succeeds).
-   */
-  private assertGrantableObjectExists(schema: string, objName: string): void {
-    const catalog = this.catalog as OracleCatalog;
-    const tableExists = this.storage.getTableMeta(schema, objName) != null;
-    const viewExists = this.storage.getViewMeta?.(schema, objName) != null;
-    const sequenceExists = this.storage.getSequence?.(schema, objName) != null;
-    if (tableExists || viewExists || sequenceExists) return;
-    // Could still be a PL/SQL object — query the catalog provider.
-    const procExists = catalog.getStoredUnits().some(u => u.schema === schema && u.name === objName);
-    if (!procExists) {
-      throw new OracleError(942, 'table or view does not exist');
-    }
-  }
-
-  private executeGrant(stmt: GrantStatement): ResultSet {
-    const catalog = this.catalog as OracleCatalog;
-    const grantees = this.granteesOf(stmt);
-    // Oracle refuses the entire statement with ORA-01917 if any name is wrong.
-    this.privileges.assertGranteesExist(grantees);
-    // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
-    // Granting an object priv requires owning the object or having WITH GRANT OPTION.
-    if (stmt.objectName) {
-      const user = this.context.currentUser;
-      const schema = this.resolveSchema(stmt.objectSchema);
-      const objName = stmt.objectName.toUpperCase();
-      this.privileges.requireGrantableObjectPrivileges(schema, objName, stmt.privileges);
-      this.assertGrantableObjectExists(schema, objName);
-      // Self-grant (owner grants to themselves) — ORA-01749.
-      for (const grantee of grantees) {
-        if (grantee.toUpperCase() === schema) {
-          throw new OracleError(1749, 'you may not GRANT/REVOKE privileges to/from yourself');
-        }
-      }
-      for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
-          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
-          if (cols && cols.length > 0) {
-            // Column-level grant: only DBA_COL_PRIVS, not DBA_TAB_PRIVS.
-            for (const c of cols) {
-              const colExists = this.storage.getTableMeta(schema, objName)?.columns.some(co => co.name === c.toUpperCase());
-              if (!colExists) throw new OracleError(904, `"${c.toUpperCase()}": invalid identifier`);
-              catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
-            }
-          } else {
-            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
-          }
-        }
-      }
-    } else {
-      this.privileges.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
-      const expanded = this.expandSystemPrivileges(stmt.privileges);
-      for (const grantee of grantees) {
-        for (const { name: priv } of expanded) {
-          if (catalog.roleExists(priv)) {
-            this.privileges.assertNoCircularRoleGrant(grantee, priv);
-            catalog.grantRole(grantee, priv, stmt.withAdminOption);
-          } else {
-            // Self-grant of SYSDBA/SYSOPER/etc on SYS — ORA-01931.
-            if (grantee.toUpperCase() === 'SYS') {
-              throw new OracleError(1931, 'role/privilege cannot be granted to SYS');
-            }
-            catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
-          }
-        }
-      }
-    }
-    return emptyResult('Grant succeeded.');
-  }
-
-  private executeRevoke(stmt: RevokeStatement): ResultSet {
-    const catalog = this.catalog as OracleCatalog;
-    const grantees = this.granteesOf(stmt);
-    // ORA-01917 stops the whole statement before any mutation, matching Oracle.
-    this.privileges.assertGranteesExist(grantees);
-    // REVOKE {ADMIN|GRANT} OPTION FOR — only strip the option flag,
-    // keep the underlying privilege row.
-    if (stmt.strippingOption) {
-      for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
-          if (stmt.objectName) {
-            const schema = this.resolveSchema(stmt.objectSchema);
-            catalog.stripTableGrantOption(grantee, priv, schema, stmt.objectName);
-          } else if (catalog.roleExists(priv)) {
-            catalog.stripRoleAdminOption(grantee, priv);
-          } else {
-            catalog.stripSystemGrantOption(grantee, priv);
-          }
-        }
-      }
-      return emptyResult('Revoke succeeded.');
-    }
-    if (stmt.objectName) {
-      const schema = stmt.objectSchema || this.context.currentSchema;
-      for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
-          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
-          if (cols && cols.length > 0) {
-            for (const c of cols) catalog.revokeColumnPrivilege(grantee, priv, schema, stmt.objectName, c);
-          } else {
-            catalog.revokeTablePrivilege(grantee, priv, schema, stmt.objectName);
-          }
-        }
-      }
-    } else {
-      const expanded = this.expandSystemPrivileges(stmt.privileges);
-      for (const grantee of grantees) {
-        for (const entry of expanded) {
-          const granteeU = grantee.toUpperCase();
-          const privU = entry.name.toUpperCase();
-          if (catalog.roleExists(entry.name)) {
-            const hadRole = catalog.getRoleGrants().some(r => r.grantee === granteeU && r.role === privU);
-            if (!hadRole && !entry.fromAll) {
-              throw new OracleError(1924, `role '${privU}' not granted or does not exist`);
-            }
-            catalog.revokeRole(grantee, entry.name);
-          } else {
-            const hadPriv = catalog.getSysPrivilegeGrants().some(p => p.grantee === granteeU && p.privilege === privU)
-              || catalog.getTablePrivilegeGrants().some(p => p.grantee === granteeU && p.privilege === privU);
-            if (!hadPriv && !entry.fromAll) {
-              throw new OracleError(1927, `cannot REVOKE privileges you did not grant`);
-            }
-            catalog.revokeSystemPrivilege(grantee, entry.name);
-          }
-        }
-      }
-    }
-    return emptyResult('Revoke succeeded.');
-  }
-
   // ── User/Role management ──────────────────────────────────────────
 
-  private executeCreateUser(stmt: CreateUserStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE USER');
-    const catalog = this.catalog as OracleCatalog;
-    if (catalog.userExists(stmt.username)) {
-      throw new OracleError(1920, `user name '${stmt.username.toUpperCase()}' conflicts with another user or role name`);
-    }
-    const profileName = (stmt.profile || 'DEFAULT').toUpperCase();
-    if (stmt.profile && !catalog.profileExists(profileName)) {
-      throw new OracleError(2380, `profile ${profileName} does not exist`);
-    }
-    const username = stmt.username.toUpperCase();
-    const authType = stmt.authenticationKind ?? (stmt.password ? 'PASSWORD' : 'PASSWORD');
-    // Reject weak passwords up-front when the chosen profile carries a
-    // PASSWORD_VERIFY_FUNCTION. Real Oracle calls the verifier before
-    // creating the row, so the user is never persisted.
-    if (authType === 'PASSWORD' && stmt.password) {
-      const verifierError = catalog.getSecurityEngine()?.verifyPasswordForProfile(username, stmt.password, profileName);
-      if (verifierError) throw new OracleError(28003, verifierError.replace(/^ORA-28003:\s*/, ''));
-    }
-    catalog.createUser({
-      username,
-      userId: catalog.allocateUserId(),
-      defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
-      temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
-      accountStatus: stmt.accountLocked ? 'LOCKED' : 'OPEN',
-      lockDate: stmt.accountLocked ? new Date() : null,
-      expiryDate: null,
-      created: new Date(),
-      profile: profileName,
-      authenticationType: authType,
-      externalName: stmt.externalName,
-    });
-    if (authType === 'PASSWORD' && stmt.password) {
-      catalog.setPassword(username, stmt.password);
-      catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
-    }
-    if ((authType === 'GLOBAL' || authType === 'EXTERNAL') && stmt.externalName) {
-      catalog.setExternalName(username, stmt.externalName);
-    }
-    if (stmt.passwordExpired) {
-      catalog.getSecurityEngine()?.passwords.expirePassword(username);
-    }
-    // Apply tablespace quotas
-    if (stmt.quota && stmt.quota.length > 0) {
-      catalog.getSecurityEngine()?.applyQuotas(username, stmt.quota);
-    }
-    this.storage.ensureSchema(username);
-    this.emitUserActivity(username, 'CREATED', { profile: profileName, authType });
-    return emptyResult('User created.');
-  }
-
-  /** Publish an `oracle.user.activity` event onto the instance bus. */
-  private emitUserActivity(
-    username: string,
-    kind: import('./events').UserActivityKind,
-    detail: Record<string, string | number | boolean>,
-  ): void {
-    this.bus.publish({
-      topic: 'oracle.user.activity',
-      payload: {
-        deviceId: this.deviceId, sid: this.sid,
-        username: username.toUpperCase(), kind,
-        sessionId: parseInt(this._sessionId, 10) || 0,
-        performedBy: this.context.currentSchema,
-        detail, timestamp: new Date(),
-      },
-    });
-  }
-
-  private executeAlterUser(stmt: AlterUserStatement): ResultSet {
-    const catalog = this.catalog as OracleCatalog;
-    const username = stmt.username.toUpperCase();
-    if (!catalog.userExists(username)) {
-      // ALTER USER on a non-existent user is ORA-01918 (user does not
-      // exist) — distinct from the generic ORA-01917 (user or role).
-      throw new OracleError(1918, `user '${username}' does not exist`);
-    }
-
-    // Users may always alter their own password; any other ALTER USER needs ALTER USER priv.
-    const isSelfPasswordChange =
-      username === this.context.currentUser &&
-      stmt.password !== undefined &&
-      !stmt.accountLock && !stmt.accountUnlock && !stmt.passwordExpire &&
-      !stmt.defaultTablespace && !stmt.temporaryTablespace &&
-      !stmt.profile && (!stmt.quota || stmt.quota.length === 0);
-    if (!isSelfPasswordChange) {
-      this.privileges.requireSystemPrivilege('ALTER USER');
-    }
-
-    const engine = catalog.getSecurityEngine();
-    const user = catalog.getUser(username);
-
-    if (stmt.password) {
-      const profileName = user?.profile ?? 'DEFAULT';
-      // IDENTIFIED BY VALUES '<hash>' bypasses password verification —
-      // the value is an opaque verifier already produced by Oracle.
-      if (engine && !stmt.passwordByHash) {
-        const result = engine.changePassword(username, stmt.password, profileName);
-        if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
-      }
-      catalog.setPassword(username, stmt.password);
-      if (user) {
-        user.authenticationType = 'PASSWORD';
-        user.externalName = undefined;
-      }
-      this.emitUserActivity(username, 'PASSWORD_CHANGED', { profile: profileName });
-    } else if (stmt.authenticationKind && user) {
-      user.authenticationType = stmt.authenticationKind;
-      if (stmt.externalName !== undefined) {
-        user.externalName = stmt.externalName;
-        catalog.setExternalName(username, stmt.externalName);
-      } else if (stmt.authenticationKind === 'EXTERNAL') {
-        // Bare IDENTIFIED EXTERNALLY — clear any prior principal.
-        user.externalName = undefined;
-      }
-    }
-    if (stmt.accountLock) {
-      catalog.lockUser(username);
-      engine?.loginTracker.lockAccount(username);
-      this.emitUserActivity(username, 'LOCKED', { by: 'ALTER USER' });
-    }
-    if (stmt.accountUnlock) {
-      catalog.unlockUser(username);
-      engine?.loginTracker.unlockAccount(username);
-      this.emitUserActivity(username, 'UNLOCKED', { by: 'ALTER USER' });
-    }
-    if (stmt.passwordExpire) {
-      engine?.passwords.expirePassword(username);
-      this.emitUserActivity(username, 'PASSWORD_EXPIRED', {});
-      // Do NOT set accountStatus here — dbaUsers() derives the combined status
-      // from PasswordManager + lock state to handle EXPIRED & LOCKED correctly.
-    }
-    if (stmt.defaultTablespace && user) {
-      user.defaultTablespace = stmt.defaultTablespace.toUpperCase();
-    }
-    if (stmt.temporaryTablespace && user) {
-      user.temporaryTablespace = stmt.temporaryTablespace.toUpperCase();
-    }
-    if (stmt.profile) {
-      const profileName = stmt.profile.toUpperCase();
-      if (!catalog.profileExists(profileName)) {
-        throw new OracleError(2380, `profile ${profileName} does not exist`);
-      }
-      if (user) user.profile = profileName;
-    }
-    if (stmt.quota && stmt.quota.length > 0) {
-      engine?.applyQuotas(username, stmt.quota);
-    }
-    if (stmt.defaultRoleSpec) {
-      catalog.setDefaultRoleSpec(username, stmt.defaultRoleSpec);
-    }
-    if (stmt.proxy) {
-      const proxyName = stmt.proxy.proxy.toUpperCase();
-      if (!catalog.userExists(proxyName)) {
-        throw new OracleError(1917, `user or role '${proxyName}' does not exist`);
-      }
-      if (stmt.proxy.mode === 'GRANT') {
-        catalog.grantProxy(username, proxyName, stmt.proxy.role);
-      } else {
-        catalog.revokeProxy(username, proxyName);
-      }
-    }
-    return emptyResult('User altered.');
-  }
-
-  private executeDropUser(stmt: DropUserStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP USER');
-    const catalog = this.catalog as OracleCatalog;
-    const username = stmt.username.toUpperCase();
-    // SYS-supplied schemas cannot be dropped — ORA-28009 / 1031.
-    const PROTECTED = new Set(['SYS', 'SYSTEM', 'PUBLIC', 'XDB', 'OUTLN', 'AUDSYS', 'DBSNMP', 'CTXSYS', 'MDSYS', 'WMSYS']);
-    if (PROTECTED.has(username)) {
-      throw new OracleError(28009, `cannot drop user '${username}': protected schema`);
-    }
-    if (!catalog.userExists(username)) {
-      throw new OracleError(1918, `user '${username}' does not exist`);
-    }
-    catalog.getSecurityEngine()?.dropUserCleanup(username);
-    catalog.dropUser(username);
-    this.emitUserActivity(username, 'DROPPED', {});
-    return emptyResult('User dropped.');
-  }
-
-  private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE ROLE');
-    const catalog = this.catalog as OracleCatalog;
-    const upper = stmt.name.toUpperCase();
-    if (catalog.roleExists(upper) || catalog.userExists(upper)) {
-      throw new OracleError(1921, `role name '${upper}' conflicts with another user or role name`);
-    }
-    const authKind = stmt.authenticationKind ?? 'NONE';
-    catalog.createRole(stmt.name, authKind);
-    if (authKind === 'PASSWORD' && stmt.password) {
-      catalog.setRolePassword(stmt.name, stmt.password);
-    }
-    return emptyResult('Role created.');
-  }
-
-  private executeDropRole(stmt: DropRoleStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP ANY ROLE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.roleExists(stmt.name)) {
-      throw new OracleError(1919, `role '${stmt.name.toUpperCase()}' does not exist`);
-    }
-    catalog.dropRole(stmt.name);
-    return emptyResult('Role dropped.');
-  }
-
   // ── Instance commands ─────────────────────────────────────────────
-
-  private executeStartup(stmt: StartupStatement): ResultSet {
-    const output = this.instance.startup(stmt.mode);
-    return emptyResult(output.join('\n'));
-  }
-
-  private executeShutdown(stmt: ShutdownStatement): ResultSet {
-    const output = this.instance.shutdown(stmt.mode);
-    return emptyResult(output.join('\n'));
-  }
-
-  private executeAlterSystem(stmt: AlterSystemStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('ALTER SYSTEM');
-    if (stmt.action === 'SET' && stmt.parameter && stmt.value) {
-      this.instance.setParameter(stmt.parameter, stmt.value, stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined);
-      return emptyResult('System altered.');
-    }
-    if (stmt.action === 'SWITCH LOGFILE') {
-      return emptyResult(this.instance.switchLogfile());
-    }
-    if (stmt.action === 'CHECKPOINT' || stmt.action === 'FLUSH') {
-      return emptyResult('System altered.');
-    }
-    if (stmt.action === 'KILL SESSION' || stmt.action === 'DISCONNECT SESSION') {
-      const sessionId = stmt.sessionId ?? '';
-      const parts = sessionId.split(',');
-      const sid = parseInt(parts[0] ?? '0', 10);
-      const serial = parseInt(parts[1] ?? '0', 10);
-      const engine = (this.catalog as import('./OracleCatalog').OracleCatalog).getSecurityEngine();
-      if (engine) {
-        const killed = engine.sessions.killSession(sid, serial);
-        if (!killed) {
-          throw new OracleError(31, `no such session: ${sessionId}`);
-        }
-      }
-      return emptyResult('System altered.');
-    }
-    if (stmt.action === 'ARCHIVE LOG') {
-      return emptyResult('Statement processed.');
-    }
-    if (stmt.action === 'ENABLE RESTRICTED SESSION' || stmt.action === 'DISABLE RESTRICTED SESSION') {
-      return emptyResult('System altered.');
-    }
-    if (stmt.action === 'RESET') {
-      return emptyResult('System altered.');
-    }
-    return emptyResult('System altered.');
-  }
-
-  private executeAlterDatabase(stmt: AlterDatabaseStatement): ResultSet {
-    if (stmt.action === 'ARCHIVELOG') {
-      return emptyResult(this.instance.setArchiveLogMode(true));
-    }
-    if (stmt.action === 'NOARCHIVELOG') {
-      return emptyResult(this.instance.setArchiveLogMode(false));
-    }
-    if (stmt.action === 'OPEN') {
-      return emptyResult('Database altered.');
-    }
-    // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
-    // MOVE DATAFILE 'old' TO 'new' [KEEP|REUSE]
-    const renameMatch = /^\s*(?:RENAME\s+FILE|MOVE\s+DATAFILE)\s+(.+)$/i.exec(stmt.action);
-    if (renameMatch) {
-      this.applyDatafileRename(renameMatch[1]);
-      return emptyResult('Database altered.');
-    }
-    // DATAFILE '…' RESIZE 200M
-    const resizeMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bRESIZE\s+(\d+\s*[KMGT]?)/i.exec(stmt.action);
-    if (resizeMatch) {
-      this.applyDatafileResize(resizeMatch[1], resizeMatch[2].replace(/\s+/g, ''));
-      return emptyResult('Database altered.');
-    }
-    // DATAFILE '…' AUTOEXTEND ON|OFF
-    const autoMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bAUTOEXTEND\s+(ON|OFF)\b/i.exec(stmt.action);
-    if (autoMatch) {
-      this.applyDatafileAutoextend(autoMatch[1], autoMatch[2].toUpperCase() === 'ON');
-      return emptyResult('Database altered.');
-    }
-    return emptyResult('Database altered.');
-  }
-
-  private applyDatafileResize(path: string, size: string): void {
-    const ts = (this.storage as OracleStorage).resizeDatafile(path, size);
-    if (!ts) return;
-    this.bus.publish({
-      topic: 'oracle.storage.datafile-resized',
-      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, size },
-    });
-  }
-
-  private applyDatafileAutoextend(path: string, on: boolean): void {
-    const ts = (this.storage as OracleStorage).setDatafileAutoextend(path, on);
-    if (!ts) return;
-    this.bus.publish({
-      topic: 'oracle.storage.datafile-autoextend-changed',
-      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, autoextend: on },
-    });
-  }
-
-  /**
-   * Parse the comma-separated FROM/TO lists in
-   *   ALTER DATABASE RENAME FILE 'a','b' TO 'c','d'
-   * and apply each rename through the storage layer, emitting one
-   * `oracle.storage.datafile-renamed` event per actual rename.
-   */
-  private applyDatafileRename(tail: string): void {
-    const [lhs, rhs] = tail.split(/\bTO\b/i);
-    const pick = (s: string | undefined): string[] =>
-      (s ?? '').match(/'([^']*)'/g)?.map(q => q.slice(1, -1)) ?? [];
-    const olds = pick(lhs);
-    const news = pick(rhs);
-    if (olds.length === 0) return;
-    const storage = this.storage as OracleStorage;
-    for (let i = 0; i < olds.length; i++) {
-      const oldPath = olds[i];
-      const newPath = news[i] ?? olds[i];
-      if (!newPath || newPath === oldPath) continue;
-      const ts = storage.renameDatafile(oldPath, newPath);
-      if (!ts) continue;
-      this.bus.publish({
-        topic: 'oracle.storage.datafile-renamed',
-        payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, oldPath, newPath },
-      });
-    }
-  }
-
-  private executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
-    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT';
-    const datafiles = [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }];
-    (this.storage as OracleStorage).createTablespace({
-      name: stmt.name.toUpperCase(),
-      type,
-      status: 'ONLINE',
-      datafiles,
-      blockSize: 8192,
-      logging: stmt.logging,
-      extentManagement: stmt.extentManagement,
-      segmentSpaceManagement: stmt.segmentSpaceManagement,
-      allocationType: stmt.allocationType,
-      encrypted: stmt.encrypted,
-    });
-    this.bus.publish({
-      topic: 'oracle.storage.tablespace-created',
-      payload: {
-        deviceId: this.deviceId,
-        sid: this.sid,
-        name: stmt.name.toUpperCase(),
-        type,
-        datafiles,
-      },
-    });
-    return emptyResult('Tablespace created.');
-  }
-
-  private executeDropTablespace(stmt: DropTablespaceStatement): ResultSet {
-    const storage = this.storage as OracleStorage;
-    const ts = storage.getTablespace(stmt.name);
-    const datafiles = ts ? ts.datafiles.map(d => d.path) : [];
-    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = ts?.type ?? 'PERMANENT';
-    storage.dropTablespace(stmt.name);
-    this.bus.publish({
-      topic: 'oracle.storage.tablespace-dropped',
-      payload: {
-        deviceId: this.deviceId,
-        sid: this.sid,
-        name: stmt.name.toUpperCase(),
-        type,
-        datafiles,
-        removeDatafiles: stmt.includeDatafiles ?? false,
-      },
-    });
-    return emptyResult('Tablespace dropped.');
-  }
-
-  /** No-op helper — see file-scope `parseInitParameters` below. */
-  private executeCreatePfileSpfile(stmt: CreatePfileSpfileStatement): ResultSet {
-    const sid = this.sid;
-    // FROM PFILE='path' / FROM SPFILE[='path'] — load the source file
-    // from the device VFS and apply its parameters before we render
-    // the output file. FROM MEMORY snapshots the live parameter set.
-    if (stmt.source === 'PFILE' || stmt.source === 'SPFILE') {
-      const srcDefault = stmt.source === 'PFILE'
-        ? `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`
-        : `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`;
-      const src = stmt.sourcePath ?? srcDefault;
-      const content = this.readDeviceFile(src);
-      if (content !== null) {
-        for (const [k, v] of parseInitParameters(content)) {
-          this.instance.setParameter(k, v, 'BOTH');
-        }
-      }
-    }
-    const params: Record<string, string> = {};
-    for (const [k, v] of this.instance.getAllParameters()) params[k] = v;
-    const defaultPath =
-      stmt.target === 'SPFILE'
-        ? `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`
-        : `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`;
-    const outputPath = stmt.outputPath ?? defaultPath;
-    this.bus.publish({
-      topic: 'oracle.instance.parameter-file-requested',
-      payload: {
-        deviceId: this.deviceId, sid,
-        target: stmt.target, outputPath, params,
-      },
-    });
-    return emptyResult(`File created.`);
-  }
-
-  /**
-   * Look up the device by id (via the global registry) and read the
-   * given path through the VFS-backed editor accessor. Returns null
-   * if the device or file cannot be reached — callers fall back to
-   * the in-memory parameter set so behaviour is graceful.
-   */
-  private readDeviceFile(path: string): string | null {
-    const dev = Equipment.getById(this.deviceId);
-    const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | undefined)?.readFileForEditor;
-    return typeof read === 'function' ? read.call(dev, path) ?? null : null;
-  }
-
-  private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
-    const storage = this.storage as OracleStorage;
-    const ts = storage.getTablespace(stmt.name);
-    if (!ts) throw new OracleError(959, `tablespace '${stmt.name}' does not exist`);
-    this.applyAlterTablespaceAction(ts.name, stmt.action);
-    return emptyResult('Tablespace altered.');
-  }
-
-  private applyAlterTablespaceAction(name: string, action: AlterTablespaceAction): void {
-    const storage = this.storage as OracleStorage;
-    const ts = storage.getTablespace(name)!;
-    const publishStatus = (oldStatus: typeof ts.status, newStatus: typeof ts.status) =>
-      this.bus.publish({
-        topic: 'oracle.storage.tablespace-status-changed',
-        payload: { deviceId: this.deviceId, sid: this.sid, name: ts.name, oldStatus, newStatus },
-      });
-    switch (action.kind) {
-      case 'ADD_DATAFILE': {
-        const df = { path: action.path, size: action.size, autoextend: action.autoextend ?? false };
-        const updated = storage.addDatafileToTablespace(name, df);
-        if (!updated) return;
-        this.bus.publish({
-          topic: 'oracle.storage.datafile-added',
-          payload: {
-            deviceId: this.deviceId, sid: this.sid,
-            tablespace: ts.name, type: ts.type,
-            path: df.path, size: df.size, autoextend: df.autoextend,
-          },
-        });
-        return;
-      }
-      case 'ONLINE': case 'READ_WRITE': {
-        const old = ts.status;
-        if (storage.setTablespaceStatus(name, 'ONLINE')) publishStatus(old, 'ONLINE');
-        return;
-      }
-      case 'OFFLINE': {
-        const old = ts.status;
-        if (storage.setTablespaceStatus(name, 'OFFLINE')) publishStatus(old, 'OFFLINE');
-        return;
-      }
-      case 'READ_ONLY': {
-        const old = ts.status;
-        if (storage.setTablespaceStatus(name, 'READ ONLY')) publishStatus(old, 'READ ONLY');
-        return;
-      }
-      case 'RENAME_TO': {
-        const oldName = ts.name;
-        storage.renameTablespace(name, action.newName);
-        this.bus.publish({
-          topic: 'oracle.storage.tablespace-renamed',
-          payload: { deviceId: this.deviceId, sid: this.sid, oldName, newName: action.newName.toUpperCase() },
-        });
-        return;
-      }
-      case 'RENAME_DATAFILE': {
-        const owner = storage.renameDatafile(action.oldPath, action.newPath);
-        if (!owner) return;
-        this.bus.publish({
-          topic: 'oracle.storage.datafile-renamed',
-          payload: { deviceId: this.deviceId, sid: this.sid, tablespace: owner, oldPath: action.oldPath, newPath: action.newPath },
-        });
-        return;
-      }
-      case 'LOGGING':         ts.logging = true; return;
-      case 'NOLOGGING':       ts.logging = false; return;
-      case 'FORCE_LOGGING':   ts.forceLogging = true; return;
-      case 'NO_FORCE_LOGGING':ts.forceLogging = false; return;
-      case 'FLASHBACK_ON':    ts.flashbackOn = true; return;
-      case 'FLASHBACK_OFF':   ts.flashbackOn = false; return;
-      // Operational verbs with no persisted metadata.
-      case 'BEGIN_BACKUP': case 'END_BACKUP':
-      case 'SHRINK_SPACE': case 'COALESCE':
-        return;
-    }
-  }
-
-  // ── ASM ──────────────────────────────────────────────────────────
-
-  private executeCreateDiskgroup(stmt: CreateDiskgroupStatement): ResultSet {
-    const asm = this.instance.asm;
-    const dg = asm.createDiskgroup(stmt.name, { redundancy: stmt.redundancy });
-    this.bus.publish({
-      topic: 'oracle.asm.diskgroup-created',
-      payload: { deviceId: this.deviceId, sid: this.sid, groupNumber: dg.groupNumber, name: dg.name, redundancy: dg.redundancy },
-    });
-    for (const d of stmt.disks) {
-      const { disk } = asm.addDisk(dg.name, d.path, { name: d.name, sizeMb: d.sizeMb });
-      this.bus.publish({
-        topic: 'oracle.asm.disk-added',
-        payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: dg.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
-      });
-    }
-    return emptyResult('Diskgroup created.');
-  }
-
-  private executeDropDiskgroup(stmt: DropDiskgroupStatement): ResultSet {
-    const { diskPaths } = this.instance.asm.dropDiskgroup(stmt.name, stmt.includingContents);
-    this.bus.publish({
-      topic: 'oracle.asm.diskgroup-dropped',
-      payload: { deviceId: this.deviceId, sid: this.sid, name: stmt.name.toUpperCase(), diskPaths },
-    });
-    return emptyResult('Diskgroup dropped.');
-  }
-
-  private executeAlterDiskgroup(stmt: AlterDiskgroupStatement): ResultSet {
-    const asm = this.instance.asm;
-    switch (stmt.action.kind) {
-      case 'ADD_DISK':
-        for (const d of stmt.action.disks) {
-          const { diskgroup, disk } = asm.addDisk(stmt.name, d.path, { name: d.name, sizeMb: d.sizeMb, failgroup: d.failgroup });
-          this.bus.publish({
-            topic: 'oracle.asm.disk-added',
-            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
-          });
-        }
-        return emptyResult('Diskgroup altered.');
-      case 'DROP_DISK':
-        for (const id of stmt.action.identifiers) {
-          const { diskgroup, disk } = asm.dropDisk(stmt.name, id);
-          this.bus.publish({
-            topic: 'oracle.asm.disk-dropped',
-            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskName: disk.name, path: disk.path },
-          });
-        }
-        return emptyResult('Diskgroup altered.');
-      case 'REBALANCE': case 'MOUNT': case 'DISMOUNT':
-        return emptyResult('Diskgroup altered.');
-    }
-  }
 
   // ── Expression evaluation ─────────────────────────────────────────
 
@@ -3465,16 +3541,9 @@ export class OracleExecutor extends BaseExecutor {
         const idSchema = (expr as IdentifierExpr).schema?.toUpperCase();
         if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
           const seqSchema = idSchema || this.context.currentSchema;
-          const seqKey = `${seqSchema.toUpperCase()}.${idTable}`;
-          if (idName === 'NEXTVAL') {
-            const val = this.storage.nextVal(seqSchema, idTable);
-            this._nextvalCalled.add(seqKey);
-            return val;
-          }
-          if (!this._nextvalCalled.has(seqKey)) {
-            throw new OracleError(8002, `sequence ${idTable}.CURRVAL is not yet defined in this session`);
-          }
-          return this.storage.currVal(seqSchema, idTable);
+          return idName === 'NEXTVAL'
+            ? this.sequenceNextVal(seqSchema, idTable)
+            : this.sequenceCurrVal(seqSchema, idTable);
         }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
         const pkgName = idTable;
@@ -3554,17 +3623,9 @@ export class OracleExecutor extends BaseExecutor {
 
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
-        const seqKey = `${seqSchema.toUpperCase()}.${expr.sequenceName.toUpperCase()}`;
-        if (expr.operation === 'NEXTVAL') {
-          const val = this.storage.nextVal(seqSchema, expr.sequenceName);
-          this._nextvalCalled.add(seqKey);
-          return val;
-        }
-        // CURRVAL requires NEXTVAL to have been called first in this session
-        if (!this._nextvalCalled.has(seqKey)) {
-          throw new OracleError(8002, `sequence ${expr.sequenceName.toUpperCase()}.CURRVAL is not yet defined in this session`);
-        }
-        return this.storage.currVal(seqSchema, expr.sequenceName);
+        return expr.operation === 'NEXTVAL'
+          ? this.sequenceNextVal(seqSchema, expr.sequenceName)
+          : this.sequenceCurrVal(seqSchema, expr.sequenceName);
       }
 
       default:
@@ -3572,21 +3633,74 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  /** NEXTVAL: advance the global counter, remember the value per session. */
+  private sequenceNextVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this.storage.nextVal(s, n) as number;
+    this._sessionCurrval.set(`${s}.${n}`, val);
+    return val;
+  }
+
+  /** CURRVAL: the last NEXTVAL of THIS session — never the global counter
+   *  (ORA-08002 before the first NEXTVAL, ORA-02289 if dropped). */
+  private sequenceCurrVal(schema: string, name: string): number {
+    const s = schema.toUpperCase();
+    const n = name.toUpperCase();
+    if (!this.storage.sequenceExists(s, n)) {
+      throw new OracleError(2289, 'sequence does not exist');
+    }
+    const val = this._sessionCurrval.get(`${s}.${n}`);
+    if (val === undefined) {
+      throw new OracleError(8002, `sequence ${n}.CURRVAL is not yet defined in this session`);
+    }
+    return val;
+  }
+
+  /** WHERE / JOIN-ON boundary: only a TRUE predicate passes — UNKNOWN
+   *  filters the row out exactly like FALSE (SQL three-valued logic). */
   private evaluateCondition(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean {
+    return this.evaluateCondition3VL(expr, row, columns) === true;
+  }
+
+  /**
+   * SQL three-valued logic (Kleene): a condition is TRUE, FALSE or
+   * UNKNOWN (represented as null). NULL operands make comparisons,
+   * LIKE, BETWEEN and IN evaluate to UNKNOWN; AND/OR combine per the
+   * standard truth tables and NOT UNKNOWN stays UNKNOWN. CHECK
+   * constraints accept TRUE *and* UNKNOWN (see ConstraintValidator
+   * wiring), while WHERE keeps only TRUE.
+   */
+  private evaluateCondition3VL(expr: Expression, row: StorageRow, columns: StorageColMeta[]): boolean | null {
+    const not3 = (v: boolean | null): boolean | null => (v === null ? null : !v);
     switch (expr.type) {
       case 'BinaryExpr': {
         if (expr.operator === 'AND') {
-          return this.evaluateCondition(expr.left, row, columns) && this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === false) return false;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === false) return false;
+          return l === null || r === null ? null : true;
         }
         if (expr.operator === 'OR') {
-          return this.evaluateCondition(expr.left, row, columns) || this.evaluateCondition(expr.right, row, columns);
+          const l = this.evaluateCondition3VL(expr.left, row, columns);
+          if (l === true) return true;
+          const r = this.evaluateCondition3VL(expr.right, row, columns);
+          if (r === true) return true;
+          return l === null || r === null ? null : false;
         }
         const left = this.evaluateExpression(expr.left, row, columns);
         const right = this.evaluateExpression(expr.right, row, columns);
+        if (left === null || right === null) return null;
         return this.applyComparison(expr.operator, left, right);
       }
       case 'UnaryExpr':
-        if (expr.operator === 'NOT') return !this.evaluateCondition(expr.operand, row, columns);
+        if (expr.operator === 'NOT') {
+          return not3(this.evaluateCondition3VL(expr.operand, row, columns));
+        }
         if (expr.operator === 'EXISTS') {
           if (expr.operand.type === 'SubqueryExpr') {
             const subResult = this.executeSubquery((expr.operand as SubqueryExpr).query, row, columns);
@@ -3607,31 +3721,50 @@ export class OracleExecutor extends BaseExecutor {
         return expr.negated ? val !== null : val === null;
       }
       case 'BetweenExpr': {
+        // val BETWEEN low AND high == val >= low AND val <= high, in 3VL.
         const val = this.evaluateExpression(expr.expr, row, columns);
         const low = this.evaluateExpression(expr.low, row, columns);
         const high = this.evaluateExpression(expr.high, row, columns);
-        const inRange = this.compareValues(val, low) >= 0 && this.compareValues(val, high) <= 0;
-        return expr.negated ? !inRange : inRange;
+        const geLow: boolean | null =
+          val === null || low === null ? null : this.compareValues(val, low) >= 0;
+        const leHigh: boolean | null =
+          val === null || high === null ? null : this.compareValues(val, high) <= 0;
+        const inRange: boolean | null =
+          geLow === false || leHigh === false ? false
+            : geLow === null || leHigh === null ? null : true;
+        return expr.negated ? not3(inRange) : inRange;
       }
       case 'InExpr': {
+        // IN is a chain of OR'd equalities: a NULL on either side makes
+        // that comparison UNKNOWN, so `x NOT IN (1, NULL)` never passes.
         const val = this.evaluateExpression(expr.expr, row, columns);
+        const inList = (values: CellValue[]): boolean | null => {
+          let sawUnknown = false;
+          for (const ev of values) {
+            if (val === null || ev === null) { sawUnknown = true; continue; }
+            if (this.compareValues(val, ev) === 0) return true;
+          }
+          return sawUnknown ? null : false;
+        };
+        let res: boolean | null;
         if (Array.isArray(expr.values)) {
-          const found = expr.values.some(v => {
-            const ev = this.evaluateExpression(v, row, columns);
-            return this.compareValues(val, ev) === 0;
-          });
-          return expr.negated ? !found : found;
+          res = inList(expr.values.map(v => this.evaluateExpression(v, row, columns)));
+        } else {
+          // Subquery IN — values is a SelectStatement
+          const subStmt = expr.values as unknown as SelectStatement;
+          const subResult = this.executeSubquery(subStmt, row, columns);
+          res = inList(subResult.rows.map(r => r[0]));
         }
-        // Subquery IN — values is a SelectStatement
-        const subStmt = expr.values as unknown as SelectStatement;
-        const subResult = this.executeSubquery(subStmt, row, columns);
-        const found = subResult.rows.some(r => this.compareValues(val, r[0]) === 0);
-        return expr.negated ? !found : found;
+        return expr.negated ? not3(res) : res;
       }
       case 'LikeExpr': {
-        const val = String(this.evaluateExpression(expr.expr, row, columns) ?? '');
-        const pattern = String(this.evaluateExpression(expr.pattern, row, columns) ?? '');
-        const escapeChar = expr.escape ? String(this.evaluateExpression(expr.escape, row, columns) ?? '') : null;
+        const valRaw = this.evaluateExpression(expr.expr, row, columns);
+        const patternRaw = this.evaluateExpression(expr.pattern, row, columns);
+        const escapeRaw = expr.escape ? this.evaluateExpression(expr.escape, row, columns) : undefined;
+        if (valRaw === null || patternRaw === null || escapeRaw === null) return null;
+        const val = String(valRaw);
+        const pattern = String(patternRaw);
+        const escapeChar = escapeRaw !== undefined ? String(escapeRaw) : null;
         // Build regex: escape regex-special chars first, then replace SQL wildcards
         let regexStr = '';
         for (let pi = 0; pi < pattern.length; pi++) {
@@ -3648,14 +3781,17 @@ export class OracleExecutor extends BaseExecutor {
             regexStr += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           }
         }
-        const regex = new RegExp('^' + regexStr + '$', 'i');
+        // Oracle LIKE is case-sensitive (no 'i' flag).
+        const regex = new RegExp('^' + regexStr + '$');
         const match = regex.test(val);
         return expr.negated ? !match : match;
       }
       case 'ParenExpr':
-        return this.evaluateCondition(expr.expr, row, columns);
-      default:
-        return !!this.evaluateExpression(expr, row, columns);
+        return this.evaluateCondition3VL(expr.expr, row, columns);
+      default: {
+        const v = this.evaluateExpression(expr, row, columns);
+        return v === null ? null : !!v;
+      }
     }
   }
 
@@ -4063,218 +4199,6 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
-  // ── Profile management ──────────────────────────────────────────
-
-  private executeCreateProfile(stmt: CreateProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('CREATE PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2379, `profile ${stmt.profileName.toUpperCase()} already exists`);
-    }
-    catalog.createProfile(stmt.profileName, stmt.limits);
-    return emptyResult('Profile created.');
-  }
-
-  private executeAlterProfile(stmt: AlterProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('ALTER PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
-    }
-    catalog.alterProfile(stmt.profileName, stmt.limits);
-    return emptyResult('Profile altered.');
-  }
-
-  private executeDropProfile(stmt: DropProfileStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('DROP PROFILE');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.profileExists(stmt.profileName)) {
-      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
-    }
-    catalog.dropProfile(stmt.profileName);
-    return emptyResult('Profile dropped.');
-  }
-
-  // ── Audit / Noaudit ──────────────────────────────────────────────
-
-  private executeAudit(stmt: AuditStatement): ResultSet {
-    // AUDIT requires AUDIT SYSTEM (for statement / privilege audit) or
-    // AUDIT ANY (for object audit). Real Oracle refuses anything else
-    // with ORA-01031.
-    if (stmt.onObject) {
-      this.privileges.requireSystemPrivilege('AUDIT ANY');
-    } else {
-      this.privileges.requireSystemPrivilege('AUDIT SYSTEM');
-    }
-    const catalog = this.catalog as OracleCatalog;
-    const options = stmt.auditOptions ?? [stmt.auditOption];
-    const byCode = stmt.byMode === 'SESSION' ? 'S' : 'A';
-    // WHENEVER [NOT] SUCCESSFUL scopes which half is audited.
-    const objSuccess = stmt.whenever === 'NOT SUCCESSFUL' ? '-' : byCode;
-    const objFailure = stmt.whenever === 'SUCCESSFUL' ? '-' : byCode;
-
-    if (stmt.onObject) {
-      const schema = (stmt.onObject.schema ?? this.context.currentUser).toUpperCase();
-      const object = stmt.onObject.name.toUpperCase();
-      for (const action of options) {
-        catalog.setObjectAuditOption(schema, object, action, {
-          success: objSuccess as 'A' | 'S' | '-',
-          failure: objFailure as 'A' | 'S' | '-',
-        });
-      }
-      return emptyResult('Audit succeeded.');
-    }
-
-    const mode = stmt.byMode === 'SESSION' ? 'BY SESSION' : 'BY ACCESS';
-    const success = stmt.whenever === 'NOT SUCCESSFUL' ? 'NOT SET' : mode;
-    const failure = stmt.whenever === 'SUCCESSFUL' ? 'NOT SET' : mode;
-    for (const auditOption of options) {
-      catalog.addStmtAuditOption({
-        auditOption,
-        userName: stmt.byUser ?? null,
-        success,
-        failure,
-      });
-    }
-    return emptyResult('Audit succeeded.');
-  }
-
-  private executeNoaudit(stmt: NoauditStatement): ResultSet {
-    if (stmt.onObject) {
-      this.privileges.requireSystemPrivilege('AUDIT ANY');
-    } else {
-      this.privileges.requireSystemPrivilege('AUDIT SYSTEM');
-    }
-    const catalog = this.catalog as OracleCatalog;
-    const options = stmt.auditOptions ?? [stmt.auditOption];
-    if (stmt.onObject) {
-      const schema = (stmt.onObject.schema ?? this.context.currentUser).toUpperCase();
-      const object = stmt.onObject.name.toUpperCase();
-      for (const action of options) {
-        catalog.clearObjectAuditOption(schema, object, action);
-      }
-      return emptyResult('Noaudit succeeded.');
-    }
-    for (const auditOption of options) {
-      catalog.removeStmtAuditOption(auditOption, stmt.byUser ?? null);
-    }
-    return emptyResult('Noaudit succeeded.');
-  }
-
-  // ── Unified audit policies ───────────────────────────────────────
-
-  private executeCreateAuditPolicy(stmt: import('../engine/parser/ASTNode').CreateAuditPolicyStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('AUDIT SYSTEM');
-    const catalog = this.catalog as OracleCatalog;
-    catalog.createUnifiedAuditPolicy({
-      name: stmt.name,
-      actions: stmt.actions,
-      objectSchema: stmt.onObject?.schema,
-      objectName: stmt.onObject?.name,
-      roles: stmt.roles,
-    });
-    return emptyResult('Audit policy created.');
-  }
-
-  private executeDropAuditPolicy(stmt: import('../engine/parser/ASTNode').DropAuditPolicyStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('AUDIT SYSTEM');
-    const catalog = this.catalog as OracleCatalog;
-    if (!catalog.dropUnifiedAuditPolicy(stmt.name)) {
-      throw new OracleError(46365, `audit policy ${stmt.name} does not exist`);
-    }
-    return emptyResult('Audit policy dropped.');
-  }
-
-  private executeAuditPolicy(stmt: import('../engine/parser/ASTNode').AuditPolicyStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('AUDIT SYSTEM');
-    const catalog = this.catalog as OracleCatalog;
-    if (stmt.disable) {
-      catalog.disableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers);
-      return emptyResult('Noaudit succeeded.');
-    }
-    catalog.enableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers, stmt.exceptUsers);
-    return emptyResult('Audit succeeded.');
-  }
-
-  // ── ADMINISTER KEY MANAGEMENT (TDE) ──────────────────────────────
-
-  private executeAdministerKeyManagement(stmt: import('../engine/parser/ASTNode').AdministerKeyManagementStatement): ResultSet {
-    this.privileges.requireSystemPrivilege('ADMINISTER KEY MANAGEMENT');
-    const catalog = this.catalog as OracleCatalog;
-    const creator = this.context.currentUser;
-
-    switch (stmt.operation) {
-      case 'CREATE_KEYSTORE': {
-        if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
-        catalog.configureTdeWallet(stmt.location, 'PASSWORD');
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      }
-      case 'OPEN_KEYSTORE': {
-        catalog.openTdeWallet();
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      }
-      case 'CLOSE_KEYSTORE': {
-        catalog.closeTdeWallet();
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      }
-      case 'SET_KEY': {
-        const tag = stmt.tag ?? '';
-        catalog.addTdeMasterKey(tag, creator);
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      }
-      case 'CREATE_AUTO_LOGIN_KEYSTORE': {
-        const w = catalog.getTdeWallet();
-        if (!w) {
-          if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
-          catalog.configureTdeWallet(stmt.location, 'AUTOLOGIN');
-        }
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      }
-      case 'BACKUP_KEYSTORE':
-      case 'MERGE_KEYSTORE':
-      case 'EXPORT_KEYS':
-      case 'IMPORT_KEYS':
-        // No state mutation needed — succeed with the canonical message.
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-      default:
-        return emptyResult('keystore altered.\nThe operation succeeded.');
-    }
-  }
-
-  // ── COMMENT ON … IS … ────────────────────────────────────────────
-
-  private executeComment(stmt: import('../engine/parser/ASTNode').CommentStatement): ResultSet {
-    const catalog = this.catalog as OracleCatalog;
-    const schema = this.resolveSchema(stmt.schema);
-    // Commenting on a foreign schema requires COMMENT ANY TABLE.
-    if (schema !== this.context.currentUser && this.context.currentUser !== 'SYS') {
-      this.privileges.requireSystemPrivilege('COMMENT ANY TABLE');
-    }
-    if (stmt.target === 'COLUMN' && stmt.columnName) {
-      catalog.setColumnComment(schema, stmt.tableName, stmt.columnName, stmt.text);
-    } else {
-      catalog.setTableComment(schema, stmt.tableName, stmt.text);
-    }
-    return emptyResult('Comment created.');
-  }
 }
 
-/**
- * Parse the `*.<name>=value` (spfile) and bare `<name>=value` (pfile)
- * lines from an init.ora-style file into a plain (name, value) map.
- * Comment lines (#) and blank lines are skipped; surrounding single
- * quotes on the value are stripped.
- */
-function parseInitParameters(content: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const raw of content.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const m = /^(?:\*\.)?([a-zA-Z0-9_]+)\s*=\s*(.+)$/.exec(line);
-    if (!m) continue;
-    let value = m[2].trim();
-    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
-    out.set(m[1].toLowerCase(), value);
-  }
-  return out;
-}
+

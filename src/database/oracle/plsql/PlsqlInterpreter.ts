@@ -595,6 +595,11 @@ export class PlsqlInterpreter {
     if (up === 'DBMS_OUTPUT.NEW_LINE') { this.host.putLine(''); return; }
     if (up === 'DBMS_OUTPUT.ENABLE' || up === 'DBMS_OUTPUT.DISABLE') return;
 
+    if (this.host.utlFile && up.startsWith('UTL_FILE.')
+        && this.execUtlFileProc(up.slice('UTL_FILE.'.length), args, scope)) {
+      return;
+    }
+
     if (this.tryCollectionMethodStmt(name, args, scope)) return;
 
     const local = scope.findSubprogram(up);
@@ -1035,10 +1040,93 @@ export class PlsqlInterpreter {
       return this.callPackageSubprogram(pkgMember.handle, pkgMember.member, args, scope);
     }
 
+    if (this.host.utlFile && up.startsWith('UTL_FILE.')) {
+      const r = this.evalUtlFileFunc(up.slice('UTL_FILE.'.length), args, scope);
+      if (r.handled) return r.value;
+    }
+
     const argLits = evaluated().map(v => this.toSqlLiteral(v)).join(', ');
     const r = this.host.runSql(`SELECT ${up}(${argLits}) FROM DUAL`);
     if (r.isQuery && r.rows.length) return r.rows[0][0];
     throw new PlsqlException('USER_DEFINED', 6550, `PLS-00201: identifier '${up}' must be declared`);
+  }
+
+  /**
+   * UTL_FILE functions — FOPEN returns an opaque file handle, IS_OPEN a
+   * boolean. The real I/O lives in UtlFileEngine (host.utlFile); here we
+   * only translate evaluated PL/SQL arguments.
+   */
+  private evalUtlFileFunc(member: string, args: CallArg[], scope: Scope): { handled: boolean; value: PlsqlValue } {
+    const api = this.host.utlFile!;
+    const arg = (i: number) => this.evalExpr(args[i].value, scope);
+    switch (member) {
+      case 'FOPEN':
+        return {
+          handled: true,
+          value: api.fopen(
+            this.toText(arg(0)), this.toText(arg(1)), this.toText(arg(2)),
+            args.length > 3 ? Number(arg(3)) : undefined),
+        };
+      case 'IS_OPEN':
+        return { handled: true, value: api.isOpen(Number(arg(0))) };
+    }
+    return { handled: false, value: null };
+  }
+
+  /**
+   * UTL_FILE procedures. GET_LINE writes the line it reads back into the
+   * caller's OUT variable (same write-back path as a user subprogram's OUT
+   * parameter). Returns false for members that are functions (FOPEN /
+   * IS_OPEN) or unknown, so the caller can fall through.
+   */
+  private execUtlFileProc(member: string, args: CallArg[], scope: Scope): boolean {
+    const api = this.host.utlFile!;
+    const arg = (i: number) => this.evalExpr(args[i].value, scope);
+    const txt = (i: number) => this.toText(arg(i));
+    const handle = () => Number(arg(0));
+    switch (member) {
+      // FOPEN as a statement: open then discard the handle (rare, but legal).
+      case 'FOPEN':
+        api.fopen(txt(0), txt(1), txt(2), args.length > 3 ? Number(arg(3)) : undefined);
+        return true;
+      case 'PUT_LINE': api.putLine(handle(), txt(1)); return true;
+      case 'PUT': api.put(handle(), txt(1)); return true;
+      case 'PUTF': api.put(handle(), this.formatPutf(txt(1), args, scope)); return true;
+      case 'NEW_LINE': api.newLine(handle(), args.length > 1 ? Number(arg(1)) : 1); return true;
+      case 'GET_LINE': {
+        const line = api.getLine(handle());
+        const target = this.exprToTarget(args[1].value);
+        if (target) this.execAssign(target, line, scope);
+        return true;
+      }
+      case 'FFLUSH': api.fflush(handle()); return true;
+      case 'FCLOSE': api.fclose(handle()); return true;
+      case 'FCLOSE_ALL': api.fcloseAll(); return true;
+      case 'FREMOVE': api.fremove(txt(0), txt(1)); return true;
+      case 'FRENAME':
+        api.frename(txt(0), txt(1), txt(2), txt(3), args.length > 4 ? this.evalExpr(args[4].value, scope) === true : false);
+        return true;
+      case 'FCOPY': api.fcopy(txt(0), txt(1), txt(2), txt(3)); return true;
+    }
+    return false;
+  }
+
+  /** UTL_FILE.PUTF format: `%s` consumes the next argument, `\n` a newline. */
+  private formatPutf(format: string, args: CallArg[], scope: Scope): string {
+    let argIdx = 2; // args[0]=handle, args[1]=format, rest are substitutions
+    let out = '';
+    for (let i = 0; i < format.length; i++) {
+      if (format[i] === '%' && format[i + 1] === 's') {
+        out += argIdx < args.length ? this.toText(this.evalExpr(args[argIdx++].value, scope)) : '';
+        i++;
+      } else if (format[i] === '\\' && format[i + 1] === 'n') {
+        out += '\n';
+        i++;
+      } else {
+        out += format[i];
+      }
+    }
+    return out;
   }
 
   private tryCollectionMethodExpr(name: string, args: CallArg[], scope: Scope): { handled: boolean; value: PlsqlValue } {

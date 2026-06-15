@@ -8,7 +8,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import {
   UDP_PORT_GLBP, GLBP_MULTICAST_IP, GLBP_MULTICAST_MAC,
-  glbpVirtualMac, compareCandidate,
+  glbpVirtualMac, compareCandidate, effectiveWeighting,
 } from '@/network/glbp/types';
 
 beforeEach(() => {
@@ -230,5 +230,35 @@ describe('GLBP — show glbp', () => {
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r2.executeCommand('show glbp brief');
     expect(out).toMatch(/Standby/);
+  });
+});
+
+describe('GLBP — weighting tracking (interface objects)', () => {
+  it('glbp weighting track lowers the forwarder weighting while the tracked link is down, restores it on up', async () => {
+    const r = new CiscoRouter('R1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('glbp 1 weighting track GigabitEthernet0/1 decrement 80');
+    await r.executeCommand('end');
+
+    const g = r.getGlbpAgent().getGroup('GigabitEthernet0/0', 1)!;
+    expect(effectiveWeighting(g)).toBe(20);
+    const own = [...g.forwarders.values()].find(f => f.ownerIp === '10.0.0.1');
+    expect(own?.weighting).toBe(20);
+
+    new Cable('t').connect(r.getPort('GigabitEthernet0/1')!, sw.getPort('FastEthernet0/1')!);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/1');
+    await r.executeCommand('no shutdown');
+    await r.executeCommand('end');
+
+    expect(effectiveWeighting(g)).toBe(100);
+    expect([...g.forwarders.values()].find(f => f.ownerIp === '10.0.0.1')?.weighting).toBe(100);
   });
 });

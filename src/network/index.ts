@@ -6,7 +6,6 @@ export {
   ETHERTYPE_ARP, ETHERTYPE_IPV4,
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
-  DEVICE_CATEGORIES,
   generateId, resetCounters,
   nextIPv4Id, resetIPv4IdCounter,
   computeIPv4Checksum, verifyIPv4Checksum, createIPv4Packet,
@@ -14,8 +13,9 @@ export {
 export type {
   EthernetFrame, IPv4Packet, ARPPacket, ICMPPacket, UDPPacket, RIPPacket, RIPRouteEntry,
   DeviceType, ConnectionType, PortInfo,
-  DeviceCategory,
 } from './core/types';
+export { DEVICE_CATALOG, DEVICE_CATEGORIES, deviceDefinition } from './core/deviceCatalog';
+export type { DeviceDefinition, DeviceOSType, DeviceCategory } from './core/deviceCatalog';
 
 // Hardware
 export { Port } from './hardware/Port';
@@ -24,6 +24,19 @@ export { Cable } from './hardware/Cable';
 // Equipment
 export { Equipment } from './equipment/Equipment';
 export type { ICLIDevice } from './equipment/ICLIDevice';
+export type {
+  CredentialAuthenticator,
+  UserAccountHost,
+  ShellIdentityHost,
+  FileEditorHost,
+  HostCapableDevice,
+} from './equipment/HostCapabilities';
+export {
+  isCredentialAuthenticator,
+  isUserAccountHost,
+  isShellIdentityHost,
+  isFileEditorHost,
+} from './equipment/HostCapabilities';
 
 // Devices
 export { EndHost } from './devices/EndHost';

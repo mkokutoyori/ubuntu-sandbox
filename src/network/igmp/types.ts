@@ -82,19 +82,9 @@ export function groupMembershipIntervalSec(rt: IgmpInterfaceRuntime): number {
   return rt.robustness * rt.queryIntervalSec + Math.ceil(rt.queryResponseIntervalDs / 10);
 }
 
-export function ipv4MulticastToMac(group: string): string {
-  const parts = group.split('.').map(Number);
-  if (parts.length !== 4) return '01:00:5e:00:00:00';
-  const b1 = parts[1] & 0x7f;
-  const b2 = parts[2] & 0xff;
-  const b3 = parts[3] & 0xff;
-  return `01:00:5e:${b1.toString(16).padStart(2, '0')}:${b2.toString(16).padStart(2, '0')}:${b3.toString(16).padStart(2, '0')}`;
-}
-
-export function isMulticastIpv4(ip: string): boolean {
-  const first = parseInt(ip.split('.')[0], 10);
-  return first >= 224 && first <= 239;
-}
+// RFC 1112 address arithmetic lives in core/ip.ts (canonical home);
+// re-exported here so IGMP callers keep their historical import path.
+export { ipv4MulticastToMac, isMulticastIpv4 } from '../core/ip';
 
 export function isReservedMulticast(ip: string): boolean {
   return ip.startsWith('224.0.0.');

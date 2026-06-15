@@ -15,6 +15,7 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
@@ -23,6 +24,7 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
+import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -112,7 +114,7 @@ function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: b
   return { patterns: positional, ignoreCase, invert, count };
 }
 
-export class WindowsPC extends EndHost {
+export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
   /** DHCP event log for Windows Event Viewer */
   private dhcpEventLog: string[] = [];
@@ -379,7 +381,7 @@ export class WindowsPC extends EndHost {
    * the {@link Equipment} stub so SSH (and any future caller) can authenticate
    * a Windows account without reaching into the private user manager.
    */
-  override checkPassword(username: string, password: string): boolean {
+  checkPassword(username: string, password: string): boolean {
     return this.userMgr.checkPassword(username, password);
   }
 
@@ -388,7 +390,7 @@ export class WindowsPC extends EndHost {
    * LinuxMachine.setUserPassword so the two platforms expose a parallel
    * surface to callers that don't care which OS they're talking to.
    */
-  override setUserPassword(username: string, password: string): void {
+  setUserPassword(username: string, password: string): void {
     this.userMgr.setUserProperty(username, 'password', password);
   }
 
@@ -915,20 +917,7 @@ export class WindowsPC extends EndHost {
   // ─── Command Parsing ──────────────────────────────────────────────
 
   private parseCommandLine(line: string): string[] {
-    const parts: string[] = [];
-    let current = '';
-    let inQuote = false;
-    for (const ch of line) {
-      if (ch === '"') {
-        inQuote = !inQuote;
-      } else if (ch === ' ' && !inQuote) {
-        if (current) { parts.push(current); current = ''; }
-      } else {
-        current += ch;
-      }
-    }
-    if (current) parts.push(current);
-    return parts;
+    return splitCmdArgs(line);
   }
 
   private expandEnvVars(text: string): string {
@@ -1474,7 +1463,7 @@ export class WindowsPC extends EndHost {
 
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
    *  reports the real currently-logged-in account on this Windows host. */
-  override getCurrentUser(): string { return this.userMgr.currentUser; }
+  getCurrentUser(): string { return this.userMgr.currentUser; }
 
   /** Get the user manager (for PowerShellExecutor and other integrations) */
   getUserManager(): WindowsUserManager { return this.userMgr; }

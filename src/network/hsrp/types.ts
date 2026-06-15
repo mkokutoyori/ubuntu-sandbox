@@ -46,6 +46,7 @@ export interface HsrpGroupRuntime {
   lastHeardStandbyMs: number;
   lastTransitionMs: number;
   tracks: HsrpTrackEntry[];
+  vipLearn: boolean;
   /**
    * Synchronous stand-in for the RFC 2281 Listen/Learn phase: a fresh
    * group first advertises in Speak ("probes"); only if no active
@@ -75,6 +76,7 @@ export function defaultGroupRuntime(iface: string, group: number, version: 1 | 2
     standbyRouterIp: null, standbyRouterPriority: 0,
     lastHeardActiveMs: 0, lastHeardStandbyMs: 0, lastTransitionMs: Date.now(),
     tracks: [],
+    vipLearn: false,
     probed: false,
   };
 }

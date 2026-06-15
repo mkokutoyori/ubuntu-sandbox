@@ -29,7 +29,7 @@ import {
  * Install the FCUBSLIVE (FlexCube) demo schema with all tables and sample data.
  */
 export function installFcubsliveSchema(db: OracleDatabase): void {
-  const { executor } = db.connectAsSysdba();
+  const { sid, executor } = db.connectAsSysdba();
 
   // Ensure schema exists
   db.storage.ensureSchema('FCUBSLIVE');
@@ -59,4 +59,5 @@ export function installFcubsliveSchema(db: OracleDatabase): void {
   for (const sql of allInserts) {
     db.executeSql(executor, sql);
   }
+  db.disconnect(sid);
 }

@@ -6,6 +6,7 @@
  */
 
 import type { ColumnDataType } from '../catalog/DataType';
+import { RowIndexCache, type IndexValueSemantics, type IndexRuntimeStats } from './RowIndexCache';
 
 // ── Row representation ──────────────────────────────────────────────
 
@@ -22,6 +23,9 @@ export interface ColumnMeta {
   dataType: ColumnDataType;
   ordinalPosition: number;
   defaultValue?: CellValue;
+  /** Parsed DEFAULT expression (AST), evaluated per-row for omitted columns
+   *  on INSERT. Typed loosely to avoid a parser→storage dependency. */
+  defaultExpr?: object;
 }
 
 export interface ConstraintMeta {
@@ -125,8 +129,9 @@ export interface SynonymMeta {
 // ── Abstract Storage ────────────────────────────────────────────────
 
 export abstract class BaseStorage {
-  /** Schema → Table name → Table data */
-  protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[] }>> = new Map();
+  protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[]; epoch: number }>> = new Map();
+  private static epochSource = 1;
+  private readonly rowIndexes = new RowIndexCache(this.indexValueSemantics());
   /** Schema → Sequence name → Sequence state */
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
   /** Schema → Index name → Index meta */
@@ -137,6 +142,10 @@ export abstract class BaseStorage {
   protected triggers: Map<string, Map<string, TriggerMeta>> = new Map();
   /** Synonyms (public + private) */
   protected synonyms: Map<string, SynonymMeta> = new Map();
+
+  protected indexValueSemantics(): IndexValueSemantics {
+    return {};
+  }
 
   // ── Schema management ────────────────────────────────────────────
 
@@ -163,7 +172,7 @@ export abstract class BaseStorage {
     if (schemaTables.has(name)) {
       throw new Error(`Table ${schema}.${name} already exists`);
     }
-    schemaTables.set(name, { meta: { ...meta, schema, name }, rows: [] });
+    schemaTables.set(name, { meta: { ...meta, schema, name }, rows: [], epoch: BaseStorage.epochSource++ });
   }
 
   dropTable(schema: string, name: string): void {
@@ -172,6 +181,7 @@ export abstract class BaseStorage {
     const schemaTables = this.tables.get(s);
     if (!schemaTables?.has(n)) throw new Error(`Table ${s}.${n} does not exist`);
     schemaTables.delete(n);
+    this.rowIndexes.forgetTable(`${s}.${n}`);
     // Drop associated indexes
     const schemaIndexes = this.indexes.get(s);
     if (schemaIndexes) {
@@ -225,7 +235,9 @@ export abstract class BaseStorage {
     const before = table.rows.length;
     table.rows = table.rows.filter(row => !predicate(row));
     table.meta.rowCount = table.rows.length;
-    return before - table.rows.length;
+    const removed = before - table.rows.length;
+    if (removed > 0) table.epoch = BaseStorage.epochSource++;
+    return removed;
   }
 
   updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number {
@@ -234,6 +246,7 @@ export abstract class BaseStorage {
     for (let i = 0; i < table.rows.length; i++) {
       if (predicate(table.rows[i])) {
         table.rows[i] = updater(table.rows[i]);
+        table.epoch = BaseStorage.epochSource++;
         count++;
       }
     }
@@ -244,6 +257,7 @@ export abstract class BaseStorage {
     const table = this.getTableData(schema, tableName);
     table.rows = [];
     table.meta.rowCount = 0;
+    table.epoch = BaseStorage.epochSource++;
   }
 
   // ── Sequence operations ──────────────────────────────────────────
@@ -312,6 +326,24 @@ export abstract class BaseStorage {
     return all;
   }
 
+  findRowsByKey(
+    schema: string,
+    tableName: string,
+    columnOrdinals: number[],
+    values: CellValue[],
+  ): StorageRow[] | null {
+    const table = this.tables.get(schema.toUpperCase())?.get(tableName.toUpperCase());
+    if (!table) return null;
+    return this.rowIndexes.probe(
+      `${schema.toUpperCase()}.${tableName.toUpperCase()}`,
+      table.epoch, table.rows, columnOrdinals, values,
+    );
+  }
+
+  getIndexRuntimeStats(): Readonly<IndexRuntimeStats> {
+    return this.rowIndexes.getStats();
+  }
+
   // ── Column alteration ────────────────────────────────────────────
 
   addColumn(schema: string, tableName: string, col: ColumnMeta): void {
@@ -331,6 +363,7 @@ export abstract class BaseStorage {
     for (const row of table.rows) row.splice(colIdx, 1);
     // Re-index ordinal positions
     table.meta.columns.forEach((c, i) => c.ordinalPosition = i);
+    table.epoch = BaseStorage.epochSource++;
   }
 
   // ── View operations ─────────────────────────────────────────────

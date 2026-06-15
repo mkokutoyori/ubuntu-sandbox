@@ -1,4 +1,6 @@
 export { Logger } from './Logger';
+export { DEVICE_CATALOG, DEVICE_CATEGORIES, deviceDefinition } from './deviceCatalog';
+export type { DeviceDefinition, DeviceOSType, DeviceCategoryId, DeviceCategory } from './deviceCatalog';
 export type { NetworkLog, LogLevel, LogSubscriber } from './Logger';
 export {
   MACAddress,
@@ -9,7 +11,6 @@ export {
   IP_PROTO_ICMP,
   IP_PROTO_TCP,
   IP_PROTO_UDP,
-  DEVICE_CATEGORIES,
   generateId,
   resetCounters,
   nextIPv4Id,
@@ -28,7 +29,6 @@ export type {
   DeviceType,
   ConnectionType,
   PortInfo,
-  DeviceCategory,
 } from './types';
 
 // ─── New abstractions (Section 1 gap fixes) ────────────────────────

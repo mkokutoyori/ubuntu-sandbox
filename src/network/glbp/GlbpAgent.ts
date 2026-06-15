@@ -9,7 +9,7 @@ import {
   type GlbpAvgState, type GlbpForwarder, type GlbpLoadBalancing,
   type GlbpHelloTlv, type GlbpAssignTlv,
   defaultGroupRuntime, makeKey,
-  glbpVirtualMac, compareCandidate,
+  glbpVirtualMac, compareCandidate, effectiveWeighting,
   UDP_PORT_GLBP, GLBP_MULTICAST_IP, GLBP_MULTICAST_MAC,
 } from './types';
 import {
@@ -50,9 +50,70 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
   setWeighting(iface: string, group: number, weighting: number): void {
     const g = this.ensureGroup(iface, group);
     g.weighting = weighting;
+    this.syncOwnWeighting(g);
+  }
+
+  private syncOwnWeighting(g: GlbpGroupRuntime): void {
     const myIp = this.myIpFor(g);
     const own = [...g.forwarders.values()].find(f => f.ownerIp === myIp);
-    if (own) own.weighting = weighting;
+    if (own) own.weighting = effectiveWeighting(g);
+  }
+
+  addTrack(iface: string, group: number, target: string, decrement: number): void {
+    const g = this.ensureGroup(iface, group);
+    const existing = g.tracks.find(t => t.target === target);
+    if (existing) {
+      existing.decrement = decrement;
+    } else {
+      const port = this.host.getPort(target);
+      const down = !!port && (!port.getIsUp() || !port.isConnected());
+      g.tracks.push({ target, decrement, down });
+    }
+    this.syncOwnWeighting(g);
+    this.advertiseIfDue(g);
+  }
+
+  removeTrack(iface: string, group: number, target: string): void {
+    const g = this.getGroup(iface, group);
+    if (!g) return;
+    const idx = g.tracks.findIndex(t => t.target === target);
+    if (idx < 0) return;
+    g.tracks.splice(idx, 1);
+    this.syncOwnWeighting(g);
+    this.advertiseIfDue(g);
+  }
+
+  protected override onLinkUp(portName: string): void {
+    for (const g of this.config.groups.values()) {
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && t.down) { t.down = false; touched = true; }
+      }
+      if (g.iface === portName) {
+        this.recompute(g, 'config');
+        this.syncOwnWeighting(g);
+        this.advertiseIfDue(g);
+      } else if (touched) {
+        this.syncOwnWeighting(g);
+        this.advertiseIfDue(g);
+      }
+    }
+  }
+
+  protected override onLinkDown(portName: string): void {
+    for (const g of this.config.groups.values()) {
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && !t.down) { t.down = true; touched = true; }
+      }
+      if (g.iface === portName) {
+        this.clearPeerState(g);
+        this.recompute(g, 'timeout');
+      } else if (touched) {
+        this.syncOwnWeighting(g);
+        this.advertiseIfDue(g);
+      }
+    }
   }
 
   setLoadBalancing(iface: string, group: number, mode: GlbpLoadBalancing): void {
@@ -293,7 +354,7 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     const tlvs: GlbpPacket['tlvs'] = [{
       type: 'hello',
       priority: g.priority,
-      weighting: g.weighting,
+      weighting: effectiveWeighting(g),
       vip: g.vip ?? '0.0.0.0',
       helloMs: g.helloSec * 1000,
       holdMs: g.holdSec * 1000,

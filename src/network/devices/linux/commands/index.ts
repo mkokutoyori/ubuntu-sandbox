@@ -20,7 +20,7 @@ import type { LinuxCommand } from './LinuxCommand';
 import { sysctlCommand } from './net/Sysctl';
 import { arpCommand } from './net/Arp';
 import { ifconfigCommand } from './net/Ifconfig';
-import { pingCommand } from './net/Ping';
+import { pingCommand, ping6Command } from './net/Ping';
 import { tracerouteCommand } from './net/Traceroute';
 import { routeCommand } from './net/Route';
 import { digCommand } from './dns/Dig';
@@ -38,6 +38,7 @@ export {
   arpCommand,
   ifconfigCommand,
   pingCommand,
+  ping6Command,
   tracerouteCommand,
   routeCommand,
   ipCommand,
@@ -63,6 +64,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   arpCommand,
   ifconfigCommand,
   pingCommand,
+  ping6Command,
   tracerouteCommand,
   routeCommand,
   ipCommand,

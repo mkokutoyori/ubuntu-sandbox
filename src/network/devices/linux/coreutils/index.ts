@@ -22,3 +22,8 @@ export {
 export type {
   TailOptions, TailSnapshot, TailSink, TailFollowHandle, TailFs, TailRunResult,
 } from './TailCommand';
+
+export {
+  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+} from './ArchiveCommands';
+export type { ArchiveFs, ArchiveCtx, CmdResult } from './ArchiveCommands';

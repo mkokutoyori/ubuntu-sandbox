@@ -43,8 +43,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // STP state (switch-only, L2)
   private stpMode = 'pvst';
-  private mstRegion: { name: string; revision: number; instances: Map<number, string> } =
-    { name: '', revision: 0, instances: new Map() };
   private ifStp = new Map<string, string[]>();
   private ifExtra = new Map<string, string[]>();
   private configAclTrie = new CommandTrie();
@@ -869,7 +867,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // Global: every other `spanning-tree …` is accepted (mode/priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
     this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
-      if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      if (args[0]?.toLowerCase() === 'mode' && args[1]) {
+        this.stpMode = args[1];
+        const m = args[1].toLowerCase();
+        this.d().getStpAgent().setMode(
+          m === 'rapid-pvst' || m === 'mst' ? 'rstp' : 'stp');
+      }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
@@ -936,14 +939,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     // config-mst sub-mode
     this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
-      this.mstRegion.name = a.join(' '); return '';
+      this.stpAgentOf(this.d())?.setMstName(a.join(' ')); return '';
     });
     this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
-      const n = parseInt(a[0], 10); if (!isNaN(n)) this.mstRegion.revision = n; return '';
+      const n = parseInt(a[0], 10); if (!isNaN(n)) this.stpAgentOf(this.d())?.setMstRevision(n); return '';
     });
     this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
       const id = parseInt(a[0], 10);
-      if (!isNaN(id)) this.mstRegion.instances.set(id, a.slice(1).join(' '));
+      if (!isNaN(id)) this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
       return '';
     });
     this.configMstTrie.register('show current', 'Show pending MST config', () =>
@@ -954,11 +957,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       this.showMstConfig());
     this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
       const head = args[0]?.toLowerCase();
-      if (head === 'name') this.mstRegion.name = '';
-      else if (head === 'revision') this.mstRegion.revision = 0;
+      const ag = this.stpAgentOf(this.d());
+      if (head === 'name') ag?.setMstName('');
+      else if (head === 'revision') ag?.setMstRevision(0);
       else if (head === 'instance' && args[1]) {
         const inst = parseInt(args[1], 10);
-        if (!isNaN(inst)) this.mstRegion.instances.delete(inst);
+        if (!isNaN(inst)) ag?.unmapMstInstance(inst);
       }
       return '';
     });
@@ -1059,16 +1063,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   }
 
   private showMstConfig(): string {
+    const region = this.stpAgentOf(this.d())?.getMstRegion();
+    const instances = region?.instances ?? new Map<number, string>();
     const ml: string[] = [
-      'Name      [' + this.mstRegion.name + ']',
-      'Revision  ' + this.mstRegion.revision + '     Instances configured ' +
-        (this.mstRegion.instances.size + 1),
+      'Name      [' + (region?.name ?? '') + ']',
+      'Revision  ' + (region?.revision ?? 0) + '     Instances configured ' +
+        (instances.size + 1),
       '-------------------------------------------------------------',
       'Instance  Vlans mapped',
       '--------  -------------------------------------------------',
       '0         1-4094',
     ];
-    for (const [id, v] of this.mstRegion.instances) ml.push(`${String(id).padEnd(10)}${v}`);
+    for (const [id, v] of instances) ml.push(`${String(id).padEnd(10)}${v}`);
     return ml.join('\n');
   }
 
@@ -1880,6 +1886,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const role =
         stpRole === 'root' ? 'Root'
         : stpRole === 'alternate' ? 'Altn'
+        : stpRole === 'backup' ? 'Back'
         : stpRole === 'disabled' ? 'Disa'
         : 'Desg';
       const sts = state === 'forwarding' ? 'FWD'
@@ -1887,7 +1894,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : state === 'listening' ? 'LIS'
         : state === 'learning' ? 'LRN'
         : 'DIS';
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
+      const portCost = agent?.getPortCost(portName) ?? 19;
+      const linkType = agent?.getPortLinkType(portName) === 'shared' ? 'Shr' : 'P2p';
+      const edge = agent?.isPortFastOperational(portName) ? ' Edge' : '';
+      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}${linkType}${edge}`);
     }
     return lines.join('\n');
   }

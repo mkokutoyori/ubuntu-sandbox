@@ -138,48 +138,48 @@ Total steps: 301
 --- [28] § ICMP — joignabilité passerelle locale ---
 [28/301] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.383 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.333 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.717 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.543 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.333/0.358/0.383/0.025 ms
+  rtt min/avg/max/mdev = 0.543/0.630/0.717/0.087 ms
 
 [29/301] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.243 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.274 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.457 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.606 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.243/0.258/0.274/0.016 ms
+  rtt min/avg/max/mdev = 0.457/0.532/0.606/0.074 ms
 
 [30/301] lbr lbr$ ping -c 2 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.320 ms
-  64 bytes from 10.2.2.1: icmp_seq=2 ttl=255 time=0.187 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.595 ms
+  64 bytes from 10.2.2.1: icmp_seq=2 ttl=255 time=0.290 ms
   
   --- 10.2.2.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.187/0.254/0.320/0.067 ms
+  rtt min/avg/max/mdev = 0.290/0.442/0.595/0.153 ms
 
 [31/301] ldc ldc$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.324 ms
-  64 bytes from 10.3.3.1: icmp_seq=2 ttl=255 time=0.248 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.526 ms
+  64 bytes from 10.3.3.1: icmp_seq=2 ttl=255 time=0.325 ms
   
   --- 10.3.3.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.248/0.286/0.324/0.038 ms
+  rtt min/avg/max/mdev = 0.325/0.425/0.526/0.101 ms
 
 [32/301] srvdc srvdc$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.206 ms
-  64 bytes from 10.3.3.1: icmp_seq=2 ttl=255 time=0.117 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.366 ms
+  64 bytes from 10.3.3.1: icmp_seq=2 ttl=255 time=0.194 ms
   
   --- 10.3.3.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.117/0.161/0.206/0.045 ms
+  rtt min/avg/max/mdev = 0.194/0.280/0.366/0.086 ms
 
 [33/301] whq whq$ ping -n 2 10.1.1.1
   
@@ -322,108 +322,108 @@ Total steps: 301
 --- [48] § ICMP — matrice inter-sites (toutes passerelles) ---
 [48/301] lhq lhq$ ping -c 2 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.342 ms
-  64 bytes from 10.2.2.1: icmp_seq=2 ttl=253 time=0.341 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.634 ms
+  64 bytes from 10.2.2.1: icmp_seq=2 ttl=253 time=0.667 ms
   
   --- 10.2.2.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.341/0.341/0.342/0.000 ms
+  rtt min/avg/max/mdev = 0.634/0.651/0.667/0.016 ms
 
 [49/301] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.144 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.341 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.144/0.144/0.144/0.000 ms
+  rtt min/avg/max/mdev = 0.341/0.341/0.341/0.000 ms
 
 [50/301] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.294 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.393 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.294/0.294/0.294/0.000 ms
+  rtt min/avg/max/mdev = 0.393/0.393/0.393/0.000 ms
 
 [51/301] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.304 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.455 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.304/0.304/0.304/0.000 ms
+  rtt min/avg/max/mdev = 0.455/0.455/0.455/0.000 ms
 
 [52/301] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.239 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.420 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
+  rtt min/avg/max/mdev = 0.420/0.420/0.420/0.000 ms
 
 [53/301] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.113 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.261 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.113/0.113/0.113/0.000 ms
+  rtt min/avg/max/mdev = 0.261/0.261/0.261/0.000 ms
 
 [54/301] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.364 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.673 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
+  rtt min/avg/max/mdev = 0.673/0.673/0.673/0.000 ms
 
 [55/301] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.196 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.466 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.196/0.196/0.196/0.000 ms
+  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
 
 [56/301] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.198 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.501 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.198/0.198/0.198/0.000 ms
+  rtt min/avg/max/mdev = 0.501/0.501/0.501/0.000 ms
 
 [57/301] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.102 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.252 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.102/0.102/0.102/0.000 ms
+  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
 
 [58/301] srvdc srvdc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.238 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=7.794 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.238/0.238/0.238/0.000 ms
+  rtt min/avg/max/mdev = 7.794/7.794/7.794/0.000 ms
 
 [59/301] srvdc srvdc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.192 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.396 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.192/0.192/0.192/0.000 ms
+  rtt min/avg/max/mdev = 0.396/0.396/0.396/0.000 ms
 
 [60/301] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.165 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.367 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.165/0.165/0.165/0.000 ms
+  rtt min/avg/max/mdev = 0.367/0.367/0.367/0.000 ms
 
 [61/301] whq whq$ ping -n 1 10.1.1.1
   
@@ -489,172 +489,172 @@ Total steps: 301
 --- [67] § ICMP — matrice inter-sites (tous hôtes distants) ---
 [67/301] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.376 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.349 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.713 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.523 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.349/0.363/0.376/0.013 ms
+  rtt min/avg/max/mdev = 0.523/0.618/0.713/0.095 ms
 
 [68/301] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.141 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.302 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.141/0.141/0.141/0.000 ms
+  rtt min/avg/max/mdev = 0.302/0.302/0.302/0.000 ms
 
 [69/301] lhq lhq$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.359 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.489 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.359/0.359/0.359/0.000 ms
+  rtt min/avg/max/mdev = 0.489/0.489/0.489/0.000 ms
 
 [70/301] lhq lhq$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.365 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.555 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.365/0.365/0.365/0.000 ms
+  rtt min/avg/max/mdev = 0.555/0.555/0.555/0.000 ms
 
 [71/301] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.348 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.471 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.348/0.348/0.348/0.000 ms
+  rtt min/avg/max/mdev = 0.471/0.471/0.471/0.000 ms
 
 [72/301] lhq lhq$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=0.291 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=0.608 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.291/0.291/0.291/0.000 ms
+  rtt min/avg/max/mdev = 0.608/0.608/0.608/0.000 ms
 
 [73/301] lbr lbr$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.350 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.638 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.350/0.350/0.350/0.000 ms
+  rtt min/avg/max/mdev = 0.638/0.638/0.638/0.000 ms
 
 [74/301] lbr lbr$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.311 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.523 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.311/0.311/0.311/0.000 ms
+  rtt min/avg/max/mdev = 0.523/0.523/0.523/0.000 ms
 
 [75/301] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.102 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.252 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.102/0.102/0.102/0.000 ms
+  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
 
 [76/301] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.376 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.468 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.376/0.376/0.376/0.000 ms
+  rtt min/avg/max/mdev = 0.468/0.468/0.468/0.000 ms
 
 [77/301] lbr lbr$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=0.404 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=0.606 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.404/0.404/0.404/0.000 ms
+  rtt min/avg/max/mdev = 0.606/0.606/0.606/0.000 ms
 
 [78/301] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.329 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.002 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.329/0.329/0.329/0.000 ms
+  rtt min/avg/max/mdev = 1.002/1.002/1.002/0.000 ms
 
 [79/301] ldc ldc$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.266 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.451 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.266/0.266/0.266/0.000 ms
+  rtt min/avg/max/mdev = 0.451/0.451/0.451/0.000 ms
 
 [80/301] ldc ldc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.313 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.532 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.313/0.313/0.313/0.000 ms
+  rtt min/avg/max/mdev = 0.532/0.532/0.532/0.000 ms
 
 [81/301] ldc ldc$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.360 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.593 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.360/0.360/0.360/0.000 ms
+  rtt min/avg/max/mdev = 0.593/0.593/0.593/0.000 ms
 
 [82/301] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.109 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.182 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.109/0.109/0.109/0.000 ms
+  rtt min/avg/max/mdev = 0.182/0.182/0.182/0.000 ms
 
 [83/301] srvdc srvdc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.316 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.473 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.316/0.316/0.316/0.000 ms
+  rtt min/avg/max/mdev = 0.473/0.473/0.473/0.000 ms
 
 [84/301] srvdc srvdc$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.333 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=126 time=0.453 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.333/0.333/0.333/0.000 ms
+  rtt min/avg/max/mdev = 0.453/0.453/0.453/0.000 ms
 
 [85/301] srvdc srvdc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.312 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=1.040 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.312/0.312/0.312/0.000 ms
+  rtt min/avg/max/mdev = 1.040/1.040/1.040/0.000 ms
 
 [86/301] srvdc srvdc$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.387 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.596 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.387/0.387/0.387/0.000 ms
+  rtt min/avg/max/mdev = 0.596/0.596/0.596/0.000 ms
 
 [87/301] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.106 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.200 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.106/0.106/0.106/0.000 ms
+  rtt min/avg/max/mdev = 0.200/0.200/0.200/0.000 ms
 
 [88/301] whq whq$ ping -n 1 10.1.1.10
   
@@ -674,7 +674,7 @@ Total steps: 301
   Ping statistics for 10.2.2.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [90/301] whq whq$ ping -n 1 10.2.2.11
   
@@ -684,7 +684,7 @@ Total steps: 301
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [91/301] whq whq$ ping -n 1 10.3.3.10
   
@@ -694,7 +694,7 @@ Total steps: 301
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [92/301] whq whq$ ping -n 1 10.3.3.11
   
@@ -704,7 +704,7 @@ Total steps: 301
   Ping statistics for 10.3.3.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [93/301] wbr wbr$ ping -n 1 10.1.1.10
   
@@ -714,7 +714,7 @@ Total steps: 301
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [94/301] wbr wbr$ ping -n 1 10.1.1.11
   
@@ -724,7 +724,7 @@ Total steps: 301
   Ping statistics for 10.1.1.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [95/301] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -754,209 +754,209 @@ Total steps: 301
   Ping statistics for 10.3.3.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 
 --- [98] § ICMP — joignabilité des liens WAN depuis les hôtes ---
 [98/301] lhq lhq$ ping -c 1 172.16.12.1
   PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
-  64 bytes from 172.16.12.1: icmp_seq=1 ttl=255 time=0.216 ms
+  64 bytes from 172.16.12.1: icmp_seq=1 ttl=255 time=0.229 ms
   
   --- 172.16.12.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.216/0.216/0.216/0.000 ms
-
-[99/301] lhq lhq$ ping -c 1 172.16.12.1
-  PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
-  64 bytes from 172.16.12.1: icmp_seq=1 ttl=255 time=0.154 ms
-  
-  --- 172.16.12.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.154/0.154/0.154/0.000 ms
-
-[100/301] lhq lhq$ ping -c 1 172.16.12.2
-  PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
-  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.527 ms
-  
-  --- 172.16.12.2 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.527/0.527/0.527/0.000 ms
-
-[101/301] lhq lhq$ ping -c 1 172.16.13.1
-  PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
-  64 bytes from 172.16.13.1: icmp_seq=1 ttl=255 time=0.167 ms
-  
-  --- 172.16.13.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.167/0.167/0.167/0.000 ms
-
-[102/301] lhq lhq$ ping -c 1 172.16.13.2
-  PING 172.16.13.2 (172.16.13.2) 56(84) bytes of data.
-  64 bytes from 172.16.13.2: icmp_seq=1 ttl=253 time=0.358 ms
-  
-  --- 172.16.13.2 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.358/0.358/0.358/0.000 ms
-
-[103/301] lhq lhq$ ping -c 1 172.16.23.1
-  PING 172.16.23.1 (172.16.23.1) 56(84) bytes of data.
-  64 bytes from 172.16.23.1: icmp_seq=1 ttl=253 time=0.227 ms
-  
-  --- 172.16.23.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.227/0.227/0.227/0.000 ms
-
-[104/301] lhq lhq$ ping -c 1 172.16.23.2
-  PING 172.16.23.2 (172.16.23.2) 56(84) bytes of data.
-  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=5.968 ms
-  
-  --- 172.16.23.2 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 5.968/5.968/5.968/0.000 ms
-
-[105/301] lbr lbr$ ping -c 1 172.16.12.1
-  PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
-  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.456 ms
-  
-  --- 172.16.12.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.456/0.456/0.456/0.000 ms
-
-[106/301] lbr lbr$ ping -c 1 172.16.12.2
-  PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
-  64 bytes from 172.16.12.2: icmp_seq=1 ttl=255 time=0.185 ms
-  
-  --- 172.16.12.2 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.185/0.185/0.185/0.000 ms
-
-[107/301] lbr lbr$ ping -c 1 172.16.13.1
-  PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
-  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.229 ms
-  
-  --- 172.16.13.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
   rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
 
-[108/301] lbr lbr$ ping -c 1 172.16.13.2
+[99/301] lhq lhq$ ping -c 1 172.16.12.1
+  PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
+  64 bytes from 172.16.12.1: icmp_seq=1 ttl=255 time=0.207 ms
+  
+  --- 172.16.12.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.207/0.207/0.207/0.000 ms
+
+[100/301] lhq lhq$ ping -c 1 172.16.12.2
+  PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
+  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.742 ms
+  
+  --- 172.16.12.2 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.742/0.742/0.742/0.000 ms
+
+[101/301] lhq lhq$ ping -c 1 172.16.13.1
+  PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
+  64 bytes from 172.16.13.1: icmp_seq=1 ttl=255 time=0.237 ms
+  
+  --- 172.16.13.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.237/0.237/0.237/0.000 ms
+
+[102/301] lhq lhq$ ping -c 1 172.16.13.2
   PING 172.16.13.2 (172.16.13.2) 56(84) bytes of data.
-  64 bytes from 172.16.13.2: icmp_seq=1 ttl=253 time=0.247 ms
+  64 bytes from 172.16.13.2: icmp_seq=1 ttl=253 time=0.566 ms
   
   --- 172.16.13.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.247/0.247/0.247/0.000 ms
+  rtt min/avg/max/mdev = 0.566/0.566/0.566/0.000 ms
+
+[103/301] lhq lhq$ ping -c 1 172.16.23.1
+  PING 172.16.23.1 (172.16.23.1) 56(84) bytes of data.
+  64 bytes from 172.16.23.1: icmp_seq=1 ttl=253 time=0.347 ms
+  
+  --- 172.16.23.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.347/0.347/0.347/0.000 ms
+
+[104/301] lhq lhq$ ping -c 1 172.16.23.2
+  PING 172.16.23.2 (172.16.23.2) 56(84) bytes of data.
+  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=0.322 ms
+  
+  --- 172.16.23.2 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
+
+[105/301] lbr lbr$ ping -c 1 172.16.12.1
+  PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
+  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.474 ms
+  
+  --- 172.16.12.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.474/0.474/0.474/0.000 ms
+
+[106/301] lbr lbr$ ping -c 1 172.16.12.2
+  PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
+  64 bytes from 172.16.12.2: icmp_seq=1 ttl=255 time=0.233 ms
+  
+  --- 172.16.12.2 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
+
+[107/301] lbr lbr$ ping -c 1 172.16.13.1
+  PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
+  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.281 ms
+  
+  --- 172.16.13.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.281/0.281/0.281/0.000 ms
+
+[108/301] lbr lbr$ ping -c 1 172.16.13.2
+  PING 172.16.13.2 (172.16.13.2) 56(84) bytes of data.
+  64 bytes from 172.16.13.2: icmp_seq=1 ttl=253 time=0.388 ms
+  
+  --- 172.16.13.2 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.388/0.388/0.388/0.000 ms
 
 [109/301] lbr lbr$ ping -c 1 172.16.23.1
   PING 172.16.23.1 (172.16.23.1) 56(84) bytes of data.
-  64 bytes from 172.16.23.1: icmp_seq=1 ttl=253 time=0.257 ms
+  64 bytes from 172.16.23.1: icmp_seq=1 ttl=253 time=0.460 ms
   
   --- 172.16.23.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.257/0.257/0.257/0.000 ms
+  rtt min/avg/max/mdev = 0.460/0.460/0.460/0.000 ms
 
 [110/301] lbr lbr$ ping -c 1 172.16.23.2
   PING 172.16.23.2 (172.16.23.2) 56(84) bytes of data.
-  64 bytes from 172.16.23.2: icmp_seq=1 ttl=255 time=0.154 ms
+  64 bytes from 172.16.23.2: icmp_seq=1 ttl=255 time=0.220 ms
   
   --- 172.16.23.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.154/0.154/0.154/0.000 ms
+  rtt min/avg/max/mdev = 0.220/0.220/0.220/0.000 ms
 
 [111/301] ldc ldc$ ping -c 1 172.16.12.1
   PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
-  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.248 ms
+  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.390 ms
   
   --- 172.16.12.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.248/0.248/0.248/0.000 ms
+  rtt min/avg/max/mdev = 0.390/0.390/0.390/0.000 ms
 
 [112/301] ldc ldc$ ping -c 1 172.16.12.2
   PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
-  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.329 ms
+  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.350 ms
   
   --- 172.16.12.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.329/0.329/0.329/0.000 ms
+  rtt min/avg/max/mdev = 0.350/0.350/0.350/0.000 ms
 
 [113/301] ldc ldc$ ping -c 1 172.16.13.1
   PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
-  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.323 ms
+  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.519 ms
   
   --- 172.16.13.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.323/0.323/0.323/0.000 ms
+  rtt min/avg/max/mdev = 0.519/0.519/0.519/0.000 ms
 
 [114/301] ldc ldc$ ping -c 1 172.16.13.2
   PING 172.16.13.2 (172.16.13.2) 56(84) bytes of data.
-  64 bytes from 172.16.13.2: icmp_seq=1 ttl=255 time=0.151 ms
+  64 bytes from 172.16.13.2: icmp_seq=1 ttl=255 time=0.180 ms
   
   --- 172.16.13.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.151/0.151/0.151/0.000 ms
+  rtt min/avg/max/mdev = 0.180/0.180/0.180/0.000 ms
 
 [115/301] ldc ldc$ ping -c 1 172.16.23.1
   PING 172.16.23.1 (172.16.23.1) 56(84) bytes of data.
-  64 bytes from 172.16.23.1: icmp_seq=1 ttl=255 time=0.129 ms
+  64 bytes from 172.16.23.1: icmp_seq=1 ttl=255 time=0.167 ms
   
   --- 172.16.23.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.129/0.129/0.129/0.000 ms
+  rtt min/avg/max/mdev = 0.167/0.167/0.167/0.000 ms
 
 [116/301] ldc ldc$ ping -c 1 172.16.23.2
   PING 172.16.23.2 (172.16.23.2) 56(84) bytes of data.
-  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=0.496 ms
+  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=0.604 ms
   
   --- 172.16.23.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.496/0.496/0.496/0.000 ms
+  rtt min/avg/max/mdev = 0.604/0.604/0.604/0.000 ms
 
 [117/301] srvdc srvdc$ ping -c 1 172.16.12.1
   PING 172.16.12.1 (172.16.12.1) 56(84) bytes of data.
-  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.263 ms
+  64 bytes from 172.16.12.1: icmp_seq=1 ttl=253 time=0.275 ms
   
   --- 172.16.12.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.263/0.263/0.263/0.000 ms
+  rtt min/avg/max/mdev = 0.275/0.275/0.275/0.000 ms
 
 [118/301] srvdc srvdc$ ping -c 1 172.16.12.2
   PING 172.16.12.2 (172.16.12.2) 56(84) bytes of data.
-  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.297 ms
+  64 bytes from 172.16.12.2: icmp_seq=1 ttl=253 time=0.522 ms
   
   --- 172.16.12.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.297/0.297/0.297/0.000 ms
+  rtt min/avg/max/mdev = 0.522/0.522/0.522/0.000 ms
 
 [119/301] srvdc srvdc$ ping -c 1 172.16.13.1
   PING 172.16.13.1 (172.16.13.1) 56(84) bytes of data.
-  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.447 ms
+  64 bytes from 172.16.13.1: icmp_seq=1 ttl=253 time=0.533 ms
   
   --- 172.16.13.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.447/0.447/0.447/0.000 ms
+  rtt min/avg/max/mdev = 0.533/0.533/0.533/0.000 ms
 
 [120/301] srvdc srvdc$ ping -c 1 172.16.13.2
   PING 172.16.13.2 (172.16.13.2) 56(84) bytes of data.
-  64 bytes from 172.16.13.2: icmp_seq=1 ttl=255 time=0.112 ms
+  64 bytes from 172.16.13.2: icmp_seq=1 ttl=255 time=0.260 ms
   
   --- 172.16.13.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.112/0.112/0.112/0.000 ms
+  rtt min/avg/max/mdev = 0.260/0.260/0.260/0.000 ms
 
 [121/301] srvdc srvdc$ ping -c 1 172.16.23.1
   PING 172.16.23.1 (172.16.23.1) 56(84) bytes of data.
-  64 bytes from 172.16.23.1: icmp_seq=1 ttl=255 time=0.125 ms
+  64 bytes from 172.16.23.1: icmp_seq=1 ttl=255 time=0.179 ms
   
   --- 172.16.23.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.125/0.125/0.125/0.000 ms
+  rtt min/avg/max/mdev = 0.179/0.179/0.179/0.000 ms
 
 [122/301] srvdc srvdc$ ping -c 1 172.16.23.2
   PING 172.16.23.2 (172.16.23.2) 56(84) bytes of data.
-  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=0.307 ms
+  64 bytes from 172.16.23.2: icmp_seq=1 ttl=253 time=0.384 ms
   
   --- 172.16.23.2 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.307/0.307/0.307/0.000 ms
+  rtt min/avg/max/mdev = 0.384/0.384/0.384/0.000 ms
 
 [123/301] whq whq$ ping -n 1 172.16.12.1
   
@@ -1144,7 +1144,7 @@ Total steps: 301
   Type escape sequence to abort.
   Sending 5, 100-byte ICMP Echos to 10.3.3.10, timeout is 2 seconds:
   !!!!!
-  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
 
 [146/301] rdc R-DC# ping 172.16.13.1
   Type escape sequence to abort.
@@ -1218,35 +1218,35 @@ Total steps: 301
 --- [154] § ICMP — TTL & traceroute ---
 [154/301] lhq lhq$ traceroute -n -m 8 10.3.3.10
   traceroute to 10.3.3.10 (10.3.3.10), 8 hops max, 60 byte packets
-   1  10.1.1.1 (10.1.1.1)  0.963 ms  0.419 ms  0.307 ms
-   2  172.16.13.2 (172.16.13.2)  0.460 ms  0.390 ms  0.259 ms
-   3  10.3.3.10 (10.3.3.10)  0.485 ms  0.318 ms  0.349 ms
+   1  10.1.1.1 (10.1.1.1)  6.667 ms  0.606 ms  0.466 ms
+   2  172.16.13.2 (172.16.13.2)  0.476 ms  0.436 ms  0.456 ms
+   3  10.3.3.10 (10.3.3.10)  0.806 ms  0.604 ms  0.460 ms
 
 [155/301] lhq lhq$ traceroute -n -m 8 10.2.2.10
   traceroute to 10.2.2.10 (10.2.2.10), 8 hops max, 60 byte packets
-   1  10.1.1.1 (10.1.1.1)  0.316 ms  0.285 ms  0.332 ms
-   2  172.16.12.2 (172.16.12.2)  0.409 ms  0.387 ms  0.375 ms
-   3  10.2.2.10 (10.2.2.10)  0.300 ms  0.300 ms  0.229 ms
+   1  10.1.1.1 (10.1.1.1)  0.346 ms  0.333 ms  0.496 ms
+   2  172.16.12.2 (172.16.12.2)  0.473 ms  0.450 ms  0.455 ms
+   3  10.2.2.10 (10.2.2.10)  0.484 ms  0.463 ms  0.484 ms
 
 [156/301] ldc ldc$ traceroute -n -m 8 10.1.1.10
   traceroute to 10.1.1.10 (10.1.1.10), 8 hops max, 60 byte packets
-   1  10.3.3.1 (10.3.3.1)  0.241 ms  0.179 ms  0.264 ms
-   2  172.16.13.1 (172.16.13.1)  0.247 ms  0.287 ms  0.369 ms
-   3  10.1.1.10 (10.1.1.10)  0.319 ms  0.249 ms  0.315 ms
+   1  10.3.3.1 (10.3.3.1)  0.314 ms  0.243 ms  0.438 ms
+   2  172.16.13.1 (172.16.13.1)  0.379 ms  0.425 ms  0.379 ms
+   3  10.1.1.10 (10.1.1.10)  0.397 ms  0.448 ms  0.469 ms
 
 [157/301] lbr lbr$ traceroute -n -m 8 10.3.3.11
   traceroute to 10.3.3.11 (10.3.3.11), 8 hops max, 60 byte packets
-   1  10.2.2.1 (10.2.2.1)  0.244 ms  0.192 ms  0.178 ms
-   2  172.16.23.1 (172.16.23.1)  0.316 ms  0.292 ms  0.246 ms
-   3  10.3.3.11 (10.3.3.11)  0.359 ms  0.240 ms  0.221 ms
+   1  10.2.2.1 (10.2.2.1)  0.293 ms  0.246 ms  0.210 ms
+   2  172.16.23.1 (172.16.23.1)  0.544 ms  0.356 ms  0.338 ms
+   3  10.3.3.11 (10.3.3.11)  0.402 ms  0.496 ms  0.438 ms
 
 [158/301] whq whq$ tracert -d -h 8 10.3.3.10
   
   Tracing route to 10.3.3.10 over a maximum of 8 hops:
   
-     1    <1 ms    <1 ms    <1 ms    10.1.1.1
+     1    1 ms     <1 ms    <1 ms    10.1.1.1
      2    <1 ms    <1 ms    <1 ms    172.16.13.2
-     3    <1 ms    <1 ms    <1 ms    10.3.3.10
+     3    <1 ms    <1 ms    1 ms     10.3.3.10
   
   Trace complete.
 
@@ -1256,7 +1256,7 @@ Total steps: 301
   
      1    <1 ms    <1 ms    <1 ms    10.2.2.1
      2    <1 ms    <1 ms    <1 ms    172.16.12.1
-     3    <1 ms    <1 ms    <1 ms    10.1.1.11
+     3    <1 ms    1 ms     <1 ms    10.1.1.11
   
   Trace complete.
 
@@ -1265,8 +1265,8 @@ Total steps: 301
   Tracing the route to 10.2.2.11
   VRF info: (vrf in name/id, vrf out name/id)
   
-    1 172.16.12.2  0 msec 0 msec 0 msec
-    2 10.2.2.11  0 msec 0 msec 0 msec
+    1 172.16.12.2  1 msec 0 msec 0 msec
+    2 10.2.2.11  1 msec 0 msec 0 msec
 
 [161/301] rbr <R-BR> tracert 10.3.3.11
   tracert to 10.3.3.11(10.3.3.11), max hops: 30, packet length: 40, press CTRL_C to break
@@ -1305,53 +1305,53 @@ Total steps: 301
 --- [166] § ICMP — taille, fragmentation & bit DF ---
 [166/301] lhq lhq$ ping -c 2 -s 1000 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 1000(1028) bytes of data.
-  1008 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.447 ms
-  1008 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.338 ms
+  1008 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.033 ms
+  1008 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.434 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.338/0.392/0.447/0.054 ms
+  rtt min/avg/max/mdev = 0.434/1.233/2.033/0.800 ms
 
 [167/301] lhq lhq$ ping -c 2 -s 1472 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 1472(1500) bytes of data.
-  1480 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.345 ms
-  1480 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.276 ms
+  1480 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.475 ms
+  1480 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.379 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.276/0.311/0.345/0.035 ms
+  rtt min/avg/max/mdev = 0.379/0.427/0.475/0.048 ms
 
 [168/301] lhq lhq$ ping -c 1 -s 2000 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 2000(2028) bytes of data.
-  2008 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.241 ms
+  2008 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.432 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
+  rtt min/avg/max/mdev = 0.432/0.432/0.432/0.000 ms
 
 [169/301] lhq lhq$ ping -c 1 -M do -s 1500 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 1500(1528) bytes of data.
-  1508 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.296 ms
+  1508 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.427 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.296/0.296/0.296/0.000 ms
+  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
 
 [170/301] lhq lhq$ ping -c 1 -M do -s 100 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 100(128) bytes of data.
-  108 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.287 ms
+  108 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.454 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.287/0.287/0.287/0.000 ms
+  rtt min/avg/max/mdev = 0.454/0.454/0.454/0.000 ms
 
 [171/301] srvdc srvdc$ ping -c 1 -M dont -s 2000 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 2000(2028) bytes of data.
-  2008 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.309 ms
+  2008 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.469 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.309/0.309/0.309/0.000 ms
+  rtt min/avg/max/mdev = 0.469/0.469/0.469/0.000 ms
 
 [172/301] whq whq$ ping -n 1 -l 1000 10.2.2.10
   
@@ -1361,7 +1361,7 @@ Total steps: 301
   Ping statistics for 10.2.2.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [173/301] whq whq$ ping -n 1 -f -l 1500 10.3.3.10
   
@@ -1532,12 +1532,12 @@ Total steps: 301
 
 [198/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.268 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.125 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.310 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.133 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.125/0.196/0.268/0.071 ms
+  rtt min/avg/max/mdev = 0.133/0.221/0.310/0.088 ms
 
 
 --- [199] § sécurité — ACL Cisco filtre ICMP entrant (R-DC WAN) ---
@@ -1578,12 +1578,12 @@ Total steps: 301
 
 [209/301] lhq lhq$ ping -c 2 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.507 ms
-  64 bytes from 10.3.3.1: icmp_seq=2 ttl=253 time=0.220 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.686 ms
+  64 bytes from 10.3.3.1: icmp_seq=2 ttl=253 time=0.456 ms
   
   --- 10.3.3.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.220/0.363/0.507/0.144 ms
+  rtt min/avg/max/mdev = 0.456/0.571/0.686/0.115 ms
 
 [210/301] rdc R-DC# show ip access-lists WAN-IN
   Extended IP access list WAN-IN
@@ -1610,12 +1610,12 @@ Total steps: 301
 
 [217/301] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.509 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.375 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.563 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.486 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.375/0.442/0.509/0.067 ms
+  rtt min/avg/max/mdev = 0.486/0.525/0.563/0.039 ms
 
 
 --- [218] § sécurité — Huawei traffic-filter ICMP ---
@@ -1672,12 +1672,12 @@ Total steps: 301
 
 [233/301] lhq lhq$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.507 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.334 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.830 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.444 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.334/0.420/0.507/0.086 ms
+  rtt min/avg/max/mdev = 0.444/0.637/0.830/0.193 ms
 
 
 --- [234] § ICMP — ignorer les echo (sysctl Linux) ---
@@ -1689,33 +1689,33 @@ Total steps: 301
 
 [236/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.265 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.114 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.335 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.234 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.114/0.189/0.265/0.075 ms
+  rtt min/avg/max/mdev = 0.234/0.285/0.335/0.050 ms
 
 [237/301] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=3.026 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=3.367 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.590 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.740 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 3.026/3.197/3.367/0.170 ms
+  rtt min/avg/max/mdev = 0.590/1.165/1.740/0.575 ms
 
 [238/301] srvdc srvdc$ sysctl -w net.ipv4.icmp_echo_ignore_all=0
 <empty>
 
 [239/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.123 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.089 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.135 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.164 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.089/0.106/0.123/0.017 ms
+  rtt min/avg/max/mdev = 0.135/0.150/0.164/0.014 ms
 
 
 --- [240] § ICMP — unreachables & redirects (routeurs) ---
@@ -1978,42 +1978,42 @@ Total steps: 301
 --- [267] § ICMP — rate-limit / rafale ---
 [267/301] lhq lhq$ ping -c 5 -i 0.2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.331 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.359 ms
-  64 bytes from 10.3.3.10: icmp_seq=3 ttl=62 time=3.875 ms
-  64 bytes from 10.3.3.10: icmp_seq=4 ttl=62 time=0.315 ms
-  64 bytes from 10.3.3.10: icmp_seq=5 ttl=62 time=0.267 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.557 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.335 ms
+  64 bytes from 10.3.3.10: icmp_seq=3 ttl=62 time=0.450 ms
+  64 bytes from 10.3.3.10: icmp_seq=4 ttl=62 time=2.324 ms
+  64 bytes from 10.3.3.10: icmp_seq=5 ttl=62 time=0.314 ms
   
   --- 10.3.3.10 ping statistics ---
   5 packets transmitted, 5 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.267/1.030/3.875/1.423 ms
+  rtt min/avg/max/mdev = 0.314/0.796/2.324/0.769 ms
 
 [268/301] lhq lhq$ ping -f -c 20 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.111 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.142 ms
-  64 bytes from 10.1.1.1: icmp_seq=3 ttl=255 time=0.095 ms
-  64 bytes from 10.1.1.1: icmp_seq=4 ttl=255 time=0.092 ms
-  64 bytes from 10.1.1.1: icmp_seq=5 ttl=255 time=0.092 ms
-  64 bytes from 10.1.1.1: icmp_seq=6 ttl=255 time=0.094 ms
-  64 bytes from 10.1.1.1: icmp_seq=7 ttl=255 time=0.088 ms
-  64 bytes from 10.1.1.1: icmp_seq=8 ttl=255 time=0.098 ms
-  64 bytes from 10.1.1.1: icmp_seq=9 ttl=255 time=0.159 ms
-  64 bytes from 10.1.1.1: icmp_seq=10 ttl=255 time=1.528 ms
-  64 bytes from 10.1.1.1: icmp_seq=11 ttl=255 time=0.167 ms
-  64 bytes from 10.1.1.1: icmp_seq=12 ttl=255 time=0.113 ms
-  64 bytes from 10.1.1.1: icmp_seq=13 ttl=255 time=0.093 ms
-  64 bytes from 10.1.1.1: icmp_seq=14 ttl=255 time=0.086 ms
-  64 bytes from 10.1.1.1: icmp_seq=15 ttl=255 time=0.090 ms
-  64 bytes from 10.1.1.1: icmp_seq=16 ttl=255 time=0.115 ms
-  64 bytes from 10.1.1.1: icmp_seq=17 ttl=255 time=0.109 ms
-  64 bytes from 10.1.1.1: icmp_seq=18 ttl=255 time=1.307 ms
-  64 bytes from 10.1.1.1: icmp_seq=19 ttl=255 time=0.098 ms
-  64 bytes from 10.1.1.1: icmp_seq=20 ttl=255 time=0.122 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.210 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.127 ms
+  64 bytes from 10.1.1.1: icmp_seq=3 ttl=255 time=0.112 ms
+  64 bytes from 10.1.1.1: icmp_seq=4 ttl=255 time=0.105 ms
+  64 bytes from 10.1.1.1: icmp_seq=5 ttl=255 time=0.106 ms
+  64 bytes from 10.1.1.1: icmp_seq=6 ttl=255 time=0.130 ms
+  64 bytes from 10.1.1.1: icmp_seq=7 ttl=255 time=0.108 ms
+  64 bytes from 10.1.1.1: icmp_seq=8 ttl=255 time=0.102 ms
+  64 bytes from 10.1.1.1: icmp_seq=9 ttl=255 time=0.170 ms
+  64 bytes from 10.1.1.1: icmp_seq=10 ttl=255 time=0.903 ms
+  64 bytes from 10.1.1.1: icmp_seq=11 ttl=255 time=0.220 ms
+  64 bytes from 10.1.1.1: icmp_seq=12 ttl=255 time=0.132 ms
+  64 bytes from 10.1.1.1: icmp_seq=13 ttl=255 time=0.277 ms
+  64 bytes from 10.1.1.1: icmp_seq=14 ttl=255 time=0.146 ms
+  64 bytes from 10.1.1.1: icmp_seq=15 ttl=255 time=0.129 ms
+  64 bytes from 10.1.1.1: icmp_seq=16 ttl=255 time=0.222 ms
+  64 bytes from 10.1.1.1: icmp_seq=17 ttl=255 time=0.135 ms
+  64 bytes from 10.1.1.1: icmp_seq=18 ttl=255 time=1.722 ms
+  64 bytes from 10.1.1.1: icmp_seq=19 ttl=255 time=0.180 ms
+  64 bytes from 10.1.1.1: icmp_seq=20 ttl=255 time=0.119 ms
   
   --- 10.1.1.1 ping statistics ---
   20 packets transmitted, 20 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.086/0.240/1.528/0.395 ms
+  rtt min/avg/max/mdev = 0.102/0.268/1.722/0.375 ms
 
 [269/301] srvdc srvdc$ sysctl -w net.ipv4.icmp_ratelimit=100
 <empty>
@@ -2023,20 +2023,20 @@ Total steps: 301
 
 [271/301] ldc ldc$ ping -c 10 -i 0.2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.109 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.083 ms
-  64 bytes from 10.3.3.10: icmp_seq=3 ttl=64 time=1.474 ms
-  64 bytes from 10.3.3.10: icmp_seq=4 ttl=64 time=0.169 ms
-  64 bytes from 10.3.3.10: icmp_seq=5 ttl=64 time=2.259 ms
-  64 bytes from 10.3.3.10: icmp_seq=6 ttl=64 time=0.108 ms
-  64 bytes from 10.3.3.10: icmp_seq=7 ttl=64 time=0.130 ms
-  64 bytes from 10.3.3.10: icmp_seq=8 ttl=64 time=0.083 ms
-  64 bytes from 10.3.3.10: icmp_seq=9 ttl=64 time=0.083 ms
-  64 bytes from 10.3.3.10: icmp_seq=10 ttl=64 time=0.074 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.134 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.115 ms
+  64 bytes from 10.3.3.10: icmp_seq=3 ttl=64 time=0.093 ms
+  64 bytes from 10.3.3.10: icmp_seq=4 ttl=64 time=0.092 ms
+  64 bytes from 10.3.3.10: icmp_seq=5 ttl=64 time=1.279 ms
+  64 bytes from 10.3.3.10: icmp_seq=6 ttl=64 time=0.140 ms
+  64 bytes from 10.3.3.10: icmp_seq=7 ttl=64 time=0.099 ms
+  64 bytes from 10.3.3.10: icmp_seq=8 ttl=64 time=0.094 ms
+  64 bytes from 10.3.3.10: icmp_seq=9 ttl=64 time=0.112 ms
+  64 bytes from 10.3.3.10: icmp_seq=10 ttl=64 time=0.099 ms
   
   --- 10.3.3.10 ping statistics ---
   10 packets transmitted, 10 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.074/0.457/2.259/0.727 ms
+  rtt min/avg/max/mdev = 0.092/0.225/1.279/0.351 ms
 
 [272/301] srvdc srvdc$ sysctl -w net.ipv4.icmp_ratelimit=1000
 <empty>
@@ -2044,7 +2044,7 @@ Total steps: 301
 [273/301] whq whq$ ping -n 4 10.2.2.10
   
   Pinging 10.2.2.10 with 32 bytes of data:
-  Reply from 10.2.2.10: bytes=32 time=3ms TTL=126
+  Reply from 10.2.2.10: bytes=32 time=<1ms TTL=126
   Reply from 10.2.2.10: bytes=32 time=<1ms TTL=126
   Reply from 10.2.2.10: bytes=32 time=<1ms TTL=126
   Reply from 10.2.2.10: bytes=32 time=<1ms TTL=126
@@ -2052,7 +2052,7 @@ Total steps: 301
   Ping statistics for 10.2.2.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 3ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 
 --- [274] § ICMP — cas négatifs / mal formés ---
@@ -2145,35 +2145,35 @@ Total steps: 301
 
 [288/301] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.310 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.179 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
+  rtt min/avg/max/mdev = 0.179/0.179/0.179/0.000 ms
 
 [289/301] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.133 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.167 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.133/0.133/0.133/0.000 ms
+  rtt min/avg/max/mdev = 0.167/0.167/0.167/0.000 ms
 
 [290/301] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.117 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.152 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.117/0.117/0.117/0.000 ms
+  rtt min/avg/max/mdev = 0.152/0.152/0.152/0.000 ms
 
 [291/301] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.101 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.225 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.101/0.101/0.101/0.000 ms
+  rtt min/avg/max/mdev = 0.225/0.225/0.225/0.000 ms
 
 [292/301] whq whq$ ping -n 1 10.1.1.1
   
@@ -2188,12 +2188,12 @@ Total steps: 301
 [293/301] wbr wbr$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=1ms TTL=255
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [294/301] rhq R-HQ# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area

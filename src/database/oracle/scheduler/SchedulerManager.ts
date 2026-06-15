@@ -61,13 +61,29 @@ export class SchedulerManager {
     let errorMessage: string | null = null;
     let output = '';
     try {
-      const { executor } = this.db.connectAsSysdba();
-      try {
-        const result = this.db.executeSql(executor, j.jobAction);
-        output = result.message ?? '';
-      } finally {
-        const sid = (executor as unknown as { _sessionId?: string })._sessionId;
-        if (sid) this.db.disconnect(parseInt(sid, 10));
+      if (j.jobType === 'EXECUTABLE') {
+        const res = this.db.instance.runOsCommand(j.jobAction);
+        if (!res) {
+          status = 'FAILED';
+          errorCode = 27370;
+          errorMessage = 'ORA-27370: job slave failed to launch a job of type EXECUTABLE';
+        } else {
+          output = res.output;
+          if (res.exitCode !== 0) {
+            status = 'FAILED';
+            errorCode = 27369;
+            errorMessage = `ORA-27369: job of type EXECUTABLE failed with exit code: ${res.exitCode}`;
+          }
+        }
+      } else {
+        const { executor } = this.db.connectAsSysdba();
+        try {
+          const result = this.db.executeSql(executor, j.jobAction);
+          output = result.message ?? '';
+        } finally {
+          const sid = (executor as unknown as { _sessionId?: string })._sessionId;
+          if (sid) this.db.disconnect(parseInt(sid, 10));
+        }
       }
     } catch (e: unknown) {
       status = 'FAILED';

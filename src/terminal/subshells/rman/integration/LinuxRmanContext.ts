@@ -20,10 +20,11 @@ import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 
-/** Shape of an Equipment that exposes the optional readFile/deleteFile methods. */
 interface FsCapableEquipment {
   writeFileFromEditor(path: string, content: string): boolean;
+  readFileForEditor?(path: string): string | null;
   readFile?(path: string): string | null;
+  deleteFileFromEditor?(path: string): boolean;
   deleteFile?(path: string): boolean;
 }
 
@@ -40,7 +41,9 @@ export class LinuxRmanContext implements IRmanOracleContext {
     private readonly _oracle: OracleDatabase | null,
   ) {
     const sid = _oracle?.instance.config.sid ?? 'ORCL';
-    this.dbId   = DbId.DEFAULT;
+    // Live instances expose their real DBID (same value V$DATABASE
+    // shows); the canonical DEFAULT only covers Oracle-less devices.
+    this.dbId   = _oracle ? DbId.of(_oracle.instance.getDbId(), sid) : DbId.DEFAULT;
     this.dbName = sid;
     this.vfs    = this._buildVfsAdapter();
   }
@@ -59,8 +62,14 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> {
-    const sid = this.dbName;
-    const base = `${ORADATA_BASE}/${sid}`;
+    // Live database: the canonical V$DATAFILE enumeration — a
+    // tablespace created after boot is backed up / restored like any
+    // other, and file numbers agree with the dictionary views.
+    if (this._oracle) {
+      return this._oracle.storage.listDatafiles();
+    }
+    // Oracle-less device: the canonical seeded layout.
+    const base = `${ORADATA_BASE}/${this.dbName}`;
     return [
       { fileNo: 1, path: `${base}/system01.dbf`,  sizeBytes: 838_860_800, tablespace: 'SYSTEM'   },
       { fileNo: 2, path: `${base}/sysaux01.dbf`,  sizeBytes: 576_716_800, tablespace: 'SYSAUX'   },
@@ -92,23 +101,21 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
+    if (this._oracle) {
+      return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
+    }
     const sid = this.dbName;
-    // Synthesised list — the real instance doesn't expose archived-log
-    // file paths directly; we mint a handful so DELETE INPUT has
-    // something to consume.
     return [1, 2, 3].map(seq => `${BACKUP_BASE}/archivelog/arch_1_${seq}_${sid}.arc`);
   }
 
   private _buildVfsAdapter(): VfsAdapter {
     const dev = this._device as unknown as FsCapableEquipment;
+    const read = (path: string): string | null =>
+      dev.readFileForEditor?.(path) ?? dev.readFile?.(path) ?? null;
     return {
       writeFile: (path, _data): Result<void, RmanError> => {
         try {
-          // Materialise as Oracle-style metadata marker. Content size is
-          // taken from the data length so capture actors / FS sync stays
-          // consistent.
-          const content = `[ORACLE RMAN BACKUP PIECE - ${_data.length} bytes]`;
-          dev.writeFileFromEditor(path, content);
+          dev.writeFileFromEditor(path, `[ORACLE RMAN BACKUP PIECE - ${_data.length} bytes]`);
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });
@@ -116,21 +123,20 @@ export class LinuxRmanContext implements IRmanOracleContext {
       },
       readFile: (path): Result<Uint8Array, RmanError> => {
         try {
-          const s = dev.readFile?.(path) ?? '';
-          return ok(new TextEncoder().encode(s));
+          return ok(new TextEncoder().encode(read(path) ?? ''));
         } catch (e) {
           return err({ code: 'VFS_READ_ERROR', message: String(e), path });
         }
       },
       fileExists: (path) => {
         try {
-          const s = dev.readFile?.(path);
-          return typeof s === 'string';
+          return read(path) !== null;
         } catch { return false; }
       },
       deleteFile: (path): Result<void, RmanError> => {
         try {
-          dev.deleteFile?.(path);
+          if (dev.deleteFileFromEditor) dev.deleteFileFromEditor(path);
+          else dev.deleteFile?.(path);
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });

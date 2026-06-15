@@ -118,6 +118,7 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
       else {
         g.vip = rest[0] ?? null;
         if (g.vip) agent?.setVip(iface, group, g.vip);
+        else agent?.setVipLearn(iface, group);
       }
       return '';
     case 'priority':

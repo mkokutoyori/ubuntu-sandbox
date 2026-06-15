@@ -2,8 +2,9 @@
  * PropertiesPanel - Right sidebar for device/connection properties
  */
 
-import { useState, useEffect } from 'react';
-import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, RefreshCw, Trash2, Cable, Activity } from 'lucide-react';
+import { useState } from 'react';
+import { useMacTable } from '@/react/hooks';
+import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, Trash2, Cable, Activity } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
 import { isFullyImplemented } from '@/network';
@@ -19,7 +20,6 @@ interface MACTableEntry {
 }
 
 interface SwitchInstance {
-  getMACTable(): Map<string, string>;
   clearMACTable(): void;
 }
 
@@ -27,7 +27,6 @@ function isSwitchInstance(obj: unknown): obj is SwitchInstance {
   return (
     obj !== null &&
     typeof obj === 'object' &&
-    typeof (obj as Record<string, unknown>)['getMACTable'] === 'function' &&
     typeof (obj as Record<string, unknown>)['clearMACTable'] === 'function'
   );
 }
@@ -43,44 +42,23 @@ export function PropertiesPanel() {
   } = useNetworkStore();
 
   const [expandedSections, setExpandedSections] = useState<string[]>(['general', 'interfaces']);
-  const [macTable, setMacTable] = useState<MACTableEntry[]>([]);
 
-  // Refresh MAC table when a switch is selected
   const devices = getDevices();
   const selectedDevice = selectedDeviceId ? devices.find(d => d.id === selectedDeviceId) : null;
   const isSwitch = selectedDevice?.type === 'switch-cisco' || selectedDevice?.type === 'switch-huawei' || selectedDevice?.type === 'switch-generic';
 
-  const getSwitchMACTable = () => {
-    if (!selectedDevice || !isSwitch) return [];
-    if (!isSwitchInstance(selectedDevice.instance)) return [];
-    const table = selectedDevice.instance.getMACTable();
-    return Array.from(table.entries()).map(([mac, port]) => ({
-      macAddress: mac,
-      interfaceId: port,
-      vlan: 1,
-      timestamp: Date.now(),
-      type: 'dynamic' as const,
-    }));
-  };
-
-  useEffect(() => {
-    if (selectedDeviceId && isSwitch) {
-      setMacTable(getSwitchMACTable());
-    } else {
-      setMacTable([]);
-    }
-  }, [selectedDeviceId, isSwitch]);
-
-  const refreshMACTable = () => {
-    if (selectedDeviceId && isSwitch) {
-      setMacTable(getSwitchMACTable());
-    }
-  };
+  const macRows = useMacTable(isSwitch ? selectedDevice?.instance ?? null : null);
+  const macTable: MACTableEntry[] = macRows.map(r => ({
+    macAddress: r.mac,
+    interfaceId: r.port,
+    vlan: r.vlan,
+    timestamp: r.timestamp,
+    type: r.type,
+  }));
 
   const handleClearMACTable = () => {
     if (selectedDevice && isSwitch && isSwitchInstance(selectedDevice.instance)) {
       selectedDevice.instance.clearMACTable();
-      setMacTable([]);
     }
   };
 
@@ -365,13 +343,6 @@ export function PropertiesPanel() {
               <div className="px-3 pb-3">
                 {/* Action buttons */}
                 <div className="flex gap-2 mb-2">
-                  <button
-                    onClick={refreshMACTable}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-white/5 border border-white/10 text-xs text-muted-foreground hover:bg-white/10 transition-colors"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    Refresh
-                  </button>
                   <button
                     onClick={handleClearMACTable}
                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-400 hover:bg-red-500/20 transition-colors"

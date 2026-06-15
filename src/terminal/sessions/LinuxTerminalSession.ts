@@ -9,7 +9,7 @@
  *   - Tab completion
  */
 
-import { Equipment } from '@/network';
+import { Equipment, type HostCapableDevice } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import {
   TerminalSession, TerminalTheme, SessionType,
@@ -314,8 +314,8 @@ export class LinuxTerminalSession extends TerminalSession {
         this.shell = null;
       });
     } else {
-      this.currentPath = device.getCwd() || '/home/user';
-      this.currentUser = device.getCurrentUser() || 'user';
+      this.currentPath = this.device.getCwd?.() || '/home/user';
+      this.currentUser = this.device.getCurrentUser?.() || 'user';
     }
   }
 
@@ -815,7 +815,7 @@ export class LinuxTerminalSession extends TerminalSession {
       const dev = this.device;
       const exitResult = (this.shell && dev instanceof LinuxMachine)
         ? dev.handleExitInSession(this.shell)
-        : dev.handleExit();
+        : dev.handleExit?.() ?? { output: '', inSu: false };
       if (exitResult.inSu) {
         if (exitResult.output) this.addLine(exitResult.output);
         this.syncDeviceState();
@@ -1135,10 +1135,10 @@ export class LinuxTerminalSession extends TerminalSession {
     const dev = this.device;
     const absolutePath = (this.shell && dev instanceof LinuxMachine)
       ? dev.resolveAbsolutePathInSession(filePath, this.shell)
-      : this.device.resolveAbsolutePath(filePath);
+      : this.device.resolveAbsolutePath?.(filePath) ?? filePath;
     const existingContent = (this.shell && dev instanceof LinuxMachine)
       ? dev.readFileForEditorInSession(absolutePath, this.shell)
-      : this.device.readFileForEditor(absolutePath);
+      : this.device.readFileForEditor?.(absolutePath) ?? null;
     const isNewFile = existingContent === null;
 
     this.inputMode = {
@@ -1158,7 +1158,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
     } else {
-      this.device.writeFileFromEditor(filePath, content);
+      this.device.writeFileFromEditor?.(filePath, content);
     }
   }
 
@@ -1200,14 +1200,14 @@ export class LinuxTerminalSession extends TerminalSession {
     // local-console user would drift back to e.g. 'user' on a Windows
     // host and break the prompt mid-session.
     if (this.sshStack.length > 0) {
-      const cwd = this.device.getCwd();
+      const cwd = this.device.getCwd?.();
       if (cwd) this.currentPath = cwd;
       this.notify();
       return;
     }
-    const cwd = this.device.getCwd();
+    const cwd = this.device.getCwd?.();
     if (cwd) this.currentPath = cwd;
-    this.currentUser = this.device.getCurrentUser();
+    this.currentUser = this.device.getCurrentUser?.() ?? 'user';
     this.notify();
   }
 
@@ -1250,8 +1250,8 @@ export class LinuxTerminalSession extends TerminalSession {
     // (see executeOnDevice), so after `su root` the device-level user is
     // still stale. Reading it here would mis-classify a root terminal as
     // non-root and skip the `adduser` / `passwd` interactive flows.
-    const currentUser = this.shell ? this.shell.user : this.device.getCurrentUser();
-    const currentUid = this.shell ? this.shell.uid : this.device.getCurrentUid();
+    const currentUser = this.shell ? this.shell.user : this.device.getCurrentUser?.() ?? 'user';
+    const currentUid = this.shell ? this.shell.uid : this.device.getCurrentUid?.() ?? 0;
 
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
@@ -2588,7 +2588,7 @@ export class LinuxTerminalSession extends TerminalSession {
    * editors open on the remote, tab completion uses the remote VFS.
    */
   pushRemoteDevice(
-    remote: Equipment,
+    remote: HostCapableDevice,
     user: string,
     label: string,
     onPop: () => void = () => undefined,
@@ -2618,7 +2618,7 @@ export class LinuxTerminalSession extends TerminalSession {
     this.device = remote;
     this.shell = remoteShell;
     this.currentUser = user;
-    this.currentPath = remoteShell?.cwd ?? remote.getCwd() ?? `/home/${user}`;
+    this.currentPath = remoteShell?.cwd ?? remote.getCwd?.() ?? `/home/${user}`;
     this.notify();
   }
 

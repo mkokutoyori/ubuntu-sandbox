@@ -14,7 +14,7 @@ import { installFcubsliveSchema } from './fcubslive';
  * Tables: REGIONS, COUNTRIES, LOCATIONS, DEPARTMENTS, JOBS, EMPLOYEES, JOB_HISTORY
  */
 export function installHRSchema(db: OracleDatabase): void {
-  const { executor } = db.connectAsSysdba();
+  const { sid, executor } = db.connectAsSysdba();
 
   // Ensure HR schema exists
   db.storage.ensureSchema('HR');
@@ -209,13 +209,17 @@ export function installHRSchema(db: OracleDatabase): void {
     SELECT first_name || ' ' || last_name INTO v_name FROM HR.EMPLOYEES WHERE employee_id = p_id;
     RETURN v_name;
   END;`);
+  // The installer is a one-shot script: log its session off like a real
+  // SQL*Plus run would (it used to leak — visible as a phantom dedicated
+  // server process and an immortal V$SESSION row).
+  db.disconnect(sid);
 }
 
 /**
  * Install the SCOTT demo schema (classic EMP/DEPT).
  */
 export function installSCOTTSchema(db: OracleDatabase): void {
-  const { executor } = db.connectAsSysdba();
+  const { sid, executor } = db.connectAsSysdba();
 
   db.storage.ensureSchema('SCOTT');
 
@@ -290,6 +294,7 @@ export function installSCOTTSchema(db: OracleDatabase): void {
   for (const sql of inserts) {
     db.executeSql(executor, sql);
   }
+  db.disconnect(sid);
 }
 
 /**

@@ -191,6 +191,32 @@ export interface PlsqlHost {
    */
   resolvePackage?(name: string): import('./PackageUnit').PackageRuntimeHandle | undefined;
   callBuiltin(name: string, rawArgsText: string, evaluatedArgs: PlsqlValue[]): boolean;
+  /** Server-side file I/O backing the UTL_FILE package, when available. */
+  utlFile?: UtlFileApi;
+}
+
+/**
+ * The UTL_FILE surface the interpreter drives. Handles are opaque
+ * integers (Oracle's FILE_TYPE is a record the PL/SQL code only passes
+ * around). Operations throw OracleError with the canonical ORA codes so
+ * the interpreter can surface them as catchable PL/SQL exceptions
+ * (e.g. NO_DATA_FOUND at end-of-file).
+ */
+export interface UtlFileApi {
+  /** Open `filename` in directory object `dir` with mode R/W/A. */
+  fopen(dir: string, filename: string, mode: string, maxLineSize?: number): number;
+  isOpen(handle: number): boolean;
+  /** Next line of a read-mode file; ORA-01403 (NO_DATA_FOUND) at EOF. */
+  getLine(handle: number): string;
+  putLine(handle: number, text: string): void;
+  put(handle: number, text: string): void;
+  newLine(handle: number, count: number): void;
+  fflush(handle: number): void;
+  fclose(handle: number): void;
+  fcloseAll(): void;
+  fremove(dir: string, filename: string): void;
+  frename(srcDir: string, srcFile: string, destDir: string, destFile: string, overwrite: boolean): void;
+  fcopy(srcDir: string, srcFile: string, destDir: string, destFile: string): void;
 }
 
 export function isTrue(v: PlsqlValue): boolean {

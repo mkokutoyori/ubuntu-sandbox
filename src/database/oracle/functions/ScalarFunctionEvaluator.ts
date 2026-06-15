@@ -23,6 +23,16 @@ export interface ScalarFunctionHost {
   getContext(): ExecutionContext;
   /** Optional SQL→PL/SQL bridge for stored functions (SELECT pkg.fn(…)). */
   callStoredFunction?(qualifiedName: string, args: CellValue[]): { handled: boolean; value: CellValue };
+  /** Read a BFILE's host content (directory + filename); null when the file is absent. */
+  readBfile?(directory: string, filename: string): string | null;
+}
+
+function parseBfileLocator(v: CellValue): { dir: string; file: string } | null {
+  if (typeof v !== 'string' || !v.startsWith('BFILE:')) return null;
+  const rest = v.slice('BFILE:'.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return null;
+  return { dir: rest.slice(0, slash), file: rest.slice(slash + 1) };
 }
 
 /** Return a mutable Date copy of the value, or null if not a date. */
@@ -58,7 +68,7 @@ function padOracle(str: string, targetLength: number, padText: string, left: boo
 /** Built-in packages whose members this evaluator implements inline. */
 const BUILTIN_PACKAGES = new Set([
   'DBMS_RANDOM', 'DBMS_LOCK', 'DBMS_UTILITY', 'DBMS_METADATA',
-  'DBMS_STATS', 'DBMS_LOB', 'UTL_FILE',
+  'DBMS_STATS', 'DBMS_LOB',
 ]);
 
 export class ScalarFunctionEvaluator {
@@ -477,21 +487,37 @@ export class ScalarFunctionEvaluator {
         return this.resolveNonBuiltin(name, args);
       }
 
+      case 'BFILENAME': {
+        if (args[0] == null || args[1] == null) return null;
+        return `BFILE:${String(args[0]).toUpperCase()}/${String(args[1])}`;
+      }
+
       // DBMS_LOB functions
       case 'GETLENGTH': {
         if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
+          const loc = parseBfileLocator(args[0]);
+          if (loc) {
+            const content = this.host.readBfile?.(loc.dir, loc.file) ?? null;
+            return content === null ? null : content.length;
+          }
           return args[0] != null ? String(args[0]).length : null;
         }
         return null;
       }
 
-      // UTL_FILE stubs
-      case 'FOPEN':
-      case 'FCLOSE':
-      case 'GET_LINE': {
-        if (expr.schema?.toUpperCase() === 'UTL_FILE') return null;
+      case 'FILEEXISTS': {
+        if (expr.schema?.toUpperCase() === 'DBMS_LOB') {
+          const loc = parseBfileLocator(args[0]);
+          if (!loc) return 0;
+          return (this.host.readBfile?.(loc.dir, loc.file) ?? null) !== null ? 1 : 0;
+        }
         return null;
       }
+
+      // UTL_FILE is a PL/SQL-only package (file handles cannot cross into
+      // SQL): it is served by UtlFileEngine through the PL/SQL interpreter,
+      // not here. A UTL_FILE.* reference inside SQL is an invalid identifier
+      // (handled by the default case → ORA-00904), exactly like real Oracle.
 
       // COUNT(*) and other aggregates return a single value for a column evaluation context
       // Real aggregation is handled at the query level — here we just return the scalar value

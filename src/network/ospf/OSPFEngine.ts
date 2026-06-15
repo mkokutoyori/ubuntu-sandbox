@@ -37,6 +37,7 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPAddress } from '../core/types';
+import { Logger } from '../core/Logger';
 import { OSPF_CONSTANTS } from '../core/constants';
 import { ipToUint32, networkAddress, inSameSubnet, wildcardMatches } from '../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -495,6 +496,12 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     destIp: string,
   ): void {
+    // RFC 2328 §8.2 / Appendix D — outgoing packets carry the interface auth.
+    const ifc = this.interfaces.get(iface);
+    if (ifc) {
+      packet.authType = ifc.authType ?? 0;
+      packet.authKey = (ifc.authType ?? 0) !== 0 ? ifc.authKey : undefined;
+    }
     this.incrementStat(packet.packetType, 'tx');
     this.getBus().publish({
       topic: 'ospf.packet.outgoing',
@@ -1136,6 +1143,8 @@ export class OSPFEngine implements IProtocolEngine {
 
     const iface = vlIface ?? physIface;
     if (!iface) return;
+    // passive-interface: hellos neither sent nor processed (IOS behaviour)
+    if (iface.passive) return;
 
     // Validate hello parameters
     if (iface.networkType === 'broadcast') {
@@ -1172,14 +1181,17 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Check if we are listed in the neighbor's hello (2-Way check)
     const seesUs = hello.neighbors.includes(this.config.routerId);
+    let twoWayTransition = false;
 
     if (seesUs) {
       if (neighbor.state === 'Init') {
         this.neighborEvent(iface, neighbor, 'TwoWayReceived');
+        twoWayTransition = true;
       }
     } else {
       if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
         this.neighborEvent(iface, neighbor, 'OneWay');
+        twoWayTransition = true;
       }
     }
 
@@ -1196,8 +1208,10 @@ export class OSPFEngine implements IProtocolEngine {
         this.drElection(iface);
       }
     } else if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
-      // NbrChange: new neighbor or changed priority/DR/BDR declaration → re-run election
+      // NbrChange (RFC 2328 §9.2): 2-Way transition either way, new
+      // neighbor, or changed priority/DR/BDR declaration → re-election
       const nbrChange = isNewNeighbor
+        || twoWayTransition
         || prevPriority !== hello.priority
         || prevDR !== hello.designatedRouter
         || prevBDR !== hello.backupDesignatedRouter;
@@ -3753,6 +3767,19 @@ export class OSPFEngine implements IProtocolEngine {
   processPacket(ifaceName: string, srcIP: string, packet: OSPFPacket): void {
     // Validate router ID isn't our own (ignore our own packets)
     if (packet.routerId === this.config.routerId) return;
+
+    // RFC 2328 §8.2 — authentication check before any FSM processing.
+    const rxIface = this.interfaces.get(ifaceName);
+    if (rxIface) {
+      const localAuthType = rxIface.authType ?? 0;
+      const pktAuthType = packet.authType ?? 0;
+      if (localAuthType !== pktAuthType
+        || (localAuthType !== 0 && rxIface.authKey !== packet.authKey)) {
+        Logger.warn(this.deviceId ?? 'ospf', 'ospf:auth-fail',
+          `OSPF packet type ${packet.packetType} from ${srcIP} dropped on ${ifaceName}: authentication mismatch`);
+        return;
+      }
+    }
 
     switch (packet.packetType) {
       case 1:

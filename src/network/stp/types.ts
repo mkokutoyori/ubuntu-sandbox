@@ -2,19 +2,35 @@ export const ETHERTYPE_STP = 0x4242;
 export const STP_BRIDGE_MAC = '01:80:c2:00:00:00';
 
 export type StpBpduType = 'config' | 'tcn';
-export type StpPortRole = 'root' | 'designated' | 'alternate' | 'disabled';
+/**
+ * Port roles per IEEE 802.1D-2004 §17.7. Classic 802.1D only names
+ * root/designated/blocked, but the rapid (802.1w) role taxonomy
+ * distinguishes the two kinds of blocked port — and Cisco/Huawei show
+ * commands report them separately even in legacy mode:
+ *  - `alternate`: blocked because a *different* bridge offers a better
+ *    path to the root (an alternate path to the root port);
+ *  - `backup`: blocked because *our own* bridge offers a superior BPDU
+ *    on the same shared segment (backs up a local designated port).
+ * Both are in the Discarding/Blocking forwarding state.
+ */
+export type StpPortRole =
+  | 'root' | 'designated' | 'alternate' | 'backup' | 'disabled';
 
 export interface BridgeId {
   priority: number;
   mac: string;
 }
 
+export type StpProtocolMode = 'stp' | 'rstp';
+
 export interface StpBpdu {
   type: 'stp';
   bpduType: StpBpduType;
   protocolId: 0x0000;
-  version: 0;
+  version: 0 | 2;
   flags: number;
+  proposal?: boolean;
+  agreement?: boolean;
   rootBridge: BridgeId;
   rootPathCost: number;
   senderBridge: BridgeId;
@@ -39,12 +55,23 @@ export function defaultPortGuards(): StpPortGuards {
 
 export interface StpConfig {
   enabled: boolean;
+  mode: StpProtocolMode;
   bridgePriority: number;
   helloSec: number;
   maxAgeSec: number;
   forwardDelaySec: number;
   baseMac: string;
   bpduGuardGlobal: boolean;
+}
+
+export interface MstRegion {
+  name: string;
+  revision: number;
+  instances: Map<number, string>;
+}
+
+export function createDefaultMstRegion(): MstRegion {
+  return { name: '', revision: 0, instances: new Map() };
 }
 
 export interface StpPortInfo {
@@ -60,6 +87,7 @@ export interface StpPortInfo {
 export function createDefaultStpConfig(baseMac: string): StpConfig {
   return {
     enabled: true,
+    mode: 'stp',
     bridgePriority: 32768,
     helloSec: 2,
     maxAgeSec: 20,

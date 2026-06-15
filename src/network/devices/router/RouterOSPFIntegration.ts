@@ -13,10 +13,11 @@
 import type { Port } from '../../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
-  ETHERTYPE_IPV4,
+  ETHERTYPE_IPV4, IP_PROTO_OSPF,
   createIPv4Packet,
 } from '../../core/types';
 import { Equipment } from '../../equipment/Equipment';
+import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
@@ -196,21 +197,16 @@ export class RouterOSPFIntegration {
     const ipPkt = createIPv4Packet(
       myIP,
       new IPAddress(destIP),
-      89, // OSPF protocol number
+      IP_PROTO_OSPF,
       1,  // TTL=1 (link-local)
       ospfPkt,
       64,
     );
 
-    // Determine destination MAC
+    // Determine destination MAC (RFC 1112 §6.4 for multicast groups)
     let dstMAC: MACAddress;
     if (destIP === '224.0.0.5' || destIP === '224.0.0.6') {
-      // Multicast: 01:00:5e + lower 23 bits of IP
-      const ipOctets = new IPAddress(destIP).getOctets();
-      dstMAC = new MACAddress(
-        `01:00:5e:${(ipOctets[1] & 0x7f).toString(16).padStart(2, '0')}:` +
-        `${ipOctets[2].toString(16).padStart(2, '0')}:${ipOctets[3].toString(16).padStart(2, '0')}`
-      );
+      dstMAC = new MACAddress(ipv4MulticastToMac(destIP));
     } else {
       const cached = this.ctx.getArpEntry(destIP);
       dstMAC = cached ? cached.mac : MACAddress.broadcast();
@@ -224,64 +220,30 @@ export class RouterOSPFIntegration {
     });
   }
 
-  /**
-   * Deliver an OSPF packet from a local interface to the correct remote
-   * OSPFEngine(s). Follows the physical cable topology:
-   *   - Direct P2P link → single remote router
-   *   - Through a switch/hub → all routers connected to that segment
-   */
-  private deliverPacket(localIfaceName: string, packet: OSPFPacket, _destIP: string): void {
-    const port = this.ctx.getPorts().get(localIfaceName);
-    if (!port) return;
-
-    const cable = port.getCable();
-    if (!cable) return;
-
-    const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-    if (!remotePort) return;
-
-    const srcIP = port.getIPAddress()?.toString() ?? '0.0.0.0';
-    const remoteEquipId = remotePort.getEquipmentId();
-    const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteEquipId);
-
-    if (remoteOSPF && remoteOSPF.ospfEngine) {
-      remoteOSPF.ospfEngine.processPacket(remotePort.getName(), srcIP, packet);
-    } else {
-      // Switch / Hub — deliver to all other connected routers on the segment
-      const remoteEquip = Equipment.getById(remoteEquipId);
-      if (!remoteEquip) return;
-      for (const swPort of remoteEquip.getPorts()) {
-        if (swPort === remotePort) continue;
-        const swCable = swPort.getCable();
-        if (!swCable) continue;
-        const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-        if (!otherEnd) continue;
-        const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherEnd.getEquipmentId());
-        if (otherOSPF?.ospfEngine) {
-          otherOSPF.ospfEngine.processPacket(otherEnd.getName(), srcIP, packet);
-        }
-      }
-    }
+  /** OSPF packets from the wire (proto 89) — the only path into the engine. */
+  receivePacket(ifaceName: string, srcIP: string, packet: OSPFPacket): void {
+    this.ospfEngine?.processPacket(ifaceName, srcIP, packet);
   }
 
   /**
-   * Wire every OSPFEngine in the domain with a sendCallback that calls
-   * deliverPacket, enabling real DD/LSR/LSU/LSAck packet exchange.
+   * Wire every engine's sendCallback to sendPacket (real frames out the
+   * port). Cable delivery is synchronous, so the FSM-driven exchange
+   * completes within the convergence call.
    */
   private setupSendCallbacks(allPeers: RouterOSPFIntegration[], useDelay = false): void {
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
       peer.ospfEngine.setSendCallback((ifaceName, packet, destIP) => {
         if (!useDelay) {
-          peer.deliverPacket(ifaceName, packet, destIP);
+          peer.sendPacket(ifaceName, packet, destIP);
           return;
         }
         const iface = peer.ospfEngine!.getInterface(ifaceName);
         const delay = iface?.propagationDelayMs ?? 0;
         if (delay > 0) {
-          setTimeout(() => peer.deliverPacket(ifaceName, packet, destIP), delay);
+          setTimeout(() => peer.sendPacket(ifaceName, packet, destIP), delay);
         } else {
-          peer.deliverPacket(ifaceName, packet, destIP);
+          peer.sendPacket(ifaceName, packet, destIP);
         }
       });
     }
@@ -330,35 +292,51 @@ export class RouterOSPFIntegration {
     localIface.neighbors.set(remoteRid, neighbor);
   }
 
-  /**
-   * Drive the OSPF neighbor state machine for all routers in the domain.
-   * Simulates full RFC 2328 §10.3 sequence:
-   *   Down → Init → 2-Way → ExStart → Exchange → Loading → Full
-   */
-  private driveStateMachine(allPeers: RouterOSPFIntegration[]): void {
-    // Phase A: HelloReceived — Down → Init
+  /** True when the engine interface maps to a cabled physical port. */
+  private static isCabled(peer: RouterOSPFIntegration, ifaceName: string): boolean {
+    return !!peer.ctx.getPorts().get(ifaceName)?.getCable();
+  }
+
+  /** One real Hello per cabled, non-passive interface of every peer. */
+  private pumpHellos(allPeers: RouterOSPFIntegration[]): void {
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
-      for (const [, iface] of peer.ospfEngine.getInterfaces()) {
+      for (const [name, iface] of peer.ospfEngine.getInterfaces()) {
         if (iface.passive) continue;
+        if (!RouterOSPFIntegration.isCabled(peer, name)) continue;
+        peer.ospfEngine.sendHelloOnInterface(name);
+      }
+    }
+  }
+
+  /**
+   * Converge the domain. Cabled links: neighbor discovery, 2-Way and the
+   * DD/LSR/LSU exchange are all driven by REAL Hello frames (the FSM
+   * transitions fire inside processHello/processDD). Virtual interfaces
+   * (tunnels, VLs — no frame transport) keep synthetic FSM events.
+   * Timer-bound steps (WaitTimer-gated DR election, §10.6 DD
+   * retransmit) are fired synchronously so a converge call completes
+   * without waiting simulated seconds.
+   */
+  private driveWireConvergence(allPeers: RouterOSPFIntegration[]): void {
+    // Round 1: mutual discovery (Init); round 2: 2-Way both sides →
+    // p2p ExStart → DD exchange cascades synchronously over the cables.
+    this.pumpHellos(allPeers);
+    this.pumpHellos(allPeers);
+
+    // Synthetic Down→Init→2-Way for virtual interfaces only.
+    type Entry = { peer: RouterOSPFIntegration; iface: OSPFInterface; neighbor: OSPFNeighbor };
+    const p2pInit: Entry[] = [];
+    const broadcastInit: Entry[] = [];
+    for (const peer of allPeers) {
+      if (!peer.ospfEngine) continue;
+      for (const [name, iface] of peer.ospfEngine.getInterfaces()) {
+        if (iface.passive) continue;
+        if (RouterOSPFIntegration.isCabled(peer, name)) continue;
         for (const [, neighbor] of iface.neighbors) {
           if (neighbor.state === 'Down') {
             peer.ospfEngine.neighborEvent(iface, neighbor, 'HelloReceived');
           }
-        }
-      }
-    }
-
-    // Phase B: TwoWayReceived — Init → 2-Way or ExStart
-    type BEntry = { peer: RouterOSPFIntegration; iface: OSPFInterface; neighbor: OSPFNeighbor };
-    const p2pInit: BEntry[] = [];
-    const broadcastInit: BEntry[] = [];
-
-    for (const peer of allPeers) {
-      if (!peer.ospfEngine) continue;
-      for (const [, iface] of peer.ospfEngine.getInterfaces()) {
-        if (iface.passive) continue;
-        for (const [, neighbor] of iface.neighbors) {
           if (neighbor.state !== 'Init') continue;
           const bucket = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
             ? broadcastInit : p2pInit;
@@ -366,39 +344,35 @@ export class RouterOSPFIntegration {
         }
       }
     }
-
-    // P2P: slaves first — when master fires startDDExchange, slave is in ExStart
+    // P2P slaves first so the master's startDDExchange finds them in ExStart.
     p2pInit.sort((a, b) => {
       const aIsSlave = a.peer.ospfEngine!.getRouterId() < a.neighbor.routerId ? 0 : 1;
       const bIsSlave = b.peer.ospfEngine!.getRouterId() < b.neighbor.routerId ? 0 : 1;
       return aIsSlave - bIsSlave;
     });
-    for (const { peer, iface, neighbor } of p2pInit) {
+    for (const { peer, iface, neighbor } of [...p2pInit, ...broadcastInit]) {
       if (peer.ospfEngine && neighbor.state === 'Init') {
         peer.ospfEngine.neighborEvent(iface, neighbor, 'TwoWayReceived');
       }
     }
 
-    // Broadcast: TwoWayReceived → 2-Way (ExStart deferred to Phase C via AdjOK)
-    for (const { peer, iface, neighbor } of broadcastInit) {
-      if (peer.ospfEngine && neighbor.state === 'Init') {
-        peer.ospfEngine.neighborEvent(iface, neighbor, 'TwoWayReceived');
-      }
-    }
-
-    // Phase C: DR election — broadcast/NBMA interfaces
+    // WaitTimer accelerator: only ifaces still Waiting elect now —
+    // established ones re-elect via BackupSeen/NbrChange on real hellos.
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
       for (const [, iface] of peer.ospfEngine.getInterfaces()) {
-        if (iface.networkType === 'broadcast' || iface.networkType === 'nbma') {
-          iface.dr = '0.0.0.0';
-          iface.bdr = '0.0.0.0';
+        if ((iface.networkType === 'broadcast' || iface.networkType === 'nbma')
+          && iface.state === 'Waiting') {
           peer.ospfEngine.drElection(iface);
         }
       }
     }
 
-    // Phase D: Re-trigger — masters whose slave was not yet in ExStart
+    // Propagate DR/BDR declarations (AdjOK → ExStart with the DR).
+    this.pumpHellos(allPeers);
+
+    // §10.6 retransmit accelerator: masters whose first DD found the
+    // slave not yet in ExStart.
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
       for (const [, iface] of peer.ospfEngine.getInterfaces()) {
@@ -462,49 +436,8 @@ export class RouterOSPFIntegration {
       }
     }
 
-    // Step 2: Discover neighbors via cables (direct or through switches)
-    for (const [portName, port] of this.ctx.getPorts()) {
-      const cable = port.getCable();
-      if (!cable) continue;
-
-      const localIface = this.ospfEngine.getInterface(portName);
-      if (!localIface) continue;
-      if (localIface.passive) continue;
-
-      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-      if (!remotePort) continue;
-
-      // Collect candidate neighbor routers
-      const candidates = this.collectCandidateRouters(remotePort);
-
-      for (const { ospf: remoteOSPF, port: rPort } of candidates) {
-        if (!remoteOSPF.ospfEngine) continue;
-
-        // Trigger auto-activate on remote side too
-        this.activateRemoteInterfaces(remoteOSPF);
-
-        const remoteIface = remoteOSPF.ospfEngine.getInterface(rPort.getName());
-        if (!remoteIface) continue;
-        if (remoteIface.passive) continue;
-
-        // Check authentication compatibility
-        const localAuth = localIface.authType ?? 0;
-        const remoteAuth = remoteIface.authType ?? 0;
-        if (localAuth !== remoteAuth) continue;
-        if (localAuth !== 0 && localIface.authKey !== remoteIface.authKey) continue;
-
-        // Check hello/dead interval match
-        if (localIface.helloInterval !== remoteIface.helloInterval) continue;
-        if (localIface.deadInterval !== remoteIface.deadInterval) continue;
-
-        // Form bidirectional adjacency
-        const localRid = this.ospfEngine.getRouterId();
-        const remoteRid = remoteOSPF.ospfEngine.getRouterId();
-
-        this.formAdjacency(this.ospfEngine, localIface, remoteIface, remoteRid, rPort);
-        remoteOSPF.formAdjacency(remoteOSPF.ospfEngine, remoteIface, localIface, localRid, port);
-      }
-    }
+    // Step 2: neighbor discovery happens via real Hello frames inside
+    // exchangeAndCompute — no out-of-band adjacency seeding here.
 
     // Step 3: Exchange LSAs between adjacent routers and compute routes
     this.exchangeAndCompute();
@@ -513,32 +446,6 @@ export class RouterOSPFIntegration {
     this.v3AutoConverge();
   }
 
-  /** Collect candidate OSPF routers connected to a remote port (direct or via switch) */
-  private collectCandidateRouters(remotePort: Port): Array<{ ospf: RouterOSPFIntegration; port: Port }> {
-    const candidates: Array<{ ospf: RouterOSPFIntegration; port: Port }> = [];
-    const remoteEquipId = remotePort.getEquipmentId();
-    const remoteOSPF = RouterOSPFIntegration.getByEquipmentId(remoteEquipId);
-
-    if (remoteOSPF) {
-      candidates.push({ ospf: remoteOSPF, port: remotePort });
-    } else {
-      // Remote device is a Switch/Hub - find all other routers connected to it
-      const remoteEquip = Equipment.getById(remoteEquipId);
-      if (!remoteEquip) return candidates;
-      for (const swPort of remoteEquip.getPorts()) {
-        if (swPort === remotePort) continue;
-        const swCable = swPort.getCable();
-        if (!swCable) continue;
-        const otherEnd = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-        if (!otherEnd) continue;
-        const otherOSPF = RouterOSPFIntegration.getByEquipmentId(otherEnd.getEquipmentId());
-        if (otherOSPF) {
-          candidates.push({ ospf: otherOSPF, port: otherEnd });
-        }
-      }
-    }
-    return candidates;
-  }
 
   /** Activate interfaces on a remote OSPF peer that match its network statements */
   private activateRemoteInterfaces(remote: RouterOSPFIntegration): void {
@@ -586,43 +493,11 @@ export class RouterOSPFIntegration {
       this.activateRemoteInterfaces(peer);
     }
 
-    // Form adjacencies between all directly connected routers
-    for (const peer1 of allPeers) {
-      if (!peer1.ospfEngine) continue;
-      for (const [portName, port] of peer1.ctx.getPorts()) {
-        const cable = port.getCable();
-        if (!cable) continue;
-        const localIface = peer1.ospfEngine.getInterface(portName);
-        if (!localIface) continue;
-        if (localIface.passive) continue;
+    // Wire sendCallbacks first: discovery itself runs over real frames.
+    this.setupSendCallbacks(allPeers);
 
-        const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-        if (!remotePort) continue;
-
-        const candidates = this.collectCandidateRouters(remotePort);
-        for (const { ospf: peer2, port: rPort } of candidates) {
-          if (!peer2.ospfEngine) continue;
-          const remoteIface = peer2.ospfEngine.getInterface(rPort.getName());
-          if (!remoteIface) continue;
-          if (remoteIface.passive) continue;
-
-          // Check auth and timer compatibility
-          const localAuth = localIface.authType ?? 0;
-          const remoteAuth = remoteIface.authType ?? 0;
-          if (localAuth !== remoteAuth) continue;
-          if (localAuth !== 0 && localIface.authKey !== remoteIface.authKey) continue;
-          if (localIface.helloInterval !== remoteIface.helloInterval) continue;
-          if (localIface.deadInterval !== remoteIface.deadInterval) continue;
-
-          const localRid = peer1.ospfEngine.getRouterId();
-          const remoteRid = peer2.ospfEngine.getRouterId();
-          peer1.formAdjacency(peer1.ospfEngine, localIface, remoteIface, remoteRid, rPort);
-          peer2.formAdjacency(peer2.ospfEngine, remoteIface, localIface, localRid, port);
-        }
-      }
-    }
-
-    // Form adjacencies over GRE tunnels
+    // Form adjacencies over GRE tunnels (no frame transport on virtual
+    // ports yet — these stay synthetically seeded)
     for (const peer1 of allPeers) {
       if (!peer1.ospfEngine) continue;
       for (const [tunName, tunPort] of peer1.ctx.getPorts()) {
@@ -651,11 +526,9 @@ export class RouterOSPFIntegration {
       }
     }
 
-    // Wire sendCallbacks for packet delivery
-    this.setupSendCallbacks(allPeers);
-
-    // Drive the OSPF neighbor state machine
-    this.driveStateMachine(allPeers);
+    // Converge: real Hello rounds for cabled links, synthetic FSM events
+    // only for virtual interfaces (tunnels / virtual links).
+    this.driveWireConvergence(allPeers);
 
     // Each router originates its Router-LSA after adjacencies are Full
     for (const peer of allPeers) {

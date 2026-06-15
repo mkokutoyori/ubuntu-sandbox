@@ -26,6 +26,12 @@ import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
+  NeighborCache,
+  NDP_RETRANS_TIMER_MS,
+  NDP_MAX_MULTICAST_SOLICIT,
+  type NeighborCacheEntry,
+} from './host/NeighborCache';
+import {
   HostSignalStore,
   makeReadonlyHostObservables,
   projectArpTable,
@@ -69,6 +75,8 @@ import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 
@@ -121,20 +129,7 @@ export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
-export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
-
-export interface NeighborCacheEntry {
-  /** Link-layer (MAC) address */
-  mac: MACAddress;
-  /** Interface on which this neighbor is reachable */
-  iface: string;
-  /** NDP state machine state */
-  state: NeighborState;
-  /** Whether this neighbor is a router */
-  isRouter: boolean;
-  /** Last reachability confirmation timestamp */
-  timestamp: number;
-}
+export type { NeighborState, NeighborCacheEntry } from './host/NeighborCache';
 
 // ─── IPv6 Routing Table Entry ────────────────────────────────────────
 
@@ -219,8 +214,12 @@ export abstract class EndHost extends Equipment {
   protected routingTable: HostRouteEntry[] = [];
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
-  /** Neighbor cache: IPv6 string → { mac, iface, state, isRouter, timestamp } */
-  protected neighborCache: Map<string, NeighborCacheEntry> = new Map();
+  protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
+    onLearned: (ip, entry) => this.emitNdpLearned({
+      ip, mac: entry.mac.toString(), iface: entry.iface,
+    }),
+    sendUnicastSolicit: (ip, entry) => this.sendUnicastNeighborSolicit(ip, entry),
+  });
   /** Monotonically increasing ICMPv6 echo identifier */
   protected ping6IdCounter: number = 0;
   /** Default IPv6 gateway (learned from RA or configured) */
@@ -333,32 +332,17 @@ export abstract class EndHost extends Equipment {
 
   /** [actor-API] Refresh the ARP signal from `this.arpTable`. */
   _refreshArpSignal(): void {
-    const map = (this as unknown as { arpTable?: Map<string, { mac: { toString(): string }; iface: string; timestamp: number }> }).arpTable;
-    if (!map) return;
-    this.hostSignalStore.arp.set(projectArpTable(map));
+    this.hostSignalStore.arp.set(projectArpTable(this.arpTable));
   }
 
-  /** [actor-API] Refresh the NDP signal from `this.ndpCache`. */
+  /** [actor-API] Refresh the NDP signal from `this.neighborCache`. */
   _refreshNdpSignal(): void {
-    const map = (this as unknown as { ndpCache?: Map<string, { mac: { toString(): string }; iface: string }> }).ndpCache;
-    if (!map) return;
-    this.hostSignalStore.ndp.set(projectNdpTable(map));
+    this.hostSignalStore.ndp.set(projectNdpTable(this.neighborCache.snapshot()));
   }
 
   /** [actor-API] Refresh the routes signal from `this.routingTable`. */
   _refreshRoutesSignal(): void {
-    const routes = (this as unknown as {
-      routingTable?: Iterable<{
-        destination: { toString(): string };
-        mask: { toString(): string };
-        gateway: { toString(): string } | null;
-        iface: string;
-        metric?: number;
-        type?: string;
-      }>;
-    }).routingTable;
-    if (!routes) return;
-    this.hostSignalStore.routes.set(projectHostRoutes(routes));
+    this.hostSignalStore.routes.set(projectHostRoutes(this.routingTable));
   }
 
   /** [actor-API] Refresh the TCP listeners + connections signals. */
@@ -375,13 +359,10 @@ export abstract class EndHost extends Equipment {
 
   /** [actor-API] Refresh the aggregate stats signal. */
   _refreshHostStatsSignal(): void {
-    const arpMap = (this as unknown as { arpTable?: Map<unknown, unknown> }).arpTable;
-    const ndpMap = (this as unknown as { ndpCache?: Map<unknown, unknown> }).ndpCache;
-    const routes = (this as unknown as { routingTable?: { length: number } }).routingTable;
     this.hostSignalStore.stats.set({
-      arpCacheSize: arpMap?.size ?? 0,
-      ndpCacheSize: ndpMap?.size ?? 0,
-      routeCount: routes?.length ?? 0,
+      arpCacheSize: this.arpTable.size,
+      ndpCacheSize: this.neighborCache.size,
+      routeCount: this.routingTable.length,
       tcpListeners: this.tcpv2.listListeners().length,
       tcpConnections: this.tcpv2.listSockets().length,
       icmpEchosSent: this.icmpEchosSent,
@@ -552,9 +533,57 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
+  }
+
+  private dhcpWireChannels = new Map<string, WireDhcpChannel>();
+
+  private getDhcpWireChannel(iface: string): WireDhcpChannel | null {
+    const port = this.ports.get(iface);
+    if (!port) return null;
+    let channel = this.dhcpWireChannels.get(iface);
+    if (!channel) {
+      channel = new WireDhcpChannel(iface, (ifc, pkt) => this.sendWireDhcpFrame(ifc, pkt));
+      this.dhcpWireChannels.set(iface, channel);
+      this.ensureDhcpUdp68Listener();
+    }
+    return channel;
+  }
+
+  /**
+   * Single UDP/68 listener feeding the per-interface wire channels.
+   * All client-side RFC 2131 validation (xid, chaddr, expected message
+   * type) lives in WireDhcpChannel.exchange().
+   */
+  private ensureDhcpUdp68Listener(): void {
+    if (this.udpListeners.has(68)) return;
+    this.udpListeners.set(68, (dgram) => {
+      const pkt = dgram.udp.payload;
+      if (pkt instanceof DHCPPacket) {
+        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt);
+      }
+    });
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 68, destinationPort: 67,
+      length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv4Packet(
+      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
+      IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+  }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
 
@@ -590,6 +619,7 @@ export abstract class EndHost extends Equipment {
     super.powerOff();
     if (wasOn) this.lifecycle.powerOff();
     this.stopArpAgingTimer();
+    this.neighborCache.stop();
   }
 
   // ─── System identity ────────────────────────────────────────────
@@ -965,7 +995,7 @@ export abstract class EndHost extends Equipment {
         ip: arp.senderIP.toString(),
         mac: arp.senderMAC.toString(),
         iface: portName,
-        source: arp.opcode === 1 ? 'request' : 'reply',
+        source: arp.operation === 'request' ? 'request' : 'reply',
       });
     }
 
@@ -1124,9 +1154,12 @@ export abstract class EndHost extends Equipment {
     const myIP = port.getIPAddress();
 
     const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
-    // Also accept if destination is the broadcast for our subnet
+    // Also accept if destination is the broadcast for our subnet, or the
+    // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
+    // it even on an unconfigured interface (DHCP clients depend on this).
     const mask = port.getSubnetMask();
-    const isBroadcast = myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask);
+    const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
+      || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
 
     if (isForUs || isBroadcast) {
       // ── Firewall: filter incoming packets ──
@@ -1639,6 +1672,42 @@ export abstract class EndHost extends Equipment {
       }
       timer = this.hostTimers.setTimeout(() => finish(null), timeoutMs);
     });
+  }
+
+  /**
+   * Synchronous variant for callers bound to a sync contract (the NSS
+   * `dns` source). Cable delivery is synchronous, so a live server's
+   * response has been captured when the send returns; null = timeout.
+   */
+  public queryDnsServerSync(
+    serverIP: IPAddress,
+    name: string,
+    qtype: string,
+  ): DnsWireResponse | null {
+    let sourcePort: number;
+    try {
+      sourcePort = this.socketTable.allocateEphemeralPort();
+    } catch {
+      return null;
+    }
+    const id = nextDnsTransactionId();
+    let reply: DnsWireResponse | null = null;
+    try {
+      this.udpBind(sourcePort, ({ udp }) => {
+        const msg = udp.payload;
+        if (isDnsWireResponse(msg) && msg.id === id) reply = msg;
+      }, 'resolver');
+    } catch {
+      return null;
+    }
+    const query: DnsWireQuery = {
+      kind: 'dns-query', id, name, qtype, recursionDesired: true,
+    };
+    this.sendUdpDatagram(
+      serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+    );
+    this.udpClose(sourcePort);
+    return reply;
   }
 
   // ─── ARP Resolution ────────────────────────────────────────────
@@ -2207,7 +2276,7 @@ export abstract class EndHost extends Equipment {
   // ─── Neighbor Cache (NDP) ──────────────────────────────────────
 
   getNeighborCache(): Map<string, NeighborCacheEntry> {
-    return new Map(this.neighborCache);
+    return this.neighborCache.snapshot();
   }
 
   // ─── IPv6 Packet Handling ──────────────────────────────────────
@@ -2289,18 +2358,29 @@ export abstract class EndHost extends Equipment {
     const route = this.resolveIPv6Route(ipv6.sourceIP);
     if (!route) return;
 
-    const dstMAC = this.neighborCache.get(route.nextHopIP.toString());
-    if (dstMAC) {
+    const send = (mac: MACAddress): void => {
       this.sendFrame(route.port.getName(), {
         srcMAC: route.port.getMAC(),
-        dstMAC: dstMAC.mac,
+        dstMAC: mac,
         etherType: ETHERTYPE_IPV6,
         payload: replyPkt,
       });
+    };
+
+    const cached = this.neighborCache.markUsed(route.nextHopIP.toString());
+    if (cached) {
+      send(cached.mac);
+    } else {
+      // No neighbor entry — resolve it instead of silently dropping the
+      // reply (RFC 4861 §7.2.2: queue the packet pending resolution).
+      this.resolveNDP(route.port.getName(), route.nextHopIP)
+        .then(send)
+        .catch(() => { /* resolution failed: drop, as a real stack would */ });
     }
   }
 
   private handleICMPv6EchoReply(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    this.neighborCache.confirmReachability(ipv6.sourceIP.toString());
     // Phase 5.7: settle the awaiting `sendPing6` via the bus. The awaiter
     // computes its own rtt; rttMs=0 is a sentinel here so capture actors
     // can still record the reply.
@@ -2344,18 +2424,8 @@ export abstract class EndHost extends Equipment {
     // Learn the source's link-layer address if provided
     const srcLLOpt = ns.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer' && !ipv6.sourceIP.isUnspecified()) {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: portName,
-        state: 'stale',
-        isRouter: false,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: portName,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, portName, false);
     }
 
     // Send Neighbor Advertisement
@@ -2414,17 +2484,11 @@ export abstract class EndHost extends Equipment {
     const mac = tgtLLOpt.address;
     const key = na.targetAddress.toString();
 
-    // Update neighbor cache
-    this.neighborCache.set(key, {
-      mac,
-      iface: portName,
-      state: na.solicitedFlag ? 'reachable' : 'stale',
+    this.neighborCache.learnFromAdvertisement(key, mac, portName, {
+      solicited: na.solicitedFlag,
       isRouter: na.routerFlag,
-      timestamp: Date.now(),
+      override: na.overrideFlag,
     });
-
-    // Phase 5.7: resolveNDP awaits this event via the bus.
-    this.emitNdpLearned({ ip: key, mac: mac.toString(), iface: portName });
 
     Logger.debug(this.id, 'ndp:na-received',
       `${this.name}: learned ${na.targetAddress} -> ${mac}`);
@@ -2442,18 +2506,8 @@ export abstract class EndHost extends Equipment {
     // Learn router's link-layer address
     const srcLLOpt = ra.options.find(o => o.optionType === 'source-link-layer');
     if (srcLLOpt && srcLLOpt.optionType === 'source-link-layer') {
-      this.neighborCache.set(ipv6.sourceIP.toString(), {
-        mac: srcLLOpt.address,
-        iface: portName,
-        state: 'reachable',
-        isRouter: true,
-        timestamp: Date.now(),
-      });
-      this.emitNdpLearned({
-        ip: ipv6.sourceIP.toString(),
-        mac: srcLLOpt.address.toString(),
-        iface: portName,
-      });
+      this.neighborCache.learnFromSource(
+        ipv6.sourceIP.toString(), srcLLOpt.address, portName, true);
     }
 
     // If router lifetime > 0, consider as default router
@@ -2502,22 +2556,27 @@ export abstract class EndHost extends Equipment {
    * Returns cached result if available, otherwise sends NS and waits.
    */
   protected async resolveNDP(portName: string, targetIP: IPv6Address, timeoutMs: number = 2000): Promise<MACAddress> {
-    const cached = this.neighborCache.get(targetIP.toString());
-    if (cached && cached.state === 'reachable') return cached.mac;
+    const cached = this.neighborCache.markUsed(targetIP.toString());
+    if (cached && cached.state !== 'incomplete') return cached.mac;
 
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
 
-    const srcIP = port.getLinkLocalIPv6();
-    if (!srcIP) throw new Error('No link-local address');
+    // RFC 4861 §7.2.2: the NS source SHOULD be the address the pending
+    // traffic uses, so the target's cache maps THAT address to our MAC
+    // (a link-local-only NS would leave the peer unable to reply to our
+    // global address without a resolution round of its own).
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) throw new Error('No IPv6 source address');
 
     const targetIpStr = targetIP.toString();
-    const waitPromise = waitForEvent(
-      this.getBus(),
-      'host.ndp.entry-learned',
-      (p) => p.deviceId === this.id && p.ip === targetIpStr,
-      { timeoutMs, scheduler: this.getScheduler() },
+    const attempts = Math.min(
+      NDP_MAX_MULTICAST_SOLICIT,
+      Math.max(1, Math.round(timeoutMs / NDP_RETRANS_TIMER_MS)),
     );
+    const perAttemptMs = Math.max(1, Math.floor(timeoutMs / attempts));
 
     const ns = createNeighborSolicitation(targetIP, port.getMAC());
     const nsPkt = createIPv6Packet(
@@ -2530,20 +2589,47 @@ export abstract class EndHost extends Equipment {
     );
     const dstMAC = targetIP.toSolicitedNodeMulticast().toMulticastMAC();
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC,
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const waitPromise = waitForEvent(
+        this.getBus(),
+        'host.ndp.entry-learned',
+        (p) => p.deviceId === this.id && p.ip === targetIpStr,
+        { timeoutMs: perAttemptMs, scheduler: this.getScheduler() },
+      );
+
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC,
+        etherType: ETHERTYPE_IPV6, payload: nsPkt,
+      });
+
+      Logger.debug(this.id, 'ndp:ns-sent',
+        `${this.name}: NS for ${targetIP} sent (attempt ${attempt}/${attempts})`);
+
+      try {
+        const learned = await waitPromise;
+        return new MACAddress(learned.mac);
+      } catch (err) {
+        if (!(err instanceof WaitForEventTimeoutError)) throw err;
+      }
+    }
+    throw new Error('NDP timeout');
+  }
+
+  private sendUnicastNeighborSolicit(ip: string, entry: NeighborCacheEntry): void {
+    const port = this.ports.get(entry.iface);
+    if (!port || !port.isIPv6Enabled()) return;
+    const targetIP = new IPv6Address(ip);
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return;
+
+    const ns = createNeighborSolicitation(targetIP, port.getMAC());
+    const nsPkt = createIPv6Packet(srcIP, targetIP, IP_PROTO_ICMPV6, 255, ns, 24);
+    this.sendFrame(entry.iface, {
+      srcMAC: port.getMAC(), dstMAC: entry.mac,
       etherType: ETHERTYPE_IPV6, payload: nsPkt,
     });
-
-    Logger.debug(this.id, 'ndp:ns-sent', `${this.name}: NS for ${targetIP} sent`);
-
-    try {
-      const learned = await waitPromise;
-      return new MACAddress(learned.mac);
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) throw new Error('NDP timeout');
-      throw err;
-    }
   }
 
   // ─── IPv6 Route Resolution (LPM) ────────────────────────────────

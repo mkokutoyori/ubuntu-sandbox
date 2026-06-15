@@ -5,12 +5,13 @@
  * Queries against these views return simulated metadata from the storage layer.
  */
 
+import { TableHistory } from './flashback/TableHistory';
 import { BaseCatalog, type CatalogUser, type CatalogPrivilege } from '../engine/catalog/BaseCatalog';
 import { type ResultSet, queryResult, emptyResult } from '../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/DataType';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
-import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { ORACLE_CONFIG } from './OracleConfig';
 import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './views/registry';
 import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
@@ -57,6 +58,64 @@ export interface EnumeratedObject {
 }
 
 /** Audit trail entry shape */
+/**
+ * One materialized view. The container table (rows) lives in storage
+ * under the same owner/name; this is the dictionary side of the object.
+ */
+export interface MaterializedViewMeta {
+  owner: string;
+  name: string;
+  /** Defining query, kept as AST so REFRESH can re-execute it. */
+  queryAst: unknown;
+  /** Original SQL text, surfaced by DBA_MVIEWS.QUERY. */
+  queryText: string;
+  buildMode: 'IMMEDIATE' | 'DEFERRED';
+  refreshMethod: 'COMPLETE' | 'FORCE' | 'FAST';
+  refreshMode: 'DEMAND' | 'COMMIT';
+  /** Base tables the query reads — drives staleness on DML. */
+  baseTables: { schema: string; table: string }[];
+  lastRefresh: Date | null;
+  staleness: 'FRESH' | 'STALE' | 'UNUSABLE';
+}
+
+/** One database link — PUBLIC links are owned by 'PUBLIC'. */
+export interface DbLinkMeta {
+  owner: string;
+  name: string;
+  /** CONNECT TO user, when the link carries fixed credentials. */
+  username: string | null;
+  /** CONNECT TO … IDENTIFIED BY password — used to open the remote
+   *  session at query time; never exposed by the dictionary views. */
+  password: string | null;
+  /** The USING 'tns_alias' connect string. */
+  host: string | null;
+  created: Date;
+}
+
+/**
+ * One directory object — a SQL name bound to a path on the database
+ * server's host filesystem. Always owned by SYS in Oracle (the dictionary
+ * reports OWNER = 'SYS' regardless of who issued CREATE DIRECTORY).
+ */
+export interface DirectoryMeta {
+  /** Uppercased object name (the namespace is global, not schema-scoped). */
+  name: string;
+  /** Host filesystem path exactly as written in the AS clause. */
+  path: string;
+  created: Date;
+}
+
+export interface MviewLogMeta {
+  owner: string;
+  master: string;
+  logTable: string;
+  withRowid: boolean;
+  withPrimaryKey: boolean;
+  withSequence: boolean;
+  pendingChanges: number;
+  created: Date;
+}
+
 export interface AuditEntry {
   sessionId: number;
   osUsername: string;
@@ -527,6 +586,115 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Read-only snapshot of the audit trail (most recent last). */
   getAuditTrail(): readonly AuditEntry[] { return this.auditTrail; }
+
+  // ── Materialized views ────────────────────────────────────────────
+  //
+  // The MV container rows live in storage as a real table (that is what
+  // makes SELECT work); this registry holds what makes it a materialized
+  // view: the defining query, refresh metadata, and staleness. DML on a
+  // base table flips dependent MVs to STALE (executor choke point).
+
+  private materializedViews: Map<string, MaterializedViewMeta> = new Map();
+  private static mvKey(owner: string, name: string): string {
+    return `${owner.toUpperCase()}.${name.toUpperCase()}`;
+  }
+
+  registerMaterializedView(meta: MaterializedViewMeta): void {
+    this.materializedViews.set(OracleCatalog.mvKey(meta.owner, meta.name), meta);
+  }
+
+  getMaterializedView(owner: string, name: string): MaterializedViewMeta | undefined {
+    return this.materializedViews.get(OracleCatalog.mvKey(owner, name));
+  }
+
+  getMaterializedViews(): readonly MaterializedViewMeta[] {
+    return [...this.materializedViews.values()];
+  }
+
+  dropMaterializedView(owner: string, name: string): boolean {
+    return this.materializedViews.delete(OracleCatalog.mvKey(owner, name));
+  }
+
+  readonly tableHistory = new TableHistory();
+
+  // ── Database links ────────────────────────────────────────────────
+
+  private dbLinks: Map<string, DbLinkMeta> = new Map();
+
+  registerDbLink(meta: DbLinkMeta): void {
+    this.dbLinks.set(OracleCatalog.mvKey(meta.owner, meta.name), meta);
+  }
+
+  getDbLink(owner: string, name: string): DbLinkMeta | undefined {
+    return this.dbLinks.get(OracleCatalog.mvKey(owner, name));
+  }
+
+  getDbLinks(): readonly DbLinkMeta[] {
+    return [...this.dbLinks.values()];
+  }
+
+  dropDbLink(owner: string, name: string): boolean {
+    return this.dbLinks.delete(OracleCatalog.mvKey(owner, name));
+  }
+
+  // ── Directory objects ─────────────────────────────────────────────
+  // Seeded with DATA_PUMP_DIR, the directory every Oracle install ships
+  // with (the former hardcoded DBA_DIRECTORIES row, now a real object).
+
+  private directories: Map<string, DirectoryMeta> = new Map([
+    ['DATA_PUMP_DIR', {
+      name: 'DATA_PUMP_DIR',
+      path: `${ORACLE_CONFIG.BASE}/admin/${ORACLE_CONFIG.SID}/dpdump/`,
+      created: new Date(),
+    }],
+  ]);
+
+  /** CREATE [OR REPLACE] DIRECTORY — replaces any existing binding. */
+  registerDirectory(meta: DirectoryMeta): void {
+    this.directories.set(meta.name.toUpperCase(), meta);
+  }
+
+  getDirectory(name: string): DirectoryMeta | undefined {
+    return this.directories.get(name.toUpperCase());
+  }
+
+  getDirectories(): readonly DirectoryMeta[] {
+    return [...this.directories.values()];
+  }
+
+  dropDirectory(name: string): boolean {
+    return this.directories.delete(name.toUpperCase());
+  }
+
+  private mviewLogs: Map<string, MviewLogMeta> = new Map();
+
+  registerMviewLog(meta: MviewLogMeta): void {
+    this.mviewLogs.set(OracleCatalog.mvKey(meta.owner, meta.master), meta);
+  }
+
+  getMviewLog(owner: string, master: string): MviewLogMeta | undefined {
+    return this.mviewLogs.get(OracleCatalog.mvKey(owner, master));
+  }
+
+  getMviewLogs(): readonly MviewLogMeta[] {
+    return [...this.mviewLogs.values()];
+  }
+
+  dropMviewLog(owner: string, master: string): boolean {
+    return this.mviewLogs.delete(OracleCatalog.mvKey(owner, master));
+  }
+
+  /** DML touched schema.table — every MV reading it is no longer fresh. */
+  markMaterializedViewsStale(schema: string, table: string): void {
+    const s = schema.toUpperCase(); const t = table.toUpperCase();
+    const log = this.mviewLogs.get(OracleCatalog.mvKey(s, t));
+    if (log) log.pendingChanges++;
+    for (const mv of this.materializedViews.values()) {
+      if (mv.baseTables.some(b => b.schema === s && b.table === t)) {
+        mv.staleness = 'STALE';
+      }
+    }
+  }
 
   /** Read-only snapshot of statement audit options. */
   getStmtAuditOpts(): readonly StmtAuditOption[] { return this.stmtAuditOpts; }
@@ -1355,6 +1523,17 @@ export class OracleCatalog extends BaseCatalog {
         timestamp: ts(created), status: 'VALID',
         temporary: 'N', generated: 'N', secondary: 'N',
         namespace: 1, oracleMaintained: s.owner === 'PUBLIC' || SYS_SCHEMAS.has(s.owner) ? 'Y' : 'N',
+      });
+    }
+
+    for (const d of this.getDirectories()) {
+      out.push({
+        owner: 'SYS', name: d.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: 'DIRECTORY', created: d.created, lastDdl: d.created,
+        timestamp: ts(d.created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 4, oracleMaintained: d.name === 'DATA_PUMP_DIR' ? 'Y' : 'N',
       });
     }
 

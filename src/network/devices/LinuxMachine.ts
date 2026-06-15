@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
+import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -31,6 +32,7 @@ import {
   SubnetMask,
   type DeviceType,
   type IPv4Packet,
+  type IPv6Address,
   type MACAddress,
 } from '../core/types';
 
@@ -75,6 +77,7 @@ import {
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
+import { buildIpCtx } from './linux/commands/net/Ip';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
@@ -92,7 +95,8 @@ function globMatch(pattern: string, candidate: string): boolean {
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
-export abstract class LinuxMachine extends EndHost {
+export abstract class LinuxMachine extends EndHost
+  implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   protected readonly defaultTTL = 64;
 
   /** Active profile — describes the "flavor" of this Linux machine. */
@@ -151,11 +155,30 @@ export abstract class LinuxMachine extends EndHost {
     // source of truth — including via compound commands and ssh exec.
     this.executor.setSessionTable(this.sessionTable);
     this.executor.attachEventBus(this.getBus(), this.id);
-    this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
+    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx));
+    // NSS `dns` source resolves through real UDP/53 once resolv.conf
+    // names a non-loopback server (loopback = systemd-resolved stub,
+    // modelled by the legacy fallback).
+    this.executor.dnsNss.setWireResolver({
+      nameservers: () => {
+        const content = this.executor.readFile('/etc/resolv.conf') ?? '';
+        return [...content.matchAll(/^\s*nameserver\s+(\S+)/gm)]
+          .map(m => m[1])
+          .filter(ip => !ip.startsWith('127.'))
+          .slice(0, 3);
+      },
+      query: (serverIp, name, qtype) => {
+        try {
+          return this.queryDnsServerSync(new IPAddress(serverIp), name, qtype);
+        } catch {
+          return null;
+        }
+      },
+    });
 
     // 4. Command registry
     this.commands = new LinuxCommandRegistry();
@@ -1030,161 +1053,6 @@ export abstract class LinuxMachine extends EndHost {
     return null;
   }
 
-  // ─── IpNetworkContext adapter (for the `ip` command) ────────────────
-
-  private buildIpNetworkContext(): IpNetworkContext {
-    const self = this;
-    return {
-      getInterfaceNames(): string[] {
-        const names: string[] = [];
-        for (const [name] of self.ports) names.push(name);
-        return names;
-      },
-      getInterfaceInfo(name: string): IpInterfaceInfo | null {
-        const port = self.ports.get(name);
-        if (!port) return null;
-        const ip = port.getIPAddress();
-        const mask = port.getSubnetMask();
-        const counters = port.getCounters();
-        return {
-          name: port.getName(),
-          mac: port.getMAC().toString(),
-          ip: ip ? ip.toString() : null,
-          mask: mask ? mask.toString() : null,
-          cidr: mask ? mask.toCIDR() : null,
-          mtu: port.getMTU(),
-          isUp: port.getIsUp(),
-          isConnected: port.isConnected(),
-          isDHCP: self.isDHCPConfigured(name),
-          counters: {
-            framesIn: counters.framesIn,
-            framesOut: counters.framesOut,
-            bytesIn: counters.bytesIn,
-            bytesOut: counters.bytesOut,
-          },
-        };
-      },
-      configureInterface(ifName: string, ip: string, cidr: number): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `Cannot find device "${ifName}"`;
-        try {
-          const mask = SubnetMask.fromCIDR(cidr);
-          self.configureInterface(ifName, new IPAddress(ip), mask);
-          return '';
-        } catch (e: any) {
-          return `Error: ${e.message}`;
-        }
-      },
-      removeInterfaceIP(ifName: string): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `Cannot find device "${ifName}"`;
-        port.clearIP();
-        return '';
-      },
-      getRoutingTable(): IpRouteEntry[] {
-        const table = self.getRoutingTable();
-        return table.map(r => ({
-          network: r.network.toString(),
-          cidr: r.mask.toCIDR(),
-          nextHop: r.nextHop ? r.nextHop.toString() : null,
-          iface: r.iface,
-          type: r.type,
-          metric: r.metric,
-          isDHCP: self.isDHCPConfigured(r.iface),
-          srcIp: r.type === 'connected' ? self.ports.get(r.iface)?.getIPAddress()?.toString() : undefined,
-        }));
-      },
-      addDefaultRoute(gateway: string): string {
-        try {
-          self.setDefaultGateway(new IPAddress(gateway));
-          return '';
-        } catch (e: any) {
-          return `Error: ${e.message}`;
-        }
-      },
-      addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
-        try {
-          const mask = SubnetMask.fromCIDR(cidr);
-          if (!self.addStaticRoute(new IPAddress(network), mask, new IPAddress(gateway), metric ?? 100)) {
-            return 'RTNETLINK answers: Network is unreachable';
-          }
-          return '';
-        } catch (e: any) {
-          return `Error: ${e.message}`;
-        }
-      },
-      deleteDefaultRoute(): string {
-        if (!self.getDefaultGateway()) return 'RTNETLINK answers: No such process';
-        self.clearDefaultGateway();
-        return '';
-      },
-      deleteRoute(network: string, cidr: number): string {
-        try {
-          const mask = SubnetMask.fromCIDR(cidr);
-          if (!self.removeRoute(new IPAddress(network), mask)) {
-            return 'RTNETLINK answers: No such process';
-          }
-          return '';
-        } catch (e: any) {
-          return `Error: ${e.message}`;
-        }
-      },
-      getNeighborTable(): IpNeighborEntry[] {
-        const entries: IpNeighborEntry[] = [];
-        for (const [ip, entry] of self.arpTable) {
-          entries.push({
-            ip,
-            mac: entry.mac.toString(),
-            iface: entry.iface,
-            state: getNUDState(entry),
-          });
-        }
-        return entries;
-      },
-      addNeighbor(ip: string, mac: string, ifName: string): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `RTNETLINK answers: No such device`;
-        try {
-          const macAddr = new MACAddress(mac);
-          self.addStaticARP(ip, macAddr, ifName);
-          return '';
-        } catch {
-          return 'RTNETLINK answers: Invalid argument';
-        }
-      },
-      deleteNeighbor(ip: string, ifName: string): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `RTNETLINK answers: No such device`;
-        const removed = self.deleteARP(ip);
-        if (!removed) return 'RTNETLINK answers: No such file or directory';
-        return '';
-      },
-      flushNeighbors(ifName?: string): string {
-        if (ifName) {
-          for (const [ip, entry] of self.arpTable) {
-            if (entry.iface === ifName) self.arpTable.delete(ip);
-          }
-        } else {
-          self.clearARPTable();
-        }
-        return '';
-      },
-      setInterfaceUp(ifName: string): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `Cannot find device "${ifName}"`;
-        port.setUp(true);
-        return '';
-      },
-      setInterfaceDown(ifName: string): string {
-        const port = self.ports.get(ifName);
-        if (!port) return `Cannot find device "${ifName}"`;
-        port.setUp(false);
-        return '';
-      },
-      xfrm: self.xfrmCtx,
-    };
-  }
-
   // ─── LinuxNetKernel façade (closes over EndHost protected members) ──
 
   private buildNetKernel(): LinuxNetKernel {
@@ -1209,6 +1077,9 @@ export abstract class LinuxMachine extends EndHost {
       },
       getRoutingTable(): HostRouteEntry[] {
         return self.getRoutingTable();
+      },
+      getIPv6RoutingTable() {
+        return self.getIPv6RoutingTable();
       },
       addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean {
         return self.addStaticRoute(network, mask, gw, metric ?? 100);
@@ -1244,6 +1115,13 @@ export abstract class LinuxMachine extends EndHost {
         ttl?: number,
       ): Promise<PingResult[]> {
         return self.executePingSequence(target, count, timeoutMs, ttl);
+      },
+      ping6Sequence(
+        target: IPv6Address,
+        count: number,
+        timeoutMs = 2000,
+      ): Promise<PingResult[]> {
+        return self.executePing6Sequence(target, count, timeoutMs);
       },
       async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]> {
         const hops = await self.executeTraceroute(target, maxHops, 2000, probesPerHop, firstTtl);
@@ -1410,9 +1288,9 @@ export abstract class LinuxMachine extends EndHost {
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
-  installSystemFile(path: string, content: string): boolean {
+  installSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
-    return this.executor.vfs.writeFile(absPath, content, 0, 0, 0o022);
+    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
   /**
@@ -1439,6 +1317,11 @@ export abstract class LinuxMachine extends EndHost {
       execStop?: string;
       user?: string;
       after?: string[];
+      listener?: {
+        processName: string;
+        daemonCommand?: string;
+        sockets: { port: number; protocol: 'tcp' | 'udp'; address?: string }[];
+      };
     },
     desired: 'active' | 'inactive',
   ): void {
@@ -1467,6 +1350,10 @@ export abstract class LinuxMachine extends EndHost {
     );
     this.executor.vfs.writeFile(path, lines.join('\n'), 0, 0, 0o022);
     const mgr = this.executor.serviceMgr;
+    // Declare the unit's sockets/daemon BEFORE the reload so the scan
+    // stamps them and the port projection binds/unbinds them on
+    // start/stop — netstat/ss/ps stay coherent with the service state.
+    if (spec.listener) mgr.registerServiceListener(spec.name, spec.listener);
     mgr.daemonReload();
     if (desired === 'active') {
       mgr.enable(spec.name);

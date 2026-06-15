@@ -623,6 +623,8 @@ export const IP_PROTO_TCP  = 6;
 export const IP_PROTO_UDP  = 17;
 export const IP_PROTO_ESP  = 50;  // Encapsulating Security Payload (RFC 4303)
 export const IP_PROTO_AH   = 51;  // Authentication Header (RFC 4302)
+export const IP_PROTO_EIGRP = 88; // EIGRP (RFC 7868 §4.2 — runs directly over IP)
+export const IP_PROTO_OSPF = 89;  // OSPF (RFC 2328 §4.3 — runs directly over IP)
 
 /** IKE / NAT-T UDP ports */
 export const UDP_PORT_IKE       = 500;   // RFC 2408 ISAKMP
@@ -1411,64 +1413,6 @@ export type DeviceType =
   | 'hub'
   | 'access-point'
   | 'cloud';
-
-// ─── Device Categories (for UI palette) ──────────────────────────────
-
-export interface DeviceCategory {
-  id: string;
-  name: string;
-  devices: Array<{
-    type: DeviceType;
-    name: string;
-    description: string;
-  }>;
-}
-
-export const DEVICE_CATEGORIES: DeviceCategory[] = [
-  {
-    id: 'computers',
-    name: 'Computers',
-    devices: [
-      { type: 'linux-pc', name: 'Linux PC', description: 'Ubuntu/Debian workstation' },
-      { type: 'windows-pc', name: 'Windows PC', description: 'Windows 10/11 workstation' },
-      { type: 'mac-pc', name: 'Mac', description: 'macOS workstation' },
-    ],
-  },
-  {
-    id: 'servers',
-    name: 'Servers',
-    devices: [
-      { type: 'linux-server', name: 'Linux Server', description: 'Ubuntu/CentOS server' },
-      { type: 'windows-server', name: 'Windows Server', description: 'Windows Server 2019/2022' },
-    ],
-  },
-  {
-    id: 'switches',
-    name: 'Switches',
-    devices: [
-      { type: 'switch-cisco', name: 'Cisco Switch', description: 'Layer 2 switching device' },
-      { type: 'switch-huawei', name: 'Huawei Switch', description: 'Layer 2 switching device' },
-      { type: 'hub', name: 'Hub', description: 'Layer 1 repeater' },
-    ],
-  },
-  {
-    id: 'routers',
-    name: 'Routers',
-    devices: [
-      { type: 'router-cisco', name: 'Cisco Router', description: 'Layer 3 routing device' },
-      { type: 'router-huawei', name: 'Huawei Router', description: 'Layer 3 routing device' },
-    ],
-  },
-  {
-    id: 'security',
-    name: 'Firewalls',
-    devices: [
-      { type: 'firewall-cisco', name: 'Cisco ASA', description: 'Cisco Adaptive Security Appliance' },
-      { type: 'firewall-fortinet', name: 'FortiGate', description: 'Fortinet firewall' },
-      { type: 'firewall-paloalto', name: 'Palo Alto', description: 'Palo Alto firewall' },
-    ],
-  },
-];
 
 export type ConnectionType = 'ethernet' | 'serial' | 'console' | 'fiber';
 

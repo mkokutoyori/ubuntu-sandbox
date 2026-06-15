@@ -24,7 +24,7 @@
  *   └── WindowsTerminalSession   — CMD/PS dual-mode, shell nesting
  */
 
-import { Equipment } from '@/network';
+import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
@@ -192,7 +192,7 @@ export abstract class TerminalSession {
    * remote machine in (`LinuxTerminalSession.pushRemoteDevice`) and pop
    * back to the local one when the session ends.
    */
-  device: Equipment;
+  device: HostCapableDevice;
 
   // ── Observable state ──
   lines: OutputLine[] = [];
@@ -864,8 +864,8 @@ export abstract class TerminalSession {
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
-      currentUser: this.device.getCurrentUser(),
-      currentUid: this.device.getCurrentUid(),
+      currentUser: this.device.getCurrentUser?.() ?? 'user',
+      currentUid: this.device.getCurrentUid?.() ?? 0,
       metadata: new Map<string, unknown>([
         ['original_command', command],
         ...(extraMetadata ?? []),

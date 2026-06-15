@@ -15,6 +15,7 @@ import type { Port } from '../../hardware/Port';
 import type { WindowsUserManager } from './WindowsUserManager';
 import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
+import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
@@ -4373,12 +4374,7 @@ export class PowerShellExecutor {
   }
 
   private isValidIP(ip: string): boolean {
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
-      return ip.split('.').every(p => parseInt(p) <= 255);
-    }
-    // IPv6 basic check
-    if (/^[0-9a-f:]+$/i.test(ip) && ip.includes(':')) return true;
-    return false;
+    return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
   private handleNewNetIPAddress(args: string[]): string {

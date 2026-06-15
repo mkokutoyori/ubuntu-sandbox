@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-11T00:24:47.010Z
+Generated: 2026-06-12T11:48:19.006Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -652,17 +652,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003d        0x31d0      2
+  1.1.1.1         1.1.1.1         0           0x8000004c        0x40c1      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003e        0xafc       1
+  1.1.1.1         1.1.1.1         0           0x8000004d        0x1939      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003f        0x908b      2
+  1.1.1.1         1.1.1.1         0           0x8000004e        0x9f7c      2
   
 
 [151/311] r1 R1# show ip ospf database router
@@ -671,17 +671,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000040        0x3434      2
+  1.1.1.1         1.1.1.1         0           0x8000004f        0x4325      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000041        0xd3c       1
+  1.1.1.1         1.1.1.1         0           0x80000050        0x1c78      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000042        0x93ee      2
+  1.1.1.1         1.1.1.1         0           0x80000051        0xa2df      2
   
 
 [152/311] r1 R1# show ip ospf database network
@@ -715,11 +715,11 @@ Total steps: 311
   OSPF Router with ID (1.1.1.1) (Process ID 1)
   
     Area 1 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000049
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000058
     Area 2 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000004a
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000059
     Area 0 self-originated LSAs
-      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000004b
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000005a
 
 [158/311] r1 R1# show ip ospf interface
   Loopback1 is up, line protocol is up
@@ -818,7 +818,7 @@ Total steps: 311
   OSPF statistics:
     Rcvd: 0 total, 0 errors
     LSA: 3 total
-    SPF: 29 runs, last run recently
+    SPF: 34 runs, last run recently
     Neighbors: 0, Adjacent: 0
     Neighbor state changes: 0
   
@@ -973,8 +973,8 @@ Total steps: 311
     Rcvd: 0 total, 0 checksum errors
            0 hello, 0 database desc, 0 link state req
            0 link state updates, 0 link state acks
-    Sent: 0 total
-           0 hello, 0 database desc, 0 link state req
+    Sent: 6 total
+           6 hello, 0 database desc, 0 link state req
            0 link state updates, 0 link state acks
 
 [199/311] r1 R1# show ip ospf segment-routing
@@ -1189,17 +1189,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000079        0x6d94      2
+  1.1.1.1         1.1.1.1         0           0x80000088        0x7c85      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000007a        0x46ed      1
+  1.1.1.1         1.1.1.1         0           0x80000089        0x552a      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000007b        0xcc4f      2
+  1.1.1.1         1.1.1.1         0           0x8000008a        0xdb40      2
   
 
 [216/311] r1 R1# show ip ospf interface brief
@@ -1302,7 +1302,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD47ECF.122D0E56 (00:24:47.071 UTC Thu Jun 11 2026)
+  reference time is EDD67083.1A9FBE76 (11:48:19.104 UTC Fri Jun 12 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1311,7 +1311,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *00:24:47.000 UTC Thu Jun 11 2026
+  *11:48:19.000 UTC Fri Jun 12 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

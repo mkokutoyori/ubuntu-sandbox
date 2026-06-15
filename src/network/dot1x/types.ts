@@ -97,8 +97,6 @@ export interface Dot1xConfig {
   localUsers: Map<string, Dot1xLocalUser>;
   defaultMaxReauthReq: number;
   defaultHoldMs: number;
-  guestVlan: number | null;
-  reauthIntervalSec: number;
 }
 
 export function createDefaultDot1xConfig(): Dot1xConfig {
@@ -108,8 +106,6 @@ export function createDefaultDot1xConfig(): Dot1xConfig {
     localUsers: new Map(),
     defaultMaxReauthReq: 2,
     defaultHoldMs: 60_000,
-    guestVlan: null,
-    reauthIntervalSec: 3600,
   };
 }
 
