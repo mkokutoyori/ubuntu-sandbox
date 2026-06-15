@@ -24,7 +24,7 @@ export class SqlPlusShell extends AbstractShell {
     // argv the SQL*Plus engine expects (after stripping the verb).
     const args = (opts.launchLine ?? 'sqlplus').trim().split(/\s+/).slice(1);
     try {
-      const created = SqlPlusSubShell.create(opts.device, args);
+      const created = SqlPlusSubShell.create(opts.device, args, opts.user);
       this.subShell = created.subShell;
       this.banner = [...created.banner, ...created.loginOutput];
     } catch {

@@ -7,6 +7,7 @@
 
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from './OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
@@ -63,6 +64,44 @@ function provisionOracleAccount(deviceId: string): void {
   });
 }
 
+/** Capability a device exposes to report a user's OS identity. */
+interface OsIdentityHost {
+  getUserIdentity(user?: string): {
+    user: string; uid: number; primaryGroup: string; groups: string[]; isSuperuser: boolean;
+  };
+  getHostname?(): string;
+}
+
+/**
+ * Build the Oracle OS security context for the user who launched sqlplus,
+ * derived from the host's real user/group database, so that `AS SYSDBA`
+ * OS-authentication is grounded in actual group membership instead of a
+ * hardcoded flag. SYSDBA is granted to:
+ *   - the superuser (root), and
+ *   - members of the OSDBA group `dba` (Oracle's canonical rule), and
+ *   - members of `sudo` — the host's administrators, who can trivially
+ *     become the Oracle software owner (`sudo su - oracle`); modelling
+ *     them as DBA-capable keeps the admin cast coherent.
+ * A genuinely unprivileged user (in neither group) is refused with
+ * ORA-01031. Falls back to {@link DEFAULT_OS_CONTEXT} on equipment with
+ * no Linux IAM layer.
+ */
+function buildOracleOsContext(deviceId: string, osUser?: string): OsSecurityContext {
+  const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as Partial<OsIdentityHost> | null;
+  if (!dev || typeof dev.getUserIdentity !== 'function') return DEFAULT_OS_CONTEXT;
+  const id = dev.getUserIdentity(osUser);
+  const hostname = dev.getHostname?.() ?? 'localhost';
+  const isDba = id.isSuperuser || id.groups.includes('dba') || id.groups.includes('sudo');
+  return {
+    osUser: id.user,
+    osGroup: id.primaryGroup || id.groups[0] || 'dba',
+    isDbaGroup: isDba,
+    hostname,
+    terminal: 'pts/0',
+    program: `sqlplus@${hostname}`,
+  };
+}
+
 /**
  * Get or create an Oracle database for a device.
  * Automatically starts the instance and installs demo schemas on first access.
@@ -115,10 +154,15 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
  */
 export function createSQLPlusSession(
   deviceId: string,
-  args: string[]
+  args: string[],
+  osUser?: string,
 ): { session: SQLPlusSession; banner: string[]; loginOutput: string[] } {
   const db = getOracleDatabase(deviceId);
   const session = new SQLPlusSession(db);
+  // Bind the invoking OS user's real security context so OS authentication
+  // and the `AS SYSDBA` dba-group check are grounded in actual /etc/group
+  // membership rather than a hardcoded default.
+  session.setOsContext(buildOracleOsContext(deviceId, osUser));
 
   const banner = session.getBanner();
   let loginOutput: string[] = [];

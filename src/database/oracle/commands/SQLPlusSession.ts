@@ -21,6 +21,7 @@ import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
 import type { HostCommandRunner } from './HostCommandRunner';
+import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from '../security/types';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
 export type { ColumnFormat } from './QueryResultRenderer';
@@ -86,6 +87,12 @@ export class SQLPlusSession {
   private columnFormats: Map<string, ColumnFormat> = new Map();
   /** Optional host-shell executor for HOST / `!` commands. */
   private hostRunner: HostCommandRunner | null = null;
+  /**
+   * OS security context of the user who launched sqlplus (drives OS
+   * authentication and the SYSDBA/dba-group check). Undefined falls back
+   * to {@link DEFAULT_OS_CONTEXT}.
+   */
+  private osCtx: OsSecurityContext | undefined;
 
   private readonly commands: SqlPlusCommand[];
 
@@ -124,6 +131,11 @@ export class SQLPlusSession {
   }
 
   /** Wire a HOST executor (typically delegated to the underlying device). */
+  /** Bind the OS security context of the invoking user. */
+  setOsContext(ctx: OsSecurityContext | undefined): void {
+    this.osCtx = ctx;
+  }
+
   setHostCommandRunner(runner: HostCommandRunner | null): void {
     this.hostRunner = runner;
   }
@@ -155,11 +167,12 @@ export class SQLPlusSession {
 
     try {
       let result;
+      const osCtx = this.osCtx ?? DEFAULT_OS_CONTEXT;
       if (asSysdba) {
-        result = this.db.connectAsSysdba();
+        result = this.db.connectAsSysdba(osCtx);
         this.asSysdba = true;
       } else {
-        result = this.db.connect(username, password);
+        result = this.db.connect(username, password, osCtx);
         this.asSysdba = false;
       }
       this.executor = result.executor;

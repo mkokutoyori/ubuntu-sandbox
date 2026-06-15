@@ -51,6 +51,43 @@ Roadmap d'implémentation (un push par item) :
 
 ---
 
+## Incrément 3 — `AS SYSDBA` adossé à l'appartenance OS réelle
+
+### Défaillance corrigée
+
+`SQLPlusSession.login` appelait `db.connect`/`db.connectAsSysdba` **sans**
+contexte OS → utilisation de `DEFAULT_OS_CONTEXT` (`isDbaGroup: true` codé
+en dur). Conséquence : `sqlplus / as sysdba` réussissait pour **n'importe
+quel** utilisateur, quelle que soit son appartenance aux groupes. Le
+contrôle OSDBA (présent dans `OracleDatabase.connectAsSysdba`) était donc
+mort, jamais déclenché.
+
+### Correctif
+
+- `LinuxMachine.getUserIdentity(user?)` : nouvelle capacité exposant les
+  faits OS réels (groupe primaire, appartenances, superuser) depuis le
+  `LinuxUserManager` — pas de label codé en dur.
+- `database.ts` : `buildOracleOsContext(deviceId, osUser)` construit le
+  `OsSecurityContext` depuis ces faits ; SYSDBA accordé à root, aux membres
+  de `dba` (OSDBA) ou de `sudo` (admins pouvant devenir le propriétaire
+  Oracle), refusé sinon (ORA-01031).
+- L'utilisateur OS appelant est désormais threadé bout-en-bout :
+  `SqlPlusShell` (`opts.user`) → `SqlPlusSubShell.create(device, args,
+  osUser)` → `createSQLPlusSession(..., osUser)` → `SQLPlusSession`
+  (`setOsContext`, réutilisé aussi par la commande `CONNECT`) →
+  `db.connect`/`connectAsSysdba(osCtx)`.
+
+### Tests
+
+- Nouveau `oracle-sysdba-osauth.test.ts` (oracle/root/admin acceptés ;
+  utilisateur non privilégié refusé ORA-01031 ; ajout dynamique à `dba`
+  ⇒ accès accordé).
+- Tests SSH→Linux→sqlplus DBA (`ssh-database-and-keys`) : passent (l'admin
+  `alice` est membre de `sudo`). Database (2640) + terminal/shell (967) :
+  **OK**, 0 régression.
+
+---
+
 ## Incrément 2 — Identité OS Oracle (`oracle`:`oinstall`+`dba`) réelle
 
 ### Défaillance corrigée

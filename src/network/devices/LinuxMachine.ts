@@ -1446,6 +1446,34 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   /**
+   * Report the OS identity facts of a user (defaulting to the current
+   * shell user): primary group, all group memberships and whether it is
+   * the superuser. Callers (e.g. the Oracle SQL*Plus layer) build their
+   * own security context from this — the device exposes the OS truth, not
+   * a hardcoded label, so checks like `AS SYSDBA` (OSDBA/dba group) are
+   * grounded in real group membership.
+   */
+  getUserIdentity(user?: string): {
+    user: string; uid: number; primaryGroup: string; groups: string[]; isSuperuser: boolean;
+  } {
+    const um = this.executor.userMgr;
+    const name = user && user.length > 0 ? user : um.currentUser;
+    const entry = um.getUser(name);
+    const groupEntries = (um.getUserGroups?.(name) ?? []) as Array<{ name: string; gid: number }>;
+    const groups = groupEntries.map((g) => g.name);
+    const primaryGroup = entry
+      ? (groupEntries.find((g) => g.gid === entry.gid)?.name ?? groups[0] ?? '')
+      : '';
+    return {
+      user: name,
+      uid: entry?.uid ?? -1,
+      primaryGroup,
+      groups,
+      isSuperuser: (entry?.uid ?? -1) === 0,
+    };
+  }
+
+  /**
    * Idempotently provision a service account (group(s) + dedicated user)
    * on the host — the way a daemon package's post-install, or an Oracle
    * installer, creates its runtime identity (`oracle` user, `oinstall`/

@@ -42,10 +42,11 @@ export class SqlPlusSubShell implements ISubShell {
   static create(
     device: Equipment,
     args: string[],
+    osUser?: string,
   ): { subShell: SqlPlusSubShell; banner: string[]; loginOutput: string[] } {
     initOracleFilesystem(device);
     const deviceId = device.getId();
-    const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
+    const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args, osUser);
 
     const host = asSyncShellHost(device);
     if (host) {
