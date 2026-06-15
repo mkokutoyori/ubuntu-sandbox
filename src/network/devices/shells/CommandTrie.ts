@@ -67,6 +67,7 @@ export interface MatchResult {
 
 export class CommandTrie {
   private root: CommandNode;
+  private canonicalDescriptions = new Map<string, string>();
 
   constructor() {
     this.root = this.createNode('', 'Root');
@@ -74,6 +75,23 @@ export class CommandTrie {
 
   private createNode(keyword: string, description: string): CommandNode {
     return { keyword, description, children: new Map(), params: [] };
+  }
+
+  /**
+   * Provide a canonical description for a top-level keyword. It is used in ?
+   * help only when the node was left with the placeholder description that
+   * equals its own keyword (i.e. the keyword is just a prefix of longer
+   * commands and no command terminates exactly on it).
+   */
+  setCanonicalDescription(keyword: string, description: string): void {
+    this.canonicalDescriptions.set(keyword.toLowerCase(), description);
+  }
+
+  private resolveDescription(node: CommandNode): string {
+    if (node.description === node.keyword) {
+      return this.canonicalDescriptions.get(node.keyword) ?? node.description;
+    }
+    return node.description;
   }
 
   // ─── Tree Construction ──────────────────────────────────────────
@@ -319,7 +337,7 @@ export class CommandTrie {
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
         const matches = this.prefixMatch(node, token);
-        return matches.map(m => ({ keyword: m.keyword, description: m.description }));
+        return matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
       }
 
       // Complete token (followed by space or more tokens) → navigate
@@ -443,7 +461,7 @@ export class CommandTrie {
 
     // Keyword children
     for (const [, child] of node.children) {
-      results.push({ keyword: child.keyword, description: child.description });
+      results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
     }
 
     // Parameter specs

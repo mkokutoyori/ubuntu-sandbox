@@ -19,7 +19,16 @@ describe('Cisco reload — argument validation (no accidental immediate reload)'
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
     expect(await r.executeCommand('reload in 5')).toContain('Reload scheduled in 5 minutes');
+    expect(await r.executeCommand('show reload')).toMatch(/Reload scheduled in [45] minutes/);
     expect(await r.executeCommand('reload cancel')).toContain('Reload cancelled');
-    expect(await r.executeCommand('reload')).toContain('Reload requested');
+    expect(await r.executeCommand('show reload')).toBe('No reload is scheduled.');
+  });
+
+  it('bare reload actually restarts the router (genuine power cycle, not cosmetic)', async () => {
+    const r = new CiscoRouter('R1');
+    await r.executeCommand('enable');
+    const out = await r.executeCommand('reload');
+    expect(out).toContain('System restarting');
+    expect(r.getIsPoweredOn()).toBe(true);
   });
 });

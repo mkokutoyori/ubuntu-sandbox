@@ -3102,3 +3102,27 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - +1 fichier de tests (cisco-switch-reload). Non-régression :
   **network-v2 complet — 7098 tests verts**. `tsc` propre ; aucun
   commentaire ajouté.
+
+### `reload` réellement partagé routeur+switch + descriptions d'aide ?
+
+- Suite : le routeur ne redémarrait pas vraiment (`reload` cosmétique →
+  « Reload requested », pas de power-cycle), seul le switch surchargeait le
+  comportement. Unifié : les hooks de base `performImmediateReload` /
+  `performScheduledReload` font désormais le vrai power-cycle
+  (`powerOff()`+`powerOn()`, retour en mode user) pour **routeur ET switch** ;
+  la surcharge switch est supprimée. `reload` redémarre maintenant
+  réellement le routeur (vérifié : `getIsPoweredOn()` revient à true,
+  « System restarting... »). Champs morts `_scheduleReload` /
+  `_getScheduledReloadMs` / `_scheduledReloadAtMs` retirés de `Router.ts`
+  (l'échéance est suivie par le shell de base, source unique).
+- Descriptions d'aide « paresseuses » : les mots-clés qui ne sont qu'un
+  préfixe (`show ...`, `configure terminal`, `no ...`, etc.) gardaient une
+  description = le mot-clé lui-même (« configure  configure »). Ajout de
+  `CommandTrie.setCanonicalDescription` consulté à l'affichage du `?`
+  (uniquement quand la description est le placeholder), + une table
+  canonique partagée (`applyCanonicalDescriptions`) appliquée aux tries
+  user/privileged/config de **tous** les équipements Cisco. Corrige
+  configure/show/no/clear/erase/sntp/copy/debug/undebug/write/event en EXEC
+  et configure/no/show/sntp/cdp/lldp/ip/ipv6/mac/errdisable/vtp/enable/
+  router/key/security/event/flow/parameter-map/zone/zone-pair en config.
+- Non-régression : **network-v2 complet — 7099 tests verts**. `tsc` propre.

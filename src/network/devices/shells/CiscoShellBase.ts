@@ -76,20 +76,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected getScheduledReloadMs(): number | null {
-    if (this.scheduledReloadAtMs !== null) return this.scheduledReloadAtMs;
-    const dev = this.d() as unknown as { _getScheduledReloadMs?: () => number | null };
-    return dev._getScheduledReloadMs?.() ?? null;
+    return this.scheduledReloadAtMs;
   }
 
   protected performImmediateReload(): string {
-    const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
-    dev._scheduleReload?.('immediate');
-    return 'Proceed with reload? [confirm]\nReload requested.';
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
+    return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
   }
 
   protected performScheduledReload(): void {
-    const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
-    dev._scheduleReload?.('immediate');
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
   }
 
   protected attachLoggingToDevice(device: TDevice): void {
@@ -253,6 +253,55 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonPrivilegedCommands();
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
+    this.applyCanonicalDescriptions();
+  }
+
+  /**
+   * Top-level keywords that only ever exist as a prefix of longer commands
+   * (e.g. `show ...`, `configure terminal`) keep the placeholder description
+   * equal to their keyword. These canonical descriptions give the ? help a
+   * proper line for them, shared by every Cisco device.
+   */
+  protected applyCanonicalDescriptions(): void {
+    const exec: Array<[string, string]> = [
+      ['configure', 'Enter configuration mode'],
+      ['show', 'Show running system information'],
+      ['no', 'Negate a command or set its defaults'],
+      ['clear', 'Reset functions'],
+      ['erase', 'Erase persistent storage'],
+      ['sntp', 'Configure SNTP'],
+      ['copy', 'Copy from one file to another'],
+      ['debug', 'Enable debugging functions'],
+      ['undebug', 'Disable debugging functions'],
+      ['write', 'Write running configuration to memory'],
+      ['event', 'Embedded Event Manager'],
+    ];
+    for (const trie of [this.userTrie, this.privilegedTrie]) {
+      for (const [k, d] of exec) trie.setCanonicalDescription(k, d);
+    }
+    const config: Array<[string, string]> = [
+      ['configure', 'Enter configuration mode'],
+      ['no', 'Negate a command or set its defaults'],
+      ['show', 'Show running system information'],
+      ['sntp', 'Configure SNTP'],
+      ['cdp', 'CDP global configuration'],
+      ['lldp', 'LLDP global configuration'],
+      ['ip', 'Global IP configuration subcommands'],
+      ['ipv6', 'Global IPv6 configuration subcommands'],
+      ['mac', 'MAC address table configuration'],
+      ['errdisable', 'Error-disable recovery configuration'],
+      ['vtp', 'VTP configuration'],
+      ['enable', 'Modify enable password parameters'],
+      ['router', 'Enable a routing protocol'],
+      ['key', 'Key management'],
+      ['security', 'Security configuration'],
+      ['event', 'Embedded Event Manager'],
+      ['flow', 'Flow monitoring configuration'],
+      ['parameter-map', 'Parameter map configuration'],
+      ['zone', 'Security zone'],
+      ['zone-pair', 'Security zone-pair'],
+    ];
+    for (const [k, d] of config) this.configTrie.setCanonicalDescription(k, d);
   }
 
   // ─── Execute Loop (shared) ──────────────────────────────────────
@@ -717,18 +766,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[OK]`;
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
-      const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
       if (args[0]?.toLowerCase() === 'cancel') {
         if (this.reloadTimer !== null) { clearTimeout(this.reloadTimer); this.reloadTimer = null; }
         this.scheduledReloadAtMs = null;
-        dev._scheduleReload?.('cancel');
         return 'Reload cancelled.';
       }
       if (args[0]?.toLowerCase() === 'in') {
         if (!args[1]) return '% Incomplete command.';
         if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
-        dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
         this.armReloadTimer(min * 60_000);
         return `Reload scheduled in ${min} minutes`;
       }

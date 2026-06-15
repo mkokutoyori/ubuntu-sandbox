@@ -1641,19 +1641,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Running Config Builder ───────────────────────────────────────
 
-  protected override performImmediateReload(): string {
-    this.d().powerOff();
-    this.d().powerOn();
-    this.mode = 'user';
-    return 'System restarting...';
-  }
-
-  protected override performScheduledReload(): void {
-    this.d().powerOff();
-    this.d().powerOn();
-    this.mode = 'user';
-  }
-
   buildRunningConfig(sw: Switch): string {
     const lines = [
       'Building configuration...',
