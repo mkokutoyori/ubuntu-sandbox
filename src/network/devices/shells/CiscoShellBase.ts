@@ -1490,6 +1490,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
         if (!range) return '';
+        if (kw === 'password' && !args[0]) return '% Incomplete command.';
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
@@ -1536,11 +1537,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
       const range = this.selectedVtyRange;
       if (!range) return '';
+      if (args.length === 0) return '% Incomplete command.';
+      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
+        return "% Invalid input detected at '^' marker.";
+      }
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       dev._getVtyLineConfig?.().upsert({
         first: range.first, last: range.last,
-        execTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
-        execTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+        execTimeoutMinutes: parseInt(args[0], 10),
+        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
       });
       return '';
     });
@@ -1548,8 +1553,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
       const range = this.selectedVtyRange;
       if (!range) return '';
+      if (!args[0] || !args[1]) return '% Incomplete command.';
+      const dir = args[1].toLowerCase();
+      if (dir !== 'in' && dir !== 'out') return "% Invalid input detected at '^' marker.";
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      const dir = (args[1] ?? 'in').toLowerCase();
       const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
       dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
       return '';
@@ -1563,13 +1570,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void;
         _getVtyLineConfig?: () => { upsert: (p: object) => void };
       };
-      if (args[0]?.toLowerCase() === 'input' && typeof dev._setVtyTransportInput === 'function') {
-        const proto = (args[1] ?? '').toLowerCase();
-        if (proto === 'all' || proto === 'ssh' || proto === 'telnet' || proto === 'none') {
-          dev._setVtyTransportInput(proto);
-          const range = this.selectedVtyRange;
-          if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
-        }
+      const dir = args[0]?.toLowerCase();
+      if (dir !== 'input' && dir !== 'output') return "% Invalid input detected at '^' marker.";
+      const proto = (args[1] ?? '').toLowerCase();
+      if (!proto) return '% Incomplete command.';
+      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (dir === 'input' && typeof dev._setVtyTransportInput === 'function') {
+        dev._setVtyTransportInput(proto);
+        const range = this.selectedVtyRange;
+        if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
       }
       return '';
     });
