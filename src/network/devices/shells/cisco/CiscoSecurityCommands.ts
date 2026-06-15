@@ -229,14 +229,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
   trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
-  trie.registerGreedy('hostname', 'Set hostname', (args) => {
-    if (args[0]) {
-      sec().hostname = args[0];
-      try { (ctx.r() as any).setHostname?.(args[0]); } catch { /* ignore */ }
-    }
-    return '';
-  });
-
   trie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
     if (args[0]) sec().domainName = args[0];
     return '';

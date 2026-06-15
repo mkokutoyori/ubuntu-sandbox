@@ -83,12 +83,6 @@ export interface CiscoShellContext {
 // ─── Global Config Mode Commands ─────────────────────────────────────
 
 export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('hostname', 'Set system hostname', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._setHostnameInternal(args[0]);
-    return '';
-  });
-
   trie.register('service dhcp', 'Enable DHCP service', () => {
     ctx.r()._getDHCPServerInternal().enable();
     return '';
