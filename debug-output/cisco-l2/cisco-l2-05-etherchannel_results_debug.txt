@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-06-15T18:31:54.717Z
+Generated: 2026-06-15T18:56:52.548Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -556,9 +556,6 @@ Total steps: 340
 
 
 --- [144] § per-channel-group inspection loop ---
-[144/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [145/340] sw1 SW1# show etherchannel 1 summary
   EtherChannel: no detail
 
@@ -615,9 +612,6 @@ Total steps: 340
 
 
 --- [163] § per-port-channel running-config loop ---
-[163/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [164/340] sw1 SW1# show running-config interface Port-channel1
   interface Port-channel1
   end
@@ -696,9 +690,6 @@ Total steps: 340
 
 
 --- [180] § full inspection ---
-[180/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [181/340] sw1 SW1# show etherchannel summary
   Flags:  D - down        P - bundled in port-channel
           I - stand-alone s - suspended
@@ -905,9 +896,6 @@ Total steps: 340
 
 
 --- [190] § per-interface etherchannel state loop (Fa0/4..0/21) ---
-[190/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [191/340] sw1 SW1# show interfaces FastEthernet0/4 etherchannel
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -1450,9 +1438,6 @@ Total steps: 340
 
 
 --- [209] § per-interface running-config loop (Fa0/4..0/21) ---
-[209/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [210/340] sw1 SW1# show running-config interface FastEthernet0/4
   interface FastEthernet0/4
    switchport mode access
@@ -1716,9 +1701,6 @@ Total steps: 340
 
 
 --- [256] § host verification ---
-[256/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [257/340] l1 l1$ ip -br addr
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
@@ -1783,12 +1765,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.548 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.384 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.578 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.377 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.384/0.966/1.548/0.582 ms
+  rtt min/avg/max/mdev = 0.377/0.978/1.578/0.601 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
@@ -1904,9 +1886,6 @@ Total steps: 340
 
 
 --- [268] § extended cross-switch interface inspection appendix ---
-[268/340] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [269/340] sw1 SW1# show interfaces FastEthernet0/0
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-06-15T18:31:45.302Z
+Generated: 2026-06-15T18:55:23.408Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -73,7 +73,7 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *18:31:45.000 UTC Mon Jun 15 2026
+  *18:55:23.000 UTC Mon Jun 15 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
@@ -971,7 +971,7 @@ Total steps: 366
   Clock is unsynchronized, stratum 16, no reference clock
 
 [196/366] sw1 SW1(config)# do show clock
-  *18:31:45.000 UTC Mon Jun 15 2026
+  *18:55:23.000 UTC Mon Jun 15 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1083,9 +1083,6 @@ Total steps: 366
 
 
 --- [217] § per-interface discovery inspection loop ---
-[217/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [218/366] sw1 SW1# show cdp interface FastEthernet0/1
   FastEthernet0/0 is up, line protocol is down
     Encapsulation ARPA
@@ -6735,9 +6732,6 @@ Total steps: 366
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---
-[284/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [285/366] srv1 srv1$ ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
@@ -6869,9 +6863,6 @@ Total steps: 366
 
 
 --- [294] § extended cross-switch interface inspection appendix ---
-[294/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [295/366] sw1 SW1# show interfaces FastEthernet0/0
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----

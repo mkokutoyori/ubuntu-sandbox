@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-06-15T18:31:51.010Z
+Generated: 2026-06-15T18:55:54.544Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -97,53 +97,50 @@ Total steps: 346
 
 
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
-[8/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.998 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.512 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.285 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.503 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.512/1.255/1.998/0.743 ms
+  rtt min/avg/max/mdev = 0.503/1.394/2.285/0.891 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.390 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.486 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.474 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.498 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.390/0.438/0.486/0.048 ms
+  rtt min/avg/max/mdev = 0.474/0.486/0.498/0.012 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.640 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.519 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.685 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.541 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.519/0.579/0.640/0.061 ms
+  rtt min/avg/max/mdev = 0.541/0.613/0.685/0.072 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.444 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.300 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.558 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.448 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.300/0.372/0.444/0.072 ms
+  rtt min/avg/max/mdev = 0.448/0.503/0.558/0.055 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.567 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.324 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.818 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.578 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.324/0.446/0.567/0.121 ms
+  rtt min/avg/max/mdev = 0.578/0.698/0.818/0.120 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -160,23 +157,23 @@ Total steps: 346
   
   Pinging 192.168.1.13 with 32 bytes of data:
   Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
-  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=3ms TTL=64
   
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 3ms, Average = 2ms
 
 [16/346] w1 w1$ ping -n 2 192.168.1.21
   
   Pinging 192.168.1.21 with 32 bytes of data:
   Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
-  Reply from 192.168.1.21: bytes=32 time=14ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.21:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 14ms, Average = 7ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [17/346] w1 w1$ ping -n 2 192.168.1.22
   
@@ -202,93 +199,93 @@ Total steps: 346
 
 [19/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.163 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.156 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.204 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.653 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.156/0.159/0.163/0.004 ms
+  rtt min/avg/max/mdev = 0.204/0.428/0.653/0.224 ms
 
 [20/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.110 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.088 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.214 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=8.069 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.088/0.099/0.110/0.011 ms
+  rtt min/avg/max/mdev = 0.214/4.141/8.069/3.927 ms
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.212 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.309 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.313 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=3.310 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.212/0.261/0.309/0.049 ms
+  rtt min/avg/max/mdev = 0.313/1.812/3.310/1.499 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.240 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.169 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.268 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.231 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.169/0.205/0.240/0.035 ms
+  rtt min/avg/max/mdev = 0.231/0.250/0.268/0.018 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.198 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.225 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.214 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.182 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.198/0.212/0.225/0.013 ms
+  rtt min/avg/max/mdev = 0.182/0.198/0.214/0.016 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.223 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.183 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.276 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.214 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.183/0.203/0.223/0.020 ms
+  rtt min/avg/max/mdev = 0.214/0.245/0.276/0.031 ms
 
 [25/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.256 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.201 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.175 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.149 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.201/0.229/0.256/0.028 ms
+  rtt min/avg/max/mdev = 0.149/0.162/0.175/0.013 ms
 
 [26/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.242 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.206 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.274 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.223 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.206/0.224/0.242/0.018 ms
+  rtt min/avg/max/mdev = 0.223/0.249/0.274/0.026 ms
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.099 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.174 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.114 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.780 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.099/0.137/0.174/0.037 ms
+  rtt min/avg/max/mdev = 0.114/0.447/0.780/0.333 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.178 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.158 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.187 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.125 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.158/0.168/0.178/0.010 ms
+  rtt min/avg/max/mdev = 0.125/0.156/0.187/0.031 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -347,48 +344,48 @@ Total steps: 346
 
 [34/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.243 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.406 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.231 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.163 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.243/0.325/0.406/0.081 ms
+  rtt min/avg/max/mdev = 0.163/0.197/0.231/0.034 ms
 
 [35/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.328 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.160 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.304 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.358 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.160/0.244/0.328/0.084 ms
+  rtt min/avg/max/mdev = 0.304/0.331/0.358/0.027 ms
 
 [36/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.223 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.211 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.174 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.176 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.211/0.217/0.223/0.006 ms
+  rtt min/avg/max/mdev = 0.174/0.175/0.176/0.001 ms
 
 [37/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.108 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.087 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.127 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.086 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.087/0.097/0.108/0.011 ms
+  rtt min/avg/max/mdev = 0.086/0.107/0.127/0.020 ms
 
 [38/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.088 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.080 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.189 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.090 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.080/0.084/0.088/0.004 ms
+  rtt min/avg/max/mdev = 0.090/0.139/0.189/0.050 ms
 
 
 --- [39] § MAC table populated by matrix ---
@@ -447,9 +444,6 @@ Total steps: 346
 
 
 --- [44] § host ARP/neighbor tables after matrix ---
-[44/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [45/346] l1 l1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
   192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
@@ -625,12 +619,12 @@ Total steps: 346
 
 [70/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.263 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.102 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.247 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.098 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.102/0.182/0.263/0.080 ms
+  rtt min/avg/max/mdev = 0.098/0.173/0.247/0.074 ms
 
 [71/346] sw1 SW1# show mac address-table dynamic
   Mac Address Table
@@ -681,12 +675,12 @@ Total steps: 346
 
 [82/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.221 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.102 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.251 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.104 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.102/0.162/0.221/0.060 ms
+  rtt min/avg/max/mdev = 0.104/0.178/0.251/0.074 ms
 
 [83/346] sw1 SW1# show mac address-table
   Mac Address Table
@@ -701,53 +695,50 @@ Total steps: 346
 
 
 --- [84] § second connectivity matrix (re-learn) ---
-[84/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [85/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.214 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.095 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.145 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.105 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.095/0.155/0.214/0.059 ms
+  rtt min/avg/max/mdev = 0.105/0.125/0.145/0.020 ms
 
 [86/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.099 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.086 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.168 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.092 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.086/0.092/0.099/0.007 ms
+  rtt min/avg/max/mdev = 0.092/0.130/0.168/0.038 ms
 
 [87/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.356 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.273 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.231 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.192 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.273/0.315/0.356/0.041 ms
+  rtt min/avg/max/mdev = 0.192/0.212/0.231/0.019 ms
 
 [88/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.306 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.164 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.209 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.215 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.164/0.235/0.306/0.071 ms
+  rtt min/avg/max/mdev = 0.209/0.212/0.215/0.003 ms
 
 [89/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.376 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.248 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.289 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.571 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.248/0.312/0.376/0.064 ms
+  rtt min/avg/max/mdev = 0.289/0.430/0.571/0.141 ms
 
 [90/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -806,93 +797,93 @@ Total steps: 346
 
 [95/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.136 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.091 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.115 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.098 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.091/0.113/0.136/0.022 ms
+  rtt min/avg/max/mdev = 0.098/0.107/0.115/0.008 ms
 
 [96/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.101 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.084 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.096 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.082 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.084/0.093/0.101/0.008 ms
+  rtt min/avg/max/mdev = 0.082/0.089/0.096/0.007 ms
 
 [97/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.270 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.180 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=5.971 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.204 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.180/0.225/0.270/0.045 ms
+  rtt min/avg/max/mdev = 0.204/3.088/5.971/2.883 ms
 
 [98/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
   64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.258 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.209 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.157 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.209/0.233/0.258/0.025 ms
+  rtt min/avg/max/mdev = 0.157/0.208/0.258/0.051 ms
 
 [99/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.182 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.167 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.185 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.151 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.167/0.175/0.182/0.007 ms
+  rtt min/avg/max/mdev = 0.151/0.168/0.185/0.017 ms
 
 [100/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.470 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.192 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.325 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.178 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.192/0.331/0.470/0.139 ms
+  rtt min/avg/max/mdev = 0.178/0.252/0.325/0.073 ms
 
 [101/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.266 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.238 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.217 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.211 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.238/0.252/0.266/0.014 ms
+  rtt min/avg/max/mdev = 0.211/0.214/0.217/0.003 ms
 
 [102/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.200 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.195 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.234 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.177 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.195/0.197/0.200/0.002 ms
+  rtt min/avg/max/mdev = 0.177/0.205/0.234/0.028 ms
 
 [103/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.154 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.117 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.099 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.092 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.117/0.136/0.154/0.018 ms
+  rtt min/avg/max/mdev = 0.092/0.096/0.099/0.003 ms
 
 [104/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.119 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.092 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.093 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.076 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.092/0.106/0.119/0.014 ms
+  rtt min/avg/max/mdev = 0.076/0.085/0.093/0.008 ms
 
 [105/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -951,54 +942,51 @@ Total steps: 346
 
 [110/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.203 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.252 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.173 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.232 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.203/0.228/0.252/0.024 ms
+  rtt min/avg/max/mdev = 0.173/0.703/1.232/0.529 ms
 
 [111/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.292 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.192 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.251 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.202 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.192/0.242/0.292/0.050 ms
+  rtt min/avg/max/mdev = 0.202/0.227/0.251/0.025 ms
 
 [112/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.294 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.238 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.167 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.180 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.238/0.266/0.294/0.028 ms
+  rtt min/avg/max/mdev = 0.167/0.173/0.180/0.006 ms
 
 [113/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.298 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.106 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.101 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.081 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.106/0.202/0.298/0.096 ms
+  rtt min/avg/max/mdev = 0.081/0.091/0.101/0.010 ms
 
 [114/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.143 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.114 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.123 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.083 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.114/0.129/0.143/0.015 ms
+  rtt min/avg/max/mdev = 0.083/0.103/0.123/0.020 ms
 
 
 --- [115] § per-VLAN MAC inspection loop ---
-[115/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [116/346] sw1 SW1# show mac address-table vlan 1
   Mac Address Table
   1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
@@ -1025,9 +1013,6 @@ Total steps: 346
 
 
 --- [122] § per-interface MAC inspection loop ---
-[122/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [123/346] sw1 SW1# show mac address-table interface FastEthernet0/1
   Mac Address Table
   -------------------------------------------
@@ -1375,9 +1360,6 @@ Total steps: 346
 
 
 --- [146] § broadcast / unknown-unicast behavior ---
-[146/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [147/346] l1 l1$ ping -c 2 192.168.1.99
   PING 192.168.1.99 (192.168.1.99) 56(84) bytes of data.
   connect: Network is unreachable
@@ -1410,9 +1392,6 @@ Total steps: 346
 
 
 --- [150] § interface counters after traffic ---
-[150/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [151/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -1595,9 +1574,6 @@ Total steps: 346
 
 
 --- [157] § host MAC/link verification ---
-[157/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [158/346] l1 l1$ ip -br link
   1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
@@ -1657,9 +1633,6 @@ Total steps: 346
 
 
 --- [164] § interface counters loop (SW1 Fa0/1..0/23) ---
-[164/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [165/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -2352,9 +2325,6 @@ Total steps: 346
 
 
 --- [188] § per-interface MAC inspection loop (SW2) ---
-[188/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [189/346] sw2 SW2> show mac address-table interface FastEthernet0/1
   % Invalid input detected at '^' marker.
   show mac address-table interface FastEthernet0/1
@@ -2472,9 +2442,6 @@ Total steps: 346
 
 
 --- [212] § per-interface MAC inspection loop (CORE) ---
-[212/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [213/346] core CORE# show mac address-table interface FastEthernet0/1
   Mac Address Table
   -------------------------------------------
@@ -2887,9 +2854,6 @@ Total steps: 346
 
 
 --- [249] § full host inspection ---
-[249/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [250/346] l1 l1$ ip -br addr
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
@@ -3130,9 +3094,6 @@ Total steps: 346
 
 
 --- [268] § final MAC state ---
-[268/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [269/346] sw1 SW1# show mac address-table
   Mac Address Table
   -------------------------------------------
@@ -3272,9 +3233,6 @@ Total steps: 346
 
 
 --- [274] § extended cross-switch interface inspection appendix ---
-[274/346] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [275/346] sw1 SW1# show interfaces FastEthernet0/0
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -3996,124 +3954,724 @@ Total steps: 346
   Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [299/346] sw2 SW2> show interfaces FastEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/0
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [300/346] sw2 SW2> show interfaces FastEthernet0/1
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/1
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [301/346] sw2 SW2> show interfaces FastEthernet0/2
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/2
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [302/346] sw2 SW2> show interfaces FastEthernet0/3
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/3
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [303/346] sw2 SW2> show interfaces FastEthernet0/4
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/4
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [304/346] sw2 SW2> show interfaces FastEthernet0/5
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/5
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [305/346] sw2 SW2> show interfaces FastEthernet0/6
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/6
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [306/346] sw2 SW2> show interfaces FastEthernet0/7
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/7
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [307/346] sw2 SW2> show interfaces FastEthernet0/8
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/8
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [308/346] sw2 SW2> show interfaces FastEthernet0/9
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/9
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [309/346] sw2 SW2> show interfaces FastEthernet0/10
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/10
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [310/346] sw2 SW2> show interfaces FastEthernet0/11
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/11
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [311/346] sw2 SW2> show interfaces FastEthernet0/12
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/12
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [312/346] sw2 SW2> show interfaces FastEthernet0/13
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/13
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [313/346] sw2 SW2> show interfaces FastEthernet0/14
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/14
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [314/346] sw2 SW2> show interfaces FastEthernet0/15
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/15
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [315/346] sw2 SW2> show interfaces FastEthernet0/16
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/16
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [316/346] sw2 SW2> show interfaces FastEthernet0/17
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/17
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [317/346] sw2 SW2> show interfaces FastEthernet0/18
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/18
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [318/346] sw2 SW2> show interfaces FastEthernet0/19
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/19
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [319/346] sw2 SW2> show interfaces FastEthernet0/20
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/20
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [320/346] sw2 SW2> show interfaces FastEthernet0/21
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/21
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [321/346] sw2 SW2> show interfaces FastEthernet0/22
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/22
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [322/346] sw2 SW2> show interfaces FastEthernet0/23
-  % Invalid input detected at '^' marker.
-  show interfaces FastEthernet0/23
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 [323/346] core CORE# show interfaces FastEthernet0/0
   Port        Name               Status       Vlan       Duplex  Speed Type

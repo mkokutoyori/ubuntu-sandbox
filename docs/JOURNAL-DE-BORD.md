@@ -3177,3 +3177,31 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   implémenter ensuite (chantier conséquent, à valider).
 - Non-régression : **network-v2 complet — 7117 tests verts** (49 skipped).
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 46 — Analyse des dumps L2 : fichier 1 (CLI basics) + écarts comblés
+
+### Harnais de debug
+- `dumpL2` : les marqueurs `{ section }` sans `cmd` appelaient
+  `executeCommand(undefined)` → exceptions JS parasites. Corrigé (on saute
+  l'exécution quand `cmd` est vide).
+
+### Écarts réels comblés (fichier cisco-l2-01-cli-basics)
+- **Commandes `show` absentes en EXEC utilisateur** : en IOS réel la plupart
+  des `show` sont privilège 1. Le switch ne les enregistrait qu'en mode
+  privilégié. Ajout de `CommandTrie.copySubtreeChildrenInto('show', …)` :
+  CiscoShellBase recopie la sous-arborescence `show` du trie privilégié vers
+  le trie utilisateur (sauf la liste privilège-15 : running-config,
+  startup-config, tech-support, archive). Mécanisme **partagé routeur+switch**
+  (et donc tout vendor Cisco) ; `show interfaces status`, `show vlan brief`,
+  etc. fonctionnent désormais en EXEC utilisateur. Lit l'état réel (handlers
+  existants), aucun hardcode.
+- **`show flash:`** (forme canonique IOS avec deux-points) rejetée car
+  `flash:` est un token distinct de `flash`. Alias ajouté (même handler réel
+  `showFlash`).
+- `where` / `show sessions` : **NON implémentés** volontairement — ils
+  reflètent des sessions sortantes suspendues (Ctrl-Shift-6 x) non modélisées
+  dans le simulateur. Plutôt qu'un faux « % No connections open » hardcodé
+  (rejeté), on les laisse non gérés (honnête) en attendant une vraie gestion
+  des sessions sortantes. À noter pour un éventuel chantier.
+- Non-régression : **network-v2 — 7126 verts** ; 9 dumps L2 régénérés.
+  `tsc` propre ; aucun commentaire ajouté.

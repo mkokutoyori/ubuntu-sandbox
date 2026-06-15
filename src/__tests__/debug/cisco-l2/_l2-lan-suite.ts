@@ -128,6 +128,9 @@ export async function dumpL2(
       lines.push('');
       lines.push(`--- [${index}] § ${step.section} ---`);
     }
+    if (step.cmd === undefined || step.cmd === '') {
+      continue;
+    }
     if (!dev) {
       lines.push(`[${index}/${steps.length}] (${key})> ${step.cmd}`);
       lines.push(`<UNKNOWN DEVICE '${key}'>`);

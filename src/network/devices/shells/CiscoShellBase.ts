@@ -42,6 +42,10 @@ import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 
+const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
+  'running-config', 'startup-config', 'tech-support', 'archive',
+]);
+
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
@@ -254,6 +258,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
     this.privilegedTrie.importMissingFrom(this.userTrie);
+    this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW);
     this.applyCanonicalDescriptions();
   }
 
@@ -526,6 +531,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
+    trie.registerGreedy('show flash:', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
       return profile === 'router-isr2911'

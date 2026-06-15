@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-06-15T18:31:52.859Z
+Generated: 2026-06-15T18:56:43.675Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -27,6 +27,7 @@ Total steps: 366
     processes       processes
     memory          Display memory statistics
     flash           Display flash filesystem
+    flash:          Display flash filesystem
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
@@ -69,6 +70,10 @@ Total steps: 366
     udld            Display UDLD state
     access-lists    Display ACLs
     port-security   Display port security
+    interfaces      Display interface information
+    etherchannel    Display EtherChannel
+    vlan            Display VLAN information
+    current         Show pending MST config
 
 [3/366] sw1 SW1> s?
     show  Show running system information
@@ -96,7 +101,7 @@ Total steps: 366
   SW1 uptime is 0 days, 0 hours
 
 [10/366] sw1 SW1> show clock
-  *18:31:52.000 UTC Mon Jun 15 2026
+  *18:56:43.000 UTC Mon Jun 15 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -127,9 +132,34 @@ Total steps: 366
        ^
 
 [16/366] sw1 SW1> show interfaces status
-  % Invalid input detected at '^' marker.
-  show interfaces status
-       ^
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          connected    1          a-full  a-10001000BASE-T
 
 
 --- [17] § enter privileged EXEC ---
@@ -162,6 +192,7 @@ Total steps: 366
     processes       processes
     memory          Display memory statistics
     flash           Display flash filesystem
+    flash:          Display flash filesystem
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
@@ -345,9 +376,12 @@ Total steps: 366
   PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [30/366] sw1 SW1# show flash:
-  % Invalid input detected at '^' marker.
-  show flash:
-       ^
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
 
 [31/366] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
@@ -699,7 +733,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *18:31:52.000 UTC Mon Jun 15 2026
+  *18:56:43.000 UTC Mon Jun 15 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1344,9 +1378,6 @@ Total steps: 366
 
 
 --- [121] § per-interface inspection loop ---
-[121/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [122/366] sw1 SW1# show interfaces FastEthernet0/1
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -3184,9 +3215,6 @@ Total steps: 366
 
 
 --- [202] § per-interface counters & cdp loop ---
-[202/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [203/366] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
@@ -6317,9 +6345,6 @@ Total steps: 366
 
 
 --- [249] § broad host inspection across all six machines ---
-[249/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [250/366] l1 l1$ hostname
   linux-pc
 
@@ -6349,7 +6374,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   18:31:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -6429,7 +6454,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 6:31:52 PM
+  System Boot Time:          6/15/2026, 6:56:43 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -6484,7 +6509,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   18:31:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -6515,7 +6540,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   18:31:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -6595,7 +6620,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 6:31:52 PM
+  System Boot Time:          6/15/2026, 6:56:43 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -6650,27 +6675,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   18:31:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:56:43 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.890 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.402 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.728 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.435 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.402/1.146/1.890/0.744 ms
+  rtt min/avg/max/mdev = 0.435/1.082/1.728/0.647 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.519 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.454 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.482 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.549 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.454/0.486/0.519/0.033 ms
+  rtt min/avg/max/mdev = 0.482/0.515/0.549/0.033 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -6696,9 +6721,6 @@ Total steps: 366
 
 
 --- [294] § extended cross-switch interface inspection appendix ---
-[294/366] sw1 SW1# undefined
-<JS EXCEPTION> Cannot read properties of undefined (reading 'trim')
-
 [295/366] sw1 SW1# show interfaces FastEthernet0/0
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----

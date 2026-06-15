@@ -100,6 +100,24 @@ export class CommandTrie {
     }
   }
 
+  /**
+   * Copy the children of a top-level keyword node (e.g. all `show <x>`
+   * sub-commands) from this trie into a target trie's same keyword node,
+   * skipping a denylist and never overwriting existing children. Models
+   * Cisco's "most show commands are privilege-1": the privileged trie's
+   * show family is mirrored into user EXEC except the genuinely priv-15
+   * entries.
+   */
+  copySubtreeChildrenInto(keyword: string, target: CommandTrie, deny: ReadonlySet<string>): void {
+    const src = this.root.children.get(keyword.toLowerCase());
+    const dst = target.root.children.get(keyword.toLowerCase());
+    if (!src || !dst) return;
+    for (const [k, node] of src.children) {
+      if (deny.has(k)) continue;
+      if (!dst.children.has(k)) dst.children.set(k, node);
+    }
+  }
+
   private resolveDescription(node: CommandNode): string {
     if (node.description === node.keyword) {
       return this.canonicalDescriptions.get(node.keyword) ?? node.description;
