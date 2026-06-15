@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-06-15T19:58:19.431Z
+Generated: 2026-06-15T20:07:22.777Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 356
@@ -12,7 +12,8 @@ Total steps: 356
 <empty>
 
 [2/356] sw1 SW1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      1
 
 [3/356] sw1 SW1# show vtp status
   VTP Version capable             : 1 to 1
@@ -74,17 +75,18 @@ Total steps: 356
   Fa0/22          ACCESS           access         on
   Fa0/23          ACCESS           access         on
   Gi0/0           ACCESS           access         on
-  Gi0/1           ACCESS           access         on
+  Gi0/1           TRUNK            trunk          on
 
 [6/356] sw1 SW1# show interfaces GigabitEthernet0/1 switchport
   Name: Gi0/1
   Switchport: Enabled
-  Administrative Mode: static access
-  Operational Mode: access
+  Administrative Mode: trunk
+  Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: Off
+  Negotiation of Trunking: On
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Trunking VLANs Enabled: ALL
 
 
 --- [7] § VTP domain on CORE (server) ---
@@ -209,9 +211,9 @@ Total steps: 356
 <empty>
 
 [33/356] core CORE# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  GigabitEthernet0/0on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/0       on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [34/356] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -229,8 +231,8 @@ Total steps: 356
 <empty>
 
 [39/356] sw1 SW1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      1
 
 [40/356] sw2 SW2> configure terminal
   % Invalid input detected at '^' marker.
@@ -251,7 +253,8 @@ Total steps: 356
 <empty>
 
 [44/356] sw2 SW2> show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      1
 
 
 --- [45] § VTP VLAN propagation (create on server) ---
@@ -340,7 +343,7 @@ Total steps: 356
 [67/356] sw2 SW2> show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 
 --- [68] § DTP negotiation modes loop (SW1 Fa0/4..0/12) ---
@@ -596,33 +599,33 @@ Total steps: 356
 <empty>
 
 [127/356] sw1 SW1(config-if)# do show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [128/356] sw1 SW1(config-if)# switchport trunk allowed vlan 10,20,30,40
 <empty>
 
 [129/356] sw1 SW1(config-if)# do show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [130/356] sw1 SW1(config-if)# switchport trunk allowed vlan add 50,60
 <empty>
@@ -634,33 +637,33 @@ Total steps: 356
 <empty>
 
 [133/356] sw1 SW1(config-if)# do show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [134/356] sw1 SW1(config-if)# switchport trunk allowed vlan none
 <empty>
 
 [135/356] sw1 SW1(config-if)# do show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [136/356] sw1 SW1(config-if)# switchport trunk allowed vlan all
 <empty>
@@ -952,17 +955,17 @@ Total steps: 356
   Trunking Native Mode VLAN: 1 (default)
 
 [172/356] sw1 SW1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      99
 
 [173/356] sw1 SW1# show interfaces GigabitEthernet0/1 trunk
   % Invalid input detected at '^' marker.
@@ -1053,9 +1056,9 @@ Total steps: 356
   Number of config digest errors     : 0
 
 [189/356] core CORE# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  GigabitEthernet0/0on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/0       on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [190/356] core CORE# show vlan brief
   VLAN Name                             Status    Ports
@@ -1113,17 +1116,17 @@ Total steps: 356
   Number of config digest errors     : 0
 
 [194/356] sw1 SW1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 1
-  FastEthernet0/5on    802.1q         trunking 1
-  FastEthernet0/6on    802.1q         trunking 1
-  FastEthernet0/7on    802.1q         trunking 1
-  FastEthernet0/8on    802.1q         trunking 1
-  FastEthernet0/9on    802.1q         trunking 1
-  FastEthernet0/10on    802.1q         trunking 1
-  FastEthernet0/11on    802.1q         trunking 1
-  FastEthernet0/12on    802.1q         trunking 1
-  GigabitEthernet0/1on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      1
+  Fa0/5       on               802.1q         trunking      1
+  Fa0/6       on               802.1q         trunking      1
+  Fa0/7       on               802.1q         trunking      1
+  Fa0/8       on               802.1q         trunking      1
+  Fa0/9       on               802.1q         trunking      1
+  Fa0/10      on               802.1q         trunking      1
+  Fa0/11      on               802.1q         trunking      1
+  Fa0/12      on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      99
 
 [195/356] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
@@ -1149,14 +1152,13 @@ Total steps: 356
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  99      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 8
+  Total Mac Addresses for this criterion: 7
 
 [197/356] sw2 SW2> show vtp status
   VTP Version capable             : 1 to 1
   VTP version running             : 1
-  VTP Domain Name                 : <empty>
+  VTP Domain Name                 : LAB
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
   Device ID                       : 02:00:00:00:00:1b
@@ -1182,12 +1184,13 @@ Total steps: 356
   Number of config digest errors     : 0
 
 [199/356] sw2 SW2> show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      1
 
 [200/356] sw2 SW2> show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [201/356] sw2 SW2> show mac address-table
   Mac Address Table
@@ -1994,6 +1997,7 @@ Total steps: 356
    switchport mode trunk
    switchport trunk native vlan 99
    switchport trunk encapsulation dot1q
+   switchport trunk encapsulation dot1q
    switchport trunk pruning vlan 10,20
   !
   end
@@ -2538,11 +2542,11 @@ Total steps: 356
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 0 bytes, 0 no buffer
+       1 packets input, 0 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 0 bytes, 0 underruns
+       14 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

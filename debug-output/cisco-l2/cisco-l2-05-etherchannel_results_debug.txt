@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-06-15T19:58:29.320Z
+Generated: 2026-06-15T20:07:32.577Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -857,32 +857,32 @@ Total steps: 340
 [188/340] sw1 SW1# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 [189/340] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -1315,12 +1315,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.188 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.564 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.233 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.593 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.564/1.376/2.188/0.812 ms
+  rtt min/avg/max/mdev = 0.593/1.413/2.233/0.820 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
@@ -1430,7 +1430,8 @@ Total steps: 340
    switchport mode access
   !
   interface GigabitEthernet0/1
-   switchport mode access
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
   !
   end
 

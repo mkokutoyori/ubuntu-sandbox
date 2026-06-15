@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-06-15T19:58:27.287Z
+Generated: 2026-06-15T20:07:32.571Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -127,7 +127,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *19:58:27.000 UTC Mon Jun 15 2026
+  *20:07:32.000 UTC Mon Jun 15 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -136,6 +136,14 @@ Total steps: 366
     Interface    User               Mode         Idle     Peer Address
 
 [12/366] sw1 SW1> show history
+  enable
+  configure terminal
+  interface GigabitEthernet0/1
+  switchport trunk encapsulation dot1q
+  switchport mode trunk
+  exit
+  end
+  disable
   show version
   show clock
   show users
@@ -156,32 +164,32 @@ Total steps: 366
 [16/366] sw1 SW1> show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 
 --- [17] § enter privileged EXEC ---
@@ -386,7 +394,8 @@ Total steps: 366
    switchport mode access
   !
   interface GigabitEthernet0/1
-   switchport mode access
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
   !
   end
 
@@ -434,17 +443,17 @@ Total steps: 366
 [31/366] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [32/366] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [33/366] sw1 SW1# show vlan id 1
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [34/366] sw1 SW1# show mac address-table
   Mac Address Table
@@ -1047,46 +1056,47 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 0 bytes, 0 no buffer
+       9 packets input, 0 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       8 packets output, 0 bytes, 0 underruns
+       10 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [42/366] sw1 SW1# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 [43/366] sw1 SW1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      1
 
 [44/366] sw1 SW1# show interfaces counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
@@ -1115,7 +1125,7 @@ Total steps: 366
   Fa0/22                  0             0           0             0
   Fa0/23                  0             0           0             0
   Gi0/0                   0             0           0             0
-  Gi0/1                   0             7           0             8
+  Gi0/1                   0             9           0            10
 
 [45/366] sw1 SW1# show interfaces description
   Interface                      Status         Protocol Description
@@ -1245,7 +1255,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *19:58:27.000 UTC Mon Jun 15 2026
+  *20:07:32.000 UTC Mon Jun 15 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1557,7 +1567,8 @@ Total steps: 366
    switchport mode access
   !
   interface GigabitEthernet0/1
-   switchport mode access
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
   !
   end
 
@@ -1811,44 +1822,45 @@ Total steps: 366
    switchport mode access
   !
   interface GigabitEthernet0/1
-   switchport mode access
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
   !
   end
 
 [107/366] sw1 SW1# sh vl br
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [108/366] sw1 SW1# sh int status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1       LINK-TO-L1         connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4       UNUSED-RANGE       disabled     1          a-full  a-100 10/100BaseTX
-  Fa0/5       UNUSED-RANGE       disabled     1          a-full  a-100 10/100BaseTX
-  Fa0/6       UNUSED-RANGE       disabled     1          a-full  a-100 10/100BaseTX
-  Fa0/7       UNUSED-RANGE       disabled     1          a-full  a-100 10/100BaseTX
-  Fa0/8       UNUSED-RANGE       disabled     1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1       LINK-TO-L1         connected    1          a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/4       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
+  Fa0/5       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
+  Fa0/6       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
+  Fa0/7       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
+  Fa0/8       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 [109/366] sw1 SW1# sh mac add
   Mac Address Table
@@ -2659,11 +2671,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 0 bytes, 0 no buffer
+       9 packets input, 0 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       8 packets output, 0 bytes, 0 underruns
+       10 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2680,12 +2692,13 @@ Total steps: 366
 [171/366] sw1 SW1# show interfaces GigabitEthernet0/1 switchport
   Name: Gi0/1
   Switchport: Enabled
-  Administrative Mode: static access
-  Operational Mode: access
+  Administrative Mode: trunk
+  Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: Off
+  Negotiation of Trunking: On
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Trunking VLANs Enabled: ALL
 
 
 --- [172] § CORE & SW2 prompts ---
@@ -2721,10 +2734,12 @@ Total steps: 366
 [174/366] core CORE# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23
 
 [175/366] core CORE# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/0       on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 [176/366] sw2 SW2> enable
 <empty>
@@ -2773,32 +2788,32 @@ Total steps: 366
 [179/366] sw2 SW2# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 
 --- [180] § host inspection — L1 (Linux) ---
@@ -3329,7 +3344,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:07:32 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3409,7 +3424,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:58:27 PM
+  System Boot Time:          6/15/2026, 8:07:32 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3464,7 +3479,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:07:32 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3495,7 +3510,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:07:32 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3575,7 +3590,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:58:27 PM
+  System Boot Time:          6/15/2026, 8:07:32 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3630,27 +3645,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:07:32 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.263 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.462 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.174 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.509 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.462/1.362/2.263/0.901 ms
+  rtt min/avg/max/mdev = 0.509/1.342/2.174/0.832 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.697 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.701 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.804 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.593 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.697/0.699/0.701/0.002 ms
+  rtt min/avg/max/mdev = 0.593/0.699/0.804/0.106 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

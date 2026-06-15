@@ -1142,11 +1142,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      const rows = ['Port      Mode  Encapsulation  Status   Native vlan'];
+      const rows = ['Port        Mode             Encapsulation  Status        Native vlan'];
       for (const p of this.d().getPortNames()) {
         const c = this.d().getSwitchportConfig(p);
         if (c && c.mode === 'trunk') {
-          rows.push(`${p.padEnd(10)}on    802.1q         trunking ${c.trunkNativeVlan}`);
+          rows.push(
+            `${this.abbreviateInterface(p).padEnd(12)}${'on'.padEnd(17)}` +
+            `${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${c.trunkNativeVlan}`);
         }
       }
       return rows.join('\n');
@@ -1918,7 +1920,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const speed = portName.startsWith('Gi') ? 'a-1000' : 'a-100';
       const type = portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX';
 
-      lines.push(`${shortName}${desc}${status}${vlanStr.padEnd(11)}${duplex.padEnd(8)}${speed.padEnd(6)}${type}`);
+      lines.push(`${shortName}${desc}${status}${vlanStr.padEnd(11)}${duplex.padEnd(8)}${speed.padEnd(7)}${type}`);
     }
 
     return lines.join('\n');

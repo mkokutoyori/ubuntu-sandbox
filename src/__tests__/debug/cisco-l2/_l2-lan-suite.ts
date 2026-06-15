@@ -76,6 +76,22 @@ export async function buildLan(opts: BuildOptions = {}): Promise<L2Lab> {
   wire('sw1-core', sw1, 'GigabitEthernet0/1', core, 'GigabitEthernet0/1');
   wire('sw2-core', sw2, 'GigabitEthernet0/1', core, 'GigabitEthernet0/0');
 
+  const trunkUp = async (sw: CiscoSwitch, ports: string[]) => {
+    await sw.executeCommand('enable');
+    await sw.executeCommand('configure terminal');
+    for (const p of ports) {
+      await sw.executeCommand(`interface ${p}`);
+      await sw.executeCommand('switchport trunk encapsulation dot1q');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('exit');
+    }
+    await sw.executeCommand('end');
+    await sw.executeCommand('disable');
+  };
+  await trunkUp(sw1, ['GigabitEthernet0/1']);
+  await trunkUp(sw2, ['GigabitEthernet0/1']);
+  await trunkUp(core, ['GigabitEthernet0/0', 'GigabitEthernet0/1']);
+
   if (opts.configureHostIps !== false) {
     const mask = '255.255.255.0';
     await l1.executeCommand(`ifconfig eth0 192.168.1.11 netmask ${mask}`);

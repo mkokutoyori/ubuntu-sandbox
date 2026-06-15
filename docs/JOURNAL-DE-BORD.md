@@ -3274,3 +3274,18 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   précisément le stub interdit).
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 50 — Analyse dumps L2 : topologie réellement trunkée + formats corrigés
+
+- **Topologie « trunked » rendue vraie** : `buildLan` configure désormais
+  réellement les liaisons inter-switch en `switchport mode trunk` (SW1/SW2
+  Gi0/1, CORE Gi0/0+Gi0/1, encapsulation dot1q). La note de topologie n'est
+  plus trompeuse ; la connectivité VLAN 1 reste OK (VLAN natif sur le trunk).
+- **`show interfaces trunk`** : formatage corrigé (nom de port abrégé
+  `Gi0/1`, colonnes alignées) — auparavant « GigabitEthernet0/1on » (nom
+  trop long écrasant la colonne). Les trunks réels sont bien listés.
+- **`show interfaces status`** : colonne Speed/Type fusionnée
+  (`a-10001000BASE-T`) corrigée → `a-1000 1000BASE-T` ; la colonne Vlan
+  affiche « trunk » pour un port trunk.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés
+  (montrent maintenant les trunks) ; `tsc` propre ; aucun commentaire.

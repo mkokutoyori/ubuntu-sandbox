@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-06-15T19:58:19.410Z
+Generated: 2026-06-15T20:07:22.773Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 361
@@ -14,12 +14,12 @@ Total steps: 361
 [2/361] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [3/361] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
 [4/361] sw1 SW1# show vlan summary
   % Invalid input detected at '^' marker.
@@ -214,7 +214,7 @@ Total steps: 361
 [67/361] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
   10   VLAN_10                          active    
   20   VLAN_20                          active    
   30   VLAN_30                          active    
@@ -256,7 +256,7 @@ Total steps: 361
 [74/361] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
   10   VLAN_10                          active    
   20   VLAN_20                          active    
   30   VLAN_30                          active    
@@ -578,7 +578,7 @@ Total steps: 361
 [171/361] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Gi0/0, Gi0/1
+  1    default                          active    Fa0/0, Gi0/0
   10   VLAN_10                          active    Fa0/5, Fa0/10, Fa0/15, Fa0/20
   20   VLAN_20                          active    Fa0/1, Fa0/6, Fa0/11, Fa0/16, Fa0/21
   30   VLAN_30                          active    Fa0/2, Fa0/7, Fa0/12, Fa0/17, Fa0/22
@@ -613,32 +613,32 @@ Total steps: 361
 [172/361] sw1 SW1(config)# do show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    30         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    40         a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   50         a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   10         a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   20         a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   30         a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   40         a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   50         a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   10         a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   20         a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   30         a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   40         a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   50         a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   10         a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   20         a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   30         a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   40         a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   50         a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   10         a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   20         a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   30         a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   40         a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/1                          connected    20         a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    30         a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    40         a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   50         a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   10         a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   20         a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   30         a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   40         a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   50         a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   10         a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   20         a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   30         a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   40         a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   50         a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   10         a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   20         a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   30         a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   40         a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   50         a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   10         a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   20         a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   30         a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   40         a-full  a-100  10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
 
 
 --- [173] § inter-switch trunks (carry all VLANs) ---
@@ -746,7 +746,9 @@ Total steps: 361
 <empty>
 
 [206/361] core CORE# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/0       on               802.1q         trunking      1
+  Gi0/1       on               802.1q         trunking      1
 
 
 --- [207] § put L1 & L2 in VLAN 10 (same broadcast domain across trunk) ---
@@ -775,13 +777,13 @@ Total steps: 361
 --- [214] § connectivity: same VLAN across switches ---
 [214/361] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.331 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.800 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.730 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.587 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.737 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.957 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.730/1.287/2.331/0.739 ms
+  rtt min/avg/max/mdev = 0.737/1.427/2.587/0.825 ms
 
 [215/361] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -792,20 +794,22 @@ Total steps: 361
 
 [216/361] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.502 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.819 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.577 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.733 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.855 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.554 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.502/0.632/0.819/0.135 ms
+  rtt min/avg/max/mdev = 0.554/0.714/0.855/0.124 ms
 
 [217/361] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
   10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
 
 [218/361] sw2 SW2# show mac address-table vlan 10
   Mac Address Table
+  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
 
 [219/361] core CORE# show mac address-table
@@ -820,8 +824,10 @@ Total steps: 361
   1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
   
-  Total Mac Addresses for this criterion: 6
+  Total Mac Addresses for this criterion: 8
 
 
 --- [220] § connectivity: different VLAN, same switch (must fail) ---
@@ -843,21 +849,17 @@ Total steps: 361
 --- [222] § connectivity: different VLAN across switches (must fail) ---
 [222/361] l1 l1$ ping -c 1 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.956 ms
   
   --- 192.168.1.22 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.956/0.956/0.956/0.000 ms
+  1 packets transmitted, 0 received, 100% packet loss
 
 [223/361] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Request timed out.
   
   Ping statistics for 192.168.1.11:
-      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
-  Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 
 --- [224] § move W2 into VLAN 10 to restore reachability ---
@@ -885,12 +887,12 @@ Total steps: 361
 
 [229/361] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.446 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.318 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.520 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.642 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.318/0.382/0.446/0.064 ms
+  rtt min/avg/max/mdev = 0.520/0.581/0.642/0.061 ms
 
 
 --- [230] § voice VLAN ---
@@ -1348,9 +1350,12 @@ Total steps: 361
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  10      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   20      02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 8
+  Total Mac Addresses for this criterion: 11
 
 [288/361] sw1 SW1# show running-config
   Building configuration...
@@ -1521,6 +1526,7 @@ Total steps: 361
   interface GigabitEthernet0/1
    switchport mode trunk
    switchport trunk encapsulation dot1q
+   switchport trunk encapsulation dot1q
   !
   end
 
@@ -1560,7 +1566,7 @@ Total steps: 361
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       13 packets input, 0 bytes, 0 no buffer
+       12 packets input, 0 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1585,7 +1591,7 @@ Total steps: 361
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 0 bytes, 0 underruns
+       15 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1606,7 +1612,7 @@ Total steps: 361
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 0 bytes, 0 underruns
+       13 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2068,7 +2074,7 @@ Total steps: 361
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       22 packets output, 0 bytes, 0 underruns
+       23 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2085,11 +2091,11 @@ Total steps: 361
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       6 packets input, 0 bytes, 0 no buffer
+       5 packets input, 0 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 0 bytes, 0 underruns
+       18 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2110,7 +2116,7 @@ Total steps: 361
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 0 bytes, 0 underruns
+       13 packets output, 0 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
