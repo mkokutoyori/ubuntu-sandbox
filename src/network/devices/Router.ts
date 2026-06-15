@@ -2112,22 +2112,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
-  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null = null;
-  private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
   private readonly _serviceFlags: Map<string, boolean> = new Map();
   private readonly _unhandledConfigLines: string[] = [];
   private _systemClockOverrideMs: number | null = null;
   private _systemClockSetAtMs: number = 0;
-
-  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
-  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
-    this._enableSecret = { value, algo };
-  }
-
-  getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
-  _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
-    this._enablePassword = { value, algo };
-  }
 
   getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
   _setServiceFlag(name: string, on: boolean): void {

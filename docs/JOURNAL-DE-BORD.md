@@ -3153,3 +3153,27 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - +1 fichier de tests (cisco-switch-exec-commands). Non-régression :
   **network-v2 complet — 7103 tests verts** + suites shell/terminal (967)
   vertes. `tsc` propre ; aucun commentaire ajouté.
+
+### Scénarios de référence Switch (Catalyst 2960) — fichier de tests unique + DRY enable secret
+
+- Nouveau fichier unique `cisco-switch-reference-scenarios.test.ts` :
+  topologie de référence (Switch1 + Linux-SRV sur Fa0/1 + Win-Client sur
+  Fa0/2) couvrant les 16 commandes de l'analyse. 14 scénarios **verts**
+  (`?`, enable >→#, enable secret persistée, show mac address-table appris
+  sur Fa0/1, terminal length 0, debug/undebug/no debug all, configure
+  terminal + isolation VLAN qui coupe le L2, disable, write [OK], erase
+  startup-config [confirm]/[OK], reload, clear mac address-table dynamic +
+  réapprentissage, statiques préservées).
+- DRY : `enable secret`/`enable password` n'étaient stockés que par le
+  routeur (sur le switch la commande était silencieusement ignorée).
+  Déplacés dans la base partagée `Equipment` (`getEnableSecret`/
+  `_setEnableSecret`/`getEnablePassword`/`_setEnablePassword`) ; retirés du
+  routeur (hérités) ; la running-config du switch les émet (réutilise
+  `renderSecretField`/`renderPasswordField`). Implémenté une seule fois.
+- Lacune clé identifiée et documentée (4 tests `it.skip`, prêts à activer) :
+  **la SVI de management L2 (`interface Vlan1` + IP)** n'est pas modélisée
+  (le switch est strictement L2). Elle conditionne : ping depuis le switch,
+  client ssh/telnet sortant, `copy ... tftp:` réel, synchro `sntp`. À
+  implémenter ensuite (chantier conséquent, à valider).
+- Non-régression : **network-v2 complet — 7117 tests verts** (49 skipped).
+  `tsc` propre ; aucun commentaire ajouté.

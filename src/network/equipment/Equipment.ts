@@ -43,6 +43,19 @@ export abstract class Equipment {
   protected ports: Map<string, Port> = new Map();
   protected readonly bootedAtMs: number = Date.now();
 
+  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null = null;
+  private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
+
+  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
+  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
+    this._enableSecret = { value, algo };
+  }
+
+  getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
+  _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
+    this._enablePassword = { value, algo };
+  }
+
   getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
   getBootedAtMs(): number { return this.bootedAtMs; }
 

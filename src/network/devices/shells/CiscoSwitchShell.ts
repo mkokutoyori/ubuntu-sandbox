@@ -22,6 +22,7 @@ import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress } from '../../core/types';
+import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -1666,6 +1667,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       `hostname ${sw.getHostname()}`,
       '!',
     ];
+
+    const enableSecret = sw.getEnableSecret();
+    if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
+    const enablePassword = sw.getEnablePassword();
+    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false)}`);
+    if (enableSecret || enablePassword) lines.push('!');
 
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
