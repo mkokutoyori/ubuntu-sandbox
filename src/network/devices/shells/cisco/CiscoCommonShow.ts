@@ -654,12 +654,54 @@ export function showCalendar(now: Date = new Date()): string {
 }
 
 /** `show terminal` — the active session's real defaults. */
-export function showTerminal(): string {
+export function showSwitchVersion(dev: {
+  getHostname(): string;
+  getUptimeMs(): number;
+  getPortNames(): string[];
+  getPort(name: string): { getMAC(): { toString(): string } } | undefined;
+}): string {
+  const hw = CISCO_HARDWARE_PROFILES['switch-c2960'];
+  const names = dev.getPortNames();
+  const fa = names.filter((n) => n.startsWith('Fast')).length;
+  const gi = names.filter((n) => n.startsWith('Gig')).length;
+  const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toString() ?? '0000.0000.0000') : '0000.0000.0000';
+  const upMin = Math.floor(dev.getUptimeMs() / 60000);
+  const up = upMin < 1 ? '0 minutes'
+    : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
+  return [
+    'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)',
+    'Copyright (c) 1986-2025 by Cisco Systems, Inc.',
+    '',
+    'ROM: Bootstrap program is C2960 boot loader',
+    'BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)',
+    '',
+    `${dev.getHostname()} uptime is ${up}`,
+    'System returned to ROM by power-on',
+    `System image file is "flash:${hw.flashImage}"`,
+    '',
+    `cisco ${hw.pid} (PowerPC405) processor (revision C0) with ${Math.floor(hw.dramKB / 2)}K/${hw.ioMemoryKB}K bytes of memory.`,
+    `Processor board ID ${hw.serialNumber}`,
+    'Last reset from power-on',
+    `${fa} FastEthernet interfaces`,
+    `${gi} Gigabit Ethernet interfaces`,
+    `The password-recovery mechanism is enabled.`,
+    '',
+    `${hw.nvramKB}K bytes of flash-simulated non-volatile configuration memory.`,
+    `Base ethernet MAC Address       : ${baseMac}`,
+    `Motherboard assembly number     : 73-12600-06`,
+    `Model number                    : ${hw.pid}`,
+    `System serial number            : ${hw.serialNumber}`,
+    '',
+    'Configuration register is 0xF',
+  ].join('\n');
+}
+
+export function showTerminal(length = 24, width = 80, historySize = 20): string {
   return [
     'Line 0, Location: "", Type: ""',
-    'Length: 24 lines, Width: 80 columns',
+    `Length: ${length} lines, Width: ${width} columns`,
     'Editing is enabled.',
-    'History is enabled, history size is 20.',
+    `History is enabled, history size is ${historySize}.`,
   ].join('\n');
 }
 

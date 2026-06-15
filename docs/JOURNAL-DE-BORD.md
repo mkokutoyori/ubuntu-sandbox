@@ -3250,3 +3250,27 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Lecture d'état réel uniquement (ports, compteurs) ; aucun hardcode.
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 49 — Analyse dumps L2 : show terminal & show version réels
+
+- **`show terminal`** était entièrement codé en dur (Length 24/Width 80/
+  history 20) — ignorait l'état réel. Désormais il lit `terminalLength`,
+  `terminalWidth` et le nouveau `terminalHistorySize` (stocké et validé
+  0-256 par `terminal history size N`). Vérifié : après `terminal length 0`/
+  `width 132`/`history size 50`, `show terminal` reflète bien 0/132/50.
+- **`show version` (switch)** était minimal/figé. Nouvelle fonction partagée
+  `showSwitchVersion(dev)` lisant l'état **réel** : uptime réel
+  (`getUptimeMs`), comptes de ports réels (24 Fa + 2 Gi), identité matérielle
+  du profil C2960 (serial, DRAM/NVRAM, image flash), MAC de base réelle
+  (`02:00:00:00:00:01`). Les deux enregistrements (user + privileged) la
+  réutilisent (DRY). Pas de valeurs inventées : seules l'identité matérielle
+  modélisée et les compteurs réels.
+- Faux positifs de l'analyse écartés (vérifiés) : `show controllers` état
+  admin correct (les ports Fa0/4-8 n'étaient pas encore `shutdown` à l'étape
+  58 ; le shutdown est à l'étape 90) ; le préfixe « sw1 » devant le prompt
+  est l'étiquette de l'équipement dans le harnais de dump, pas le prompt réel.
+- `show processes cpu/memory` laissés en sortie honnête (le modèle n'a pas
+  d'ordonnanceur/pool mémoire ; fabriquer des process/octets serait
+  précisément le stub interdit).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.

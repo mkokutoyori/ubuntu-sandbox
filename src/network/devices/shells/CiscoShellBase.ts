@@ -122,6 +122,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
+  protected terminalHistorySize: number = 20;
 
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
@@ -643,7 +644,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show calendar', 'Display hardware calendar', () =>
       showCalendar());
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
-      showTerminal());
+      showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize));
     trie.register('show processes memory', 'Display per-process memory', () =>
       showProcessesMemory());
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
@@ -725,8 +726,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (head === 'monitor') return '';
     if (head === 'exec') return '';
     if (head === 'history') {
-      // `terminal history size N` — accepted, value ignored (history is
-      // capped by the session container, not by line config).
+      if ((rest[0] ?? '').toLowerCase() === 'size') {
+        const n = parseInt(rest[1] ?? '', 10);
+        if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
+        this.terminalHistorySize = n;
+        return '';
+      }
+      if (rest.length === 0) { this.terminalHistorySize = 20; return ''; }
       return '';
     }
     if (head === 'monitor') {

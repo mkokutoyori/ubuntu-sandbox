@@ -24,6 +24,7 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { showInterface } from './cisco/CiscoShowCommands';
+import { showSwitchVersion } from './cisco/CiscoCommonShow';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -1091,7 +1092,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private registerUserCommands(): void {
     this.userTrie.register('show version', 'Display system hardware and software status', () => {
-      return `Cisco IOS Software, C2960 Software\n${this.d().getHostname()} uptime is 0 days, 0 hours`;
+      return showSwitchVersion(this.d());
     });
 
     this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
@@ -1274,7 +1275,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.privilegedTrie.register('show version', 'Display system information', () => {
-      return `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2\n${this.d().getHostname()} uptime is 0 days, 0 hours`;
+      return showSwitchVersion(this.d());
     });
 
     this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-06-15T19:46:31.631Z
+Generated: 2026-06-15T19:58:27.235Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -12,8 +12,30 @@ Total steps: 301
 <empty>
 
 [2/301] sw1 SW1# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2
-  SW1 uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  SW1 uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [3/301] sw1 SW1# show inventory
   NAME: "SW1", DESCR: "Cisco Catalyst Switch"
@@ -413,14 +435,14 @@ Total steps: 301
   ^
 
 [49/301] sw1 SYS-SW1# show clock
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  19:46:31 UTC Mon Jun 15 2026
+  19:58:27 UTC Mon Jun 15 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -435,7 +457,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
 
 
 --- [57] § boot system config ---
@@ -1467,30 +1489,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.971 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.460 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.149 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.551 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.460/1.215/1.971/0.756 ms
+  rtt min/avg/max/mdev = 0.551/1.350/2.149/0.799 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.727 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.544 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.680 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.381 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.544/0.636/0.727/0.091 ms
+  rtt min/avg/max/mdev = 0.381/0.531/0.680/0.149 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.747 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.539 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.655 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.500 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.539/0.643/0.747/0.104 ms
+  rtt min/avg/max/mdev = 0.500/0.578/0.655/0.078 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1583,8 +1605,30 @@ Total steps: 301
 <empty>
 
 [200/301] sw1 SYS-SW1# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2
-  SYS-SW1 uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  SYS-SW1 uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [201/301] sw1 SYS-SW1# show running-config
   Building configuration...
@@ -1719,12 +1763,12 @@ Total steps: 301
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.537 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.234 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.592 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.187 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.234/0.385/0.537/0.151 ms
+  rtt min/avg/max/mdev = 0.187/0.389/0.592/0.203 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -1848,8 +1892,30 @@ Total steps: 301
 
 --- [213] § repeated show family across switches ---
 [214/301] sw1 SYS-SW1# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2
-  SYS-SW1 uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  SYS-SW1 uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [215/301] sw1 SYS-SW1# show vlan brief
   VLAN Name                             Status    Ports
@@ -1909,15 +1975,37 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [220/301] sw1 SYS-SW1# show clock
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
 
 [221/301] sw1 SYS-SW1# show logging
   Syslog logging: enabled
   
 
 [222/301] sw2 SW2> show version
-  Cisco IOS Software, C2960 Software
-  SW2 uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  SW2 uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:1b
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [223/301] sw2 SW2> show vlan brief
   VLAN Name                             Status    Ports
@@ -1976,15 +2064,37 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [228/301] sw2 SW2> show clock
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
 
 [229/301] sw2 SW2> show logging
   Syslog logging: enabled
   
 
 [230/301] core CORE> show version
-  Cisco IOS Software, C2960 Software
-  CORE uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  CORE uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:35
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [231/301] core CORE> show vlan brief
   VLAN Name                             Status    Ports
@@ -2043,7 +2153,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [236/301] core CORE> show clock
-  *19:46:31.000 UTC Mon Jun 15 2026
+  *19:58:27.000 UTC Mon Jun 15 2026
 
 [237/301] core CORE> show logging
   Syslog logging: enabled
@@ -2055,7 +2165,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2072,21 +2182,21 @@ Total steps: 301
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:58       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:58       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:58       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:58       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:58       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:58       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:58       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:58       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:58       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:58       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:58       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:58       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:58       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    19:58       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    19:58       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2114,7 +2224,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2131,22 +2241,22 @@ Total steps: 301
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    19:46       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:58       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:58       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:58       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:58       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:58       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:58       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:58       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:58       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:58       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:58       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:58       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:58       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:58       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    19:58       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    19:58       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    19:58       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2182,7 +2292,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:46:31 PM
+  System Boot Time:          6/15/2026, 7:58:27 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2458,7 +2568,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2475,21 +2585,21 @@ Total steps: 301
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:58       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:58       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:58       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:58       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:58       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:58       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:58       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:58       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:58       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:58       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:58       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:58       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:58       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    19:58       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    19:58       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2520,7 +2630,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:46:31 PM
+  System Boot Time:          6/15/2026, 7:58:27 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2796,7 +2906,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:58:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2813,22 +2923,22 @@ Total steps: 301
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    19:46       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:58       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:58       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:58       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:58       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:58       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:58       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:58       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:58       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:58       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:58       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:58       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:58       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:58       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    19:58       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    19:58       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    19:58       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2885,8 +2995,30 @@ Total steps: 301
   Configuration register is 0x2102
 
 [276/301] sw2 SW2> show version
-  Cisco IOS Software, C2960 Software
-  SW2 uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  SW2 uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:1b
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [277/301] sw2 SW2> more nvram:startup-config
   % Invalid input detected at '^' marker.
@@ -2934,8 +3066,30 @@ Total steps: 301
   Configuration register is 0x2102
 
 [285/301] core CORE> show version
-  Cisco IOS Software, C2960 Software
-  CORE uptime is 0 days, 0 hours
+  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: Bootstrap program is C2960 boot loader
+  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  
+  CORE uptime is 0 minutes
+  System returned to ROM by power-on
+  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  
+  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1234X56Y
+  Last reset from power-on
+  24 FastEthernet interfaces
+  2 Gigabit Ethernet interfaces
+  The password-recovery mechanism is enabled.
+  
+  64K bytes of flash-simulated non-volatile configuration memory.
+  Base ethernet MAC Address       : 02:00:00:00:00:35
+  Motherboard assembly number     : 73-12600-06
+  Model number                    : WS-C2960-24TT-L
+  System serial number            : FOC1234X56Y
+  
+  Configuration register is 0xF
 
 [286/301] core CORE> more nvram:startup-config
   % Invalid input detected at '^' marker.
@@ -3004,21 +3158,21 @@ Total steps: 301
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.759 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.591 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.833 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.455 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.591/0.675/0.759/0.084 ms
+  rtt min/avg/max/mdev = 0.455/0.644/0.833/0.189 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.583 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.331 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.571 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.263 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.331/0.457/0.583/0.126 ms
+  rtt min/avg/max/mdev = 0.263/0.417/0.571/0.154 ms
 
 [301/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
