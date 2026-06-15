@@ -9,6 +9,7 @@
  */
 
 import { IPAddress, SubnetMask, IPv6Address } from '../../../core/types';
+import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
@@ -334,6 +335,9 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     if (!ctx.getSelectedInterface()) return '% No interface selected';
+    if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
+      return "% Invalid input detected at '^' marker.";
+    }
     try {
       ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]));
       return '';
@@ -352,15 +356,20 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('mtu', 'Set MTU', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; } }
+    if (!port) return '';
+    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
+    try { port.setMTU(parseInt(args[0], 10)); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; }
     return '';
   });
   trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setBandwidthKbps(n);
+    if (!/^\d+$/.test(args[0] ?? '') || n < 1 || n > 10000000) {
+      return "% Invalid input detected at '^' marker.";
+    }
+    port.setBandwidthKbps(n);
     return '';
   });
   trie.registerGreedy('delay', 'Set interface delay (10us)', (args) => {
@@ -380,8 +389,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
     const a = (args[0] ?? '').toLowerCase();
-    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as 'full' | 'half' | 'auto');
+    if (a !== 'full' && a !== 'half' && a !== 'auto') return "% Invalid input detected at '^' marker.";
+    port.setDuplex(a as 'full' | 'half' | 'auto');
     return '';
   });
   trie.registerGreedy('speed', 'Set interface speed', (args) => {
@@ -389,8 +400,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (!port) return '';
     if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
+    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
+    try { port.setSpeed(parseInt(args[0], 10)); } catch { return "% Invalid input detected at '^' marker."; }
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
