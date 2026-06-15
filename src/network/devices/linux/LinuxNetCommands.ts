@@ -194,9 +194,8 @@ export function cmdNetstat(
     // construct LinuxCommandExecutor directly without a device).
     if (wantTcp || showAll) {
       lines.push(formatNetstatLine('tcp', '0.0.0.0:22', '0.0.0.0:*', 'LISTEN', '985/sshd: /usr/sbin'));
-      if (isServer) {
-        lines.push(formatNetstatLine('tcp', '0.0.0.0:1521', '0.0.0.0:*', 'LISTEN', '2001/tnslsnr'));
-      }
+      // The Oracle TNS listener (tcp/1521) is not bound until it is started;
+      // it surfaces here only through the live socket table, never hardcoded.
     }
     if (wantUdp || showAll) {
       lines.push(formatNetstatLine('udp', '127.0.0.53:53', '0.0.0.0:*', '', '540/systemd-resolve'));
@@ -326,10 +325,8 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
     if (wantListening || wantTcp || showAll) {
       const proc = showProcesses ? ' users:(("sshd",pid=985,fd=3))' : '';
       lines.push(`LISTEN     0       128      0.0.0.0:22            0.0.0.0:*        ${proc}`);
-      if (isServer) {
-        const sp = showProcesses ? ' users:(("tnslsnr",pid=2001,fd=12))' : '';
-        lines.push(`LISTEN     0       128      0.0.0.0:1521          0.0.0.0:*        ${sp}`);
-      }
+      // tnslsnr (tcp/1521) only appears via the live socket table once the
+      // Oracle listener is started — never hardcoded here.
     }
     if (!wantListening) {
       const proc = showProcesses ? ' users:(("sshd",pid=1200,fd=4))' : '';

@@ -145,7 +145,7 @@ export abstract class LinuxMachine extends EndHost {
     );
     // Wire the socket table before the event bus: the reactive
     // ServicePortProjection created in attachEventBus needs the table.
-    this.initDefaultSockets(profile.isServer);
+    this.initDefaultSockets();
     this.executor.setSocketTable(this.socketTable);
     // Share the SSH session table so `who`/`w`/`last` render from one
     // source of truth — including via compound commands and ssh exec.
@@ -647,17 +647,19 @@ export abstract class LinuxMachine extends EndHost {
    * Pre-populate the socket table with services that are always running
    * on a freshly booted Linux machine.  The PIDs match the static values
    * used by ps/netstat output so the two are coherent.
+   *
+   * Note: the Oracle TNS listener (tcp/1521) is intentionally NOT bound
+   * here. A real `tnslsnr` only occupies the port once it is started
+   * (`lsnrctl start`); the simulated listener defaults to the stopped
+   * state (see OracleInstance.listenerStatus). The socket is bound and
+   * released in lockstep with that state by OracleListenerSync, so that
+   * `netstat`/`ss`, the systemd unit and V$LISTENER all agree.
    */
-  private initDefaultSockets(isServer: boolean): void {
+  private initDefaultSockets(): void {
     // sshd — listens on all interfaces (every Linux machine has SSH)
     this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
     // systemd-resolved — DNS stub resolver bound to loopback only
     this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
-
-    if (isServer) {
-      // Oracle TNS listener — only on server profiles
-      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr');
-    }
   }
 
   // ─── Ports ───────────────────────────────────────────────────────────

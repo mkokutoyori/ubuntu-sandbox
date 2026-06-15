@@ -11,6 +11,7 @@ import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from './OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
+import { OracleListenerSync } from '@/adapters/OracleListenerSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
@@ -22,6 +23,8 @@ const oracleInstances: Map<string, OracleDatabase> = new Map();
 const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 /** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
+/** Per-device listener sync adapter — binds the real TNS listener TCP socket. */
+const oracleListenerSyncs: Map<string, OracleListenerSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -49,6 +52,12 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);
+
+    const listenerSync = new OracleListenerSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+    });
+    listenerSync.start();
+    oracleListenerSyncs.set(deviceId, listenerSync);
 
     db.instance.startup('OPEN');
     installAllDemoSchemas(db);
@@ -132,6 +141,8 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
+  oracleListenerSyncs.get(deviceId)?.stop();
+  oracleListenerSyncs.delete(deviceId);
   const db = oracleInstances.get(deviceId);
   if (db) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
@@ -153,6 +164,8 @@ export function resetAllOracleInstances(): void {
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();
+  for (const sync of oracleListenerSyncs.values()) sync.stop();
+  oracleListenerSyncs.clear();
   for (const db of oracleInstances.values()) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }

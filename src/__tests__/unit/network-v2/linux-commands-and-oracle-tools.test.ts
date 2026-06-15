@@ -254,9 +254,14 @@ describe('netstat', () => {
     expect(out).not.toContain('Active Internet connections');
   });
 
-  it('netstat on server shows Oracle listener port', async () => {
+  it('netstat on server shows Oracle listener port once the listener is started', async () => {
+    // tnslsnr only binds tcp/1521 after `lsnrctl start`; the socket then
+    // surfaces through the live socket table.
+    const db = getOracleDatabase(server.getId());
+    db.instance.startListener();
     const out = await server.executeCommand('netstat -tlnp');
     expect(out).toContain(':1521');
+    expect(out).toContain('tnslsnr');
   });
 });
 

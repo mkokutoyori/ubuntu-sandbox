@@ -299,7 +299,11 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
   },
   mysql: { processName: 'mysqld', sockets: [{ port: 3306, protocol: 'tcp' }] },
   postgresql: { processName: 'postgres', sockets: [{ port: 5432, protocol: 'tcp' }] },
-  'oracle-ohasd': { processName: 'tnslsnr', sockets: [{ port: 1521, protocol: 'tcp' }] },
+  // Oracle High Availability Services daemon (ohasd). It is NOT the TNS
+  // listener: the tcp/1521 socket belongs to `tnslsnr`, which is bound and
+  // released by OracleListenerSync in lockstep with the real listener
+  // lifecycle (`lsnrctl start`/`stop`). ohasd therefore owns no socket here.
+  'oracle-ohasd': { processName: 'ohasd.bin', sockets: [] },
 };
 
 /** A service plus the runtime data the port projection needs to bind it. */

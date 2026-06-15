@@ -467,9 +467,12 @@ describe('SP-10 — EndHost integration: OS default sockets', () => {
     expect(pc.getSocketTable().isPortBound(1521, 'tcp')).toBe(false);
   });
 
-  it('LinuxServer pre-binds Oracle TNS listener on port 1521/tcp', () => {
+  it('LinuxServer does NOT pre-bind Oracle port 1521 (listener stopped by default)', () => {
+    // A real tnslsnr only occupies tcp/1521 once `lsnrctl start` runs.
+    // The port is bound by OracleListenerSync in lockstep with the
+    // listener lifecycle — not hardcoded at boot.
     const srv = new LinuxServer('linux-server', 'SRV1');
-    expect(srv.getSocketTable().isPortBound(1521, 'tcp')).toBe(true);
+    expect(srv.getSocketTable().isPortBound(1521, 'tcp')).toBe(false);
   });
 
   it('LinuxServer SSH socket processName is sshd', () => {
@@ -542,11 +545,10 @@ describe('SP-11 — Linux netstat: dynamic output from socket table', () => {
     expect(out).not.toMatch(/^udp/m);
   });
 
-  it('LinuxServer netstat shows Oracle port 1521', async () => {
+  it('LinuxServer netstat does not show Oracle port 1521 until the listener starts', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
     const out = await srv.executeCommand('netstat -tlnp');
-    expect(out).toContain(':1521');
-    expect(out).toContain('LISTEN');
+    expect(out).not.toContain(':1521');
   });
 
   it('netstat reflects removed socket after close', async () => {
