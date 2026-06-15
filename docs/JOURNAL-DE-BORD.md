@@ -2946,3 +2946,52 @@ de bascule d'AVF sur perte d'une interface suivie.
   effective baissée quand le lien suivi est down, restaurée à up ; le
   comportement iface-down→init préservé). Non-régression : **network-v2
   complet — 7055 tests verts**. `tsc`/lint propres ; aucun commentaire.
+
+---
+
+## Entrée 45 — Audit des commandes Cisco (mode par mode) : validation d'arguments + DRY
+
+**Date** : 2026-06-15
+
+Audit systématique des commandes Cisco demandé (argument, message
+d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
+
+### Mode interface (config-if)
+
+- `ip address` acceptait silencieusement un masque invalide
+  (`999.0.0.0`, non contigu `255.0.255.0`) et configurait l'interface.
+  Désormais validé (`isValidIPv4` + nouveau `isValidSubnetMask` partagé
+  dans `core/ip.ts` — vérifié inexistant avant ajout) → `% Invalid input
+  detected at '^' marker.`, état inchangé.
+- `speed` **avalait** l'erreur de `Port.setSpeed` (`catch {}`) ;
+  `duplex`/`mtu`/`bandwidth` ignoraient silencieusement les valeurs
+  invalides. Désormais ils renvoient l'erreur IOS et réutilisent la
+  validation existante de `Port` (setSpeed/setMTU lèvent déjà).
+
+### Mode global config
+
+- `ip route` : même trou de masque (routes boguées installées) ; message
+  d'erreur non-IOS pour un next-hop invalide ; **distance administrative
+  ignorée** (statiques flottantes impossibles). Validé (réutilise les
+  helpers), AD 1-255 honorée → `addStaticRoute` mappe la distance sur
+  `ad` (la distance d'une statique EST son AD).
+- `enable secret`/`enable password` acceptaient une valeur vide.
+  → `% Incomplete command.`
+
+### DRY (une seule implémentation)
+
+- `hostname` était enregistré **4 fois** ; sur le routeur la copie
+  sécurité gagnait et n'utilisait que `setHostname` (laissait `this.name`
+  périmé — bug réel affectant logs/affichages), alors que le switch
+  mettait à jour les deux. Doublons retirés → handler unique du base
+  (`_setHostnameInternal`, met à jour hostname **et** name) partagé.
+- `enable secret`/`password` dédupliqués (base unique ; la copie sécurité
+  écrivait `sec().enableSecret`, jamais lu — `show running-config` lit
+  `getEnableSecret`).
+
+### Validation
+
+- +4 fichiers de tests (cisco-interface-validation, cisco-ip-route-validation,
+  cisco-hostname-dry, cisco-enable-password). Non-régression : **network-v2
+  complet — 7067 tests verts** à chaque incrément. `tsc` propre ; aucun
+  commentaire ajouté.
