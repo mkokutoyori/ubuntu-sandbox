@@ -42,12 +42,48 @@ Principales défaillances identifiées :
 Roadmap d'implémentation (un push par item) :
 
 - [x] 1. Listener TNS : binding TCP réel (socket 1521) piloté par l'état du listener.
-- [ ] 2. Provisioning utilisateur OS `oracle` + groupe `dba` sur l'hôte.
+- [x] 2. Provisioning utilisateur OS `oracle` + groupe `dba` sur l'hôte.
 - [ ] 3. Process d'arrière-plan Oracle sous l'UID oracle réel.
 - [ ] 4. Variables d'environnement ORACLE_* exportées (`/etc/profile.d`).
 - [ ] 5. Stubs `dbstart`/`dbshut`/`lsnrctl` pour des unités systemd valides.
 - [ ] 6. Centralisation des codes d'erreur ORA- (DRY).
 - [ ] 7. Décomposition du god class `OracleExecutor` (strategy/handlers).
+
+---
+
+## Incrément 2 — Identité OS Oracle (`oracle`:`oinstall`+`dba`) réelle
+
+### Défaillance corrigée
+
+L'utilisateur `oracle` et le groupe `dba` n'existaient **pas** sur l'hôte :
+ce n'étaient que des chaînes codées en dur (`DEFAULT_OS_CONTEXT`,
+`OracleFilesystemSync`, unités systemd `User=oracle`). Conséquences :
+
+- Les unités systemd `oracle-*.service` référençaient `User=oracle` — un
+  utilisateur inexistant dans `/etc/passwd`.
+- Le contrôle `/ AS SYSDBA` reposait sur un `isDbaGroup` codé en dur,
+  jamais adossé à une vraie appartenance au groupe `dba`.
+- Les process d'arrière-plan / datafiles « appartenaient » à un label
+  `oracle` sans entrée `/etc/passwd` correspondante.
+
+### Correctif (structurel, réutilisable)
+
+- Nouvelle capacité device **`LinuxMachine.installServiceAccount(spec)`** :
+  provisionne idempotemment groupe(s) + utilisateur dédié via le vrai
+  `LinuxUserManager` (`groupadd`/`useradd`/`usermod`). Générique (réutilisable
+  pour tout démon), adossée à `/etc/passwd` + `/etc/group`.
+- `getOracleDatabase` provisionne désormais l'identité Oracle 19c standard
+  avant le boot de l'instance : utilisateur `oracle` (uid 54321, home
+  `ORACLE_BASE`, shell `/bin/bash`), groupe primaire `oinstall` (gid 54321),
+  groupe supplémentaire `dba` (gid 54322) — exactement comme un installeur
+  Oracle. Fait via une capacité duck-typée (no-op sur équipement non-Linux).
+
+### Tests
+
+- Nouveau `oracle-os-account.test.ts` (6 cas : absence avant install,
+  `getent passwd/group`, appartenance `id oracle`, idempotence, ancrage de
+  `User=oracle`).
+- Database (2636) + suites IAM/utilisateurs (332) : **OK**, 0 régression.
 
 ---
 

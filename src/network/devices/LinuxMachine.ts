@@ -90,6 +90,25 @@ function globMatch(pattern: string, candidate: string): boolean {
   return new RegExp('^' + escaped + '$').test(candidate);
 }
 
+/**
+ * Declarative description of a daemon's OS identity, provisioned by
+ * {@link LinuxMachine.installServiceAccount}.
+ */
+export interface ServiceAccountSpec {
+  groups: Array<{ name: string; gid?: number }>;
+  user: {
+    name: string;
+    uid?: number;
+    /** Primary group, by name (must be one of `groups` or already exist). */
+    primaryGroup?: string;
+    /** Supplementary groups, by name. */
+    groups?: string[];
+    home?: string;
+    shell?: string;
+    gecos?: string;
+  };
+}
+
 // ─── Class ─────────────────────────────────────────────────────────────
 
 export abstract class LinuxMachine extends EndHost {
@@ -1424,6 +1443,43 @@ export abstract class LinuxMachine extends EndHost {
   deleteFileFromEditor(path: string): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     return this.executor.vfs.deleteFile(absPath);
+  }
+
+  /**
+   * Idempotently provision a service account (group(s) + dedicated user)
+   * on the host — the way a daemon package's post-install, or an Oracle
+   * installer, creates its runtime identity (`oracle` user, `oinstall`/
+   * `dba` groups) before the service can run. This backs systemd units
+   * with `User=<name>`, file ownership and process credentials with a
+   * real `/etc/passwd` + `/etc/group` entry instead of a dangling label.
+   *
+   * Safe to call repeatedly: existing groups/users are left untouched and
+   * only missing supplementary memberships are added.
+   */
+  installServiceAccount(spec: ServiceAccountSpec): void {
+    const um = this.executor.userMgr;
+
+    for (const g of spec.groups) {
+      if (!um.getGroup(g.name)) {
+        um.groupadd(g.name, g.gid != null ? { g: g.gid } : {});
+      }
+    }
+
+    const supplementary = spec.user.groups?.length ? spec.user.groups.join(',') : undefined;
+    if (!um.getUser(spec.user.name)) {
+      um.useradd(spec.user.name, {
+        u: spec.user.uid,
+        g: spec.user.primaryGroup,
+        G: supplementary,
+        d: spec.user.home,
+        m: true,
+        s: spec.user.shell ?? '/bin/bash',
+        c: spec.user.gecos,
+      });
+    } else if (supplementary) {
+      // Account already exists — ensure it carries the required groups.
+      um.usermod(spec.user.name, { aG: supplementary });
+    }
   }
 
   /**

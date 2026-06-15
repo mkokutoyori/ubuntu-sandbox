@@ -26,6 +26,43 @@ const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device listener sync adapter — binds the real TNS listener TCP socket. */
 const oracleListenerSyncs: Map<string, OracleListenerSync> = new Map();
 
+/** Capability a device exposes to provision a daemon's OS identity. */
+interface ServiceAccountHost {
+  installServiceAccount(spec: {
+    groups: Array<{ name: string; gid?: number }>;
+    user: {
+      name: string; uid?: number; primaryGroup?: string; groups?: string[];
+      home?: string; shell?: string; gecos?: string;
+    };
+  }): void;
+}
+
+/**
+ * Idempotently provision the Oracle OS identity on the host that runs the
+ * instance — `oracle` user, `oinstall` (primary) and `dba` groups — using
+ * the conventional Oracle 19c uid/gid values. No-op on devices that do not
+ * expose the capability (e.g. non-Linux equipment).
+ */
+function provisionOracleAccount(deviceId: string): void {
+  const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as Partial<ServiceAccountHost> | null;
+  if (!dev || typeof dev.installServiceAccount !== 'function') return;
+  dev.installServiceAccount({
+    groups: [
+      { name: 'oinstall', gid: 54321 },
+      { name: 'dba', gid: 54322 },
+    ],
+    user: {
+      name: 'oracle',
+      uid: 54321,
+      primaryGroup: 'oinstall',
+      groups: ['dba'],
+      home: ORACLE_CONFIG.BASE,
+      shell: '/bin/bash',
+      gecos: 'Oracle Software Owner',
+    },
+  });
+}
+
 /**
  * Get or create an Oracle database for a device.
  * Automatically starts the instance and installs demo schemas on first access.
@@ -39,6 +76,12 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
+
+    // Provision the Oracle OS identity (oracle:oinstall + dba) on the host
+    // before the instance boots — exactly as an Oracle installer would, so
+    // background processes, datafile ownership and the systemd `User=oracle`
+    // units are backed by a real /etc/passwd + /etc/group entry.
+    provisionOracleAccount(deviceId);
 
     const sync = new OracleFilesystemSync(getDefaultEventBus(), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
