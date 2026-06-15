@@ -23,6 +23,7 @@ import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
+import { showInterface } from './cisco/CiscoShowCommands';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -1194,25 +1195,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return 'EtherChannel: no detail';
     });
 
-    // `show interfaces <if> switchport`
     this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
-      if (args.length >= 2 && args[args.length - 1].toLowerCase() === 'switchport') {
-        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '))
-          ?? args.slice(0, -1).join(' ');
-        const c = this.d().getSwitchportConfig(name);
-        return [
-          `Name: ${name}`,
-          `Switchport: Enabled`,
-          `Administrative Mode: ${c?.mode === 'trunk' ? 'trunk' : 'static access'}`,
-          `Operational Mode: ${c?.mode ?? 'access'}`,
-          `Access Mode VLAN: ${c?.accessVlan ?? 1}`,
-          `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1}`,
-        ].join('\n');
+      if (args.length === 0) return this.showAllInterfacesDetail();
+      const last = args[args.length - 1].toLowerCase();
+      if (last === 'switchport') {
+        const target = args.slice(0, -1).join(' ');
+        if (!target) {
+          return this.d().getPortNames().map((n) => this.showSwitchportDetail(n)).join('\n\n');
+        }
+        const name = this.resolveInterfaceName(target) ?? target;
+        return this.showSwitchportDetail(name);
       }
-      if (args[0]?.toLowerCase() === 'status' || args.length === 0) {
-        return this.showInterfacesStatus(this.d());
+      if (last === 'counters') {
+        const target = args.slice(0, -1).join(' ');
+        const name = target ? this.resolveInterfaceName(target) : null;
+        return this.showInterfacesCounters(name);
       }
-      return this.showInterfacesStatus(this.d());
+      if (last === 'description') return this.showInterfacesDescriptionTable();
+      if (args.length === 1 && last === 'status') return this.showInterfacesStatus(this.d());
+      const name = this.resolveInterfaceName(args.join(' '));
+      if (name && this.d().getPort(name)) return showInterface(this.d(), name);
+      return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
     });
 
     this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
@@ -1232,14 +1235,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.privilegedTrie.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
       if (!args[0]) return '% Incomplete command.';
       return this.showVlanBrief(this.d(), { name: args[0] });
-    });
-
-    this.privilegedTrie.register('show interfaces status', 'Display interface status', () => {
-      return this.showInterfacesStatus(this.d());
-    });
-
-    this.privilegedTrie.register('show interfaces', 'Display interface information', () => {
-      return this.showInterfacesStatus(this.d());
     });
 
     this.privilegedTrie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
@@ -1845,6 +1840,62 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : `ERROR: VLAN ${filter.name} not found in current VLAN database`;
     }
     return lines.join('\n');
+  }
+
+  private showAllInterfacesDetail(): string {
+    const sw = this.d();
+    return sw.getPortNames().map((n) => showInterface(sw, n)).join('\n');
+  }
+
+  private showSwitchportDetail(name: string): string {
+    const c = this.d().getSwitchportConfig(name);
+    const mode = c?.mode === 'trunk' ? 'trunk' : 'static access';
+    const oper = c?.mode ?? 'access';
+    const lines = [
+      `Name: ${this.abbreviateInterface(name)}`,
+      `Switchport: Enabled`,
+      `Administrative Mode: ${mode}`,
+      `Operational Mode: ${oper}`,
+      `Administrative Trunking Encapsulation: dot1q`,
+      `Negotiation of Trunking: ${c?.mode === 'trunk' ? 'On' : 'Off'}`,
+      `Access Mode VLAN: ${c?.accessVlan ?? 1} (${this.d().getVLANs().get(c?.accessVlan ?? 1)?.name ?? 'default'})`,
+      `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1} (default)`,
+    ];
+    if (c?.mode === 'trunk') {
+      const allowed = c.trunkAllowedVlans.size >= 4094
+        ? 'ALL' : this.compactVlanList(Array.from(c.trunkAllowedVlans).sort((a, b) => a - b));
+      lines.push(`Trunking VLANs Enabled: ${allowed}`);
+    }
+    if (c?.voiceVlan) lines.push(`Voice VLAN: ${c.voiceVlan}`);
+    return lines.join('\n');
+  }
+
+  private showInterfacesCounters(name: string | null): string {
+    const sw = this.d();
+    const rows = ['Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts'];
+    for (const [pn, port] of sw._getPortsInternal()) {
+      if (name && pn !== name) continue;
+      const c = port.getCounters();
+      rows.push(
+        `${this.abbreviateInterface(pn).padEnd(15)} ${String(c.bytesIn).padStart(9)} ` +
+        `${String(c.framesIn).padStart(13)} ${String(c.bytesOut).padStart(11)} ${String(c.framesOut).padStart(13)}`,
+      );
+    }
+    if (name && rows.length === 1) return `% Invalid input detected at '^' marker.`;
+    return rows.join('\n');
+  }
+
+  private showInterfacesDescriptionTable(): string {
+    const sw = this.d();
+    const rows = ['Interface                      Status         Protocol Description'];
+    for (const [name, port] of sw._getPortsInternal()) {
+      const up = port.getIsUp();
+      const status = up ? 'up' : 'admin down';
+      const proto = up && port.isConnected() ? 'up' : 'down';
+      const desc = sw.getInterfaceDescription(name) || '';
+      rows.push(`${this.abbreviateInterface(name).padEnd(31)}${status.padEnd(15)}${proto.padEnd(9)}${desc}`);
+    }
+    return rows.join('\n');
   }
 
   private showInterfacesStatus(sw: Switch): string {

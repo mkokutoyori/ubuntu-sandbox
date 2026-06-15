@@ -214,6 +214,21 @@ function isVirtualInterface(name: string): boolean {
   return /^(Tunnel|Loopback|Null|Vlan|BVI|Bundle-Ether|Port-channel|Virtual-)/i.test(name);
 }
 
+function interfaceNameMatches(fullName: string, spec: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9/]/g, '');
+  const f = norm(fullName);
+  const p = norm(spec);
+  if (!p) return true;
+  if (f === p) return true;
+  const split = (s: string): [string, string] => {
+    const m = s.match(/^([a-z-]+)(.*)$/);
+    return m ? [m[1], m[2]] : [s, ''];
+  };
+  const [ft, fn] = split(f);
+  const [pt, pn] = split(p);
+  return fn === pn && pt.length > 0 && ft.startsWith(pt);
+}
+
 export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
   if (!enabled) {
@@ -233,9 +248,12 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const timer = agentCfg?.timerSec ?? 60;
     const hold = agentCfg?.holdtimeSec ?? 180;
     const disabled = agentCfg?.disabledPorts ?? new Set<string>();
+    const after = a.slice(a.indexOf('interface') + 'interface'.length).trim();
+    const spec = after.split(/\s+/)[0] ?? '';
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
       const name = p.getName();
+      if (spec && !interfaceNameMatches(name, spec)) continue;
       if (disabled.has(name)) continue;
       if (isVirtualInterface(name)) continue;
       lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +

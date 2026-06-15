@@ -114,7 +114,7 @@ function formatArpTimeout(totalSec: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-export function showInterface(router: Router, ifName: string): string {
+export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port> }, ifName: string): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
   if (!port) return `% Invalid input detected at \'^\' marker.\nshow interface ${ifName}\n     ^`;
@@ -183,6 +183,22 @@ export function showInterface(router: Router, ifName: string): string {
     lines.push(`  ${duplex}, ${speedMbps}Mbps, media type is RJ45`);
     lines.push(`  output flow-control is unsupported, input flow-control is unsupported`);
     lines.push(`  ARP type: ARPA, ARP Timeout ${formatArpTimeout(port.getArpTimeoutSec())}`);
+  }
+
+  if (!isTunnel && !isLoopback) {
+    const c = port.getCounters();
+    const rxPause = `  Last input ${connected ? '00:00:00' : 'never'}, output ${connected ? '00:00:00' : 'never'}, output hang never`;
+    lines.push(rxPause);
+    lines.push(`  Queueing strategy: fifo`);
+    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
+    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
+    lines.push(`     Received 0 broadcasts (0 multicasts)`);
+    lines.push(`     0 runts, 0 giants, 0 throttles`);
+    lines.push(`     ${c.errorsIn} input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored`);
+    lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
+    lines.push(`     ${c.errorsOut} output errors, 0 collisions, 0 interface resets`);
+    lines.push(`     ${c.dropsIn} input drops, ${c.dropsOut} output drops`);
   }
 
   return lines.join('\n');

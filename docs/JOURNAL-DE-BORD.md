@@ -3229,3 +3229,24 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   listée dans `show sessions` ; `disconnect 1` → fermée → registre vide.
 - Non-régression : **network-v2 — 7126 verts** ; `tsc` propre ; aucun
   commentaire dans le code.
+
+## Entrée 48 — Analyse dumps L2 : show interfaces / show cdp interface filtrés (vrais détails)
+
+- **`show interfaces <nom>`** renvoyait la table `status` globale au lieu du
+  détail de l'interface (bug : tout retombait sur `showInterfacesStatus`).
+  Cause : doublons d'enregistrement exact `show interfaces`/`show interfaces
+  status` qui écrasaient l'action du handler greedy. Doublons retirés ;
+  dispatcher réécrit : `show interfaces` (sans arg) → détail de TOUTES les
+  interfaces ; `show interfaces <nom>` → détail de cette interface ;
+  `<nom> switchport` → switchport filtré ; `<nom> counters` → compteurs de
+  ce port ; `counters`/`description` → tables ; `status`/`trunk` conservés.
+- **`showInterface` élargi (DRY multi-vendor)** : signature structurelle
+  (`{ _getPortsInternal() }`) pour servir routeur ET switch ; enrichi avec
+  les compteurs réels (packets/bytes input/output, input/output errors,
+  drops via `port.getCounters()`) — manquaient à l'analyse.
+- **`show cdp interface <nom>`** ne filtrait pas (boucle sur tous les ports).
+  Ajout d'un matcher d'interface tolérant aux abréviations (fa0/1 ↔
+  FastEthernet0/1) dans `showCdp` (partagé) → filtre réel sur le port donné.
+- Lecture d'état réel uniquement (ports, compteurs) ; aucun hardcode.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-06-15T19:12:36.507Z
+Generated: 2026-06-15T19:46:31.631Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -413,14 +413,14 @@ Total steps: 301
   ^
 
 [49/301] sw1 SYS-SW1# show clock
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  19:12:36 UTC Mon Jun 15 2026
+  19:46:31 UTC Mon Jun 15 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -435,7 +435,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
 
 
 --- [57] § boot system config ---
@@ -777,694 +777,671 @@ Total steps: 301
 
 --- [157] § per-interface description + counters loop ---
 [158/301] sw1 SYS-SW1# show interfaces FastEthernet0/1 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [159/301] sw1 SYS-SW1# show interfaces FastEthernet0/2 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [160/301] sw1 SYS-SW1# show interfaces FastEthernet0/3 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [161/301] sw1 SYS-SW1# show interfaces FastEthernet0/4 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [162/301] sw1 SYS-SW1# show interfaces FastEthernet0/5 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [163/301] sw1 SYS-SW1# show interfaces FastEthernet0/6 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [164/301] sw1 SYS-SW1# show interfaces FastEthernet0/7 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [165/301] sw1 SYS-SW1# show interfaces FastEthernet0/8 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [166/301] sw1 SYS-SW1# show interfaces FastEthernet0/9 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [167/301] sw1 SYS-SW1# show interfaces FastEthernet0/10 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [168/301] sw1 SYS-SW1# show interfaces FastEthernet0/11 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [169/301] sw1 SYS-SW1# show interfaces FastEthernet0/12 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [170/301] sw1 SYS-SW1# show interfaces FastEthernet0/13 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [171/301] sw1 SYS-SW1# show interfaces FastEthernet0/14 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [172/301] sw1 SYS-SW1# show interfaces FastEthernet0/15 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [173/301] sw1 SYS-SW1# show interfaces FastEthernet0/16 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [174/301] sw1 SYS-SW1# show interfaces FastEthernet0/17 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [175/301] sw1 SYS-SW1# show interfaces FastEthernet0/18 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [176/301] sw1 SYS-SW1# show interfaces FastEthernet0/19 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [177/301] sw1 SYS-SW1# show interfaces FastEthernet0/20 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [178/301] sw1 SYS-SW1# show interfaces FastEthernet0/21 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [179/301] sw1 SYS-SW1# show interfaces FastEthernet0/22 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 [180/301] sw1 SYS-SW1# show interfaces FastEthernet0/23 description
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          connected    1          a-full  a-10001000BASE-T
+  Interface                      Status         Protocol Description
+  Fa0/0                          up             down     
+  Fa0/1                          up             up       
+  Fa0/2                          up             up       
+  Fa0/3                          up             up       
+  Fa0/4                          up             down     
+  Fa0/5                          up             down     
+  Fa0/6                          up             down     
+  Fa0/7                          up             down     
+  Fa0/8                          up             down     
+  Fa0/9                          up             down     
+  Fa0/10                         up             down     
+  Fa0/11                         up             down     
+  Fa0/12                         up             down     
+  Fa0/13                         up             down     
+  Fa0/14                         up             down     
+  Fa0/15                         up             down     
+  Fa0/16                         up             down     
+  Fa0/17                         up             down     
+  Fa0/18                         up             down     
+  Fa0/19                         up             down     
+  Fa0/20                         up             down     
+  Fa0/21                         up             down     
+  Fa0/22                         up             down     
+  Fa0/23                         up             down     
+  Gi0/0                          up             down     
+  Gi0/1                          up             up       
 
 
 --- [181] § debug controls ---
@@ -1490,30 +1467,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.661 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.389 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.971 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.460 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.389/1.025/1.661/0.636 ms
+  rtt min/avg/max/mdev = 0.460/1.215/1.971/0.756 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.575 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.325 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.727 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.544 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.325/0.450/0.575/0.125 ms
+  rtt min/avg/max/mdev = 0.544/0.636/0.727/0.091 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.496 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.400 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.747 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.539 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.400/0.448/0.496/0.048 ms
+  rtt min/avg/max/mdev = 0.539/0.643/0.747/0.104 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1742,12 +1719,12 @@ Total steps: 301
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.476 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.147 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.537 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.234 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.147/0.312/0.476/0.165 ms
+  rtt min/avg/max/mdev = 0.234/0.385/0.537/0.151 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -1932,7 +1909,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [220/301] sw1 SYS-SW1# show clock
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
 
 [221/301] sw1 SYS-SW1# show logging
   Syslog logging: enabled
@@ -1999,7 +1976,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [228/301] sw2 SW2> show clock
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
 
 [229/301] sw2 SW2> show logging
   Syslog logging: enabled
@@ -2066,7 +2043,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [236/301] core CORE> show clock
-  *19:12:36.000 UTC Mon Jun 15 2026
+  *19:46:31.000 UTC Mon Jun 15 2026
 
 [237/301] core CORE> show logging
   Syslog logging: enabled
@@ -2078,7 +2055,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   19:12:36 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2095,21 +2072,21 @@ Total steps: 301
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:12       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:12       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:12       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:12       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:12       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:12       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:12       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:12       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:12       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:12       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:12       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:12       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:12       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    19:12       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    19:12       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2137,7 +2114,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   19:12:36 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2154,22 +2131,22 @@ Total steps: 301
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:12       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:12       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:12       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:12       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:12       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:12       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:12       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:12       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:12       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:12       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:12       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:12       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:12       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    19:12       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    19:12       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    19:12       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    19:46       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2205,7 +2182,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:12:36 PM
+  System Boot Time:          6/15/2026, 7:46:31 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2481,7 +2458,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   19:12:36 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2498,21 +2475,21 @@ Total steps: 301
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:12       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:12       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:12       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:12       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:12       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:12       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:12       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:12       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:12       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:12       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:12       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:12       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:12       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    19:12       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    19:12       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2543,7 +2520,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 7:12:36 PM
+  System Boot Time:          6/15/2026, 7:46:31 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2819,7 +2796,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   19:12:36 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:46:31 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2836,22 +2813,22 @@ Total steps: 301
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    19:12       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    19:12       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    19:12       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    19:12       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    19:12       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    19:12       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    19:12       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    19:12       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    19:12       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    19:12       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    19:12       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    19:12       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    19:12       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    19:12       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    19:12       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    19:12       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    19:46       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    19:46       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    19:46       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    19:46       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    19:46       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    19:46       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    19:46       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    19:46       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    19:46       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    19:46       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    19:46       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    19:46       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    19:46       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    19:46       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    19:46       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    19:46       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -3027,21 +3004,21 @@ Total steps: 301
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.721 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.343 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.759 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.591 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.343/0.532/0.721/0.189 ms
+  rtt min/avg/max/mdev = 0.591/0.675/0.759/0.084 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.425 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.204 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.583 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.331 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.204/0.315/0.425/0.111 ms
+  rtt min/avg/max/mdev = 0.331/0.457/0.583/0.126 ms
 
 [301/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
