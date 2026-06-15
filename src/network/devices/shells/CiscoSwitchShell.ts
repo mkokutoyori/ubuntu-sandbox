@@ -1265,13 +1265,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2\n${this.d().getHostname()} uptime is 0 days, 0 hours`;
     });
 
-    this.privilegedTrie.register('reload', 'Restart the switch', () => {
-      this.d().powerOff();
-      this.d().powerOn();
-      this.mode = 'user';
-      return 'System restarting...';
-    });
-
     this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
       return this.showDHCPSnooping(this.d());
     });
@@ -1647,6 +1640,19 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   }
 
   // ─── Running Config Builder ───────────────────────────────────────
+
+  protected override performImmediateReload(): string {
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
+    return 'System restarting...';
+  }
+
+  protected override performScheduledReload(): void {
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
+  }
 
   buildRunningConfig(sw: Switch): string {
     const lines = [

@@ -3077,3 +3077,28 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Cohérence : `show running-config interface` n'émettait pas la
   `description` (la running-config globale, si). Ajoutée (réutilise
   `getInterfaceDescription`). Test ajouté dans cisco-interface-validation.
+
+### Mode privileged EXEC — `reload` du switch (bug signalé en prod) + DRY
+
+- **Bug réel (version déployée)** : sur un switch, `reload in 5` éteignait
+  l'appareil **immédiatement** au lieu de planifier. Cause : le switch avait
+  son propre handler `reload` (exact, `powerOff()`+`powerOn()`) qui ignorait
+  les arguments `in`/`at`/`cancel` et gagnait sur le handler de base (lequel
+  ne savait planifier que pour le routeur via `_scheduleReload`).
+- DRY appliqué : handler `reload` unique dans CiscoShellBase (parsing +
+  validation `in`/`at`/`cancel`), avec deux points d'extension protégés —
+  `performImmediateReload()` (par défaut « Reload requested » ; le switch
+  redémarre réellement → « System restarting... ») et
+  `performScheduledReload()` (déclenché par un vrai minuteur à l'échéance ;
+  le switch power-cycle). Le doublon switch est retiré.
+- `reload in N` planifie via un minuteur (`unref` pour ne pas retenir la
+  boucle d'événements) ; ne touche plus à l'alimentation immédiatement.
+  `reload cancel` annule le minuteur. `reload in abc`/`reload in`/`reload at`
+  → messages IOS sans redémarrage accidentel.
+- `show reload` était un **stub** (`showReload()` renvoyait toujours « No
+  reload is scheduled. »). Désormais il reflète l'échéance réelle (suivie
+  dans le shell de base, cohérent routeur ET switch) ; doublon de handler
+  `show reload` retiré.
+- +1 fichier de tests (cisco-switch-reload). Non-régression :
+  **network-v2 complet — 7098 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.

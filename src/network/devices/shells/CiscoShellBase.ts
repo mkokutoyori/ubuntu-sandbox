@@ -60,6 +60,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private scheduledReloadAtMs: number | null = null;
+
+  private armReloadTimer(ms: number): void {
+    if (this.reloadTimer !== null) clearTimeout(this.reloadTimer);
+    this.scheduledReloadAtMs = Date.now() + ms;
+    const t = setTimeout(() => {
+      this.reloadTimer = null;
+      this.scheduledReloadAtMs = null;
+      this.performScheduledReload();
+    }, ms);
+    (t as unknown as { unref?: () => void }).unref?.();
+    this.reloadTimer = t;
+  }
+
+  protected getScheduledReloadMs(): number | null {
+    if (this.scheduledReloadAtMs !== null) return this.scheduledReloadAtMs;
+    const dev = this.d() as unknown as { _getScheduledReloadMs?: () => number | null };
+    return dev._getScheduledReloadMs?.() ?? null;
+  }
+
+  protected performImmediateReload(): string {
+    const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
+    dev._scheduleReload?.('immediate');
+    return 'Proceed with reload? [confirm]\nReload requested.';
+  }
+
+  protected performScheduledReload(): void {
+    const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
+    dev._scheduleReload?.('immediate');
+  }
 
   protected attachLoggingToDevice(device: TDevice): void {
     (device as unknown as { _loggingConfig?: LoggingConfig })._loggingConfig = this.logging;
@@ -542,7 +573,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show stacks', 'Display process stacks', () =>
       showStacks());
     trie.registerGreedy('show reload', 'Display reload schedule', () =>
-      showReload());
+      showReload(this.getScheduledReloadMs()));
     trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
       const dev = this.d() as unknown as Router;
       return showAaa(getSecurityConfig(dev), a.join(' '));
@@ -688,6 +719,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
       const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
       if (args[0]?.toLowerCase() === 'cancel') {
+        if (this.reloadTimer !== null) { clearTimeout(this.reloadTimer); this.reloadTimer = null; }
+        this.scheduledReloadAtMs = null;
         dev._scheduleReload?.('cancel');
         return 'Reload cancelled.';
       }
@@ -696,14 +729,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
         dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
+        this.armReloadTimer(min * 60_000);
         return `Reload scheduled in ${min} minutes`;
       }
       if (args[0]?.toLowerCase() === 'at') {
         if (!args[1]) return '% Incomplete command.';
         return `Reload scheduled for ${args[1]}`;
       }
-      dev._scheduleReload?.('immediate');
-      return 'Proceed with reload? [confirm]\nReload requested.';
+      return this.performImmediateReload();
     });
     this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
       const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
@@ -753,14 +786,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
       return svc.disable('ip.packet');
     });
-    this.privilegedTrie.register('show reload', 'Show pending reload', () => {
-      const dev = this.d() as unknown as { _getScheduledReloadMs?: () => number | null };
-      const t = dev._getScheduledReloadMs?.();
-      if (t === null || t === undefined) return 'No reload is scheduled';
-      const sec = Math.max(0, Math.floor((t - Date.now()) / 1000));
-      return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
-    });
-
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
       return dev.getDebugService?.();
