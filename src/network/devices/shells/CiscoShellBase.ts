@@ -690,14 +690,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         dev._scheduleReload?.('cancel');
         return 'Reload cancelled.';
       }
-      if (args[0]?.toLowerCase() === 'in' && args[1]) {
+      if (args[0]?.toLowerCase() === 'in') {
+        if (!args[1]) return '% Incomplete command.';
+        if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
-        if (!isNaN(min)) {
-          dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
-          return `Reload scheduled in ${min} minutes`;
-        }
+        dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
+        return `Reload scheduled in ${min} minutes`;
       }
-      if (args[0]?.toLowerCase() === 'at' && args[1]) {
+      if (args[0]?.toLowerCase() === 'at') {
+        if (!args[1]) return '% Incomplete command.';
         return `Reload scheduled for ${args[1]}`;
       }
       dev._scheduleReload?.('immediate');
