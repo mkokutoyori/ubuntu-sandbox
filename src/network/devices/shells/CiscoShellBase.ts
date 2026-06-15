@@ -1348,6 +1348,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
         secret = args.slice(2).join(' ');
       } else { secret = args.join(' '); }
+      if (secret === '') return '% Incomplete command.';
       dev._setEnableSecret?.(secret, algo);
       return '';
     });
@@ -1358,6 +1359,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
       else { password = args.join(' '); }
+      if (password === '') return '% Incomplete command.';
       dev._setEnablePassword?.(password, algo);
       return '';
     });
