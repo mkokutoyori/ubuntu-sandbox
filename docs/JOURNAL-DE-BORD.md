@@ -3021,3 +3021,30 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - +1 fichier de tests (cisco-router-protocol-validation). Non-régression :
   **network-v2 complet — 7083 tests verts**. `tsc` propre ; aucun
   commentaire ajouté.
+
+### Mode global config — services partagés (logging / NTP / DNS) + DRY
+
+- `logging` : le switch avait **sa propre implémentation** (`_setSyslogServer`,
+  une seule chaîne, sans la richesse du moteur). DRY appliqué : handler
+  unique du base (LoggingConfig + vrai SyslogAgent, déjà compatible switch
+  via `getSyslogAgent`). Le doublon switch est retiré ; `show logging` et
+  `show running-config` du switch lisent désormais la config unifiée
+  (`this.logging.hosts` / `asRunningConfigLines`). Champs morts
+  `syslogServer`/`_getSyslogServer`/`_setSyslogServer` supprimés de
+  `Switch.ts`. Validation ajoutée (routeur ET switch) : `logging host`
+  sans IP → incomplet ; IP invalide → message IOS.
+- `ntp server`/`ntp peer` sans cible renvoyaient "" → `% Incomplete command.`
+- `ip name-server` : sans arg → incomplet ; IP invalide acceptée en
+  silence → message IOS (réutilise `isValidIPv4`).
+- `ip domain-name` : **split-brain réel** — un doublon dans
+  CiscoSecurityCommands gagnait et écrivait `sec().domainName` (lu seulement
+  par la section running-config sécurité), si bien que `show hosts` lisait
+  `mgmt.domainName` resté vide → « Default domain is not set » alors que la
+  running-config affichait le domaine. Doublons retirés → handler base
+  unique (écrit `mgmt.domainName`) ; running-config et `show hosts`
+  cohérents ; sans arg → incomplet. Champs morts `hostname`/`domainName`
+  + émetteur retirés de `CiscoSecurityConfig`.
+- +1 fichier de tests (cisco-logging-validation, contexte LAN routeur+switch
+  câblés, vérifie l'effet réel via show logging / running-config / show
+  hosts). Non-régression : **network-v2 complet — 7088 tests verts**.
+  `tsc` propre ; aucun commentaire ajouté.

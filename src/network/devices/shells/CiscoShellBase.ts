@@ -22,6 +22,7 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter } from './cli-utils';
+import { isValidIPv4 } from '../../core/ip';
 import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
@@ -1079,6 +1080,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
+      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
       const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
@@ -1180,9 +1183,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
-      if (mgmt && args[0]) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
       return '';
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
@@ -1232,6 +1236,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
+      const head = (args[0] ?? '').toLowerCase();
+      if (head === 'host') {
+        if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+        if (!isValidIPv4(args[1])) return CISCO_ERRORS.INVALID_INPUT;
+      } else if (/^\d+\.\d+\.\d+\.\d+$/.test(head) && !isValidIPv4(head)) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
       this.attachLoggingToDevice(this.d());
       this.logging.apply(args, false);
       this.syncSyslogAgent();
@@ -1244,6 +1255,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
       const a = args.map(s => s.toLowerCase());
+      if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+      if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
       const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
       if (!agent) return '';
       if (a[0] === 'server' && a[1]) {

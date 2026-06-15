@@ -201,16 +201,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
   trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
-  trie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
-    if (args[0]) sec().domainName = args[0];
-    return '';
-  });
-
-  trie.registerGreedy('ip domain name', 'Set domain name', (args) => {
-    if (args[0]) sec().domainName = args[0];
-    return '';
-  });
-
   trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
     let modulus = 1024;
     let label = 'default';
