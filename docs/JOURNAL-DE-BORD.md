@@ -3074,3 +3074,6 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   table de routage, ping primaire+secondaire, retrait). Non-régression :
   **network-v2 complet — 7093 tests verts**. `tsc` propre ; aucun
   commentaire ajouté.
+- Cohérence : `show running-config interface` n'émettait pas la
+  `description` (la running-config globale, si). Ajoutée (réutilise
+  `getInterfaceDescription`). Test ajouté dans cisco-interface-validation.

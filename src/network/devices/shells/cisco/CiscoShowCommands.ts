@@ -485,6 +485,8 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
     '!',
     `interface ${ifName}`,
   ];
+  const desc = router.getInterfaceDescription(ifName);
+  if (desc) lines.push(` description ${desc}`);
   if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);

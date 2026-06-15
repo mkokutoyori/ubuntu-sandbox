@@ -62,4 +62,13 @@ describe('Cisco interface config — argument validation (IOS error messages)', 
     expect(p.getSpeed()).toBe(1000);
     expect(p.getDuplex()).toBe('full');
   });
+
+  it('per-interface running-config includes the description', async () => {
+    const r = await intf();
+    await r.executeCommand('description Uplink-to-core');
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config interface GigabitEthernet0/0'))
+      .toContain('description Uplink-to-core');
+  });
 });
