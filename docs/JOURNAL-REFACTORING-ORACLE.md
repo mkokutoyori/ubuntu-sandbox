@@ -2186,6 +2186,22 @@ d'intégration via `connect` (nouveau OK, ancien OK pendant la fenêtre, mot de 
 sans rapport → ORA-01017, profil sans rollover → ancien rejeté). Non-régression
 sécurité/auth (91 tests) ; `tsc` + ESLint propres.
 
+### 2026-06-16 — Suppression des copies mortes de date dans valueUtils (dedup, suite)
+**Défaillance (duplication) :** après la consolidation précédente vers `dateSupport`,
+`functions/valueUtils.ts` conservait encore un **5ᵉ exemplaire** au mot près de
+`coerceDate`, `formatDate`, `formatOracleDate` et `parseOracleDate`. Pire : ces
+quatre exports n'étaient **importés nulle part** (recherche projet : seuls
+`compareValues` et `implicitToDate` de ce module sont consommés — par
+`OracleExecutor`, `ConstraintValidator`, `OracleStorage`). Du code mort dupliqué
+qui rouvrait la porte à la dérive corrigée juste avant.
+**Correction :** suppression pure des quatre fonctions et des helpers devenus
+inutilisés (`pad`, `MONTHS_LONG`, `DAYS_LONG`). `valueUtils` ne garde que ce qui lui
+est propre — `implicitToDate` (conversion implicite NLS DD-MON-RR, logique RR) et
+`compareValues` (comparaison Oracle 3-way). `dateSupport` reste l'unique source du
+formatage/parsing de dates. ~70 lignes mortes retirées.
+**Validation :** `tsc` + ESLint propres ; `unit/database/` complet (125 fichiers,
+3019 tests verts).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
