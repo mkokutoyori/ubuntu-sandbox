@@ -3447,3 +3447,15 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   interface non-trunk renvoie l'en-tête seul ; une interface inconnue → IOS
   invalid input.
 - Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 61 — Fichier 3 (item G + séquence test) : fin de l'analyse fichier 3
+
+- Item G : `show dtp` — la colonne Negotiation affiche désormais « off »
+  pour les ports en mode `access` explicite (et `nonegotiate`), « on » pour
+  trunk/dynamic — cohérent avec l'état réel de l'agent DTP.
+- Séquence de test corrigée : `enable` ajouté avant le 1er `configure
+  terminal` de sw2 (le simulateur rejetait correctement `configure terminal`
+  en mode utilisateur — artefact de test, pas un bug). sw2 configure
+  maintenant VTP correctement dans le dump.
+- Fichier 3 entièrement traité (A→G). Non-régression : network-v2 — 7117
+  verts ; tsc propre ; aucun commentaire.

@@ -323,9 +323,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         lines.push('--------------- ---------------- -------------- -----------');
         for (const p of ports) {
           const s = dtp.getPortState(p);
+          const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
           lines.push(
             `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
-            `${s.operationalMode.padEnd(15)}${s.adminMode === 'nonegotiate' ? 'off' : 'on'}`,
+            `${s.operationalMode.padEnd(15)}${negotiation}`,
           );
         }
         return lines.join('\n');
