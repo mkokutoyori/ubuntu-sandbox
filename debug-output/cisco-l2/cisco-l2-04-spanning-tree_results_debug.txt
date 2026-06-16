@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-06-15T20:07:34.394Z
+Generated: 2026-06-16T08:49:06.028Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -21,32 +21,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p
+  Fa0/2            Desg  FWD  4         128.3     P2p
+  Fa0/3            Desg  FWD  4         128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [3/363] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -56,7 +34,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [4/363] sw1 SW1# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -169,7 +147,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [14/363] sw1 SW1(config)# spanning-tree mode rapid-pvst
 <empty>
@@ -182,7 +160,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [16/363] sw1 SW1(config)# spanning-tree mode mst
 <empty>
@@ -195,7 +173,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [18/363] sw1 SW1(config)# spanning-tree mode rapid-pvst
 <empty>
@@ -334,32 +312,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p
+  Fa0/2            Desg  FWD  4         128.3     P2p
+  Fa0/3            Desg  FWD  4         128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [60/363] sw1 SW1(config)# end
 <empty>
@@ -401,7 +357,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [71/363] sw1 SW1(config)# end
 <empty>
@@ -896,32 +852,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [224/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
@@ -931,7 +865,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [225/363] sw1 SW1# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -949,32 +883,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [227/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
@@ -986,32 +898,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [228/363] sw1 SW1# show spanning-tree interface FastEthernet0/1
   FastEthernet0/1
@@ -1064,32 +954,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [236/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
@@ -1101,32 +969,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [237/363] sw1 SW1# show spanning-tree vlan 30
   VLAN0030
@@ -1138,32 +984,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [238/363] sw1 SW1# show spanning-tree vlan 40
   VLAN0040
@@ -1175,32 +999,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [239/363] sw1 SW1# show spanning-tree vlan 50
   VLAN0050
@@ -1212,32 +1014,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [240/363] sw1 SW1# show spanning-tree vlan 60
   VLAN0060
@@ -1249,32 +1029,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [241/363] sw1 SW1# show spanning-tree vlan 70
   VLAN0070
@@ -1286,32 +1044,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [242/363] sw1 SW1# show spanning-tree vlan 80
   VLAN0080
@@ -1323,32 +1059,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [243/363] sw1 SW1# show spanning-tree vlan 90
   VLAN0090
@@ -1360,32 +1074,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [244/363] sw1 SW1# show spanning-tree vlan 100
   VLAN0100
@@ -1397,32 +1089,10 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p Edge
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p Edge
-  Fa0/5            Disa  FWD  4         128.05    P2p Edge
-  Fa0/6            Disa  FWD  4         128.06    P2p Edge
-  Fa0/7            Disa  FWD  4         128.07    P2p Edge
-  Fa0/8            Disa  FWD  4         128.08    P2p Edge
-  Fa0/9            Disa  FWD  4         128.09    P2p Edge
-  Fa0/10           Disa  FWD  4         128.010   P2p Edge
-  Fa0/11           Disa  FWD  4         128.011   P2p Edge
-  Fa0/12           Disa  FWD  4         128.012   P2p Edge
-  Fa0/13           Disa  FWD  4         128.013   P2p Edge
-  Fa0/14           Disa  FWD  4         128.014   P2p Edge
-  Fa0/15           Disa  FWD  4         128.015   P2p Edge
-  Fa0/16           Disa  FWD  4         128.016   P2p Edge
-  Fa0/17           Disa  FWD  4         128.017   P2p Edge
-  Fa0/18           Disa  FWD  4         128.018   P2p Edge
-  Fa0/19           Disa  FWD  4         128.019   P2p Edge
-  Fa0/20           Disa  FWD  4         128.020   P2p Edge
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Desg  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  4         128.2     P2p Edge
+  Fa0/2            Desg  FWD  4         128.3     P2p Edge
+  Fa0/3            Desg  FWD  4         128.4     P2p Edge
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 
 --- [245] § per-interface STP inspection loop ---
@@ -1622,7 +1292,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [277/363] sw1 SW1# undebug all
   All possible debugging has been turned off
@@ -1640,7 +1310,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          2          2
 
 [280/363] core CORE# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -1659,7 +1329,7 @@ Total steps: 363
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [283/363] sw2 SW2# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -1695,12 +1365,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.085 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.436 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.617 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.472 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.436/1.260/2.085/0.824 ms
+  rtt min/avg/max/mdev = 0.472/1.045/1.617/0.573 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...

@@ -979,10 +979,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const sw = this.d();
         const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
         const stpStates = sw._getSTPStates();
+        const ports = sw._getPortsInternal();
         const isRoot = agent?.isRoot() ?? false;
         const rootForVlan = isRoot ? 'VLAN0001' : 'none';
         let blocking = 0, listening = 0, learning = 0, forwarding = 0;
-        for (const state of stpStates.values()) {
+        for (const [name, state] of stpStates) {
+          const port = ports.get(name);
+          if (!port || !port.getIsUp() || !port.isConnected()) continue;
           if (state === 'blocking') blocking++;
           else if (state === 'listening') listening++;
           else if (state === 'learning') learning++;
@@ -1947,7 +1950,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       'Interface        Role  Sts  Cost      Prio.Nbr  Type',
       '---------------- ----  ---  --------  --------  ----',
     ];
+    const portIndex = new Map<string, number>();
+    let idx = 0;
+    for (const name of sw.getPortNames()) { idx += 1; portIndex.set(name, idx); }
+    const ports = sw._getPortsInternal();
     for (const [portName, state] of stpStates) {
+      const port = ports.get(portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
       const shortName = this.abbreviateInterface(portName).padEnd(17);
       const stpRole = agent?.getPortRole(portName) ?? 'designated';
       const role =
@@ -1964,7 +1973,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const portCost = agent?.getPortCost(portName) ?? 19;
       const linkType = agent?.getPortLinkType(portName) === 'shared' ? 'Shr' : 'P2p';
       const edge = agent?.isPortFastOperational(portName) ? ' Edge' : '';
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}${linkType}${edge}`);
+      const prioNbr = `128.${portIndex.get(portName) ?? 1}`;
+      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}${prioNbr.padEnd(10)}${linkType}${edge}`);
     }
     return lines.join('\n');
   }
@@ -1975,7 +1985,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private stpSummaryCounts(sw: Switch): string {
     let blk = 0, lis = 0, lrn = 0, fwd = 0;
-    for (const [, state] of sw._getSTPStates()) {
+    const ports = sw._getPortsInternal();
+    for (const [name, state] of sw._getSTPStates()) {
+      const port = ports.get(name);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (state === 'blocking') blk++;
       else if (state === 'listening') lis++;
       else if (state === 'learning') lrn++;

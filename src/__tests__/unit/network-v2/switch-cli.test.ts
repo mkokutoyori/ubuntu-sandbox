@@ -642,11 +642,14 @@ describe('T-L2-06: Show Commands', () => {
   });
 
   it('show spanning-tree should show port states', async () => {
+    const peer = new CiscoSwitch('switch-cisco', 'PEER', 4);
+    new Cable('stp-link').connect(sw.getPort('FastEthernet0/0')!, peer.getPort('FastEthernet0/0')!);
     await sw.executeCommand('enable');
     const result = await sw.executeCommand('show spanning-tree');
     expect(result).toContain('VLAN0001');
     expect(result).toContain('ieee');
     expect(result).toContain('FWD');
+    expect(result).toContain('Fa0/0');
   });
 
   it('show startup-config should show "not present" initially', async () => {

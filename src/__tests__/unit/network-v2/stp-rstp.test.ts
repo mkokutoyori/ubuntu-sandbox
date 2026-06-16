@@ -207,7 +207,9 @@ describe('STP link type (RSTP operPointToPoint, 802.1D-2004 §6.4.3)', () => {
     const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     root.getStpAgent().setBridgePriority(0);
+    const edge = new CiscoSwitch('switch-cisco', 'EDGE', 4);
     new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(sw2.getPort('FastEthernet0/1')!, edge.getPort('FastEthernet0/0')!);
     sw2.getPort('FastEthernet0/0')!.setDuplex('half');
     sw2.getStpAgent().setPortFast('FastEthernet0/1', true);
     await sw2.executeCommand('enable');

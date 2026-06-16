@@ -3289,3 +3289,24 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   affiche « trunk » pour un port trunk.
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés
   (montrent maintenant les trunks) ; `tsc` propre ; aucun commentaire.
+
+## Entrée 51 — Analyse dumps L2 fichier 4 : show spanning-tree cohérent
+
+- Bugs signalés (#5) corrigés dans le rendu STP du switch :
+  - **Rôle « Disa » avec état « FWD »** (incohérent) : les ports non
+    opérationnels (notconnect / shutdown) étaient listés en Forwarding.
+    Désormais `show spanning-tree` ne liste que les ports réellement up +
+    connectés (comportement IOS réel) — les rôles/états deviennent cohérents.
+  - **Numéros de port invalides** (`128.00`, `128.010`) : remplacés par un
+    index de port stable et unique (`128.2`, `128.3`, … `128.26`).
+  - **Type « P2p » partout** y compris notconnect : seuls les ports
+    opérationnels (donc réellement P2p/Shr) apparaissent.
+  - **`show spanning-tree summary`** comptait les 26 ports en Forwarding ;
+    désormais seuls les ports opérationnels sont comptés (4 Forwarding / 4
+    Active dans le lab).
+- Lecture d'état réel (connectivité des ports via `_getPortsInternal`,
+  rôles via `StpAgent`) ; aucun hardcode.
+- Tests existants encodant l'ancien comportement bogué mis à jour pour être
+  réalistes (switch-cli : port câblé ; stp-rstp : port edge câblé à un voisin).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
