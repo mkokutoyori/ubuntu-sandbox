@@ -105,6 +105,14 @@ export function defaultPathCost(speedKbps: number): number {
   return 200;
 }
 
+export function defaultPathCostLong(speedKbps: number): number {
+  if (speedKbps >= 10_000_000) return 2_000;
+  if (speedKbps >= 1_000_000) return 20_000;
+  if (speedKbps >= 100_000) return 200_000;
+  if (speedKbps >= 10_000) return 2_000_000;
+  return 20_000_000;
+}
+
 export function compareBridge(a: BridgeId, b: BridgeId): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
   const am = a.mac.toLowerCase();

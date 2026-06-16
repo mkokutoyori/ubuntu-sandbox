@@ -4,7 +4,7 @@ import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
   type StpPortGuards, type MstRegion,
-  createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost,
+  createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost, defaultPathCostLong,
   defaultPortGuards, createDefaultMstRegion,
   ETHERTYPE_STP, STP_BRIDGE_MAC,
 } from './types';
@@ -33,6 +33,8 @@ export interface StpHost {
 export class StpAgent extends ReactiveAgentBase {
   private config: StpConfig;
   private readonly mstRegion: MstRegion = createDefaultMstRegion();
+  private readonly mstInstancePriority = new Map<number, number>();
+  private pathcostMethod: 'short' | 'long' = 'short';
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
   private readonly rootInconsistent = new Set<string>();
@@ -124,7 +126,18 @@ export class StpAgent extends ReactiveAgentBase {
    * is 4, FastEthernet 19, 10 GbE 2, not the 200 a raw Mbps value yields).
    */
   private costForPort(port: import('../hardware/Port').Port | undefined): number {
-    return defaultPathCost((port?.getSpeed() ?? 0) * 1000);
+    const kbps = (port?.getSpeed() ?? 0) * 1000;
+    return this.pathcostMethod === 'long' ? defaultPathCostLong(kbps) : defaultPathCost(kbps);
+  }
+
+  getPathcostMethod(): 'short' | 'long' { return this.pathcostMethod; }
+  setPathcostMethod(method: 'short' | 'long'): void { this.pathcostMethod = method; }
+
+  getMstInstancePriority(instanceId: number): number {
+    return this.mstInstancePriority.get(instanceId) ?? 32768;
+  }
+  setMstInstancePriority(instanceId: number, priority: number): void {
+    this.mstInstancePriority.set(instanceId, priority);
   }
 
   /**

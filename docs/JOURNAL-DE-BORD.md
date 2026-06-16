@@ -3459,3 +3459,23 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   maintenant VTP correctement dans le dump.
 - Fichier 3 entièrement traité (A→G). Non-régression : network-v2 — 7117
   verts ; tsc propre ; aucun commentaire.
+
+## Entrée 62 — Fichier 4 Lot 1 : commandes show/MST manquantes
+
+- `show spanning-tree active` → état STP des interfaces actives (réutilise
+  showSpanningTree, déjà filtré sur les ports opérationnels).
+- `show spanning-tree pathcost method` → lit un vrai drapeau `pathcostMethod`
+  sur StpAgent (short/long) ; `spanning-tree pathcost method long|short` le
+  règle et impacte le calcul de coût (table 802.1t long ajoutée :
+  `defaultPathCostLong`).
+- `spanning-tree mst <n> priority <p>` → vrai état `mstInstancePriority` sur
+  StpAgent (handler dédié `spanning-tree mst` greedy, coexiste avec le
+  sous-mode `spanning-tree mst configuration`).
+- `show spanning-tree mst` (toutes instances) et `show spanning-tree mst <n>`
+  → nouvelle vue `showMstInstances` (MST0 + instances configurées, priorité
+  réelle par instance, VLAN mappés, ports opérationnels rôle/état/coût).
+  Instance inconnue → « % MST instance N is not configured ».
+- `show pending` (sous-mode config-mst) → config MST (comme `show current`).
+- État réel uniquement (StpAgent : pathcost method, priorités d'instance,
+  région MST) ; aucun hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; tsc propre.

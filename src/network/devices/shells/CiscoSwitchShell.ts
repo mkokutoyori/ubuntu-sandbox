@@ -901,6 +901,20 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           && args[2]?.toLowerCase() === 'default') {
         this.d().getStpAgent().setBpduGuardGlobal(true);
       }
+      if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
+        const m = args[2]?.toLowerCase();
+        if (m !== 'long' && m !== 'short') return "% Invalid input detected at '^' marker.";
+        this.d().getStpAgent().setPathcostMethod(m);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
+      if (args[1]?.toLowerCase() === 'priority') {
+        const inst = parseInt(args[0] ?? '', 10);
+        const prio = parseInt(args[2] ?? '', 10);
+        if (isNaN(inst) || isNaN(prio)) return "% Invalid input detected at '^' marker.";
+        this.d().getStpAgent().setMstInstancePriority(inst, prio);
+      }
       return '';
     });
     this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
@@ -959,11 +973,15 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (!isNaN(id)) this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
       return '';
     });
-    this.configMstTrie.register('show current', 'Show pending MST config', () =>
+    this.configMstTrie.register('show current', 'Show current MST config', () =>
+      this.showMstConfig());
+    this.configMstTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
     // The base redirects `show …` in config modes to the privileged
     // trie, so `show current` must also resolve there.
-    this.privilegedTrie.register('show current', 'Show pending MST config', () =>
+    this.privilegedTrie.register('show current', 'Show current MST config', () =>
+      this.showMstConfig());
+    this.privilegedTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
     this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
       const head = args[0]?.toLowerCase();
@@ -1050,6 +1068,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           `Number of inconsistent ports (segments) in the system : ${bad.length}`,
         ].join('\n');
       });
+      t.register('show spanning-tree active', 'STP state on active interfaces', () =>
+        this.showSpanningTree(this.d()));
+      t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
+        `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
+      t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
+        if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
+        if (!a[0]) return this.showMstInstances();
+        const id = parseInt(a[0], 10);
+        if (isNaN(id)) return "% Invalid input detected at '^' marker.";
+        return this.showMstInstances(id);
+      });
       t.register('show debugging', 'Display active debugging', () => {
         if (this.debugFlags.size === 0) return 'No debugging is enabled';
         return [...this.debugFlags].sort().join('\n');
@@ -1089,6 +1118,49 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ];
     for (const [id, v] of instances) ml.push(`${String(id).padEnd(10)}${v}`);
     return ml.join('\n');
+  }
+
+  private showMstInstances(filter?: number): string {
+    const sw = this.d();
+    const agent = this.stpAgentOf(sw);
+    if (!agent) return '';
+    const region = agent.getMstRegion();
+    const mac = this.formatMacCisco(new MACAddress(agent.ownBridgeId().mac));
+    const ports = sw._getPortsInternal();
+    const ids = [0, ...[...region.instances.keys()].sort((a, b) => a - b)];
+    const blocks: string[] = [];
+    for (const id of ids) {
+      if (filter !== undefined && id !== filter) continue;
+      const mapped = id === 0
+        ? (region.instances.size ? 'all VLANs not explicitly mapped' : '1-4094')
+        : (region.instances.get(id) ?? '');
+      const prio = agent.getMstInstancePriority(id);
+      const block = [
+        `##### MST${id}    vlans mapped:   ${mapped}`,
+        `Bridge        address ${mac}  priority  ${prio + id} (${prio} sysid ${id})`,
+        '',
+        'Interface        Role  Sts  Cost      Prio.Nbr  Type',
+        '---------------- ----  ---  --------  --------  ----',
+      ];
+      let idx = 0;
+      for (const name of sw.getPortNames()) {
+        idx += 1;
+        const port = ports.get(name);
+        if (!port || !port.getIsUp() || !port.isConnected()) continue;
+        const role = agent.getPortRole(name);
+        const roleLabel = role === 'root' ? 'Root' : role === 'alternate' ? 'Altn'
+          : role === 'backup' ? 'Back' : 'Desg';
+        const sts = sw._getSTPStates().get(name) === 'forwarding' ? 'FWD' : 'BLK';
+        const cost = agent.getPortCost(name);
+        const linkType = agent.getPortLinkType(name) === 'shared' ? 'Shr' : 'P2p';
+        block.push(`${this.abbreviateInterface(name).padEnd(17)}${roleLabel.padEnd(6)}${sts.padEnd(5)}${String(cost).padEnd(10)}${`128.${idx}`.padEnd(10)}${linkType}`);
+      }
+      blocks.push(block.join('\n'));
+    }
+    if (filter !== undefined && blocks.length === 0) {
+      return `% MST instance ${filter} is not configured`;
+    }
+    return blocks.join('\n\n');
   }
 
   private resolvePortName(input: string): string | null {

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-06-16T14:58:31.001Z
+Generated: 2026-06-16T15:30:27.649Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -122,14 +122,22 @@ Total steps: 363
   Number of inconsistent ports (segments) in the system : 0
 
 [9/363] sw1 SW1# show spanning-tree active
-  % Invalid input detected at '^' marker.
-  show spanning-tree active
-                     ^
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     0200.0000.0001
+               Cost        0
+               This bridge is the root
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [10/363] sw1 SW1# show spanning-tree pathcost method
-  % Invalid input detected at '^' marker.
-  show spanning-tree pathcost method
-                     ^
+  Spanning tree default pathcost method used is short
 
 
 --- [11] § STP mode selection ---
@@ -802,25 +810,54 @@ Total steps: 363
   2         vlan 40,50,60
 
 [214/363] sw1 SW1(config-mst)# show pending
-  % Invalid input detected at '^' marker.
-  show pending
-       ^
+  Name      [REGION1]
+  Revision  5     Instances configured 3
+  -------------------------------------------------------------
+  Instance  Vlans mapped
+  --------  -------------------------------------------------
+  0         1-4094
+  1         vlan 10,20,30
+  2         vlan 40,50,60
 
 [215/363] sw1 SW1(config-mst)# exit
 <empty>
 
 [216/363] sw1 SW1(config)# spanning-tree mst 1 priority 4096
-  % Invalid input detected at '^' marker.
-  spanning-tree mst 1 priority 4096
-                    ^
+<empty>
 
 [217/363] sw1 SW1(config)# spanning-tree mst 2 priority 8192
-  % Invalid input detected at '^' marker.
-  spanning-tree mst 2 priority 8192
-                    ^
+<empty>
 
 [218/363] sw1 SW1(config)# do show spanning-tree mst
-  % Incomplete command.
+  ##### MST0    vlans mapped:   all VLANs not explicitly mapped
+  Bridge        address 0200.0000.0001  priority  32768 (32768 sysid 0)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
+  
+  ##### MST1    vlans mapped:   vlan 10,20,30
+  Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
+  
+  ##### MST2    vlans mapped:   vlan 40,50,60
+  Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [219/363] sw1 SW1(config)# do show spanning-tree mst configuration
   Name      [REGION1]
@@ -833,9 +870,15 @@ Total steps: 363
   2         vlan 40,50,60
 
 [220/363] sw1 SW1(config)# do show spanning-tree mst 1
-  % Invalid input detected at '^' marker.
-  show spanning-tree mst 1
-                         ^
+  ##### MST1    vlans mapped:   vlan 10,20,30
+  Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [221/363] sw1 SW1(config)# end
 <empty>
@@ -929,7 +972,35 @@ Total steps: 363
   Number of inconsistent ports (segments) in the system : 0
 
 [232/363] sw1 SW1# show spanning-tree mst
-  % Incomplete command.
+  ##### MST0    vlans mapped:   all VLANs not explicitly mapped
+  Bridge        address 0200.0000.0001  priority  32768 (32768 sysid 0)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
+  
+  ##### MST1    vlans mapped:   vlan 10,20,30
+  Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
+  
+  ##### MST2    vlans mapped:   vlan 40,50,60
+  Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/1            Desg  FWD  19        128.2     P2p
+  Fa0/2            Desg  FWD  19        128.3     P2p
+  Fa0/3            Desg  FWD  19        128.4     P2p
+  Gi0/1            Desg  FWD  4         128.26    P2p
 
 [233/363] sw1 SW1# show errdisable recovery
   ErrDisable Reason            Timer Status
@@ -1365,12 +1436,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.577 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.730 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.420 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.684 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.730/1.653/2.577/0.923 ms
+  rtt min/avg/max/mdev = 0.684/1.552/2.420/0.868 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
