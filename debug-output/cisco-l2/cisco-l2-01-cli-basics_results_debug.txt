@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-06-16T11:07:41.041Z
+Generated: 2026-06-16T13:03:20.443Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -127,7 +127,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *11:07:41.000 UTC Tue Jun 16 2026
+  *13:03:20.000 UTC Tue Jun 16 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -578,11 +578,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 0 bytes, 0 underruns
+       11 packets output, 704 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/2 is up, line protocol is up
@@ -597,11 +597,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 0 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/3 is up, line protocol is up
@@ -616,11 +616,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 0 bytes, 0 underruns
+       9 packets output, 576 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/4 is down, line protocol is down
@@ -1034,11 +1034,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 0 bytes, 0 no buffer
+       9 packets input, 576 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 0 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1079,9 +1079,9 @@ Total steps: 366
 [44/366] sw1 SW1# show interfaces counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
   Fa0/0                   0             0           0             0
-  Fa0/1                   0             1           0            11
-  Fa0/2                   0             1           0            10
-  Fa0/3                   0             1           0             9
+  Fa0/1                  64             1         704            11
+  Fa0/2                  64             1         640            10
+  Fa0/3                  64             1         576             9
   Fa0/4                   0             0           0             0
   Fa0/5                   0             0           0             0
   Fa0/6                   0             0           0             0
@@ -1103,7 +1103,7 @@ Total steps: 366
   Fa0/22                  0             0           0             0
   Fa0/23                  0             0           0             0
   Gi0/0                   0             0           0             0
-  Gi0/1                   0             9           0            10
+  Gi0/1                 576             9         640            10
 
 [45/366] sw1 SW1# show interfaces description
   Interface                      Status         Protocol Description
@@ -1233,7 +1233,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *11:07:41.000 UTC Tue Jun 16 2026
+  *13:03:20.000 UTC Tue Jun 16 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1915,11 +1915,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 0 bytes, 0 underruns
+       11 packets output, 704 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1946,11 +1946,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 0 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1977,11 +1977,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 0 bytes, 0 underruns
+       9 packets output, 576 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2649,11 +2649,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       9 packets input, 0 bytes, 0 no buffer
+       9 packets input, 576 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 0 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2819,9 +2819,9 @@ Total steps: 366
   eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
           inet 192.168.1.11  netmask 255.255.255.0  broadcast 192.168.1.255
           ether 02:00:00:00:00:4f  txqueuelen 1000  (Ethernet)
-          RX packets 11  bytes 0 (0.0 KiB)
+          RX packets 11  bytes 704 (0.7 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
-          TX packets 1  bytes 0 (0.0 KiB)
+          TX packets 1  bytes 64 (0.1 KiB)
           TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
 
 [184/366] l1 l1$ ip route
@@ -3063,7 +3063,7 @@ Total steps: 366
 --- [202] § per-interface counters & cdp loop ---
 [203/366] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/1                   0             1           0            11
+  Fa0/1                  64             1         704            11
 
 [204/366] sw1 SW1# show cdp interface FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -3073,7 +3073,7 @@ Total steps: 366
 
 [205/366] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/2                   0             1           0            10
+  Fa0/2                  64             1         640            10
 
 [206/366] sw1 SW1# show cdp interface FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -3083,7 +3083,7 @@ Total steps: 366
 
 [207/366] sw1 SW1# show interfaces FastEthernet0/3 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/3                   0             1           0             9
+  Fa0/3                  64             1         576             9
 
 [208/366] sw1 SW1# show cdp interface FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -3322,7 +3322,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   11:07:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   13:03:20 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3402,7 +3402,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/16/2026, 11:07:41 AM
+  System Boot Time:          6/16/2026, 1:03:20 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3457,7 +3457,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   11:07:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   13:03:20 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3488,7 +3488,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   11:07:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   13:03:20 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3568,7 +3568,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/16/2026, 11:07:41 AM
+  System Boot Time:          6/16/2026, 1:03:20 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3623,27 +3623,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   11:07:41 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   13:03:20 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.893 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.393 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.909 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.416 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.393/1.143/1.893/0.750 ms
+  rtt min/avg/max/mdev = 0.416/1.163/1.909/0.747 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.607 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.522 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.573 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.426 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.522/0.564/0.607/0.043 ms
+  rtt min/avg/max/mdev = 0.426/0.500/0.573/0.073 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -3703,11 +3703,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 0 bytes, 0 no buffer
+       5 packets input, 472 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 0 bytes, 0 underruns
+       15 packets output, 1112 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -3724,11 +3724,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 0 bytes, 0 no buffer
+       3 packets input, 268 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 0 bytes, 0 underruns
+       12 packets output, 844 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -3745,11 +3745,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 0 bytes, 0 underruns
+       9 packets output, 576 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4207,11 +4207,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 0 bytes, 0 no buffer
+       3 packets input, 268 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 0 bytes, 0 underruns
+       13 packets output, 908 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4228,11 +4228,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 0 bytes, 0 underruns
+       10 packets output, 640 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4249,11 +4249,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 0 bytes, 0 underruns
+       9 packets output, 576 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

@@ -3385,3 +3385,22 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Tests STP encodant l'ancien coût gigabit des ports Fa mis à jour (19).
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 56 — Compteurs d'octets cohérents + purge MAC (link-flap)
+
+1. **Compteur d'octets bloqué à 0** alors que les paquets augmentaient
+   (anomalie physique) — CORRIGÉ. `Port.sendFrame`/`receiveFrame`
+   incrémentent désormais `bytesOut`/`bytesIn` via `ethernetFrameBytes()`
+   (nouvelle aide dans core/types : en-tête 14 + payload réel — totalLength
+   IPv4, 28 ARP, 40+payloadLength IPv6 — + FCS, minimum trame 64 octets).
+   Vérifié : « 12 packets input, 1186 bytes » (au lieu de 0 bytes).
+2. **Purge de la table MAC** — déjà couverte : changement de VLAN d'accès
+   (`setSwitchportAccessVlan` → flush, entrée 55) ET link-flap (flush sur
+   link-down déjà câblé dans `initPorts.onLinkChange`). Vérifié : une MAC
+   n'apparaît que dans le VLAN configuré et est oubliée au down du port.
+- Tests `ifconfig` byte-exact (local vs SSH) : la normalisation des
+  compteurs ne masquait pas le suffixe lisible « (0.5 KiB) » ; ajout du
+  strip `(*)` — les octets étant désormais non nuls et propres à chaque
+  équipement.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
