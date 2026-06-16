@@ -41,6 +41,12 @@ import {
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
+import { isPathReachable } from '../linux/network/HostLookup';
+import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
+
+const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
+  'running-config', 'startup-config', 'tech-support', 'archive',
+]);
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -60,6 +66,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
+  protected readonly outgoingSessions = new OutgoingSessionRegistry();
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private scheduledReloadAtMs: number | null = null;
+
+  private armReloadTimer(ms: number): void {
+    if (this.reloadTimer !== null) clearTimeout(this.reloadTimer);
+    this.scheduledReloadAtMs = Date.now() + ms;
+    const t = setTimeout(() => {
+      this.reloadTimer = null;
+      this.scheduledReloadAtMs = null;
+      this.performScheduledReload();
+    }, ms);
+    (t as unknown as { unref?: () => void }).unref?.();
+    this.reloadTimer = t;
+  }
+
+  protected getScheduledReloadMs(): number | null {
+    return this.scheduledReloadAtMs;
+  }
+
+  protected performImmediateReload(): string {
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
+    return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
+  }
+
+  protected performScheduledReload(): void {
+    this.d().powerOff();
+    this.d().powerOn();
+    this.mode = 'user';
+  }
 
   protected attachLoggingToDevice(device: TDevice): void {
     (device as unknown as { _loggingConfig?: LoggingConfig })._loggingConfig = this.logging;
@@ -84,6 +122,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
+  protected terminalHistorySize: number = 20;
 
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
@@ -222,6 +261,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonPrivilegedCommands();
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
+    this.privilegedTrie.importMissingFrom(this.userTrie);
+    this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW);
+    this.applyCanonicalDescriptions();
+  }
+
+  /**
+   * Top-level keywords that only ever exist as a prefix of longer commands
+   * (e.g. `show ...`, `configure terminal`) keep the placeholder description
+   * equal to their keyword. These canonical descriptions give the ? help a
+   * proper line for them, shared by every Cisco device.
+   */
+  protected applyCanonicalDescriptions(): void {
+    const exec: Array<[string, string]> = [
+      ['configure', 'Enter configuration mode'],
+      ['show', 'Show running system information'],
+      ['no', 'Negate a command or set its defaults'],
+      ['clear', 'Reset functions'],
+      ['erase', 'Erase persistent storage'],
+      ['sntp', 'Configure SNTP'],
+      ['copy', 'Copy from one file to another'],
+      ['debug', 'Enable debugging functions'],
+      ['undebug', 'Disable debugging functions'],
+      ['write', 'Write running configuration to memory'],
+      ['event', 'Embedded Event Manager'],
+    ];
+    for (const trie of [this.userTrie, this.privilegedTrie]) {
+      for (const [k, d] of exec) trie.setCanonicalDescription(k, d);
+    }
+    const config: Array<[string, string]> = [
+      ['configure', 'Enter configuration mode'],
+      ['no', 'Negate a command or set its defaults'],
+      ['show', 'Show running system information'],
+      ['sntp', 'Configure SNTP'],
+      ['cdp', 'CDP global configuration'],
+      ['lldp', 'LLDP global configuration'],
+      ['ip', 'Global IP configuration subcommands'],
+      ['ipv6', 'Global IPv6 configuration subcommands'],
+      ['mac', 'MAC address table configuration'],
+      ['errdisable', 'Error-disable recovery configuration'],
+      ['vtp', 'VTP configuration'],
+      ['enable', 'Modify enable password parameters'],
+      ['router', 'Enable a routing protocol'],
+      ['key', 'Key management'],
+      ['security', 'Security configuration'],
+      ['event', 'Embedded Event Manager'],
+      ['flow', 'Flow monitoring configuration'],
+      ['parameter-map', 'Parameter map configuration'],
+      ['zone', 'Security zone'],
+      ['zone-pair', 'Security zone-pair'],
+    ];
+    for (const [k, d] of config) this.configTrie.setCanonicalDescription(k, d);
   }
 
   // ─── Execute Loop (shared) ──────────────────────────────────────
@@ -424,6 +514,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private registerCommonShowCommands(trie: CommandTrie): void {
     trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers());
+    trie.register('show sessions', 'Display open outgoing connections', () => renderSessions(this.outgoingSessions));
+    trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
+    trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
+      if (!args[0]) {
+        const last = this.outgoingSessions.list().slice(-1)[0];
+        if (!last) return '% No connections open';
+        this.outgoingSessions.close(last.conn);
+        return '';
+      }
+      const n = parseInt(args[0], 10);
+      if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
+      const target = this.outgoingSessions.get(n)!;
+      this.outgoingSessions.close(n);
+      return `Closing connection to ${target.host} [confirm]`;
+    });
+    trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
+      const list = this.outgoingSessions.list();
+      const n = args[0] ? parseInt(args[0], 10) : (list.slice(-1)[0]?.conn ?? NaN);
+      const s = this.outgoingSessions.get(n);
+      if (!s) return '% No connection open';
+      this.outgoingSessions.touch(n);
+      return `[Resuming connection ${n} to ${s.host} ... ]`;
+    });
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
@@ -445,6 +558,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
+    trie.registerGreedy('show flash:', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
       return profile === 'router-isr2911'
@@ -530,7 +644,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show calendar', 'Display hardware calendar', () =>
       showCalendar());
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
-      showTerminal());
+      showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize));
     trie.register('show processes memory', 'Display per-process memory', () =>
       showProcessesMemory());
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
@@ -542,7 +656,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show stacks', 'Display process stacks', () =>
       showStacks());
     trie.registerGreedy('show reload', 'Display reload schedule', () =>
-      showReload());
+      showReload(this.getScheduledReloadMs()));
     trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
       const dev = this.d() as unknown as Router;
       return showAaa(getSecurityConfig(dev), a.join(' '));
@@ -612,8 +726,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (head === 'monitor') return '';
     if (head === 'exec') return '';
     if (head === 'history') {
-      // `terminal history size N` — accepted, value ignored (history is
-      // capped by the session container, not by line config).
+      if ((rest[0] ?? '').toLowerCase() === 'size') {
+        const n = parseInt(rest[1] ?? '', 10);
+        if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
+        this.terminalHistorySize = n;
+        return '';
+      }
+      if (rest.length === 0) { this.terminalHistorySize = 20; return ''; }
       return '';
     }
     if (head === 'monitor') {
@@ -686,24 +805,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[OK]`;
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
-      const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
       if (args[0]?.toLowerCase() === 'cancel') {
-        dev._scheduleReload?.('cancel');
+        if (this.reloadTimer !== null) { clearTimeout(this.reloadTimer); this.reloadTimer = null; }
+        this.scheduledReloadAtMs = null;
         return 'Reload cancelled.';
       }
       if (args[0]?.toLowerCase() === 'in') {
         if (!args[1]) return '% Incomplete command.';
         if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
-        dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
+        this.armReloadTimer(min * 60_000);
         return `Reload scheduled in ${min} minutes`;
       }
       if (args[0]?.toLowerCase() === 'at') {
         if (!args[1]) return '% Incomplete command.';
         return `Reload scheduled for ${args[1]}`;
       }
-      dev._scheduleReload?.('immediate');
-      return 'Proceed with reload? [confirm]\nReload requested.';
+      return this.performImmediateReload();
     });
     this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
       const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
@@ -753,14 +871,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (sub === 'nhrp') return svc.disable('ip.nhrp');
       return svc.disable('ip.packet');
     });
-    this.privilegedTrie.register('show reload', 'Show pending reload', () => {
-      const dev = this.d() as unknown as { _getScheduledReloadMs?: () => number | null };
-      const t = dev._getScheduledReloadMs?.();
-      if (t === null || t === undefined) return 'No reload is scheduled';
-      const sec = Math.max(0, Math.floor((t - Date.now()) / 1000));
-      return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
-    });
-
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
       return dev.getDebugService?.();
@@ -831,14 +941,61 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
       return this.runOutboundSshClient(args);
     });
-    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
-    });
-    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      return `Trying ${args[0]} ... \n% Connection refused by remote host`;
-    });
+    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
+    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
+  }
+
+  /**
+   * Outbound Telnet driven by the real topology: resolve the target,
+   * pick a source interface, and verify L2/L3 reachability. A session is
+   * recorded only when a Telnet listener (network CLI device with telnet
+   * transport) actually accepts the connection.
+   */
+  private runOutboundTelnet(args: string[]): string {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    if (positional.length === 0) return '% Incomplete command.';
+    const display = positional[0];
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    const router = this.d() as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    };
+    let host = display;
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
+
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return `Trying ${display} ...\n% No usable interface for outbound Telnet`;
+
+    const remote = findHostByAddress(host);
+    if (!remote || remote.poweredOff || remote.interfaceDown) {
+      return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
+    }
+    if (!isPathReachable(sourceIp, remote.ip)) {
+      return `Trying ${display} ...\n% Destination unreachable; gateway or route not found`;
+    }
+    if (!this.remoteAcceptsTelnet(remote.device, port)) {
+      return `Trying ${display} ...\n% Connection refused by remote host`;
+    }
+    this.outgoingSessions.open({ host: display, address: remote.ip, protocol: 'telnet', user: '' });
+    return `Trying ${display} ... Open\n`;
+  }
+
+  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
+    if (port !== 23) return false;
+    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
+    const cls = d.constructor?.name ?? '';
+    const type = (d.getDeviceType?.() ?? '').toLowerCase();
+    const isNetworkCli =
+      /Router|Switch/.test(cls) || /router|switch/.test(type);
+    if (!isNetworkCli) return false;
+    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
+    if (transport === undefined) return true;
+    return transport === 'telnet' || transport === 'all';
   }
 
   /**
@@ -903,6 +1060,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const remoteHk = this.lookupRemoteSshHostKey(host);
       if (remoteHk) {
         dev._getSshKnownHosts?.().add({ host, ...remoteHk });
+      }
+      if (!cmd) {
+        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
       }
     }
     return result.output;

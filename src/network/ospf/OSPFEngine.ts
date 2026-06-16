@@ -116,6 +116,20 @@ export class OSPFEngine implements IProtocolEngine {
   /** Reentrancy guard: prevents recursive sendLSRequest inside processLSUpdate */
   private insideProcessLSUpdate = false;
 
+  /**
+   * Batch-reconvergence mode. When the topology integration drives a whole
+   * domain to convergence in a single synchronous pass, no simulated time
+   * elapses between LSA originations and receptions. The wall-clock pacing
+   * rules MinLSInterval (§12.4, flood side) and MinLSArrival (§13 step 5b,
+   * receive side) must therefore be relaxed so a newer LSA instance can still
+   * supersede a stale copy on the wire. Set/cleared by the integration around
+   * the origination + re-flood phase.
+   */
+  private batchConvergence = false;
+
+  /** Toggle batch-reconvergence pacing relaxation (see {@link batchConvergence}). */
+  setBatchConvergence(on: boolean): void { this.batchConvergence = on; }
+
   /** SPF throttle — configurable via setThrottleSPF() */
   private spfThrottleInitial = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
   private spfThrottleHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
@@ -1963,7 +1977,7 @@ export class OSPFEngine implements IProtocolEngine {
         // of whether the incoming LSA has a higher sequence number.
         const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
         const now = Date.now();
-        if (existing && this.lsArrivalTimes.has(arrKey)) {
+        if (!this.batchConvergence && existing && this.lsArrivalTimes.has(arrKey)) {
           const lastArrival = this.lsArrivalTimes.get(arrKey)!;
           if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
             continue; // Drop — arrived too quickly (MinLSArrival)
@@ -2122,13 +2136,6 @@ export class OSPFEngine implements IProtocolEngine {
       topic: 'ospf.lsa.installed',
       payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa) },
     });
-  }
-
-  mergeLSA(areaId: string, lsa: LSA): boolean {
-    const existing = this.lookupLSA(areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-    if (existing && !this.isNewerLSA(lsa, existing)) return false;
-    this.installLSA(areaId, structuredClone(lsa));
-    return true;
   }
 
   lsaIsNewer(a: LSA, b: LSA): boolean {
@@ -2595,7 +2602,7 @@ export class OSPFEngine implements IProtocolEngine {
     // We only record (and check) the last flood time when we actually sent to at
     // least one neighbor — if there are no Full neighbors, the "flood" is a no-op
     // and we do not start the rate-limiting clock.
-    if (!force && isSelfOriginated) {
+    if (!force && !this.batchConvergence && isSelfOriginated) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       if (this.lastFloodTime.has(key)) {
         const lastTime = this.lastFloodTime.get(key)!;
@@ -2642,6 +2649,27 @@ export class OSPFEngine implements IProtocolEngine {
     if (isSelfOriginated && sentToAny) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       this.lastFloodTime.set(key, Date.now());
+    }
+  }
+
+  /**
+   * Force a re-flood of every self-originated LSA currently held in the LSDB,
+   * over real LSU frames (RFC 2328 §13.3). Receiving routers supersede any
+   * stale instance they still hold (lower sequence) via {@link processLSUpdate}.
+   *
+   * This exists for *batch* reconvergence (e.g. a router added to an already
+   * converged domain): the MinLSInterval (§12.4) flood rate-limit assumes wall
+   * time advances between originations, which it does not in a synchronous
+   * "converge now" pass. Forcing the flood here keeps LSDB synchronisation on
+   * the wire (no out-of-band LSDB copy) while guaranteeing newer instances win.
+   */
+  refloodSelfOriginatedLSAs(): void {
+    for (const [areaId, areaDB] of this.lsdb.areas) {
+      for (const [, lsa] of areaDB) {
+        if (lsa.advertisingRouter !== this.config.routerId) continue;
+        if (lsa.lsAge >= OSPF_MAX_AGE) continue;
+        this.floodLSA(areaId, lsa, null, true); // force past MinLSInterval
+      }
     }
   }
 

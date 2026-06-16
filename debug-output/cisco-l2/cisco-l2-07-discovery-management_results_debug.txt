@@ -1,0 +1,6078 @@
+============================================================
+Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
+Generated: 2026-06-15T20:07:22.790Z
+Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
+focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
+Total steps: 366
+============================================================
+
+
+--- [1] § baseline discovery/management ---
+[1/366] sw1 SW1> enable
+<empty>
+
+[2/366] sw1 SW1# show cdp
+  Global CDP information:
+          Sending CDP packets every 60 seconds
+          Sending a holdtime value of 180 seconds
+          Sending CDPv2 advertisements is  enabled
+
+[3/366] sw1 SW1# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Fas 0/1           180        H           Linux Host eth 0
+  W1               Fas 0/2           180        H           Windows Host eth 0
+  SRV1             Fas 0/3           180        H           Linux Host eth 0
+  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
+  
+  Total cdp entries displayed : 4
+
+[4/366] sw1 SW1# show cdp neighbors detail
+  -------------------------
+  Device ID: L1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: FastEthernet0/1,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: W1
+  Entry address(es):
+  Platform: Windows Host,  Capabilities: Host
+  Interface: FastEthernet0/2,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: SRV1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: FastEthernet0/3,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: CORE
+  Entry address(es):
+  Platform: Cisco Catalyst 2960,  Capabilities: Switch
+  Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
+  Holdtime : 180 sec
+  
+  Total cdp entries displayed : 4
+
+[5/366] sw1 SW1# show lldp
+  % LLDP is not enabled
+
+[6/366] sw1 SW1# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[7/366] sw1 SW1# show clock
+  *20:07:22.000 UTC Mon Jun 15 2026
+
+[8/366] sw1 SW1# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[9/366] sw1 SW1# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[10/366] sw1 SW1# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[11/366] sw1 SW1# show logging
+  Syslog logging: enabled
+  
+
+[12/366] sw1 SW1# show ip interface brief
+  Interface              IP-Address      OK? Method Status                Protocol
+  Vlan1                  unassigned      YES unset  administratively down down
+
+
+--- [13] § CDP global + per-interface loop ---
+[13/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[14/366] sw1 SW1(config)# cdp run
+<empty>
+
+[15/366] sw1 SW1(config)# cdp timer 30
+<empty>
+
+[16/366] sw1 SW1(config)# cdp holdtime 120
+<empty>
+
+[17/366] sw1 SW1(config)# cdp advertise-v2
+<empty>
+
+[18/366] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[19/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[20/366] sw1 SW1(config-if)# exit
+<empty>
+
+[21/366] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[22/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[23/366] sw1 SW1(config-if)# exit
+<empty>
+
+[24/366] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[25/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[26/366] sw1 SW1(config-if)# exit
+<empty>
+
+[27/366] sw1 SW1(config)# interface FastEthernet0/4
+<empty>
+
+[28/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[29/366] sw1 SW1(config-if)# exit
+<empty>
+
+[30/366] sw1 SW1(config)# interface FastEthernet0/5
+<empty>
+
+[31/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[32/366] sw1 SW1(config-if)# exit
+<empty>
+
+[33/366] sw1 SW1(config)# interface FastEthernet0/6
+<empty>
+
+[34/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[35/366] sw1 SW1(config-if)# exit
+<empty>
+
+[36/366] sw1 SW1(config)# interface FastEthernet0/7
+<empty>
+
+[37/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[38/366] sw1 SW1(config-if)# exit
+<empty>
+
+[39/366] sw1 SW1(config)# interface FastEthernet0/8
+<empty>
+
+[40/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[41/366] sw1 SW1(config-if)# exit
+<empty>
+
+[42/366] sw1 SW1(config)# interface FastEthernet0/9
+<empty>
+
+[43/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[44/366] sw1 SW1(config-if)# exit
+<empty>
+
+[45/366] sw1 SW1(config)# interface FastEthernet0/10
+<empty>
+
+[46/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[47/366] sw1 SW1(config-if)# exit
+<empty>
+
+[48/366] sw1 SW1(config)# interface FastEthernet0/11
+<empty>
+
+[49/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[50/366] sw1 SW1(config-if)# exit
+<empty>
+
+[51/366] sw1 SW1(config)# interface FastEthernet0/12
+<empty>
+
+[52/366] sw1 SW1(config-if)# cdp enable
+<empty>
+
+[53/366] sw1 SW1(config-if)# exit
+<empty>
+
+[54/366] sw1 SW1(config)# end
+<empty>
+
+[55/366] sw1 SW1# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Fas 0/1           180        H           Linux Host eth 0
+  W1               Fas 0/2           180        H           Windows Host eth 0
+  SRV1             Fas 0/3           180        H           Linux Host eth 0
+  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
+  
+  Total cdp entries displayed : 4
+
+[56/366] sw1 SW1# show cdp neighbors detail
+  -------------------------
+  Device ID: L1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: FastEthernet0/1,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: W1
+  Entry address(es):
+  Platform: Windows Host,  Capabilities: Host
+  Interface: FastEthernet0/2,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: SRV1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: FastEthernet0/3,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: CORE
+  Entry address(es):
+  Platform: Cisco Catalyst 2960,  Capabilities: Switch
+  Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
+  Holdtime : 180 sec
+  
+  Total cdp entries displayed : 4
+
+[57/366] sw1 SW1# show cdp interface
+  FastEthernet0/0 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/2 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/3 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/4 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/5 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/6 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/7 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/8 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/9 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/10 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/11 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/12 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/13 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/14 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/15 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/16 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/17 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/18 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/19 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/20 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/21 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/22 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  FastEthernet0/23 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  GigabitEthernet0/0 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+  GigabitEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[58/366] sw1 SW1# show cdp traffic
+  Global CDP information:
+          Sending CDP packets every 30 seconds
+          Sending a holdtime value of 120 seconds
+          Sending CDPv2 advertisements is  enabled
+
+
+--- [59] § LLDP global + per-interface loop ---
+[59/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[60/366] sw1 SW1(config)# lldp run
+<empty>
+
+[61/366] sw1 SW1(config)# lldp timer 30
+<empty>
+
+[62/366] sw1 SW1(config)# lldp holdtime 120
+<empty>
+
+[63/366] sw1 SW1(config)# lldp reinit 2
+<empty>
+
+[64/366] sw1 SW1(config)# interface FastEthernet0/1
+<empty>
+
+[65/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[66/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[67/366] sw1 SW1(config-if)# exit
+<empty>
+
+[68/366] sw1 SW1(config)# interface FastEthernet0/2
+<empty>
+
+[69/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[70/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[71/366] sw1 SW1(config-if)# exit
+<empty>
+
+[72/366] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[73/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[74/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[75/366] sw1 SW1(config-if)# exit
+<empty>
+
+[76/366] sw1 SW1(config)# interface FastEthernet0/4
+<empty>
+
+[77/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[78/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[79/366] sw1 SW1(config-if)# exit
+<empty>
+
+[80/366] sw1 SW1(config)# interface FastEthernet0/5
+<empty>
+
+[81/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[82/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[83/366] sw1 SW1(config-if)# exit
+<empty>
+
+[84/366] sw1 SW1(config)# interface FastEthernet0/6
+<empty>
+
+[85/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[86/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[87/366] sw1 SW1(config-if)# exit
+<empty>
+
+[88/366] sw1 SW1(config)# interface FastEthernet0/7
+<empty>
+
+[89/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[90/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[91/366] sw1 SW1(config-if)# exit
+<empty>
+
+[92/366] sw1 SW1(config)# interface FastEthernet0/8
+<empty>
+
+[93/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[94/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[95/366] sw1 SW1(config-if)# exit
+<empty>
+
+[96/366] sw1 SW1(config)# interface FastEthernet0/9
+<empty>
+
+[97/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[98/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[99/366] sw1 SW1(config-if)# exit
+<empty>
+
+[100/366] sw1 SW1(config)# interface FastEthernet0/10
+<empty>
+
+[101/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[102/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[103/366] sw1 SW1(config-if)# exit
+<empty>
+
+[104/366] sw1 SW1(config)# interface FastEthernet0/11
+<empty>
+
+[105/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[106/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[107/366] sw1 SW1(config-if)# exit
+<empty>
+
+[108/366] sw1 SW1(config)# interface FastEthernet0/12
+<empty>
+
+[109/366] sw1 SW1(config-if)# lldp transmit
+<empty>
+
+[110/366] sw1 SW1(config-if)# lldp receive
+<empty>
+
+[111/366] sw1 SW1(config-if)# exit
+<empty>
+
+[112/366] sw1 SW1(config)# end
+<empty>
+
+[113/366] sw1 SW1# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Fas 0/1        120        Host            eth0
+  W1                  Fas 0/2        120        Host            eth0
+  SRV1                Fas 0/3        120        Host            eth0
+  CORE                Gig 0/1        120        Switch          GigabitEthernet0/1
+  
+  Total entries displayed: 4
+
+[114/366] sw1 SW1# show lldp neighbors detail
+  
+  
+  Total entries displayed: 0
+
+[115/366] sw1 SW1# show lldp interface
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[116/366] sw1 SW1# show lldp traffic
+  Global LLDP Information:
+      Status: ACTIVE
+      LLDP advertisements are sent every 30 seconds
+      LLDP hold time advertised is 120 seconds
+      LLDP interface reinitialisation delay is 2 seconds
+
+
+--- [117] § management SVI (Vlan1) + default gateway ---
+[117/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[118/366] sw1 SW1(config)# interface Vlan1
+  % Invalid interface name "Vlan1"
+
+[119/366] sw1 SW1(config)# ip address 192.168.1.254 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.1.254 255.255.255.0
+     ^
+
+[120/366] sw1 SW1(config)# no shutdown
+<empty>
+
+[121/366] sw1 SW1(config)# exit
+<empty>
+
+[122/366] sw1 SW1# ip default-gateway 192.168.1.1
+  % Invalid input detected at '^' marker.
+  ip default-gateway 192.168.1.1
+  ^
+
+[123/366] sw1 SW1# do show ip interface brief
+  % Invalid input detected at '^' marker.
+  do show ip interface brief
+  ^
+
+[124/366] sw1 SW1# do show interfaces Vlan1
+  % Invalid input detected at '^' marker.
+  do show interfaces Vlan1
+  ^
+
+[125/366] sw1 SW1# end
+<empty>
+
+[126/366] sw1 SW1# show running-config interface Vlan1
+  interface Vlan1
+  end
+
+
+--- [127] § hostname & banners ---
+[127/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[128/366] sw1 SW1(config)# hostname ACCESS-SW1
+<empty>
+
+[129/366] sw1 ACCESS-SW1(config)# banner motd #Unauthorized access prohibited#
+<empty>
+
+[130/366] sw1 ACCESS-SW1(config)# banner login #Login banner#
+<empty>
+
+[131/366] sw1 ACCESS-SW1(config)# banner exec #Welcome#
+<empty>
+
+[132/366] sw1 ACCESS-SW1(config)# hostname SW1
+<empty>
+
+[133/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [134] § local users & privilege loop ---
+[134/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[135/366] sw1 SW1(config)# enable secret Str0ngEnable!
+<empty>
+
+[136/366] sw1 SW1(config)# enable password Weak
+<empty>
+
+[137/366] sw1 SW1(config)# service password-encryption
+<empty>
+
+[138/366] sw1 SW1(config)# username user1 privilege 1 secret Pass1!
+<empty>
+
+[139/366] sw1 SW1(config)# username user2 privilege 1 secret Pass2!
+<empty>
+
+[140/366] sw1 SW1(config)# username user3 privilege 1 secret Pass3!
+<empty>
+
+[141/366] sw1 SW1(config)# username user4 privilege 15 secret Pass4!
+<empty>
+
+[142/366] sw1 SW1(config)# username user5 privilege 15 secret Pass5!
+<empty>
+
+[143/366] sw1 SW1(config)# username user6 privilege 15 secret Pass6!
+<empty>
+
+[144/366] sw1 SW1(config)# username admin privilege 15 secret AdminPass!
+<empty>
+
+[145/366] sw1 SW1(config)# do show running-config | include username
+<empty>
+
+[146/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [147] § AAA + line vty login ---
+[147/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[148/366] sw1 SW1(config)# aaa new-model
+<empty>
+
+[149/366] sw1 SW1(config)# aaa authentication login default local
+<empty>
+
+[150/366] sw1 SW1(config)# aaa authorization exec default local
+<empty>
+
+[151/366] sw1 SW1(config)# line vty 0 15
+<empty>
+
+[152/366] sw1 SW1(config-line)# login authentication default
+<empty>
+
+[153/366] sw1 SW1(config-line)# exec-timeout 10 0
+<empty>
+
+[154/366] sw1 SW1(config-line)# exit
+<empty>
+
+[155/366] sw1 SW1(config)# line console 0
+<empty>
+
+[156/366] sw1 SW1(config-line)# login local
+<empty>
+
+[157/366] sw1 SW1(config-line)# logging synchronous
+<empty>
+
+[158/366] sw1 SW1(config-line)# exit
+<empty>
+
+[159/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [160] § SSH server enablement ---
+[160/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[161/366] sw1 SW1(config)# ip domain-name lab.local
+<empty>
+
+[162/366] sw1 SW1(config)# crypto key generate rsa modulus 2048
+<empty>
+
+[163/366] sw1 SW1(config)# ip ssh version 2
+<empty>
+
+[164/366] sw1 SW1(config)# ip ssh time-out 60
+<empty>
+
+[165/366] sw1 SW1(config)# ip ssh authentication-retries 3
+<empty>
+
+[166/366] sw1 SW1(config)# line vty 0 15
+<empty>
+
+[167/366] sw1 SW1(config-line)# transport input ssh
+<empty>
+
+[168/366] sw1 SW1(config-line)# exit
+<empty>
+
+[169/366] sw1 SW1(config)# do show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[170/366] sw1 SW1(config)# do show ssh
+  Connection Version Mode Encryption  Hmac  State  Username
+  %No SSHv2 server connections running.
+
+[171/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [172] § logging config + hosts loop ---
+[172/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[173/366] sw1 SW1(config)# logging on
+<empty>
+
+[174/366] sw1 SW1(config)# logging buffered 16384 debugging
+<empty>
+
+[175/366] sw1 SW1(config)# logging console warnings
+<empty>
+
+[176/366] sw1 SW1(config)# logging trap informational
+<empty>
+
+[177/366] sw1 SW1(config)# logging facility local6
+<empty>
+
+[178/366] sw1 SW1(config)# logging host 192.168.1.13
+<empty>
+
+[179/366] sw1 SW1(config)# logging host 192.168.1.23
+<empty>
+
+[180/366] sw1 SW1(config)# logging host 10.0.0.50
+<empty>
+
+[181/366] sw1 SW1(config)# logging source-interface Vlan1
+<empty>
+
+[182/366] sw1 SW1(config)# service timestamps log datetime msec
+<empty>
+
+[183/366] sw1 SW1(config)# do show logging
+  Syslog logging: enabled
+    Logging to 192.168.1.13
+    Logging to 192.168.1.23
+    Logging to 10.0.0.50
+  
+
+[184/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [185] § clock + NTP/SNTP ---
+[185/366] sw1 SW1# clock set 12:00:00 15 June 2026
+  % Invalid input detected at '^' marker.
+  clock set 12:00:00 15 June 2026
+  ^
+
+[186/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[187/366] sw1 SW1(config)# clock timezone UTC 0
+<empty>
+
+[188/366] sw1 SW1(config)# ntp server 192.168.1.13
+<empty>
+
+[189/366] sw1 SW1(config)# ntp server 192.168.1.23 prefer
+<empty>
+
+[190/366] sw1 SW1(config)# ntp authenticate
+<empty>
+
+[191/366] sw1 SW1(config)# ntp authentication-key 1 md5 NtpKey
+<empty>
+
+[192/366] sw1 SW1(config)# ntp trusted-key 1
+<empty>
+
+[193/366] sw1 SW1(config)# sntp server 192.168.1.13
+<empty>
+
+[194/366] sw1 SW1(config)# do show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[195/366] sw1 SW1(config)# do show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[196/366] sw1 SW1(config)# do show clock
+  *20:07:22.000 UTC Mon Jun 15 2026
+
+[197/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [198] § SNMP ---
+[198/366] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[199/366] sw1 SW1(config)# snmp-server community public RO
+<empty>
+
+[200/366] sw1 SW1(config)# snmp-server community private RW
+<empty>
+
+[201/366] sw1 SW1(config)# snmp-server location LAB-RACK-1
+<empty>
+
+[202/366] sw1 SW1(config)# snmp-server contact netops@lab.local
+<empty>
+
+[203/366] sw1 SW1(config)# snmp-server host 192.168.1.13 version 2c public
+<empty>
+
+[204/366] sw1 SW1(config)# snmp-server enable traps
+<empty>
+
+[205/366] sw1 SW1(config)# do show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[206/366] sw1 SW1(config)# do show snmp community
+  SNMP agent not enabled
+
+[207/366] sw1 SW1(config)# end
+<empty>
+
+
+--- [208] § CORE & SW2 discovery ---
+[208/366] core CORE> enable
+<empty>
+
+[209/366] core CORE# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  SW2              Gig 0/0           180        S           Cisco Catalyst 2960 Gig 0/1
+  SW1              Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[210/366] core CORE# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[211/366] sw2 SW2> enable
+<empty>
+
+[212/366] sw2 SW2# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L2               Fas 0/1           180        H           Linux Host eth 0
+  W2               Fas 0/2           180        H           Windows Host eth 0
+  SRV2             Fas 0/3           180        H           Linux Host eth 0
+  CORE             Gig 0/1           180        S           Cisco Catalyst 2960 Gig 0/0
+  
+  Total cdp entries displayed : 4
+
+[213/366] sw2 SW2# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+
+--- [214] § management reachability from hosts ---
+[214/366] l1 l1$ ping -c 2 192.168.1.254
+  PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.1.254 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[215/366] srv1 srv1$ ping -c 2 192.168.1.254
+  PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.1.254 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[216/366] l1 l1$ arp -a
+  ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
+  ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
+  ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
+  ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
+  ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
+
+
+--- [217] § per-interface discovery inspection loop ---
+[218/366] sw1 SW1# show cdp interface FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[219/366] sw1 SW1# show lldp interface FastEthernet0/1
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[220/366] sw1 SW1# show cdp interface FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[221/366] sw1 SW1# show lldp interface FastEthernet0/2
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[222/366] sw1 SW1# show cdp interface FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[223/366] sw1 SW1# show lldp interface FastEthernet0/3
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[224/366] sw1 SW1# show cdp interface FastEthernet0/4
+  FastEthernet0/4 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[225/366] sw1 SW1# show lldp interface FastEthernet0/4
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[226/366] sw1 SW1# show cdp interface FastEthernet0/5
+  FastEthernet0/5 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[227/366] sw1 SW1# show lldp interface FastEthernet0/5
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[228/366] sw1 SW1# show cdp interface FastEthernet0/6
+  FastEthernet0/6 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[229/366] sw1 SW1# show lldp interface FastEthernet0/6
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[230/366] sw1 SW1# show cdp interface FastEthernet0/7
+  FastEthernet0/7 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[231/366] sw1 SW1# show lldp interface FastEthernet0/7
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[232/366] sw1 SW1# show cdp interface FastEthernet0/8
+  FastEthernet0/8 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[233/366] sw1 SW1# show lldp interface FastEthernet0/8
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[234/366] sw1 SW1# show cdp interface FastEthernet0/9
+  FastEthernet0/9 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[235/366] sw1 SW1# show lldp interface FastEthernet0/9
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[236/366] sw1 SW1# show cdp interface FastEthernet0/10
+  FastEthernet0/10 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[237/366] sw1 SW1# show lldp interface FastEthernet0/10
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[238/366] sw1 SW1# show cdp interface FastEthernet0/11
+  FastEthernet0/11 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[239/366] sw1 SW1# show lldp interface FastEthernet0/11
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[240/366] sw1 SW1# show cdp interface FastEthernet0/12
+  FastEthernet0/12 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[241/366] sw1 SW1# show lldp interface FastEthernet0/12
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[242/366] sw1 SW1# show cdp interface FastEthernet0/13
+  FastEthernet0/13 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[243/366] sw1 SW1# show lldp interface FastEthernet0/13
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[244/366] sw1 SW1# show cdp interface FastEthernet0/14
+  FastEthernet0/14 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[245/366] sw1 SW1# show lldp interface FastEthernet0/14
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[246/366] sw1 SW1# show cdp interface FastEthernet0/15
+  FastEthernet0/15 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[247/366] sw1 SW1# show lldp interface FastEthernet0/15
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[248/366] sw1 SW1# show cdp interface FastEthernet0/16
+  FastEthernet0/16 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[249/366] sw1 SW1# show lldp interface FastEthernet0/16
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[250/366] sw1 SW1# show cdp interface FastEthernet0/17
+  FastEthernet0/17 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[251/366] sw1 SW1# show lldp interface FastEthernet0/17
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[252/366] sw1 SW1# show cdp interface FastEthernet0/18
+  FastEthernet0/18 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[253/366] sw1 SW1# show lldp interface FastEthernet0/18
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[254/366] sw1 SW1# show cdp interface FastEthernet0/19
+  FastEthernet0/19 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[255/366] sw1 SW1# show lldp interface FastEthernet0/19
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[256/366] sw1 SW1# show cdp interface FastEthernet0/20
+  FastEthernet0/20 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[257/366] sw1 SW1# show lldp interface FastEthernet0/20
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[258/366] sw1 SW1# show cdp interface FastEthernet0/21
+  FastEthernet0/21 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[259/366] sw1 SW1# show lldp interface FastEthernet0/21
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[260/366] sw1 SW1# show cdp interface FastEthernet0/22
+  FastEthernet0/22 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[261/366] sw1 SW1# show lldp interface FastEthernet0/22
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+[262/366] sw1 SW1# show cdp interface FastEthernet0/23
+  FastEthernet0/23 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
+
+[263/366] sw1 SW1# show lldp interface FastEthernet0/23
+  FastEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/2:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/3:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+  FastEthernet0/4:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/5:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/6:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/7:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/8:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/9:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/10:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/11:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/12:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/13:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/14:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/15:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/16:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/17:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/18:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/19:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/20:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/21:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/22:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  FastEthernet0/23:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/0:
+      Tx: enabled
+      Rx: enabled
+      Tx state: INIT
+      Rx state: INIT
+  GigabitEthernet0/1:
+      Tx: enabled
+      Rx: enabled
+      Tx state: IDLE
+      Rx state: WAIT FOR FRAME
+
+
+--- [264] § SW2 management plane ---
+[264/366] sw2 SW2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[265/366] sw2 SW2(config)# interface Vlan1
+  % Invalid interface name "Vlan1"
+
+[266/366] sw2 SW2(config)# ip address 192.168.1.253 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.1.253 255.255.255.0
+     ^
+
+[267/366] sw2 SW2(config)# no shutdown
+<empty>
+
+[268/366] sw2 SW2(config)# exit
+<empty>
+
+[269/366] sw2 SW2# ip default-gateway 192.168.1.1
+  % Invalid input detected at '^' marker.
+  ip default-gateway 192.168.1.1
+  ^
+
+[270/366] sw2 SW2# enable secret Sw2Enable!
+  % Invalid input detected at '^' marker.
+  enable secret Sw2Enable!
+         ^
+
+[271/366] sw2 SW2# ip domain-name lab.local
+  % Invalid input detected at '^' marker.
+  ip domain-name lab.local
+  ^
+
+[272/366] sw2 SW2# crypto key generate rsa modulus 2048
+  % Invalid input detected at '^' marker.
+  crypto key generate rsa modulus 2048
+  ^
+
+[273/366] sw2 SW2# ip ssh version 2
+  % Invalid input detected at '^' marker.
+  ip ssh version 2
+  ^
+
+[274/366] sw2 SW2# logging host 192.168.1.13
+  % Invalid input detected at '^' marker.
+  logging host 192.168.1.13
+  ^
+
+[275/366] sw2 SW2# ntp server 192.168.1.23
+  % Invalid input detected at '^' marker.
+  ntp server 192.168.1.23
+  ^
+
+[276/366] sw2 SW2# snmp-server community public RO
+  % Invalid input detected at '^' marker.
+  snmp-server community public RO
+  ^
+
+[277/366] sw2 SW2# end
+<empty>
+
+[278/366] sw2 SW2# show ip interface brief
+  Interface              IP-Address      OK? Method Status                Protocol
+  Vlan1                  unassigned      YES unset  administratively down down
+
+[279/366] sw2 SW2# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[280/366] sw2 SW2# show logging
+  Syslog logging: enabled
+  
+
+[281/366] sw2 SW2# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[282/366] sw2 SW2# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW2
+  !
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+  !
+  interface FastEthernet0/2
+   switchport mode access
+  !
+  interface FastEthernet0/3
+   switchport mode access
+  !
+  interface FastEthernet0/4
+   switchport mode access
+  !
+  interface FastEthernet0/5
+   switchport mode access
+  !
+  interface FastEthernet0/6
+   switchport mode access
+  !
+  interface FastEthernet0/7
+   switchport mode access
+  !
+  interface FastEthernet0/8
+   switchport mode access
+  !
+  interface FastEthernet0/9
+   switchport mode access
+  !
+  interface FastEthernet0/10
+   switchport mode access
+  !
+  interface FastEthernet0/11
+   switchport mode access
+  !
+  interface FastEthernet0/12
+   switchport mode access
+  !
+  interface FastEthernet0/13
+   switchport mode access
+  !
+  interface FastEthernet0/14
+   switchport mode access
+  !
+  interface FastEthernet0/15
+   switchport mode access
+  !
+  interface FastEthernet0/16
+   switchport mode access
+  !
+  interface FastEthernet0/17
+   switchport mode access
+  !
+  interface FastEthernet0/18
+   switchport mode access
+  !
+  interface FastEthernet0/19
+   switchport mode access
+  !
+  interface FastEthernet0/20
+   switchport mode access
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
+  !
+  end
+
+[283/366] l2 l2$ ping -c 2 192.168.1.253
+  PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.1.253 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+
+--- [284] § host service inspection (SRV1/SRV2) ---
+[285/366] srv1 srv1$ ss -tlnp
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=7,fd=3))
+
+[286/366] srv1 srv1$ systemctl status sshd
+  Unit sshd.service could not be found.
+
+[287/366] srv1 srv1$ systemctl status chronyd
+  Unit chronyd.service could not be found.
+
+[288/366] srv1 srv1$ cat /etc/ntp.conf
+  cat: /etc/ntp.conf: No such file or directory
+
+[289/366] srv2 srv2$ ss -tlnp
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=7,fd=3))
+
+[290/366] srv2 srv2$ systemctl status sshd
+  Unit sshd.service could not be found.
+
+[291/366] srv2 srv2$ systemctl status chronyd
+  Unit chronyd.service could not be found.
+
+[292/366] srv2 srv2$ cat /etc/ntp.conf
+  cat: /etc/ntp.conf: No such file or directory
+
+[293/366] sw1 SW1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW1
+  !
+  enable secret 5 $1$ec95d4ed$iXyMKwbvZfoKEqIhdw7oI0
+  enable password 0 Weak
+  !
+  cdp timer 30
+  cdp holdtime 120
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+  !
+  interface FastEthernet0/2
+   switchport mode access
+  !
+  interface FastEthernet0/3
+   switchport mode access
+  !
+  interface FastEthernet0/4
+   switchport mode access
+  !
+  interface FastEthernet0/5
+   switchport mode access
+  !
+  interface FastEthernet0/6
+   switchport mode access
+  !
+  interface FastEthernet0/7
+   switchport mode access
+  !
+  interface FastEthernet0/8
+   switchport mode access
+  !
+  interface FastEthernet0/9
+   switchport mode access
+  !
+  interface FastEthernet0/10
+   switchport mode access
+  !
+  interface FastEthernet0/11
+   switchport mode access
+  !
+  interface FastEthernet0/12
+   switchport mode access
+  !
+  interface FastEthernet0/13
+   switchport mode access
+  !
+  interface FastEthernet0/14
+   switchport mode access
+  !
+  interface FastEthernet0/15
+   switchport mode access
+  !
+  interface FastEthernet0/16
+   switchport mode access
+  !
+  interface FastEthernet0/17
+   switchport mode access
+  !
+  interface FastEthernet0/18
+   switchport mode access
+  !
+  interface FastEthernet0/19
+   switchport mode access
+  !
+  interface FastEthernet0/20
+   switchport mode access
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
+  !
+  logging buffered 16384 debugging
+  logging console warnings
+  logging facility local6
+  logging source-interface Vlan1
+  logging host 192.168.1.13
+  logging host 192.168.1.23
+  logging host 10.0.0.50
+  end
+
+
+--- [294] § extended cross-switch interface inspection appendix ---
+[295/366] sw1 SW1# show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[296/366] sw1 SW1# show interfaces FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       18 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[297/366] sw1 SW1# show interfaces FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       1 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       18 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[298/366] sw1 SW1# show interfaces FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       16 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[299/366] sw1 SW1# show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:05 (bia 02:00:00:00:00:05)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[300/366] sw1 SW1# show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:06 (bia 02:00:00:00:00:06)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[301/366] sw1 SW1# show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:07 (bia 02:00:00:00:00:07)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[302/366] sw1 SW1# show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:08 (bia 02:00:00:00:00:08)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[303/366] sw1 SW1# show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:09 (bia 02:00:00:00:00:09)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[304/366] sw1 SW1# show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0a (bia 02:00:00:00:00:0a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[305/366] sw1 SW1# show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0b (bia 02:00:00:00:00:0b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[306/366] sw1 SW1# show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0c (bia 02:00:00:00:00:0c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[307/366] sw1 SW1# show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0d (bia 02:00:00:00:00:0d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[308/366] sw1 SW1# show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0e (bia 02:00:00:00:00:0e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[309/366] sw1 SW1# show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0f (bia 02:00:00:00:00:0f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[310/366] sw1 SW1# show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:10 (bia 02:00:00:00:00:10)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[311/366] sw1 SW1# show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:11 (bia 02:00:00:00:00:11)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[312/366] sw1 SW1# show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:12 (bia 02:00:00:00:00:12)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[313/366] sw1 SW1# show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:13 (bia 02:00:00:00:00:13)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[314/366] sw1 SW1# show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[315/366] sw1 SW1# show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:15 (bia 02:00:00:00:00:15)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[316/366] sw1 SW1# show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:16 (bia 02:00:00:00:00:16)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[317/366] sw1 SW1# show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:17 (bia 02:00:00:00:00:17)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[318/366] sw1 SW1# show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:18 (bia 02:00:00:00:00:18)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[319/366] sw2 SW2# show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[320/366] sw2 SW2# show interfaces FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       16 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[321/366] sw2 SW2# show interfaces FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       1 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       16 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[322/366] sw2 SW2# show interfaces FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       1 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       15 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[323/366] sw2 SW2# show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[324/366] sw2 SW2# show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[325/366] sw2 SW2# show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[326/366] sw2 SW2# show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[327/366] sw2 SW2# show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[328/366] sw2 SW2# show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[329/366] sw2 SW2# show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:25 (bia 02:00:00:00:00:25)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[330/366] sw2 SW2# show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:26 (bia 02:00:00:00:00:26)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[331/366] sw2 SW2# show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:27 (bia 02:00:00:00:00:27)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[332/366] sw2 SW2# show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:28 (bia 02:00:00:00:00:28)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[333/366] sw2 SW2# show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:29 (bia 02:00:00:00:00:29)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[334/366] sw2 SW2# show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2a (bia 02:00:00:00:00:2a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[335/366] sw2 SW2# show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2b (bia 02:00:00:00:00:2b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[336/366] sw2 SW2# show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2c (bia 02:00:00:00:00:2c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[337/366] sw2 SW2# show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2d (bia 02:00:00:00:00:2d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[338/366] sw2 SW2# show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2e (bia 02:00:00:00:00:2e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[339/366] sw2 SW2# show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2f (bia 02:00:00:00:00:2f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[340/366] sw2 SW2# show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:30 (bia 02:00:00:00:00:30)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[341/366] sw2 SW2# show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:31 (bia 02:00:00:00:00:31)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[342/366] sw2 SW2# show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:32 (bia 02:00:00:00:00:32)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[343/366] core CORE# show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:35 (bia 02:00:00:00:00:35)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[344/366] core CORE# show interfaces FastEthernet0/1
+  FastEthernet0/1 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:36 (bia 02:00:00:00:00:36)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[345/366] core CORE# show interfaces FastEthernet0/2
+  FastEthernet0/2 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:37 (bia 02:00:00:00:00:37)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[346/366] core CORE# show interfaces FastEthernet0/3
+  FastEthernet0/3 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:38 (bia 02:00:00:00:00:38)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[347/366] core CORE# show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:39 (bia 02:00:00:00:00:39)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[348/366] core CORE# show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3a (bia 02:00:00:00:00:3a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[349/366] core CORE# show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3b (bia 02:00:00:00:00:3b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[350/366] core CORE# show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3c (bia 02:00:00:00:00:3c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[351/366] core CORE# show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3d (bia 02:00:00:00:00:3d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[352/366] core CORE# show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3e (bia 02:00:00:00:00:3e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[353/366] core CORE# show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3f (bia 02:00:00:00:00:3f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[354/366] core CORE# show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:40 (bia 02:00:00:00:00:40)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[355/366] core CORE# show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:41 (bia 02:00:00:00:00:41)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[356/366] core CORE# show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:42 (bia 02:00:00:00:00:42)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[357/366] core CORE# show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:43 (bia 02:00:00:00:00:43)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[358/366] core CORE# show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:44 (bia 02:00:00:00:00:44)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[359/366] core CORE# show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:45 (bia 02:00:00:00:00:45)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[360/366] core CORE# show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:46 (bia 02:00:00:00:00:46)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[361/366] core CORE# show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:47 (bia 02:00:00:00:00:47)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[362/366] core CORE# show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:48 (bia 02:00:00:00:00:48)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[363/366] core CORE# show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:49 (bia 02:00:00:00:00:49)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[364/366] core CORE# show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4a (bia 02:00:00:00:00:4a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[365/366] core CORE# show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4b (bia 02:00:00:00:00:4b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[366/366] core CORE# show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4c (bia 02:00:00:00:00:4c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops

@@ -214,6 +214,21 @@ function isVirtualInterface(name: string): boolean {
   return /^(Tunnel|Loopback|Null|Vlan|BVI|Bundle-Ether|Port-channel|Virtual-)/i.test(name);
 }
 
+function interfaceNameMatches(fullName: string, spec: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9/]/g, '');
+  const f = norm(fullName);
+  const p = norm(spec);
+  if (!p) return true;
+  if (f === p) return true;
+  const split = (s: string): [string, string] => {
+    const m = s.match(/^([a-z-]+)(.*)$/);
+    return m ? [m[1], m[2]] : [s, ''];
+  };
+  const [ft, fn] = split(f);
+  const [pt, pn] = split(p);
+  return fn === pn && pt.length > 0 && ft.startsWith(pt);
+}
+
 export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
   if (!enabled) {
@@ -233,9 +248,12 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const timer = agentCfg?.timerSec ?? 60;
     const hold = agentCfg?.holdtimeSec ?? 180;
     const disabled = agentCfg?.disabledPorts ?? new Set<string>();
+    const after = a.slice(a.indexOf('interface') + 'interface'.length).trim();
+    const spec = after.split(/\s+/)[0] ?? '';
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
       const name = p.getName();
+      if (spec && !interfaceNameMatches(name, spec)) continue;
       if (disabled.has(name)) continue;
       if (isVirtualInterface(name)) continue;
       lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
@@ -636,12 +654,54 @@ export function showCalendar(now: Date = new Date()): string {
 }
 
 /** `show terminal` — the active session's real defaults. */
-export function showTerminal(): string {
+export function showSwitchVersion(dev: {
+  getHostname(): string;
+  getUptimeMs(): number;
+  getPortNames(): string[];
+  getPort(name: string): { getMAC(): { toString(): string } } | undefined;
+}): string {
+  const hw = CISCO_HARDWARE_PROFILES['switch-c2960'];
+  const names = dev.getPortNames();
+  const fa = names.filter((n) => n.startsWith('Fast')).length;
+  const gi = names.filter((n) => n.startsWith('Gig')).length;
+  const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toString() ?? '0000.0000.0000') : '0000.0000.0000';
+  const upMin = Math.floor(dev.getUptimeMs() / 60000);
+  const up = upMin < 1 ? '0 minutes'
+    : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
+  return [
+    'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)',
+    'Copyright (c) 1986-2025 by Cisco Systems, Inc.',
+    '',
+    'ROM: Bootstrap program is C2960 boot loader',
+    'BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)',
+    '',
+    `${dev.getHostname()} uptime is ${up}`,
+    'System returned to ROM by power-on',
+    `System image file is "flash:${hw.flashImage}"`,
+    '',
+    `cisco ${hw.pid} (PowerPC405) processor (revision C0) with ${Math.floor(hw.dramKB / 2)}K/${hw.ioMemoryKB}K bytes of memory.`,
+    `Processor board ID ${hw.serialNumber}`,
+    'Last reset from power-on',
+    `${fa} FastEthernet interfaces`,
+    `${gi} Gigabit Ethernet interfaces`,
+    `The password-recovery mechanism is enabled.`,
+    '',
+    `${hw.nvramKB}K bytes of flash-simulated non-volatile configuration memory.`,
+    `Base ethernet MAC Address       : ${baseMac}`,
+    `Motherboard assembly number     : 73-12600-06`,
+    `Model number                    : ${hw.pid}`,
+    `System serial number            : ${hw.serialNumber}`,
+    '',
+    'Configuration register is 0xF',
+  ].join('\n');
+}
+
+export function showTerminal(length = 24, width = 80, historySize = 20): string {
   return [
     'Line 0, Location: "", Type: ""',
-    'Length: 24 lines, Width: 80 columns',
+    `Length: ${length} lines, Width: ${width} columns`,
     'Editing is enabled.',
-    'History is enabled, history size is 20.',
+    `History is enabled, history size is ${historySize}.`,
   ].join('\n');
 }
 
@@ -682,8 +742,10 @@ export function showStacks(): string {
   ].join('\n');
 }
 
-export function showReload(): string {
-  return 'No reload is scheduled.';
+export function showReload(scheduledAtMs?: number | null): string {
+  if (scheduledAtMs === null || scheduledAtMs === undefined) return 'No reload is scheduled.';
+  const sec = Math.max(0, Math.floor((scheduledAtMs - Date.now()) / 1000));
+  return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
 }
 
 export function showAaa(sec: import('@/network/devices/router/security/CiscoSecurityConfig').CiscoSecurityConfig, arg = ''): string {

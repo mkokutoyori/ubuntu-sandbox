@@ -67,6 +67,7 @@ export interface MatchResult {
 
 export class CommandTrie {
   private root: CommandNode;
+  private canonicalDescriptions = new Map<string, string>();
 
   constructor() {
     this.root = this.createNode('', 'Root');
@@ -74,6 +75,54 @@ export class CommandTrie {
 
   private createNode(keyword: string, description: string): CommandNode {
     return { keyword, description, children: new Map(), params: [] };
+  }
+
+  /**
+   * Provide a canonical description for a top-level keyword. It is used in ?
+   * help only when the node was left with the placeholder description that
+   * equals its own keyword (i.e. the keyword is just a prefix of longer
+   * commands and no command terminates exactly on it).
+   */
+  setCanonicalDescription(keyword: string, description: string): void {
+    this.canonicalDescriptions.set(keyword.toLowerCase(), description);
+  }
+
+  /**
+   * Import top-level commands from another trie that this trie does not
+   * already define. Models Cisco's "privileged EXEC is a superset of user
+   * EXEC": user commands become available in privileged mode without
+   * duplicating their registration, while privileged-specific overrides
+   * (same keyword) are preserved.
+   */
+  importMissingFrom(other: CommandTrie): void {
+    for (const [kw, node] of other.root.children) {
+      if (!this.root.children.has(kw)) this.root.children.set(kw, node);
+    }
+  }
+
+  /**
+   * Copy the children of a top-level keyword node (e.g. all `show <x>`
+   * sub-commands) from this trie into a target trie's same keyword node,
+   * skipping a denylist and never overwriting existing children. Models
+   * Cisco's "most show commands are privilege-1": the privileged trie's
+   * show family is mirrored into user EXEC except the genuinely priv-15
+   * entries.
+   */
+  copySubtreeChildrenInto(keyword: string, target: CommandTrie, deny: ReadonlySet<string>): void {
+    const src = this.root.children.get(keyword.toLowerCase());
+    const dst = target.root.children.get(keyword.toLowerCase());
+    if (!src || !dst) return;
+    for (const [k, node] of src.children) {
+      if (deny.has(k)) continue;
+      if (!dst.children.has(k)) dst.children.set(k, node);
+    }
+  }
+
+  private resolveDescription(node: CommandNode): string {
+    if (node.description === node.keyword) {
+      return this.canonicalDescriptions.get(node.keyword) ?? node.description;
+    }
+    return node.description;
   }
 
   // ─── Tree Construction ──────────────────────────────────────────
@@ -319,7 +368,7 @@ export class CommandTrie {
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
         const matches = this.prefixMatch(node, token);
-        return matches.map(m => ({ keyword: m.keyword, description: m.description }));
+        return matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
       }
 
       // Complete token (followed by space or more tokens) → navigate
@@ -443,7 +492,7 @@ export class CommandTrie {
 
     // Keyword children
     for (const [, child] of node.children) {
-      results.push({ keyword: child.keyword, description: child.description });
+      results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
     }
 
     // Parameter specs

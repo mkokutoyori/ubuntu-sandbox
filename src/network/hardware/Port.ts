@@ -57,6 +57,7 @@ export class Port {
   // IPv4 configuration
   private ipAddress: IPAddress | null = null;
   private subnetMask: SubnetMask | null = null;
+  private secondaryIPs: Array<{ ip: IPAddress; mask: SubnetMask }> = [];
   // IPv6 configuration (multiple addresses per interface)
   private ipv6Addresses: IPv6AddressEntry[] = [];
   private ipv6Enabled: boolean = false;
@@ -201,13 +202,31 @@ export class Port {
   }
 
   clearIP(): void {
-    if (this.ipAddress === null && this.subnetMask === null) return;
+    if (this.ipAddress === null && this.subnetMask === null && this.secondaryIPs.length === 0) return;
     this.ipAddress = null;
     this.subnetMask = null;
+    this.secondaryIPs = [];
     this.getBus().publish({
       topic: 'port.config.ip-changed',
       payload: { ...this.portRef(), ip: null, mask: null },
     });
+  }
+
+  getSecondaryIPs(): Array<{ ip: IPAddress; mask: SubnetMask }> { return this.secondaryIPs; }
+
+  addSecondaryIP(ip: IPAddress, mask: SubnetMask): void {
+    if (this.secondaryIPs.some((e) => e.ip.equals(ip))) return;
+    this.secondaryIPs.push({ ip, mask });
+    Logger.info(this.equipmentId, 'port:ip-config', `${this.name}: secondary IP ${ip}/${mask.toCIDR()}`);
+  }
+
+  removeSecondaryIP(ip: IPAddress): void {
+    this.secondaryIPs = this.secondaryIPs.filter((e) => !e.ip.equals(ip));
+  }
+
+  ownsIPv4(ip: IPAddress): boolean {
+    if (this.ipAddress?.equals(ip)) return true;
+    return this.secondaryIPs.some((e) => e.ip.equals(ip));
   }
 
   // ─── IPv6 Configuration ────────────────────────────────────────

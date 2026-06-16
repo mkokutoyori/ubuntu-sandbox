@@ -3048,3 +3048,244 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   câblés, vérifie l'effet réel via show logging / running-config / show
   hosts). Non-régression : **network-v2 complet — 7088 tests verts**.
   `tsc` propre ; aucun commentaire ajouté.
+
+### Mode config-if — adresses IPv4 secondaires (fonctionnalité réelle)
+
+- Détecté en **contexte LAN** (deux routeurs câblés) : `ip address X Y
+  secondary` **écrasait l'adresse primaire** au lieu d'ajouter une
+  secondaire — la connectivité tombait silencieusement (ping 0%). Le
+  mot-clé `secondary` était purement ignoré.
+- Implémentation complète (pas un stub), vérifiée par ping bout-en-bout
+  sur les deux sous-réseaux :
+  - `Port` : stockage `secondaryIPs[]` + `addSecondaryIP`/`removeSecondaryIP`/
+    `getSecondaryIPs`/`ownsIPv4` ; `clearIP` purge aussi les secondaires.
+  - `Router.configureInterface(..., secondary)` : ajoute l'adresse + une
+    route connectée sans toucher la primaire ; `removeSecondaryAddress`
+    pour le retrait ciblé.
+  - Plan de données : réponse ARP sur primaire **et** secondaires
+    (`ownsIPv4`, senderIP = IP demandée), livraison locale ICMP, sélection
+    d'interface (`findInterfaceForIP`/`peerOnSameSubnet`) sur les
+    sous-réseaux secondaires.
+  - running-config (global et par interface) émet `ip address X Y secondary`.
+  - CLI : mot-clé `secondary` câblé ; un mot-clé invalide en 3e position →
+    message IOS ; `no ip address X Y secondary` retire une secondaire en
+    gardant la primaire.
+- +1 fichier de tests (cisco-secondary-address, contexte LAN : running-config,
+  table de routage, ping primaire+secondaire, retrait). Non-régression :
+  **network-v2 complet — 7093 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.
+- Cohérence : `show running-config interface` n'émettait pas la
+  `description` (la running-config globale, si). Ajoutée (réutilise
+  `getInterfaceDescription`). Test ajouté dans cisco-interface-validation.
+
+### Mode privileged EXEC — `reload` du switch (bug signalé en prod) + DRY
+
+- **Bug réel (version déployée)** : sur un switch, `reload in 5` éteignait
+  l'appareil **immédiatement** au lieu de planifier. Cause : le switch avait
+  son propre handler `reload` (exact, `powerOff()`+`powerOn()`) qui ignorait
+  les arguments `in`/`at`/`cancel` et gagnait sur le handler de base (lequel
+  ne savait planifier que pour le routeur via `_scheduleReload`).
+- DRY appliqué : handler `reload` unique dans CiscoShellBase (parsing +
+  validation `in`/`at`/`cancel`), avec deux points d'extension protégés —
+  `performImmediateReload()` (par défaut « Reload requested » ; le switch
+  redémarre réellement → « System restarting... ») et
+  `performScheduledReload()` (déclenché par un vrai minuteur à l'échéance ;
+  le switch power-cycle). Le doublon switch est retiré.
+- `reload in N` planifie via un minuteur (`unref` pour ne pas retenir la
+  boucle d'événements) ; ne touche plus à l'alimentation immédiatement.
+  `reload cancel` annule le minuteur. `reload in abc`/`reload in`/`reload at`
+  → messages IOS sans redémarrage accidentel.
+- `show reload` était un **stub** (`showReload()` renvoyait toujours « No
+  reload is scheduled. »). Désormais il reflète l'échéance réelle (suivie
+  dans le shell de base, cohérent routeur ET switch) ; doublon de handler
+  `show reload` retiré.
+- +1 fichier de tests (cisco-switch-reload). Non-régression :
+  **network-v2 complet — 7098 tests verts**. `tsc` propre ; aucun
+  commentaire ajouté.
+
+### `reload` réellement partagé routeur+switch + descriptions d'aide ?
+
+- Suite : le routeur ne redémarrait pas vraiment (`reload` cosmétique →
+  « Reload requested », pas de power-cycle), seul le switch surchargeait le
+  comportement. Unifié : les hooks de base `performImmediateReload` /
+  `performScheduledReload` font désormais le vrai power-cycle
+  (`powerOff()`+`powerOn()`, retour en mode user) pour **routeur ET switch** ;
+  la surcharge switch est supprimée. `reload` redémarre maintenant
+  réellement le routeur (vérifié : `getIsPoweredOn()` revient à true,
+  « System restarting... »). Champs morts `_scheduleReload` /
+  `_getScheduledReloadMs` / `_scheduledReloadAtMs` retirés de `Router.ts`
+  (l'échéance est suivie par le shell de base, source unique).
+- Descriptions d'aide « paresseuses » : les mots-clés qui ne sont qu'un
+  préfixe (`show ...`, `configure terminal`, `no ...`, etc.) gardaient une
+  description = le mot-clé lui-même (« configure  configure »). Ajout de
+  `CommandTrie.setCanonicalDescription` consulté à l'affichage du `?`
+  (uniquement quand la description est le placeholder), + une table
+  canonique partagée (`applyCanonicalDescriptions`) appliquée aux tries
+  user/privileged/config de **tous** les équipements Cisco. Corrige
+  configure/show/no/clear/erase/sntp/copy/debug/undebug/write/event en EXEC
+  et configure/no/show/sntp/cdp/lldp/ip/ipv6/mac/errdisable/vtp/enable/
+  router/key/security/event/flow/parameter-map/zone/zone-pair en config.
+- Non-régression : **network-v2 complet — 7099 tests verts**. `tsc` propre.
+
+### Commandes manquantes au `?` + EXEC privilégié = sur-ensemble de l'EXEC utilisateur (DRY)
+
+- Constat : sur le switch, `ping` n'était dispo qu'en mode utilisateur, pas
+  en mode privilégié (en IOS réel, le privilégié inclut tout l'EXEC
+  utilisateur). Le routeur, lui, **dupliquait** l'enregistrement de
+  `ping`/`traceroute` dans les deux tries — exactement le « deux fois » à
+  éviter.
+- Correctif DRY structurel : `CommandTrie.importMissingFrom` ; le shell de
+  base importe les commandes de l'EXEC utilisateur absentes de l'EXEC
+  privilégié (sans réenregistrer, les surcharges privilégiées priment). Le
+  routeur n'enregistre plus `ping`/`traceroute` qu'une seule fois (mode
+  utilisateur) ; ils restent disponibles et fonctionnels en privilégié
+  (vérifié : ping 100% en mode privilégié). S'applique à tous les
+  équipements Cisco.
+- `clear mac address-table [dynamic] [vlan N | interface IF]` : commande L2
+  **propre au switch** (le routeur n'a pas de table MAC) — implémentée une
+  seule fois sur le switch via `clearDynamicMACEntries` (n'efface que les
+  entrées dynamiques, garde les statiques ; filtre vlan/interface ; rejette
+  une interface inconnue).
+- Limite connue (non corrigée — vrai L2) : le `ping` du switch reste
+  « % Ping not yet implemented on switch. » (un switch L2 pingue depuis une
+  SVI de management, non modélisée ici) ; message honnête, pas un faux
+  succès.
+- +1 fichier de tests (cisco-switch-exec-commands). Non-régression :
+  **network-v2 complet — 7103 tests verts** + suites shell/terminal (967)
+  vertes. `tsc` propre ; aucun commentaire ajouté.
+
+### Scénarios de référence Switch (Catalyst 2960) — fichier de tests unique + DRY enable secret
+
+- Nouveau fichier unique `cisco-switch-reference-scenarios.test.ts` :
+  topologie de référence (Switch1 + Linux-SRV sur Fa0/1 + Win-Client sur
+  Fa0/2) couvrant les 16 commandes de l'analyse. 14 scénarios **verts**
+  (`?`, enable >→#, enable secret persistée, show mac address-table appris
+  sur Fa0/1, terminal length 0, debug/undebug/no debug all, configure
+  terminal + isolation VLAN qui coupe le L2, disable, write [OK], erase
+  startup-config [confirm]/[OK], reload, clear mac address-table dynamic +
+  réapprentissage, statiques préservées).
+- DRY : `enable secret`/`enable password` n'étaient stockés que par le
+  routeur (sur le switch la commande était silencieusement ignorée).
+  Déplacés dans la base partagée `Equipment` (`getEnableSecret`/
+  `_setEnableSecret`/`getEnablePassword`/`_setEnablePassword`) ; retirés du
+  routeur (hérités) ; la running-config du switch les émet (réutilise
+  `renderSecretField`/`renderPasswordField`). Implémenté une seule fois.
+- Lacune clé identifiée et documentée (4 tests `it.skip`, prêts à activer) :
+  **la SVI de management L2 (`interface Vlan1` + IP)** n'est pas modélisée
+  (le switch est strictement L2). Elle conditionne : ping depuis le switch,
+  client ssh/telnet sortant, `copy ... tftp:` réel, synchro `sntp`. À
+  implémenter ensuite (chantier conséquent, à valider).
+- Non-régression : **network-v2 complet — 7117 tests verts** (49 skipped).
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 46 — Analyse des dumps L2 : fichier 1 (CLI basics) + écarts comblés
+
+### Harnais de debug
+- `dumpL2` : les marqueurs `{ section }` sans `cmd` appelaient
+  `executeCommand(undefined)` → exceptions JS parasites. Corrigé (on saute
+  l'exécution quand `cmd` est vide).
+
+### Écarts réels comblés (fichier cisco-l2-01-cli-basics)
+- **Commandes `show` absentes en EXEC utilisateur** : en IOS réel la plupart
+  des `show` sont privilège 1. Le switch ne les enregistrait qu'en mode
+  privilégié. Ajout de `CommandTrie.copySubtreeChildrenInto('show', …)` :
+  CiscoShellBase recopie la sous-arborescence `show` du trie privilégié vers
+  le trie utilisateur (sauf la liste privilège-15 : running-config,
+  startup-config, tech-support, archive). Mécanisme **partagé routeur+switch**
+  (et donc tout vendor Cisco) ; `show interfaces status`, `show vlan brief`,
+  etc. fonctionnent désormais en EXEC utilisateur. Lit l'état réel (handlers
+  existants), aucun hardcode.
+- **`show flash:`** (forme canonique IOS avec deux-points) rejetée car
+  `flash:` est un token distinct de `flash`. Alias ajouté (même handler réel
+  `showFlash`).
+- `where` / `show sessions` : **NON implémentés** volontairement — ils
+  reflètent des sessions sortantes suspendues (Ctrl-Shift-6 x) non modélisées
+  dans le simulateur. Plutôt qu'un faux « % No connections open » hardcodé
+  (rejeté), on les laisse non gérés (honnête) en attendant une vraie gestion
+  des sessions sortantes. À noter pour un éventuel chantier.
+- Non-régression : **network-v2 — 7126 verts** ; 9 dumps L2 régénérés.
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 47 — `show sessions` / `where` / telnet : vraie fonctionnalité (zéro hardcode)
+
+- Refus du stub `() => '% No connections open'`. Implémentation réelle :
+  `OutgoingSessionRegistry` (état réel des connexions sortantes : conn#,
+  hôte, adresse, protocole, user, idle, octets) — classe réutilisable,
+  partagée routeur+switch via `CiscoShellBase`, réutilisable par d'autres
+  vendors.
+- `ssh` (client réel `runSshClient`) enregistre une session sur connexion
+  interactive réussie (exit 0, sans commande inline) ; un échec d'auth ne
+  crée **aucune** session (comportement réel vérifié).
+- `telnet` n'est plus un stub « % Connection refused » figé : il résout la
+  cible (`ip host`), choisit une interface source, vérifie l'accessibilité
+  réelle (`findHostByAddress` + `isPathReachable`) et n'ouvre une session
+  que si un service Telnet (équipement réseau CLI avec transport telnet/all,
+  port 23) répond. Sinon : message réel selon la cause (timeout si éteint/
+  injoignable, refused si pas de service Telnet).
+- `show sessions` / `where` rendent le **registre réel** ; vide → « % No
+  connections open » calculé (pas codé en dur). `disconnect [n]` ferme une
+  session réelle ; `resume [n]` la réactive.
+- Vérifié bout-en-bout : telnet R1→R2 (joignable) → « Open » + session
+  listée dans `show sessions` ; `disconnect 1` → fermée → registre vide.
+- Non-régression : **network-v2 — 7126 verts** ; `tsc` propre ; aucun
+  commentaire dans le code.
+
+## Entrée 48 — Analyse dumps L2 : show interfaces / show cdp interface filtrés (vrais détails)
+
+- **`show interfaces <nom>`** renvoyait la table `status` globale au lieu du
+  détail de l'interface (bug : tout retombait sur `showInterfacesStatus`).
+  Cause : doublons d'enregistrement exact `show interfaces`/`show interfaces
+  status` qui écrasaient l'action du handler greedy. Doublons retirés ;
+  dispatcher réécrit : `show interfaces` (sans arg) → détail de TOUTES les
+  interfaces ; `show interfaces <nom>` → détail de cette interface ;
+  `<nom> switchport` → switchport filtré ; `<nom> counters` → compteurs de
+  ce port ; `counters`/`description` → tables ; `status`/`trunk` conservés.
+- **`showInterface` élargi (DRY multi-vendor)** : signature structurelle
+  (`{ _getPortsInternal() }`) pour servir routeur ET switch ; enrichi avec
+  les compteurs réels (packets/bytes input/output, input/output errors,
+  drops via `port.getCounters()`) — manquaient à l'analyse.
+- **`show cdp interface <nom>`** ne filtrait pas (boucle sur tous les ports).
+  Ajout d'un matcher d'interface tolérant aux abréviations (fa0/1 ↔
+  FastEthernet0/1) dans `showCdp` (partagé) → filtre réel sur le port donné.
+- Lecture d'état réel uniquement (ports, compteurs) ; aucun hardcode.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 49 — Analyse dumps L2 : show terminal & show version réels
+
+- **`show terminal`** était entièrement codé en dur (Length 24/Width 80/
+  history 20) — ignorait l'état réel. Désormais il lit `terminalLength`,
+  `terminalWidth` et le nouveau `terminalHistorySize` (stocké et validé
+  0-256 par `terminal history size N`). Vérifié : après `terminal length 0`/
+  `width 132`/`history size 50`, `show terminal` reflète bien 0/132/50.
+- **`show version` (switch)** était minimal/figé. Nouvelle fonction partagée
+  `showSwitchVersion(dev)` lisant l'état **réel** : uptime réel
+  (`getUptimeMs`), comptes de ports réels (24 Fa + 2 Gi), identité matérielle
+  du profil C2960 (serial, DRAM/NVRAM, image flash), MAC de base réelle
+  (`02:00:00:00:00:01`). Les deux enregistrements (user + privileged) la
+  réutilisent (DRY). Pas de valeurs inventées : seules l'identité matérielle
+  modélisée et les compteurs réels.
+- Faux positifs de l'analyse écartés (vérifiés) : `show controllers` état
+  admin correct (les ports Fa0/4-8 n'étaient pas encore `shutdown` à l'étape
+  58 ; le shutdown est à l'étape 90) ; le préfixe « sw1 » devant le prompt
+  est l'étiquette de l'équipement dans le harnais de dump, pas le prompt réel.
+- `show processes cpu/memory` laissés en sortie honnête (le modèle n'a pas
+  d'ordonnanceur/pool mémoire ; fabriquer des process/octets serait
+  précisément le stub interdit).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 50 — Analyse dumps L2 : topologie réellement trunkée + formats corrigés
+
+- **Topologie « trunked » rendue vraie** : `buildLan` configure désormais
+  réellement les liaisons inter-switch en `switchport mode trunk` (SW1/SW2
+  Gi0/1, CORE Gi0/0+Gi0/1, encapsulation dot1q). La note de topologie n'est
+  plus trompeuse ; la connectivité VLAN 1 reste OK (VLAN natif sur le trunk).
+- **`show interfaces trunk`** : formatage corrigé (nom de port abrégé
+  `Gi0/1`, colonnes alignées) — auparavant « GigabitEthernet0/1on » (nom
+  trop long écrasant la colonne). Les trunks réels sont bien listés.
+- **`show interfaces status`** : colonne Speed/Type fusionnée
+  (`a-10001000BASE-T`) corrigée → `a-1000 1000BASE-T` ; la colonne Vlan
+  affiche « trunk » pour un port trunk.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés
+  (montrent maintenant les trunks) ; `tsc` propre ; aucun commentaire.

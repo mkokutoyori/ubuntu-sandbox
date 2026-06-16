@@ -1,0 +1,4044 @@
+============================================================
+Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
+Generated: 2026-06-15T20:07:30.639Z
+Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
+focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
+Total steps: 346
+============================================================
+
+
+--- [1] § baseline MAC table ---
+[1/346] sw1 SW1> enable
+<empty>
+
+[2/346] sw1 SW1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[3/346] sw1 SW1# show mac address-table count
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[4/346] sw1 SW1# show mac address-table dynamic
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[5/346] sw1 SW1# show mac address-table static
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[6/346] sw1 SW1# show mac address-table aging-time
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[7/346] sw1 SW1# show mac address-table vlan 1
+  Mac Address Table
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+
+
+--- [8] § full connectivity matrix (VLAN 1, all pairs) ---
+[9/346] l1 l1$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.135 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.572 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.572/1.353/2.135/0.781 ms
+
+[10/346] l1 l1$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.520 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.527 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.520/0.523/0.527/0.004 ms
+
+[11/346] l1 l1$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.682 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.559 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.559/0.620/0.682/0.062 ms
+
+[12/346] l1 l1$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.499 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.426 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.426/0.462/0.499/0.037 ms
+
+[13/346] l1 l1$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.571 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.542 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.542/0.556/0.571/0.014 ms
+
+[14/346] w1 w1$ ping -n 2 192.168.1.11
+  
+  Pinging 192.168.1.11 with 32 bytes of data:
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[15/346] w1 w1$ ping -n 2 192.168.1.13
+  
+  Pinging 192.168.1.13 with 32 bytes of data:
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.13:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[16/346] w1 w1$ ping -n 2 192.168.1.21
+  
+  Pinging 192.168.1.21 with 32 bytes of data:
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.21:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[17/346] w1 w1$ ping -n 2 192.168.1.22
+  
+  Pinging 192.168.1.22 with 32 bytes of data:
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
+  
+  Ping statistics for 192.168.1.22:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[18/346] w1 w1$ ping -n 2 192.168.1.23
+  
+  Pinging 192.168.1.23 with 32 bytes of data:
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.23:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[19/346] srv1 srv1$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.299 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.137 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.137/0.218/0.299/0.081 ms
+
+[20/346] srv1 srv1$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.265 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.171 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.171/0.218/0.265/0.047 ms
+
+[21/346] srv1 srv1$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.414 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.262 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.262/0.338/0.414/0.076 ms
+
+[22/346] srv1 srv1$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.325 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.317 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.317/0.321/0.325/0.004 ms
+
+[23/346] srv1 srv1$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.301 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.349 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.301/0.325/0.349/0.024 ms
+
+[24/346] l2 l2$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.320 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.222 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.222/0.271/0.320/0.049 ms
+
+[25/346] l2 l2$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.409 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.291 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.291/0.350/0.409/0.059 ms
+
+[26/346] l2 l2$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.349 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.459 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.349/0.404/0.459/0.055 ms
+
+[27/346] l2 l2$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.165 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=10.961 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.165/5.563/10.961/5.398 ms
+
+[28/346] l2 l2$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.392 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.167 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.167/0.279/0.392/0.113 ms
+
+[29/346] w2 w2$ ping -n 2 192.168.1.11
+  
+  Pinging 192.168.1.11 with 32 bytes of data:
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[30/346] w2 w2$ ping -n 2 192.168.1.12
+  
+  Pinging 192.168.1.12 with 32 bytes of data:
+  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
+  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
+  
+  Ping statistics for 192.168.1.12:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[31/346] w2 w2$ ping -n 2 192.168.1.13
+  
+  Pinging 192.168.1.13 with 32 bytes of data:
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.13:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[32/346] w2 w2$ ping -n 2 192.168.1.21
+  
+  Pinging 192.168.1.21 with 32 bytes of data:
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.21:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[33/346] w2 w2$ ping -n 2 192.168.1.23
+  
+  Pinging 192.168.1.23 with 32 bytes of data:
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.23:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[34/346] srv2 srv2$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.403 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.264 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.264/0.333/0.403/0.070 ms
+
+[35/346] srv2 srv2$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.222 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.313 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.222/0.268/0.313/0.045 ms
+
+[36/346] srv2 srv2$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.276 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.225 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.225/0.251/0.276/0.026 ms
+
+[37/346] srv2 srv2$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.173 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.177 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.173/0.175/0.177/0.002 ms
+
+[38/346] srv2 srv2$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.167 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.112 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.112/0.140/0.167/0.027 ms
+
+
+--- [39] § MAC table populated by matrix ---
+[39/346] sw1 SW1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[40/346] sw1 SW1# show mac address-table count
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[41/346] sw2 SW2> show mac address-table
+  Mac Address Table
+  --------------------------------
+  No entries
+
+[42/346] core CORE> enable
+<empty>
+
+[43/346] core CORE# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+
+--- [44] § host ARP/neighbor tables after matrix ---
+[45/346] l1 l1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[46/346] w1 w1$ arp -a
+  
+  Interface: 192.168.1.12 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.1.11          02-00-00-00-00-4f     dynamic
+    192.168.1.13          02-00-00-00-00-57     dynamic
+    192.168.1.21          02-00-00-00-00-5b     dynamic
+    192.168.1.23          02-00-00-00-00-63     dynamic
+    192.168.1.22          02-00-00-00-00-5f     dynamic
+
+[47/346] srv1 srv1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[48/346] l2 l2$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+[49/346] w2 w2$ arp -a
+  
+  Interface: 192.168.1.22 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.1.11          02-00-00-00-00-4f     dynamic
+    192.168.1.13          02-00-00-00-00-57     dynamic
+    192.168.1.21          02-00-00-00-00-5b     dynamic
+    192.168.1.23          02-00-00-00-00-63     dynamic
+    192.168.1.12          02-00-00-00-00-53     dynamic
+
+[50/346] srv2 srv2$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+
+--- [51] § static MAC entries loop ---
+[51/346] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[52/346] sw1 SW1(config)# mac address-table static 0000.dead.0001 vlan 1 interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0001 vlan 1 interface FastEthernet0/1
+                    ^
+
+[53/346] sw1 SW1(config)# mac address-table static 0000.dead.0002 vlan 1 interface FastEthernet0/2
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0002 vlan 1 interface FastEthernet0/2
+                    ^
+
+[54/346] sw1 SW1(config)# mac address-table static 0000.dead.0003 vlan 1 interface FastEthernet0/3
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0003 vlan 1 interface FastEthernet0/3
+                    ^
+
+[55/346] sw1 SW1(config)# mac address-table static 0000.dead.0004 vlan 1 interface FastEthernet0/4
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0004 vlan 1 interface FastEthernet0/4
+                    ^
+
+[56/346] sw1 SW1(config)# mac address-table static 0000.dead.0005 vlan 1 interface FastEthernet0/5
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0005 vlan 1 interface FastEthernet0/5
+                    ^
+
+[57/346] sw1 SW1(config)# mac address-table static 0000.dead.0006 vlan 1 interface FastEthernet0/6
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0006 vlan 1 interface FastEthernet0/6
+                    ^
+
+[58/346] sw1 SW1(config)# mac address-table static 0000.dead.0007 vlan 1 interface FastEthernet0/7
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0007 vlan 1 interface FastEthernet0/7
+                    ^
+
+[59/346] sw1 SW1(config)# mac address-table static 0000.dead.0008 vlan 1 interface FastEthernet0/8
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0008 vlan 1 interface FastEthernet0/8
+                    ^
+
+[60/346] sw1 SW1(config)# mac address-table static 0000.dead.0009 vlan 1 interface FastEthernet0/9
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0009 vlan 1 interface FastEthernet0/9
+                    ^
+
+[61/346] sw1 SW1(config)# mac address-table static 0000.dead.0010 vlan 1 interface FastEthernet0/10
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.dead.0010 vlan 1 interface FastEthernet0/10
+                    ^
+
+[62/346] sw1 SW1(config)# mac address-table aging-time 120
+<empty>
+
+[63/346] sw1 SW1(config)# mac address-table notification change
+  % Invalid input detected at '^' marker.
+  mac address-table notification change
+                    ^
+
+[64/346] sw1 SW1(config)# end
+<empty>
+
+[65/346] sw1 SW1# show mac address-table static
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[66/346] sw1 SW1# show mac address-table aging-time
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+
+--- [67] § unicast flooding after clear ---
+[67/346] sw1 SW1# show mac address-table dynamic
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[68/346] sw1 SW1# clear mac address-table dynamic
+<empty>
+
+[69/346] sw1 SW1# show mac address-table dynamic
+  Mac Address Table
+  -------------------------------------------
+  No entries.
+
+[70/346] l1 l1$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.265 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.201 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.201/0.233/0.265/0.032 ms
+
+[71/346] sw1 SW1# show mac address-table dynamic
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 2
+
+[72/346] sw1 SW1# clear mac address-table dynamic vlan 1
+<empty>
+
+[73/346] sw1 SW1# show mac address-table count
+  Mac Address Table
+  -------------------------------------------
+  No entries.
+
+[74/346] sw1 SW1# clear mac address-table dynamic interface FastEthernet0/1
+<empty>
+
+[75/346] sw1 SW1# clear mac address-table dynamic address 0000.dead.0001
+<empty>
+
+
+--- [76] § MAC move via link bounce ---
+[76/346] sw1 SW1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[77/346] sw1 SW1(config)# interface FastEthernet0/3
+<empty>
+
+[78/346] sw1 SW1(config-if)# shutdown
+<empty>
+
+[79/346] sw1 SW1(config-if)# do show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  No entries.
+
+[80/346] sw1 SW1(config-if)# no shutdown
+<empty>
+
+[81/346] sw1 SW1(config-if)# end
+<empty>
+
+[82/346] srv1 srv1$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.249 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.127 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.127/0.188/0.249/0.061 ms
+
+[83/346] sw1 SW1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 2
+
+
+--- [84] § second connectivity matrix (re-learn) ---
+[85/346] l1 l1$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.260 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.135 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.135/0.198/0.260/0.063 ms
+
+[86/346] l1 l1$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.193 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.120 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.120/0.156/0.193/0.036 ms
+
+[87/346] l1 l1$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.270 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.232 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.232/0.251/0.270/0.019 ms
+
+[88/346] l1 l1$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.505 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.227 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.227/0.366/0.505/0.139 ms
+
+[89/346] l1 l1$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.380 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.275 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.275/0.328/0.380/0.053 ms
+
+[90/346] w1 w1$ ping -n 2 192.168.1.11
+  
+  Pinging 192.168.1.11 with 32 bytes of data:
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[91/346] w1 w1$ ping -n 2 192.168.1.13
+  
+  Pinging 192.168.1.13 with 32 bytes of data:
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.13:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[92/346] w1 w1$ ping -n 2 192.168.1.21
+  
+  Pinging 192.168.1.21 with 32 bytes of data:
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.21:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[93/346] w1 w1$ ping -n 2 192.168.1.22
+  
+  Pinging 192.168.1.22 with 32 bytes of data:
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
+  
+  Ping statistics for 192.168.1.22:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[94/346] w1 w1$ ping -n 2 192.168.1.23
+  
+  Pinging 192.168.1.23 with 32 bytes of data:
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.23:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[95/346] srv1 srv1$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.205 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.153 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.153/0.179/0.205/0.026 ms
+
+[96/346] srv1 srv1$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.397 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.200 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.200/0.299/0.397/0.099 ms
+
+[97/346] srv1 srv1$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.342 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.224 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.224/0.283/0.342/0.059 ms
+
+[98/346] srv1 srv1$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.346 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.273 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.273/0.310/0.346/0.036 ms
+
+[99/346] srv1 srv1$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.357 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.394 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.357/0.376/0.394/0.018 ms
+
+[100/346] l2 l2$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.253 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.206 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.206/0.230/0.253/0.023 ms
+
+[101/346] l2 l2$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.364 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.263 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.263/0.314/0.364/0.050 ms
+
+[102/346] l2 l2$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.292 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.283 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.283/0.287/0.292/0.005 ms
+
+[103/346] l2 l2$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.201 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.122 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.122/0.161/0.201/0.040 ms
+
+[104/346] l2 l2$ ping -c 2 192.168.1.23
+  PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.128 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.115 ms
+  
+  --- 192.168.1.23 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.115/0.121/0.128/0.006 ms
+
+[105/346] w2 w2$ ping -n 2 192.168.1.11
+  
+  Pinging 192.168.1.11 with 32 bytes of data:
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[106/346] w2 w2$ ping -n 2 192.168.1.12
+  
+  Pinging 192.168.1.12 with 32 bytes of data:
+  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
+  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
+  
+  Ping statistics for 192.168.1.12:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[107/346] w2 w2$ ping -n 2 192.168.1.13
+  
+  Pinging 192.168.1.13 with 32 bytes of data:
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.13:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[108/346] w2 w2$ ping -n 2 192.168.1.21
+  
+  Pinging 192.168.1.21 with 32 bytes of data:
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.21:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[109/346] w2 w2$ ping -n 2 192.168.1.23
+  
+  Pinging 192.168.1.23 with 32 bytes of data:
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
+  
+  Ping statistics for 192.168.1.23:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[110/346] srv2 srv2$ ping -c 2 192.168.1.11
+  PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.278 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.215 ms
+  
+  --- 192.168.1.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.215/0.246/0.278/0.032 ms
+
+[111/346] srv2 srv2$ ping -c 2 192.168.1.12
+  PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.332 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.212 ms
+  
+  --- 192.168.1.12 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.212/0.272/0.332/0.060 ms
+
+[112/346] srv2 srv2$ ping -c 2 192.168.1.13
+  PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.222 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.260 ms
+  
+  --- 192.168.1.13 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.222/0.241/0.260/0.019 ms
+
+[113/346] srv2 srv2$ ping -c 2 192.168.1.21
+  PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.132 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.113 ms
+  
+  --- 192.168.1.21 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.113/0.123/0.132/0.010 ms
+
+[114/346] srv2 srv2$ ping -c 2 192.168.1.22
+  PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.122 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.217 ms
+  
+  --- 192.168.1.22 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.122/0.170/0.217/0.047 ms
+
+
+--- [115] § per-VLAN MAC inspection loop ---
+[116/346] sw1 SW1# show mac address-table vlan 1
+  Mac Address Table
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+
+[117/346] sw1 SW1# show mac address-table vlan 10
+  Mac Address Table
+
+[118/346] sw1 SW1# show mac address-table vlan 20
+  Mac Address Table
+
+[119/346] sw1 SW1# show mac address-table vlan 30
+  Mac Address Table
+
+[120/346] sw1 SW1# show mac address-table vlan 40
+  Mac Address Table
+
+[121/346] sw1 SW1# show mac address-table vlan 50
+  Mac Address Table
+
+
+--- [122] § per-interface MAC inspection loop ---
+[123/346] sw1 SW1# show mac address-table interface FastEthernet0/1
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[124/346] sw1 SW1# show mac address-table interface FastEthernet0/2
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[125/346] sw1 SW1# show mac address-table interface FastEthernet0/3
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[126/346] sw1 SW1# show mac address-table interface FastEthernet0/4
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[127/346] sw1 SW1# show mac address-table interface FastEthernet0/5
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[128/346] sw1 SW1# show mac address-table interface FastEthernet0/6
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[129/346] sw1 SW1# show mac address-table interface FastEthernet0/7
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[130/346] sw1 SW1# show mac address-table interface FastEthernet0/8
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[131/346] sw1 SW1# show mac address-table interface FastEthernet0/9
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[132/346] sw1 SW1# show mac address-table interface FastEthernet0/10
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[133/346] sw1 SW1# show mac address-table interface FastEthernet0/11
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[134/346] sw1 SW1# show mac address-table interface FastEthernet0/12
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[135/346] sw1 SW1# show mac address-table interface FastEthernet0/13
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[136/346] sw1 SW1# show mac address-table interface FastEthernet0/14
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[137/346] sw1 SW1# show mac address-table interface FastEthernet0/15
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[138/346] sw1 SW1# show mac address-table interface FastEthernet0/16
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[139/346] sw1 SW1# show mac address-table interface FastEthernet0/17
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[140/346] sw1 SW1# show mac address-table interface FastEthernet0/18
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[141/346] sw1 SW1# show mac address-table interface FastEthernet0/19
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[142/346] sw1 SW1# show mac address-table interface FastEthernet0/20
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[143/346] sw1 SW1# show mac address-table interface FastEthernet0/21
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[144/346] sw1 SW1# show mac address-table interface FastEthernet0/22
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[145/346] sw1 SW1# show mac address-table interface FastEthernet0/23
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+
+--- [146] § broadcast / unknown-unicast behavior ---
+[147/346] l1 l1$ ping -c 2 192.168.1.99
+  PING 192.168.1.99 (192.168.1.99) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.1.99 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[148/346] sw1 SW1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[149/346] l1 l1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.23             ether   02:00:00:00:00:63   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+
+--- [150] § interface counters after traffic ---
+[151/346] sw1 SW1# show interfaces FastEthernet0/1 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/1                   0            46           0            58
+
+[152/346] sw1 SW1# show interfaces FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       46 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       58 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[153/346] sw1 SW1# show interfaces FastEthernet0/2 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/2                   0            41           0            59
+
+[154/346] sw1 SW1# show interfaces FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       41 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       59 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[155/346] sw1 SW1# show interfaces FastEthernet0/3 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/3                   0            45           0            62
+
+[156/346] sw1 SW1# show interfaces FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       45 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       62 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+
+--- [157] § host MAC/link verification ---
+[158/346] l1 l1$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:50 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:51 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
+
+[159/346] srv1 srv1$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+
+[160/346] w1 w1$ getmac
+  Physical Address  Transport Name          
+  ================= ========================
+  02-00-00-00-00-53 \Device\Tcpip_Ethernet_0
+  02-00-00-00-00-54 Media disconnected      
+  02-00-00-00-00-55 Media disconnected      
+  02-00-00-00-00-56 Media disconnected      
+
+[161/346] w2 w2$ getmac
+  Physical Address  Transport Name          
+  ================= ========================
+  02-00-00-00-00-5F \Device\Tcpip_Ethernet_0
+  02-00-00-00-00-60 Media disconnected      
+  02-00-00-00-00-61 Media disconnected      
+  02-00-00-00-00-62 Media disconnected      
+
+[162/346] l2 l2$ ip neigh
+  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
+  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
+  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
+  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
+  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+
+[163/346] srv2 srv2$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.11             ether   02:00:00:00:00:4f   C     *               eth0
+  192.168.1.13             ether   02:00:00:00:00:57   C     *               eth0
+  192.168.1.21             ether   02:00:00:00:00:5b   C     *               eth0
+  192.168.1.12             ether   02:00:00:00:00:53   C     *               eth0
+  192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
+
+
+--- [164] § interface counters loop (SW1 Fa0/1..0/23) ---
+[165/346] sw1 SW1# show interfaces FastEthernet0/1 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/1                   0            46           0            58
+
+[166/346] sw1 SW1# show interfaces FastEthernet0/2 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/2                   0            41           0            59
+
+[167/346] sw1 SW1# show interfaces FastEthernet0/3 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/3                   0            45           0            62
+
+[168/346] sw1 SW1# show interfaces FastEthernet0/4 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/4                   0             0           0             0
+
+[169/346] sw1 SW1# show interfaces FastEthernet0/5 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/5                   0             0           0             0
+
+[170/346] sw1 SW1# show interfaces FastEthernet0/6 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/6                   0             0           0             0
+
+[171/346] sw1 SW1# show interfaces FastEthernet0/7 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/7                   0             0           0             0
+
+[172/346] sw1 SW1# show interfaces FastEthernet0/8 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/8                   0             0           0             0
+
+[173/346] sw1 SW1# show interfaces FastEthernet0/9 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/9                   0             0           0             0
+
+[174/346] sw1 SW1# show interfaces FastEthernet0/10 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/10                  0             0           0             0
+
+[175/346] sw1 SW1# show interfaces FastEthernet0/11 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/11                  0             0           0             0
+
+[176/346] sw1 SW1# show interfaces FastEthernet0/12 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/12                  0             0           0             0
+
+[177/346] sw1 SW1# show interfaces FastEthernet0/13 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/13                  0             0           0             0
+
+[178/346] sw1 SW1# show interfaces FastEthernet0/14 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/14                  0             0           0             0
+
+[179/346] sw1 SW1# show interfaces FastEthernet0/15 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/15                  0             0           0             0
+
+[180/346] sw1 SW1# show interfaces FastEthernet0/16 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/16                  0             0           0             0
+
+[181/346] sw1 SW1# show interfaces FastEthernet0/17 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/17                  0             0           0             0
+
+[182/346] sw1 SW1# show interfaces FastEthernet0/18 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/18                  0             0           0             0
+
+[183/346] sw1 SW1# show interfaces FastEthernet0/19 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/19                  0             0           0             0
+
+[184/346] sw1 SW1# show interfaces FastEthernet0/20 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/20                  0             0           0             0
+
+[185/346] sw1 SW1# show interfaces FastEthernet0/21 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/21                  0             0           0             0
+
+[186/346] sw1 SW1# show interfaces FastEthernet0/22 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/22                  0             0           0             0
+
+[187/346] sw1 SW1# show interfaces FastEthernet0/23 counters
+  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
+  Fa0/23                  0             0           0             0
+
+
+--- [188] § per-interface MAC inspection loop (SW2) ---
+[189/346] sw2 SW2> show mac address-table interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/1
+                         ^
+
+[190/346] sw2 SW2> show mac address-table interface FastEthernet0/2
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/2
+                         ^
+
+[191/346] sw2 SW2> show mac address-table interface FastEthernet0/3
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/3
+                         ^
+
+[192/346] sw2 SW2> show mac address-table interface FastEthernet0/4
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/4
+                         ^
+
+[193/346] sw2 SW2> show mac address-table interface FastEthernet0/5
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/5
+                         ^
+
+[194/346] sw2 SW2> show mac address-table interface FastEthernet0/6
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/6
+                         ^
+
+[195/346] sw2 SW2> show mac address-table interface FastEthernet0/7
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/7
+                         ^
+
+[196/346] sw2 SW2> show mac address-table interface FastEthernet0/8
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/8
+                         ^
+
+[197/346] sw2 SW2> show mac address-table interface FastEthernet0/9
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/9
+                         ^
+
+[198/346] sw2 SW2> show mac address-table interface FastEthernet0/10
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/10
+                         ^
+
+[199/346] sw2 SW2> show mac address-table interface FastEthernet0/11
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/11
+                         ^
+
+[200/346] sw2 SW2> show mac address-table interface FastEthernet0/12
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/12
+                         ^
+
+[201/346] sw2 SW2> show mac address-table interface FastEthernet0/13
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/13
+                         ^
+
+[202/346] sw2 SW2> show mac address-table interface FastEthernet0/14
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/14
+                         ^
+
+[203/346] sw2 SW2> show mac address-table interface FastEthernet0/15
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/15
+                         ^
+
+[204/346] sw2 SW2> show mac address-table interface FastEthernet0/16
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/16
+                         ^
+
+[205/346] sw2 SW2> show mac address-table interface FastEthernet0/17
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/17
+                         ^
+
+[206/346] sw2 SW2> show mac address-table interface FastEthernet0/18
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/18
+                         ^
+
+[207/346] sw2 SW2> show mac address-table interface FastEthernet0/19
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/19
+                         ^
+
+[208/346] sw2 SW2> show mac address-table interface FastEthernet0/20
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/20
+                         ^
+
+[209/346] sw2 SW2> show mac address-table interface FastEthernet0/21
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/21
+                         ^
+
+[210/346] sw2 SW2> show mac address-table interface FastEthernet0/22
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/22
+                         ^
+
+[211/346] sw2 SW2> show mac address-table interface FastEthernet0/23
+  % Invalid input detected at '^' marker.
+  show mac address-table interface FastEthernet0/23
+                         ^
+
+
+--- [212] § per-interface MAC inspection loop (CORE) ---
+[213/346] core CORE# show mac address-table interface FastEthernet0/1
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[214/346] core CORE# show mac address-table interface FastEthernet0/2
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[215/346] core CORE# show mac address-table interface FastEthernet0/3
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[216/346] core CORE# show mac address-table interface FastEthernet0/4
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[217/346] core CORE# show mac address-table interface FastEthernet0/5
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[218/346] core CORE# show mac address-table interface FastEthernet0/6
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[219/346] core CORE# show mac address-table interface FastEthernet0/7
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[220/346] core CORE# show mac address-table interface FastEthernet0/8
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[221/346] core CORE# show mac address-table interface FastEthernet0/9
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[222/346] core CORE# show mac address-table interface FastEthernet0/10
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[223/346] core CORE# show mac address-table interface FastEthernet0/11
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[224/346] core CORE# show mac address-table interface FastEthernet0/12
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[225/346] core CORE# show mac address-table interface FastEthernet0/13
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[226/346] core CORE# show mac address-table interface FastEthernet0/14
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[227/346] core CORE# show mac address-table interface FastEthernet0/15
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[228/346] core CORE# show mac address-table interface FastEthernet0/16
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[229/346] core CORE# show mac address-table interface FastEthernet0/17
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[230/346] core CORE# show mac address-table interface FastEthernet0/18
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[231/346] core CORE# show mac address-table interface FastEthernet0/19
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[232/346] core CORE# show mac address-table interface FastEthernet0/20
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[233/346] core CORE# show mac address-table interface FastEthernet0/21
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[234/346] core CORE# show mac address-table interface FastEthernet0/22
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[235/346] core CORE# show mac address-table interface FastEthernet0/23
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+
+--- [236] § extended static MAC entries (SW2) ---
+[236/346] sw2 SW2> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[237/346] sw2 SW2> mac address-table static 0000.beef.0001 vlan 1 interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0001 vlan 1 interface FastEthernet0/1
+  ^
+
+[238/346] sw2 SW2> mac address-table static 0000.beef.0002 vlan 1 interface FastEthernet0/2
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0002 vlan 1 interface FastEthernet0/2
+  ^
+
+[239/346] sw2 SW2> mac address-table static 0000.beef.0003 vlan 1 interface FastEthernet0/3
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0003 vlan 1 interface FastEthernet0/3
+  ^
+
+[240/346] sw2 SW2> mac address-table static 0000.beef.0004 vlan 1 interface FastEthernet0/4
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0004 vlan 1 interface FastEthernet0/4
+  ^
+
+[241/346] sw2 SW2> mac address-table static 0000.beef.0005 vlan 1 interface FastEthernet0/5
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0005 vlan 1 interface FastEthernet0/5
+  ^
+
+[242/346] sw2 SW2> mac address-table static 0000.beef.0006 vlan 1 interface FastEthernet0/6
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0006 vlan 1 interface FastEthernet0/6
+  ^
+
+[243/346] sw2 SW2> mac address-table static 0000.beef.0007 vlan 1 interface FastEthernet0/7
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0007 vlan 1 interface FastEthernet0/7
+  ^
+
+[244/346] sw2 SW2> mac address-table static 0000.beef.0008 vlan 1 interface FastEthernet0/8
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0008 vlan 1 interface FastEthernet0/8
+  ^
+
+[245/346] sw2 SW2> mac address-table static 0000.beef.0009 vlan 1 interface FastEthernet0/9
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0009 vlan 1 interface FastEthernet0/9
+  ^
+
+[246/346] sw2 SW2> mac address-table static 0000.beef.0010 vlan 1 interface FastEthernet0/10
+  % Invalid input detected at '^' marker.
+  mac address-table static 0000.beef.0010 vlan 1 interface FastEthernet0/10
+  ^
+
+[247/346] sw2 SW2> end
+<empty>
+
+[248/346] sw2 SW2> show mac address-table static
+  % Invalid input detected at '^' marker.
+  show mac address-table static
+                         ^
+
+
+--- [249] § full host inspection ---
+[250/346] l1 l1$ ip -br addr
+  eth0            UP            192.168.1.11/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[251/346] l1 l1$ ip neigh
+  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
+  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
+  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
+  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
+  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+
+[252/346] l1 l1$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:50 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:51 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
+
+[253/346] w1 w1$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : W1
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-53
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 192.168.1.12(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-54
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-55
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-56
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[254/346] w1 w1$ arp -a
+  
+  Interface: 192.168.1.12 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.1.11          02-00-00-00-00-4f     dynamic
+    192.168.1.13          02-00-00-00-00-57     dynamic
+    192.168.1.21          02-00-00-00-00-5b     dynamic
+    192.168.1.23          02-00-00-00-00-63     dynamic
+    192.168.1.22          02-00-00-00-00-5f     dynamic
+
+[255/346] w1 w1$ getmac
+  Physical Address  Transport Name          
+  ================= ========================
+  02-00-00-00-00-53 \Device\Tcpip_Ethernet_0
+  02-00-00-00-00-54 Media disconnected      
+  02-00-00-00-00-55 Media disconnected      
+  02-00-00-00-00-56 Media disconnected      
+
+[256/346] srv1 srv1$ ip -br addr
+  eth0            UP            192.168.1.13/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[257/346] srv1 srv1$ ip neigh
+  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
+  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
+  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
+  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
+  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+
+[258/346] srv1 srv1$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+
+[259/346] l2 l2$ ip -br addr
+  eth0            UP            192.168.1.21/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[260/346] l2 l2$ ip neigh
+  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
+  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
+  192.168.1.23 dev eth0 lladdr 02:00:00:00:00:63 REACHABLE
+  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
+  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+
+[261/346] l2 l2$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[262/346] w2 w2$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : W2
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-5F
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 192.168.1.22(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-60
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-61
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-62
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[263/346] w2 w2$ arp -a
+  
+  Interface: 192.168.1.22 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.1.11          02-00-00-00-00-4f     dynamic
+    192.168.1.13          02-00-00-00-00-57     dynamic
+    192.168.1.21          02-00-00-00-00-5b     dynamic
+    192.168.1.23          02-00-00-00-00-63     dynamic
+    192.168.1.12          02-00-00-00-00-53     dynamic
+
+[264/346] w2 w2$ getmac
+  Physical Address  Transport Name          
+  ================= ========================
+  02-00-00-00-00-5F \Device\Tcpip_Ethernet_0
+  02-00-00-00-00-60 Media disconnected      
+  02-00-00-00-00-61 Media disconnected      
+  02-00-00-00-00-62 Media disconnected      
+
+[265/346] srv2 srv2$ ip -br addr
+  eth0            UP            192.168.1.23/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+[266/346] srv2 srv2$ ip neigh
+  192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
+  192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
+  192.168.1.21 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
+  192.168.1.12 dev eth0 lladdr 02:00:00:00:00:53 REACHABLE
+  192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
+
+[267/346] srv2 srv2$ ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:63 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:64 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:65 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:66 brd ff:ff:ff:ff:ff:ff
+
+
+--- [268] § final MAC state ---
+[269/346] sw1 SW1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[270/346] sw1 SW1# show mac address-table count
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  
+  Total Mac Addresses for this criterion: 6
+
+[271/346] sw2 SW2> show mac address-table
+  Mac Address Table
+  --------------------------------
+  No entries
+
+[272/346] core CORE# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  
+  Total Mac Addresses for this criterion: 6
+
+[273/346] sw1 SW1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW1
+  !
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+  !
+  interface FastEthernet0/2
+   switchport mode access
+  !
+  interface FastEthernet0/3
+   switchport mode access
+  !
+  interface FastEthernet0/4
+   switchport mode access
+  !
+  interface FastEthernet0/5
+   switchport mode access
+  !
+  interface FastEthernet0/6
+   switchport mode access
+  !
+  interface FastEthernet0/7
+   switchport mode access
+  !
+  interface FastEthernet0/8
+   switchport mode access
+  !
+  interface FastEthernet0/9
+   switchport mode access
+  !
+  interface FastEthernet0/10
+   switchport mode access
+  !
+  interface FastEthernet0/11
+   switchport mode access
+  !
+  interface FastEthernet0/12
+   switchport mode access
+  !
+  interface FastEthernet0/13
+   switchport mode access
+  !
+  interface FastEthernet0/14
+   switchport mode access
+  !
+  interface FastEthernet0/15
+   switchport mode access
+  !
+  interface FastEthernet0/16
+   switchport mode access
+  !
+  interface FastEthernet0/17
+   switchport mode access
+  !
+  interface FastEthernet0/18
+   switchport mode access
+  !
+  interface FastEthernet0/19
+   switchport mode access
+  !
+  interface FastEthernet0/20
+   switchport mode access
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode trunk
+   switchport trunk encapsulation dot1q
+  !
+  end
+
+
+--- [274] § extended cross-switch interface inspection appendix ---
+[275/346] sw1 SW1# show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[276/346] sw1 SW1# show interfaces FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       46 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       58 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[277/346] sw1 SW1# show interfaces FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       41 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       59 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[278/346] sw1 SW1# show interfaces FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       45 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       62 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[279/346] sw1 SW1# show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:05 (bia 02:00:00:00:00:05)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[280/346] sw1 SW1# show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:06 (bia 02:00:00:00:00:06)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[281/346] sw1 SW1# show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:07 (bia 02:00:00:00:00:07)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[282/346] sw1 SW1# show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:08 (bia 02:00:00:00:00:08)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[283/346] sw1 SW1# show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:09 (bia 02:00:00:00:00:09)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[284/346] sw1 SW1# show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0a (bia 02:00:00:00:00:0a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[285/346] sw1 SW1# show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0b (bia 02:00:00:00:00:0b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[286/346] sw1 SW1# show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0c (bia 02:00:00:00:00:0c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[287/346] sw1 SW1# show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0d (bia 02:00:00:00:00:0d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[288/346] sw1 SW1# show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0e (bia 02:00:00:00:00:0e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[289/346] sw1 SW1# show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:0f (bia 02:00:00:00:00:0f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[290/346] sw1 SW1# show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:10 (bia 02:00:00:00:00:10)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[291/346] sw1 SW1# show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:11 (bia 02:00:00:00:00:11)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[292/346] sw1 SW1# show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:12 (bia 02:00:00:00:00:12)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[293/346] sw1 SW1# show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:13 (bia 02:00:00:00:00:13)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[294/346] sw1 SW1# show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[295/346] sw1 SW1# show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:15 (bia 02:00:00:00:00:15)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[296/346] sw1 SW1# show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:16 (bia 02:00:00:00:00:16)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[297/346] sw1 SW1# show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:17 (bia 02:00:00:00:00:17)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[298/346] sw1 SW1# show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:18 (bia 02:00:00:00:00:18)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[299/346] sw2 SW2> show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[300/346] sw2 SW2> show interfaces FastEthernet0/1
+  FastEthernet0/1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       41 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       54 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[301/346] sw2 SW2> show interfaces FastEthernet0/2
+  FastEthernet0/2 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       41 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       53 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[302/346] sw2 SW2> show interfaces FastEthernet0/3
+  FastEthernet0/3 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       41 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       52 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[303/346] sw2 SW2> show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[304/346] sw2 SW2> show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[305/346] sw2 SW2> show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[306/346] sw2 SW2> show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[307/346] sw2 SW2> show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[308/346] sw2 SW2> show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[309/346] sw2 SW2> show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:25 (bia 02:00:00:00:00:25)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[310/346] sw2 SW2> show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:26 (bia 02:00:00:00:00:26)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[311/346] sw2 SW2> show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:27 (bia 02:00:00:00:00:27)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[312/346] sw2 SW2> show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:28 (bia 02:00:00:00:00:28)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[313/346] sw2 SW2> show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:29 (bia 02:00:00:00:00:29)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[314/346] sw2 SW2> show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2a (bia 02:00:00:00:00:2a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[315/346] sw2 SW2> show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2b (bia 02:00:00:00:00:2b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[316/346] sw2 SW2> show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2c (bia 02:00:00:00:00:2c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[317/346] sw2 SW2> show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2d (bia 02:00:00:00:00:2d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[318/346] sw2 SW2> show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2e (bia 02:00:00:00:00:2e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[319/346] sw2 SW2> show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:2f (bia 02:00:00:00:00:2f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[320/346] sw2 SW2> show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:30 (bia 02:00:00:00:00:30)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[321/346] sw2 SW2> show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:31 (bia 02:00:00:00:00:31)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[322/346] sw2 SW2> show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:32 (bia 02:00:00:00:00:32)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[323/346] core CORE# show interfaces FastEthernet0/0
+  FastEthernet0/0 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:35 (bia 02:00:00:00:00:35)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[324/346] core CORE# show interfaces FastEthernet0/1
+  FastEthernet0/1 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:36 (bia 02:00:00:00:00:36)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[325/346] core CORE# show interfaces FastEthernet0/2
+  FastEthernet0/2 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:37 (bia 02:00:00:00:00:37)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[326/346] core CORE# show interfaces FastEthernet0/3
+  FastEthernet0/3 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:38 (bia 02:00:00:00:00:38)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[327/346] core CORE# show interfaces FastEthernet0/4
+  FastEthernet0/4 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:39 (bia 02:00:00:00:00:39)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[328/346] core CORE# show interfaces FastEthernet0/5
+  FastEthernet0/5 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3a (bia 02:00:00:00:00:3a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[329/346] core CORE# show interfaces FastEthernet0/6
+  FastEthernet0/6 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3b (bia 02:00:00:00:00:3b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[330/346] core CORE# show interfaces FastEthernet0/7
+  FastEthernet0/7 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3c (bia 02:00:00:00:00:3c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[331/346] core CORE# show interfaces FastEthernet0/8
+  FastEthernet0/8 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3d (bia 02:00:00:00:00:3d)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[332/346] core CORE# show interfaces FastEthernet0/9
+  FastEthernet0/9 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3e (bia 02:00:00:00:00:3e)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[333/346] core CORE# show interfaces FastEthernet0/10
+  FastEthernet0/10 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:3f (bia 02:00:00:00:00:3f)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[334/346] core CORE# show interfaces FastEthernet0/11
+  FastEthernet0/11 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:40 (bia 02:00:00:00:00:40)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[335/346] core CORE# show interfaces FastEthernet0/12
+  FastEthernet0/12 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:41 (bia 02:00:00:00:00:41)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[336/346] core CORE# show interfaces FastEthernet0/13
+  FastEthernet0/13 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:42 (bia 02:00:00:00:00:42)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[337/346] core CORE# show interfaces FastEthernet0/14
+  FastEthernet0/14 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:43 (bia 02:00:00:00:00:43)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[338/346] core CORE# show interfaces FastEthernet0/15
+  FastEthernet0/15 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:44 (bia 02:00:00:00:00:44)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[339/346] core CORE# show interfaces FastEthernet0/16
+  FastEthernet0/16 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:45 (bia 02:00:00:00:00:45)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[340/346] core CORE# show interfaces FastEthernet0/17
+  FastEthernet0/17 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:46 (bia 02:00:00:00:00:46)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[341/346] core CORE# show interfaces FastEthernet0/18
+  FastEthernet0/18 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:47 (bia 02:00:00:00:00:47)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[342/346] core CORE# show interfaces FastEthernet0/19
+  FastEthernet0/19 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:48 (bia 02:00:00:00:00:48)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[343/346] core CORE# show interfaces FastEthernet0/20
+  FastEthernet0/20 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:49 (bia 02:00:00:00:00:49)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[344/346] core CORE# show interfaces FastEthernet0/21
+  FastEthernet0/21 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4a (bia 02:00:00:00:00:4a)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[345/346] core CORE# show interfaces FastEthernet0/22
+  FastEthernet0/22 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4b (bia 02:00:00:00:00:4b)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
+
+[346/346] core CORE# show interfaces FastEthernet0/23
+  FastEthernet0/23 is down, line protocol is down
+    Hardware is Fast Ethernet, address is 02:00:00:00:00:4c (bia 02:00:00:00:00:4c)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops

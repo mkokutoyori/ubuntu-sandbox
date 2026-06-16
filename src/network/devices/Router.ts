@@ -549,16 +549,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /**
    * Configure an IP on an interface. Automatically adds a connected route.
    */
-  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): boolean {
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, secondary = false): boolean {
     const port = this.ports.get(ifName);
     if (!port) return false;
 
-    port.configureIP(ip, mask);
-
-    // Remove old connected route for this interface
-    this.routingTable = this.routingTable.filter(
-      r => !(r.type === 'connected' && r.iface === ifName)
-    );
+    if (secondary) {
+      port.addSecondaryIP(ip, mask);
+    } else {
+      port.configureIP(ip, mask);
+      // Remove old primary connected route for this interface, keeping
+      // routes belonging to secondary subnets still configured.
+      const secondaryNets = port.getSecondaryIPs().map((e) =>
+        e.ip.getOctets().map((o, i) => o & e.mask.getOctets()[i]).join('.'));
+      this.routingTable = this.routingTable.filter(
+        r => !(r.type === 'connected' && r.iface === ifName
+          && !secondaryNets.includes(String(r.network)))
+      );
+    }
 
     // Add connected route
     const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
@@ -617,6 +624,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (this.ospfIntegration.isOSPFEnabled()) {
       this._ospfAutoConverge();
     }
+    return true;
+  }
+
+  removeSecondaryAddress(ifName: string, ip: IPAddress, mask: SubnetMask): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+    port.removeSecondaryIP(ip);
+    const net = ip.getOctets().map((o, i) => o & mask.getOctets()[i]).join('.');
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName && String(r.network) === net)
+    );
+    if (this.ospfIntegration.isOSPFEnabled()) this._ospfAutoConverge();
     return true;
   }
 
@@ -774,6 +793,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       if (ip && mask && ip.isInSameSubnet(targetIP, mask)) return port;
+      for (const e of port.getSecondaryIPs()) {
+        if (e.ip.isInSameSubnet(targetIP, e.mask)) return port;
+      }
     }
     return null;
   }
@@ -783,7 +805,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!port) return false;
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    return !!(ip && mask && ip.isInSameSubnet(peerIP, mask));
+    if (ip && mask && ip.isInSameSubnet(peerIP, mask)) return true;
+    return port.getSecondaryIPs().some((e) => e.ip.isInSameSubnet(peerIP, e.mask));
   }
 
   // ─── IPv6 Routing Table Management — delegated to IPv6DataPlane ─
@@ -981,10 +1004,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       });
     }
 
-    if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
+    if (arp.operation === 'request' && port.ownsIPv4(arp.targetIP)) {
       const reply: ARPPacket = {
         type: 'arp', operation: 'reply',
-        senderMAC: port.getMAC(), senderIP: myIP,
+        senderMAC: port.getMAC(), senderIP: arp.targetIP,
         targetMAC: arp.senderMAC, targetIP: arp.senderIP,
       };
       this.sendFrame(portName, {
@@ -1085,8 +1108,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
     for (const [, port] of this.ports) {
-      const myIP = port.getIPAddress();
-      if (myIP && destIP.equals(myIP)) {
+      if (port.ownsIPv4(destIP)) {
         // Control plane — deliver locally (ACL does not filter router-destined traffic)
         this.handleLocalDelivery(inPort, ipPkt);
         return;
@@ -2090,22 +2112,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
-  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null = null;
-  private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
   private readonly _serviceFlags: Map<string, boolean> = new Map();
   private readonly _unhandledConfigLines: string[] = [];
   private _systemClockOverrideMs: number | null = null;
   private _systemClockSetAtMs: number = 0;
-
-  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
-  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
-    this._enableSecret = { value, algo };
-  }
-
-  getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
-  _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
-    this._enablePassword = { value, algo };
-  }
 
   getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
   _setServiceFlag(name: string, on: boolean): void {
@@ -2134,14 +2144,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this._startupConfigSnapshot !== null;
   }
   getStartupConfigSnapshot(): string | null { return this._startupConfigSnapshot; }
-
-  private _scheduledReloadAtMs: number | null = null;
-  _scheduleReload(when: 'immediate' | { atMs: number } | 'cancel'): void {
-    if (when === 'cancel') { this._scheduledReloadAtMs = null; return; }
-    if (when === 'immediate') { this._scheduledReloadAtMs = Date.now(); return; }
-    this._scheduledReloadAtMs = when.atMs;
-  }
-  _getScheduledReloadMs(): number | null { return this._scheduledReloadAtMs; }
 
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
   getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
