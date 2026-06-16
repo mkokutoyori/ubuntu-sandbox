@@ -3310,3 +3310,19 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   réalistes (switch-cli : port câblé ; stp-rstp : port edge câblé à un voisin).
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 52 — UI : la bannière de boot se réaffiche à la réouverture d'un terminal
+
+- Symptôme : fermer un terminal puis en ouvrir un nouveau (même équipement)
+  n'affichait plus la bannière de boot — le 2e terminal tombait directement
+  sur le prompt.
+- Cause : `_bootShown` est porté par l'équipement et n'était remis à zéro
+  qu'au power-cycle ; jamais à la fermeture des terminaux.
+- Correctif : `Equipment.clearBootShown()` ; `TerminalManager.closeTerminal`
+  réinitialise le flag quand **le dernier** terminal d'un équipement se ferme.
+  Ainsi une réouverture après déconnexion complète rejoue la bannière, tandis
+  que des terminaux concurrents ne re-bootent pas (le 1er boote, les autres
+  tombent sur le prompt tant qu'une session reste ouverte).
+- Vérifié : open→boot, 2e concurrent ne reboote pas, fermeture du dernier →
+  flag remis à zéro, réouverture → boot rejoué. Suites react/gui/terminal
+  (560) vertes ; `tsc` propre ; aucun commentaire ajouté.

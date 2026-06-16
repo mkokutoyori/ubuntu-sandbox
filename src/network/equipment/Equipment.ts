@@ -160,6 +160,13 @@ export abstract class Equipment {
    */
   markBootShown(): void { this._bootShown = true; }
 
+  /**
+   * Clear the boot-shown flag — called when the last terminal of a device
+   * closes, so the next console opened (after a full disconnect) replays the
+   * boot banner instead of dropping straight to a bare prompt.
+   */
+  clearBootShown(): void { this._bootShown = false; }
+
   powerOn(): void {
     const wasOn = this.isPoweredOn;
     this.isPoweredOn = true;
