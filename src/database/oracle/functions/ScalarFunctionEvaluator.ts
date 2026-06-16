@@ -12,6 +12,12 @@ import type { FunctionCallExpr, Expression } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
 import type { CellValue, StorageRow, ColumnMeta as StorageColMeta } from '../../engine/storage/BaseStorage';
 import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
+// Date parsing/formatting lives in one place — dateSupport — so the SQL
+// scalar evaluator and the PL/SQL interpreter cannot drift apart.
+import { coerceDateValue as coerceDate, formatDateValue as formatDate } from './dateSupport';
+
+// Re-exported under their historical names for existing consumers.
+export { coerceDate, formatDate };
 
 /** Services the evaluator needs from the executing engine. */
 export interface ScalarFunctionHost {
@@ -33,25 +39,6 @@ function parseBfileLocator(v: CellValue): { dir: string; file: string } | null {
   const slash = rest.indexOf('/');
   if (slash < 0) return null;
   return { dir: rest.slice(0, slash), file: rest.slice(slash + 1) };
-}
-
-/** Return a mutable Date copy of the value, or null if not a date. */
-export function coerceDate(value: unknown): Date | null {
-  if (value instanceof Date) return new Date(value.getTime());
-  if (typeof value !== 'string') return null;
-  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
-    // Accept bare YYYY-MM-DD too.
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  }
-  const ms = Date.parse(value.replace(' ', 'T'));
-  return Number.isNaN(ms) ? null : new Date(ms);
-}
-
-/** Format a Date the way SYSDATE / TO_CHAR(DATE) renders in SQL*Plus. */
-export function formatDate(d: Date): string {
-  const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
-    + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /** Oracle LPAD/RPAD: non-positive length is NULL; truncate to the target. */

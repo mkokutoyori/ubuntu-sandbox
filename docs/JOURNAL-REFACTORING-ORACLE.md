@@ -2120,6 +2120,28 @@ un autre port (22) sans effet, bequest local exempté. Non-régression :
 propre, ESLint propre sur les fichiers modifiés (l'avertissement `no-this-alias`
 en `LinuxMachine.ts:1059` préexiste, hors périmètre).
 
+### 2026-06-16 — Déduplication finale du parsing/formatage de dates Oracle
+**Défaillance (duplication) :** quatre implémentations parallèles des mêmes
+primitives de date subsistaient, au mot près :
+- `ScalarFunctionEvaluator.coerceDate` ≡ `dateSupport.coerceDateValue` (identiques) ;
+- `ScalarFunctionEvaluator.formatDate` ≡ `dateSupport.formatDateValue` (identiques) ;
+- `OracleExecutor.formatOracleDate` ≡ `dateSupport.formatDateWithPattern` (identiques) ;
+- `OracleExecutor.parseOracleDate` ≡ `dateSupport.parseDateWithPattern` (identiques) ;
+- `OracleExecutor.coerceToDateMs` ré-implémentait encore le même `Date.parse`.
+Risque concret : une correction de fidélité (p.ex. un nouveau token de format ou
+un fuseau) appliquée à un seul exemplaire fait diverger silencieusement le rendu
+SQL, le rendu PL/SQL et l'arithmétique de dates.
+**Correction (source unique, pas de réécriture) :** `dateSupport` devient l'unique
+implémentation. `ScalarFunctionEvaluator` importe `coerceDateValue`/`formatDateValue`
+(et les ré-exporte sous leurs noms historiques `coerceDate`/`formatDate` pour ne pas
+casser les consommateurs). `OracleExecutor.formatOracleDate`/`parseOracleDate`
+délèguent à `formatDateWithPattern`/`parseDateWithPattern` ; `coerceToDateMs`
+réutilise `coerceDateValue` tout en conservant son garde-fou plus strict (la
+comparaison exige un timestamp complet, pas un `YYYY-MM-DD` nu). ~90 lignes
+dupliquées supprimées, aucun changement de comportement.
+**Validation :** `unit/database/` complet (125 fichiers, 3008 tests verts) couvrant
+TO_DATE/TO_CHAR/SYSDATE, l'arithmétique de dates et le PL/SQL ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
