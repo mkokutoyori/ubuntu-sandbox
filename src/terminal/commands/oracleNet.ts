@@ -104,6 +104,17 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** First configured IPv4 of a device, as a dotted string, if any. */
+function primaryIpv4(dev: unknown): string | undefined {
+  const ports = (dev as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null }> }).getPorts?.();
+  if (!ports) return undefined;
+  for (const p of ports) {
+    const ip = p.getIPAddress?.();
+    if (ip) return ip.toString();
+  }
+  return undefined;
+}
+
 /** Is this address one of the local device's own identities? */
 function isLocalAddress(localDevice: HostCapableDevice, host: string): boolean {
   const h = host.toLowerCase();
@@ -155,6 +166,29 @@ export function resolveOracleConnectTarget(
   // else simply has nothing listening on the TNS port.
   if (target.getType() !== 'linux-server' && remote) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
+  }
+
+  // The SYN to the listener crosses the target host's INPUT firewall
+  // before any TNS negotiation. A blocked TCP 1521 must therefore look
+  // exactly as it does on a real host: a DROP silently swallows the SYN
+  // (client times out → ORA-12170), a REJECT actively refuses it
+  // (indistinguishable from no listener → ORA-12541). Local bequest
+  // connections never traverse the network, so they are exempt.
+  if (remote) {
+    const fwHost = target as unknown as {
+      firewallAcceptsInboundTcp?: (srcIP: string, dstIP: string, dstPort: number) => 'accept' | 'drop' | 'reject';
+    };
+    if (typeof fwHost.firewallAcceptsInboundTcp === 'function') {
+      const dstIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(desc.host) ? desc.host : (primaryIpv4(target) ?? desc.host);
+      const srcIP = primaryIpv4(localDevice) ?? '0.0.0.0';
+      const verdict = fwHost.firewallAcceptsInboundTcp(srcIP, dstIP, desc.port);
+      if (verdict === 'drop') {
+        return { ok: false, error: 'ORA-12170: TNS:Connect timeout occurred' };
+      }
+      if (verdict === 'reject') {
+        return { ok: false, error: 'ORA-12541: TNS:no listener' };
+      }
+    }
   }
 
   const db = getDb(target.getId());

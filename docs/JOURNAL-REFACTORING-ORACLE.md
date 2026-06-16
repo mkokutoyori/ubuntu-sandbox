@@ -2056,6 +2056,136 @@ fichier écrit par le job visible via `cat` (preuve d'exécution hôte réelle),
 PLSQL_BLOCK toujours en SQL) ; non-régression `unit/database/` ; `tsc` + ESLint
 propres.
 
+### 2026-06-16 — INACTIVE_ACCOUNT_TIME appliqué au login + raisons de verrouillage distinctes
+**Défaillance (cohérence couche accès) :** `INACTIVE_ACCOUNT_TIME` (profil, 12c+)
+n'était **jamais** appliqué dans le chemin d'authentification. Un compte dormant
+restait connectable tant qu'aucun `DormantAccountAnalyzer.sweep()` manuel n'avait
+été déclenché — alors que le vrai Oracle verrouille l'account au *connect time*
+(le contrôle de fond a déjà posé le lock). Toute l'infrastructure existait pourtant
+déjà : `ProfileManager.resolveInactiveAccountTimeDays`, et la date de dernier login.
+Défaut connexe : `LoginTracker.lockAccount` servait indistinctement aux trois types
+de verrou (échecs de login, lock DBA `ALTER USER … ACCOUNT LOCK`, inactivité), et
+`shouldAutoUnlock` les déverrouillait **tous** après `PASSWORD_LOCK_TIME`. Or un
+lock DBA et un lock d'inactivité ne doivent **jamais** s'auto-déverrouiller : ils
+exigent un `ACCOUNT UNLOCK` explicite. Un `ACCOUNT LOCK` posé par un DBA se levait
+donc tout seul au bout d'un jour — écart de fidélité.
+**Correction (enhancement de l'existant, pas de duplication) :**
+- `LoginAttemptRecord` enrichi de `lockReason: 'FAILED_LOGIN' | 'INACTIVITY' | 'DBA'`
+  et de `lastSuccessAt` (timestamp du dernier login réussi).
+- `LoginTracker` : `lockAccount(user, reason)` tague la raison ; `recordSuccess`
+  estampille `lastSuccessAt` ; `shouldAutoUnlock` ne libère que les locks
+  `FAILED_LOGIN` (les locks DBA/inactivité restent verrouillés) ; nouveau getter
+  `getLastSuccessfulLogin`.
+- `SecurityEngine.authenticate` : nouveau contrôle d'inactivité, placé avant la
+  vérification du mot de passe (un compte dormant est refusé quel que soit le mot
+  de passe, comme la branche LOCKED existante). Point de référence : dernier login
+  réussi, à défaut date de création du compte (même règle que le
+  `DormantAccountAnalyzer`). Dépassement → `catalog.lockUser` + lock `INACTIVITY`
+  + `ORA-28000: the account is locked`.
+- Les deux appelants existants alignés sur la raison correcte : `UserAdminExecutor`
+  (`ACCOUNT LOCK` → `'DBA'`) et `DormantAccountAnalyzer.sweep` (→ `'INACTIVITY'`),
+  sans dupliquer la logique de lock.
+**Validation :** `oracle-security-engine.test.ts` étendu (81 tests verts) : nouveau
+bloc d'intégration `INACTIVE_ACCOUNT_TIME` (CREATE PROFILE end-to-end, compte frais
+OK, compte dormant → ORA-28000 + statut LOCKED, refus malgré mot de passe valide,
+référence = dernier login et non création, réveil après `ACCOUNT UNLOCK`) + tests
+unitaires `LoginTracker` des raisons de lock et du dernier login. Non-régression :
+`unit/database/` complet (125 fichiers, 3004 tests verts) ; `tsc` + ESLint propres.
+
+### 2026-06-16 — Le listener Oracle respecte le firewall (iptables) du host
+**Défaillance (cohérence couche réseau) :** la résolution Oracle Net distante
+(`resolveOracleConnectTarget`) vérifiait l'hôte, l'alimentation, le type de device,
+le port et le service du listener — mais **jamais le firewall** du host cible. Comme
+une connexion `sqlplus user/pass@//host/svc` se résout par référence vers la
+`OracleDatabase` cible (sans forger de SYN qui traverserait la pile réseau), une
+règle `iptables -A INPUT -p tcp --dport 1521 -j DROP` posée sur le serveur de base
+**n'avait aucun effet** : le client se connectait quand même. Écart direct avec un
+vrai hôte, où le SYN est filtré par netfilter avant toute négociation TNS.
+**Correction (réutilisation de l'infrastructure existante, pas de duplication) :**
+- Nouvelle capacité `LinuxMachine.firewallAcceptsInboundTcp(srcIP, dstIP, dstPort)`
+  qui évalue la chaîne INPUT via le `LinuxIptablesManager` déjà en place
+  (`executor.iptables.filterPacket`), en déduisant l'interface d'ingress du port
+  portant l'adresse ciblée (pour que les règles `-i <iface>` matchent comme pour un
+  vrai paquet). Aucune logique de filtrage réimplémentée.
+- `oracleNet.resolveOracleConnectTarget` interroge cette capacité pour les
+  connexions **distantes** uniquement (le bequest local ne traverse pas le réseau),
+  et mappe le verdict sur l'échelle d'erreurs Oracle Net réelle : `DROP` → SYN avalé
+  → `ORA-12170: TNS:Connect timeout occurred` ; `REJECT` → refus actif, indiscernable
+  de l'absence de listener → `ORA-12541: TNS:no listener`. Le contrôle précède la
+  négociation TNS, comme au niveau paquet.
+**Validation :** `oracle-tns-remote.test.ts` étendu (24 tests verts) : DROP/1521 →
+ORA-12170 puis reconnexion après `iptables -F`, REJECT/1521 → ORA-12541, règle sur
+un autre port (22) sans effet, bequest local exempté. Non-régression :
+`unit/database/` (3008 tests verts) + `network-v2/linux-iptables` (128) ; `tsc`
+propre, ESLint propre sur les fichiers modifiés (l'avertissement `no-this-alias`
+en `LinuxMachine.ts:1059` préexiste, hors périmètre).
+
+### 2026-06-16 — Déduplication finale du parsing/formatage de dates Oracle
+**Défaillance (duplication) :** quatre implémentations parallèles des mêmes
+primitives de date subsistaient, au mot près :
+- `ScalarFunctionEvaluator.coerceDate` ≡ `dateSupport.coerceDateValue` (identiques) ;
+- `ScalarFunctionEvaluator.formatDate` ≡ `dateSupport.formatDateValue` (identiques) ;
+- `OracleExecutor.formatOracleDate` ≡ `dateSupport.formatDateWithPattern` (identiques) ;
+- `OracleExecutor.parseOracleDate` ≡ `dateSupport.parseDateWithPattern` (identiques) ;
+- `OracleExecutor.coerceToDateMs` ré-implémentait encore le même `Date.parse`.
+Risque concret : une correction de fidélité (p.ex. un nouveau token de format ou
+un fuseau) appliquée à un seul exemplaire fait diverger silencieusement le rendu
+SQL, le rendu PL/SQL et l'arithmétique de dates.
+**Correction (source unique, pas de réécriture) :** `dateSupport` devient l'unique
+implémentation. `ScalarFunctionEvaluator` importe `coerceDateValue`/`formatDateValue`
+(et les ré-exporte sous leurs noms historiques `coerceDate`/`formatDate` pour ne pas
+casser les consommateurs). `OracleExecutor.formatOracleDate`/`parseOracleDate`
+délèguent à `formatDateWithPattern`/`parseDateWithPattern` ; `coerceToDateMs`
+réutilise `coerceDateValue` tout en conservant son garde-fou plus strict (la
+comparaison exige un timestamp complet, pas un `YYYY-MM-DD` nu). ~90 lignes
+dupliquées supprimées, aucun changement de comportement.
+**Validation :** `unit/database/` complet (125 fichiers, 3008 tests verts) couvrant
+TO_DATE/TO_CHAR/SYSDATE, l'arithmétique de dates et le PL/SQL ; `tsc` + ESLint propres.
+
+### 2026-06-16 — ALTER USER … IDENTIFIED BY : bon code ORA (28003 vs 28007)
+**Défaillance (fidélité d'erreur) :** sur `ALTER USER … IDENTIFIED BY`,
+`UserAdminExecutor` levait **toujours** `OracleError(28007, …)` (réutilisation) quand
+`SecurityEngine.changePassword` échouait — y compris quand l'échec venait du
+**vérificateur de complexité** (`PASSWORD_VERIFY_FUNCTION`), dont le vrai code est
+`ORA-28003`. Comme `changePassword` ne renvoyait qu'une string, l'appelant devinait
+le code. Résultat : un mot de passe trop faible rejeté avec un message
+`ORA-28003: …` mais un `err.code = ORA-28007`, soit un rendu `format()`
+incohérent « ORA-28007: ORA-28003: … ». (À l'inverse, `CREATE USER` levait déjà
+correctement `ORA-28003`.)
+**Correction (propagation structurée, pas de devinette) :** `changePassword`
+retourne désormais `{ ok, error?, errorCode? }` — `28003` pour un échec du
+vérificateur, `28007` pour une violation de réutilisation. L'appelant lève
+`OracleError(result.errorCode ?? 28007, …)` en nettoyant le préfixe ORA- redondant.
+Branches de réutilisation (`violatesReuseTime`/`violatesReuseMax`) fusionnées.
+**Validation :** `oracle-security-enhancements.test.ts` étendu (mot de passe faible
+sous profil vérificateur → ORA-28003 et **pas** 28007 ; réutilisation → ORA-28007) ;
+non-régression auth/user (oracle-auth-integration, user-activity,
+access-management-comprehensive : 844 tests verts) ; `tsc` + ESLint propres.
+
+### 2026-06-16 — PASSWORD_ROLLOVER_TIME (19c) appliqué à l'authentification
+**Défaillance (cohérence couche accès) :** le paramètre de profil
+`PASSWORD_ROLLOVER_TIME` (19c) était stocké, listé dans `DBA_PROFILES` et résolu
+(`resolvePasswordRolloverTimeDays`) mais **jamais appliqué**. Le vrai Oracle 19c, après
+un changement de mot de passe sous un profil avec rollover, garde l'**ancien** mot de
+passe valide pendant la fenêtre de rollover — ce qui permet à un parc de clients /
+pool de connexions de basculer progressivement vers le nouveau credential sans
+coupure. Ici, l'ancien mot de passe était immédiatement rejeté (ORA-01017).
+**Correction (enhancement de l'existant) :**
+- `PasswordManager.isWithinRollover(user, candidate, rolloverDays)` : `true` si
+  `candidate` est le mot de passe *précédent* (history[1]) et que l'on est encore
+  dans la fenêtre depuis le dernier changement (référence = `history[0].changedAt`,
+  testable) ; fenêtre nulle/négative = désactivé ; `UNLIMITED` = toujours valide.
+- `SecurityEngine.authenticate` : quand la comparaison au mot de passe courant
+  échoue, on tente le rollover *avant* d'enregistrer un échec — un login en rollover
+  n'incrémente donc pas `FAILED_LOGIN_ATTEMPTS`. Les autres mots de passe erronés
+  restent en ORA-01017.
+**Validation :** `oracle-security-engine.test.ts` étendu (90 tests verts) : 5 tests
+unitaires `PasswordManager` (précédent accepté dans la fenêtre, courant non éligible,
+fenêtre 0 désactivée, expiration après la fenêtre, absence de précédent) + 4 tests
+d'intégration via `connect` (nouveau OK, ancien OK pendant la fenêtre, mot de passe
+sans rapport → ORA-01017, profil sans rollover → ancien rejeté). Non-régression
+sécurité/auth (91 tests) ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -82,8 +82,35 @@ export class SecurityEngine {
       this.loginTracker.unlockAccount(upper);
     }
 
+    // INACTIVE_ACCOUNT_TIME (12c+) — an account idle for longer than the
+    // profile ceiling is locked at connect time, exactly like the
+    // background check the real database runs. The reference point is the
+    // last successful logon, falling back to the account creation date
+    // when the user has never logged on. This mirrors the lazy
+    // enforcement of the LOCKED branch above: it precedes the password
+    // check so a dormant account is refused regardless of credentials.
+    const inactiveDays = this.profiles.resolveInactiveAccountTimeDays(user.profile);
+    if (inactiveDays !== Infinity && user.accountStatus !== 'LOCKED') {
+      const lastLogin = this.loginTracker.getLastSuccessfulLogin(upper) ?? user.created;
+      const idleDays = (Date.now() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
+      if (idleDays >= inactiveDays) {
+        catalog.lockUser(upper);
+        this.loginTracker.lockAccount(upper, 'INACTIVITY');
+        return { success: false, errorCode: 28000, message: 'ORA-28000: the account is locked', requiresPasswordChange: false, isGracePeriod: false };
+      }
+    }
+
     // Verify password
     if (storedPassword === undefined || storedPassword !== password) {
+      // 19c PASSWORD_ROLLOVER_TIME: the previous password stays valid for
+      // the rollover window after a change, so a fleet of clients can
+      // pick up the new credential gradually instead of all at once.
+      const rolloverDays = this.profiles.resolvePasswordRolloverTimeDays(user.profile);
+      if (rolloverDays > 0 && this.passwords.isWithinRollover(upper, password, rolloverDays)) {
+        this.loginTracker.recordSuccess(upper);
+        return { success: true, errorCode: 0, message: '', requiresPasswordChange: false, isGracePeriod: false };
+      }
+
       this.loginTracker.recordFailure(upper);
 
       const profileName = user.profile;
@@ -161,24 +188,25 @@ export class SecurityEngine {
     username: string,
     newPassword: string,
     profileName: string
-  ): { ok: boolean; error?: string } {
+  ): { ok: boolean; error?: string; errorCode?: number } {
     const upper = username.toUpperCase();
 
     // Complexity check (PASSWORD_VERIFY_FUNCTION) runs first — Oracle
     // refuses to even consider reuse if the verifier rejects the value.
+    // A verifier failure is ORA-28003, distinct from the ORA-28007 reuse
+    // error below — the caller must surface the right code, so we return
+    // it rather than letting the caller guess.
     const verifierError = this.profiles.verifyPassword(profileName, upper, newPassword);
     if (verifierError) {
-      return { ok: false, error: verifierError };
+      return { ok: false, error: verifierError, errorCode: 28003 };
     }
 
     const reuseTime = this.profiles.resolvePasswordReuseTime(profileName);
     const reuseMax = this.profiles.resolvePasswordReuseMax(profileName);
 
-    if (this.passwords.violatesReuseTime(upper, newPassword, reuseTime)) {
-      return { ok: false, error: 'ORA-28007: the password cannot be reused' };
-    }
-    if (this.passwords.violatesReuseMax(upper, newPassword, reuseMax)) {
-      return { ok: false, error: 'ORA-28007: the password cannot be reused' };
+    if (this.passwords.violatesReuseTime(upper, newPassword, reuseTime)
+        || this.passwords.violatesReuseMax(upper, newPassword, reuseMax)) {
+      return { ok: false, error: 'ORA-28007: the password cannot be reused', errorCode: 28007 };
     }
 
     this.passwords.setPassword(upper, newPassword);

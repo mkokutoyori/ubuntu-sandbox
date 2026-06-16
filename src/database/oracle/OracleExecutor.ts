@@ -29,6 +29,7 @@ import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
+import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
 import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
@@ -3852,62 +3853,14 @@ export class OracleExecutor extends BaseExecutor {
     return this.scalarFunctions.evaluate(expr, row, columns);
   }
 
+  // Date format/parse delegate to the single dateSupport implementation
+  // shared with the scalar evaluator and PL/SQL interpreter.
   private formatOracleDate(d: Date, fmt: string): string {
-    const pad = (n: number, w: number = 2) => String(n).padStart(w, '0');
-    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-    const monthsShort = months.map(m => m.slice(0, 3));
-    const days = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
-    const daysShort = days.map(d => d.slice(0, 3));
-
-    let result = fmt;
-    // Order matters: longest tokens first to avoid partial replacement
-    result = result.replace(/YYYY/g, String(d.getFullYear()));
-    result = result.replace(/YY/g, String(d.getFullYear()).slice(-2));
-    result = result.replace(/MONTH/g, months[d.getMonth()]);
-    result = result.replace(/MON/g, monthsShort[d.getMonth()]);
-    result = result.replace(/MM/g, pad(d.getMonth() + 1));
-    result = result.replace(/DD/g, pad(d.getDate()));
-    result = result.replace(/DAY/g, days[d.getDay()]);
-    result = result.replace(/DY/g, daysShort[d.getDay()]);
-    result = result.replace(/HH24/g, pad(d.getHours()));
-    result = result.replace(/HH/g, pad(d.getHours() % 12 || 12));
-    result = result.replace(/MI/g, pad(d.getMinutes()));
-    result = result.replace(/SS/g, pad(d.getSeconds()));
-    return result;
+    return formatDateWithPattern(d, fmt);
   }
 
   private parseOracleDate(dateStr: string, fmt: string): string {
-    // Try ISO format first
-    const isoDate = new Date(dateStr);
-    if (!isNaN(isoDate.getTime())) {
-      return isoDate.toISOString().slice(0, 19).replace('T', ' ');
-    }
-    // Simple format-aware parsing for common Oracle formats
-    let year = 2000, month = 1, day = 1, hour = 0, min = 0, sec = 0;
-    const fmtUpper = fmt.toUpperCase();
-    const parts = dateStr.split(/[\s/\-:.,]+/);
-    const fmtParts = fmtUpper.split(/[\s/\-:.,]+/);
-    for (let i = 0; i < fmtParts.length && i < parts.length; i++) {
-      const v = parseInt(parts[i], 10);
-      if (isNaN(v) && fmtParts[i] === 'MON') {
-        const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        const idx = months.indexOf(parts[i].toUpperCase().slice(0, 3));
-        if (idx >= 0) month = idx + 1;
-        continue;
-      }
-      if (isNaN(v)) continue;
-      switch (fmtParts[i]) {
-        case 'YYYY': year = v; break;
-        case 'YY': year = 2000 + v; break;
-        case 'MM': month = v; break;
-        case 'DD': day = v; break;
-        case 'HH24': case 'HH': hour = v; break;
-        case 'MI': min = v; break;
-        case 'SS': sec = v; break;
-      }
-    }
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}`;
+    return parseDateWithPattern(dateStr, fmt);
   }
 
   private getMetadataDDL(args: CellValue[]): CellValue {
@@ -4089,11 +4042,11 @@ export class OracleExecutor extends BaseExecutor {
    */
   private coerceToDateMs(value: CellValue): number | null {
     if (value instanceof Date) return value.getTime();
+    // Comparison demands a full timestamp: a bare YYYY-MM-DD or a pure
+    // numeric string ("1", "100") must NOT be treated as a date here.
     if (typeof value !== 'string') return null;
-    // Reject pure numeric strings ("1", "100") that just happen to parse.
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
-    const ms = Date.parse(value.replace(' ', 'T'));
-    return Number.isNaN(ms) ? null : ms;
+    return coerceDateValue(value)?.getTime() ?? null;
   }
 
 
