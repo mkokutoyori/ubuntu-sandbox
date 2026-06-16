@@ -179,24 +179,25 @@ export class SecurityEngine {
     username: string,
     newPassword: string,
     profileName: string
-  ): { ok: boolean; error?: string } {
+  ): { ok: boolean; error?: string; errorCode?: number } {
     const upper = username.toUpperCase();
 
     // Complexity check (PASSWORD_VERIFY_FUNCTION) runs first — Oracle
     // refuses to even consider reuse if the verifier rejects the value.
+    // A verifier failure is ORA-28003, distinct from the ORA-28007 reuse
+    // error below — the caller must surface the right code, so we return
+    // it rather than letting the caller guess.
     const verifierError = this.profiles.verifyPassword(profileName, upper, newPassword);
     if (verifierError) {
-      return { ok: false, error: verifierError };
+      return { ok: false, error: verifierError, errorCode: 28003 };
     }
 
     const reuseTime = this.profiles.resolvePasswordReuseTime(profileName);
     const reuseMax = this.profiles.resolvePasswordReuseMax(profileName);
 
-    if (this.passwords.violatesReuseTime(upper, newPassword, reuseTime)) {
-      return { ok: false, error: 'ORA-28007: the password cannot be reused' };
-    }
-    if (this.passwords.violatesReuseMax(upper, newPassword, reuseMax)) {
-      return { ok: false, error: 'ORA-28007: the password cannot be reused' };
+    if (this.passwords.violatesReuseTime(upper, newPassword, reuseTime)
+        || this.passwords.violatesReuseMax(upper, newPassword, reuseMax)) {
+      return { ok: false, error: 'ORA-28007: the password cannot be reused', errorCode: 28007 };
     }
 
     this.passwords.setPassword(upper, newPassword);

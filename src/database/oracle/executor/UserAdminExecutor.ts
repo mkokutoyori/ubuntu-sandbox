@@ -129,7 +129,14 @@ export class UserAdminExecutor {
       // the value is an opaque verifier already produced by Oracle.
       if (engine && !stmt.passwordByHash) {
         const result = engine.changePassword(username, stmt.password, profileName);
-        if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
+        if (!result.ok) {
+          // Surface the verifier's own code (ORA-28003) or the reuse code
+          // (ORA-28007) — never a hardcoded mismatch. OracleError keeps a
+          // message that already carries an ORA- prefix as-is.
+          const code = result.errorCode ?? 28007;
+          const msg = (result.error ?? 'password change failed').replace(/^ORA-\d+:\s*/, '');
+          throw new OracleError(code, msg);
+        }
       }
       catalog.setPassword(username, stmt.password);
       if (user) {

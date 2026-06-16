@@ -59,6 +59,26 @@ describe('password verifier strategies', () => {
   });
 });
 
+describe('ALTER USER password change surfaces the correct ORA code', () => {
+  it('a weak password under a verifier profile raises ORA-28003, not ORA-28007', () => {
+    const sh = newSession('pwc-1');
+    sh.processLine("CREATE PROFILE verif_p LIMIT PASSWORD_VERIFY_FUNCTION ORA12C_VERIFY_FUNCTION;");
+    sh.processLine('CREATE USER UPWC IDENTIFIED BY "Str0ngPwd1" PROFILE verif_p;');
+    const out = run(sh, 'ALTER USER UPWC IDENTIFIED BY "weak";');
+    expect(out).toMatch(/ORA-28003/);
+    expect(out).not.toMatch(/ORA-28007/);
+  });
+
+  it('reusing a recent password raises ORA-28007', () => {
+    const sh = newSession('pwc-2');
+    sh.processLine("CREATE PROFILE reuse_p LIMIT PASSWORD_REUSE_MAX 3;");
+    sh.processLine('CREATE USER UREUSE IDENTIFIED BY "First#Pwd1" PROFILE reuse_p;');
+    sh.processLine('ALTER USER UREUSE IDENTIFIED BY "Second#Pwd2";');
+    const out = run(sh, 'ALTER USER UREUSE IDENTIFIED BY "Second#Pwd2";');
+    expect(out).toMatch(/ORA-28007/);
+  });
+});
+
 describe('profile parameter coverage', () => {
   it('DBA_PROFILES lists INACTIVE_ACCOUNT_TIME and PASSWORD_ROLLOVER_TIME', () => {
     const sh = newSession('pp-1');

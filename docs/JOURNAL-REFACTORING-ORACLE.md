@@ -2142,6 +2142,26 @@ dupliquées supprimées, aucun changement de comportement.
 **Validation :** `unit/database/` complet (125 fichiers, 3008 tests verts) couvrant
 TO_DATE/TO_CHAR/SYSDATE, l'arithmétique de dates et le PL/SQL ; `tsc` + ESLint propres.
 
+### 2026-06-16 — ALTER USER … IDENTIFIED BY : bon code ORA (28003 vs 28007)
+**Défaillance (fidélité d'erreur) :** sur `ALTER USER … IDENTIFIED BY`,
+`UserAdminExecutor` levait **toujours** `OracleError(28007, …)` (réutilisation) quand
+`SecurityEngine.changePassword` échouait — y compris quand l'échec venait du
+**vérificateur de complexité** (`PASSWORD_VERIFY_FUNCTION`), dont le vrai code est
+`ORA-28003`. Comme `changePassword` ne renvoyait qu'une string, l'appelant devinait
+le code. Résultat : un mot de passe trop faible rejeté avec un message
+`ORA-28003: …` mais un `err.code = ORA-28007`, soit un rendu `format()`
+incohérent « ORA-28007: ORA-28003: … ». (À l'inverse, `CREATE USER` levait déjà
+correctement `ORA-28003`.)
+**Correction (propagation structurée, pas de devinette) :** `changePassword`
+retourne désormais `{ ok, error?, errorCode? }` — `28003` pour un échec du
+vérificateur, `28007` pour une violation de réutilisation. L'appelant lève
+`OracleError(result.errorCode ?? 28007, …)` en nettoyant le préfixe ORA- redondant.
+Branches de réutilisation (`violatesReuseTime`/`violatesReuseMax`) fusionnées.
+**Validation :** `oracle-security-enhancements.test.ts` étendu (mot de passe faible
+sous profil vérificateur → ORA-28003 et **pas** 28007 ; réutilisation → ORA-28007) ;
+non-régression auth/user (oracle-auth-integration, user-activity,
+access-management-comprehensive : 844 tests verts) ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
