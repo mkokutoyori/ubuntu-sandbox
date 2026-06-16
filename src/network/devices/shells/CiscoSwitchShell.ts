@@ -1890,20 +1890,29 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showSwitchportDetail(name: string): string {
     const c = this.d().getSwitchportConfig(name);
-    const mode = c?.mode === 'trunk' ? 'trunk' : 'static access';
-    const oper = c?.mode ?? 'access';
+    const dtp = this.d().getDtpAgent();
+    const admin = dtp.getAdminMode(name);
+    const oper = dtp.getOperationalMode(name);
+    const adminLabel =
+      admin === 'trunk' || admin === 'nonegotiate' ? 'trunk'
+      : admin === 'dynamic-auto' ? 'dynamic auto'
+      : admin === 'dynamic-desirable' ? 'dynamic desirable'
+      : 'static access';
+    const operLabel = oper === 'trunk' ? 'trunk' : 'static access';
+    const negotiation = admin === 'access' || admin === 'nonegotiate' ? 'Off' : 'On';
+    const nativeVlan = c?.trunkNativeVlan ?? 1;
     const lines = [
       `Name: ${this.abbreviateInterface(name)}`,
       `Switchport: Enabled`,
-      `Administrative Mode: ${mode}`,
-      `Operational Mode: ${oper}`,
+      `Administrative Mode: ${adminLabel}`,
+      `Operational Mode: ${operLabel}`,
       `Administrative Trunking Encapsulation: dot1q`,
-      `Negotiation of Trunking: ${c?.mode === 'trunk' ? 'On' : 'Off'}`,
+      `Negotiation of Trunking: ${negotiation}`,
       `Access Mode VLAN: ${c?.accessVlan ?? 1} (${this.d().getVLANs().get(c?.accessVlan ?? 1)?.name ?? 'default'})`,
-      `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1} (default)`,
+      `Trunking Native Mode VLAN: ${nativeVlan}${nativeVlan === 1 ? ' (default)' : ''}`,
     ];
-    if (c?.mode === 'trunk') {
-      const allowed = c.trunkAllowedVlans.size >= 4094
+    if (oper === 'trunk') {
+      const allowed = !c || c.trunkAllowedVlans.size >= 4094
         ? 'ALL' : this.compactVlanList(Array.from(c.trunkAllowedVlans).sort((a, b) => a - b));
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }

@@ -3404,3 +3404,16 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   équipement.
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 57 — Fichier 3 (item A+E) : DTP reflété dans show … switchport
+
+- `show interfaces … switchport` lisait `cfg.mode` (access/trunk) + une
+  négociation codée en dur → `dynamic auto/desirable` apparaissaient comme
+  « trunk » et `nonegotiate` affichait quand même « Negotiation: On ».
+- Corrigé en lisant l'état réel de l'agent DTP (`getAdminMode` /
+  `getOperationalMode`) : Administrative Mode = static access / trunk /
+  dynamic auto / dynamic desirable ; Negotiation = Off seulement pour access
+  et nonegotiate ; sections trunk affichées selon le mode opérationnel réel.
+- Label native VLAN corrigé (item E) : « (default) » uniquement pour le
+  VLAN 1 (ex. « Trunking Native Mode VLAN: 99 », sans « (default) »).
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.

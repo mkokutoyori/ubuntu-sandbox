@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-06-16T13:03:11.340Z
+Generated: 2026-06-16T13:37:03.150Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 356
@@ -368,7 +368,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -394,7 +394,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -420,7 +420,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -446,7 +446,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -472,7 +472,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -498,7 +498,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -524,7 +524,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -550,7 +550,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -576,7 +576,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -682,7 +682,7 @@ Total steps: 356
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: On
   Access Mode VLAN: 1 (default)
-  Trunking Native Mode VLAN: 99 (default)
+  Trunking Native Mode VLAN: 99
   Trunking VLANs Enabled: ALL
 
 [140/356] sw1 SW1(config-if)# end
@@ -719,17 +719,17 @@ Total steps: 356
   Name: Fa0/1
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
-  Trunking Native Mode VLAN: 5000 (default)
+  Trunking Native Mode VLAN: 5000
 
 [150/356] sw1 SW1# show interfaces FastEthernet0/2 switchport
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -739,7 +739,7 @@ Total steps: 356
   Name: Fa0/3
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -751,7 +751,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -762,7 +762,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -773,7 +773,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -784,7 +784,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -795,7 +795,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -806,7 +806,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -817,7 +817,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -828,7 +828,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -839,7 +839,7 @@ Total steps: 356
   Administrative Mode: trunk
   Operational Mode: trunk
   Administrative Trunking Encapsulation: dot1q
-  Negotiation of Trunking: On
+  Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
@@ -848,7 +848,7 @@ Total steps: 356
   Name: Fa0/13
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -858,7 +858,7 @@ Total steps: 356
   Name: Fa0/14
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -868,7 +868,7 @@ Total steps: 356
   Name: Fa0/15
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -878,7 +878,7 @@ Total steps: 356
   Name: Fa0/16
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -888,7 +888,7 @@ Total steps: 356
   Name: Fa0/17
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -898,7 +898,7 @@ Total steps: 356
   Name: Fa0/18
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -908,7 +908,7 @@ Total steps: 356
   Name: Fa0/19
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -918,7 +918,7 @@ Total steps: 356
   Name: Fa0/20
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -928,7 +928,7 @@ Total steps: 356
   Name: Fa0/21
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -938,7 +938,7 @@ Total steps: 356
   Name: Fa0/22
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -948,7 +948,7 @@ Total steps: 356
   Name: Fa0/23
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1202,7 +1202,7 @@ Total steps: 356
   Name: Fa0/1
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1212,7 +1212,7 @@ Total steps: 356
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1222,7 +1222,7 @@ Total steps: 356
   Name: Fa0/3
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1232,7 +1232,7 @@ Total steps: 356
   Name: Fa0/4
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1242,7 +1242,7 @@ Total steps: 356
   Name: Fa0/5
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1252,7 +1252,7 @@ Total steps: 356
   Name: Fa0/6
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1262,7 +1262,7 @@ Total steps: 356
   Name: Fa0/7
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1272,7 +1272,7 @@ Total steps: 356
   Name: Fa0/8
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1282,7 +1282,7 @@ Total steps: 356
   Name: Fa0/9
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1292,7 +1292,7 @@ Total steps: 356
   Name: Fa0/10
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1302,7 +1302,7 @@ Total steps: 356
   Name: Fa0/11
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1312,7 +1312,7 @@ Total steps: 356
   Name: Fa0/12
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1322,7 +1322,7 @@ Total steps: 356
   Name: Fa0/13
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1332,7 +1332,7 @@ Total steps: 356
   Name: Fa0/14
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1342,7 +1342,7 @@ Total steps: 356
   Name: Fa0/15
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1352,7 +1352,7 @@ Total steps: 356
   Name: Fa0/16
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1362,7 +1362,7 @@ Total steps: 356
   Name: Fa0/17
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1372,7 +1372,7 @@ Total steps: 356
   Name: Fa0/18
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1382,7 +1382,7 @@ Total steps: 356
   Name: Fa0/19
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1392,7 +1392,7 @@ Total steps: 356
   Name: Fa0/20
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1402,7 +1402,7 @@ Total steps: 356
   Name: Fa0/21
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1412,7 +1412,7 @@ Total steps: 356
   Name: Fa0/22
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1422,7 +1422,7 @@ Total steps: 356
   Name: Fa0/23
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1434,7 +1434,7 @@ Total steps: 356
   Name: Fa0/1
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1444,7 +1444,7 @@ Total steps: 356
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1454,7 +1454,7 @@ Total steps: 356
   Name: Fa0/3
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1464,7 +1464,7 @@ Total steps: 356
   Name: Fa0/4
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1474,7 +1474,7 @@ Total steps: 356
   Name: Fa0/5
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1484,7 +1484,7 @@ Total steps: 356
   Name: Fa0/6
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1494,7 +1494,7 @@ Total steps: 356
   Name: Fa0/7
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1504,7 +1504,7 @@ Total steps: 356
   Name: Fa0/8
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1514,7 +1514,7 @@ Total steps: 356
   Name: Fa0/9
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1524,7 +1524,7 @@ Total steps: 356
   Name: Fa0/10
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1534,7 +1534,7 @@ Total steps: 356
   Name: Fa0/11
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1544,7 +1544,7 @@ Total steps: 356
   Name: Fa0/12
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1554,7 +1554,7 @@ Total steps: 356
   Name: Fa0/13
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1564,7 +1564,7 @@ Total steps: 356
   Name: Fa0/14
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1574,7 +1574,7 @@ Total steps: 356
   Name: Fa0/15
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1584,7 +1584,7 @@ Total steps: 356
   Name: Fa0/16
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1594,7 +1594,7 @@ Total steps: 356
   Name: Fa0/17
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1604,7 +1604,7 @@ Total steps: 356
   Name: Fa0/18
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1614,7 +1614,7 @@ Total steps: 356
   Name: Fa0/19
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1624,7 +1624,7 @@ Total steps: 356
   Name: Fa0/20
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1634,7 +1634,7 @@ Total steps: 356
   Name: Fa0/21
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1644,7 +1644,7 @@ Total steps: 356
   Name: Fa0/22
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
@@ -1654,7 +1654,7 @@ Total steps: 356
   Name: Fa0/23
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
