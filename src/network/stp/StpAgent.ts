@@ -34,6 +34,10 @@ export class StpAgent extends ReactiveAgentBase {
   private config: StpConfig;
   private readonly mstRegion: MstRegion = createDefaultMstRegion();
   private readonly mstInstancePriority = new Map<number, number>();
+  private readonly vlanPriority = new Map<number, number>();
+  private readonly vlanHello = new Map<number, number>();
+  private readonly vlanMaxAge = new Map<number, number>();
+  private readonly vlanForwardDelay = new Map<number, number>();
   private pathcostMethod: 'short' | 'long' = 'short';
   private readonly portInfo = new Map<string, StpPortInfo>();
   private readonly guards = new Map<string, StpPortGuards>();
@@ -191,6 +195,39 @@ export class StpAgent extends ReactiveAgentBase {
       this.stopTimers();
       this.armTimers();
     }
+  }
+
+  setVlanPriority(vlan: number, priority: number): void {
+    if (priority < 0 || priority > 61440) return;
+    this.vlanPriority.set(vlan, Math.floor(priority / 4096) * 4096);
+    if (vlan === 1) this.setBridgePriority(priority);
+  }
+  getVlanPriority(vlan: number): number {
+    return this.vlanPriority.get(vlan) ?? this.config.bridgePriority;
+  }
+  setVlanHelloSec(vlan: number, sec: number): void {
+    this.vlanHello.set(vlan, sec);
+    if (vlan === 1) this.setHelloSec(sec);
+  }
+  getVlanHelloSec(vlan: number): number {
+    return this.vlanHello.get(vlan) ?? this.config.helloSec;
+  }
+  setVlanMaxAgeSec(vlan: number, sec: number): void {
+    this.vlanMaxAge.set(vlan, sec);
+    if (vlan === 1) this.setMaxAgeSec(sec);
+  }
+  getVlanMaxAgeSec(vlan: number): number {
+    return this.vlanMaxAge.get(vlan) ?? this.config.maxAgeSec;
+  }
+  setVlanForwardDelaySec(vlan: number, sec: number): void {
+    this.vlanForwardDelay.set(vlan, sec);
+    if (vlan === 1) this.setForwardDelaySec(sec);
+  }
+  getVlanForwardDelaySec(vlan: number): number {
+    return this.vlanForwardDelay.get(vlan) ?? this.config.forwardDelaySec;
+  }
+  getConfiguredVlans(): number[] {
+    return [...this.vlanPriority.keys()].sort((a, b) => a - b);
   }
 
   setMode(mode: import('./types').StpProtocolMode): void {

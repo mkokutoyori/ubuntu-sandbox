@@ -3492,3 +3492,19 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - `pathcost method` (Lot 1) inclus dans le résumé + running-config.
 - État réel uniquement ; aucun hardcode, aucun commentaire.
 - Non-régression : network-v2 — 7117 verts ; tsc propre.
+
+## Entrée 64 — Fichier 4 Lot 3a : priorité STP réellement par-VLAN (PVST)
+
+- `spanning-tree vlan N priority/hello-time/max-age/forward-time` et
+  `spanning-tree vlan N root primary|secondary` étaient appliqués à
+  l'instance globale unique → toutes les VLAN affichaient la même priorité.
+- Vrai état par-VLAN sur StpAgent : `vlanPriority`/`vlanHello`/`vlanMaxAge`/
+  `vlanForwardDelay` (Map par VLAN, repli sur la config globale ; VLAN 1
+  reste lié à l'instance globale pour l'élection). `root primary`→24576,
+  `secondary`→28672.
+- `show spanning-tree vlan N` / `root` / `bridge` / `detail` lisent la
+  priorité et les timers **par VLAN** (priorité = base par-VLAN + sysid).
+  Vérifié : VLAN1→24577, VLAN10→8202 (8192+10), VLAN20→24596 (root primary).
+- Élection inter-switch reste mono-instance (le plan de données reste correct
+  par VLAN) ; la config/affichage par-VLAN est désormais réelle.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.

@@ -884,13 +884,20 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           m === 'rapid-pvst' || m === 'mst' ? 'rstp' : 'stp');
       }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
+        const vlan = parseInt(args[1] ?? '', 10);
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
         const agent = this.d().getStpAgent();
-        if (knob === 'priority' && !isNaN(n)) agent.setBridgePriority(n);
-        else if (knob === 'hello-time' && !isNaN(n)) agent.setHelloSec(n);
-        else if (knob === 'max-age' && !isNaN(n)) agent.setMaxAgeSec(n);
-        else if (knob === 'forward-time' && !isNaN(n)) agent.setForwardDelaySec(n);
+        if (isNaN(vlan)) return "% Invalid input detected at '^' marker.";
+        if (knob === 'priority' && !isNaN(n)) agent.setVlanPriority(vlan, n);
+        else if (knob === 'hello-time' && !isNaN(n)) agent.setVlanHelloSec(vlan, n);
+        else if (knob === 'max-age' && !isNaN(n)) agent.setVlanMaxAgeSec(vlan, n);
+        else if (knob === 'forward-time' && !isNaN(n)) agent.setVlanForwardDelaySec(vlan, n);
+        else if (knob === 'root') {
+          const kind = args[3]?.toLowerCase();
+          if (kind === 'primary') agent.setVlanPriority(vlan, 24576);
+          else if (kind === 'secondary') agent.setVlanPriority(vlan, 28672);
+        }
       }
       if (args[0]?.toLowerCase() === 'priority') {
         const n = parseInt(args[1] ?? '', 10);
@@ -2115,8 +2122,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const root = agent?.getRootBridge();
     const cost = agent?.getRootPathCost() ?? 0;
     const rootPort = agent?.getRootPort();
+    const isRoot = agent?.isRoot() ?? true;
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const rootPrio = root ? root.priority + 1 : 32769;
+    const rootPrio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
     const lines = [
       `VLAN${String(vlanId).padStart(4, '0')}`,
       '  Spanning tree enabled protocol ieee',
@@ -2183,14 +2191,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const root = agent?.getRootBridge();
     const cost = agent?.getRootPathCost() ?? 0;
     const rootPort = agent?.getRootPort();
+    const isRoot = agent?.isRoot() ?? true;
     const mac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const prio = root ? root.priority + vlanId : 32768 + vlanId;
+    const prio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
+    const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
+    const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
+    const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
     const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
     return [
       '                                        Root    Hello Max Fwd',
       'Vlan             Root ID              Cost    Port    Time  Age Dly',
       '---------------- -------------------- ------- ------- ----- --- ---',
-      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}2     20  15`,
+      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}${String(hello).padEnd(6)}${String(maxAge).padEnd(4)}${fwd}`,
     ].join('\n');
   }
 
@@ -2198,13 +2210,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const agent = this.stpAgentOf(sw);
     const own = agent?.ownBridgeId();
     const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
-    const prio = (own ? own.priority : 32768) + vlanId;
+    const prio = (agent?.getVlanPriority(vlanId) ?? 32768) + vlanId;
+    const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
+    const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
+    const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
     const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
     return [
       '                                                   Hello  Max  Fwd',
       'Vlan             Bridge ID                          Time  Age  Dly  Protocol',
       '---------------- ---------------------------------- -----  ---  ---  --------',
-      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  2     20   15   ieee`,
+      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  ${String(hello).padEnd(6)}${String(maxAge).padEnd(5)}${String(fwd).padEnd(5)}ieee`,
     ].join('\n');
   }
 
@@ -2237,7 +2252,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const ownMac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
     const out: string[] = [
       ` VLAN${String(vlanId).padStart(4, '0')} is executing the ${this.stpMode} compatible Spanning Tree protocol`,
-      `  Bridge Identifier has priority ${own ? own.priority : 32768}, sysid ${vlanId}, address ${ownMac}`,
+      `  Bridge Identifier has priority ${agent?.getVlanPriority(vlanId) ?? 32768}, sysid ${vlanId}, address ${ownMac}`,
       isRoot
         ? '  We are the root of the spanning tree'
         : `  Current root has priority ${root ? root.priority : 32768}, address ${rootMac}`,
