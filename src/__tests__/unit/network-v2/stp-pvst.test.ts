@@ -70,6 +70,37 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     expect(a.getRootPortForVlan(20)).toBe('FastEthernet0/0');
   });
 
+  it('breaks a redundant loop independently per VLAN and blocks in the data plane', async () => {
+    const bus = new EventBus();
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    sw1.setEventBus(bus);
+    sw2.setEventBus(bus);
+
+    for (const sw of [sw1, sw2]) {
+      for (const port of ['FastEthernet0/0', 'FastEthernet0/1']) {
+        await provision(sw, port);
+      }
+    }
+    await setVlanPriority(sw1, 1, 4096);
+    await setVlanPriority(sw1, 10, 4096);
+
+    new Cable('a').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+
+    const b = sw2.getStpAgent();
+    for (const vlan of [1, 10]) {
+      const roles = ['FastEthernet0/0', 'FastEthernet0/1'].map((p) => b.getPortRoleForVlan(vlan, p));
+      const blocked = roles.filter((r) => r === 'alternate' || r === 'backup');
+      const rootPorts = roles.filter((r) => r === 'root');
+      expect(blocked.length).toBe(1);
+      expect(rootPorts.length).toBe(1);
+      const blockedPort = ['FastEthernet0/0', 'FastEthernet0/1']
+        .find((p) => b.getPortRoleForVlan(vlan, p) === 'alternate' || b.getPortRoleForVlan(vlan, p) === 'backup')!;
+      expect(sw2.getStpVlanState(blockedPort, vlan)).toBe('blocking');
+    }
+  });
+
   it('VLAN-tagged BPDUs reach the neighbour over the wire', async () => {
     const bus = new EventBus();
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);

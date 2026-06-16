@@ -28,6 +28,7 @@ export interface StpInstanceAgent {
   isRootInconsistent(portName: string): boolean;
   isPortFastOperational(portName: string): boolean;
   isPointToPoint(portName: string): boolean;
+  portCarriesVlan(portName: string, vlan: number): boolean;
   onInstanceForwardState(vlan: number, portName: string, state: StpForwardState): void;
   onInstanceTopologyChange(vlan: number): void;
   sendProposal(vlan: number, portName: string): void;
@@ -135,6 +136,7 @@ export class StpVlanInstance {
     for (const port of this.agent.getPorts()) {
       const name = port.getName();
       if (!port.getIsUp() || !port.isConnected()) continue;
+      if (!this.agent.portCarriesVlan(name, this.vlanId)) continue;
       if (this.agent.isRootInconsistent(name)) { this.applyRole(name, 'alternate'); continue; }
       if (this.agent.isPortFastOperational(name) && name !== this.rootPort) {
         this.applyRole(name, 'designated');
@@ -293,6 +295,9 @@ export class StpVlanInstance {
   }
 
   forceAll(state: StpForwardState): void {
-    for (const port of this.agent.getPorts()) this.applyForwardState(port.getName(), state);
+    for (const port of this.agent.getPorts()) {
+      if (!this.agent.portCarriesVlan(port.getName(), this.vlanId)) continue;
+      this.applyForwardState(port.getName(), state);
+    }
   }
 }

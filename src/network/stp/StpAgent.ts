@@ -185,6 +185,10 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return this.getPortLinkType(portName) === 'p2p';
   }
 
+  portCarriesVlan(portName: string, vlan: number): boolean {
+    return this.portVlans(portName).includes(vlan);
+  }
+
   getMstRegion(): MstRegion { return this.mstRegion; }
   setMstName(name: string): void { this.mstRegion.name = name; }
   setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
@@ -339,7 +343,8 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       this.armTimers();
     } else {
       this.stopTimers();
-      this.cst().forceAll('forwarding');
+      this.ensurePortInstances();
+      for (const inst of this.instances.values()) inst.forceAll('forwarding');
     }
   }
 

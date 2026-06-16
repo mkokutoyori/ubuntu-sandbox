@@ -943,13 +943,6 @@ export abstract class Switch extends Equipment {
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     if (!this.isPoweredOn) return;
 
-    // STP: drop frames on blocking/disabled/listening ports
-    const stpState = this.stpStates.get(portName);
-    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening') {
-      Logger.debug(this.id, 'switch:stp-drop', `${this.name}: dropping frame on ${portName} (${stpState})`);
-      return;
-    }
-
     // Port shutdown check
     const port = this.getPort(portName);
     if (port && !port.getIsUp()) return;
@@ -975,6 +968,12 @@ export abstract class Switch extends Equipment {
       } else {
         ingressVlan = cfg.trunkNativeVlan;
       }
+    }
+
+    const stpState = this.getStpVlanState(portName, ingressVlan);
+    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening') {
+      Logger.debug(this.id, 'switch:stp-drop', `${this.name}: dropping frame on ${portName} VLAN ${ingressVlan} (${stpState})`);
+      return;
     }
 
     // ─── Step 1.5: Dynamic ARP Inspection (untrusted / DAI-enabled VLANs)
@@ -1113,7 +1112,7 @@ export abstract class Switch extends Equipment {
       const port = this.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
 
-      const stpState = this.stpStates.get(portName);
+      const stpState = this.getStpVlanState(portName, vlan);
       if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
 
       if (cfg.mode === 'access') {
@@ -1145,7 +1144,7 @@ export abstract class Switch extends Equipment {
     const port = this.getPort(portName);
     if (!port || !port.getIsUp()) return;
 
-    const stpState = this.stpStates.get(portName);
+    const stpState = this.getStpVlanState(portName, vlan);
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
 
     if (cfg.mode === 'access') {

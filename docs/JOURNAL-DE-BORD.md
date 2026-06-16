@@ -3593,3 +3593,32 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Non-régression : **network-v2 — 7119 verts** (320 fichiers, +2 tests) ;
   STP/switch/VLAN ciblés (145) verts ; tsc propre ; eslint propre sur les
   fichiers touchés.
+
+## Entrée 68 — PVST+ Lot 3 : blocage du plan de données par-VLAN
+
+- Suite du Lot 2 : l'élection par-VLAN existait mais le plan de données
+  appliquait encore l'arbre commun (un port bloqué l'était pour toutes les
+  VLAN). Un port pouvait être Forwarding pour le VLAN 10 et Blocking pour le
+  VLAN 20 dans le modèle, sans que le filtrage de trames le respecte.
+- `Switch.handleFrame` consulte désormais `getStpVlanState(port, ingressVlan)`
+  (et non plus l'état mono-port) : le drop d'entrée (blocking/listening/
+  disabled) est évalué après détermination du VLAN d'entrée. Les chemins de
+  sortie `floodFrame`/`forwardToPort` consultent aussi l'état du VLAN concerné.
+  Conséquence : une trame d'un VLAN n'emprunte que les ports en Forwarding
+  **pour ce VLAN**.
+- Chaque `StpVlanInstance` n'élit et n'applique de rôle que sur les ports qui
+  **portent** réellement son VLAN (`portCarriesVlan`) : un port access en VLAN
+  10 ne pollue plus l'arbre du VLAN 1. `setEnabled(false)` force Forwarding sur
+  toutes les instances (désactivation globale réaliste).
+- Repli sûr : `getStpVlanState` retombe sur l'état mono-port (CST) quand aucune
+  entrée par-VLAN n'existe — les commutateurs sans agent PVST+ et les
+  topologies mono-VLAN gardent un comportement strictement identique (les
+  contrôles `port.getIsUp()` masquent tout état par-VLAN obsolète sur lien bas).
+- Limite restante (Lot 4) : le rendu `show spanning-tree vlan N` lit encore
+  l'arbre commun ; il lira l'instance par-VLAN au prochain lot.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Nouveau test (stp-pvst, 3e cas) : boucle redondante à deux trunks rompue
+  indépendamment par VLAN (un seul port alternate par VLAN sur le non-root) et
+  état « blocking » par-VLAN vérifié dans le plan de données.
+- Non-régression : **network-v2 — 7120 verts** (320 fichiers, +1 test) ; tsc
+  propre ; eslint propre sur les fichiers touchés.
