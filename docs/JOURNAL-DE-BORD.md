@@ -3343,3 +3343,21 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   (chantier déjà identifié) ; non traité ici.
 - Non-régression : **network-v2 — 7117 verts** ; `tsc` propre ; aucun
   commentaire ajouté.
+
+## Entrée 54 — Analyse dumps L2 fichier 2 (VLAN/access)
+
+- Sous-système VLAN globalement **correct** (vérifié) : cycle de vie des
+  VLAN, plages/listes, attribution des ports d'accès reflétée dans
+  `show vlan brief`, isolation VLAN réelle (même VLAN inter-switch = OK ;
+  VLAN différents = 100% perte), voice VLAN.
+- Seul vrai manque : **`show vlan summary`** non implémenté → ajouté, lit les
+  compteurs réels (`getVLANs()` ; VLAN normaux vs étendus ≥ 1006).
+- Faux positifs (artefacts de séquence de test, pas des bugs sim) :
+  - `interface range GigabitEthernet0/0 - 1` « échouait » car le test était
+    retombé en mode privilégié — `vlan 10,20` (liste) **reste en config**
+    (comportement IOS réel), donc le `exit` qui suivait sortait du config.
+    Séquence du fichier de debug corrigée ; la commande fonctionne en config.
+  - `vlan abc/0/4096/5000` → « % Invalid VLAN ID » : négatifs intentionnels,
+    corrects.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.

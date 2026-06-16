@@ -1224,6 +1224,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
     });
 
+    this.privilegedTrie.register('show vlan summary', 'Display VLAN count summary', () => {
+      const ids = [...this.d().getVLANs().keys()];
+      const extended = ids.filter((id) => id >= 1006).length;
+      const normal = ids.length - extended;
+      return [
+        `Number of existing VLANs          : ${ids.length}`,
+        `Number of existing VTP VLANs      : ${normal}`,
+        `Number of existing extended VLANs : ${extended}`,
+      ].join('\n');
+    });
+
     this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
       return this.showVlanBrief(this.d());
     });

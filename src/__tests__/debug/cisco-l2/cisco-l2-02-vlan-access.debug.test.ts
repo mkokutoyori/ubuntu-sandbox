@@ -71,7 +71,6 @@ describe('debug-dump: cisco-l2-02-vlan-access', () => {
     s.push({ on: 'core', cmd: 'enable' });
     s.push({ on: 'core', cmd: 'configure terminal' });
     s.push({ on: 'core', cmd: 'vlan 10,20' });
-    s.push({ on: 'core', cmd: 'exit' });
     s.push({ on: 'core', cmd: 'interface range GigabitEthernet0/0 - 1' });
     s.push({ on: 'core', cmd: 'switchport mode trunk' });
     s.push({ on: 'core', cmd: 'exit' });
