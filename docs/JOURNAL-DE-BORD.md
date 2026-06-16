@@ -3524,3 +3524,36 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   hardcode, aucun commentaire.
 - Non-régression : network-v2 — 7117 verts ; suites shell/terminal/react/gui
   (1076) vertes ; tsc propre.
+
+## Entrée 66 — PVST+ Lot 1 : extraction de `StpVlanInstance` (fondation multi-instance)
+
+- Contexte : l'élection STP inter-switch restait mono-instance (un seul arbre
+  CST). La config et l'affichage par-VLAN existaient (entrée 64) mais le root
+  opérationnel élu entre switches n'était pas calculé par-VLAN — pas d'échange
+  PVST+ réel. Chantier moteur découpé en lots ; ce lot pose la fondation sans
+  changement de comportement.
+- `StpAgent` portait dans ses champs l'état d'une unique élection (`portInfo`,
+  `forwardStates`, `transitionTimers`, `rootBridge`/`rootPort`/`rootPathCost`)
+  mélangé à la trame BPDU, aux guards et à la machine de changement de
+  topologie — impossible d'instancier N arbres.
+- Extraction d'une classe cohésive `StpVlanInstance` (un arbre 802.1D = un
+  VLAN sous PVST+) : élection du root, rôles de port, machine d'états de
+  transmission temporisée (Listening → Learning → Forwarding), info-aging des
+  BPDU reçus. Le seam `StpInstanceAgent` (injection de dépendances) expose à
+  l'instance les faits par-port/par-pont (config, coûts, guards, scheduler,
+  émission de BPDU) sans la coupler à l'agent complet.
+- `StpAgent` conserve les préoccupations transverses (cadrage et émission des
+  BPDU sur le câble, BPDU/Root/Loop Guard, PortFast, machine TCN/tcWhile,
+  fast-aging) et délègue à `instances: Map<vlan, StpVlanInstance>` — une seule
+  instance (VLAN 1, la CST) pour l'instant. L'API publique historique
+  (`getRootBridge`/`getPortRole`/`getForwardState`/…) délègue à la CST :
+  comportement strictement identique.
+- Pièges corrigés en cours de route : collision de noms entre les accesseurs
+  exposés à l'instance (`bus()`/`scheduler()`) et les champs/méthodes
+  homonymes de la classe de base réactive — résolus par des noms distincts
+  (le champ privé `scheduler` renommé `armedScheduler`).
+- Tout passe par la topologie : les BPDU restent des trames réelles émises via
+  `host.sendFrame` sur les ports câblés ; aucun chemin hors-bande.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Non-régression : **network-v2 — 7117 verts** (49 skipped, identique au socle) ;
+  STP ciblé (protocol/rstp/tcn/guards/cisco-stp — 61) vert ; tsc + eslint propres.
