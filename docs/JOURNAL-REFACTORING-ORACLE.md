@@ -2186,6 +2186,50 @@ d'intégration via `connect` (nouveau OK, ancien OK pendant la fenêtre, mot de 
 sans rapport → ORA-01017, profil sans rollover → ancien rejeté). Non-régression
 sécurité/auth (91 tests) ; `tsc` + ESLint propres.
 
+### 2026-06-16 — Suppression des copies mortes de date dans valueUtils (dedup, suite)
+**Défaillance (duplication) :** après la consolidation précédente vers `dateSupport`,
+`functions/valueUtils.ts` conservait encore un **5ᵉ exemplaire** au mot près de
+`coerceDate`, `formatDate`, `formatOracleDate` et `parseOracleDate`. Pire : ces
+quatre exports n'étaient **importés nulle part** (recherche projet : seuls
+`compareValues` et `implicitToDate` de ce module sont consommés — par
+`OracleExecutor`, `ConstraintValidator`, `OracleStorage`). Du code mort dupliqué
+qui rouvrait la porte à la dérive corrigée juste avant.
+**Correction :** suppression pure des quatre fonctions et des helpers devenus
+inutilisés (`pad`, `MONTHS_LONG`, `DAYS_LONG`). `valueUtils` ne garde que ce qui lui
+est propre — `implicitToDate` (conversion implicite NLS DD-MON-RR, logique RR) et
+`compareValues` (comparaison Oracle 3-way). `dateSupport` reste l'unique source du
+formatage/parsing de dates. ~70 lignes mortes retirées.
+**Validation :** `tsc` + ESLint propres ; `unit/database/` complet (125 fichiers,
+3019 tests verts).
+
+### 2026-06-16 — AUDIT_SYSLOG_LEVEL : audit Oracle routé vers le syslog du host
+**Défaillance (cohérence couche audit ↔ journalisation OS) :** l'audit Oracle
+n'allait que dans la trail catalogue et les fichiers `.aud` (adump). Le vrai Oracle,
+quand le paramètre `AUDIT_SYSLOG_LEVEL = facility.priority` est positionné, envoie
+*en plus* les enregistrements d'audit OS au **syslog du système** (mécanisme
+canonique de centralisation vers rsyslog/SIEM). Ce paramètre n'était ni appliqué ni
+relié à la pile de logs de l'hôte (`LinuxLogManager`, qui gère pourtant déjà les
+facilities `local0-7`/priorités et `/var/log/syslog`).
+**Correction (multi-couches, réutilisation de l'existant, pattern adaptateur) :**
+- `LinuxLogManager.logAt(facility.priority, tag, message)` : écriture publique à une
+  facility/priorité arbitraire, en réutilisant le parseur `parsePriority` déjà
+  présent (utilisé par la commande `logger`).
+- `LinuxMachine.logSyslog(spec, tag, message)` : capacité device publique déléguant
+  à `logMgr.logAt` (comme `firewallAcceptsInboundTcp` pour le firewall).
+- Nouvel adaptateur `OracleAuditSyslogSync` (miroir de `OracleSystemdSync`/
+  `OracleFilesystemSync`) : abonné à `oracle.audit.recorded`, il lit
+  `audit_syslog_level` sur l'instance ; **si le paramètre est absent (défaut), rien
+  n'est écrit** (fidèle) ; sinon il émet une ligne « Oracle Audit » structurée
+  (`SESSIONID/DBUSERID/ACTION/RETURNCODE/OS$USERID/USERHOST/TERMINAL[/OBJ$NAME]`)
+  vers le syslog. Câblé dans `terminal/commands/database.ts` (construction, start,
+  teardown, reset) à côté des deux adaptateurs existants.
+**Validation :** nouvelle suite `oracle-audit-syslog-coherence.test.ts` (3 tests :
+DDL audité → ligne « Oracle Audit » dans `/var/log/syslog` quand le niveau est
+positionné, **rien** quand il ne l'est pas, ligne portant `DBUSERID "SYS"` et
+l'ACTION). Non-régression : `unit/database/` complet (126 fichiers, 3022 tests
+verts) + `network-v2/logging-enhancements` (12) ; `tsc` propre, ESLint propre sur le
+code modifié (warning `no-this-alias` `LinuxMachine.ts:1059` préexistant).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

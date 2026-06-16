@@ -273,6 +273,7 @@ describe('SSH LAN — strict local vs SSH coherence', () => {
       s
         .replace(/(RX|TX) packets \d+/g, '$1 packets *')
         .replace(/bytes \d+/g, 'bytes *')
+        .replace(/\([\d.]+ [KMGTP]?i?B\)/g, '(*)')
         .replace(/\n+$/, '');
     await expectStrictCoherence(lan.pc1, lan.pc2, 'ifconfig eth0', norm);
   });
@@ -283,6 +284,7 @@ describe('SSH LAN — strict local vs SSH coherence', () => {
       s
         .replace(/(RX|TX) packets \d+/g, '$1 packets *')
         .replace(/bytes \d+/g, 'bytes *')
+        .replace(/\([\d.]+ [KMGTP]?i?B\)/g, '(*)')
         .replace(/\n+$/, '');
     await expectStrictCoherence(lan.pc1, lan.pc2, 'ifconfig', norm);
   });

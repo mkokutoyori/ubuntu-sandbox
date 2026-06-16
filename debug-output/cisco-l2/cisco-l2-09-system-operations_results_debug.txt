@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-06-15T20:07:30.655Z
+Generated: 2026-06-16T17:13:57.247Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -436,14 +436,14 @@ Total steps: 301
   ^
 
 [49/301] sw1 SYS-SW1# show clock
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  20:07:30 UTC Mon Jun 15 2026
+  17:13:57 UTC Tue Jun 16 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -458,7 +458,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
 
 
 --- [57] § boot system config ---
@@ -1490,30 +1490,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.085 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.512 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.717 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.360 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.512/1.298/2.085/0.787 ms
+  rtt min/avg/max/mdev = 0.360/1.039/1.717/0.679 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.665 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.495 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.533 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.356 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.495/0.580/0.665/0.085 ms
+  rtt min/avg/max/mdev = 0.356/0.445/0.533/0.088 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.733 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.539 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.557 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.415 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.539/0.636/0.733/0.097 ms
+  rtt min/avg/max/mdev = 0.415/0.486/0.557/0.071 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1764,12 +1764,12 @@ Total steps: 301
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.592 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.270 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.357 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.177 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.270/0.431/0.592/0.161 ms
+  rtt min/avg/max/mdev = 0.177/0.267/0.357/0.090 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -1964,10 +1964,16 @@ Total steps: 301
   Root bridge for: VLAN0001
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [219/301] sw1 SYS-SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1976,7 +1982,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [220/301] sw1 SYS-SW1# show clock
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
 
 [221/301] sw1 SYS-SW1# show logging
   Syslog logging: enabled
@@ -2053,10 +2059,16 @@ Total steps: 301
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          4          4
 
 [227/301] sw2 SW2> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -2065,7 +2077,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [228/301] sw2 SW2> show clock
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
 
 [229/301] sw2 SW2> show logging
   Syslog logging: enabled
@@ -2142,10 +2154,16 @@ Total steps: 301
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          2          2
 
 [235/301] core CORE> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -2154,7 +2172,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [236/301] core CORE> show clock
-  *20:07:30.000 UTC Mon Jun 15 2026
+  *17:13:57.000 UTC Tue Jun 16 2026
 
 [237/301] core CORE> show logging
   Syslog logging: enabled
@@ -2166,7 +2184,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   20:07:30 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:13:57 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2183,21 +2201,21 @@ Total steps: 301
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    20:07       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    20:07       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    20:07       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    20:07       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    20:07       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    20:07       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    20:07       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    20:07       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    20:07       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    20:07       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    20:07       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    20:07       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    20:07       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    20:07       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    20:07       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    17:13       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    17:13       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    17:13       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    17:13       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    17:13       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    17:13       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    17:13       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    17:13       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    17:13       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    17:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    17:13       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    17:13       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    17:13       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    17:13       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    17:13       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2225,7 +2243,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   20:07:30 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:13:57 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2242,22 +2260,22 @@ Total steps: 301
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    20:07       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    20:07       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    20:07       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    20:07       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    20:07       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    20:07       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    20:07       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    20:07       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    20:07       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    20:07       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    20:07       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    20:07       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    20:07       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    20:07       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    20:07       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    20:07       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    17:13       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    17:13       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    17:13       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    17:13       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    17:13       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    17:13       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    17:13       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    17:13       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    17:13       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    17:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    17:13       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    17:13       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    17:13       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    17:13       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    17:13       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    17:13       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2293,7 +2311,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 8:07:30 PM
+  System Boot Time:          6/16/2026, 5:13:57 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2569,7 +2587,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   20:07:30 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:13:57 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2586,21 +2604,21 @@ Total steps: 301
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    20:07       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    20:07       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    20:07       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    20:07       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    20:07       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    20:07       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    20:07       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    20:07       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    20:07       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    20:07       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    20:07       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    20:07       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    20:07       00:00 /lib/apparmor/apparmor.systemd reload
-  user        14  0.0  0.1   10240   4096 pts/0    S    20:07       00:00 -bash
-  user        15  0.0  0.1   12288   3072 pts/0    R    20:07       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    17:13       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    17:13       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    17:13       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    17:13       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    17:13       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    17:13       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    17:13       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    17:13       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    17:13       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    17:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    17:13       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    17:13       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    17:13       00:00 /lib/apparmor/apparmor.systemd reload
+  user        14  0.0  0.1   10240   4096 pts/0    S    17:13       00:00 -bash
+  user        15  0.0  0.1   12288   3072 pts/0    R    17:13       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2631,7 +2649,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/15/2026, 8:07:30 PM
+  System Boot Time:          6/16/2026, 5:13:57 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2907,7 +2925,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   20:07:30 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   17:13:57 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2924,22 +2942,22 @@ Total steps: 301
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    20:07       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    20:07       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    20:07       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    20:07       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    20:07       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    20:07       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    20:07       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    20:07       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    20:07       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    20:07       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    20:07       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    20:07       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.0    3166    256 ?        S    20:07       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.1   45552   4146 ?        S    20:07       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    20:07       00:00 -bash
-  root        16  0.0  0.1   12288   3072 pts/0    R    20:07       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    17:13       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    17:13       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    17:13       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    17:13       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    17:13       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    17:13       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    17:13       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    17:13       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    17:13       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    17:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    17:13       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    17:13       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.0    3166    256 ?        S    17:13       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.1   45552   4146 ?        S    17:13       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    17:13       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    17:13       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -3124,7 +3142,7 @@ Total steps: 301
   Reload scheduled in 2 minutes
 
 [293/301] sw2 SW2# show reload
-  Reload scheduled in 1 minutes 59 seconds
+  Reload scheduled in 2 minutes 0 seconds
 
 [294/301] sw2 SW2# reload cancel
   Reload cancelled.
@@ -3159,21 +3177,21 @@ Total steps: 301
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.818 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.363 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.673 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.330 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.363/0.591/0.818/0.228 ms
+  rtt min/avg/max/mdev = 0.330/0.501/0.673/0.172 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.525 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.424 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.471 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.218 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.424/0.475/0.525/0.050 ms
+  rtt min/avg/max/mdev = 0.218/0.345/0.471/0.126 ms
 
 [301/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table

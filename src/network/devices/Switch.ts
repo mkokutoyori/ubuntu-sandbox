@@ -79,6 +79,7 @@ export interface SwitchportConfig {
   accessVlan: number;           // VLAN for access mode (default 1)
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
+  voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -144,6 +145,7 @@ export abstract class Switch extends Equipment {
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
+  private stpVlanStates: Map<string, STPPortState> = new Map();
 
   // ─── MAC Move Detection ───────────────────────────────────────
   private macMoveCount: number = 0;
@@ -488,6 +490,7 @@ export abstract class Switch extends Equipment {
     for (let i = 0; i < count; i++) {
       const portName = this.getPortName(i, count);
       const port = new Port(portName, 'ethernet');
+      if (portName.startsWith('Fast')) port.setSpeed(100);
       this.addPort(port);
 
       // Default switchport config: access mode, VLAN 1
@@ -507,12 +510,13 @@ export abstract class Switch extends Equipment {
       port.onLinkChange((state) => {
         if (state === 'up') {
           const stp = this.stpStates.get(portName);
-          if (stp === 'listening' || stp === 'learning') {
+          if (stp === 'listening' || stp === 'learning' || stp === 'disabled') {
             this.stpStates.set(portName, 'forwarding');
           }
         } else {
           // Real switches purge dynamic entries the moment a link drops —
           // frames must not chase a dead port for up to 300 s of aging.
+          this.stpStates.set(portName, 'disabled');
           this.flushDynamicMacsOnPort(portName, 'link-down');
         }
       });
@@ -705,6 +709,8 @@ export abstract class Switch extends Equipment {
     const newVlan = this.vlans.get(vlanId);
     if (newVlan && cfg.mode === 'access') newVlan.ports.add(portName);
 
+    this.flushDynamicMacsOnPort(portName, 'access-vlan-change');
+
     Logger.info(this.id, 'switch:access-vlan', `${this.name}: ${portName} access VLAN ${vlanId}`);
     return true;
   }
@@ -782,6 +788,27 @@ export abstract class Switch extends Equipment {
 
   getSTPState(portName: string): STPPortState {
     return this.stpStates.get(portName) || 'disabled';
+  }
+
+  getStpPortVlans(portName: string): number[] {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return [1];
+    if (cfg.mode === 'access') {
+      return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
+    }
+    const out = [...cfg.trunkAllowedVlans]
+      .filter((v) => this.vlans.has(v))
+      .sort((a, b) => a - b);
+    return out.length ? out : [1];
+  }
+
+  getStpVlanState(portName: string, vlan: number): STPPortState {
+    return this.stpVlanStates.get(`${vlan}:${portName}`) ?? this.getSTPState(portName);
+  }
+
+  setStpVlanState(portName: string, vlan: number, state: STPPortState): void {
+    this.stpVlanStates.set(`${vlan}:${portName}`, state);
+    if (vlan === 1) this.setSTPState(portName, state);
   }
 
   setSTPState(portName: string, state: STPPortState): void {
@@ -916,13 +943,6 @@ export abstract class Switch extends Equipment {
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     if (!this.isPoweredOn) return;
 
-    // STP: drop frames on blocking/disabled/listening ports
-    const stpState = this.stpStates.get(portName);
-    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening') {
-      Logger.debug(this.id, 'switch:stp-drop', `${this.name}: dropping frame on ${portName} (${stpState})`);
-      return;
-    }
-
     // Port shutdown check
     const port = this.getPort(portName);
     if (port && !port.getIsUp()) return;
@@ -948,6 +968,12 @@ export abstract class Switch extends Equipment {
       } else {
         ingressVlan = cfg.trunkNativeVlan;
       }
+    }
+
+    const stpState = this.getStpVlanState(portName, ingressVlan);
+    if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening') {
+      Logger.debug(this.id, 'switch:stp-drop', `${this.name}: dropping frame on ${portName} VLAN ${ingressVlan} (${stpState})`);
+      return;
     }
 
     // ─── Step 1.5: Dynamic ARP Inspection (untrusted / DAI-enabled VLANs)
@@ -1086,7 +1112,7 @@ export abstract class Switch extends Equipment {
       const port = this.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
 
-      const stpState = this.stpStates.get(portName);
+      const stpState = this.getStpVlanState(portName, vlan);
       if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
 
       if (cfg.mode === 'access') {
@@ -1118,7 +1144,7 @@ export abstract class Switch extends Equipment {
     const port = this.getPort(portName);
     if (!port || !port.getIsUp()) return;
 
-    const stpState = this.stpStates.get(portName);
+    const stpState = this.getStpVlanState(portName, vlan);
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
 
     if (cfg.mode === 'access') {

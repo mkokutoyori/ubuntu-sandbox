@@ -3289,3 +3289,364 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   affiche « trunk » pour un port trunk.
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés
   (montrent maintenant les trunks) ; `tsc` propre ; aucun commentaire.
+
+## Entrée 51 — Analyse dumps L2 fichier 4 : show spanning-tree cohérent
+
+- Bugs signalés (#5) corrigés dans le rendu STP du switch :
+  - **Rôle « Disa » avec état « FWD »** (incohérent) : les ports non
+    opérationnels (notconnect / shutdown) étaient listés en Forwarding.
+    Désormais `show spanning-tree` ne liste que les ports réellement up +
+    connectés (comportement IOS réel) — les rôles/états deviennent cohérents.
+  - **Numéros de port invalides** (`128.00`, `128.010`) : remplacés par un
+    index de port stable et unique (`128.2`, `128.3`, … `128.26`).
+  - **Type « P2p » partout** y compris notconnect : seuls les ports
+    opérationnels (donc réellement P2p/Shr) apparaissent.
+  - **`show spanning-tree summary`** comptait les 26 ports en Forwarding ;
+    désormais seuls les ports opérationnels sont comptés (4 Forwarding / 4
+    Active dans le lab).
+- Lecture d'état réel (connectivité des ports via `_getPortsInternal`,
+  rôles via `StpAgent`) ; aucun hardcode.
+- Tests existants encodant l'ancien comportement bogué mis à jour pour être
+  réalistes (switch-cli : port câblé ; stp-rstp : port edge câblé à un voisin).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 52 — UI : la bannière de boot se réaffiche à la réouverture d'un terminal
+
+- Symptôme : fermer un terminal puis en ouvrir un nouveau (même équipement)
+  n'affichait plus la bannière de boot — le 2e terminal tombait directement
+  sur le prompt.
+- Cause : `_bootShown` est porté par l'équipement et n'était remis à zéro
+  qu'au power-cycle ; jamais à la fermeture des terminaux.
+- Correctif : `Equipment.clearBootShown()` ; `TerminalManager.closeTerminal`
+  réinitialise le flag quand **le dernier** terminal d'un équipement se ferme.
+  Ainsi une réouverture après déconnexion complète rejoue la bannière, tandis
+  que des terminaux concurrents ne re-bootent pas (le 1er boote, les autres
+  tombent sur le prompt tant qu'une session reste ouverte).
+- Vérifié : open→boot, 2e concurrent ne reboote pas, fermeture du dernier →
+  flag remis à zéro, réouverture → boot rejoué. Suites react/gui/terminal
+  (560) vertes ; `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 53 — #9 : prérequis crypto / login local / transport input ssh
+
+- Vérité IOS : `login local` (sans username) et `transport input ssh` (sans
+  clés) **n'échouent pas à la configuration** ; l'échec est au login/runtime.
+  Le simulateur les acceptait silencieusement → comportement **déjà correct**
+  (ajouter un avertissement serait fabriquer une sortie que l'IOS réel n'émet
+  pas).
+- Le seul vrai prérequis vérifié à la saisie par l'IOS est
+  `crypto key generate rsa`, qui exige un domaine défini. Ajouté (routeur) :
+  sans `ip domain-name`, retourne « % Please define a domain-name first. »
+  et ne génère aucune clé ; avec domaine → génération normale. Lit l'état
+  réel (`getManagementService().domainName`).
+- Note : sur le switch, `crypto`/SSH de management dépendent de la SVI L2
+  (chantier déjà identifié) ; non traité ici.
+- Non-régression : **network-v2 — 7117 verts** ; `tsc` propre ; aucun
+  commentaire ajouté.
+
+## Entrée 54 — Analyse dumps L2 fichier 2 (VLAN/access)
+
+- Sous-système VLAN globalement **correct** (vérifié) : cycle de vie des
+  VLAN, plages/listes, attribution des ports d'accès reflétée dans
+  `show vlan brief`, isolation VLAN réelle (même VLAN inter-switch = OK ;
+  VLAN différents = 100% perte), voice VLAN.
+- Seul vrai manque : **`show vlan summary`** non implémenté → ajouté, lit les
+  compteurs réels (`getVLANs()` ; VLAN normaux vs étendus ≥ 1006).
+- Faux positifs (artefacts de séquence de test, pas des bugs sim) :
+  - `interface range GigabitEthernet0/0 - 1` « échouait » car le test était
+    retombé en mode privilégié — `vlan 10,20` (liste) **reste en config**
+    (comportement IOS réel), donc le `exit` qui suivait sortait du config.
+    Séquence du fichier de debug corrigée ; la commande fonctionne en config.
+  - `vlan abc/0/4096/5000` → « % Invalid VLAN ID » : négatifs intentionnels,
+    corrects.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 55 — Vérification du rapport fichier 2 : 6 défaillances traitées
+
+1. **Fuite MAC inter-VLAN (critique)** — CORRIGÉ. Une MAC apprise en VLAN 1
+   (ARP gratuit pendant la config IP de l'hôte, port encore en VLAN 1)
+   restait après le changement de VLAN d'accès → doublon VLAN1+VLANx.
+   `setSwitchportAccessVlan` purge désormais les MAC dynamiques du port
+   (`flushDynamicMacsOnPort`), comme un vrai switch. Vérifié : la MAC
+   n'apparaît plus que dans le VLAN configuré.
+2. **Ligne `switchport trunk encapsulation dot1q` dupliquée** — CORRIGÉ.
+   `recordIf` dédoublonne par verbe (3 premiers tokens) → une seule ligne.
+3. **Trunk « implicite »** — désormais légitime : `buildLan` configure
+   réellement les trunks ; l'artefact CORE (commandes en mode privilégié)
+   venait de la séquence de test, corrigée.
+4. **Voice VLAN non affiché** — CORRIGÉ. `switchport voice vlan N` stocke
+   `cfg.voiceVlan` (handler dédié) ; affiché dans `show interfaces … switchport`
+   (« Voice VLAN: 50 ») et dans la running-config.
+5. **BW/débit FastEthernet à 1 Gbps** — CORRIGÉ. Les ports FastEthernet
+   prennent 100 Mbps à la création (`port.setSpeed(100)`) → `BW 100000
+   Kbit/sec`, `100Mbps` ; le coût STP redevient 19 (et 4 en gigabit).
+6. **`show vlan summary`** — CORRIGÉ (entrée 54).
+- Tests STP encodant l'ancien coût gigabit des ports Fa mis à jour (19).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 56 — Compteurs d'octets cohérents + purge MAC (link-flap)
+
+1. **Compteur d'octets bloqué à 0** alors que les paquets augmentaient
+   (anomalie physique) — CORRIGÉ. `Port.sendFrame`/`receiveFrame`
+   incrémentent désormais `bytesOut`/`bytesIn` via `ethernetFrameBytes()`
+   (nouvelle aide dans core/types : en-tête 14 + payload réel — totalLength
+   IPv4, 28 ARP, 40+payloadLength IPv6 — + FCS, minimum trame 64 octets).
+   Vérifié : « 12 packets input, 1186 bytes » (au lieu de 0 bytes).
+2. **Purge de la table MAC** — déjà couverte : changement de VLAN d'accès
+   (`setSwitchportAccessVlan` → flush, entrée 55) ET link-flap (flush sur
+   link-down déjà câblé dans `initPorts.onLinkChange`). Vérifié : une MAC
+   n'apparaît que dans le VLAN configuré et est oubliée au down du port.
+- Tests `ifconfig` byte-exact (local vs SSH) : la normalisation des
+  compteurs ne masquait pas le suffixe lisible « (0.5 KiB) » ; ajout du
+  strip `(*)` — les octets étant désormais non nuls et propres à chaque
+  équipement.
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 57 — Fichier 3 (item A+E) : DTP reflété dans show … switchport
+
+- `show interfaces … switchport` lisait `cfg.mode` (access/trunk) + une
+  négociation codée en dur → `dynamic auto/desirable` apparaissaient comme
+  « trunk » et `nonegotiate` affichait quand même « Negotiation: On ».
+- Corrigé en lisant l'état réel de l'agent DTP (`getAdminMode` /
+  `getOperationalMode`) : Administrative Mode = static access / trunk /
+  dynamic auto / dynamic desirable ; Negotiation = Off seulement pour access
+  et nonegotiate ; sections trunk affichées selon le mode opérationnel réel.
+- Label native VLAN corrigé (item E) : « (default) » uniquement pour le
+  VLAN 1 (ex. « Trunking Native Mode VLAN: 99 », sans « (default) »).
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 58 — Fichier 3 (item B) : show interfaces trunk complet
+
+- `show interfaces trunk` ne montrait que la 1ʳᵉ section (Mode/Encap/Status/
+  Native) ; les opérations `switchport trunk allowed vlan {…|add|remove|
+  except|none}` étaient invisibles.
+- Ajout des 3 sections IOS manquantes, calculées depuis l'état réel :
+  « Vlans allowed on trunk » (cfg.trunkAllowedVlans), « Vlans allowed and
+  active in management domain » et « Vlans … forwarding state » (allowed ∩
+  VLAN existants). Ports trunk déterminés par le mode opérationnel DTP réel.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 59 — Fichier 3 (items C+F) : show vtp password + capacité VTP
+
+- `show vtp password` ajouté (user + privileged) : lit l'état réel
+  (`getVtpAgent().getConfig().password`) → « VTP Password: secret123 » ou
+  « The VTP password is not configured. ».
+- Item F : « VTP Version capable » ne dépend plus de la version configurée
+  (était « 1 to {version} ») → « 1 to 2 » (capacité matérielle réelle du
+  C2960, indépendante du running version).
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 60 — Fichier 3 (item D) : show interfaces <if> trunk
+
+- `show interfaces <if> trunk` ajouté : la logique de rendu trunk extraite
+  dans `showTrunkTable(portNames)` (DRY), appelée par `show interfaces trunk`
+  (tous les ports) et par la vue par interface (filtre sur un port). Une
+  interface non-trunk renvoie l'en-tête seul ; une interface inconnue → IOS
+  invalid input.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 61 — Fichier 3 (item G + séquence test) : fin de l'analyse fichier 3
+
+- Item G : `show dtp` — la colonne Negotiation affiche désormais « off »
+  pour les ports en mode `access` explicite (et `nonegotiate`), « on » pour
+  trunk/dynamic — cohérent avec l'état réel de l'agent DTP.
+- Séquence de test corrigée : `enable` ajouté avant le 1er `configure
+  terminal` de sw2 (le simulateur rejetait correctement `configure terminal`
+  en mode utilisateur — artefact de test, pas un bug). sw2 configure
+  maintenant VTP correctement dans le dump.
+- Fichier 3 entièrement traité (A→G). Non-régression : network-v2 — 7117
+  verts ; tsc propre ; aucun commentaire.
+
+## Entrée 62 — Fichier 4 Lot 1 : commandes show/MST manquantes
+
+- `show spanning-tree active` → état STP des interfaces actives (réutilise
+  showSpanningTree, déjà filtré sur les ports opérationnels).
+- `show spanning-tree pathcost method` → lit un vrai drapeau `pathcostMethod`
+  sur StpAgent (short/long) ; `spanning-tree pathcost method long|short` le
+  règle et impacte le calcul de coût (table 802.1t long ajoutée :
+  `defaultPathCostLong`).
+- `spanning-tree mst <n> priority <p>` → vrai état `mstInstancePriority` sur
+  StpAgent (handler dédié `spanning-tree mst` greedy, coexiste avec le
+  sous-mode `spanning-tree mst configuration`).
+- `show spanning-tree mst` (toutes instances) et `show spanning-tree mst <n>`
+  → nouvelle vue `showMstInstances` (MST0 + instances configurées, priorité
+  réelle par instance, VLAN mappés, ports opérationnels rôle/état/coût).
+  Instance inconnue → « % MST instance N is not configured ».
+- `show pending` (sous-mode config-mst) → config MST (comme `show current`).
+- État réel uniquement (StpAgent : pathcost method, priorités d'instance,
+  région MST) ; aucun hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; tsc propre.
+
+## Entrée 63 — Fichier 4 Lot 2 : options STP globales avec vrai état
+
+- `spanning-tree portfast default`, `portfast bpdufilter default`,
+  `loopguard default`, `uplinkfast`, `backbonefast` étaient acceptés mais
+  sans effet. Désormais stockés sur `StpConfig`/`StpAgent` (setters dédiés +
+  `getGlobalStp`) et reflétés dans `show spanning-tree summary` (Portfast
+  Default / BPDU Guard / BPDU Filter / Loopguard / UplinkFast / BackboneFast /
+  Configured Pathcost method). Émis aussi dans la running-config
+  (`runningConfigGlobalLines`). Formes `no ...` gérées.
+- `pathcost method` (Lot 1) inclus dans le résumé + running-config.
+- État réel uniquement ; aucun hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; tsc propre.
+
+## Entrée 64 — Fichier 4 Lot 3a : priorité STP réellement par-VLAN (PVST)
+
+- `spanning-tree vlan N priority/hello-time/max-age/forward-time` et
+  `spanning-tree vlan N root primary|secondary` étaient appliqués à
+  l'instance globale unique → toutes les VLAN affichaient la même priorité.
+- Vrai état par-VLAN sur StpAgent : `vlanPriority`/`vlanHello`/`vlanMaxAge`/
+  `vlanForwardDelay` (Map par VLAN, repli sur la config globale ; VLAN 1
+  reste lié à l'instance globale pour l'élection). `root primary`→24576,
+  `secondary`→28672.
+- `show spanning-tree vlan N` / `root` / `bridge` / `detail` lisent la
+  priorité et les timers **par VLAN** (priorité = base par-VLAN + sysid).
+  Vérifié : VLAN1→24577, VLAN10→8202 (8192+10), VLAN20→24596 (root primary).
+- Élection inter-switch reste mono-instance (le plan de données reste correct
+  par VLAN) ; la config/affichage par-VLAN est désormais réelle.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 65 — Fichier 4 Lot 3b : événements debug spanning-tree sur link-flap
+
+- `debug spanning-tree events` n'émettait rien lors d'un shutdown/no-shutdown.
+- Cause : à la perte de lien, `Switch.stpStates` restait « forwarding » (pas
+  de transition). Désormais link-down → état STP « disabled », link-up →
+  « forwarding » (transition réelle dans le modèle).
+- Le shell capture les transitions de façon synchrone : `execute()` compare
+  l'état STP avant/après la commande et, si le drapeau debug est actif, émet
+  les lignes réelles « *HH:MM:SS: STP: VLANxxxx FaX/Y -> <état> ». Vérifié :
+  shutdown → « -> disabled », no shutdown → « -> forwarding » ; plus rien
+  après `undebug all`.
+- État réel uniquement (transitions STP réelles, drapeau debug réel) ; aucun
+  hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; suites shell/terminal/react/gui
+  (1076) vertes ; tsc propre.
+
+## Entrée 66 — PVST+ Lot 1 : extraction de `StpVlanInstance` (fondation multi-instance)
+
+- Contexte : l'élection STP inter-switch restait mono-instance (un seul arbre
+  CST). La config et l'affichage par-VLAN existaient (entrée 64) mais le root
+  opérationnel élu entre switches n'était pas calculé par-VLAN — pas d'échange
+  PVST+ réel. Chantier moteur découpé en lots ; ce lot pose la fondation sans
+  changement de comportement.
+- `StpAgent` portait dans ses champs l'état d'une unique élection (`portInfo`,
+  `forwardStates`, `transitionTimers`, `rootBridge`/`rootPort`/`rootPathCost`)
+  mélangé à la trame BPDU, aux guards et à la machine de changement de
+  topologie — impossible d'instancier N arbres.
+- Extraction d'une classe cohésive `StpVlanInstance` (un arbre 802.1D = un
+  VLAN sous PVST+) : élection du root, rôles de port, machine d'états de
+  transmission temporisée (Listening → Learning → Forwarding), info-aging des
+  BPDU reçus. Le seam `StpInstanceAgent` (injection de dépendances) expose à
+  l'instance les faits par-port/par-pont (config, coûts, guards, scheduler,
+  émission de BPDU) sans la coupler à l'agent complet.
+- `StpAgent` conserve les préoccupations transverses (cadrage et émission des
+  BPDU sur le câble, BPDU/Root/Loop Guard, PortFast, machine TCN/tcWhile,
+  fast-aging) et délègue à `instances: Map<vlan, StpVlanInstance>` — une seule
+  instance (VLAN 1, la CST) pour l'instant. L'API publique historique
+  (`getRootBridge`/`getPortRole`/`getForwardState`/…) délègue à la CST :
+  comportement strictement identique.
+- Pièges corrigés en cours de route : collision de noms entre les accesseurs
+  exposés à l'instance (`bus()`/`scheduler()`) et les champs/méthodes
+  homonymes de la classe de base réactive — résolus par des noms distincts
+  (le champ privé `scheduler` renommé `armedScheduler`).
+- Tout passe par la topologie : les BPDU restent des trames réelles émises via
+  `host.sendFrame` sur les ports câblés ; aucun chemin hors-bande.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Non-régression : **network-v2 — 7117 verts** (49 skipped, identique au socle) ;
+  STP ciblé (protocol/rstp/tcn/guards/cisco-stp — 61) vert ; tsc + eslint propres.
+
+## Entrée 67 — PVST+ Lot 2 : vraie élection du root par-VLAN sur le câble
+
+- Défaillance corrigée : l'élection du root opérationnel entre switches restait
+  mono-instance. Deux switches reliés par un trunk portant les VLAN 1/10/20
+  élisaient le même root pour toutes les VLAN ; impossible d'avoir SW1 root du
+  VLAN 10 et SW2 root du VLAN 20 (comportement Cisco PVST+ de référence).
+- Le BPDU porte désormais le `vlan` (Per-VLAN Spanning Tree). `StpAgent` tient
+  une instance `StpVlanInstance` par VLAN active et :
+  - **émet** un BPDU par (port, VLAN porté par le port) — pont annoncé avec la
+    priorité par-VLAN (`ownBridgeId(vlan)`), root/coût/rôle propres à l'instance ;
+  - **route** chaque BPDU reçu vers l'instance de son VLAN (`payload.vlan`),
+    ingère l'info et relance l'élection de cette seule instance ;
+  - **élit** un root, un root port et des rôles indépendants par VLAN.
+- L'ensemble des VLAN actives est borné par la base VLAN réelle du switch :
+  `Switch.getStpPortVlans()` rend, pour un port access son VLAN d'accès, pour un
+  trunk les VLAN autorisées **qui existent** (un trunk par défaut → `[1]` tant
+  qu'aucune VLAN n'est créée). Les topologies mono-VLAN restent une instance
+  unique (VLAN 1 = CST) au comportement strictement identique.
+- `setVlanPriority(vlan>1)` relance l'élection de l'instance concernée et
+  ré-émet, déclenchant la convergence par-VLAN sur le câble.
+- Tout passe par la topologie : les BPDU par-VLAN sont des trames réelles
+  (`host.sendFrame`) sur les ports câblés ; le voisin les reçoit et converge.
+  Aucun chemin hors-bande, aucun duck-typing du graphe.
+- Plan de données : l'état de transmission est désormais calculé par (VLAN,
+  port) et mémorisé (`Switch.stpVlanStates`) ; pour ce lot le plan de données
+  continue d'appliquer l'arbre commun (VLAN 1) — le filtrage de blocage
+  par-VLAN et le rendu `show spanning-tree vlan N` réel suivront (Lot 3).
+- Limite connue (Lot 3) : la machine de changement de topologie (TCN/tcWhile,
+  fast-aging) reste globale, pilotée par la CST.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Nouveau test `stp-pvst.test.ts` (2) : élection divergente VLAN 10/20 entre
+  deux switches câblés ; réception de BPDU étiquetés 1/10/20 par le voisin.
+- Non-régression : **network-v2 — 7119 verts** (320 fichiers, +2 tests) ;
+  STP/switch/VLAN ciblés (145) verts ; tsc propre ; eslint propre sur les
+  fichiers touchés.
+
+## Entrée 68 — PVST+ Lot 3 : blocage du plan de données par-VLAN
+
+- Suite du Lot 2 : l'élection par-VLAN existait mais le plan de données
+  appliquait encore l'arbre commun (un port bloqué l'était pour toutes les
+  VLAN). Un port pouvait être Forwarding pour le VLAN 10 et Blocking pour le
+  VLAN 20 dans le modèle, sans que le filtrage de trames le respecte.
+- `Switch.handleFrame` consulte désormais `getStpVlanState(port, ingressVlan)`
+  (et non plus l'état mono-port) : le drop d'entrée (blocking/listening/
+  disabled) est évalué après détermination du VLAN d'entrée. Les chemins de
+  sortie `floodFrame`/`forwardToPort` consultent aussi l'état du VLAN concerné.
+  Conséquence : une trame d'un VLAN n'emprunte que les ports en Forwarding
+  **pour ce VLAN**.
+- Chaque `StpVlanInstance` n'élit et n'applique de rôle que sur les ports qui
+  **portent** réellement son VLAN (`portCarriesVlan`) : un port access en VLAN
+  10 ne pollue plus l'arbre du VLAN 1. `setEnabled(false)` force Forwarding sur
+  toutes les instances (désactivation globale réaliste).
+- Repli sûr : `getStpVlanState` retombe sur l'état mono-port (CST) quand aucune
+  entrée par-VLAN n'existe — les commutateurs sans agent PVST+ et les
+  topologies mono-VLAN gardent un comportement strictement identique (les
+  contrôles `port.getIsUp()` masquent tout état par-VLAN obsolète sur lien bas).
+- Limite restante (Lot 4) : le rendu `show spanning-tree vlan N` lit encore
+  l'arbre commun ; il lira l'instance par-VLAN au prochain lot.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Nouveau test (stp-pvst, 3e cas) : boucle redondante à deux trunks rompue
+  indépendamment par VLAN (un seul port alternate par VLAN sur le non-root) et
+  état « blocking » par-VLAN vérifié dans le plan de données.
+- Non-régression : **network-v2 — 7120 verts** (320 fichiers, +1 test) ; tsc
+  propre ; eslint propre sur les fichiers touchés.
+
+## Entrée 69 — PVST+ Lot 4 : `show spanning-tree vlan N` lit l'instance par-VLAN
+
+- Dernier lot : le rendu `show spanning-tree [vlan N | root | bridge | detail |
+  blockedports]` lisait encore l'arbre commun (`getRootBridge`/`getPortRole`/
+  `_getSTPStates`). Pour un lab multi-VLAN, toutes les VLAN affichaient le même
+  root et les mêmes rôles.
+- Bascule sur les accesseurs par-VLAN (`getRootBridgeForVlan`,
+  `getRootPortForVlan`, `getRootPathCostForVlan`, `isRootForVlan`,
+  `getPortRoleForVlan`, `getForwardStateForVlan`) + filtrage des ports affichés
+  sur l'appartenance réelle au VLAN (`Switch.getStpPortVlans`). `show spanning-
+  tree vlan 10` et `vlan 20` montrent désormais des roots/rôles/états distincts.
+- Effet de bord correctif : `show spanning-tree detail` affichait les ports non
+  opérationnels en « disabled forwarding » (rôle disabled mais état forwarding,
+  incohérent — il lisait l'état mono-port hérité de la base). Il lit maintenant
+  l'état d'instance et rend « disabled disabled » — cohérent.
+- Tout passe par la topologie ; aucun commentaire ; aucun hardcode.
+- Nouveau cas de test (stp-pvst, 4e) : `show spanning-tree vlan 10` indique
+  « This bridge is the root » sur le root du VLAN 10, et le root port sur l'autre
+  switch pour le VLAN 20.
+- 9 dumps L2 régénérés (amélioration `detail` ; le reste = jitter de temps de
+  ping non déterministe ; zéro régression de connectivité vérifiée).
+- Non-régression : **network-v2 — 7130 verts** (avec dumps L2, 329 fichiers) ;
+  STP/PVST+ ciblés verts ; tsc + eslint propres sur les fichiers touchés.
+- Bilan PVST+ : élection du root **réellement par-VLAN** entre switches via des
+  BPDU PVST+ échangés sur le câble, blocage du plan de données par-VLAN, et
+  affichage par-VLAN. Limite restante documentée : la machine de changement de
+  topologie (TCN/tcWhile, fast-aging) demeure pilotée par la CST (VLAN 1).

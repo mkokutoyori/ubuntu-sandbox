@@ -26,6 +26,8 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
+import { TerminalAsyncRuntime } from '@/terminal/async';
+import type { AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -208,6 +210,8 @@ export abstract class TerminalSession {
 
   protected readonly inputHostImpl: import('./SessionInputHost').SessionInputHost;
 
+  protected readonly asyncRuntime: TerminalAsyncRuntime;
+
   /** Maximum number of output lines before oldest lines are trimmed. */
   protected maxScrollback: number = MAX_SCROLLBACK_LINES;
 
@@ -239,6 +243,12 @@ export abstract class TerminalSession {
       notify: () => this.notify(),
       isDisposed: () => this.disposed,
     });
+    this.asyncRuntime = new TerminalAsyncRuntime({
+      addLine: (text, type) => this.addLine(text, type),
+      addLines: (texts, type) => this.addLines(texts, type),
+      notify: () => this.notify(),
+      attachStream: (opts) => this.inputHostImpl.attachStream(opts),
+    });
   }
 
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
@@ -246,6 +256,26 @@ export abstract class TerminalSession {
   listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
     return this.inputHostImpl.listStreams();
   }
+
+  startAsyncCommand(spec: AsyncJobSpec): AsyncJobHandle | null {
+    return this.asyncRuntime.start(spec);
+  }
+
+  listAsyncJobs(): AsyncJobHandle[] {
+    return this.asyncRuntime.listJobs();
+  }
+
+  cancelAsyncJob(id: string): boolean {
+    return this.asyncRuntime.cancel(id);
+  }
+
+  cancelAsyncJobsWhere(predicate: (handle: AsyncJobHandle) => boolean): number {
+    return this.asyncRuntime.cancelWhere(predicate);
+  }
+
+  get hasForegroundAsyncJob(): boolean { return this.asyncRuntime.hasForegroundJob; }
+
+  get hasBackgroundAsyncJobs(): boolean { return this.asyncRuntime.hasBackgroundJobs; }
 
   // ── React subscription API ──────────────────────────────────────
 
@@ -346,6 +376,7 @@ export abstract class TerminalSession {
 
   dispose(): void {
     if (this.disposed) return;
+    this.asyncRuntime.cancelAll();
     // Subclasses may register a teardown to release SSH sessions, sub-shells,
     // remote-forwarders, etc. Run them BEFORE flagging disposed so handlers
     // can still observe state if they want to.
@@ -1035,6 +1066,7 @@ export abstract class TerminalSession {
 
   /** Called on Ctrl+C in normal mode. */
   protected onCtrlC(): void {
+    if (this.asyncRuntime.interruptForeground()) return;
     this.addLine(`${this.getPrompt()}${this.input}^C`);
     this.input = '';
     this.notify();

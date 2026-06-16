@@ -267,7 +267,16 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     this.updatePrompt();
+    this.afterCommandExecuted(trimmed);
   }
+
+  /**
+   * Hook fired after a command has fully executed and the prompt has been
+   * refreshed. Subclasses use it to reconcile asynchronous side effects of
+   * the command (e.g. starting/stopping live debug streams) with the
+   * device's post-command state.
+   */
+  protected afterCommandExecuted(_command: string): void {}
 
   // ── Flow completion hook ────────────────────────────────────────
 

@@ -37,14 +37,18 @@ export type DebugCategory =
   | 'ntp.events'
   | 'ntp.packets';
 
+import type { IEventBus } from '@/events/EventBus';
+import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+
 export interface DebugFlag {
   category: DebugCategory;
   enabledAtMs: number;
   scope?: string;
 }
 
-export class RouterDebugService {
+export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
+  private readonly broadcast = new DebugBroadcast();
 
   enable(category: DebugCategory, scope?: string): string {
     this.flags.set(category, { category, enabledAtMs: Date.now(), scope });
@@ -58,6 +62,8 @@ export class RouterDebugService {
 
   isEnabled(category: DebugCategory): boolean { return this.flags.has(category); }
 
+  hasAnyFlag(): boolean { return this.flags.size > 0; }
+
   list(): readonly DebugFlag[] {
     return [...this.flags.values()].sort((a, b) => a.category.localeCompare(b.category));
   }
@@ -66,6 +72,55 @@ export class RouterDebugService {
     const n = this.flags.size;
     this.flags.clear();
     return n === 0 ? 'All possible debugging has been turned off' : `${n} debug flag${n === 1 ? '' : 's'} have been turned off`;
+  }
+
+  subscribe(listener: DebugLineListener): () => void {
+    return this.broadcast.subscribe(listener);
+  }
+
+  private emit(category: DebugCategory, line: string): void {
+    if (!this.flags.has(category)) return;
+    this.broadcast.fan(line);
+  }
+
+  attachToBus(bus: IEventBus, deviceId: string): void {
+    if (this.broadcast.attachedDeviceId === deviceId) return;
+    this.detachFromBus();
+    this.broadcast.attachedDeviceId = deviceId;
+    const mine = (p: { deviceId?: string }) => p.deviceId === undefined || p.deviceId === deviceId;
+    this.broadcast.track(bus.subscribe('ospf.neighbor.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.ospf.adj', `OSPF-5-ADJCHG: Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.interface.state-changed', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.ospf.events', `OSPF: Interface ${p.iface} state change from ${p.oldState} to ${p.newState}`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.spf.run', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.ospf.spf', `OSPF: Running ${p.kind} SPF (run ${p.runIndex}), ${p.routesCount} routes, runtime ${p.runtimeMs}ms`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
+      if (!mine(e.payload)) return;
+      this.emit('ip.ospf.hello', `OSPF: Send hello packet on ${e.payload.iface}`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.packet.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.ospf.packet', `OSPF: rcv packet from ${p.srcIp} on ${p.iface}`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.packet.outgoing', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload;
+      this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
+    }));
+  }
+
+  detachFromBus(): void {
+    this.broadcast.detach();
   }
 
   static label(category: DebugCategory): string {

@@ -1221,6 +1221,17 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
+  /**
+   * Emit a syslog record at an arbitrary `facility.priority` spec — the
+   * host-side hook used by the Oracle audit→syslog bridge when
+   * AUDIT_SYSLOG_LEVEL is configured, so audit records land in
+   * `/var/log/syslog` like a real database with that parameter set.
+   * Returns false when the spec is malformed.
+   */
+  logSyslog(facilityPrioritySpec: string, tag: string, message: string): boolean {
+    return this.executor.logMgr.logAt(facilityPrioritySpec, tag, message);
+  }
+
   private logIptablesDrop(
     pkt: PacketInfo,
     verdict: 'drop' | 'reject',

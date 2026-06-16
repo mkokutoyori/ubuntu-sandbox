@@ -45,7 +45,8 @@ const NORMALISE_IFCONFIG = (s: string) =>
   stripTrailing(
     s
       .replace(/(RX|TX) packets \d+/g, '$1 packets *')
-      .replace(/bytes \d+/g, 'bytes *'),
+      .replace(/bytes \d+/g, 'bytes *')
+        .replace(/\([\d.]+ [KMGTP]?i?B\)/g, '(*)'),
   );
 
 const NORMALISE_TRACEROUTE = (s: string) =>

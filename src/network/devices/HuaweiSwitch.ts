@@ -39,7 +39,7 @@ export class HuaweiSwitch extends Switch {
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
       ...hostBase,
-      onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+      onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
@@ -63,10 +63,8 @@ export class HuaweiSwitch extends Switch {
     if (!authorized) this.flushDynamicMacsOnPort(portName, 'dot1x-unauthorized');
   }
 
-  private applyStpForwardState(portName: string, state: StpForwardState): void {
-    // StpForwardState is a subset of STPPortState — apply verbatim so the
-    // data plane honors the 802.1D listening/learning transitions.
-    this.setSTPState(portName, state);
+  private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {
+    this.setStpVlanState(portName, vlan, state);
   }
 
   override setEventBus(bus: IEventBus | null): void {

@@ -37,6 +37,7 @@ import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { SwitchDebugService } from './switch/SwitchDebugService';
 
 export class CiscoSwitch extends Switch {
   private readonly agents = new AgentRegistry();
@@ -76,9 +77,10 @@ export class CiscoSwitch extends Switch {
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
       ...hostBase,
-      onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+      onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onStpBpduGuardErrDisable: (p) => this.applyStpBpduGuardErrDisable(p),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
+      getStpPortVlans: (p) => this.getStpPortVlans(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({
@@ -132,10 +134,8 @@ export class CiscoSwitch extends Switch {
     super.setSwitchportMode(portName, mode);
   }
 
-  private applyStpForwardState(portName: string, state: StpForwardState): void {
-    // StpForwardState is a subset of STPPortState — apply verbatim so the
-    // data plane honors the 802.1D listening/learning transitions.
-    this.setSTPState(portName, state);
+  private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {
+    this.setStpVlanState(portName, vlan, state);
   }
 
   private applyStpBpduGuardErrDisable(portName: string): void {
@@ -150,6 +150,15 @@ export class CiscoSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    if (bus) this.getDebugService().attachToBus(bus, this.id);
+    else this._debugService?.detachFromBus();
+  }
+
+  private _debugService: SwitchDebugService | null = null;
+
+  getDebugService(): SwitchDebugService {
+    if (!this._debugService) this._debugService = new SwitchDebugService();
+    return this._debugService;
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {

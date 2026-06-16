@@ -1,217 +1,217 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-06-15T20:07:22.773Z
+Generated: 2026-06-16T17:13:57.355Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
-Total steps: 361
+Total steps: 360
 ============================================================
 
 
 --- [1] § baseline VLAN database ---
-[1/361] sw1 SW1> enable
+[1/360] sw1 SW1> enable
 <empty>
 
-[2/361] sw1 SW1# show vlan brief
+[2/360] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
-[3/361] sw1 SW1# show vlan
+[3/360] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
 
-[4/361] sw1 SW1# show vlan summary
-  % Invalid input detected at '^' marker.
-  show vlan summary
-            ^
+[4/360] sw1 SW1# show vlan summary
+  Number of existing VLANs          : 1
+  Number of existing VTP VLANs      : 1
+  Number of existing extended VLANs : 0
 
-[5/361] sw1 SW1# configure terminal
+[5/360] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 
 --- [6] § VLAN creation loop (10..200) ---
-[7/361] sw1 SW1(config)# vlan 10
+[7/360] sw1 SW1(config)# vlan 10
 <empty>
 
-[8/361] sw1 SW1(config-vlan)# name VLAN_10
+[8/360] sw1 SW1(config-vlan)# name VLAN_10
 <empty>
 
-[9/361] sw1 SW1(config-vlan)# exit
+[9/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[10/361] sw1 SW1(config)# vlan 20
+[10/360] sw1 SW1(config)# vlan 20
 <empty>
 
-[11/361] sw1 SW1(config-vlan)# name VLAN_20
+[11/360] sw1 SW1(config-vlan)# name VLAN_20
 <empty>
 
-[12/361] sw1 SW1(config-vlan)# exit
+[12/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[13/361] sw1 SW1(config)# vlan 30
+[13/360] sw1 SW1(config)# vlan 30
 <empty>
 
-[14/361] sw1 SW1(config-vlan)# name VLAN_30
+[14/360] sw1 SW1(config-vlan)# name VLAN_30
 <empty>
 
-[15/361] sw1 SW1(config-vlan)# exit
+[15/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[16/361] sw1 SW1(config)# vlan 40
+[16/360] sw1 SW1(config)# vlan 40
 <empty>
 
-[17/361] sw1 SW1(config-vlan)# name VLAN_40
+[17/360] sw1 SW1(config-vlan)# name VLAN_40
 <empty>
 
-[18/361] sw1 SW1(config-vlan)# exit
+[18/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[19/361] sw1 SW1(config)# vlan 50
+[19/360] sw1 SW1(config)# vlan 50
 <empty>
 
-[20/361] sw1 SW1(config-vlan)# name VLAN_50
+[20/360] sw1 SW1(config-vlan)# name VLAN_50
 <empty>
 
-[21/361] sw1 SW1(config-vlan)# exit
+[21/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[22/361] sw1 SW1(config)# vlan 60
+[22/360] sw1 SW1(config)# vlan 60
 <empty>
 
-[23/361] sw1 SW1(config-vlan)# name VLAN_60
+[23/360] sw1 SW1(config-vlan)# name VLAN_60
 <empty>
 
-[24/361] sw1 SW1(config-vlan)# exit
+[24/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[25/361] sw1 SW1(config)# vlan 70
+[25/360] sw1 SW1(config)# vlan 70
 <empty>
 
-[26/361] sw1 SW1(config-vlan)# name VLAN_70
+[26/360] sw1 SW1(config-vlan)# name VLAN_70
 <empty>
 
-[27/361] sw1 SW1(config-vlan)# exit
+[27/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[28/361] sw1 SW1(config)# vlan 80
+[28/360] sw1 SW1(config)# vlan 80
 <empty>
 
-[29/361] sw1 SW1(config-vlan)# name VLAN_80
+[29/360] sw1 SW1(config-vlan)# name VLAN_80
 <empty>
 
-[30/361] sw1 SW1(config-vlan)# exit
+[30/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[31/361] sw1 SW1(config)# vlan 90
+[31/360] sw1 SW1(config)# vlan 90
 <empty>
 
-[32/361] sw1 SW1(config-vlan)# name VLAN_90
+[32/360] sw1 SW1(config-vlan)# name VLAN_90
 <empty>
 
-[33/361] sw1 SW1(config-vlan)# exit
+[33/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[34/361] sw1 SW1(config)# vlan 100
+[34/360] sw1 SW1(config)# vlan 100
 <empty>
 
-[35/361] sw1 SW1(config-vlan)# name VLAN_100
+[35/360] sw1 SW1(config-vlan)# name VLAN_100
 <empty>
 
-[36/361] sw1 SW1(config-vlan)# exit
+[36/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[37/361] sw1 SW1(config)# vlan 110
+[37/360] sw1 SW1(config)# vlan 110
 <empty>
 
-[38/361] sw1 SW1(config-vlan)# name VLAN_110
+[38/360] sw1 SW1(config-vlan)# name VLAN_110
 <empty>
 
-[39/361] sw1 SW1(config-vlan)# exit
+[39/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[40/361] sw1 SW1(config)# vlan 120
+[40/360] sw1 SW1(config)# vlan 120
 <empty>
 
-[41/361] sw1 SW1(config-vlan)# name VLAN_120
+[41/360] sw1 SW1(config-vlan)# name VLAN_120
 <empty>
 
-[42/361] sw1 SW1(config-vlan)# exit
+[42/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[43/361] sw1 SW1(config)# vlan 130
+[43/360] sw1 SW1(config)# vlan 130
 <empty>
 
-[44/361] sw1 SW1(config-vlan)# name VLAN_130
+[44/360] sw1 SW1(config-vlan)# name VLAN_130
 <empty>
 
-[45/361] sw1 SW1(config-vlan)# exit
+[45/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[46/361] sw1 SW1(config)# vlan 140
+[46/360] sw1 SW1(config)# vlan 140
 <empty>
 
-[47/361] sw1 SW1(config-vlan)# name VLAN_140
+[47/360] sw1 SW1(config-vlan)# name VLAN_140
 <empty>
 
-[48/361] sw1 SW1(config-vlan)# exit
+[48/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[49/361] sw1 SW1(config)# vlan 150
+[49/360] sw1 SW1(config)# vlan 150
 <empty>
 
-[50/361] sw1 SW1(config-vlan)# name VLAN_150
+[50/360] sw1 SW1(config-vlan)# name VLAN_150
 <empty>
 
-[51/361] sw1 SW1(config-vlan)# exit
+[51/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[52/361] sw1 SW1(config)# vlan 160
+[52/360] sw1 SW1(config)# vlan 160
 <empty>
 
-[53/361] sw1 SW1(config-vlan)# name VLAN_160
+[53/360] sw1 SW1(config-vlan)# name VLAN_160
 <empty>
 
-[54/361] sw1 SW1(config-vlan)# exit
+[54/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[55/361] sw1 SW1(config)# vlan 170
+[55/360] sw1 SW1(config)# vlan 170
 <empty>
 
-[56/361] sw1 SW1(config-vlan)# name VLAN_170
+[56/360] sw1 SW1(config-vlan)# name VLAN_170
 <empty>
 
-[57/361] sw1 SW1(config-vlan)# exit
+[57/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[58/361] sw1 SW1(config)# vlan 180
+[58/360] sw1 SW1(config)# vlan 180
 <empty>
 
-[59/361] sw1 SW1(config-vlan)# name VLAN_180
+[59/360] sw1 SW1(config-vlan)# name VLAN_180
 <empty>
 
-[60/361] sw1 SW1(config-vlan)# exit
+[60/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[61/361] sw1 SW1(config)# vlan 190
+[61/360] sw1 SW1(config)# vlan 190
 <empty>
 
-[62/361] sw1 SW1(config-vlan)# name VLAN_190
+[62/360] sw1 SW1(config-vlan)# name VLAN_190
 <empty>
 
-[63/361] sw1 SW1(config-vlan)# exit
+[63/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[64/361] sw1 SW1(config)# vlan 200
+[64/360] sw1 SW1(config)# vlan 200
 <empty>
 
-[65/361] sw1 SW1(config-vlan)# name VLAN_200
+[65/360] sw1 SW1(config-vlan)# name VLAN_200
 <empty>
 
-[66/361] sw1 SW1(config-vlan)# exit
+[66/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[67/361] sw1 SW1(config)# do show vlan brief
+[67/360] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
@@ -238,22 +238,22 @@ Total steps: 361
 
 
 --- [68] § VLAN ranges & lists ---
-[69/361] sw1 SW1(config)# vlan 300-305
+[69/360] sw1 SW1(config)# vlan 300-305
 <empty>
 
-[70/361] sw1 SW1(config)# vlan 400,410,420
+[70/360] sw1 SW1(config)# vlan 400,410,420
 <empty>
 
-[71/361] sw1 SW1(config)# vlan 999
+[71/360] sw1 SW1(config)# vlan 999
 <empty>
 
-[72/361] sw1 SW1(config-vlan)# name MGMT
+[72/360] sw1 SW1(config-vlan)# name MGMT
 <empty>
 
-[73/361] sw1 SW1(config-vlan)# exit
+[73/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[74/361] sw1 SW1(config)# do show vlan brief
+[74/360] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
@@ -288,294 +288,294 @@ Total steps: 361
   420  VLAN0420                         active    
   999  MGMT                             active    
 
-[75/361] sw1 SW1(config)# vlan 0
+[75/360] sw1 SW1(config)# vlan 0
   % Invalid VLAN ID
 
-[76/361] sw1 SW1(config)# vlan 4096
+[76/360] sw1 SW1(config)# vlan 4096
   % Invalid VLAN ID
 
-[77/361] sw1 SW1(config)# vlan abc
+[77/360] sw1 SW1(config)# vlan abc
   % Invalid VLAN ID
 
 
 --- [78] § SW1 access port assignment loop (Fa0/1..0/23) ---
-[79/361] sw1 SW1(config)# interface FastEthernet0/1
+[79/360] sw1 SW1(config)# interface FastEthernet0/1
 <empty>
 
-[80/361] sw1 SW1(config-if)# switchport mode access
+[80/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[81/361] sw1 SW1(config-if)# switchport access vlan 20
+[81/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[82/361] sw1 SW1(config-if)# exit
+[82/360] sw1 SW1(config-if)# exit
 <empty>
 
-[83/361] sw1 SW1(config)# interface FastEthernet0/2
+[83/360] sw1 SW1(config)# interface FastEthernet0/2
 <empty>
 
-[84/361] sw1 SW1(config-if)# switchport mode access
+[84/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[85/361] sw1 SW1(config-if)# switchport access vlan 30
+[85/360] sw1 SW1(config-if)# switchport access vlan 30
 <empty>
 
-[86/361] sw1 SW1(config-if)# exit
+[86/360] sw1 SW1(config-if)# exit
 <empty>
 
-[87/361] sw1 SW1(config)# interface FastEthernet0/3
+[87/360] sw1 SW1(config)# interface FastEthernet0/3
 <empty>
 
-[88/361] sw1 SW1(config-if)# switchport mode access
+[88/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[89/361] sw1 SW1(config-if)# switchport access vlan 40
+[89/360] sw1 SW1(config-if)# switchport access vlan 40
 <empty>
 
-[90/361] sw1 SW1(config-if)# exit
+[90/360] sw1 SW1(config-if)# exit
 <empty>
 
-[91/361] sw1 SW1(config)# interface FastEthernet0/4
+[91/360] sw1 SW1(config)# interface FastEthernet0/4
 <empty>
 
-[92/361] sw1 SW1(config-if)# switchport mode access
+[92/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[93/361] sw1 SW1(config-if)# switchport access vlan 50
+[93/360] sw1 SW1(config-if)# switchport access vlan 50
 <empty>
 
-[94/361] sw1 SW1(config-if)# exit
+[94/360] sw1 SW1(config-if)# exit
 <empty>
 
-[95/361] sw1 SW1(config)# interface FastEthernet0/5
+[95/360] sw1 SW1(config)# interface FastEthernet0/5
 <empty>
 
-[96/361] sw1 SW1(config-if)# switchport mode access
+[96/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[97/361] sw1 SW1(config-if)# switchport access vlan 10
+[97/360] sw1 SW1(config-if)# switchport access vlan 10
 <empty>
 
-[98/361] sw1 SW1(config-if)# exit
+[98/360] sw1 SW1(config-if)# exit
 <empty>
 
-[99/361] sw1 SW1(config)# interface FastEthernet0/6
+[99/360] sw1 SW1(config)# interface FastEthernet0/6
 <empty>
 
-[100/361] sw1 SW1(config-if)# switchport mode access
+[100/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[101/361] sw1 SW1(config-if)# switchport access vlan 20
+[101/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[102/361] sw1 SW1(config-if)# exit
+[102/360] sw1 SW1(config-if)# exit
 <empty>
 
-[103/361] sw1 SW1(config)# interface FastEthernet0/7
+[103/360] sw1 SW1(config)# interface FastEthernet0/7
 <empty>
 
-[104/361] sw1 SW1(config-if)# switchport mode access
+[104/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[105/361] sw1 SW1(config-if)# switchport access vlan 30
+[105/360] sw1 SW1(config-if)# switchport access vlan 30
 <empty>
 
-[106/361] sw1 SW1(config-if)# exit
+[106/360] sw1 SW1(config-if)# exit
 <empty>
 
-[107/361] sw1 SW1(config)# interface FastEthernet0/8
+[107/360] sw1 SW1(config)# interface FastEthernet0/8
 <empty>
 
-[108/361] sw1 SW1(config-if)# switchport mode access
+[108/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[109/361] sw1 SW1(config-if)# switchport access vlan 40
+[109/360] sw1 SW1(config-if)# switchport access vlan 40
 <empty>
 
-[110/361] sw1 SW1(config-if)# exit
+[110/360] sw1 SW1(config-if)# exit
 <empty>
 
-[111/361] sw1 SW1(config)# interface FastEthernet0/9
+[111/360] sw1 SW1(config)# interface FastEthernet0/9
 <empty>
 
-[112/361] sw1 SW1(config-if)# switchport mode access
+[112/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[113/361] sw1 SW1(config-if)# switchport access vlan 50
+[113/360] sw1 SW1(config-if)# switchport access vlan 50
 <empty>
 
-[114/361] sw1 SW1(config-if)# exit
+[114/360] sw1 SW1(config-if)# exit
 <empty>
 
-[115/361] sw1 SW1(config)# interface FastEthernet0/10
+[115/360] sw1 SW1(config)# interface FastEthernet0/10
 <empty>
 
-[116/361] sw1 SW1(config-if)# switchport mode access
+[116/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[117/361] sw1 SW1(config-if)# switchport access vlan 10
+[117/360] sw1 SW1(config-if)# switchport access vlan 10
 <empty>
 
-[118/361] sw1 SW1(config-if)# exit
+[118/360] sw1 SW1(config-if)# exit
 <empty>
 
-[119/361] sw1 SW1(config)# interface FastEthernet0/11
+[119/360] sw1 SW1(config)# interface FastEthernet0/11
 <empty>
 
-[120/361] sw1 SW1(config-if)# switchport mode access
+[120/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[121/361] sw1 SW1(config-if)# switchport access vlan 20
+[121/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[122/361] sw1 SW1(config-if)# exit
+[122/360] sw1 SW1(config-if)# exit
 <empty>
 
-[123/361] sw1 SW1(config)# interface FastEthernet0/12
+[123/360] sw1 SW1(config)# interface FastEthernet0/12
 <empty>
 
-[124/361] sw1 SW1(config-if)# switchport mode access
+[124/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[125/361] sw1 SW1(config-if)# switchport access vlan 30
+[125/360] sw1 SW1(config-if)# switchport access vlan 30
 <empty>
 
-[126/361] sw1 SW1(config-if)# exit
+[126/360] sw1 SW1(config-if)# exit
 <empty>
 
-[127/361] sw1 SW1(config)# interface FastEthernet0/13
+[127/360] sw1 SW1(config)# interface FastEthernet0/13
 <empty>
 
-[128/361] sw1 SW1(config-if)# switchport mode access
+[128/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[129/361] sw1 SW1(config-if)# switchport access vlan 40
+[129/360] sw1 SW1(config-if)# switchport access vlan 40
 <empty>
 
-[130/361] sw1 SW1(config-if)# exit
+[130/360] sw1 SW1(config-if)# exit
 <empty>
 
-[131/361] sw1 SW1(config)# interface FastEthernet0/14
+[131/360] sw1 SW1(config)# interface FastEthernet0/14
 <empty>
 
-[132/361] sw1 SW1(config-if)# switchport mode access
+[132/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[133/361] sw1 SW1(config-if)# switchport access vlan 50
+[133/360] sw1 SW1(config-if)# switchport access vlan 50
 <empty>
 
-[134/361] sw1 SW1(config-if)# exit
+[134/360] sw1 SW1(config-if)# exit
 <empty>
 
-[135/361] sw1 SW1(config)# interface FastEthernet0/15
+[135/360] sw1 SW1(config)# interface FastEthernet0/15
 <empty>
 
-[136/361] sw1 SW1(config-if)# switchport mode access
+[136/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[137/361] sw1 SW1(config-if)# switchport access vlan 10
+[137/360] sw1 SW1(config-if)# switchport access vlan 10
 <empty>
 
-[138/361] sw1 SW1(config-if)# exit
+[138/360] sw1 SW1(config-if)# exit
 <empty>
 
-[139/361] sw1 SW1(config)# interface FastEthernet0/16
+[139/360] sw1 SW1(config)# interface FastEthernet0/16
 <empty>
 
-[140/361] sw1 SW1(config-if)# switchport mode access
+[140/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[141/361] sw1 SW1(config-if)# switchport access vlan 20
+[141/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[142/361] sw1 SW1(config-if)# exit
+[142/360] sw1 SW1(config-if)# exit
 <empty>
 
-[143/361] sw1 SW1(config)# interface FastEthernet0/17
+[143/360] sw1 SW1(config)# interface FastEthernet0/17
 <empty>
 
-[144/361] sw1 SW1(config-if)# switchport mode access
+[144/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[145/361] sw1 SW1(config-if)# switchport access vlan 30
+[145/360] sw1 SW1(config-if)# switchport access vlan 30
 <empty>
 
-[146/361] sw1 SW1(config-if)# exit
+[146/360] sw1 SW1(config-if)# exit
 <empty>
 
-[147/361] sw1 SW1(config)# interface FastEthernet0/18
+[147/360] sw1 SW1(config)# interface FastEthernet0/18
 <empty>
 
-[148/361] sw1 SW1(config-if)# switchport mode access
+[148/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[149/361] sw1 SW1(config-if)# switchport access vlan 40
+[149/360] sw1 SW1(config-if)# switchport access vlan 40
 <empty>
 
-[150/361] sw1 SW1(config-if)# exit
+[150/360] sw1 SW1(config-if)# exit
 <empty>
 
-[151/361] sw1 SW1(config)# interface FastEthernet0/19
+[151/360] sw1 SW1(config)# interface FastEthernet0/19
 <empty>
 
-[152/361] sw1 SW1(config-if)# switchport mode access
+[152/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[153/361] sw1 SW1(config-if)# switchport access vlan 50
+[153/360] sw1 SW1(config-if)# switchport access vlan 50
 <empty>
 
-[154/361] sw1 SW1(config-if)# exit
+[154/360] sw1 SW1(config-if)# exit
 <empty>
 
-[155/361] sw1 SW1(config)# interface FastEthernet0/20
+[155/360] sw1 SW1(config)# interface FastEthernet0/20
 <empty>
 
-[156/361] sw1 SW1(config-if)# switchport mode access
+[156/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[157/361] sw1 SW1(config-if)# switchport access vlan 10
+[157/360] sw1 SW1(config-if)# switchport access vlan 10
 <empty>
 
-[158/361] sw1 SW1(config-if)# exit
+[158/360] sw1 SW1(config-if)# exit
 <empty>
 
-[159/361] sw1 SW1(config)# interface FastEthernet0/21
+[159/360] sw1 SW1(config)# interface FastEthernet0/21
 <empty>
 
-[160/361] sw1 SW1(config-if)# switchport mode access
+[160/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[161/361] sw1 SW1(config-if)# switchport access vlan 20
+[161/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[162/361] sw1 SW1(config-if)# exit
+[162/360] sw1 SW1(config-if)# exit
 <empty>
 
-[163/361] sw1 SW1(config)# interface FastEthernet0/22
+[163/360] sw1 SW1(config)# interface FastEthernet0/22
 <empty>
 
-[164/361] sw1 SW1(config-if)# switchport mode access
+[164/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[165/361] sw1 SW1(config-if)# switchport access vlan 30
+[165/360] sw1 SW1(config-if)# switchport access vlan 30
 <empty>
 
-[166/361] sw1 SW1(config-if)# exit
+[166/360] sw1 SW1(config-if)# exit
 <empty>
 
-[167/361] sw1 SW1(config)# interface FastEthernet0/23
+[167/360] sw1 SW1(config)# interface FastEthernet0/23
 <empty>
 
-[168/361] sw1 SW1(config-if)# switchport mode access
+[168/360] sw1 SW1(config-if)# switchport mode access
 <empty>
 
-[169/361] sw1 SW1(config-if)# switchport access vlan 40
+[169/360] sw1 SW1(config-if)# switchport access vlan 40
 <empty>
 
-[170/361] sw1 SW1(config-if)# exit
+[170/360] sw1 SW1(config-if)# exit
 <empty>
 
-[171/361] sw1 SW1(config)# do show vlan brief
+[171/360] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Gi0/0
@@ -610,7 +610,7 @@ Total steps: 361
   420  VLAN0420                         active    
   999  MGMT                             active    
 
-[172/361] sw1 SW1(config)# do show interfaces status
+[172/360] sw1 SW1(config)# do show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/0                          notconnect   1          a-full  a-100  10/100BaseTX
@@ -642,177 +642,182 @@ Total steps: 361
 
 
 --- [173] § inter-switch trunks (carry all VLANs) ---
-[173/361] sw1 SW1(config)# interface GigabitEthernet0/1
+[173/360] sw1 SW1(config)# interface GigabitEthernet0/1
 <empty>
 
-[174/361] sw1 SW1(config-if)# switchport trunk encapsulation dot1q
+[174/360] sw1 SW1(config-if)# switchport trunk encapsulation dot1q
 <empty>
 
-[175/361] sw1 SW1(config-if)# switchport mode trunk
+[175/360] sw1 SW1(config-if)# switchport mode trunk
 <empty>
 
-[176/361] sw1 SW1(config-if)# switchport trunk allowed vlan all
+[176/360] sw1 SW1(config-if)# switchport trunk allowed vlan all
 <empty>
 
-[177/361] sw1 SW1(config-if)# exit
+[177/360] sw1 SW1(config-if)# exit
 <empty>
 
-[178/361] sw1 SW1(config)# end
+[178/360] sw1 SW1(config)# end
 <empty>
 
-[179/361] sw2 SW2> enable
+[179/360] sw2 SW2> enable
 <empty>
 
-[180/361] sw2 SW2# configure terminal
+[180/360] sw2 SW2# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[181/361] sw2 SW2(config)# vlan 10
+[181/360] sw2 SW2(config)# vlan 10
 <empty>
 
-[182/361] sw2 SW2(config-vlan)# name VLAN_10
+[182/360] sw2 SW2(config-vlan)# name VLAN_10
 <empty>
 
-[183/361] sw2 SW2(config-vlan)# exit
+[183/360] sw2 SW2(config-vlan)# exit
 <empty>
 
-[184/361] sw2 SW2(config)# vlan 20
+[184/360] sw2 SW2(config)# vlan 20
 <empty>
 
-[185/361] sw2 SW2(config-vlan)# exit
+[185/360] sw2 SW2(config-vlan)# exit
 <empty>
 
-[186/361] sw2 SW2(config)# interface FastEthernet0/1
+[186/360] sw2 SW2(config)# interface FastEthernet0/1
 <empty>
 
-[187/361] sw2 SW2(config-if)# switchport mode access
+[187/360] sw2 SW2(config-if)# switchport mode access
 <empty>
 
-[188/361] sw2 SW2(config-if)# switchport access vlan 10
+[188/360] sw2 SW2(config-if)# switchport access vlan 10
 <empty>
 
-[189/361] sw2 SW2(config-if)# exit
+[189/360] sw2 SW2(config-if)# exit
 <empty>
 
-[190/361] sw2 SW2(config)# interface FastEthernet0/2
+[190/360] sw2 SW2(config)# interface FastEthernet0/2
 <empty>
 
-[191/361] sw2 SW2(config-if)# switchport mode access
+[191/360] sw2 SW2(config-if)# switchport mode access
 <empty>
 
-[192/361] sw2 SW2(config-if)# switchport access vlan 20
+[192/360] sw2 SW2(config-if)# switchport access vlan 20
 <empty>
 
-[193/361] sw2 SW2(config-if)# exit
+[193/360] sw2 SW2(config-if)# exit
 <empty>
 
-[194/361] sw2 SW2(config)# interface GigabitEthernet0/1
+[194/360] sw2 SW2(config)# interface GigabitEthernet0/1
 <empty>
 
-[195/361] sw2 SW2(config-if)# switchport mode trunk
+[195/360] sw2 SW2(config-if)# switchport mode trunk
 <empty>
 
-[196/361] sw2 SW2(config-if)# exit
+[196/360] sw2 SW2(config-if)# exit
 <empty>
 
-[197/361] sw2 SW2(config)# end
+[197/360] sw2 SW2(config)# end
 <empty>
 
-[198/361] core CORE> enable
+[198/360] core CORE> enable
 <empty>
 
-[199/361] core CORE# configure terminal
+[199/360] core CORE# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[200/361] core CORE(config)# vlan 10,20
+[200/360] core CORE(config)# vlan 10,20
 <empty>
 
-[201/361] core CORE(config)# exit
+[201/360] core CORE(config)# interface range GigabitEthernet0/0 - 1
 <empty>
 
-[202/361] core CORE# interface range GigabitEthernet0/0 - 1
-  % Invalid input detected at '^' marker.
-  interface range GigabitEthernet0/0 - 1
-  ^
-
-[203/361] core CORE# switchport mode trunk
-  % Invalid input detected at '^' marker.
-  switchport mode trunk
-  ^
-
-[204/361] core CORE# exit
+[202/360] core CORE(config-if)# switchport mode trunk
 <empty>
 
-[205/361] core CORE# end
+[203/360] core CORE(config-if)# exit
 <empty>
 
-[206/361] core CORE# show interfaces trunk
+[204/360] core CORE(config)# end
+<empty>
+
+[205/360] core CORE# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
   Gi0/0       on               802.1q         trunking      1
   Gi0/1       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Gi0/0       1-4094
+  Gi0/1       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Gi0/0       1,10,20
+  Gi0/1       1,10,20
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Gi0/0       1,10,20
+  Gi0/1       1,10,20
 
 
---- [207] § put L1 & L2 in VLAN 10 (same broadcast domain across trunk) ---
-[207/361] sw1 SW1# configure terminal
+--- [206] § put L1 & L2 in VLAN 10 (same broadcast domain across trunk) ---
+[206/360] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[208/361] sw1 SW1(config)# interface FastEthernet0/1
+[207/360] sw1 SW1(config)# interface FastEthernet0/1
 <empty>
 
-[209/361] sw1 SW1(config-if)# switchport access vlan 10
+[208/360] sw1 SW1(config-if)# switchport access vlan 10
 <empty>
 
-[210/361] sw1 SW1(config-if)# exit
+[209/360] sw1 SW1(config-if)# exit
 <empty>
 
-[211/361] sw1 SW1(config)# interface FastEthernet0/2
+[210/360] sw1 SW1(config)# interface FastEthernet0/2
 <empty>
 
-[212/361] sw1 SW1(config-if)# switchport access vlan 20
+[211/360] sw1 SW1(config-if)# switchport access vlan 20
 <empty>
 
-[213/361] sw1 SW1(config-if)# end
+[212/360] sw1 SW1(config-if)# end
 <empty>
 
 
---- [214] § connectivity: same VLAN across switches ---
-[214/361] l1 l1$ ping -c 3 192.168.1.21
+--- [213] § connectivity: same VLAN across switches ---
+[213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.587 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.737 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.957 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.008 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=5.549 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.833 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.737/1.427/2.587/0.825 ms
+  rtt min/avg/max/mdev = 0.833/2.796/5.549/2.004 ms
 
-[215/361] l1 l1$ arp -a
+[214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
   ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
-[216/361] l2 l2$ ping -c 3 192.168.1.11
+[215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.733 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.855 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.554 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.575 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.492 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.457 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.554/0.714/0.855/0.124 ms
+  rtt min/avg/max/mdev = 0.457/0.508/0.575/0.049 ms
 
-[217/361] sw1 SW1# show mac address-table vlan 10
+[216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
   10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
 
-[218/361] sw2 SW2# show mac address-table vlan 10
+[217/360] sw2 SW2# show mac address-table vlan 10
   Mac Address Table
   10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
 
-[219/361] core CORE# show mac address-table
+[218/360] core CORE# show mac address-table
   Mac Address Table
   -------------------------------------------
   
@@ -830,14 +835,14 @@ Total steps: 361
   Total Mac Addresses for this criterion: 8
 
 
---- [220] § connectivity: different VLAN, same switch (must fail) ---
-[220/361] l1 l1$ ping -c 1 192.168.1.12
+--- [219] § connectivity: different VLAN, same switch (must fail) ---
+[219/360] l1 l1$ ping -c 1 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
   
   --- 192.168.1.12 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
 
-[221/361] w1 w1$ ping -n 1 192.168.1.11
+[220/360] w1 w1$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
   Request timed out.
@@ -846,14 +851,14 @@ Total steps: 361
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 
---- [222] § connectivity: different VLAN across switches (must fail) ---
-[222/361] l1 l1$ ping -c 1 192.168.1.22
+--- [221] § connectivity: different VLAN across switches (must fail) ---
+[221/360] l1 l1$ ping -c 1 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
   
   --- 192.168.1.22 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
 
-[223/361] w2 w2$ ping -n 1 192.168.1.11
+[222/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
   Request timed out.
@@ -862,20 +867,20 @@ Total steps: 361
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 
---- [224] § move W2 into VLAN 10 to restore reachability ---
-[224/361] sw2 SW2# configure terminal
+--- [223] § move W2 into VLAN 10 to restore reachability ---
+[223/360] sw2 SW2# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[225/361] sw2 SW2(config)# interface FastEthernet0/2
+[224/360] sw2 SW2(config)# interface FastEthernet0/2
 <empty>
 
-[226/361] sw2 SW2(config-if)# switchport access vlan 10
+[225/360] sw2 SW2(config-if)# switchport access vlan 10
 <empty>
 
-[227/361] sw2 SW2(config-if)# end
+[226/360] sw2 SW2(config-if)# end
 <empty>
 
-[228/361] w2 w2$ ping -n 1 192.168.1.11
+[227/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
   Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
@@ -885,316 +890,318 @@ Total steps: 361
   Approximate round trip times in milli-seconds:
       Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
-[229/361] l1 l1$ ping -c 2 192.168.1.22
+[228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.520 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.642 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.327 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.287 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.520/0.581/0.642/0.061 ms
+  rtt min/avg/max/mdev = 0.287/0.307/0.327/0.020 ms
 
 
---- [230] § voice VLAN ---
-[230/361] sw1 SW1# configure terminal
+--- [229] § voice VLAN ---
+[229/360] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[231/361] sw1 SW1(config)# vlan 50
+[230/360] sw1 SW1(config)# vlan 50
 <empty>
 
-[232/361] sw1 SW1(config-vlan)# name VOICE
+[231/360] sw1 SW1(config-vlan)# name VOICE
 <empty>
 
-[233/361] sw1 SW1(config-vlan)# exit
+[232/360] sw1 SW1(config-vlan)# exit
 <empty>
 
-[234/361] sw1 SW1(config)# interface FastEthernet0/2
+[233/360] sw1 SW1(config)# interface FastEthernet0/2
 <empty>
 
-[235/361] sw1 SW1(config-if)# switchport voice vlan 50
+[234/360] sw1 SW1(config-if)# switchport voice vlan 50
 <empty>
 
-[236/361] sw1 SW1(config-if)# do show interfaces FastEthernet0/2 switchport
+[235/360] sw1 SW1(config-if)# do show interfaces FastEthernet0/2 switchport
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Voice VLAN: 50
 
-[237/361] sw1 SW1(config-if)# end
+[236/360] sw1 SW1(config-if)# end
 <empty>
 
 
---- [238] § per-interface switchport inspection loop (SW1) ---
-[239/361] sw1 SW1# show interfaces FastEthernet0/1 switchport
+--- [237] § per-interface switchport inspection loop (SW1) ---
+[238/360] sw1 SW1# show interfaces FastEthernet0/1 switchport
   Name: Fa0/1
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
 
-[240/361] sw1 SW1# show interfaces FastEthernet0/2 switchport
+[239/360] sw1 SW1# show interfaces FastEthernet0/2 switchport
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Voice VLAN: 50
 
-[241/361] sw1 SW1# show interfaces FastEthernet0/3 switchport
+[240/360] sw1 SW1# show interfaces FastEthernet0/3 switchport
   Name: Fa0/3
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
 
-[242/361] sw1 SW1# show interfaces FastEthernet0/4 switchport
+[241/360] sw1 SW1# show interfaces FastEthernet0/4 switchport
   Name: Fa0/4
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
 
-[243/361] sw1 SW1# show interfaces FastEthernet0/5 switchport
+[242/360] sw1 SW1# show interfaces FastEthernet0/5 switchport
   Name: Fa0/5
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
 
-[244/361] sw1 SW1# show interfaces FastEthernet0/6 switchport
+[243/360] sw1 SW1# show interfaces FastEthernet0/6 switchport
   Name: Fa0/6
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
 
-[245/361] sw1 SW1# show interfaces FastEthernet0/7 switchport
+[244/360] sw1 SW1# show interfaces FastEthernet0/7 switchport
   Name: Fa0/7
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
 
-[246/361] sw1 SW1# show interfaces FastEthernet0/8 switchport
+[245/360] sw1 SW1# show interfaces FastEthernet0/8 switchport
   Name: Fa0/8
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
 
-[247/361] sw1 SW1# show interfaces FastEthernet0/9 switchport
+[246/360] sw1 SW1# show interfaces FastEthernet0/9 switchport
   Name: Fa0/9
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
 
-[248/361] sw1 SW1# show interfaces FastEthernet0/10 switchport
+[247/360] sw1 SW1# show interfaces FastEthernet0/10 switchport
   Name: Fa0/10
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
 
-[249/361] sw1 SW1# show interfaces FastEthernet0/11 switchport
+[248/360] sw1 SW1# show interfaces FastEthernet0/11 switchport
   Name: Fa0/11
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
 
-[250/361] sw1 SW1# show interfaces FastEthernet0/12 switchport
+[249/360] sw1 SW1# show interfaces FastEthernet0/12 switchport
   Name: Fa0/12
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
 
-[251/361] sw1 SW1# show interfaces FastEthernet0/13 switchport
+[250/360] sw1 SW1# show interfaces FastEthernet0/13 switchport
   Name: Fa0/13
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
 
-[252/361] sw1 SW1# show interfaces FastEthernet0/14 switchport
+[251/360] sw1 SW1# show interfaces FastEthernet0/14 switchport
   Name: Fa0/14
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
 
-[253/361] sw1 SW1# show interfaces FastEthernet0/15 switchport
+[252/360] sw1 SW1# show interfaces FastEthernet0/15 switchport
   Name: Fa0/15
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
 
-[254/361] sw1 SW1# show interfaces FastEthernet0/16 switchport
+[253/360] sw1 SW1# show interfaces FastEthernet0/16 switchport
   Name: Fa0/16
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
 
-[255/361] sw1 SW1# show interfaces FastEthernet0/17 switchport
+[254/360] sw1 SW1# show interfaces FastEthernet0/17 switchport
   Name: Fa0/17
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
 
-[256/361] sw1 SW1# show interfaces FastEthernet0/18 switchport
+[255/360] sw1 SW1# show interfaces FastEthernet0/18 switchport
   Name: Fa0/18
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
 
-[257/361] sw1 SW1# show interfaces FastEthernet0/19 switchport
+[256/360] sw1 SW1# show interfaces FastEthernet0/19 switchport
   Name: Fa0/19
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
 
-[258/361] sw1 SW1# show interfaces FastEthernet0/20 switchport
+[257/360] sw1 SW1# show interfaces FastEthernet0/20 switchport
   Name: Fa0/20
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
 
-[259/361] sw1 SW1# show interfaces FastEthernet0/21 switchport
+[258/360] sw1 SW1# show interfaces FastEthernet0/21 switchport
   Name: Fa0/21
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
 
-[260/361] sw1 SW1# show interfaces FastEthernet0/22 switchport
+[259/360] sw1 SW1# show interfaces FastEthernet0/22 switchport
   Name: Fa0/22
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
 
-[261/361] sw1 SW1# show interfaces FastEthernet0/23 switchport
+[260/360] sw1 SW1# show interfaces FastEthernet0/23 switchport
   Name: Fa0/23
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
 
 
---- [262] § VLAN deletion & cleanup ---
-[262/361] sw1 SW1# configure terminal
+--- [261] § VLAN deletion & cleanup ---
+[261/360] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[263/361] sw1 SW1(config)# no vlan 110
+[262/360] sw1 SW1(config)# no vlan 110
 <empty>
 
-[264/361] sw1 SW1(config)# no vlan 120
+[263/360] sw1 SW1(config)# no vlan 120
 <empty>
 
-[265/361] sw1 SW1(config)# no vlan 130
+[264/360] sw1 SW1(config)# no vlan 130
 <empty>
 
-[266/361] sw1 SW1(config)# no vlan 140
+[265/360] sw1 SW1(config)# no vlan 140
 <empty>
 
-[267/361] sw1 SW1(config)# no vlan 150
+[266/360] sw1 SW1(config)# no vlan 150
 <empty>
 
-[268/361] sw1 SW1(config)# no vlan 160
+[267/360] sw1 SW1(config)# no vlan 160
 <empty>
 
-[269/361] sw1 SW1(config)# no vlan 170
+[268/360] sw1 SW1(config)# no vlan 170
 <empty>
 
-[270/361] sw1 SW1(config)# no vlan 180
+[269/360] sw1 SW1(config)# no vlan 180
 <empty>
 
-[271/361] sw1 SW1(config)# no vlan 190
+[270/360] sw1 SW1(config)# no vlan 190
 <empty>
 
-[272/361] sw1 SW1(config)# no vlan 200
+[271/360] sw1 SW1(config)# no vlan 200
 <empty>
 
-[273/361] sw1 SW1(config)# do show vlan brief
+[272/360] sw1 SW1(config)# do show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Gi0/0
@@ -1219,64 +1226,64 @@ Total steps: 361
   420  VLAN0420                         active    
   999  MGMT                             active    
 
-[274/361] sw1 SW1(config)# end
+[273/360] sw1 SW1(config)# end
 <empty>
 
 
---- [275] § final host verification ---
-[276/361] l1 l1$ ip -br addr
+--- [274] § final host verification ---
+[275/360] l1 l1$ ip -br addr
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
-[277/361] l1 l1$ arp -a
+[276/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
   ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
-[278/361] l2 l2$ ip -br addr
+[277/360] l2 l2$ ip -br addr
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
-[279/361] l2 l2$ arp -a
+[278/360] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
-[280/361] srv1 srv1$ ip -br addr
+[279/360] srv1 srv1$ ip -br addr
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
-[281/361] srv1 srv1$ arp -a
+[280/360] srv1 srv1$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
   ? (192.168.1.23) at 02:00:00:00:00:63 [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
-[282/361] srv2 srv2$ ip -br addr
+[281/360] srv2 srv2$ ip -br addr
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
-[283/361] srv2 srv2$ arp -a
+[282/360] srv2 srv2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
   ? (192.168.1.21) at 02:00:00:00:00:5b [ether] on eth0
   ? (192.168.1.12) at 02:00:00:00:00:53 [ether] on eth0
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
-[284/361] w1 w1$ ipconfig
+[283/360] w1 w1$ ipconfig
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
@@ -1302,7 +1309,7 @@ Total steps: 361
      Media State . . . . . . . . . . . : Media disconnected
   
 
-[285/361] w2 w2$ arp -a
+[284/360] w2 w2$ arp -a
   
   Interface: 192.168.1.22 --- 0x1
     Internet Address      Physical Address      Type
@@ -1312,7 +1319,7 @@ Total steps: 361
     192.168.1.23          02-00-00-00-00-63     dynamic
     192.168.1.12          02-00-00-00-00-53     dynamic
 
-[286/361] sw1 SW1# show vlan brief
+[285/360] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/0, Gi0/0
@@ -1337,15 +1344,12 @@ Total steps: 361
   420  VLAN0420                         active    
   999  MGMT                             active    
 
-[287/361] sw1 SW1# show mac address-table
+[286/360] sw1 SW1# show mac address-table
   Mac Address Table
   -------------------------------------------
   
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
   1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
@@ -1355,9 +1359,9 @@ Total steps: 361
   20      02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 11
+  Total Mac Addresses for this criterion: 8
 
-[288/361] sw1 SW1# show running-config
+[287/360] sw1 SW1# show running-config
   Building configuration...
   
   Current configuration:
@@ -1526,19 +1530,18 @@ Total steps: 361
   interface GigabitEthernet0/1
    switchport mode trunk
    switchport trunk encapsulation dot1q
-   switchport trunk encapsulation dot1q
   !
   end
 
 
---- [289] § extended cross-switch interface inspection appendix ---
-[290/361] sw1 SW1# show interfaces FastEthernet0/0
+--- [288] § extended cross-switch interface inspection appendix ---
+[289/360] sw1 SW1# show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1553,76 +1556,76 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[291/361] sw1 SW1# show interfaces FastEthernet0/1
+[290/360] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       12 packets input, 0 bytes, 0 no buffer
+       12 packets input, 1186 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       24 packets output, 0 bytes, 0 underruns
+       24 packets output, 1878 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[292/361] sw1 SW1# show interfaces FastEthernet0/2
+[291/360] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 0 bytes, 0 no buffer
+       2 packets input, 166 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 0 bytes, 0 underruns
+       15 packets output, 998 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[293/361] sw1 SW1# show interfaces FastEthernet0/3
+[292/360] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 0 bytes, 0 underruns
+       13 packets output, 832 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[294/361] sw1 SW1# show interfaces FastEthernet0/4
+[293/360] sw1 SW1# show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:05 (bia 02:00:00:00:00:05)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1637,13 +1640,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[295/361] sw1 SW1# show interfaces FastEthernet0/5
+[294/360] sw1 SW1# show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:06 (bia 02:00:00:00:00:06)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1658,13 +1661,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[296/361] sw1 SW1# show interfaces FastEthernet0/6
+[295/360] sw1 SW1# show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:07 (bia 02:00:00:00:00:07)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1679,13 +1682,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[297/361] sw1 SW1# show interfaces FastEthernet0/7
+[296/360] sw1 SW1# show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:08 (bia 02:00:00:00:00:08)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1700,13 +1703,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[298/361] sw1 SW1# show interfaces FastEthernet0/8
+[297/360] sw1 SW1# show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:09 (bia 02:00:00:00:00:09)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1721,13 +1724,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[299/361] sw1 SW1# show interfaces FastEthernet0/9
+[298/360] sw1 SW1# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0a (bia 02:00:00:00:00:0a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1742,13 +1745,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[300/361] sw1 SW1# show interfaces FastEthernet0/10
+[299/360] sw1 SW1# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0b (bia 02:00:00:00:00:0b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1763,13 +1766,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[301/361] sw1 SW1# show interfaces FastEthernet0/11
+[300/360] sw1 SW1# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0c (bia 02:00:00:00:00:0c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1784,13 +1787,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[302/361] sw1 SW1# show interfaces FastEthernet0/12
+[301/360] sw1 SW1# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0d (bia 02:00:00:00:00:0d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1805,13 +1808,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[303/361] sw1 SW1# show interfaces FastEthernet0/13
+[302/360] sw1 SW1# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0e (bia 02:00:00:00:00:0e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1826,13 +1829,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[304/361] sw1 SW1# show interfaces FastEthernet0/14
+[303/360] sw1 SW1# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0f (bia 02:00:00:00:00:0f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1847,13 +1850,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[305/361] sw1 SW1# show interfaces FastEthernet0/15
+[304/360] sw1 SW1# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:10 (bia 02:00:00:00:00:10)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1868,13 +1871,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[306/361] sw1 SW1# show interfaces FastEthernet0/16
+[305/360] sw1 SW1# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:11 (bia 02:00:00:00:00:11)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1889,13 +1892,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[307/361] sw1 SW1# show interfaces FastEthernet0/17
+[306/360] sw1 SW1# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:12 (bia 02:00:00:00:00:12)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1910,13 +1913,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[308/361] sw1 SW1# show interfaces FastEthernet0/18
+[307/360] sw1 SW1# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:13 (bia 02:00:00:00:00:13)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1931,13 +1934,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[309/361] sw1 SW1# show interfaces FastEthernet0/19
+[308/360] sw1 SW1# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1952,13 +1955,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[310/361] sw1 SW1# show interfaces FastEthernet0/20
+[309/360] sw1 SW1# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:15 (bia 02:00:00:00:00:15)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1973,13 +1976,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[311/361] sw1 SW1# show interfaces FastEthernet0/21
+[310/360] sw1 SW1# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:16 (bia 02:00:00:00:00:16)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -1994,13 +1997,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[312/361] sw1 SW1# show interfaces FastEthernet0/22
+[311/360] sw1 SW1# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:17 (bia 02:00:00:00:00:17)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2015,13 +2018,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[313/361] sw1 SW1# show interfaces FastEthernet0/23
+[312/360] sw1 SW1# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:18 (bia 02:00:00:00:00:18)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2036,13 +2039,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[314/361] sw2 SW2# show interfaces FastEthernet0/0
+[313/360] sw2 SW2# show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2057,76 +2060,76 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[315/361] sw2 SW2# show interfaces FastEthernet0/1
+[314/360] sw2 SW2# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 0 bytes, 0 no buffer
+       7 packets input, 676 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 0 bytes, 0 underruns
+       23 packets output, 1776 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[316/361] sw2 SW2# show interfaces FastEthernet0/2
+[315/360] sw2 SW2# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 0 bytes, 0 no buffer
+       5 packets input, 472 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 0 bytes, 0 underruns
+       18 packets output, 1304 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[317/361] sw2 SW2# show interfaces FastEthernet0/3
+[316/360] sw2 SW2# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 0 bytes, 0 no buffer
+       1 packets input, 64 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 0 bytes, 0 underruns
+       13 packets output, 832 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[318/361] sw2 SW2# show interfaces FastEthernet0/4
+[317/360] sw2 SW2# show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2141,13 +2144,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[319/361] sw2 SW2# show interfaces FastEthernet0/5
+[318/360] sw2 SW2# show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2162,13 +2165,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[320/361] sw2 SW2# show interfaces FastEthernet0/6
+[319/360] sw2 SW2# show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2183,13 +2186,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[321/361] sw2 SW2# show interfaces FastEthernet0/7
+[320/360] sw2 SW2# show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2204,13 +2207,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[322/361] sw2 SW2# show interfaces FastEthernet0/8
+[321/360] sw2 SW2# show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2225,13 +2228,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[323/361] sw2 SW2# show interfaces FastEthernet0/9
+[322/360] sw2 SW2# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2246,13 +2249,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[324/361] sw2 SW2# show interfaces FastEthernet0/10
+[323/360] sw2 SW2# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:25 (bia 02:00:00:00:00:25)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2267,13 +2270,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[325/361] sw2 SW2# show interfaces FastEthernet0/11
+[324/360] sw2 SW2# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:26 (bia 02:00:00:00:00:26)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2288,13 +2291,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[326/361] sw2 SW2# show interfaces FastEthernet0/12
+[325/360] sw2 SW2# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:27 (bia 02:00:00:00:00:27)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2309,13 +2312,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[327/361] sw2 SW2# show interfaces FastEthernet0/13
+[326/360] sw2 SW2# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:28 (bia 02:00:00:00:00:28)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2330,13 +2333,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[328/361] sw2 SW2# show interfaces FastEthernet0/14
+[327/360] sw2 SW2# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:29 (bia 02:00:00:00:00:29)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2351,13 +2354,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[329/361] sw2 SW2# show interfaces FastEthernet0/15
+[328/360] sw2 SW2# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2a (bia 02:00:00:00:00:2a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2372,13 +2375,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[330/361] sw2 SW2# show interfaces FastEthernet0/16
+[329/360] sw2 SW2# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2b (bia 02:00:00:00:00:2b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2393,13 +2396,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[331/361] sw2 SW2# show interfaces FastEthernet0/17
+[330/360] sw2 SW2# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2c (bia 02:00:00:00:00:2c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2414,13 +2417,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[332/361] sw2 SW2# show interfaces FastEthernet0/18
+[331/360] sw2 SW2# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2d (bia 02:00:00:00:00:2d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2435,13 +2438,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[333/361] sw2 SW2# show interfaces FastEthernet0/19
+[332/360] sw2 SW2# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2e (bia 02:00:00:00:00:2e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2456,13 +2459,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[334/361] sw2 SW2# show interfaces FastEthernet0/20
+[333/360] sw2 SW2# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2f (bia 02:00:00:00:00:2f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2477,13 +2480,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[335/361] sw2 SW2# show interfaces FastEthernet0/21
+[334/360] sw2 SW2# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:30 (bia 02:00:00:00:00:30)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2498,13 +2501,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[336/361] sw2 SW2# show interfaces FastEthernet0/22
+[335/360] sw2 SW2# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:31 (bia 02:00:00:00:00:31)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2519,13 +2522,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[337/361] sw2 SW2# show interfaces FastEthernet0/23
+[336/360] sw2 SW2# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:32 (bia 02:00:00:00:00:32)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2540,13 +2543,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[338/361] core CORE# show interfaces FastEthernet0/0
+[337/360] core CORE# show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:35 (bia 02:00:00:00:00:35)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2561,13 +2564,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[339/361] core CORE# show interfaces FastEthernet0/1
+[338/360] core CORE# show interfaces FastEthernet0/1
   FastEthernet0/1 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:36 (bia 02:00:00:00:00:36)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2582,13 +2585,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[340/361] core CORE# show interfaces FastEthernet0/2
+[339/360] core CORE# show interfaces FastEthernet0/2
   FastEthernet0/2 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:37 (bia 02:00:00:00:00:37)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2603,13 +2606,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[341/361] core CORE# show interfaces FastEthernet0/3
+[340/360] core CORE# show interfaces FastEthernet0/3
   FastEthernet0/3 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:38 (bia 02:00:00:00:00:38)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2624,13 +2627,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[342/361] core CORE# show interfaces FastEthernet0/4
+[341/360] core CORE# show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:39 (bia 02:00:00:00:00:39)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2645,13 +2648,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[343/361] core CORE# show interfaces FastEthernet0/5
+[342/360] core CORE# show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3a (bia 02:00:00:00:00:3a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2666,13 +2669,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[344/361] core CORE# show interfaces FastEthernet0/6
+[343/360] core CORE# show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3b (bia 02:00:00:00:00:3b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2687,13 +2690,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[345/361] core CORE# show interfaces FastEthernet0/7
+[344/360] core CORE# show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3c (bia 02:00:00:00:00:3c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2708,13 +2711,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[346/361] core CORE# show interfaces FastEthernet0/8
+[345/360] core CORE# show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3d (bia 02:00:00:00:00:3d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2729,13 +2732,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[347/361] core CORE# show interfaces FastEthernet0/9
+[346/360] core CORE# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3e (bia 02:00:00:00:00:3e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2750,13 +2753,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[348/361] core CORE# show interfaces FastEthernet0/10
+[347/360] core CORE# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3f (bia 02:00:00:00:00:3f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2771,13 +2774,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[349/361] core CORE# show interfaces FastEthernet0/11
+[348/360] core CORE# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:40 (bia 02:00:00:00:00:40)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2792,13 +2795,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[350/361] core CORE# show interfaces FastEthernet0/12
+[349/360] core CORE# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:41 (bia 02:00:00:00:00:41)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2813,13 +2816,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[351/361] core CORE# show interfaces FastEthernet0/13
+[350/360] core CORE# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:42 (bia 02:00:00:00:00:42)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2834,13 +2837,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[352/361] core CORE# show interfaces FastEthernet0/14
+[351/360] core CORE# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:43 (bia 02:00:00:00:00:43)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2855,13 +2858,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[353/361] core CORE# show interfaces FastEthernet0/15
+[352/360] core CORE# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:44 (bia 02:00:00:00:00:44)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2876,13 +2879,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[354/361] core CORE# show interfaces FastEthernet0/16
+[353/360] core CORE# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:45 (bia 02:00:00:00:00:45)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2897,13 +2900,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[355/361] core CORE# show interfaces FastEthernet0/17
+[354/360] core CORE# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:46 (bia 02:00:00:00:00:46)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2918,13 +2921,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[356/361] core CORE# show interfaces FastEthernet0/18
+[355/360] core CORE# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:47 (bia 02:00:00:00:00:47)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2939,13 +2942,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[357/361] core CORE# show interfaces FastEthernet0/19
+[356/360] core CORE# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:48 (bia 02:00:00:00:00:48)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2960,13 +2963,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[358/361] core CORE# show interfaces FastEthernet0/20
+[357/360] core CORE# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:49 (bia 02:00:00:00:00:49)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2981,13 +2984,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[359/361] core CORE# show interfaces FastEthernet0/21
+[358/360] core CORE# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4a (bia 02:00:00:00:00:4a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3002,13 +3005,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[360/361] core CORE# show interfaces FastEthernet0/22
+[359/360] core CORE# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4b (bia 02:00:00:00:00:4b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3023,13 +3026,13 @@ Total steps: 361
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
-[361/361] core CORE# show interfaces FastEthernet0/23
+[360/360] core CORE# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4c (bia 02:00:00:00:00:4c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never

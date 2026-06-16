@@ -26,6 +26,7 @@ export type StpProtocolMode = 'stp' | 'rstp';
 export interface StpBpdu {
   type: 'stp';
   bpduType: StpBpduType;
+  vlan?: number;
   protocolId: 0x0000;
   version: 0 | 2;
   flags: number;
@@ -62,6 +63,11 @@ export interface StpConfig {
   forwardDelaySec: number;
   baseMac: string;
   bpduGuardGlobal: boolean;
+  portfastDefault: boolean;
+  bpduFilterGlobal: boolean;
+  loopGuardGlobal: boolean;
+  uplinkFast: boolean;
+  backboneFast: boolean;
 }
 
 export interface MstRegion {
@@ -94,6 +100,11 @@ export function createDefaultStpConfig(baseMac: string): StpConfig {
     forwardDelaySec: 15,
     baseMac: baseMac.toLowerCase(),
     bpduGuardGlobal: false,
+    portfastDefault: false,
+    bpduFilterGlobal: false,
+    loopGuardGlobal: false,
+    uplinkFast: false,
+    backboneFast: false,
   };
 }
 
@@ -103,6 +114,14 @@ export function defaultPathCost(speedKbps: number): number {
   if (speedKbps >= 100_000) return 19;
   if (speedKbps >= 10_000) return 100;
   return 200;
+}
+
+export function defaultPathCostLong(speedKbps: number): number {
+  if (speedKbps >= 10_000_000) return 2_000;
+  if (speedKbps >= 1_000_000) return 20_000;
+  if (speedKbps >= 100_000) return 200_000;
+  if (speedKbps >= 10_000) return 2_000_000;
+  return 20_000_000;
 }
 
 export function compareBridge(a: BridgeId, b: BridgeId): number {

@@ -160,6 +160,8 @@ export abstract class Equipment {
    */
   markBootShown(): void { this._bootShown = true; }
 
+  clearBootShown(): void { this._bootShown = false; }
+
   powerOn(): void {
     const wasOn = this.isPoweredOn;
     this.isPoweredOn = true;

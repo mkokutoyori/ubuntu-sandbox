@@ -20,6 +20,7 @@
 import {
   MACAddress, IPAddress, SubnetMask, EthernetFrame, PortInfo, ConnectionType, IPv6Address,
   PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS, PortViolationMode,
+  ethernetFrameBytes,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { PortSecurity } from './PortSecurity';
@@ -634,6 +635,7 @@ export class Port {
     }
 
     this.counters.framesOut++;
+    this.counters.bytesOut += ethernetFrameBytes(frame);
     Logger.debug(this.equipmentId, 'port:send',
       `${this.name}: sending frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
@@ -667,6 +669,7 @@ export class Port {
     }
 
     this.counters.framesIn++;
+    this.counters.bytesIn += ethernetFrameBytes(frame);
     Logger.debug(this.equipmentId, 'port:recv',
       `${this.name}: received frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });

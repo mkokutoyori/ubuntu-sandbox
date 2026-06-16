@@ -615,6 +615,18 @@ export interface EthernetFrame {
   payload: ARPPacket | IPv4Packet | IPv6Packet | unknown;
 }
 
+export function ethernetFrameBytes(frame: EthernetFrame): number {
+  let overhead = 18;
+  if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;
+  const p = frame.payload as { totalLength?: number; payloadLength?: number } | undefined;
+  let payloadBytes: number;
+  if (frame.etherType === ETHERTYPE_ARP) payloadBytes = 28;
+  else if (frame.etherType === ETHERTYPE_IPV4 && typeof p?.totalLength === 'number') payloadBytes = p.totalLength;
+  else if (frame.etherType === ETHERTYPE_IPV6 && typeof p?.payloadLength === 'number') payloadBytes = 40 + p.payloadLength;
+  else payloadBytes = 46;
+  return Math.max(64, overhead + payloadBytes);
+}
+
 // ─── L3: IPv4 Packet (RFC 791) ──────────────────────────────────────
 
 /** IPv4 protocol numbers */

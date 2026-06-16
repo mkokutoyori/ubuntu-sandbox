@@ -30,6 +30,7 @@ describe('debug-dump: cisco-l2-03-trunk-dtp-vtp', () => {
     s.push({ on: 'sw1', cmd: 'vtp password secret123' });
     s.push({ on: 'sw1', cmd: 'do show vtp status' });
     s.push({ on: 'sw1', cmd: 'end' });
+    s.push({ on: 'sw2', cmd: 'enable' });
     s.push({ on: 'sw2', cmd: 'configure terminal' });
     s.push({ on: 'sw2', cmd: 'vtp domain LAB' });
     s.push({ on: 'sw2', cmd: 'vtp mode transparent' });

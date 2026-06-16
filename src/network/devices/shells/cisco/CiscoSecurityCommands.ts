@@ -202,6 +202,11 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
   trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
+    const dev = ctx.r() as unknown as { getManagementService?: () => { domainName?: string } };
+    const domain = dev.getManagementService?.().domainName ?? '';
+    if (!domain) {
+      return '% Please define a domain-name first.';
+    }
     let modulus = 1024;
     let label = 'default';
     let general = false;

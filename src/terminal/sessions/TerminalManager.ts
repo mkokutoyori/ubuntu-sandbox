@@ -227,7 +227,10 @@ export class TerminalManager {
     if (deviceSessions) {
       const idx = deviceSessions.indexOf(sessionId);
       if (idx >= 0) deviceSessions.splice(idx, 1);
-      if (deviceSessions.length === 0) this.deviceSessions.delete(deviceId);
+      if (deviceSessions.length === 0) {
+        this.deviceSessions.delete(deviceId);
+        session.device.clearBootShown();
+      }
     }
 
     this.notify();

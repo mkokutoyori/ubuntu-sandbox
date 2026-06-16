@@ -171,10 +171,9 @@ describe('STP port path cost reflects link speed (Table 17-3)', () => {
   it('getPortCost derives the cost from the real interface speed', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const ag = sw.getStpAgent();
-    // Ports default to 1000 Mbps (Gigabit) → cost 4, not the old hard-coded 19.
-    expect(ag.getPortCost('FastEthernet0/0')).toBe(4);
-    sw.getPort('FastEthernet0/0')!.setSpeed(100);
     expect(ag.getPortCost('FastEthernet0/0')).toBe(19);
+    sw.getPort('FastEthernet0/0')!.setSpeed(1000);
+    expect(ag.getPortCost('FastEthernet0/0')).toBe(4);
     sw.getPort('FastEthernet0/0')!.setSpeed(10000);
     expect(ag.getPortCost('FastEthernet0/0')).toBe(2);
   });
@@ -189,8 +188,7 @@ describe('STP port path cost reflects link speed (Table 17-3)', () => {
 
     const out = await sw.executeCommand('show spanning-tree');
     expect(out).toContain('Back');             // backup role is rendered
-    expect(out).toMatch(/Desg\s+FWD\s+4\b/);   // real Gigabit cost, not 19
-    expect(out).not.toMatch(/\b19\b/);         // the constant is gone
+    expect(out).toMatch(/Desg\s+FWD\s+19\b/);  // real FastEthernet cost
   });
 });
 
@@ -207,7 +205,9 @@ describe('STP link type (RSTP operPointToPoint, 802.1D-2004 §6.4.3)', () => {
     const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     root.getStpAgent().setBridgePriority(0);
+    const edge = new CiscoSwitch('switch-cisco', 'EDGE', 4);
     new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(sw2.getPort('FastEthernet0/1')!, edge.getPort('FastEthernet0/0')!);
     sw2.getPort('FastEthernet0/0')!.setDuplex('half');
     sw2.getStpAgent().setPortFast('FastEthernet0/1', true);
     await sw2.executeCommand('enable');

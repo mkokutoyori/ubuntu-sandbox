@@ -62,7 +62,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── ISwitchShell ────────────────────────────────────────────────
 
   execute(sw: Switch, input: string): string {
-    return this.executeOnDevice(sw, input) as string;
+    const stpDebug = [...this.debugFlags].some(
+      (f) => f.toLowerCase().includes('spanning tree') || f.toLowerCase().includes('all '));
+    const before = stpDebug ? new Map(sw._getSTPStates()) : null;
+    let out = this.executeOnDevice(sw, input) as string;
+    if (before) {
+      const events = this.stpDebugEvents(sw, before);
+      if (events) out = out ? `${out}\n${events}` : events;
+    }
+    return out;
+  }
+
+  private stpDebugEvents(sw: Switch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
+    const stamp = new Date().toISOString().slice(11, 19);
+    const lines: string[] = [];
+    for (const [port, state] of sw._getSTPStates()) {
+      if (before.get(port) === state) continue;
+      const cfg = sw.getSwitchportConfig(port);
+      const vlan = cfg && cfg.mode !== 'trunk' ? cfg.accessVlan : 1;
+      lines.push(`*${stamp}: STP: VLAN${String(vlan).padStart(4, '0')} ${this.abbreviateInterface(port)} -> ${state}`);
+    }
+    return lines.join('\n');
   }
 
   getPrompt(sw: Switch): string {
@@ -323,9 +343,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         lines.push('--------------- ---------------- -------------- -----------');
         for (const p of ports) {
           const s = dtp.getPortState(p);
+          const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
           lines.push(
             `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
-            `${s.operationalMode.padEnd(15)}${s.adminMode === 'nonegotiate' ? 'off' : 'on'}`,
+            `${s.operationalMode.padEnd(15)}${negotiation}`,
           );
         }
         return lines.join('\n');
@@ -695,11 +716,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show vtp password', 'Display the VTP password', () => {
+        const cfg = this.d().getVtpAgent().getConfig();
+        return cfg.password
+          ? `VTP Password: ${cfg.password}`
+          : 'The VTP password is not configured.';
+      });
       t.register('show vtp status', 'Display VTP status', () => {
         const cfg = this.d().getVtpAgent().getConfig();
         const numVlans = this.d().getVLANs().size;
         return [
-          `VTP Version capable             : 1 to ${cfg.version}`,
+          `VTP Version capable             : 1 to 2`,
           `VTP version running             : ${cfg.version}`,
           `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
           `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
@@ -877,29 +904,66 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           m === 'rapid-pvst' || m === 'mst' ? 'rstp' : 'stp');
       }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
+        const vlan = parseInt(args[1] ?? '', 10);
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
         const agent = this.d().getStpAgent();
-        if (knob === 'priority' && !isNaN(n)) agent.setBridgePriority(n);
-        else if (knob === 'hello-time' && !isNaN(n)) agent.setHelloSec(n);
-        else if (knob === 'max-age' && !isNaN(n)) agent.setMaxAgeSec(n);
-        else if (knob === 'forward-time' && !isNaN(n)) agent.setForwardDelaySec(n);
+        if (isNaN(vlan)) return "% Invalid input detected at '^' marker.";
+        if (knob === 'priority' && !isNaN(n)) agent.setVlanPriority(vlan, n);
+        else if (knob === 'hello-time' && !isNaN(n)) agent.setVlanHelloSec(vlan, n);
+        else if (knob === 'max-age' && !isNaN(n)) agent.setVlanMaxAgeSec(vlan, n);
+        else if (knob === 'forward-time' && !isNaN(n)) agent.setVlanForwardDelaySec(vlan, n);
+        else if (knob === 'root') {
+          const kind = args[3]?.toLowerCase();
+          if (kind === 'primary') agent.setVlanPriority(vlan, 24576);
+          else if (kind === 'secondary') agent.setVlanPriority(vlan, 28672);
+        }
       }
       if (args[0]?.toLowerCase() === 'priority') {
         const n = parseInt(args[1] ?? '', 10);
         if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
       }
-      if (args[0]?.toLowerCase() === 'portfast'
-          && args[1]?.toLowerCase() === 'bpduguard'
-          && args[2]?.toLowerCase() === 'default') {
-        this.d().getStpAgent().setBpduGuardGlobal(true);
+      if (args[0]?.toLowerCase() === 'portfast') {
+        const sub = args[1]?.toLowerCase();
+        const agent = this.d().getStpAgent();
+        if (sub === 'default') agent.setPortfastDefault(true);
+        else if (sub === 'bpduguard' && args[2]?.toLowerCase() === 'default') agent.setBpduGuardGlobal(true);
+        else if (sub === 'bpdufilter' && args[2]?.toLowerCase() === 'default') agent.setBpduFilterGlobal(true);
+      }
+      if (args[0]?.toLowerCase() === 'loopguard' && args[1]?.toLowerCase() === 'default') {
+        this.d().getStpAgent().setLoopGuardGlobal(true);
+      }
+      if (args[0]?.toLowerCase() === 'uplinkfast') this.d().getStpAgent().setUplinkFast(true);
+      if (args[0]?.toLowerCase() === 'backbonefast') this.d().getStpAgent().setBackboneFast(true);
+      if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
+        const m = args[2]?.toLowerCase();
+        if (m !== 'long' && m !== 'short') return "% Invalid input detected at '^' marker.";
+        this.d().getStpAgent().setPathcostMethod(m);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
+      if (args[1]?.toLowerCase() === 'priority') {
+        const inst = parseInt(args[0] ?? '', 10);
+        const prio = parseInt(args[2] ?? '', 10);
+        if (isNaN(inst) || isNaN(prio)) return "% Invalid input detected at '^' marker.";
+        this.d().getStpAgent().setMstInstancePriority(inst, prio);
       }
       return '';
     });
     this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
-      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
-        this.d().getStpAgent().setEnabled(false);
-      }
+      const agent = this.d().getStpAgent();
+      const a0 = args[0]?.toLowerCase();
+      if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
+      else if (a0 === 'portfast') {
+        const sub = args[1]?.toLowerCase();
+        if (sub === 'default') agent.setPortfastDefault(false);
+        else if (sub === 'bpduguard') agent.setBpduGuardGlobal(false);
+        else if (sub === 'bpdufilter') agent.setBpduFilterGlobal(false);
+      } else if (a0 === 'loopguard') agent.setLoopGuardGlobal(false);
+      else if (a0 === 'uplinkfast') agent.setUplinkFast(false);
+      else if (a0 === 'backbonefast') agent.setBackboneFast(false);
+      else if (a0 === 'pathcost') agent.setPathcostMethod('short');
       return '';
     });
 
@@ -952,11 +1016,15 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (!isNaN(id)) this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
       return '';
     });
-    this.configMstTrie.register('show current', 'Show pending MST config', () =>
+    this.configMstTrie.register('show current', 'Show current MST config', () =>
+      this.showMstConfig());
+    this.configMstTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
     // The base redirects `show …` in config modes to the privileged
     // trie, so `show current` must also resolve there.
-    this.privilegedTrie.register('show current', 'Show pending MST config', () =>
+    this.privilegedTrie.register('show current', 'Show current MST config', () =>
+      this.showMstConfig());
+    this.privilegedTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
     this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
       const head = args[0]?.toLowerCase();
@@ -979,21 +1047,32 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const sw = this.d();
         const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
         const stpStates = sw._getSTPStates();
+        const ports = sw._getPortsInternal();
         const isRoot = agent?.isRoot() ?? false;
         const rootForVlan = isRoot ? 'VLAN0001' : 'none';
         let blocking = 0, listening = 0, learning = 0, forwarding = 0;
-        for (const state of stpStates.values()) {
+        for (const [name, state] of stpStates) {
+          const port = ports.get(name);
+          if (!port || !port.getIsUp() || !port.isConnected()) continue;
           if (state === 'blocking') blocking++;
           else if (state === 'listening') listening++;
           else if (state === 'learning') learning++;
           else if (state === 'forwarding') forwarding++;
         }
         const total = blocking + listening + learning + forwarding;
+        const g = agent?.getGlobalStp();
+        const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
         return [
           `Switch is in ${this.stpMode} mode`,
           `Root bridge for: ${rootForVlan}`,
           `Extended system ID           is enabled`,
-          `Portfast Default             is disabled`,
+          `Portfast Default             ${onOff(g?.portfastDefault)}`,
+          `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
+          `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
+          `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
+          `UplinkFast                   ${onOff(g?.uplinkFast)}`,
+          `BackboneFast                 ${onOff(g?.backboneFast)}`,
+          `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
           ``,
           `Name                   Blocking Listening Learning Forwarding STP Active`,
           `---------------------- -------- --------- -------- ---------- ----------`,
@@ -1040,6 +1119,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           `Number of inconsistent ports (segments) in the system : ${bad.length}`,
         ].join('\n');
       });
+      t.register('show spanning-tree active', 'STP state on active interfaces', () =>
+        this.showSpanningTree(this.d()));
+      t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
+        `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
+      t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
+        if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
+        if (!a[0]) return this.showMstInstances();
+        const id = parseInt(a[0], 10);
+        if (isNaN(id)) return "% Invalid input detected at '^' marker.";
+        return this.showMstInstances(id);
+      });
       t.register('show debugging', 'Display active debugging', () => {
         if (this.debugFlags.size === 0) return 'No debugging is enabled';
         return [...this.debugFlags].sort().join('\n');
@@ -1047,7 +1137,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
         const what = a.join(' ') || 'all';
         this.debugFlags.add(`Spanning Tree ${what} debugging is on`);
+        this.switchDebug()?.enable(what);
         return `Spanning Tree ${what} debugging is on`;
+      });
+      t.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
+        const what = a.join(' ') || 'all';
+        for (const f of [...this.debugFlags]) if (f.startsWith('Spanning Tree')) this.debugFlags.delete(f);
+        this.switchDebug()?.disable(what);
+        return `Spanning Tree ${what} debugging is off`;
       });
       t.registerGreedy('debug', 'Enable debugging', (a) => {
         const what = a.join(' ') || 'all';
@@ -1056,13 +1153,19 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       });
       t.registerGreedy('undebug', 'Disable debugging', () => {
         this.debugFlags.clear();
+        this.switchDebug()?.disableAll();
         return 'All possible debugging has been turned off';
       });
       t.register('no debug all', 'Disable debugging', () => {
         this.debugFlags.clear();
+        this.switchDebug()?.disableAll();
         return 'All possible debugging has been turned off';
       });
     }
+  }
+
+  private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {
+    return (this.d() as unknown as { getDebugService?: () => import('../switch/SwitchDebugService').SwitchDebugService }).getDebugService?.();
   }
 
   private showMstConfig(): string {
@@ -1079,6 +1182,49 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ];
     for (const [id, v] of instances) ml.push(`${String(id).padEnd(10)}${v}`);
     return ml.join('\n');
+  }
+
+  private showMstInstances(filter?: number): string {
+    const sw = this.d();
+    const agent = this.stpAgentOf(sw);
+    if (!agent) return '';
+    const region = agent.getMstRegion();
+    const mac = this.formatMacCisco(new MACAddress(agent.ownBridgeId().mac));
+    const ports = sw._getPortsInternal();
+    const ids = [0, ...[...region.instances.keys()].sort((a, b) => a - b)];
+    const blocks: string[] = [];
+    for (const id of ids) {
+      if (filter !== undefined && id !== filter) continue;
+      const mapped = id === 0
+        ? (region.instances.size ? 'all VLANs not explicitly mapped' : '1-4094')
+        : (region.instances.get(id) ?? '');
+      const prio = agent.getMstInstancePriority(id);
+      const block = [
+        `##### MST${id}    vlans mapped:   ${mapped}`,
+        `Bridge        address ${mac}  priority  ${prio + id} (${prio} sysid ${id})`,
+        '',
+        'Interface        Role  Sts  Cost      Prio.Nbr  Type',
+        '---------------- ----  ---  --------  --------  ----',
+      ];
+      let idx = 0;
+      for (const name of sw.getPortNames()) {
+        idx += 1;
+        const port = ports.get(name);
+        if (!port || !port.getIsUp() || !port.isConnected()) continue;
+        const role = agent.getPortRole(name);
+        const roleLabel = role === 'root' ? 'Root' : role === 'alternate' ? 'Altn'
+          : role === 'backup' ? 'Back' : 'Desg';
+        const sts = sw._getSTPStates().get(name) === 'forwarding' ? 'FWD' : 'BLK';
+        const cost = agent.getPortCost(name);
+        const linkType = agent.getPortLinkType(name) === 'shared' ? 'Shr' : 'P2p';
+        block.push(`${this.abbreviateInterface(name).padEnd(17)}${roleLabel.padEnd(6)}${sts.padEnd(5)}${String(cost).padEnd(10)}${`128.${idx}`.padEnd(10)}${linkType}`);
+      }
+      blocks.push(block.join('\n'));
+    }
+    if (filter !== undefined && blocks.length === 0) {
+      return `% MST instance ${filter} is not configured`;
+    }
+    return blocks.join('\n\n');
   }
 
   private resolvePortName(input: string): string | null {
@@ -1142,16 +1288,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      const rows = ['Port        Mode             Encapsulation  Status        Native vlan'];
-      for (const p of this.d().getPortNames()) {
-        const c = this.d().getSwitchportConfig(p);
-        if (c && c.mode === 'trunk') {
-          rows.push(
-            `${this.abbreviateInterface(p).padEnd(12)}${'on'.padEnd(17)}` +
-            `${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${c.trunkNativeVlan}`);
-        }
-      }
-      return rows.join('\n');
+      return this.showTrunkTable(this.d().getPortNames());
     });
 
     this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
@@ -1211,14 +1348,38 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       if (last === 'counters') {
         const target = args.slice(0, -1).join(' ');
-        const name = target ? this.resolveInterfaceName(target) : null;
-        return this.showInterfacesCounters(name);
+        if (target) {
+          const name = this.resolveInterfaceName(target);
+          if (!name || !this.d().getPort(name)) {
+            return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          }
+          return this.showInterfacesCounters(name);
+        }
+        return this.showInterfacesCounters(null);
       }
       if (last === 'description') return this.showInterfacesDescriptionTable();
+      if (last === 'trunk' && args.length > 1) {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+        }
+        return this.showTrunkTable([name]);
+      }
       if (args.length === 1 && last === 'status') return this.showInterfacesStatus(this.d());
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name);
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+    });
+
+    this.privilegedTrie.register('show vlan summary', 'Display VLAN count summary', () => {
+      const ids = [...this.d().getVLANs().keys()];
+      const extended = ids.filter((id) => id >= 1006).length;
+      const normal = ids.length - extended;
+      return [
+        `Number of existing VLANs          : ${ids.length}`,
+        `Number of existing VTP VLANs      : ${normal}`,
+        `Number of existing extended VLANs : ${extended}`,
+      ].join('\n');
     });
 
     this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
@@ -1250,6 +1411,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
           out.push(` switchport access vlan ${cfg.accessVlan}`);
         }
+        if (cfg.voiceVlan !== undefined) out.push(` switchport voice vlan ${cfg.voiceVlan}`);
       }
       for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
@@ -1535,8 +1697,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const recordIf = (line: string) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const verb = line.split(' ').slice(0, 3).join(' ');
       for (const i of ifs) {
-        const l = this.ifExtra.get(i) ?? [];
+        const l = (this.ifExtra.get(i) ?? []).filter(
+          (existing) => existing.split(' ').slice(0, 3).join(' ') !== verb);
         l.push(line);
         this.ifExtra.set(i, l);
       }
@@ -1561,8 +1725,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     };
-    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () =>
-      removeIf('switchport voice'));
+    this.configIfTrie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const kw = args[0].toLowerCase();
+      const v = parseInt(args[0], 10);
+      if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const cfg = this.d().getSwitchportConfig(i);
+        if (cfg) cfg.voiceVlan = isNaN(v) ? undefined : v;
+      }
+      return '';
+    });
+    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () => {
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const cfg = this.d().getSwitchportConfig(i);
+        if (cfg) cfg.voiceVlan = undefined;
+      }
+      return removeIf('switchport voice');
+    });
 
     this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
       if (args.length < 1) return '% Incomplete command.';
@@ -1757,6 +1941,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       } else if (cfg.accessVlan !== 1) {
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
+      if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
       if (dai.trustedPorts.has(portName)) {
@@ -1850,22 +2035,60 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return sw.getPortNames().map((n) => showInterface(sw, n)).join('\n');
   }
 
+  private showTrunkTable(portNames: string[]): string {
+    const sw = this.d();
+    const dtp = sw.getDtpAgent();
+    const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
+    const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
+    for (const p of portNames) {
+      const c = sw.getSwitchportConfig(p);
+      if (c && dtp.getOperationalMode(p) === 'trunk') {
+        trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
+      }
+    }
+    const lines = ['Port        Mode             Encapsulation  Status        Native vlan'];
+    for (const t of trunks) {
+      lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
+    }
+    if (trunks.length === 0) return lines.join('\n');
+    const allowedStr = (a: Set<number>) =>
+      a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
+    const activeStr = (a: Set<number>) =>
+      this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
+    lines.push('', 'Port        Vlans allowed on trunk');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
+    lines.push('', 'Port        Vlans allowed and active in management domain');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    return lines.join('\n');
+  }
+
   private showSwitchportDetail(name: string): string {
     const c = this.d().getSwitchportConfig(name);
-    const mode = c?.mode === 'trunk' ? 'trunk' : 'static access';
-    const oper = c?.mode ?? 'access';
+    const dtp = this.d().getDtpAgent();
+    const admin = dtp.getAdminMode(name);
+    const oper = dtp.getOperationalMode(name);
+    const adminLabel =
+      admin === 'trunk' || admin === 'nonegotiate' ? 'trunk'
+      : admin === 'dynamic-auto' ? 'dynamic auto'
+      : admin === 'dynamic-desirable' ? 'dynamic desirable'
+      : 'static access';
+    const operLabel = oper === 'trunk' ? 'trunk' : 'static access';
+    const negotiation = admin === 'access' || admin === 'nonegotiate' ? 'Off' : 'On';
+    const nativeVlan = c?.trunkNativeVlan ?? 1;
     const lines = [
       `Name: ${this.abbreviateInterface(name)}`,
       `Switchport: Enabled`,
-      `Administrative Mode: ${mode}`,
-      `Operational Mode: ${oper}`,
+      `Administrative Mode: ${adminLabel}`,
+      `Operational Mode: ${operLabel}`,
       `Administrative Trunking Encapsulation: dot1q`,
-      `Negotiation of Trunking: ${c?.mode === 'trunk' ? 'On' : 'Off'}`,
+      `Negotiation of Trunking: ${negotiation}`,
       `Access Mode VLAN: ${c?.accessVlan ?? 1} (${this.d().getVLANs().get(c?.accessVlan ?? 1)?.name ?? 'default'})`,
-      `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1} (default)`,
+      `Trunking Native Mode VLAN: ${nativeVlan}${nativeVlan === 1 ? ' (default)' : ''}`,
     ];
-    if (c?.mode === 'trunk') {
-      const allowed = c.trunkAllowedVlans.size >= 4094
+    if (oper === 'trunk') {
+      const allowed = !c || c.trunkAllowedVlans.size >= 4094
         ? 'ALL' : this.compactVlanList(Array.from(c.trunkAllowedVlans).sort((a, b) => a - b));
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }
@@ -1929,11 +2152,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private showSpanningTree(sw: Switch, vlanId = 1): string {
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
-    const root = agent?.getRootBridge();
-    const cost = agent?.getRootPathCost() ?? 0;
-    const rootPort = agent?.getRootPort();
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const rootPrio = root ? root.priority + 1 : 32769;
+    const rootPrio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
     const lines = [
       `VLAN${String(vlanId).padStart(4, '0')}`,
       '  Spanning tree enabled protocol ieee',
@@ -1947,9 +2171,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       'Interface        Role  Sts  Cost      Prio.Nbr  Type',
       '---------------- ----  ---  --------  --------  ----',
     ];
-    for (const [portName, state] of stpStates) {
+    const portIndex = new Map<string, number>();
+    let idx = 0;
+    for (const name of sw.getPortNames()) { idx += 1; portIndex.set(name, idx); }
+    const ports = sw._getPortsInternal();
+    for (const [portName] of stpStates) {
+      const port = ports.get(portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       const shortName = this.abbreviateInterface(portName).padEnd(17);
-      const stpRole = agent?.getPortRole(portName) ?? 'designated';
+      const stpRole = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
       const role =
         stpRole === 'root' ? 'Root'
         : stpRole === 'alternate' ? 'Altn'
@@ -1964,7 +2196,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const portCost = agent?.getPortCost(portName) ?? 19;
       const linkType = agent?.getPortLinkType(portName) === 'shared' ? 'Shr' : 'P2p';
       const edge = agent?.isPortFastOperational(portName) ? ' Edge' : '';
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}128.${portName.replace(/\D/g, '').padEnd(6)}${linkType}${edge}`);
+      const prioNbr = `128.${portIndex.get(portName) ?? 1}`;
+      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}${prioNbr.padEnd(10)}${linkType}${edge}`);
     }
     return lines.join('\n');
   }
@@ -1975,7 +2208,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private stpSummaryCounts(sw: Switch): string {
     let blk = 0, lis = 0, lrn = 0, fwd = 0;
-    for (const [, state] of sw._getSTPStates()) {
+    const ports = sw._getPortsInternal();
+    for (const [name, state] of sw._getSTPStates()) {
+      const port = ports.get(name);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (state === 'blocking') blk++;
       else if (state === 'listening') lis++;
       else if (state === 'learning') lrn++;
@@ -1987,17 +2223,21 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showStpRoot(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
-    const root = agent?.getRootBridge();
-    const cost = agent?.getRootPathCost() ?? 0;
-    const rootPort = agent?.getRootPort();
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const mac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const prio = root ? root.priority + vlanId : 32768 + vlanId;
+    const prio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
+    const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
+    const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
+    const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
     const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
     return [
       '                                        Root    Hello Max Fwd',
       'Vlan             Root ID              Cost    Port    Time  Age Dly',
       '---------------- -------------------- ------- ------- ----- --- ---',
-      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}2     20  15`,
+      `${vlan.padEnd(17)}${prio} ${mac}  ${String(cost).padEnd(8)}${(rootPort ? this.abbreviateInterface(rootPort) : '').padEnd(8)}${String(hello).padEnd(6)}${String(maxAge).padEnd(4)}${fwd}`,
     ].join('\n');
   }
 
@@ -2005,21 +2245,26 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const agent = this.stpAgentOf(sw);
     const own = agent?.ownBridgeId();
     const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
-    const prio = (own ? own.priority : 32768) + vlanId;
+    const prio = (agent?.getVlanPriority(vlanId) ?? 32768) + vlanId;
+    const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
+    const maxAge = agent?.getVlanMaxAgeSec(vlanId) ?? 20;
+    const fwd = agent?.getVlanForwardDelaySec(vlanId) ?? 15;
     const vlan = `VLAN${String(vlanId).padStart(4, '0')}`;
     return [
       '                                                   Hello  Max  Fwd',
       'Vlan             Bridge ID                          Time  Age  Dly  Protocol',
       '---------------- ---------------------------------- -----  ---  ---  --------',
-      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  2     20   15   ieee`,
+      `${vlan.padEnd(17)}${prio} (${prio - vlanId}, ${vlanId})  ${mac}  ${String(hello).padEnd(6)}${String(maxAge).padEnd(5)}${String(fwd).padEnd(5)}ieee`,
     ].join('\n');
   }
 
   private showStpBlockedPorts(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const blocked: string[] = [];
-    for (const [portName, state] of sw._getSTPStates()) {
-      const role = agent?.getPortRole(portName);
+    for (const [portName] of sw._getSTPStates()) {
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const role = agent?.getPortRoleForVlan(vlanId, portName);
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       if (state === 'blocking' || role === 'alternate' || role === 'backup') {
         blocked.push(this.abbreviateInterface(portName));
       }
@@ -2036,24 +2281,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showStpDetail(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
-    const isRoot = agent?.isRoot() ?? true;
-    const root = agent?.getRootBridge();
-    const own = agent?.ownBridgeId();
-    const cost = agent?.getRootPathCost() ?? 0;
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const own = agent?.ownBridgeId(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
     const rootMac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
     const ownMac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
     const out: string[] = [
       ` VLAN${String(vlanId).padStart(4, '0')} is executing the ${this.stpMode} compatible Spanning Tree protocol`,
-      `  Bridge Identifier has priority ${own ? own.priority : 32768}, sysid ${vlanId}, address ${ownMac}`,
+      `  Bridge Identifier has priority ${agent?.getVlanPriority(vlanId) ?? 32768}, sysid ${vlanId}, address ${ownMac}`,
       isRoot
         ? '  We are the root of the spanning tree'
         : `  Current root has priority ${root ? root.priority : 32768}, address ${rootMac}`,
-      `  Root port is ${agent?.getRootPort() ? this.abbreviateInterface(agent.getRootPort()!) : 'N/A'}, cost of root path is ${cost}`,
+      `  Root port is ${rootPort ? this.abbreviateInterface(rootPort) : 'N/A'}, cost of root path is ${cost}`,
       '  Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec',
       '',
     ];
-    for (const [portName, state] of sw._getSTPStates()) {
-      const role = agent?.getPortRole(portName) ?? 'designated';
+    for (const [portName] of sw._getSTPStates()) {
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const role = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       out.push(
         ` Port ${portName} of VLAN${String(vlanId).padStart(4, '0')} is ${role} ${state}`,
         `   Port path cost 19, Port priority 128`,
