@@ -3479,3 +3479,16 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - État réel uniquement (StpAgent : pathcost method, priorités d'instance,
   région MST) ; aucun hardcode, aucun commentaire.
 - Non-régression : network-v2 — 7117 verts ; tsc propre.
+
+## Entrée 63 — Fichier 4 Lot 2 : options STP globales avec vrai état
+
+- `spanning-tree portfast default`, `portfast bpdufilter default`,
+  `loopguard default`, `uplinkfast`, `backbonefast` étaient acceptés mais
+  sans effet. Désormais stockés sur `StpConfig`/`StpAgent` (setters dédiés +
+  `getGlobalStp`) et reflétés dans `show spanning-tree summary` (Portfast
+  Default / BPDU Guard / BPDU Filter / Loopguard / UplinkFast / BackboneFast /
+  Configured Pathcost method). Émis aussi dans la running-config
+  (`runningConfigGlobalLines`). Formes `no ...` gérées.
+- `pathcost method` (Lot 1) inclus dans le résumé + running-config.
+- État réel uniquement ; aucun hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; tsc propre.

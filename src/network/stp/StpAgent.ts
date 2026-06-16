@@ -239,6 +239,25 @@ export class StpAgent extends ReactiveAgentBase {
     this.config.bpduGuardGlobal = on;
   }
 
+  setPortfastDefault(on: boolean): void { this.config.portfastDefault = on; }
+  setBpduFilterGlobal(on: boolean): void { this.config.bpduFilterGlobal = on; }
+  setLoopGuardGlobal(on: boolean): void { this.config.loopGuardGlobal = on; }
+  setUplinkFast(on: boolean): void { this.config.uplinkFast = on; }
+  setBackboneFast(on: boolean): void { this.config.backboneFast = on; }
+  getGlobalStp(): {
+    portfastDefault: boolean; bpduGuardGlobal: boolean; bpduFilterGlobal: boolean;
+    loopGuardGlobal: boolean; uplinkFast: boolean; backboneFast: boolean;
+  } {
+    return {
+      portfastDefault: this.config.portfastDefault,
+      bpduGuardGlobal: this.config.bpduGuardGlobal,
+      bpduFilterGlobal: this.config.bpduFilterGlobal,
+      loopGuardGlobal: this.config.loopGuardGlobal,
+      uplinkFast: this.config.uplinkFast,
+      backboneFast: this.config.backboneFast,
+    };
+  }
+
   clearRootInconsistent(portName: string): void {
     if (!this.rootInconsistent.delete(portName)) return;
     this.getBus().publish({
@@ -284,6 +303,13 @@ export class StpAgent extends ReactiveAgentBase {
     if (this.config.forwardDelaySec !== 15) {
       out.push(`spanning-tree vlan 1 forward-time ${this.config.forwardDelaySec}`);
     }
+    if (this.config.portfastDefault) out.push('spanning-tree portfast default');
+    if (this.config.bpduGuardGlobal) out.push('spanning-tree portfast bpduguard default');
+    if (this.config.bpduFilterGlobal) out.push('spanning-tree portfast bpdufilter default');
+    if (this.config.loopGuardGlobal) out.push('spanning-tree loopguard default');
+    if (this.config.uplinkFast) out.push('spanning-tree uplinkfast');
+    if (this.config.backboneFast) out.push('spanning-tree backbonefast');
+    if (this.pathcostMethod === 'long') out.push('spanning-tree pathcost method long');
     return out;
   }
 

@@ -896,11 +896,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const n = parseInt(args[1] ?? '', 10);
         if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
       }
-      if (args[0]?.toLowerCase() === 'portfast'
-          && args[1]?.toLowerCase() === 'bpduguard'
-          && args[2]?.toLowerCase() === 'default') {
-        this.d().getStpAgent().setBpduGuardGlobal(true);
+      if (args[0]?.toLowerCase() === 'portfast') {
+        const sub = args[1]?.toLowerCase();
+        const agent = this.d().getStpAgent();
+        if (sub === 'default') agent.setPortfastDefault(true);
+        else if (sub === 'bpduguard' && args[2]?.toLowerCase() === 'default') agent.setBpduGuardGlobal(true);
+        else if (sub === 'bpdufilter' && args[2]?.toLowerCase() === 'default') agent.setBpduFilterGlobal(true);
       }
+      if (args[0]?.toLowerCase() === 'loopguard' && args[1]?.toLowerCase() === 'default') {
+        this.d().getStpAgent().setLoopGuardGlobal(true);
+      }
+      if (args[0]?.toLowerCase() === 'uplinkfast') this.d().getStpAgent().setUplinkFast(true);
+      if (args[0]?.toLowerCase() === 'backbonefast') this.d().getStpAgent().setBackboneFast(true);
       if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
         const m = args[2]?.toLowerCase();
         if (m !== 'long' && m !== 'short') return "% Invalid input detected at '^' marker.";
@@ -918,9 +925,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
     this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
-      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
-        this.d().getStpAgent().setEnabled(false);
-      }
+      const agent = this.d().getStpAgent();
+      const a0 = args[0]?.toLowerCase();
+      if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
+      else if (a0 === 'portfast') {
+        const sub = args[1]?.toLowerCase();
+        if (sub === 'default') agent.setPortfastDefault(false);
+        else if (sub === 'bpduguard') agent.setBpduGuardGlobal(false);
+        else if (sub === 'bpdufilter') agent.setBpduFilterGlobal(false);
+      } else if (a0 === 'loopguard') agent.setLoopGuardGlobal(false);
+      else if (a0 === 'uplinkfast') agent.setUplinkFast(false);
+      else if (a0 === 'backbonefast') agent.setBackboneFast(false);
+      else if (a0 === 'pathcost') agent.setPathcostMethod('short');
       return '';
     });
 
@@ -1017,11 +1033,19 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           else if (state === 'forwarding') forwarding++;
         }
         const total = blocking + listening + learning + forwarding;
+        const g = agent?.getGlobalStp();
+        const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
         return [
           `Switch is in ${this.stpMode} mode`,
           `Root bridge for: ${rootForVlan}`,
           `Extended system ID           is enabled`,
-          `Portfast Default             is disabled`,
+          `Portfast Default             ${onOff(g?.portfastDefault)}`,
+          `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
+          `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
+          `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
+          `UplinkFast                   ${onOff(g?.uplinkFast)}`,
+          `BackboneFast                 ${onOff(g?.backboneFast)}`,
+          `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
           ``,
           `Name                   Blocking Listening Learning Forwarding STP Active`,
           `---------------------- -------- --------- -------- ---------- ----------`,

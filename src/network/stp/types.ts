@@ -62,6 +62,11 @@ export interface StpConfig {
   forwardDelaySec: number;
   baseMac: string;
   bpduGuardGlobal: boolean;
+  portfastDefault: boolean;
+  bpduFilterGlobal: boolean;
+  loopGuardGlobal: boolean;
+  uplinkFast: boolean;
+  backboneFast: boolean;
 }
 
 export interface MstRegion {
@@ -94,6 +99,11 @@ export function createDefaultStpConfig(baseMac: string): StpConfig {
     forwardDelaySec: 15,
     baseMac: baseMac.toLowerCase(),
     bpduGuardGlobal: false,
+    portfastDefault: false,
+    bpduFilterGlobal: false,
+    loopGuardGlobal: false,
+    uplinkFast: false,
+    backboneFast: false,
   };
 }
 
