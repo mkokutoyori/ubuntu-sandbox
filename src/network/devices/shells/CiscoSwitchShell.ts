@@ -1137,7 +1137,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
         const what = a.join(' ') || 'all';
         this.debugFlags.add(`Spanning Tree ${what} debugging is on`);
+        this.switchDebug()?.enable(what);
         return `Spanning Tree ${what} debugging is on`;
+      });
+      t.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
+        const what = a.join(' ') || 'all';
+        for (const f of [...this.debugFlags]) if (f.startsWith('Spanning Tree')) this.debugFlags.delete(f);
+        this.switchDebug()?.disable(what);
+        return `Spanning Tree ${what} debugging is off`;
       });
       t.registerGreedy('debug', 'Enable debugging', (a) => {
         const what = a.join(' ') || 'all';
@@ -1146,13 +1153,19 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       });
       t.registerGreedy('undebug', 'Disable debugging', () => {
         this.debugFlags.clear();
+        this.switchDebug()?.disableAll();
         return 'All possible debugging has been turned off';
       });
       t.register('no debug all', 'Disable debugging', () => {
         this.debugFlags.clear();
+        this.switchDebug()?.disableAll();
         return 'All possible debugging has been turned off';
       });
     }
+  }
+
+  private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {
+    return (this.d() as unknown as { getDebugService?: () => import('../switch/SwitchDebugService').SwitchDebugService }).getDebugService?.();
   }
 
   private showMstConfig(): string {

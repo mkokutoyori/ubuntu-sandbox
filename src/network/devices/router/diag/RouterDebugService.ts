@@ -37,7 +37,8 @@ export type DebugCategory =
   | 'ntp.events'
   | 'ntp.packets';
 
-import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import type { IEventBus } from '@/events/EventBus';
+import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 export interface DebugFlag {
   category: DebugCategory;
@@ -45,13 +46,9 @@ export interface DebugFlag {
   scope?: string;
 }
 
-export type DebugListener = (line: string) => void;
-
-export class RouterDebugService {
+export class RouterDebugService implements TerminalDebugSource {
   private readonly flags: Map<DebugCategory, DebugFlag> = new Map();
-  private readonly listeners = new Set<DebugListener>();
-  private busSubs: Unsubscribe[] = [];
-  private attachedDeviceId: string | null = null;
+  private readonly broadcast = new DebugBroadcast();
 
   enable(category: DebugCategory, scope?: string): string {
     this.flags.set(category, { category, enabledAtMs: Date.now(), scope });
@@ -77,46 +74,45 @@ export class RouterDebugService {
     return n === 0 ? 'All possible debugging has been turned off' : `${n} debug flag${n === 1 ? '' : 's'} have been turned off`;
   }
 
-  subscribe(listener: DebugListener): () => void {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+  subscribe(listener: DebugLineListener): () => void {
+    return this.broadcast.subscribe(listener);
   }
 
   private emit(category: DebugCategory, line: string): void {
     if (!this.flags.has(category)) return;
-    for (const listener of this.listeners) listener(line);
+    this.broadcast.fan(line);
   }
 
   attachToBus(bus: IEventBus, deviceId: string): void {
-    if (this.attachedDeviceId === deviceId) return;
+    if (this.broadcast.attachedDeviceId === deviceId) return;
     this.detachFromBus();
-    this.attachedDeviceId = deviceId;
+    this.broadcast.attachedDeviceId = deviceId;
     const mine = (p: { deviceId?: string }) => p.deviceId === undefined || p.deviceId === deviceId;
-    this.busSubs.push(bus.subscribe('ospf.neighbor.state-changed', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.neighbor.state-changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
       this.emit('ip.ospf.adj', `OSPF-5-ADJCHG: Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
     }));
-    this.busSubs.push(bus.subscribe('ospf.interface.state-changed', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.interface.state-changed', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
       this.emit('ip.ospf.events', `OSPF: Interface ${p.iface} state change from ${p.oldState} to ${p.newState}`);
     }));
-    this.busSubs.push(bus.subscribe('ospf.spf.run', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.spf.run', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
       this.emit('ip.ospf.spf', `OSPF: Running ${p.kind} SPF (run ${p.runIndex}), ${p.routesCount} routes, runtime ${p.runtimeMs}ms`);
     }));
-    this.busSubs.push(bus.subscribe('ospf.hello.send-requested', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
       this.emit('ip.ospf.hello', `OSPF: Send hello packet on ${e.payload.iface}`);
     }));
-    this.busSubs.push(bus.subscribe('ospf.packet.received', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.packet.received', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
       this.emit('ip.ospf.packet', `OSPF: rcv packet from ${p.srcIp} on ${p.iface}`);
     }));
-    this.busSubs.push(bus.subscribe('ospf.packet.outgoing', (e) => {
+    this.broadcast.track(bus.subscribe('ospf.packet.outgoing', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload;
       this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
@@ -124,9 +120,7 @@ export class RouterDebugService {
   }
 
   detachFromBus(): void {
-    for (const unsub of this.busSubs) unsub();
-    this.busSubs = [];
-    this.attachedDeviceId = null;
+    this.broadcast.detach();
   }
 
   static label(category: DebugCategory): string {

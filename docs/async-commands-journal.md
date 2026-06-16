@@ -83,7 +83,35 @@ device), privilège enable requis (commande `debug` en mode privilégié).
 Validation : `cisco-debug-subscription.test.ts` — 4/4 verts (stream ADJCHG
 live, prompt libre, arrêt sur `no debug`, isolation inter-sessions).
 
+### Switch (Cisco IOS) — `debug spanning-tree …` / `no debug spanning-tree`
+
+Deuxième commande de la catégorie « abonnement aux événements », même socle.
+
+- Factorisation DRY : extraction de `DebugBroadcast`
+  (`src/network/devices/diag/DebugBroadcast.ts`) — cœur générique de diffusion
+  (set d'abonnés, fan-out, suivi/détachement des souscriptions bus) et interface
+  `TerminalDebugSource` (`hasAnyFlag` + `subscribe`) que toute source de debug
+  implémente. `RouterDebugService` est refactoré pour composer ce cœur (aucun
+  changement de signature publique).
+- `SwitchDebugService` (`src/network/devices/switch/SwitchDebugService.ts`) :
+  source de debug STP bridgée au bus (`stp.role.changed`, `stp.state.changed`,
+  `stp.root.changed`, `stp.topology.change`, `stp.bpdu.sent/received`,
+  `stp.bpdu-guard.violation`), catégories `events` / `bpdu`, filtrage par
+  `deviceId`.
+- `CiscoSwitch` expose `getDebugService()` et l'attache/détache dans
+  `setEventBus` (même schéma que le routeur).
+- `CiscoSwitchShell` route `debug spanning-tree` / `no debug spanning-tree` /
+  `undebug` / `no debug all` vers le service (tout en conservant l'affichage
+  `show debugging` existant).
+- `CiscoTerminalSession.afterCommandExecuted` généralisé : ne dépend plus de
+  `instanceof Router` mais d'un duck-typing `getDebugService(): TerminalDebugSource`.
+  Routeur et switch partagent ainsi exactement le même pipeline d'abonnement.
+
+Validation : `cisco-switch-debug-subscription.test.ts` — 2/2 verts ; le test
+routeur reste vert après refactor ; régressions STP / switch CLI vertes
+(`cisco-stp`, `cisco-switch-exec-commands`, `switch-cli`).
+
 ## Suite
 
-- Event Subscription : Switch → Firewall → PC Linux → PC Windows.
+- Event Subscription : Firewall → PC Linux → PC Windows.
 - Puis Real-Time Monitoring, puis Background Commands.

@@ -14,7 +14,7 @@ import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
-import type { RouterDebugService } from '@/network/devices/router/diag/RouterDebugService';
+import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -145,9 +145,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
   private debugUnsubscribe: (() => void) | null = null;
 
   protected override afterCommandExecuted(_command: string): void {
-    const dev = this.device;
-    if (!(dev instanceof Router)) return;
-    const svc = dev.getDebugService();
+    const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
+    if (!svc) return;
     if (svc.hasAnyFlag() && !this.debugJob) {
       this.startDebugSubscription(svc);
     } else if (!svc.hasAnyFlag() && this.debugJob) {
@@ -156,7 +155,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
     }
   }
 
-  private startDebugSubscription(svc: RouterDebugService): void {
+  private startDebugSubscription(svc: TerminalDebugSource): void {
     this.debugJob = this.startAsyncCommand({
       mode: 'background',
       kind: 'subscription',
