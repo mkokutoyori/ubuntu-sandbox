@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-06-16T13:03:11.320Z
+Generated: 2026-06-16T17:12:45.046Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -73,7 +73,7 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *13:03:11.000 UTC Tue Jun 16 2026
+  *17:12:45.000 UTC Tue Jun 16 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
@@ -971,7 +971,7 @@ Total steps: 366
   Clock is unsynchronized, stratum 16, no reference clock
 
 [196/366] sw1 SW1(config)# do show clock
-  *13:03:11.000 UTC Tue Jun 16 2026
+  *17:12:45.000 UTC Tue Jun 16 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>

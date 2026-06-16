@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-06-16T13:03:11.321Z
+Generated: 2026-06-16T17:13:57.355Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -742,6 +742,18 @@ Total steps: 360
   Port        Mode             Encapsulation  Status        Native vlan
   Gi0/0       on               802.1q         trunking      1
   Gi0/1       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Gi0/0       1-4094
+  Gi0/1       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Gi0/0       1,10,20
+  Gi0/1       1,10,20
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Gi0/0       1,10,20
+  Gi0/1       1,10,20
 
 
 --- [206] § put L1 & L2 in VLAN 10 (same broadcast domain across trunk) ---
@@ -770,13 +782,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.372 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.594 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.763 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.008 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=5.549 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.833 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.594/1.243/2.372/0.801 ms
+  rtt min/avg/max/mdev = 0.833/2.796/5.549/2.004 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -787,13 +799,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.522 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.677 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.549 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.575 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.492 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.457 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.522/0.583/0.677/0.068 ms
+  rtt min/avg/max/mdev = 0.457/0.508/0.575/0.049 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -880,12 +892,12 @@ Total steps: 360
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.448 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.963 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.327 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.287 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.448/0.705/0.963/0.257 ms
+  rtt min/avg/max/mdev = 0.287/0.307/0.327/0.020 ms
 
 
 --- [229] § voice VLAN ---
@@ -911,7 +923,7 @@ Total steps: 360
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -927,7 +939,7 @@ Total steps: 360
   Name: Fa0/1
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
@@ -937,7 +949,7 @@ Total steps: 360
   Name: Fa0/2
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -948,7 +960,7 @@ Total steps: 360
   Name: Fa0/3
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
@@ -958,7 +970,7 @@ Total steps: 360
   Name: Fa0/4
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
@@ -968,7 +980,7 @@ Total steps: 360
   Name: Fa0/5
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
@@ -978,7 +990,7 @@ Total steps: 360
   Name: Fa0/6
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -988,7 +1000,7 @@ Total steps: 360
   Name: Fa0/7
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
@@ -998,7 +1010,7 @@ Total steps: 360
   Name: Fa0/8
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
@@ -1008,7 +1020,7 @@ Total steps: 360
   Name: Fa0/9
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
@@ -1018,7 +1030,7 @@ Total steps: 360
   Name: Fa0/10
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
@@ -1028,7 +1040,7 @@ Total steps: 360
   Name: Fa0/11
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -1038,7 +1050,7 @@ Total steps: 360
   Name: Fa0/12
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
@@ -1048,7 +1060,7 @@ Total steps: 360
   Name: Fa0/13
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
@@ -1058,7 +1070,7 @@ Total steps: 360
   Name: Fa0/14
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
@@ -1068,7 +1080,7 @@ Total steps: 360
   Name: Fa0/15
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
@@ -1078,7 +1090,7 @@ Total steps: 360
   Name: Fa0/16
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -1088,7 +1100,7 @@ Total steps: 360
   Name: Fa0/17
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
@@ -1098,7 +1110,7 @@ Total steps: 360
   Name: Fa0/18
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
@@ -1108,7 +1120,7 @@ Total steps: 360
   Name: Fa0/19
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
@@ -1118,7 +1130,7 @@ Total steps: 360
   Name: Fa0/20
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
@@ -1128,7 +1140,7 @@ Total steps: 360
   Name: Fa0/21
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
@@ -1138,7 +1150,7 @@ Total steps: 360
   Name: Fa0/22
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
@@ -1148,7 +1160,7 @@ Total steps: 360
   Name: Fa0/23
   Switchport: Enabled
   Administrative Mode: static access
-  Operational Mode: access
+  Operational Mode: static access
   Administrative Trunking Encapsulation: dot1q
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)

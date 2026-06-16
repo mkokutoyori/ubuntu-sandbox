@@ -3622,3 +3622,31 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   état « blocking » par-VLAN vérifié dans le plan de données.
 - Non-régression : **network-v2 — 7120 verts** (320 fichiers, +1 test) ; tsc
   propre ; eslint propre sur les fichiers touchés.
+
+## Entrée 69 — PVST+ Lot 4 : `show spanning-tree vlan N` lit l'instance par-VLAN
+
+- Dernier lot : le rendu `show spanning-tree [vlan N | root | bridge | detail |
+  blockedports]` lisait encore l'arbre commun (`getRootBridge`/`getPortRole`/
+  `_getSTPStates`). Pour un lab multi-VLAN, toutes les VLAN affichaient le même
+  root et les mêmes rôles.
+- Bascule sur les accesseurs par-VLAN (`getRootBridgeForVlan`,
+  `getRootPortForVlan`, `getRootPathCostForVlan`, `isRootForVlan`,
+  `getPortRoleForVlan`, `getForwardStateForVlan`) + filtrage des ports affichés
+  sur l'appartenance réelle au VLAN (`Switch.getStpPortVlans`). `show spanning-
+  tree vlan 10` et `vlan 20` montrent désormais des roots/rôles/états distincts.
+- Effet de bord correctif : `show spanning-tree detail` affichait les ports non
+  opérationnels en « disabled forwarding » (rôle disabled mais état forwarding,
+  incohérent — il lisait l'état mono-port hérité de la base). Il lit maintenant
+  l'état d'instance et rend « disabled disabled » — cohérent.
+- Tout passe par la topologie ; aucun commentaire ; aucun hardcode.
+- Nouveau cas de test (stp-pvst, 4e) : `show spanning-tree vlan 10` indique
+  « This bridge is the root » sur le root du VLAN 10, et le root port sur l'autre
+  switch pour le VLAN 20.
+- 9 dumps L2 régénérés (amélioration `detail` ; le reste = jitter de temps de
+  ping non déterministe ; zéro régression de connectivité vérifiée).
+- Non-régression : **network-v2 — 7130 verts** (avec dumps L2, 329 fichiers) ;
+  STP/PVST+ ciblés verts ; tsc + eslint propres sur les fichiers touchés.
+- Bilan PVST+ : élection du root **réellement par-VLAN** entre switches via des
+  BPDU PVST+ échangés sur le câble, blocage du plan de données par-VLAN, et
+  affichage par-VLAN. Limite restante documentée : la machine de changement de
+  topologie (TCN/tcWhile, fast-aging) demeure pilotée par la CST (VLAN 1).

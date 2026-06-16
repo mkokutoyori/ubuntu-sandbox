@@ -2139,10 +2139,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private showSpanningTree(sw: Switch, vlanId = 1): string {
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
-    const root = agent?.getRootBridge();
-    const cost = agent?.getRootPathCost() ?? 0;
-    const rootPort = agent?.getRootPort();
-    const isRoot = agent?.isRoot() ?? true;
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
     const rootPrio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
     const lines = [
@@ -2162,11 +2162,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     let idx = 0;
     for (const name of sw.getPortNames()) { idx += 1; portIndex.set(name, idx); }
     const ports = sw._getPortsInternal();
-    for (const [portName, state] of stpStates) {
+    for (const [portName] of stpStates) {
       const port = ports.get(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       const shortName = this.abbreviateInterface(portName).padEnd(17);
-      const stpRole = agent?.getPortRole(portName) ?? 'designated';
+      const stpRole = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
       const role =
         stpRole === 'root' ? 'Root'
         : stpRole === 'alternate' ? 'Altn'
@@ -2208,10 +2210,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showStpRoot(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
-    const root = agent?.getRootBridge();
-    const cost = agent?.getRootPathCost() ?? 0;
-    const rootPort = agent?.getRootPort();
-    const isRoot = agent?.isRoot() ?? true;
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const mac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
     const prio = (isRoot ? (agent?.getVlanPriority(vlanId) ?? 32768) : (root?.priority ?? 32768)) + vlanId;
     const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
@@ -2246,8 +2248,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private showStpBlockedPorts(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const blocked: string[] = [];
-    for (const [portName, state] of sw._getSTPStates()) {
-      const role = agent?.getPortRole(portName);
+    for (const [portName] of sw._getSTPStates()) {
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const role = agent?.getPortRoleForVlan(vlanId, portName);
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       if (state === 'blocking' || role === 'alternate' || role === 'backup') {
         blocked.push(this.abbreviateInterface(portName));
       }
@@ -2264,10 +2268,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showStpDetail(sw: Switch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
-    const isRoot = agent?.isRoot() ?? true;
-    const root = agent?.getRootBridge();
-    const own = agent?.ownBridgeId();
-    const cost = agent?.getRootPathCost() ?? 0;
+    const isRoot = agent?.isRootForVlan(vlanId) ?? true;
+    const root = agent?.getRootBridgeForVlan(vlanId);
+    const own = agent?.ownBridgeId(vlanId);
+    const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
+    const rootPort = agent?.getRootPortForVlan(vlanId);
     const rootMac = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
     const ownMac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
     const out: string[] = [
@@ -2276,12 +2281,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       isRoot
         ? '  We are the root of the spanning tree'
         : `  Current root has priority ${root ? root.priority : 32768}, address ${rootMac}`,
-      `  Root port is ${agent?.getRootPort() ? this.abbreviateInterface(agent.getRootPort()!) : 'N/A'}, cost of root path is ${cost}`,
+      `  Root port is ${rootPort ? this.abbreviateInterface(rootPort) : 'N/A'}, cost of root path is ${cost}`,
       '  Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec',
       '',
     ];
-    for (const [portName, state] of sw._getSTPStates()) {
-      const role = agent?.getPortRole(portName) ?? 'designated';
+    for (const [portName] of sw._getSTPStates()) {
+      if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
+      const role = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
+      const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       out.push(
         ` Port ${portName} of VLAN${String(vlanId).padStart(4, '0')} is ${role} ${state}`,
         `   Port path cost 19, Port priority 128`,

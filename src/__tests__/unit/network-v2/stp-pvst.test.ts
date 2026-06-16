@@ -101,6 +101,30 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     }
   });
 
+  it('show spanning-tree vlan N renders the per-VLAN root', async () => {
+    const bus = new EventBus();
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
+    sw1.setEventBus(bus);
+    sw2.setEventBus(bus);
+    await provision(sw1, 'FastEthernet0/0');
+    await provision(sw2, 'FastEthernet0/0');
+    new Cable('trunk').connect(
+      sw1.getPort('FastEthernet0/0')!,
+      sw2.getPort('FastEthernet0/0')!,
+    );
+    await setVlanPriority(sw1, 10, 4096);
+    await setVlanPriority(sw2, 20, 4096);
+
+    await sw1.executeCommand('enable');
+    const sw1Vlan10 = await sw1.executeCommand('show spanning-tree vlan 10');
+    const sw1Vlan20 = await sw1.executeCommand('show spanning-tree vlan 20');
+
+    expect(sw1Vlan10).toContain('This bridge is the root');
+    expect(sw1Vlan20).not.toContain('This bridge is the root');
+    expect(sw1Vlan20).toContain('Fa0/0');
+  });
+
   it('VLAN-tagged BPDUs reach the neighbour over the wire', async () => {
     const bus = new EventBus();
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);

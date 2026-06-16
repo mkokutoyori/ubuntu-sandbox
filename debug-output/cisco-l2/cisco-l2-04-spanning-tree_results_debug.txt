@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-06-16T16:06:36.879Z
+Generated: 2026-06-16T17:13:57.778Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -61,7 +61,7 @@ Total steps: 363
     Root port is N/A, cost of root path is 0
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-   Port FastEthernet0/0 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/0 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
    Port FastEthernet0/1 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
@@ -69,47 +69,47 @@ Total steps: 363
      Port path cost 19, Port priority 128
    Port FastEthernet0/3 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/4 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/5 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/6 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/7 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/8 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/9 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/10 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/11 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/12 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/13 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/14 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/15 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/16 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/17 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/18 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/19 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/20 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/21 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/22 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/23 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/0 of VLAN0001 is disabled forwarding
+   Port GigabitEthernet0/0 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
    Port GigabitEthernet0/1 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
@@ -955,32 +955,26 @@ Total steps: 363
 [226/363] sw1 SW1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24586
+    Root ID    Priority    8202
                Address     0200.0000.0001
-               Cost        0
-               This bridge is the root
+               Cost        4
+               Port        Gi0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
-  Gi0/1            Desg  FWD  4         128.26    P2p
+  Gi0/1            Root  FWD  4         128.26    P2p
 
 [227/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
-    Root ID    Priority    28692
+    Root ID    Priority    12308
                Address     0200.0000.0001
-               Cost        0
-               This bridge is the root
+               Cost        4
+               Port        Gi0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
-  Gi0/1            Desg  FWD  4         128.26    P2p
+  Gi0/1            Root  FWD  4         128.26    P2p
 
 [228/363] sw1 SW1# show spanning-tree interface FastEthernet0/1
   FastEthernet0/1
@@ -1054,32 +1048,26 @@ Total steps: 363
 [235/363] sw1 SW1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24586
+    Root ID    Priority    8202
                Address     0200.0000.0001
-               Cost        0
-               This bridge is the root
+               Cost        4
+               Port        Gi0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
-  Gi0/1            Desg  FWD  4         128.26    P2p
+  Gi0/1            Root  FWD  4         128.26    P2p
 
 [236/363] sw1 SW1# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
-    Root ID    Priority    28692
+    Root ID    Priority    12308
                Address     0200.0000.0001
-               Cost        0
-               This bridge is the root
+               Cost        4
+               Port        Gi0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
-  Gi0/1            Desg  FWD  4         128.26    P2p
+  Gi0/1            Root  FWD  4         128.26    P2p
 
 [237/363] sw1 SW1# show spanning-tree vlan 30
   VLAN0030
@@ -1091,9 +1079,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [238/363] sw1 SW1# show spanning-tree vlan 40
@@ -1106,9 +1091,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [239/363] sw1 SW1# show spanning-tree vlan 50
@@ -1121,9 +1103,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [240/363] sw1 SW1# show spanning-tree vlan 60
@@ -1136,9 +1115,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [241/363] sw1 SW1# show spanning-tree vlan 70
@@ -1151,9 +1127,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [242/363] sw1 SW1# show spanning-tree vlan 80
@@ -1166,9 +1139,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [243/363] sw1 SW1# show spanning-tree vlan 90
@@ -1181,9 +1151,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 [244/363] sw1 SW1# show spanning-tree vlan 100
@@ -1196,9 +1163,6 @@ Total steps: 363
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.2     P2p Edge
-  Fa0/2            Desg  FWD  19        128.3     P2p Edge
-  Fa0/3            Desg  FWD  19        128.4     P2p Edge
   Gi0/1            Desg  FWD  4         128.26    P2p
 
 
@@ -1370,10 +1334,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *16:06:36: STP: VLAN0001 Fa0/3 -> disabled
+  *17:13:57: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *16:06:36: STP: VLAN0001 Fa0/3 -> forwarding
+  *17:13:57: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1490,12 +1454,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.191 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.657 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.842 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.383 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.657/1.424/2.191/0.767 ms
+  rtt min/avg/max/mdev = 0.383/1.113/1.842/0.729 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
@@ -1747,7 +1711,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1100 bytes, 0 underruns
+       28 packets output, 1868 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1768,7 +1732,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       14 packets output, 934 bytes, 0 underruns
+       26 packets output, 1702 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1789,7 +1753,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1100 bytes, 0 underruns
+       28 packets output, 1868 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
