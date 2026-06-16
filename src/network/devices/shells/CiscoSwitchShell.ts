@@ -695,11 +695,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show vtp password', 'Display the VTP password', () => {
+        const cfg = this.d().getVtpAgent().getConfig();
+        return cfg.password
+          ? `VTP Password: ${cfg.password}`
+          : 'The VTP password is not configured.';
+      });
       t.register('show vtp status', 'Display VTP status', () => {
         const cfg = this.d().getVtpAgent().getConfig();
         const numVlans = this.d().getVLANs().size;
         return [
-          `VTP Version capable             : 1 to ${cfg.version}`,
+          `VTP Version capable             : 1 to 2`,
           `VTP version running             : ${cfg.version}`,
           `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
           `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,

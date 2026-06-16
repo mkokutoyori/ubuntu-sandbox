@@ -3428,3 +3428,13 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   active in management domain » et « Vlans … forwarding state » (allowed ∩
   VLAN existants). Ports trunk déterminés par le mode opérationnel DTP réel.
 - Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 59 — Fichier 3 (items C+F) : show vtp password + capacité VTP
+
+- `show vtp password` ajouté (user + privileged) : lit l'état réel
+  (`getVtpAgent().getConfig().password`) → « VTP Password: secret123 » ou
+  « The VTP password is not configured. ».
+- Item F : « VTP Version capable » ne dépend plus de la version configurée
+  (était « 1 to {version} ») → « 1 to 2 » (capacité matérielle réelle du
+  C2960, indépendante du running version).
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
