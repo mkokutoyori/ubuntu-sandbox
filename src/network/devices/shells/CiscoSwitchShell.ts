@@ -1151,32 +1151,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      const sw = this.d();
-      const dtp = sw.getDtpAgent();
-      const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
-      const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
-      for (const p of sw.getPortNames()) {
-        const c = sw.getSwitchportConfig(p);
-        if (c && dtp.getOperationalMode(p) === 'trunk') {
-          trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
-        }
-      }
-      const lines = ['Port        Mode             Encapsulation  Status        Native vlan'];
-      for (const t of trunks) {
-        lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
-      }
-      if (trunks.length === 0) return lines.join('\n');
-      const allowedStr = (a: Set<number>) =>
-        a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
-      const activeStr = (a: Set<number>) =>
-        this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
-      lines.push('', 'Port        Vlans allowed on trunk');
-      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
-      lines.push('', 'Port        Vlans allowed and active in management domain');
-      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
-      lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
-      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
-      return lines.join('\n');
+      return this.showTrunkTable(this.d().getPortNames());
     });
 
     this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
@@ -1240,6 +1215,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         return this.showInterfacesCounters(name);
       }
       if (last === 'description') return this.showInterfacesDescriptionTable();
+      if (last === 'trunk' && args.length > 1) {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+        }
+        return this.showTrunkTable([name]);
+      }
       if (args.length === 1 && last === 'status') return this.showInterfacesStatus(this.d());
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name);
@@ -1908,6 +1890,35 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private showAllInterfacesDetail(): string {
     const sw = this.d();
     return sw.getPortNames().map((n) => showInterface(sw, n)).join('\n');
+  }
+
+  private showTrunkTable(portNames: string[]): string {
+    const sw = this.d();
+    const dtp = sw.getDtpAgent();
+    const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
+    const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
+    for (const p of portNames) {
+      const c = sw.getSwitchportConfig(p);
+      if (c && dtp.getOperationalMode(p) === 'trunk') {
+        trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
+      }
+    }
+    const lines = ['Port        Mode             Encapsulation  Status        Native vlan'];
+    for (const t of trunks) {
+      lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
+    }
+    if (trunks.length === 0) return lines.join('\n');
+    const allowedStr = (a: Set<number>) =>
+      a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
+    const activeStr = (a: Set<number>) =>
+      this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
+    lines.push('', 'Port        Vlans allowed on trunk');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
+    lines.push('', 'Port        Vlans allowed and active in management domain');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    return lines.join('\n');
   }
 
   private showSwitchportDetail(name: string): string {

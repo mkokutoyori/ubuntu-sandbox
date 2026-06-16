@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-06-16T13:50:05.602Z
+Generated: 2026-06-16T13:57:03.426Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 356
@@ -1185,9 +1185,17 @@ Total steps: 356
   Gi0/1       1,10,20,30,40,50,60
 
 [173/356] sw1 SW1# show interfaces GigabitEthernet0/1 trunk
-  % Invalid input detected at '^' marker.
-  show interfaces GigabitEthernet0/1 trunk
-                  ^
+  Port        Mode             Encapsulation  Status        Native vlan
+  Gi0/1       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Gi0/1       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Gi0/1       1,10,20,30,40,50,60
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Gi0/1       1,10,20,30,40,50,60
 
 
 --- [174] § connectivity over negotiated trunks ---

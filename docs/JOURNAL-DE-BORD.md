@@ -3438,3 +3438,12 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
   (était « 1 to {version} ») → « 1 to 2 » (capacité matérielle réelle du
   C2960, indépendante du running version).
 - Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 60 — Fichier 3 (item D) : show interfaces <if> trunk
+
+- `show interfaces <if> trunk` ajouté : la logique de rendu trunk extraite
+  dans `showTrunkTable(portNames)` (DRY), appelée par `show interfaces trunk`
+  (tous les ports) et par la vue par interface (filtre sur un port). Une
+  interface non-trunk renvoie l'en-tête seul ; une interface inconnue → IOS
+  invalid input.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
