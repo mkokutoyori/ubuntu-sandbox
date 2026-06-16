@@ -3417,3 +3417,14 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Label native VLAN corrigé (item E) : « (default) » uniquement pour le
   VLAN 1 (ex. « Trunking Native Mode VLAN: 99 », sans « (default) »).
 - Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 58 — Fichier 3 (item B) : show interfaces trunk complet
+
+- `show interfaces trunk` ne montrait que la 1ʳᵉ section (Mode/Encap/Status/
+  Native) ; les opérations `switchport trunk allowed vlan {…|add|remove|
+  except|none}` étaient invisibles.
+- Ajout des 3 sections IOS manquantes, calculées depuis l'état réel :
+  « Vlans allowed on trunk » (cfg.trunkAllowedVlans), « Vlans allowed and
+  active in management domain » et « Vlans … forwarding state » (allowed ∩
+  VLAN existants). Ports trunk déterminés par le mode opérationnel DTP réel.
+- Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.

@@ -1145,16 +1145,32 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      const rows = ['Port        Mode             Encapsulation  Status        Native vlan'];
-      for (const p of this.d().getPortNames()) {
-        const c = this.d().getSwitchportConfig(p);
-        if (c && c.mode === 'trunk') {
-          rows.push(
-            `${this.abbreviateInterface(p).padEnd(12)}${'on'.padEnd(17)}` +
-            `${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${c.trunkNativeVlan}`);
+      const sw = this.d();
+      const dtp = sw.getDtpAgent();
+      const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
+      const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
+      for (const p of sw.getPortNames()) {
+        const c = sw.getSwitchportConfig(p);
+        if (c && dtp.getOperationalMode(p) === 'trunk') {
+          trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
         }
       }
-      return rows.join('\n');
+      const lines = ['Port        Mode             Encapsulation  Status        Native vlan'];
+      for (const t of trunks) {
+        lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
+      }
+      if (trunks.length === 0) return lines.join('\n');
+      const allowedStr = (a: Set<number>) =>
+        a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
+      const activeStr = (a: Set<number>) =>
+        this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
+      lines.push('', 'Port        Vlans allowed on trunk');
+      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
+      lines.push('', 'Port        Vlans allowed and active in management domain');
+      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+      lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
+      for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+      return lines.join('\n');
     });
 
     this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
