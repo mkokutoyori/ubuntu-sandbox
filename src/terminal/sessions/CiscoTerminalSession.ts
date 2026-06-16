@@ -13,6 +13,8 @@ import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import type { AsyncJobHandle } from '@/terminal/async';
+import type { RouterDebugService } from '@/network/devices/router/diag/RouterDebugService';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -137,5 +139,38 @@ export class CiscoTerminalSession extends CLITerminalSession {
     }
 
     return null;
+  }
+
+  private debugJob: AsyncJobHandle | null = null;
+  private debugUnsubscribe: (() => void) | null = null;
+
+  protected override afterCommandExecuted(_command: string): void {
+    const dev = this.device;
+    if (!(dev instanceof Router)) return;
+    const svc = dev.getDebugService();
+    if (svc.hasAnyFlag() && !this.debugJob) {
+      this.startDebugSubscription(svc);
+    } else if (!svc.hasAnyFlag() && this.debugJob) {
+      this.debugJob.cancel();
+      this.debugJob = null;
+    }
+  }
+
+  private startDebugSubscription(svc: RouterDebugService): void {
+    this.debugJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'debug',
+      label: 'IOS debug output',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.debugUnsubscribe?.();
+          this.debugUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 }

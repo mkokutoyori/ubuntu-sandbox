@@ -50,7 +50,40 @@ Migration de l'existant (enhancement, pas de mécanique parallèle) :
 Validation : `tail-follow-ui.test.ts`, `TailAttachStream.test.ts`,
 `SessionInputHost.test.ts` — 14/14 verts. Aucune nouvelle erreur de type.
 
+## Event Subscription Commands
+
+### Router (Cisco IOS) — `debug ip ospf …` / `no debug …`
+
+Première commande branchée sur le socle (catégorie « abonnement aux
+événements »).
+
+- `RouterDebugService` enrichi : registre de flags devenu émetteur pub/sub
+  (`subscribe`, `hasAnyFlag`) et pont d'événements (`attachToBus` /
+  `detachFromBus`). Il s'abonne au bus du device pour les topics OSPF
+  (`ospf.neighbor.state-changed`, `ospf.interface.state-changed`,
+  `ospf.spf.run`, `ospf.hello.send-requested`, `ospf.packet.*`) et, lorsque le
+  flag de la catégorie correspondante est armé, formate une ligne de debug IOS
+  réaliste qu'il diffuse à ses abonnés. Filtrage par `deviceId`.
+- `Router.setEventBus` attache/détache le service de debug au bus (même schéma
+  que `attachLoggingToBus` / SNMP `attachToBus`).
+- `CLITerminalSession` expose un hook générique `afterCommandExecuted` appelé
+  après chaque commande et son `updatePrompt`.
+- `CiscoTerminalSession.afterCommandExecuted` réconcilie l'état : dès qu'un flag
+  de debug est armé, un job d'abonnement (`mode: background`, `kind:
+  subscription`) est démarré via le socle ; il s'abonne au service et déverse
+  les lignes en temps réel dans le terminal (prompt libre, non bloquant). Quand
+  plus aucun flag n'est armé (`no debug …` / `undebug all`), le job est annulé.
+
+Critères couverts : streaming temps réel ligne par ligne, prompt non bloqué
+(commande d'arrière-plan), arrêt propre via `no debug`, isolation des sessions
+(chaque terminal a son propre runtime et son propre abonnement), impact sur
+l'état interne réel (les lignes proviennent des vrais événements du bus du
+device), privilège enable requis (commande `debug` en mode privilégié).
+
+Validation : `cisco-debug-subscription.test.ts` — 4/4 verts (stream ADJCHG
+live, prompt libre, arrêt sur `no debug`, isolation inter-sessions).
+
 ## Suite
 
-- Event Subscription Commands → Real-Time Monitoring → Background Commands.
-- Par équipement : Router → Switch → Firewall → PC Linux → PC Windows.
+- Event Subscription : Switch → Firewall → PC Linux → PC Windows.
+- Puis Real-Time Monitoring, puis Background Commands.
