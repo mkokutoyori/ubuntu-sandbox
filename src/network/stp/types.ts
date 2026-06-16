@@ -26,6 +26,7 @@ export type StpProtocolMode = 'stp' | 'rstp';
 export interface StpBpdu {
   type: 'stp';
   bpduType: StpBpduType;
+  vlan?: number;
   protocolId: 0x0000;
   version: 0 | 2;
   flags: number;

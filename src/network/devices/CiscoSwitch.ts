@@ -76,9 +76,10 @@ export class CiscoSwitch extends Switch {
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
       ...hostBase,
-      onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+      onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onStpBpduGuardErrDisable: (p) => this.applyStpBpduGuardErrDisable(p),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
+      getStpPortVlans: (p) => this.getStpPortVlans(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({
@@ -132,10 +133,8 @@ export class CiscoSwitch extends Switch {
     super.setSwitchportMode(portName, mode);
   }
 
-  private applyStpForwardState(portName: string, state: StpForwardState): void {
-    // StpForwardState is a subset of STPPortState — apply verbatim so the
-    // data plane honors the 802.1D listening/learning transitions.
-    this.setSTPState(portName, state);
+  private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {
+    this.setStpVlanState(portName, vlan, state);
   }
 
   private applyStpBpduGuardErrDisable(portName: string): void {

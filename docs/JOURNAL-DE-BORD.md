@@ -3557,3 +3557,39 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - État réel uniquement ; aucun commentaire ; aucun hardcode.
 - Non-régression : **network-v2 — 7117 verts** (49 skipped, identique au socle) ;
   STP ciblé (protocol/rstp/tcn/guards/cisco-stp — 61) vert ; tsc + eslint propres.
+
+## Entrée 67 — PVST+ Lot 2 : vraie élection du root par-VLAN sur le câble
+
+- Défaillance corrigée : l'élection du root opérationnel entre switches restait
+  mono-instance. Deux switches reliés par un trunk portant les VLAN 1/10/20
+  élisaient le même root pour toutes les VLAN ; impossible d'avoir SW1 root du
+  VLAN 10 et SW2 root du VLAN 20 (comportement Cisco PVST+ de référence).
+- Le BPDU porte désormais le `vlan` (Per-VLAN Spanning Tree). `StpAgent` tient
+  une instance `StpVlanInstance` par VLAN active et :
+  - **émet** un BPDU par (port, VLAN porté par le port) — pont annoncé avec la
+    priorité par-VLAN (`ownBridgeId(vlan)`), root/coût/rôle propres à l'instance ;
+  - **route** chaque BPDU reçu vers l'instance de son VLAN (`payload.vlan`),
+    ingère l'info et relance l'élection de cette seule instance ;
+  - **élit** un root, un root port et des rôles indépendants par VLAN.
+- L'ensemble des VLAN actives est borné par la base VLAN réelle du switch :
+  `Switch.getStpPortVlans()` rend, pour un port access son VLAN d'accès, pour un
+  trunk les VLAN autorisées **qui existent** (un trunk par défaut → `[1]` tant
+  qu'aucune VLAN n'est créée). Les topologies mono-VLAN restent une instance
+  unique (VLAN 1 = CST) au comportement strictement identique.
+- `setVlanPriority(vlan>1)` relance l'élection de l'instance concernée et
+  ré-émet, déclenchant la convergence par-VLAN sur le câble.
+- Tout passe par la topologie : les BPDU par-VLAN sont des trames réelles
+  (`host.sendFrame`) sur les ports câblés ; le voisin les reçoit et converge.
+  Aucun chemin hors-bande, aucun duck-typing du graphe.
+- Plan de données : l'état de transmission est désormais calculé par (VLAN,
+  port) et mémorisé (`Switch.stpVlanStates`) ; pour ce lot le plan de données
+  continue d'appliquer l'arbre commun (VLAN 1) — le filtrage de blocage
+  par-VLAN et le rendu `show spanning-tree vlan N` réel suivront (Lot 3).
+- Limite connue (Lot 3) : la machine de changement de topologie (TCN/tcWhile,
+  fast-aging) reste globale, pilotée par la CST.
+- État réel uniquement ; aucun commentaire ; aucun hardcode.
+- Nouveau test `stp-pvst.test.ts` (2) : élection divergente VLAN 10/20 entre
+  deux switches câblés ; réception de BPDU étiquetés 1/10/20 par le voisin.
+- Non-régression : **network-v2 — 7119 verts** (320 fichiers, +2 tests) ;
+  STP/switch/VLAN ciblés (145) verts ; tsc propre ; eslint propre sur les
+  fichiers touchés.

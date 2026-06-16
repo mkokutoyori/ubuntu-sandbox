@@ -145,6 +145,7 @@ export abstract class Switch extends Equipment {
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
+  private stpVlanStates: Map<string, STPPortState> = new Map();
 
   // ─── MAC Move Detection ───────────────────────────────────────
   private macMoveCount: number = 0;
@@ -787,6 +788,27 @@ export abstract class Switch extends Equipment {
 
   getSTPState(portName: string): STPPortState {
     return this.stpStates.get(portName) || 'disabled';
+  }
+
+  getStpPortVlans(portName: string): number[] {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return [1];
+    if (cfg.mode === 'access') {
+      return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
+    }
+    const out = [...cfg.trunkAllowedVlans]
+      .filter((v) => this.vlans.has(v))
+      .sort((a, b) => a - b);
+    return out.length ? out : [1];
+  }
+
+  getStpVlanState(portName: string, vlan: number): STPPortState {
+    return this.stpVlanStates.get(`${vlan}:${portName}`) ?? this.getSTPState(portName);
+  }
+
+  setStpVlanState(portName: string, vlan: number, state: STPPortState): void {
+    this.stpVlanStates.set(`${vlan}:${portName}`, state);
+    if (vlan === 1) this.setSTPState(portName, state);
   }
 
   setSTPState(portName: string, state: STPPortState): void {
