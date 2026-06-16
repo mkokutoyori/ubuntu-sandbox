@@ -615,11 +615,6 @@ export interface EthernetFrame {
   payload: ARPPacket | IPv4Packet | IPv6Packet | unknown;
 }
 
-/**
- * Estimate the on-the-wire size of an Ethernet frame in bytes — used to
- * advance interface byte counters consistently with packet counters. Real
- * frames are never zero-byte: the minimum payload pads to a 64-byte frame.
- */
 export function ethernetFrameBytes(frame: EthernetFrame): number {
   let overhead = 18;
   if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;

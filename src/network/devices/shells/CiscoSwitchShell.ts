@@ -1212,8 +1212,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       if (last === 'counters') {
         const target = args.slice(0, -1).join(' ');
-        const name = target ? this.resolveInterfaceName(target) : null;
-        return this.showInterfacesCounters(name);
+        if (target) {
+          const name = this.resolveInterfaceName(target);
+          if (!name || !this.d().getPort(name)) {
+            return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
+          }
+          return this.showInterfacesCounters(name);
+        }
+        return this.showInterfacesCounters(null);
       }
       if (last === 'description') return this.showInterfacesDescriptionTable();
       if (last === 'trunk' && args.length > 1) {
