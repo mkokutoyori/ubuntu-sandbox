@@ -59,7 +59,7 @@ export class DormantAccountAnalyzer {
         if (days >= inactiveLimit && user.accountStatus !== 'LOCKED'
             && user.accountStatus !== 'EXPIRED & LOCKED') {
           this.catalog.lockUser(upper);
-          this.engine.loginTracker.lockAccount(upper);
+          this.engine.loginTracker.lockAccount(upper, 'INACTIVITY');
         }
       }
       found++;

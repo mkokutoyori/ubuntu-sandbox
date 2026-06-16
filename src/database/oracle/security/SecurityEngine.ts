@@ -82,6 +82,24 @@ export class SecurityEngine {
       this.loginTracker.unlockAccount(upper);
     }
 
+    // INACTIVE_ACCOUNT_TIME (12c+) — an account idle for longer than the
+    // profile ceiling is locked at connect time, exactly like the
+    // background check the real database runs. The reference point is the
+    // last successful logon, falling back to the account creation date
+    // when the user has never logged on. This mirrors the lazy
+    // enforcement of the LOCKED branch above: it precedes the password
+    // check so a dormant account is refused regardless of credentials.
+    const inactiveDays = this.profiles.resolveInactiveAccountTimeDays(user.profile);
+    if (inactiveDays !== Infinity && user.accountStatus !== 'LOCKED') {
+      const lastLogin = this.loginTracker.getLastSuccessfulLogin(upper) ?? user.created;
+      const idleDays = (Date.now() - lastLogin.getTime()) / (24 * 60 * 60 * 1000);
+      if (idleDays >= inactiveDays) {
+        catalog.lockUser(upper);
+        this.loginTracker.lockAccount(upper, 'INACTIVITY');
+        return { success: false, errorCode: 28000, message: 'ORA-28000: the account is locked', requiresPasswordChange: false, isGracePeriod: false };
+      }
+    }
+
     // Verify password
     if (storedPassword === undefined || storedPassword !== password) {
       this.loginTracker.recordFailure(upper);

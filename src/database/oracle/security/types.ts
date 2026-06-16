@@ -73,11 +73,24 @@ export interface QuotaRecord {
 
 // ── Login tracking ───────────────────────────────────────────────────
 
+/**
+ * Why an account is currently locked. Oracle treats these very
+ * differently: a FAILED_LOGIN lock is released automatically after
+ * PASSWORD_LOCK_TIME, whereas a DBA lock (`ALTER USER … ACCOUNT LOCK`)
+ * and an INACTIVE_ACCOUNT_TIME lock both require an explicit
+ * `ACCOUNT UNLOCK` and must never auto-unlock.
+ */
+export type AccountLockReason = 'FAILED_LOGIN' | 'INACTIVITY' | 'DBA';
+
 export interface LoginAttemptRecord {
   failedCount: number;
   lastFailedAt: Date | null;
-  /** When the account was auto-locked by failed login enforcement. */
+  /** When the account was last locked (any reason), null if open. */
   lockedAt: Date | null;
+  /** Why it was locked — drives auto-unlock eligibility. */
+  lockReason: AccountLockReason | null;
+  /** Timestamp of the last successful logon, null if never. */
+  lastSuccessAt: Date | null;
 }
 
 // ── Password history ─────────────────────────────────────────────────

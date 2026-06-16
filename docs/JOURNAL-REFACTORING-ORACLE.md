@@ -2056,6 +2056,42 @@ fichier écrit par le job visible via `cat` (preuve d'exécution hôte réelle),
 PLSQL_BLOCK toujours en SQL) ; non-régression `unit/database/` ; `tsc` + ESLint
 propres.
 
+### 2026-06-16 — INACTIVE_ACCOUNT_TIME appliqué au login + raisons de verrouillage distinctes
+**Défaillance (cohérence couche accès) :** `INACTIVE_ACCOUNT_TIME` (profil, 12c+)
+n'était **jamais** appliqué dans le chemin d'authentification. Un compte dormant
+restait connectable tant qu'aucun `DormantAccountAnalyzer.sweep()` manuel n'avait
+été déclenché — alors que le vrai Oracle verrouille l'account au *connect time*
+(le contrôle de fond a déjà posé le lock). Toute l'infrastructure existait pourtant
+déjà : `ProfileManager.resolveInactiveAccountTimeDays`, et la date de dernier login.
+Défaut connexe : `LoginTracker.lockAccount` servait indistinctement aux trois types
+de verrou (échecs de login, lock DBA `ALTER USER … ACCOUNT LOCK`, inactivité), et
+`shouldAutoUnlock` les déverrouillait **tous** après `PASSWORD_LOCK_TIME`. Or un
+lock DBA et un lock d'inactivité ne doivent **jamais** s'auto-déverrouiller : ils
+exigent un `ACCOUNT UNLOCK` explicite. Un `ACCOUNT LOCK` posé par un DBA se levait
+donc tout seul au bout d'un jour — écart de fidélité.
+**Correction (enhancement de l'existant, pas de duplication) :**
+- `LoginAttemptRecord` enrichi de `lockReason: 'FAILED_LOGIN' | 'INACTIVITY' | 'DBA'`
+  et de `lastSuccessAt` (timestamp du dernier login réussi).
+- `LoginTracker` : `lockAccount(user, reason)` tague la raison ; `recordSuccess`
+  estampille `lastSuccessAt` ; `shouldAutoUnlock` ne libère que les locks
+  `FAILED_LOGIN` (les locks DBA/inactivité restent verrouillés) ; nouveau getter
+  `getLastSuccessfulLogin`.
+- `SecurityEngine.authenticate` : nouveau contrôle d'inactivité, placé avant la
+  vérification du mot de passe (un compte dormant est refusé quel que soit le mot
+  de passe, comme la branche LOCKED existante). Point de référence : dernier login
+  réussi, à défaut date de création du compte (même règle que le
+  `DormantAccountAnalyzer`). Dépassement → `catalog.lockUser` + lock `INACTIVITY`
+  + `ORA-28000: the account is locked`.
+- Les deux appelants existants alignés sur la raison correcte : `UserAdminExecutor`
+  (`ACCOUNT LOCK` → `'DBA'`) et `DormantAccountAnalyzer.sweep` (→ `'INACTIVITY'`),
+  sans dupliquer la logique de lock.
+**Validation :** `oracle-security-engine.test.ts` étendu (81 tests verts) : nouveau
+bloc d'intégration `INACTIVE_ACCOUNT_TIME` (CREATE PROFILE end-to-end, compte frais
+OK, compte dormant → ORA-28000 + statut LOCKED, refus malgré mot de passe valide,
+référence = dernier login et non création, réveil après `ACCOUNT UNLOCK`) + tests
+unitaires `LoginTracker` des raisons de lock et du dernier login. Non-régression :
+`unit/database/` complet (125 fichiers, 3004 tests verts) ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

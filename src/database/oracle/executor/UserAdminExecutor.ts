@@ -149,7 +149,8 @@ export class UserAdminExecutor {
     }
     if (stmt.accountLock) {
       catalog.lockUser(username);
-      engine?.loginTracker.lockAccount(username);
+      // A DBA lock is permanent until ACCOUNT UNLOCK — never auto-released.
+      engine?.loginTracker.lockAccount(username, 'DBA');
       this.emitUserActivity(username, 'LOCKED', { by: 'ALTER USER' });
     }
     if (stmt.accountUnlock) {
