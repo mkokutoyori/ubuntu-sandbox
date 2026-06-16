@@ -530,6 +530,12 @@ export class RouterOSPFIntegration {
     // only for virtual interfaces (tunnels / virtual links).
     this.driveWireConvergence(allPeers);
 
+    // Batch reconvergence: relax the wall-clock pacing rules
+    // (MinLSInterval/MinLSArrival) on every engine for the duration of this
+    // synchronous origination + flood pass — no simulated time elapses here,
+    // so a newer LSA instance must still be free to supersede a stale copy.
+    for (const peer of allPeers) peer.ospfEngine?.setBatchConvergence(true);
+
     // Each router originates its Router-LSA after adjacencies are Full
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
@@ -543,10 +549,20 @@ export class RouterOSPFIntegration {
       }
     }
 
+    // Propagate every router's (possibly updated) self-originated LSAs over
+    // real LSU frames so newer instances supersede any stale copy held by a
+    // peer that converged earlier — e.g. a router joining an already-converged
+    // domain. This replaces the former out-of-band `synchronizeLSDBs` merge:
+    // LSDB synchronisation now happens entirely on the wire (RFC 2328 §13.3).
+    // Done while sendCallbacks are still synchronous (pre-delay re-wire).
+    for (const peer of allPeers) {
+      peer.ospfEngine?.refloodSelfOriginatedLSAs();
+    }
+
+    for (const peer of allPeers) peer.ospfEngine?.setBatchConvergence(false);
+
     // Re-wire sendCallbacks with delay enabled for live simulation
     this.setupSendCallbacks(allPeers, true);
-
-    this.synchronizeLSDBs(allPeers);
 
     // Run SPF and install routes for each router
     for (const peer of allPeers) {
@@ -563,29 +579,6 @@ export class RouterOSPFIntegration {
       }
 
       peer.installRoutes(allOSPFRoutes);
-    }
-  }
-
-  private synchronizeLSDBs(peers: RouterOSPFIntegration[]): void {
-    const maxPasses = peers.length + 2;
-    for (let pass = 0; pass < maxPasses; pass++) {
-      let changed = false;
-      for (const src of peers) {
-        const se = src.ospfEngine;
-        if (!se) continue;
-        for (const [areaId, areaDB] of se.getLSDB().areas) {
-          for (const [, lsa] of areaDB) {
-            for (const dst of peers) {
-              if (dst === src) continue;
-              const de = dst.ospfEngine;
-              if (!de) continue;
-              if (!de.getConfig().areas.has(areaId)) continue;
-              if (de.mergeLSA(areaId, lsa)) changed = true;
-            }
-          }
-        }
-      }
-      if (!changed) break;
     }
   }
 

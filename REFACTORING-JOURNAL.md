@@ -1302,3 +1302,86 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   JOURNAL-DE-BORD (canal `WireDhcpChannel` essayé en premier), et la
   surface parallèle `requestLeaseOnWire` a été fusionnée dans le
   `DHCPClient` (JOURNAL-DE-BORD, entrée 30).
+
+---
+
+## Entrée n°26 — 2026-06-16 — OSPF : fin de la synchronisation de LSDB hors-bande (RFC 2328 §13)
+
+### Défaillances constatées
+
+1. **LSDB recopiée hors-bande** — `RouterOSPFIntegration.exchangeAndCompute()`
+   bouclait sa convergence par `synchronizeLSDBs()` : une boucle qui parcourait
+   *tous* les routeurs du domaine (registre statique + BFS) et **copiait
+   directement chaque LSA d'un moteur dans la LSDB des autres** via
+   `OSPFEngine.mergeLSA()` (`installLSA(structuredClone(lsa))`). Aucune trame
+   LSU ne circulait sur le câble pour cette étape : du flooding *en mémoire*,
+   exactement le « théâtre de control plane » que la campagne traque. C'était
+   le **seul** contrevenant hors-bande majeur restant côté protocoles (BGP,
+   EIGRP, RIP, STP, FHRP, CDP/LLDP, VTP/DTP, LACP/UDLD, IGMP, PIM, VXLAN, NTP,
+   BFD floodent/échangent déjà via `port.sendFrame()` — audit complet mené).
+2. **Le flooding réel ne re-convergeait pas sur changement incrémental** — une
+   fois la béquille retirée, deux scénarios cassaient (topologie construite
+   routeur par routeur) : le premier routeur configuré n'apprenait jamais le
+   LAN d'un voisin ajouté **plus tard**, et un spoke n'apprenait pas l'autre
+   spoke à travers un hub. Diagnostic : la LSDB de la victime **était pourtant
+   complète** (les LSA arrivaient bien par le fil), mais elle gardait une
+   **instance périmée** de la Router-LSA du voisin (vue comme un simple lien
+   *stub* d'avant l'adjacence), si bien que son SPF ne traversait plus le
+   réseau de transit — aucune route transitive calculée.
+3. **Cause racine : pacing à l'horloge murale incompatible avec la convergence
+   synchrone** — la nouvelle instance (séquence supérieure) de la Router-LSA
+   était bloquée des **deux côtés** : `floodLSA` la supprimait via
+   **MinLSInterval** (§12.4, émetteur) et `processLSUpdate` la rejetait via
+   **MinLSArrival** (§13 étape 5b, récepteur). Ces deux garde-fous comparent
+   `Date.now()`, or *aucun temps simulé ne s'écoule* pendant la passe
+   « converge maintenant ». `synchronizeLSDBs` masquait le problème en
+   appelant `installLSA` directement (contournant les deux). Un troisième
+   défaut s'ajoutait : le re-flood était déclenché **après** le recâblage des
+   `sendCallback` en mode différé (`setTimeout`), donc les LSU partaient
+   *hors* du flux synchrone et le SPF tournait avant leur livraison.
+
+### Correction (structurelle)
+
+- **Suppression de `synchronizeLSDBs()` et de la primitive `mergeLSA()`** (qui
+  ne servait qu'à elle) : la synchronisation de LSDB ne peut désormais se faire
+  **que par de vraies trames LSU sur le câble** (`floodLSA → dispatchOutgoing →
+  sendCallback → sendPacket → port.sendFrame`).
+- **`OSPFEngine.refloodSelfOriginatedLSAs()`** (nouveau) : re-flood forcé de
+  toutes les LSA self-originées encore vivantes (RFC 2328 §13.3) ; le
+  `processLSUpdate` du voisin supersède proprement l'instance périmée.
+- **Mode `batchConvergence`** (nouveau, `setBatchConvergence()`) : pendant la
+  passe d'origination + re-flood synchrone, MinLSInterval (émetteur) et
+  MinLSArrival (récepteur) sont relâchés — leur cadence à l'horloge murale n'a
+  pas de sens sans écoulement de temps simulé. Hors de cette passe, le pacing
+  RFC reste strictement appliqué (le drapeau n'est posé que par l'intégration).
+- **Ordre corrigé** dans `exchangeAndCompute` : origination → re-flood **tant
+  que les `sendCallback` sont synchrones**, *puis seulement* recâblage en mode
+  différé pour la simulation live, *puis* SPF.
+
+### Fichiers
+
+- `src/network/ospf/OSPFEngine.ts` (champ `batchConvergence` + `setBatchConvergence`,
+  `refloodSelfOriginatedLSAs`, relâche conditionnelle de MinLSInterval/MinLSArrival,
+  suppression de `mergeLSA`)
+- `src/network/devices/router/RouterOSPFIntegration.ts` (suppression de
+  `synchronizeLSDBs`, passe de re-flood encadrée par le mode batch)
+
+### Validation
+
+- Les 2 scénarios `ospf-transitive-spf` (voisin tardif ; spoke↔spoke via hub
+  cross-vendor) passent désormais **par flooding LSU réel**, sans copie mémoire.
+- Suite OSPF complète : **17 fichiers, 404 tests verts** (DR election, virtual
+  links, NSSA, timers/aging — dont MinLSInterval —, reliability, ECMP, packet
+  exchange…).
+- Non-régression `unit/network-v2` : **319 fichiers, 7117 tests verts** (49
+  skipped). Build de production (esbuild) OK.
+
+### Limites connues / suites futures
+
+- L'orchestration de convergence OSPFv2 garde encore un **registre statique**
+  (`collectOSPFDomain`) et active les interfaces des pairs hors-bande ; la
+  *synchronisation de LSDB*, elle, est maintenant 100 % sur le fil. Migrer la
+  découverte de domaine vers une découverte purement pilotée par les Hello
+  reçus est l'étape suivante.
+- **OSPFv3** conserve son propre chemin hors-bande (`v3ComputeRoutes` lit
+  directement les tables de routage des pairs) — à traiter séparément.
