@@ -509,12 +509,13 @@ export abstract class Switch extends Equipment {
       port.onLinkChange((state) => {
         if (state === 'up') {
           const stp = this.stpStates.get(portName);
-          if (stp === 'listening' || stp === 'learning') {
+          if (stp === 'listening' || stp === 'learning' || stp === 'disabled') {
             this.stpStates.set(portName, 'forwarding');
           }
         } else {
           // Real switches purge dynamic entries the moment a link drops —
           // frames must not chase a dead port for up to 300 s of aging.
+          this.stpStates.set(portName, 'disabled');
           this.flushDynamicMacsOnPort(portName, 'link-down');
         }
       });

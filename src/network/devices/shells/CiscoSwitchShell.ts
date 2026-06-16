@@ -62,7 +62,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── ISwitchShell ────────────────────────────────────────────────
 
   execute(sw: Switch, input: string): string {
-    return this.executeOnDevice(sw, input) as string;
+    const stpDebug = [...this.debugFlags].some(
+      (f) => f.toLowerCase().includes('spanning tree') || f.toLowerCase().includes('all '));
+    const before = stpDebug ? new Map(sw._getSTPStates()) : null;
+    let out = this.executeOnDevice(sw, input) as string;
+    if (before) {
+      const events = this.stpDebugEvents(sw, before);
+      if (events) out = out ? `${out}\n${events}` : events;
+    }
+    return out;
+  }
+
+  private stpDebugEvents(sw: Switch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
+    const stamp = new Date().toISOString().slice(11, 19);
+    const lines: string[] = [];
+    for (const [port, state] of sw._getSTPStates()) {
+      if (before.get(port) === state) continue;
+      const cfg = sw.getSwitchportConfig(port);
+      const vlan = cfg && cfg.mode !== 'trunk' ? cfg.accessVlan : 1;
+      lines.push(`*${stamp}: STP: VLAN${String(vlan).padStart(4, '0')} ${this.abbreviateInterface(port)} -> ${state}`);
+    }
+    return lines.join('\n');
   }
 
   getPrompt(sw: Switch): string {

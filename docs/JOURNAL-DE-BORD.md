@@ -3508,3 +3508,19 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Élection inter-switch reste mono-instance (le plan de données reste correct
   par VLAN) ; la config/affichage par-VLAN est désormais réelle.
 - Non-régression : network-v2 — 7117 verts ; tsc propre ; aucun commentaire.
+
+## Entrée 65 — Fichier 4 Lot 3b : événements debug spanning-tree sur link-flap
+
+- `debug spanning-tree events` n'émettait rien lors d'un shutdown/no-shutdown.
+- Cause : à la perte de lien, `Switch.stpStates` restait « forwarding » (pas
+  de transition). Désormais link-down → état STP « disabled », link-up →
+  « forwarding » (transition réelle dans le modèle).
+- Le shell capture les transitions de façon synchrone : `execute()` compare
+  l'état STP avant/après la commande et, si le drapeau debug est actif, émet
+  les lignes réelles « *HH:MM:SS: STP: VLANxxxx FaX/Y -> <état> ». Vérifié :
+  shutdown → « -> disabled », no shutdown → « -> forwarding » ; plus rien
+  après `undebug all`.
+- État réel uniquement (transitions STP réelles, drapeau debug réel) ; aucun
+  hardcode, aucun commentaire.
+- Non-régression : network-v2 — 7117 verts ; suites shell/terminal/react/gui
+  (1076) vertes ; tsc propre.
