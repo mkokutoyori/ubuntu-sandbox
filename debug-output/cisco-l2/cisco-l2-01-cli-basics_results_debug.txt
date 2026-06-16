@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-06-16T08:49:05.795Z
+Generated: 2026-06-16T09:04:21.571Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -127,7 +127,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *08:49:05.000 UTC Tue Jun 16 2026
+  *09:04:21.000 UTC Tue Jun 16 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -1233,7 +1233,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *08:49:05.000 UTC Tue Jun 16 2026
+  *09:04:21.000 UTC Tue Jun 16 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -3322,7 +3322,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   08:49:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   09:04:21 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3402,7 +3402,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/16/2026, 8:49:05 AM
+  System Boot Time:          6/16/2026, 9:04:21 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3457,7 +3457,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   08:49:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   09:04:21 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3488,7 +3488,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   08:49:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   09:04:21 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3568,7 +3568,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          6/16/2026, 8:49:05 AM
+  System Boot Time:          6/16/2026, 9:04:21 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3623,27 +3623,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   08:49:05 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   09:04:21 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.676 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.459 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.603 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.413 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.459/1.067/1.676/0.608 ms
+  rtt min/avg/max/mdev = 0.413/1.008/1.603/0.595 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.477 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.417 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.499 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.521 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.417/0.447/0.477/0.030 ms
+  rtt min/avg/max/mdev = 0.499/0.510/0.521/0.011 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

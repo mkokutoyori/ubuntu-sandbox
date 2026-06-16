@@ -3326,3 +3326,20 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
 - Vérifié : open→boot, 2e concurrent ne reboote pas, fermeture du dernier →
   flag remis à zéro, réouverture → boot rejoué. Suites react/gui/terminal
   (560) vertes ; `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 53 — #9 : prérequis crypto / login local / transport input ssh
+
+- Vérité IOS : `login local` (sans username) et `transport input ssh` (sans
+  clés) **n'échouent pas à la configuration** ; l'échec est au login/runtime.
+  Le simulateur les acceptait silencieusement → comportement **déjà correct**
+  (ajouter un avertissement serait fabriquer une sortie que l'IOS réel n'émet
+  pas).
+- Le seul vrai prérequis vérifié à la saisie par l'IOS est
+  `crypto key generate rsa`, qui exige un domaine défini. Ajouté (routeur) :
+  sans `ip domain-name`, retourne « % Please define a domain-name first. »
+  et ne génère aucune clé ; avec domaine → génération normale. Lit l'état
+  réel (`getManagementService().domainName`).
+- Note : sur le switch, `crypto`/SSH de management dépendent de la SVI L2
+  (chantier déjà identifié) ; non traité ici.
+- Non-régression : **network-v2 — 7117 verts** ; `tsc` propre ; aucun
+  commentaire ajouté.
