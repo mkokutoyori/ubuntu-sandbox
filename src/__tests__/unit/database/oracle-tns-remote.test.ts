@@ -274,6 +274,48 @@ describe('DML across database links settles with the local transaction', () => {
   });
 });
 
+describe('remote connections honour the host firewall (iptables)', () => {
+  it('DROP on tcp/1521 makes the listener time out (ORA-12170)', async () => {
+    const { client, dbhost } = lan();
+    await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j DROP');
+
+    const blocked = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
+    expect(blocked.loginOutput.join('\n')).toMatch(/ORA-12170/);
+    blocked.subShell.dispose();
+
+    // Flushing the rule restores reachability.
+    await dbhost.executeCommand('iptables -F INPUT');
+    const ok = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
+    expect(ok.loginOutput.join('\n')).toContain('Connected.');
+    ok.subShell.dispose();
+  });
+
+  it('REJECT on tcp/1521 refuses the connection (ORA-12541)', async () => {
+    const { client, dbhost } = lan();
+    await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j REJECT');
+    const refused = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
+    expect(refused.loginOutput.join('\n')).toMatch(/ORA-12541/);
+    refused.subShell.dispose();
+  });
+
+  it('a rule on another port does not block the listener', async () => {
+    const { client, dbhost } = lan();
+    await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
+    const ok = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
+    expect(ok.loginOutput.join('\n')).toContain('Connected.');
+    ok.subShell.dispose();
+  });
+
+  it('local bequest connections are exempt from the firewall', async () => {
+    const { dbhost } = lan();
+    await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j DROP');
+    // `/ as sysdba` on the host itself never crosses the network.
+    const local = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
+    expect(local.loginOutput.join('\n')).toContain('Connected.');
+    local.subShell.dispose();
+  });
+});
+
 describe('remote connections honour the configured listener port', () => {
   it('after moving the remote listener to 1530, only that port answers', () => {
     const { client, dbhost } = lan();

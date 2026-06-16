@@ -1202,6 +1202,25 @@ export abstract class LinuxMachine extends EndHost
     return verdict;
   }
 
+  /**
+   * Would an inbound TCP connection to `dstPort` from `srcIP` survive the
+   * INPUT firewall chain? Lets in-network service clients (e.g. the
+   * Oracle Net listener path, which resolves to the target database by
+   * reference rather than forging a SYN packet) still honour iptables —
+   * exactly like a real host where `-A INPUT -p tcp --dport 1521 -j DROP`
+   * makes the listener unreachable. A DROP looks like a dead port
+   * (timeout); a REJECT actively refuses the connection.
+   */
+  firewallAcceptsInboundTcp(srcIP: string, dstIP: string, dstPort: number): 'accept' | 'drop' | 'reject' {
+    // The ingress interface is the one that owns the targeted address, so
+    // `-i <iface>` rules match the way they would for a real SYN.
+    const ownPort = this.getPorts().find((p) => p.getIPAddress()?.toString() === dstIP);
+    const iface = ownPort?.getName() ?? this.getPorts()[0]?.getName() ?? '';
+    return this.executor.iptables.filterPacket({
+      direction: 'in', protocol: 6, srcIP, dstIP, srcPort: 0, dstPort, iface,
+    });
+  }
+
   private logIptablesDrop(
     pkt: PacketInfo,
     verdict: 'drop' | 'reject',

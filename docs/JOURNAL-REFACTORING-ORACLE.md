@@ -2092,6 +2092,34 @@ référence = dernier login et non création, réveil après `ACCOUNT UNLOCK`) +
 unitaires `LoginTracker` des raisons de lock et du dernier login. Non-régression :
 `unit/database/` complet (125 fichiers, 3004 tests verts) ; `tsc` + ESLint propres.
 
+### 2026-06-16 — Le listener Oracle respecte le firewall (iptables) du host
+**Défaillance (cohérence couche réseau) :** la résolution Oracle Net distante
+(`resolveOracleConnectTarget`) vérifiait l'hôte, l'alimentation, le type de device,
+le port et le service du listener — mais **jamais le firewall** du host cible. Comme
+une connexion `sqlplus user/pass@//host/svc` se résout par référence vers la
+`OracleDatabase` cible (sans forger de SYN qui traverserait la pile réseau), une
+règle `iptables -A INPUT -p tcp --dport 1521 -j DROP` posée sur le serveur de base
+**n'avait aucun effet** : le client se connectait quand même. Écart direct avec un
+vrai hôte, où le SYN est filtré par netfilter avant toute négociation TNS.
+**Correction (réutilisation de l'infrastructure existante, pas de duplication) :**
+- Nouvelle capacité `LinuxMachine.firewallAcceptsInboundTcp(srcIP, dstIP, dstPort)`
+  qui évalue la chaîne INPUT via le `LinuxIptablesManager` déjà en place
+  (`executor.iptables.filterPacket`), en déduisant l'interface d'ingress du port
+  portant l'adresse ciblée (pour que les règles `-i <iface>` matchent comme pour un
+  vrai paquet). Aucune logique de filtrage réimplémentée.
+- `oracleNet.resolveOracleConnectTarget` interroge cette capacité pour les
+  connexions **distantes** uniquement (le bequest local ne traverse pas le réseau),
+  et mappe le verdict sur l'échelle d'erreurs Oracle Net réelle : `DROP` → SYN avalé
+  → `ORA-12170: TNS:Connect timeout occurred` ; `REJECT` → refus actif, indiscernable
+  de l'absence de listener → `ORA-12541: TNS:no listener`. Le contrôle précède la
+  négociation TNS, comme au niveau paquet.
+**Validation :** `oracle-tns-remote.test.ts` étendu (24 tests verts) : DROP/1521 →
+ORA-12170 puis reconnexion après `iptables -F`, REJECT/1521 → ORA-12541, règle sur
+un autre port (22) sans effet, bequest local exempté. Non-régression :
+`unit/database/` (3008 tests verts) + `network-v2/linux-iptables` (128) ; `tsc`
+propre, ESLint propre sur les fichiers modifiés (l'avertissement `no-this-alias`
+en `LinuxMachine.ts:1059` préexiste, hors périmètre).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
