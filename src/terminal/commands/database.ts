@@ -12,6 +12,7 @@ import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
+import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
@@ -24,6 +25,8 @@ const oracleInstances: Map<string, OracleDatabase> = new Map();
 const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 /** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
+/** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
+const oracleAuditSyslogSyncs: Map<string, OracleAuditSyslogSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -106,6 +109,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);
+
+    const auditSyslog = new OracleAuditSyslogSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    auditSyslog.start();
+    oracleAuditSyslogSyncs.set(deviceId, auditSyslog);
 
     db.instance.startup('OPEN');
     // A freshly provisioned server boots with the listener running
@@ -243,6 +253,8 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
+  oracleAuditSyslogSyncs.get(deviceId)?.stop();
+  oracleAuditSyslogSyncs.delete(deviceId);
   const db = oracleInstances.get(deviceId);
   if (db) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
@@ -264,6 +276,8 @@ export function resetAllOracleInstances(): void {
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();
+  for (const sync of oracleAuditSyslogSyncs.values()) sync.stop();
+  oracleAuditSyslogSyncs.clear();
   for (const db of oracleInstances.values()) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }

@@ -179,6 +179,27 @@ export class LinuxLogManager {
   }
 
   /**
+   * Append a record at an explicit `facility.priority` spec (e.g.
+   * `local0.info`) — the bridge a service uses when its syslog routing is
+   * configurable. Oracle's AUDIT_SYSLOG_LEVEL is the first consumer.
+   * Returns false when the spec is malformed (unknown facility/priority).
+   */
+  logAt(facilityPrioritySpec: string, tag: string, message: string, pid = 0): boolean {
+    const parsed = this.parsePriority(facilityPrioritySpec);
+    if (!parsed) return false;
+    this.addEntry({
+      priority: parsed.priority,
+      facility: parsed.facility,
+      unit: '',
+      tag,
+      message,
+      pid,
+      hostname: this.hostname,
+    });
+    return true;
+  }
+
+  /**
    * Append an authentication-facility record — the bridge the IAM layer uses
    * to keep `/var/log/auth.log` (and the journal) coherent with account
    * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
