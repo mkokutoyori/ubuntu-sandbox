@@ -111,6 +111,23 @@ export class PasswordManager {
     return tail.some(r => r.password === candidate);
   }
 
+  /**
+   * 19c PASSWORD_ROLLOVER_TIME: for `rolloverDays` after a password
+   * change, the immediately-previous password is still accepted, so an
+   * application connection pool can roll over gracefully. Returns true
+   * when `candidate` is that previous password and we are still inside
+   * the window. A zero/negative window disables the feature.
+   */
+  isWithinRollover(username: string, candidate: string, rolloverDays: number): boolean {
+    if (rolloverDays <= 0) return false;
+    const records = this.history.get(username.toUpperCase()) ?? [];
+    if (records.length < 2) return false;          // no prior password
+    if (records[1].password !== candidate) return false;
+    if (rolloverDays === Infinity) return true;    // UNLIMITED window
+    const ageDays = (Date.now() - records[0].changedAt.getTime()) / (24 * 60 * 60 * 1000);
+    return ageDays <= rolloverDays;
+  }
+
   getHistory(username: string): PasswordHistoryRecord[] {
     return this.history.get(username.toUpperCase()) ?? [];
   }

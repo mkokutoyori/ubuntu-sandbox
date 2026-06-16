@@ -2162,6 +2162,30 @@ sous profil vérificateur → ORA-28003 et **pas** 28007 ; réutilisation → OR
 non-régression auth/user (oracle-auth-integration, user-activity,
 access-management-comprehensive : 844 tests verts) ; `tsc` + ESLint propres.
 
+### 2026-06-16 — PASSWORD_ROLLOVER_TIME (19c) appliqué à l'authentification
+**Défaillance (cohérence couche accès) :** le paramètre de profil
+`PASSWORD_ROLLOVER_TIME` (19c) était stocké, listé dans `DBA_PROFILES` et résolu
+(`resolvePasswordRolloverTimeDays`) mais **jamais appliqué**. Le vrai Oracle 19c, après
+un changement de mot de passe sous un profil avec rollover, garde l'**ancien** mot de
+passe valide pendant la fenêtre de rollover — ce qui permet à un parc de clients /
+pool de connexions de basculer progressivement vers le nouveau credential sans
+coupure. Ici, l'ancien mot de passe était immédiatement rejeté (ORA-01017).
+**Correction (enhancement de l'existant) :**
+- `PasswordManager.isWithinRollover(user, candidate, rolloverDays)` : `true` si
+  `candidate` est le mot de passe *précédent* (history[1]) et que l'on est encore
+  dans la fenêtre depuis le dernier changement (référence = `history[0].changedAt`,
+  testable) ; fenêtre nulle/négative = désactivé ; `UNLIMITED` = toujours valide.
+- `SecurityEngine.authenticate` : quand la comparaison au mot de passe courant
+  échoue, on tente le rollover *avant* d'enregistrer un échec — un login en rollover
+  n'incrémente donc pas `FAILED_LOGIN_ATTEMPTS`. Les autres mots de passe erronés
+  restent en ORA-01017.
+**Validation :** `oracle-security-engine.test.ts` étendu (90 tests verts) : 5 tests
+unitaires `PasswordManager` (précédent accepté dans la fenêtre, courant non éligible,
+fenêtre 0 désactivée, expiration après la fenêtre, absence de précédent) + 4 tests
+d'intégration via `connect` (nouveau OK, ancien OK pendant la fenêtre, mot de passe
+sans rapport → ORA-01017, profil sans rollover → ancien rejeté). Non-régression
+sécurité/auth (91 tests) ; `tsc` + ESLint propres.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

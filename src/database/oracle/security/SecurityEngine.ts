@@ -102,6 +102,15 @@ export class SecurityEngine {
 
     // Verify password
     if (storedPassword === undefined || storedPassword !== password) {
+      // 19c PASSWORD_ROLLOVER_TIME: the previous password stays valid for
+      // the rollover window after a change, so a fleet of clients can
+      // pick up the new credential gradually instead of all at once.
+      const rolloverDays = this.profiles.resolvePasswordRolloverTimeDays(user.profile);
+      if (rolloverDays > 0 && this.passwords.isWithinRollover(upper, password, rolloverDays)) {
+        this.loginTracker.recordSuccess(upper);
+        return { success: true, errorCode: 0, message: '', requiresPasswordChange: false, isGracePeriod: false };
+      }
+
       this.loginTracker.recordFailure(upper);
 
       const profileName = user.profile;

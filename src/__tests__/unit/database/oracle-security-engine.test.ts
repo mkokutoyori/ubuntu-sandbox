@@ -395,6 +395,39 @@ describe('PasswordManager', () => {
     expect(mgr.getHistory('alice')).toHaveLength(0);
     expect(mgr.isForceExpired('alice')).toBe(false);
   });
+
+  // ── PASSWORD_ROLLOVER_TIME (19c) ──────────────────────────────────
+
+  test('isWithinRollover accepts the previous password inside the window', () => {
+    mgr.setPassword('alice', 'old');
+    mgr.setPassword('alice', 'new');
+    expect(mgr.isWithinRollover('alice', 'old', 7)).toBe(true);
+  });
+
+  test('isWithinRollover rejects the current password (only the previous rolls over)', () => {
+    mgr.setPassword('alice', 'old');
+    mgr.setPassword('alice', 'new');
+    expect(mgr.isWithinRollover('alice', 'new', 7)).toBe(false);
+  });
+
+  test('isWithinRollover is disabled when the window is zero', () => {
+    mgr.setPassword('alice', 'old');
+    mgr.setPassword('alice', 'new');
+    expect(mgr.isWithinRollover('alice', 'old', 0)).toBe(false);
+  });
+
+  test('isWithinRollover rejects once the window has elapsed', () => {
+    mgr.setPassword('alice', 'old');
+    mgr.setPassword('alice', 'new');
+    // Backdate the change 10 days into the past.
+    mgr.getHistory('alice')[0].changedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    expect(mgr.isWithinRollover('alice', 'old', 7)).toBe(false);
+  });
+
+  test('isWithinRollover needs a previous password', () => {
+    mgr.setPassword('alice', 'only');
+    expect(mgr.isWithinRollover('alice', 'only', 7)).toBe(false);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -602,5 +635,40 @@ describe('SecurityEngine — INACTIVE_ACCOUNT_TIME enforcement', () => {
     // genuine reactivation, then it connects.
     (db as any).catalog.getUser('BOB').created = new Date();
     expect(() => db.connect('BOB', 'bobpass1')).not.toThrow();
+  });
+});
+
+describe('SecurityEngine — PASSWORD_ROLLOVER_TIME enforcement (19c)', () => {
+  let db: OracleDatabase;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup('OPEN');
+    const conn = db.connectAsSysdba();
+    db.executeSql(conn.executor, "CREATE PROFILE roll_p LIMIT PASSWORD_ROLLOVER_TIME 7");
+    db.executeSql(conn.executor, 'CREATE USER carol IDENTIFIED BY "Old#Pwd1" PROFILE roll_p');
+    db.executeSql(conn.executor, "GRANT CREATE SESSION TO carol");
+    db.executeSql(conn.executor, 'ALTER USER carol IDENTIFIED BY "New#Pwd2"');
+  });
+
+  test('the new password works', () => {
+    expect(() => db.connect('CAROL', 'New#Pwd2')).not.toThrow();
+  });
+
+  test('the previous password still works during the rollover window', () => {
+    expect(() => db.connect('CAROL', 'Old#Pwd1')).not.toThrow();
+  });
+
+  test('an unrelated wrong password is still rejected (ORA-01017)', () => {
+    expect(() => db.connect('CAROL', 'Bogus#Pwd9')).toThrow(/ORA-01017/);
+  });
+
+  test('without a rollover window the previous password is rejected', () => {
+    const conn = db.connectAsSysdba();
+    db.executeSql(conn.executor, 'CREATE USER dave IDENTIFIED BY "Old#Pwd1"'); // DEFAULT profile, rollover 0
+    db.executeSql(conn.executor, "GRANT CREATE SESSION TO dave");
+    db.executeSql(conn.executor, 'ALTER USER dave IDENTIFIED BY "New#Pwd2"');
+    expect(() => db.connect('DAVE', 'Old#Pwd1')).toThrow(/ORA-01017/);
+    expect(() => db.connect('DAVE', 'New#Pwd2')).not.toThrow();
   });
 });
