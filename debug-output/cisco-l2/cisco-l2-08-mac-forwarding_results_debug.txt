@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-06-16T10:40:02.512Z
+Generated: 2026-06-16T11:07:39.402Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -99,48 +99,48 @@ Total steps: 346
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.957 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.399 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.810 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.423 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.399/1.178/1.957/0.779 ms
+  rtt min/avg/max/mdev = 0.423/1.117/1.810/0.693 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.326 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.388 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.335 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.555 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.326/0.357/0.388/0.031 ms
+  rtt min/avg/max/mdev = 0.335/0.445/0.555/0.110 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.525 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.505 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.567 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.436 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.505/0.515/0.525/0.010 ms
+  rtt min/avg/max/mdev = 0.436/0.502/0.567/0.066 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.422 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.343 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.372 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.315 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.343/0.383/0.422/0.039 ms
+  rtt min/avg/max/mdev = 0.315/0.344/0.372/0.029 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.384 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.366 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.409 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.555 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.366/0.375/0.384/0.009 ms
+  rtt min/avg/max/mdev = 0.409/0.482/0.555/0.073 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -168,23 +168,23 @@ Total steps: 346
   
   Pinging 192.168.1.21 with 32 bytes of data:
   Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
-  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.21: bytes=32 time=6ms TTL=64
   
   Ping statistics for 192.168.1.21:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 6ms, Average = 3ms
 
 [17/346] w1 w1$ ping -n 2 192.168.1.22
   
   Pinging 192.168.1.22 with 32 bytes of data:
   Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
-  Reply from 192.168.1.22: bytes=32 time=4ms TTL=128
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
   
   Ping statistics for 192.168.1.22:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 4ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [18/346] w1 w1$ ping -n 2 192.168.1.23
   
@@ -199,93 +199,93 @@ Total steps: 346
 
 [19/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.199 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.117 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.267 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.115 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.117/0.158/0.199/0.041 ms
+  rtt min/avg/max/mdev = 0.115/0.191/0.267/0.076 ms
 
 [20/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.173 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.145 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.141 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.103 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.145/0.159/0.173/0.014 ms
+  rtt min/avg/max/mdev = 0.103/0.122/0.141/0.019 ms
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.310 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.191 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.253 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.353 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.191/0.250/0.310/0.059 ms
+  rtt min/avg/max/mdev = 0.253/0.303/0.353/0.050 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.273 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.186 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.267 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.202 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.186/0.230/0.273/0.043 ms
+  rtt min/avg/max/mdev = 0.202/0.235/0.267/0.032 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.214 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.190 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.382 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.313 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.190/0.202/0.214/0.012 ms
+  rtt min/avg/max/mdev = 0.313/0.347/0.382/0.035 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.277 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.199 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.340 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.229 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.199/0.238/0.277/0.039 ms
+  rtt min/avg/max/mdev = 0.229/0.285/0.340/0.055 ms
 
 [25/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.193 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.213 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.208 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.297 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.193/0.203/0.213/0.010 ms
+  rtt min/avg/max/mdev = 0.208/0.253/0.297/0.045 ms
 
 [26/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.339 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.302 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.221 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.207 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.302/0.321/0.339/0.018 ms
+  rtt min/avg/max/mdev = 0.207/0.214/0.221/0.007 ms
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.151 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.143 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.122 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.095 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.143/0.147/0.151/0.004 ms
+  rtt min/avg/max/mdev = 0.095/0.109/0.122/0.013 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.158 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.196 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.129 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.166 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.158/0.177/0.196/0.019 ms
+  rtt min/avg/max/mdev = 0.129/0.147/0.166/0.019 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -345,47 +345,47 @@ Total steps: 346
 [34/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
   64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.334 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.225 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.200 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.225/0.279/0.334/0.055 ms
+  rtt min/avg/max/mdev = 0.200/0.267/0.334/0.067 ms
 
 [35/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.236 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.223 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.199 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.227 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.223/0.229/0.236/0.006 ms
+  rtt min/avg/max/mdev = 0.199/0.213/0.227/0.014 ms
 
 [36/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.257 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.218 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.288 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.208 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.218/0.238/0.257/0.020 ms
+  rtt min/avg/max/mdev = 0.208/0.248/0.288/0.040 ms
 
 [37/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.123 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.103 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.141 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.133 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.103/0.113/0.123/0.010 ms
+  rtt min/avg/max/mdev = 0.133/0.137/0.141/0.004 ms
 
 [38/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.161 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.125 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.156 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.163 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.125/0.143/0.161/0.018 ms
+  rtt min/avg/max/mdev = 0.156/0.159/0.163/0.003 ms
 
 
 --- [39] § MAC table populated by matrix ---
@@ -619,12 +619,12 @@ Total steps: 346
 
 [70/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.245 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.111 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.282 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.119 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.111/0.178/0.245/0.067 ms
+  rtt min/avg/max/mdev = 0.119/0.200/0.282/0.082 ms
 
 [71/346] sw1 SW1# show mac address-table dynamic
   Mac Address Table
@@ -675,12 +675,12 @@ Total steps: 346
 
 [82/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.250 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.144 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.201 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.150 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.144/0.197/0.250/0.053 ms
+  rtt min/avg/max/mdev = 0.150/0.176/0.201/0.026 ms
 
 [83/346] sw1 SW1# show mac address-table
   Mac Address Table
@@ -697,48 +697,48 @@ Total steps: 346
 --- [84] § second connectivity matrix (re-learn) ---
 [85/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.257 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.139 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.202 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.104 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.139/0.198/0.257/0.059 ms
+  rtt min/avg/max/mdev = 0.104/0.153/0.202/0.049 ms
 
 [86/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.116 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.101 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.121 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.094 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.101/0.108/0.116/0.008 ms
+  rtt min/avg/max/mdev = 0.094/0.108/0.121/0.013 ms
 
 [87/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.244 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.185 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.241 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.241 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.185/0.214/0.244/0.029 ms
+  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
 
 [88/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.363 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.185 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.370 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.208 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.185/0.274/0.363/0.089 ms
+  rtt min/avg/max/mdev = 0.208/0.289/0.370/0.081 ms
 
 [89/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.309 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.259 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.374 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.186 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.259/0.284/0.309/0.025 ms
+  rtt min/avg/max/mdev = 0.186/0.280/0.374/0.094 ms
 
 [90/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -797,93 +797,93 @@ Total steps: 346
 
 [95/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.141 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.105 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.192 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.109 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.105/0.123/0.141/0.018 ms
+  rtt min/avg/max/mdev = 0.109/0.151/0.192/0.041 ms
 
 [96/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.318 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.132 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.139 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.098 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.132/0.225/0.318/0.093 ms
+  rtt min/avg/max/mdev = 0.098/0.118/0.139/0.021 ms
 
 [97/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.207 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.216 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.219 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.185 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.207/0.212/0.216/0.005 ms
+  rtt min/avg/max/mdev = 0.185/0.202/0.219/0.017 ms
 
 [98/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.209 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.249 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.296 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.190 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.209/0.229/0.249/0.020 ms
+  rtt min/avg/max/mdev = 0.190/0.243/0.296/0.053 ms
 
 [99/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.293 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.259 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.211 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.258 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.259/0.276/0.293/0.017 ms
+  rtt min/avg/max/mdev = 0.211/0.234/0.258/0.023 ms
 
 [100/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.257 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.203 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.219 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.177 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.203/0.230/0.257/0.027 ms
+  rtt min/avg/max/mdev = 0.177/0.198/0.219/0.021 ms
 
 [101/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.228 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.183 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.240 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.181 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.183/0.206/0.228/0.022 ms
+  rtt min/avg/max/mdev = 0.181/0.211/0.240/0.029 ms
 
 [102/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.243 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.198 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.244 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.184 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.198/0.221/0.243/0.022 ms
+  rtt min/avg/max/mdev = 0.184/0.214/0.244/0.030 ms
 
 [103/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.108 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.102 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.109 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.137 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.102/0.105/0.108/0.003 ms
+  rtt min/avg/max/mdev = 0.109/0.123/0.137/0.014 ms
 
 [104/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.110 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.153 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.115 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.158 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.110/0.132/0.153/0.021 ms
+  rtt min/avg/max/mdev = 0.115/0.136/0.158/0.021 ms
 
 [105/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -942,48 +942,48 @@ Total steps: 346
 
 [110/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.206 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.165 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.239 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.170 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.165/0.185/0.206/0.020 ms
+  rtt min/avg/max/mdev = 0.170/0.204/0.239/0.034 ms
 
 [111/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.187 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.163 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.221 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.179 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.163/0.175/0.187/0.012 ms
+  rtt min/avg/max/mdev = 0.179/0.200/0.221/0.021 ms
 
 [112/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.260 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.179 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.287 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.157 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.179/0.220/0.260/0.040 ms
+  rtt min/avg/max/mdev = 0.157/0.222/0.287/0.065 ms
 
 [113/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.117 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.096 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.120 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.092 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.096/0.106/0.117/0.011 ms
+  rtt min/avg/max/mdev = 0.092/0.106/0.120/0.014 ms
 
 [114/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.104 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.091 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.125 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.159 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.091/0.098/0.104/0.006 ms
+  rtt min/avg/max/mdev = 0.125/0.142/0.159/0.017 ms
 
 
 --- [115] § per-VLAN MAC inspection loop ---
@@ -1399,10 +1399,10 @@ Total steps: 346
 [152/346] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -1424,10 +1424,10 @@ Total steps: 346
 [154/346] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -1449,10 +1449,10 @@ Total steps: 346
 [156/346] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -2534,10 +2534,10 @@ Total steps: 346
 [275/346] sw1 SW1# show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2555,10 +2555,10 @@ Total steps: 346
 [276/346] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -2576,10 +2576,10 @@ Total steps: 346
 [277/346] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -2597,10 +2597,10 @@ Total steps: 346
 [278/346] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -2618,10 +2618,10 @@ Total steps: 346
 [279/346] sw1 SW1# show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:05 (bia 02:00:00:00:00:05)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2639,10 +2639,10 @@ Total steps: 346
 [280/346] sw1 SW1# show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:06 (bia 02:00:00:00:00:06)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2660,10 +2660,10 @@ Total steps: 346
 [281/346] sw1 SW1# show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:07 (bia 02:00:00:00:00:07)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2681,10 +2681,10 @@ Total steps: 346
 [282/346] sw1 SW1# show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:08 (bia 02:00:00:00:00:08)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2702,10 +2702,10 @@ Total steps: 346
 [283/346] sw1 SW1# show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:09 (bia 02:00:00:00:00:09)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2723,10 +2723,10 @@ Total steps: 346
 [284/346] sw1 SW1# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0a (bia 02:00:00:00:00:0a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2744,10 +2744,10 @@ Total steps: 346
 [285/346] sw1 SW1# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0b (bia 02:00:00:00:00:0b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2765,10 +2765,10 @@ Total steps: 346
 [286/346] sw1 SW1# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0c (bia 02:00:00:00:00:0c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2786,10 +2786,10 @@ Total steps: 346
 [287/346] sw1 SW1# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0d (bia 02:00:00:00:00:0d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2807,10 +2807,10 @@ Total steps: 346
 [288/346] sw1 SW1# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0e (bia 02:00:00:00:00:0e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2828,10 +2828,10 @@ Total steps: 346
 [289/346] sw1 SW1# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:0f (bia 02:00:00:00:00:0f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2849,10 +2849,10 @@ Total steps: 346
 [290/346] sw1 SW1# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:10 (bia 02:00:00:00:00:10)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2870,10 +2870,10 @@ Total steps: 346
 [291/346] sw1 SW1# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:11 (bia 02:00:00:00:00:11)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2891,10 +2891,10 @@ Total steps: 346
 [292/346] sw1 SW1# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:12 (bia 02:00:00:00:00:12)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2912,10 +2912,10 @@ Total steps: 346
 [293/346] sw1 SW1# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:13 (bia 02:00:00:00:00:13)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2933,10 +2933,10 @@ Total steps: 346
 [294/346] sw1 SW1# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2954,10 +2954,10 @@ Total steps: 346
 [295/346] sw1 SW1# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:15 (bia 02:00:00:00:00:15)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2975,10 +2975,10 @@ Total steps: 346
 [296/346] sw1 SW1# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:16 (bia 02:00:00:00:00:16)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -2996,10 +2996,10 @@ Total steps: 346
 [297/346] sw1 SW1# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:17 (bia 02:00:00:00:00:17)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3017,10 +3017,10 @@ Total steps: 346
 [298/346] sw1 SW1# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:18 (bia 02:00:00:00:00:18)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3038,10 +3038,10 @@ Total steps: 346
 [299/346] sw2 SW2> show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3059,10 +3059,10 @@ Total steps: 346
 [300/346] sw2 SW2> show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -3080,10 +3080,10 @@ Total steps: 346
 [301/346] sw2 SW2> show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -3101,10 +3101,10 @@ Total steps: 346
 [302/346] sw2 SW2> show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input 00:00:00, output 00:00:00, output hang never
@@ -3122,10 +3122,10 @@ Total steps: 346
 [303/346] sw2 SW2> show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3143,10 +3143,10 @@ Total steps: 346
 [304/346] sw2 SW2> show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3164,10 +3164,10 @@ Total steps: 346
 [305/346] sw2 SW2> show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3185,10 +3185,10 @@ Total steps: 346
 [306/346] sw2 SW2> show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3206,10 +3206,10 @@ Total steps: 346
 [307/346] sw2 SW2> show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3227,10 +3227,10 @@ Total steps: 346
 [308/346] sw2 SW2> show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3248,10 +3248,10 @@ Total steps: 346
 [309/346] sw2 SW2> show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:25 (bia 02:00:00:00:00:25)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3269,10 +3269,10 @@ Total steps: 346
 [310/346] sw2 SW2> show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:26 (bia 02:00:00:00:00:26)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3290,10 +3290,10 @@ Total steps: 346
 [311/346] sw2 SW2> show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:27 (bia 02:00:00:00:00:27)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3311,10 +3311,10 @@ Total steps: 346
 [312/346] sw2 SW2> show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:28 (bia 02:00:00:00:00:28)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3332,10 +3332,10 @@ Total steps: 346
 [313/346] sw2 SW2> show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:29 (bia 02:00:00:00:00:29)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3353,10 +3353,10 @@ Total steps: 346
 [314/346] sw2 SW2> show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2a (bia 02:00:00:00:00:2a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3374,10 +3374,10 @@ Total steps: 346
 [315/346] sw2 SW2> show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2b (bia 02:00:00:00:00:2b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3395,10 +3395,10 @@ Total steps: 346
 [316/346] sw2 SW2> show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2c (bia 02:00:00:00:00:2c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3416,10 +3416,10 @@ Total steps: 346
 [317/346] sw2 SW2> show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2d (bia 02:00:00:00:00:2d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3437,10 +3437,10 @@ Total steps: 346
 [318/346] sw2 SW2> show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2e (bia 02:00:00:00:00:2e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3458,10 +3458,10 @@ Total steps: 346
 [319/346] sw2 SW2> show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:2f (bia 02:00:00:00:00:2f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3479,10 +3479,10 @@ Total steps: 346
 [320/346] sw2 SW2> show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:30 (bia 02:00:00:00:00:30)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3500,10 +3500,10 @@ Total steps: 346
 [321/346] sw2 SW2> show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:31 (bia 02:00:00:00:00:31)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3521,10 +3521,10 @@ Total steps: 346
 [322/346] sw2 SW2> show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:32 (bia 02:00:00:00:00:32)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3542,10 +3542,10 @@ Total steps: 346
 [323/346] core CORE# show interfaces FastEthernet0/0
   FastEthernet0/0 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:35 (bia 02:00:00:00:00:35)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3563,10 +3563,10 @@ Total steps: 346
 [324/346] core CORE# show interfaces FastEthernet0/1
   FastEthernet0/1 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:36 (bia 02:00:00:00:00:36)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3584,10 +3584,10 @@ Total steps: 346
 [325/346] core CORE# show interfaces FastEthernet0/2
   FastEthernet0/2 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:37 (bia 02:00:00:00:00:37)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3605,10 +3605,10 @@ Total steps: 346
 [326/346] core CORE# show interfaces FastEthernet0/3
   FastEthernet0/3 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:38 (bia 02:00:00:00:00:38)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3626,10 +3626,10 @@ Total steps: 346
 [327/346] core CORE# show interfaces FastEthernet0/4
   FastEthernet0/4 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:39 (bia 02:00:00:00:00:39)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3647,10 +3647,10 @@ Total steps: 346
 [328/346] core CORE# show interfaces FastEthernet0/5
   FastEthernet0/5 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3a (bia 02:00:00:00:00:3a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3668,10 +3668,10 @@ Total steps: 346
 [329/346] core CORE# show interfaces FastEthernet0/6
   FastEthernet0/6 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3b (bia 02:00:00:00:00:3b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3689,10 +3689,10 @@ Total steps: 346
 [330/346] core CORE# show interfaces FastEthernet0/7
   FastEthernet0/7 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3c (bia 02:00:00:00:00:3c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3710,10 +3710,10 @@ Total steps: 346
 [331/346] core CORE# show interfaces FastEthernet0/8
   FastEthernet0/8 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3d (bia 02:00:00:00:00:3d)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3731,10 +3731,10 @@ Total steps: 346
 [332/346] core CORE# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3e (bia 02:00:00:00:00:3e)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3752,10 +3752,10 @@ Total steps: 346
 [333/346] core CORE# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:3f (bia 02:00:00:00:00:3f)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3773,10 +3773,10 @@ Total steps: 346
 [334/346] core CORE# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:40 (bia 02:00:00:00:00:40)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3794,10 +3794,10 @@ Total steps: 346
 [335/346] core CORE# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:41 (bia 02:00:00:00:00:41)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3815,10 +3815,10 @@ Total steps: 346
 [336/346] core CORE# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:42 (bia 02:00:00:00:00:42)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3836,10 +3836,10 @@ Total steps: 346
 [337/346] core CORE# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:43 (bia 02:00:00:00:00:43)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3857,10 +3857,10 @@ Total steps: 346
 [338/346] core CORE# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:44 (bia 02:00:00:00:00:44)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3878,10 +3878,10 @@ Total steps: 346
 [339/346] core CORE# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:45 (bia 02:00:00:00:00:45)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3899,10 +3899,10 @@ Total steps: 346
 [340/346] core CORE# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:46 (bia 02:00:00:00:00:46)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3920,10 +3920,10 @@ Total steps: 346
 [341/346] core CORE# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:47 (bia 02:00:00:00:00:47)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3941,10 +3941,10 @@ Total steps: 346
 [342/346] core CORE# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:48 (bia 02:00:00:00:00:48)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3962,10 +3962,10 @@ Total steps: 346
 [343/346] core CORE# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:49 (bia 02:00:00:00:00:49)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -3983,10 +3983,10 @@ Total steps: 346
 [344/346] core CORE# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4a (bia 02:00:00:00:00:4a)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -4004,10 +4004,10 @@ Total steps: 346
 [345/346] core CORE# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4b (bia 02:00:00:00:00:4b)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never
@@ -4025,10 +4025,10 @@ Total steps: 346
 [346/346] core CORE# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
     Hardware is Fast Ethernet, address is 02:00:00:00:00:4c (bia 02:00:00:00:00:4c)
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
+    Full-duplex, 100Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
     Last input never, output never, output hang never

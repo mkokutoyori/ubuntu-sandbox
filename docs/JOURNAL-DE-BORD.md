@@ -3361,3 +3361,27 @@ d'erreur, effet réel sur l'état), en mutualisant le commun switch/routeur.
     corrects.
 - Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
   `tsc` propre ; aucun commentaire ajouté.
+
+## Entrée 55 — Vérification du rapport fichier 2 : 6 défaillances traitées
+
+1. **Fuite MAC inter-VLAN (critique)** — CORRIGÉ. Une MAC apprise en VLAN 1
+   (ARP gratuit pendant la config IP de l'hôte, port encore en VLAN 1)
+   restait après le changement de VLAN d'accès → doublon VLAN1+VLANx.
+   `setSwitchportAccessVlan` purge désormais les MAC dynamiques du port
+   (`flushDynamicMacsOnPort`), comme un vrai switch. Vérifié : la MAC
+   n'apparaît plus que dans le VLAN configuré.
+2. **Ligne `switchport trunk encapsulation dot1q` dupliquée** — CORRIGÉ.
+   `recordIf` dédoublonne par verbe (3 premiers tokens) → une seule ligne.
+3. **Trunk « implicite »** — désormais légitime : `buildLan` configure
+   réellement les trunks ; l'artefact CORE (commandes en mode privilégié)
+   venait de la séquence de test, corrigée.
+4. **Voice VLAN non affiché** — CORRIGÉ. `switchport voice vlan N` stocke
+   `cfg.voiceVlan` (handler dédié) ; affiché dans `show interfaces … switchport`
+   (« Voice VLAN: 50 ») et dans la running-config.
+5. **BW/débit FastEthernet à 1 Gbps** — CORRIGÉ. Les ports FastEthernet
+   prennent 100 Mbps à la création (`port.setSpeed(100)`) → `BW 100000
+   Kbit/sec`, `100Mbps` ; le coût STP redevient 19 (et 4 en gigabit).
+6. **`show vlan summary`** — CORRIGÉ (entrée 54).
+- Tests STP encodant l'ancien coût gigabit des ports Fa mis à jour (19).
+- Non-régression : **network-v2 — 7117 verts** ; 9 dumps L2 régénérés ;
+  `tsc` propre ; aucun commentaire ajouté.

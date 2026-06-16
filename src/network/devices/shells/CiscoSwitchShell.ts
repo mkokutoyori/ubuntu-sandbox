@@ -1264,6 +1264,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
           out.push(` switchport access vlan ${cfg.accessVlan}`);
         }
+        if (cfg.voiceVlan !== undefined) out.push(` switchport voice vlan ${cfg.voiceVlan}`);
       }
       for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
@@ -1549,8 +1550,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const recordIf = (line: string) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const verb = line.split(' ').slice(0, 3).join(' ');
       for (const i of ifs) {
-        const l = this.ifExtra.get(i) ?? [];
+        const l = (this.ifExtra.get(i) ?? []).filter(
+          (existing) => existing.split(' ').slice(0, 3).join(' ') !== verb);
         l.push(line);
         this.ifExtra.set(i, l);
       }
@@ -1575,8 +1578,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     };
-    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () =>
-      removeIf('switchport voice'));
+    this.configIfTrie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const kw = args[0].toLowerCase();
+      const v = parseInt(args[0], 10);
+      if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const cfg = this.d().getSwitchportConfig(i);
+        if (cfg) cfg.voiceVlan = isNaN(v) ? undefined : v;
+      }
+      return '';
+    });
+    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () => {
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const cfg = this.d().getSwitchportConfig(i);
+        if (cfg) cfg.voiceVlan = undefined;
+      }
+      return removeIf('switchport voice');
+    });
 
     this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
       if (args.length < 1) return '% Incomplete command.';
@@ -1771,6 +1794,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       } else if (cfg.accessVlan !== 1) {
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
+      if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
       if (dai.trustedPorts.has(portName)) {

@@ -79,6 +79,7 @@ export interface SwitchportConfig {
   accessVlan: number;           // VLAN for access mode (default 1)
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
+  voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -488,6 +489,7 @@ export abstract class Switch extends Equipment {
     for (let i = 0; i < count; i++) {
       const portName = this.getPortName(i, count);
       const port = new Port(portName, 'ethernet');
+      if (portName.startsWith('Fast')) port.setSpeed(100);
       this.addPort(port);
 
       // Default switchport config: access mode, VLAN 1
@@ -704,6 +706,8 @@ export abstract class Switch extends Equipment {
     cfg.accessVlan = vlanId;
     const newVlan = this.vlans.get(vlanId);
     if (newVlan && cfg.mode === 'access') newVlan.ports.add(portName);
+
+    this.flushDynamicMacsOnPort(portName, 'access-vlan-change');
 
     Logger.info(this.id, 'switch:access-vlan', `${this.name}: ${portName} access VLAN ${vlanId}`);
     return true;
