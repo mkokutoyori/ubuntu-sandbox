@@ -170,8 +170,36 @@ Validation : `linux-ping-stream-ui.test.ts` — 3/3 (streaming progressif + prom
 verrouillé, interruption Ctrl+C avec résumé, vraie injoignabilité). Régressions
 ping bloc / tail / debug / indicateur : 34/34.
 
+## Sondage Playwright (probe UI réel) — manquements identifiés
+
+Spec diagnostique `e2e/async-commands-probe.spec.ts` (pilote l'app réelle :
+ping -t, reload in, debug ip ospf, debug spanning-tree, ping Linux).
+
+Constats :
+
+1. **BUG CRITIQUE (corrigé)** — `src/network/tcp/TcpStack.ts` importait
+   `getDefaultScheduler` deux fois → `Identifier 'getDefaultScheduler' has
+   already been declared` : le bundle navigateur plantait au chargement,
+   `window.__networkStore` jamais exposé, **toute l'UI cassée**. Régression
+   venue d'un merge récent (hors périmètre async). Corrigé. Build prod OK.
+2. **Windows `ping -t`** — pas sur le pipeline async : sortie en bloc (pas de
+   streaming progressif), prompt **non** verrouillé, et `-t` (continu) s'arrête
+   tout seul après 10 paquets au lieu de tourner jusqu'à Ctrl+C. À brancher
+   comme le ping Linux (job foreground streaming, continu, Ctrl+C + résumé).
+3. **Cisco `reload in N`** — planifie un vrai reload mais via un `setTimeout`
+   maison dans `CiscoShellBase` (async custom, exactement ce que le socle doit
+   remplacer). Pas listé comme tâche background, pas d'indicateur, hors
+   `TerminalAsyncRuntime`/`Scheduler`. Détail : message « 1 minutes ».
+4. **OK** — `debug ip ospf` / `debug spanning-tree` : indicateur background
+   « ● IOS debug output » présent, prompt libre, ack correct (lignes seulement
+   sur événement réel).
+5. **OK** — ping Linux : streaming + stats confirmés (le faux « grew=false » du
+   probe est un artefact de timing : à -i 0.3s le ping finit avant le 1er
+   snapshot ; couvert par le test unitaire).
+
 ## Suite
 
+- Brancher Windows `ping -t` sur le pipeline (réutiliser `WinPing`).
+- Migrer `reload in` du `setTimeout` maison vers le pipeline (background job).
 - Event Subscription : Firewall → PC Windows.
-- Real-Time Monitoring : Router (ping étendu/traceroute), Windows (`ping -t`).
-- Puis Background Commands.
+- Real-Time Monitoring : Router (ping étendu/traceroute).

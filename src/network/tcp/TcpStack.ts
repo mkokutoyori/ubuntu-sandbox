@@ -1,8 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
-import {
-  getDefaultScheduler, type IScheduler,
-} from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
