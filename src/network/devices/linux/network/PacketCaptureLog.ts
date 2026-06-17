@@ -24,13 +24,21 @@ export interface CapturedPacket {
 
 export class PacketCaptureLog {
   private readonly packets: CapturedPacket[] = [];
+  private readonly listeners = new Set<(pkt: CapturedPacket) => void>();
 
   constructor(private readonly capacity = 256) {}
+
+  /** Subscribe to live captures (tcpdump follow). Returns an unsubscribe. */
+  subscribe(listener: (pkt: CapturedPacket) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
 
   /** Append one packet, evicting the oldest once capacity is exceeded. */
   capture(pkt: CapturedPacket): void {
     this.packets.push(pkt);
     if (this.packets.length > this.capacity) this.packets.shift();
+    for (const listener of this.listeners) listener(pkt);
   }
 
   /**

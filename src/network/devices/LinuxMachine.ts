@@ -1654,6 +1654,10 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.executeInSession(commandLine, session);
   }
 
+  subscribeCapture(listener: (pkt: import('./linux/network/PacketCaptureLog').CapturedPacket) => void): () => void {
+    return this.executor.captureLog.subscribe(listener);
+  }
+
   crontabEditTemplate(user: string): string {
     const existing = this.executor.cron.list(user);
     if (existing && existing.trim().length > 0) {

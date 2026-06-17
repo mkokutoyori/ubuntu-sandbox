@@ -545,6 +545,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
+    trie.register('show processes', 'Display active processes', () =>
+      showProcessesCpu());
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
     trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>

@@ -385,7 +385,13 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
  *   -c <count>   stop after `count` packets
  *   port <n>     Berkeley-packet-filter expression on the port
  */
-export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string {
+export interface TcpdumpOptions {
+  iface: string;
+  count: number;
+  portFilter: number | null;
+}
+
+export function parseTcpdumpArgs(args: string[]): TcpdumpOptions {
   let iface = 'eth0';
   let count = Infinity;
   let portFilter: number | null = null;
@@ -394,7 +400,6 @@ export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string
     const a = args[i];
     if (a === 'port') { portFilter = Number.parseInt(args[++i], 10) || null; continue; }
     if (!a.startsWith('-')) continue;
-    // Expand a bundle of short flags: `-ni` → -n -i, `-c` takes a value.
     const chars = a.slice(1);
     for (let c = 0; c < chars.length; c++) {
       const ch = chars[c];
@@ -405,32 +410,42 @@ export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string
         else count = Number.parseInt(value, 10) || Infinity;
         break;
       }
-      // -n / -nn / -v / -e / -x … — no-ops for the simulator.
     }
   }
+  return { iface, count, portFilter };
+}
 
-  const header = [
+export function tcpdumpHeader(iface: string): string[] {
+  return [
     'tcpdump: verbose output suppressed, use -v[v]... for full protocol decode',
     `listening on ${iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes`,
   ];
+}
 
-  const captured = log ? log.all() : [];
-  const matching = (portFilter !== null
-    ? captured.filter(p => p.srcPort === portFilter || p.dstPort === portFilter)
-    : [...captured]
-  ).slice(0, count === Infinity ? undefined : count);
-
-  const body = matching.map(formatTcpdumpPacket);
-  const footer = [
-    `${matching.length} packet${matching.length === 1 ? '' : 's'} captured`,
-    `${matching.length} packet${matching.length === 1 ? '' : 's'} received by filter`,
+export function tcpdumpFooter(count: number): string[] {
+  return [
+    `${count} packet${count === 1 ? '' : 's'} captured`,
+    `${count} packet${count === 1 ? '' : 's'} received by filter`,
     '0 packets dropped by kernel',
   ];
-  return [...header, ...body, ...footer].join('\n');
+}
+
+export function packetMatchesPort(p: CapturedPacket, portFilter: number | null): boolean {
+  return portFilter === null || p.srcPort === portFilter || p.dstPort === portFilter;
+}
+
+export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string {
+  const { iface, count, portFilter } = parseTcpdumpArgs(args);
+  const captured = log ? log.all() : [];
+  const matching = captured
+    .filter((p) => packetMatchesPort(p, portFilter))
+    .slice(0, count === Infinity ? undefined : count);
+  const body = matching.map(formatTcpdumpPacket);
+  return [...tcpdumpHeader(iface), ...body, ...tcpdumpFooter(matching.length)].join('\n');
 }
 
 /** Render one captured segment in tcpdump's default one-line form. */
-function formatTcpdumpPacket(p: CapturedPacket): string {
+export function formatTcpdumpPacket(p: CapturedPacket): string {
   const ts = p.at.toTimeString().slice(0, 8) +
     '.' + String(p.at.getMilliseconds()).padStart(3, '0') + '000';
   const win = p.flags === 'S' ? 64240 : p.flags === 'S.' ? 65160 : 502;

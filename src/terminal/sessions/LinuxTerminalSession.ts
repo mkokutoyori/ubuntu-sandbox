@@ -12,6 +12,7 @@
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
+import { parseTcpdumpArgs, tcpdumpHeader, tcpdumpFooter, formatTcpdumpPacket, packetMatchesPort } from '@/network/devices/linux/LinuxNetCommands';
 import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
@@ -836,6 +837,43 @@ export class LinuxTerminalSession extends TerminalSession {
     return this.startRepaintingMonitor(commandLine, intervalMs);
   }
 
+  private tryStartTcpdump(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'tcpdump') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const opts = parseTcpdumpArgs(toks.slice(1));
+
+    let captured = 0;
+    let unsubscribe: (() => void) | null = null;
+    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooter(captured)) ctx.sink.line(l); };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => { for (const h of tcpdumpHeader(opts.iface)) ctx.sink.line(h); return true; },
+      run: async (ctx) => {
+        await new Promise<void>((resolve) => {
+          const finish = () => { unsubscribe?.(); unsubscribe = null; resolve(); };
+          if (ctx.cancelled()) { resolve(); return; }
+          unsubscribe = dev.subscribeCapture((pkt) => {
+            if (!packetMatchesPort(pkt, opts.portFilter)) return;
+            ctx.sink.line(formatTcpdumpPacket(pkt));
+            captured++;
+            if (captured >= opts.count) finish();
+          });
+          ctx.onCancel(finish);
+        });
+        if (!ctx.cancelled()) footer(ctx);
+      },
+      onInterrupt: (ctx) => footer(ctx),
+    });
+    return job !== null;
+  }
+
   private tryStartJournalFollow(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -943,6 +981,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;
+    if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 

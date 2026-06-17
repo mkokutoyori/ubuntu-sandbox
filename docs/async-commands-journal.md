@@ -328,7 +328,24 @@ run-parts, cron.daily, cron.d, @reboot, service stoppé), `cron-editor-ui` (5),
 e2e `cron.spec.ts` (3 : install/list, -r, -e ouvre nano). Aucune régression
 (386 tests linux fs/ssh/journal verts).
 
+## tcpdump (capture live) + show processes
+
+- **tcpdump** était un dump statique (`cmdTcpdump` rend le `PacketCaptureLog`).
+  Ajout du suivi live : `PacketCaptureLog.subscribe(listener)` émis sur
+  `capture()` ; parseur/formateur extraits et réutilisés
+  (`parseTcpdumpArgs`/`tcpdumpHeader`/`tcpdumpFooter`/`formatTcpdumpPacket`/
+  `packetMatchesPort`) ; `LinuxMachine.subscribeCapture`. Le controller
+  `LinuxTerminalSession.tryStartTcpdump` lance un job foreground streaming :
+  header, paquets en direct, filtre `port`, `-c N` s'arrête + résumé,
+  Ctrl+C → « N packets captured … ». Le `tcpdump` device-level (non interactif)
+  reste le dump bloc (suite SSH inchangée).
+- **show processes** : ajout de la commande nue `show processes` (IOS) qui
+  réutilise `showProcessesCpu()` ; `show processes cpu`/`memory` inchangés.
+
+Validation : `linux-tcpdump-stream-ui.test.ts` (4), `cisco-show-processes.test.ts`
+(3), e2e `tcpdump.spec.ts` (1 : capture live + résumé). Régressions tcpdump/SSH
+verts (223).
+
 ## Suite
 
-- `tcpdump` (capture live, réutiliser `PacketCaptureLog`).
-- Background listing : `show processes` / `ps` reflétant `listAsyncJobs()`.
+- `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
