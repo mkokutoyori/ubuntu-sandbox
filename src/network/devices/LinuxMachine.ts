@@ -1616,6 +1616,11 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
+  runWatchFrameInSession(commandLine: string, session: LinuxShellSession): string {
+    if (!this.isPoweredOn || session.disposed) return '';
+    return this.executor.executeInSession(commandLine, session);
+  }
+
   async pingStreamInSession(
     targetStr: string,
     opts: {

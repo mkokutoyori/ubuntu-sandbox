@@ -227,8 +227,26 @@ Constats :
   → lignes live `OSPF: snd/rcv packet ...`. ✅
 - Indicateur background présent, prompt libre, isolation par `deviceId`.
 
+## Real-Time Monitoring — PC Linux : `watch`
+
+- Exploration d'abord : `cron` est **déjà** fonctionnel (`LinuxMachine.startCronTicker`
+  → `tickCron` toutes les 60 s exécute les jobs dus) → pas touché. `watch` en
+  revanche était un **one-shot** (`handleWatch` rendait une seule frame) alors
+  que le cahier des charges le liste comme moniteur temps réel.
+- Correctif : `watch` branché sur le pipeline (job foreground streaming).
+  Réutilisation totale de l'existant — `parseWatchArgs` (intervalle) +
+  `runWatch`/`handleWatch` via `executor.executeInSession` (une frame par tick,
+  tokenisation et exécution du shell réutilisées, zéro re-parsing). Le controller
+  (`LinuxTerminalSession.tryStartWatchStream`) ne fait qu'orchestrer : repeint la
+  frame **en place** (troncature à `baseLen` + ré-affichage) toutes les N s,
+  prompt verrouillé, Ctrl+C arrête.
+- `LinuxMachine.runWatchFrameInSession` produit une frame dans le contexte de la
+  session (cwd/env du terminal).
+
+Validation : `linux-watch-stream-ui.test.ts` (2/2) + probe Playwright
+(`hasHeader`, `promptLockedWhileRunning`, `refreshedInPlace`).
+
 ## Suite
 
-- Event Subscription : Firewall, Linux (`journalctl -f` / conntrack).
-- Real-Time Monitoring : Router (ping étendu / traceroute live).
-- Background Commands : `show processes` / `ps`-style listing des jobs.
+- Event Subscription : `journalctl -f` (suivi live du journal systemd).
+- Background Commands : `top` (refresh plein écran), `tcpdump` (capture live).

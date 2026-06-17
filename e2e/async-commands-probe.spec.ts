@@ -199,6 +199,28 @@ test('probe: linux ping streaming (sanity)', async ({ page }) => {
   });
 });
 
+test('probe: linux watch (real-time refresh)', async ({ page }) => {
+  const id = await addDevice(page, 'linux-pc', 400, 300);
+  await openTerminal(page, id);
+  await typeCmd(page, 'watch -n 0.5 date');
+  await page.waitForTimeout(800);
+  const t1 = await modalText(page);
+  const inputsDuring = await visibleTextInputs(page);
+  await page.waitForTimeout(1600);
+  const t2 = await modalText(page);
+  await ctrlC(page);
+  await page.waitForTimeout(400);
+  const t3 = await modalText(page);
+  await page.screenshot({ path: '/tmp/probe/linux-watch.png' });
+  record({
+    probe: 'linux watch',
+    hasHeader: /Every 0\.5s: date/.test(t2),
+    promptLockedWhileRunning: inputsDuring === 0,
+    refreshedInPlace: Math.abs(t2.split('\n').length - t1.split('\n').length) <= 2,
+    stoppedAfterCtrlC: t3.includes('^C'),
+  });
+});
+
 test.afterAll(() => {
   writeFileSync('/tmp/probe/report.json', JSON.stringify(findings, null, 2));
 });

@@ -11,6 +11,7 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
+import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
@@ -791,6 +792,38 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartWatchStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'watch') return false;
+    let parsed: ReturnType<typeof parseWatchArgs>;
+    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
+    if (parsed.command.length === 0) return false;
+
+    const shell = this.shell;
+    const intervalMs = Math.max(100, parsed.intervalSeconds * 1000);
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const frame = dev.runWatchFrameInSession(commandLine, shell);
+          this.lines = this.lines.slice(0, baseLen);
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -858,6 +891,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
+    if (this.tryStartWatchStream(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
