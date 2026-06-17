@@ -1105,7 +1105,9 @@ export class LinuxCommandExecutor {
   /** Unregister a previously externally-registered process. */
   unregisterProcess(externalPid: number): boolean {
     const osPid = this._externalToOsPid.get(externalPid);
-    if (osPid !== undefined) this.processMgr.kill(osPid, 'SIGKILL');
+    // Silent reap: removing an overlay entry is bookkeeping, not a delivered
+    // signal — see LinuxProcessManager.kill.
+    if (osPid !== undefined) this.processMgr.kill(osPid, 'SIGKILL', { silent: true });
     this._externalToOsPid.delete(externalPid);
     return this._systemProcesses.delete(externalPid);
   }
@@ -1113,7 +1115,7 @@ export class LinuxCommandExecutor {
   /** Clear all registered system processes */
   clearSystemProcesses(): void {
     for (const osPid of this._externalToOsPid.values()) {
-      this.processMgr.kill(osPid, 'SIGKILL');
+      this.processMgr.kill(osPid, 'SIGKILL', { silent: true });
     }
     this._externalToOsPid.clear();
     this._systemProcesses.clear();
