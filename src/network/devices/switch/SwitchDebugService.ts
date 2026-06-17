@@ -47,9 +47,7 @@ export class SwitchDebugService implements TerminalDebugSource {
   }
 
   attachToBus(bus: IEventBus, deviceId: string): void {
-    if (this.broadcast.attachedDeviceId === deviceId) return;
-    this.detachFromBus();
-    this.broadcast.attachedDeviceId = deviceId;
+    if (!this.broadcast.beginAttach(bus, deviceId)) return;
     const mine = (p: { deviceId: string }) => p.deviceId === deviceId;
     this.broadcast.track(bus.subscribe('stp.role.changed', (e) => {
       if (!mine(e.payload)) return;

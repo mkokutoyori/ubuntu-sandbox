@@ -197,9 +197,38 @@ Constats :
    probe est un artefact de timing : à -i 0.3s le ping finit avant le 1er
    snapshot ; couvert par le test unitaire).
 
+## Corrections post-sondage + lab debug (vérifiés Playwright)
+
+1. **Windows `ping -t` / `ping -n`** branché sur le pipeline (réutilise
+   `WinPing` : `parseWinPingArgs` + `formatWinPingHeader/ReplyLine/Stats`
+   extraits, `cmdPing` bloc recompose dessus). `WindowsPC.pingStreamInSession`
+   (resolve + `executePingStream`). `WindowsTerminalSession` intercepte `ping`
+   en mode cmd : job foreground streaming, `-t` continu jusqu'à Ctrl+C +
+   statistiques. Vérifié unit + probe (`grewProgressively:true`, prompt
+   verrouillé).
+2. **`reload in`** routé via le `Scheduler` partagé (fin du `setTimeout` maison
+   + hack `unref`), grammaire « 1 minute » / « N minutes ». Reste une action
+   device-globale (le scheduler partagé, pas un job per-session, car un reload
+   survit à la fermeture du terminal).
+3. **BUG MAJEUR corrigé — le debug ne streamait pas du tout dans l'app réelle.**
+   Le service de debug ne s'abonnait au bus que dans `setEventBus`, jamais
+   appelé par le store : les équipements utilisent `getDefaultEventBus()`
+   (singleton) via `Equipment.getBus()`, où les agents (STP/OSPF) publient,
+   mais le service écoutait dans le vide. Correctif : `getDebugService()`
+   s'abonne désormais à `this.getBus()` (et re-bind sur changement de bus via
+   `DebugBroadcast.beginAttach`). Les tests unitaires passaient car ils
+   câblaient le bus à la main — d'où l'importance du sondage Playwright.
+
+## Lab de vérification debug (`e2e/debug-lab.spec.ts`)
+
+- **STP** : 2 switches Cisco câblés → `debug spanning-tree` → lignes live
+  `STP: Tx BPDU on FastEthernet0/0 ...` dans le terminal. ✅
+- **OSPF** : 2 routeurs (hello-interval 1) câblés → `debug ip ospf adj/packet`
+  → lignes live `OSPF: snd/rcv packet ...`. ✅
+- Indicateur background présent, prompt libre, isolation par `deviceId`.
+
 ## Suite
 
-- Brancher Windows `ping -t` sur le pipeline (réutiliser `WinPing`).
-- Migrer `reload in` du `setTimeout` maison vers le pipeline (background job).
-- Event Subscription : Firewall → PC Windows.
-- Real-Time Monitoring : Router (ping étendu/traceroute).
+- Event Subscription : Firewall, Linux (`journalctl -f` / conntrack).
+- Real-Time Monitoring : Router (ping étendu / traceroute live).
+- Background Commands : `show processes` / `ps`-style listing des jobs.

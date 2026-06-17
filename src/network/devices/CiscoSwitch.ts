@@ -150,14 +150,14 @@ export class CiscoSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
-    if (bus) this.getDebugService().attachToBus(bus, this.id);
-    else this._debugService?.detachFromBus();
+    this._debugService?.attachToBus(this.getBus(), this.id);
   }
 
   private _debugService: SwitchDebugService | null = null;
 
   getDebugService(): SwitchDebugService {
     if (!this._debugService) this._debugService = new SwitchDebugService();
+    this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
   }
 
