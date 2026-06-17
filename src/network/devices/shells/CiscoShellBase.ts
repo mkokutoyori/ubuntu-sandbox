@@ -13,6 +13,7 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
@@ -67,19 +68,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
   protected readonly outgoingSessions = new OutgoingSessionRegistry();
-  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private reloadTimer: TimerHandle | null = null;
   private scheduledReloadAtMs: number | null = null;
 
+  private reloadScheduler(): IScheduler {
+    const dev = this.d() as unknown as { getScheduler?: () => IScheduler };
+    return dev.getScheduler?.() ?? getDefaultScheduler();
+  }
+
   private armReloadTimer(ms: number): void {
-    if (this.reloadTimer !== null) clearTimeout(this.reloadTimer);
+    const scheduler = this.reloadScheduler();
+    if (this.reloadTimer !== null) scheduler.clear(this.reloadTimer);
     this.scheduledReloadAtMs = Date.now() + ms;
-    const t = setTimeout(() => {
+    this.reloadTimer = scheduler.setTimeout(() => {
       this.reloadTimer = null;
       this.scheduledReloadAtMs = null;
       this.performScheduledReload();
     }, ms);
-    (t as unknown as { unref?: () => void }).unref?.();
-    this.reloadTimer = t;
   }
 
   protected getScheduledReloadMs(): number | null {
@@ -806,7 +811,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
       if (args[0]?.toLowerCase() === 'cancel') {
-        if (this.reloadTimer !== null) { clearTimeout(this.reloadTimer); this.reloadTimer = null; }
+        if (this.reloadTimer !== null) { this.reloadScheduler().clear(this.reloadTimer); this.reloadTimer = null; }
         this.scheduledReloadAtMs = null;
         return 'Reload cancelled.';
       }
@@ -815,7 +820,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
         const min = parseInt(args[1], 10);
         this.armReloadTimer(min * 60_000);
-        return `Reload scheduled in ${min} minutes`;
+        return `Reload scheduled in ${min} minute${min === 1 ? '' : 's'}`;
       }
       if (args[0]?.toLowerCase() === 'at') {
         if (!args[1]) return '% Incomplete command.';
