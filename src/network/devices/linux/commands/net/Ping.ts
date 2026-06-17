@@ -22,6 +22,39 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const PING_FLAGS = ['-c', '-t', '-s', '-W', '-i', '-4', '-6'];
 
+export interface ParsedPingArgs {
+  count: number;
+  ttl?: number;
+  size: number;
+  timeoutMs: number;
+  intervalMs: number;
+  targetStr: string;
+  v6: boolean;
+}
+
+export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6'): ParsedPingArgs {
+  let count = 4;
+  let ttl: number | undefined;
+  let size = 56;
+  let timeoutMs = 2000;
+  let intervalMs = 1000;
+  let targetStr = '';
+  let v6 = cmdName === 'ping6';
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10); i++; }
+    else if (args[i] === '-t' && args[i + 1]) { ttl = parseInt(args[i + 1], 10); i++; }
+    else if (args[i] === '-s' && args[i + 1]) { size = parseInt(args[i + 1], 10); i++; }
+    else if (args[i] === '-W' && args[i + 1]) { timeoutMs = Math.round((parseFloat(args[i + 1]) || 2) * 1000); i++; }
+    else if (args[i] === '-i' && args[i + 1]) { intervalMs = Math.round((parseFloat(args[i + 1]) || 1) * 1000); i++; }
+    else if (args[i] === '-6') { v6 = true; }
+    else if (!args[i].startsWith('-')) { targetStr = args[i]; }
+  }
+
+  if (!v6 && targetStr.includes(':')) v6 = true;
+  return { count, ttl, size, timeoutMs, intervalMs, targetStr, v6 };
+}
+
 function completePingFlags(_ctx: LinuxCommandContext, args: string[]): string[] {
   const partial = args[args.length - 1] ?? '';
   if (partial.startsWith('-')) {
@@ -37,38 +70,9 @@ function completePingFlags(_ctx: LinuxCommandContext, args: string[]): string[] 
 async function runPing(
   ctx: LinuxCommandContext, args: string[], cmdName: 'ping' | 'ping6',
 ): Promise<string> {
-  let count = 4;
-  let ttl: number | undefined;
-  let size = 56;
-  let targetStr = '';
-  let v6 = cmdName === 'ping6';
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-c' && args[i + 1]) {
-      count = parseInt(args[i + 1], 10);
-      i++;
-    } else if (args[i] === '-t' && args[i + 1]) {
-      ttl = parseInt(args[i + 1], 10);
-      i++;
-    } else if (args[i] === '-s' && args[i + 1]) {
-      size = parseInt(args[i + 1], 10);
-      i++;
-    } else if (args[i] === '-W' && args[i + 1]) {
-      i++; // timeout value accepted but not used in the simulation
-    } else if (args[i] === '-i' && args[i + 1]) {
-      i++; // interval value accepted but not used in the simulation
-    } else if (args[i] === '-6') {
-      v6 = true;
-    } else if (!args[i].startsWith('-')) {
-      targetStr = args[i];
-    }
-  }
+  const { count, ttl, size, targetStr, v6 } = parsePingArgs(args, cmdName);
 
   if (!targetStr) return `Usage: ${cmdName} [-c count] [-t ttl] [-s size] <destination>`;
-
-  // A literal IPv6 target selects the v6 path even without `-6`,
-  // matching iputils' address-family auto-detection.
-  if (!v6 && targetStr.includes(':')) v6 = true;
 
   if (v6) {
     let targetIP6: IPv6Address;

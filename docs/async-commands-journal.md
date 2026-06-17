@@ -128,7 +128,50 @@ plusieurs commandes background sont actives »).
 
 Validation : `terminal-infobar-indicator.test.tsx` — 3/3 verts.
 
+## Séparation Vue / Controller / Modèle (principe directeur)
+
+Découpage explicite respecté par toutes les commandes async :
+
+- **Modèle** (`src/network/…`) : exécution réelle et sources de données
+  structurées. Ex. `EndHost.executePingStream` (vrai chemin ICMP : route + ARP +
+  `sendPing`), `RouterDebugService` / `SwitchDebugService` (sources d'événements
+  bus). Le modèle produit des objets (`PingResult`) / lignes de domaine, jamais
+  de logique de terminal.
+- **Présentation** (formatage, côté vue) : fonctions pures qui rendent les
+  données en texte. Pour ping, ce sont les helpers **déjà existants**
+  `formatPingHeader` / `formatPingReplyLine` / `formatPingStats`
+  (`LinuxFormatHelpers.ts`), partagés entre le ping bloc historique et le ping
+  streaming — zéro duplication. La vue React (`TerminalView`) rend les lignes et
+  l'indicateur.
+- **Controller** (`TerminalSession` + `TerminalAsyncRuntime`) : orchestre
+  uniquement — parse l'entrée (via le parseur existant), lance le job, branche
+  modèle → présentation → sink. Aucun formatage ni règle métier dans la session.
+
+## Real-Time Monitoring — PC Linux : `ping` en streaming
+
+- **Anti-duplication** : le projet gérait déjà un vrai `ping` complet
+  (`linux/commands/net/Ping.ts` : parse `-c/-t/-s/-W/-i/-6`, `resolveHostname`,
+  `pingSequence`, `formatPingOutput`). Réutilisé intégralement :
+  - parseur extrait en `parsePingArgs` (Ping.ts) et partagé avec `runPing` ;
+  - formatage extrait en `formatPingHeader/ReplyLine/Stats` (LinuxFormatHelpers)
+    et partagé avec `renderPingBody` (le ping bloc reste byte-identique —
+    `ping-through-switch` 20/20 verts) ;
+  - résolution + exécution réutilisées via `LinuxMachine.pingStreamInSession`
+    (résout l'hôte dans le modèle puis `executePingStream`).
+- **Streaming** : `EndHost.executePingStream` réutilise `resolveRoute` /
+  `resolveARP` / `sendPing` (mêmes primitives que `executePingSequence`) et émet
+  chaque `PingResult` au fil de l'eau, avec espacement abortable et arrêt sur
+  signal.
+- **Controller** : `LinuxTerminalSession.tryStartPingStream` intercepte `ping`
+  (hors pipes/redirections, IPv4), démarre un job foreground streaming : header,
+  lignes progressives, prompt bloqué, Ctrl+C → `^C` + statistiques partielles.
+
+Validation : `linux-ping-stream-ui.test.ts` — 3/3 (streaming progressif + prompt
+verrouillé, interruption Ctrl+C avec résumé, vraie injoignabilité). Régressions
+ping bloc / tail / debug / indicateur : 34/34.
+
 ## Suite
 
-- Event Subscription : Firewall → PC Linux → PC Windows.
-- Puis Real-Time Monitoring, puis Background Commands.
+- Event Subscription : Firewall → PC Windows.
+- Real-Time Monitoring : Router (ping étendu/traceroute), Windows (`ping -t`).
+- Puis Background Commands.

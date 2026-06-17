@@ -77,11 +77,53 @@ function formatInterface(port: Port): string {
   });
 }
 
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
+export function formatPingHeader(target: IPAddress, size: number = 56, hostname?: string): string {
   const totalSize = size + 28; // ICMP header (8) + IP header (20)
   const displayName = hostname ?? target.toString();
-  const header = `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
-  return renderPingBody(header, String(target), count, results, size);
+  return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
+}
+
+/** One `ping` reply line for a single probe, or null when the probe produced no line. */
+export function formatPingReplyLine(r: PingResult, size: number = 56): string | null {
+  if (r.success) {
+    const replySize = size + 8; // data size + ICMP header
+    return `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`;
+  }
+  if (r.error) {
+    if (r.error.includes('Time to live exceeded')) {
+      const match = r.error.match(/from ([\d.]+)/);
+      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
+    }
+    if (r.error.includes('Destination unreachable')) {
+      const match = r.error.match(/from ([\d.]+)/);
+      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Destination Host Unreachable`;
+    }
+  }
+  return null;
+}
+
+/** The trailing `--- statistics ---` block shared by block and streaming ping. */
+export function formatPingStats(targetStr: string, count: number, results: PingResult[]): string[] {
+  const received = results.filter(r => r.success);
+  const failed = count - received.length;
+  const lines = [
+    '',
+    `--- ${targetStr} ping statistics ---`,
+    `${count} packets transmitted, ${received.length} received, ${count === 0 ? 0 : Math.round((failed / count) * 100)}% packet loss`,
+  ];
+  if (received.length > 0) {
+    const rtts = received.map(r => r.rttMs);
+    const min = Math.min(...rtts).toFixed(3);
+    const max = Math.max(...rtts).toFixed(3);
+    const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
+    const mdev = (Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length)).toFixed(3);
+    lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
+  }
+  return lines;
+}
+
+function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
+  return renderPingBody(formatPingHeader(target, size, hostname), String(target), count, results, size);
 }
 
 function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
@@ -93,44 +135,15 @@ function formatPing6Output(target: IPv6Address, count: number, results: PingResu
 /** Per-packet lines + statistics block, shared by ping and ping6. */
 function renderPingBody(header: string, targetStr: string, count: number, results: PingResult[], size: number): string {
   const lines: string[] = [header];
-
-  const received = results.filter(r => r.success);
-  const failed = count - received.length;
-
   if (results.length === 0) {
     lines.push('connect: Network is unreachable');
   } else {
     for (const r of results) {
-      if (r.success) {
-        const replySize = size + 8; // data size + ICMP header
-        lines.push(`${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`);
-      } else if (r.error) {
-        if (r.error.includes('Time to live exceeded')) {
-          const match = r.error.match(/from ([\d.]+)/);
-          const fromIP = match ? match[1] : 'unknown';
-          lines.push(`From ${fromIP} icmp_seq=${r.seq} Time to live exceeded`);
-        } else if (r.error.includes('Destination unreachable')) {
-          const match = r.error.match(/from ([\d.]+)/);
-          const fromIP = match ? match[1] : 'unknown';
-          lines.push(`From ${fromIP} icmp_seq=${r.seq} Destination Host Unreachable`);
-        }
-      }
+      const line = formatPingReplyLine(r, size);
+      if (line !== null) lines.push(line);
     }
   }
-
-  lines.push('');
-  lines.push(`--- ${targetStr} ping statistics ---`);
-  lines.push(`${count} packets transmitted, ${received.length} received, ${Math.round((failed / count) * 100)}% packet loss`);
-
-  if (received.length > 0) {
-    const rtts = received.map(r => r.rttMs);
-    const min = Math.min(...rtts).toFixed(3);
-    const max = Math.max(...rtts).toFixed(3);
-    const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
-    const mdev = (Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length)).toFixed(3);
-    lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
-  }
-
+  lines.push(...formatPingStats(targetStr, count, results));
   return lines.join('\n');
 }
 
