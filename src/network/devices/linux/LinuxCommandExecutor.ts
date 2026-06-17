@@ -6,6 +6,7 @@ import { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
+import { cronAllowed } from './cron/CronPermissions';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -115,7 +116,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
+  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
   'pkill', 'pgrep', 'pidof', 'killall',
@@ -2104,6 +2105,7 @@ export class LinuxCommandExecutor {
 
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
+      case 'run-parts': return this.handleRunParts(args);
 
       // Script execution
       case 'bash':
@@ -2656,32 +2658,96 @@ export class LinuxCommandExecutor {
   }
 
   private handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {
-    if (args[0] === '-l') {
-      const content = this.cron.list();
-      if (content === null) return { output: 'no crontab for ' + this.userMgr.currentUser, exitCode: 1 };
+    let targetUser = this.userMgr.currentUser;
+    let explicitUser = false;
+    let op: 'list' | 'remove' | 'install' | 'edit' | null = null;
+    let fileArg: string | null = null;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-u') { targetUser = args[++i] ?? ''; explicitUser = true; }
+      else if (a === '-l') op = 'list';
+      else if (a === '-r' || a === '-i') op = 'remove';
+      else if (a === '-e') op = 'edit';
+      else if (a === '-') { op = 'install'; fileArg = '-'; }
+      else if (!a.startsWith('-')) { op = 'install'; fileArg = a; }
+    }
+
+    if (explicitUser && this.userMgr.currentUid !== 0 && targetUser !== this.userMgr.currentUser) {
+      return { output: 'crontab: must be privileged to use -u', exitCode: 1 };
+    }
+    if (explicitUser && !this.userMgr.getUser(targetUser)) {
+      return { output: `crontab: user '${targetUser}' unknown`, exitCode: 1 };
+    }
+    if (!cronAllowed(targetUser, this.vfs)) {
+      return { output: `You (${this.userMgr.currentUser}) are not allowed to use this program (crontab)\nSee crontab(1) for more information.`, exitCode: 1 };
+    }
+
+    if (op === 'list') {
+      const content = this.cron.list(targetUser);
+      if (content === null) return { output: `no crontab for ${targetUser}`, exitCode: 1 };
       return { output: content, exitCode: 0 };
     }
-    if (args[0] === '-r') {
-      this.cron.remove();
+    if (op === 'remove') {
+      this.removeCrontab(targetUser);
       return { output: '', exitCode: 0 };
     }
-    if (args[0] === '-') {
-      // Read the new crontab from stdin.
-      if (stdin) {
-        const user = this.userMgr.currentUser;
-        this.cron.install(stdin, user);
-        // A running cron daemon picks up the new table: it logs the
-        // reload and fires any job already due in the current minute.
-        if (this.serviceMgr.isActive('cron')) {
-          this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
-          for (const job of this.cron.dueJobs()) {
-            this.logMgr.logDaemon('CRON', `(${user}) CMD (${job.command})`);
-          }
-        }
+    if (op === 'edit') {
+      return { output: '', exitCode: 0 };
+    }
+    if (op === 'install') {
+      let content: string | null;
+      if (fileArg === '-') {
+        content = stdin ?? '';
+      } else {
+        content = this.vfs.readFile(this.vfs.normalizePath(fileArg!, this.cwd));
+        if (content === null) return { output: `crontab: ${fileArg}: No such file or directory`, exitCode: 1 };
       }
+      this.installCrontab(content, targetUser);
       return { output: '', exitCode: 0 };
     }
-    return { output: '', exitCode: 0 };
+    return { output: 'usage: crontab [-u user] file\n       crontab [-u user] [-i] {-e | -l | -r}', exitCode: 1 };
+  }
+
+  installCrontab(content: string, user: string): void {
+    this.cron.install(content, user);
+    this.vfs.mkdirp('/var/spool/cron/crontabs', 0o1730, 0, 0);
+    this.vfs.writeFile(
+      `/var/spool/cron/crontabs/${user}`,
+      content.endsWith('\n') ? content : content + '\n',
+      0, 0, 0o077,
+    );
+    if (this.serviceMgr.isActive('cron')) {
+      this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
+    }
+  }
+
+  removeCrontab(user: string): void {
+    this.cron.remove(user);
+    this.vfs.deleteFile(`/var/spool/cron/crontabs/${user}`);
+    if (this.serviceMgr.isActive('cron')) {
+      this.logMgr.logDaemon('cron', `(${user}) DELETE (crontabs/${user})`);
+    }
+  }
+
+  private handleRunParts(args: string[]): { output: string; exitCode: number } {
+    const dir = args.find((a) => !a.startsWith('-'));
+    if (!dir) return { output: 'Usage: run-parts [--test] [--report] DIRECTORY', exitCode: 1 };
+    const path = this.vfs.normalizePath(dir, this.cwd);
+    const entries = this.vfs.listDirectory(path);
+    if (!entries) return { output: `run-parts: failed to open directory ${dir}`, exitCode: 1 };
+    const test = args.includes('--test');
+    const out: string[] = [];
+    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(entry.name)) continue;
+      const filePath = `${path}/${entry.name}`;
+      if (test) { out.push(filePath); continue; }
+      const content = this.vfs.readFile(filePath);
+      if (content === null) continue;
+      const result = this.execute(content);
+      if (result) out.push(result);
+    }
+    return { output: out.join('\n'), exitCode: 0 };
   }
 
   // ─── Permission checking ──────────────────────────────────────────

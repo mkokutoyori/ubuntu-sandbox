@@ -38,6 +38,8 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { CronEngine } from './linux/cron/CronEngine';
+import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
 import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -250,34 +252,65 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private cronTimer: symbol | null = null;
+  private _cronEngine: CronEngine | null = null;
+
+  private getCronEngine(): CronEngine {
+    if (!this._cronEngine) {
+      this._cronEngine = new CronEngine({
+        sources: [this.executor.cron, new SystemCron(this.executor.vfs)],
+        runner: (command, ctx) => this.runCronJob(command, ctx),
+        syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
+        deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
+        homeFor: (user) => this.executor.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`),
+        hostname: (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim(),
+        now: () => new Date(),
+      });
+    }
+    return this._cronEngine;
+  }
 
   private startCronTicker(): void {
     if (this.cronTimer !== null) return;
-    this.cronTimer = this.hostTimers.setInterval(() => this.tickCron(), 60_000);
+    this.cronTimer = this.hostTimers.setInterval(() => this.cronTick(), 60_000);
+    this.cronTick();
   }
 
-  private tickCron(): void {
-    if (!this.isServiceActive('cron')) return;
-    const due = this.executor.cron.dueJobs();
-    for (const job of due) {
-      const um = this.executor.userMgr;
-      const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.cwd };
-      const userEntry = um.getUser(job.user);
-      if (userEntry) {
-        um.currentUser = job.user;
-        um.currentUid = userEntry.uid;
-        um.currentGid = userEntry.gid;
-        this.executor.cwd = userEntry.home ?? `/home/${job.user}`;
-      }
-      try {
-        this.executor.execute(job.command);
-      } finally {
-        um.currentUser = prev.user;
-        um.currentUid = prev.uid;
-        um.currentGid = prev.gid;
-        this.executor.cwd = prev.cwd;
-      }
+  cronTick(at: Date = new Date()): void {
+    const engine = this.getCronEngine();
+    const active = this.isServiceActive('cron');
+    if (active && !engine.isRunning) engine.start();
+    else if (!active && engine.isRunning) engine.stop();
+    engine.tick(at);
+  }
+
+  private runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): { output: string; exitCode: number } {
+    const um = this.executor.userMgr;
+    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.cwd };
+    const entry = um.getUser(ctx.user);
+    if (entry) {
+      um.currentUser = ctx.user;
+      um.currentUid = entry.uid;
+      um.currentGid = entry.gid;
+      this.executor.cwd = entry.home ?? `/home/${ctx.user}`;
     }
+    try {
+      const output = this.executor.executeWithEnv(command, ctx.env);
+      return { output: output ?? '', exitCode: 0 };
+    } catch {
+      return { output: '', exitCode: 1 };
+    } finally {
+      um.currentUser = prev.user;
+      um.currentUid = prev.uid;
+      um.currentGid = prev.gid;
+      this.executor.cwd = prev.cwd;
+    }
+  }
+
+  private deliverCronMail(recipient: string, body: string): void {
+    const entry = this.executor.userMgr.getUser(recipient);
+    const host = (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim();
+    const envelope = `From cron@${host}  ${new Date().toString()}\n`;
+    this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
 
   /**
@@ -1619,6 +1652,18 @@ export abstract class LinuxMachine extends EndHost
   runCommandFrameInSession(commandLine: string, session: LinuxShellSession): string {
     if (!this.isPoweredOn || session.disposed) return '';
     return this.executor.executeInSession(commandLine, session);
+  }
+
+  crontabEditTemplate(user: string): string {
+    const existing = this.executor.cron.list(user);
+    if (existing && existing.trim().length > 0) {
+      return existing.endsWith('\n') ? existing : existing + '\n';
+    }
+    return '# Edit this file to introduce tasks to be run by cron.\n#\n# m h  dom mon dow   command\n';
+  }
+
+  installCrontabContent(content: string, user: string): void {
+    this.executor.installCrontab(content, user);
   }
 
   followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {

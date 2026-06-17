@@ -283,6 +283,51 @@ Validation : `cisco-reload-in-scheduler.test.ts` — le reboot (powerOff+powerOn
 se déclenche après l'écoulement (scheduler virtuel), `reload cancel` l'empêche ;
 11/11 tests reload verts.
 
+## Cron Linux — implémentation réaliste, exhaustive (TDD)
+
+Exploration d'abord (sous-agent) : l'existant n'était qu'une table unique
+in-memory + un ticker 60 s sans capture de sortie, sans per-user réel, sans env,
+sans `-u/-e/-i`, sans `/etc/crontab`/`cron.d`/run-parts, sans permissions, sans
+mail. Reconstruction cohérente avec VFS / process / services / bash / logs /
+mail, sans stub.
+
+Modèle (`src/network/devices/linux/cron/`) :
+- `CronSchedule` enrichi : noms (jan-dec, sun-sat), `@reboot`, 0/7=dimanche,
+  ranges/steps/lists/macros. Réexporté depuis `LinuxCronManager` (compat tests).
+- `CrontabParser` : commentaires, lignes vides, assignations d'env (quotes,
+  MAILTO), jobs (mode user et mode système avec champ user), snapshot d'env
+  par job, erreurs de ligne.
+- `LinuxCronManager` : tables per-user (compat legacy single-arg), `dueJobs`
+  agrégé, `rebootJobs`, `getEnv`.
+- `CronPermissions` : `cron.allow` / `cron.deny` (allow prioritaire, root
+  toujours autorisé).
+- `SystemCron` : `/etc/crontab` + `/etc/cron.d/*` (champ user).
+- `CronEngine` : daemon injecté (dedup minute, `@reboot` au start, env
+  SHELL/PATH/HOME/LOGNAME/USER + env crontab, log syslog `CRON[pid]: (user) CMD`,
+  livraison du stdout en mail mbox vers MAILTO ou propriétaire, `MAILTO=""`
+  supprime le mail).
+
+Intégration :
+- `crontab` réécrit : `-l/-r/-i`, `-u user` (privilège + user inconnu),
+  install fichier/stdin, permissions, fichiers spool `/var/spool/cron/crontabs/<user>`,
+  log RELOAD/DELETE.
+- `run-parts [--test]` (exécute les scripts d'un répertoire) → `cron.daily/...`
+  via le `/etc/crontab` standard seedé.
+- `LinuxMachine` : `tickCron` remplacé par `CronEngine` (runner = contexte user
+  + env + capture via `executeWithEnv`, mail mbox `/var/mail/<user>`), gating
+  service cron, `@reboot` au (re)start.
+- VFS seedé : `/etc/crontab` Debian standard, `/etc/cron.d`,
+  `/var/spool/cron/crontabs`.
+- UI : `crontab -e` ouvre l'éditeur (nano) sur un buffer temp pré-rempli ;
+  à la sauvegarde → installation, à l'abandon → « no changes made to crontab ».
+
+Tests (TDD, 76 scénarios) : `cron-model` (27), `cron-engine` (12),
+`cron-firewall` (11, CF-03 rendu réaliste : RELOAD à l'install, CMD au tick),
+`cron-integration` (18, full-stack via LinuxPC : permissions, mail, env,
+run-parts, cron.daily, cron.d, @reboot, service stoppé), `cron-editor-ui` (5),
+e2e `cron.spec.ts` (3 : install/list, -r, -e ouvre nano). Aucune régression
+(386 tests linux fs/ssh/journal verts).
+
 ## Suite
 
 - `tcpdump` (capture live, réutiliser `PacketCaptureLog`).

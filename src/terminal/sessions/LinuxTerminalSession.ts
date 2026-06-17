@@ -943,6 +943,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;
+    if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -1228,6 +1229,46 @@ export class LinuxTerminalSession extends TerminalSession {
     this.syncDeviceState();
   }
 
+  private _pendingCrontabEdit: { user: string; tmpPath: string } | null = null;
+
+  private tryCrontabEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    let toks = commandLine.trim().split(/\s+/);
+    if (toks[0] === 'sudo') toks = toks.slice(1);
+    if (toks[0] !== 'crontab' || !toks.includes('-e')) return false;
+
+    const current = dev.getCurrentUser();
+    const uIdx = toks.indexOf('-u');
+    const user = uIdx >= 0 ? (toks[uIdx + 1] ?? current) : current;
+    if (user !== current && current !== 'root') {
+      this.addLine('crontab: must be privileged to use -u');
+      return true;
+    }
+
+    const template = dev.crontabEditTemplate(user);
+    const tmpPath = `/tmp/crontab.${Math.floor(Math.random() * 1e6)}`;
+    dev.writeFileFromEditorInSession(tmpPath, template, this.shell);
+    this._pendingCrontabEdit = { user, tmpPath };
+    this.openEditor('nano', [tmpPath]);
+    return true;
+  }
+
+  private finishCrontabEdit(saved: boolean): void {
+    const pending = this._pendingCrontabEdit;
+    this._pendingCrontabEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (saved && dev instanceof LinuxMachine && this.shell) {
+      const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+      dev.installCrontabContent(content, pending!.user);
+      this.addLine('crontab: installing new crontab');
+    } else {
+      this.addLine('no changes made to crontab');
+    }
+    this.notify();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
@@ -1277,6 +1318,7 @@ export class LinuxTerminalSession extends TerminalSession {
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
   editorExit(saved: boolean = true): void {
+    if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;

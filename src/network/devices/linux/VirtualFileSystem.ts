@@ -77,13 +77,13 @@ export class VirtualFileSystem {
     const dirs = [
       '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
       '/usr/local', '/usr/local/bin',
-      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
+      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
-      '/var/local', '/var/opt', '/var/backups', '/var/run',
+      '/var/local', '/var/opt', '/var/backups', '/var/run', '/var/spool/cron/crontabs',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
     ];
@@ -114,6 +114,16 @@ export class VirtualFileSystem {
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.createFileAt('/etc/crontab',
+      'SHELL=/bin/sh\n' +
+      'PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n' +
+      '\n' +
+      '17 *\t* * *\troot\tcd / && run-parts --report /etc/cron.hourly\n' +
+      '25 6\t* * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )\n' +
+      '47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n' +
+      '52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )\n',
+      0o644, 0, 0);
+    this.chmod('/var/spool/cron/crontabs', 0o1730);
     this.createFileAt('/etc/hosts',
       '127.0.0.1\tlocalhost\n' +
       '127.0.1.1\tlocalhost\n' +
