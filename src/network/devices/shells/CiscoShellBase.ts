@@ -71,19 +71,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private reloadTimer: TimerHandle | null = null;
   private scheduledReloadAtMs: number | null = null;
 
-  private reloadScheduler(): IScheduler {
-    const dev = this.d() as unknown as { getScheduler?: () => IScheduler };
+  private schedulerFor(device: TDevice): IScheduler {
+    const dev = device as unknown as { getScheduler?: () => IScheduler };
     return dev.getScheduler?.() ?? getDefaultScheduler();
   }
 
   private armReloadTimer(ms: number): void {
-    const scheduler = this.reloadScheduler();
+    const device = this.d();
+    const scheduler = this.schedulerFor(device);
     if (this.reloadTimer !== null) scheduler.clear(this.reloadTimer);
     this.scheduledReloadAtMs = Date.now() + ms;
     this.reloadTimer = scheduler.setTimeout(() => {
       this.reloadTimer = null;
       this.scheduledReloadAtMs = null;
-      this.performScheduledReload();
+      this.performScheduledReload(device);
     }, ms);
   }
 
@@ -98,9 +99,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
   }
 
-  protected performScheduledReload(): void {
-    this.d().powerOff();
-    this.d().powerOn();
+  protected performScheduledReload(device: TDevice): void {
+    device.powerOff();
+    device.powerOn();
     this.mode = 'user';
   }
 
@@ -811,7 +812,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
       if (args[0]?.toLowerCase() === 'cancel') {
-        if (this.reloadTimer !== null) { this.reloadScheduler().clear(this.reloadTimer); this.reloadTimer = null; }
+        if (this.reloadTimer !== null) { this.schedulerFor(this.d()).clear(this.reloadTimer); this.reloadTimer = null; }
         this.scheduledReloadAtMs = null;
         return 'Reload cancelled.';
       }

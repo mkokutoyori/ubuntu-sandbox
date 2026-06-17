@@ -269,6 +269,20 @@ Validation : `linux-top-journalctl-stream-ui.test.ts` (2/2) + probes Playwright
 `logger` streamée en direct, prompt verrouillé). Régressions journal/logging :
 121/121.
 
+## Fix — `reload in` ne rebootait jamais
+
+Bug réel (antérieur, le `setTimeout` maison l'avait aussi) : le callback du timer
+de reload appelait `this.d()` (la référence device n'est valide que *pendant*
+`execute()`). Quand le timer se déclenche plus tard, `d()` lève « Device
+reference not set » → l'exception est avalée (RealTimeScheduler la log) et
+l'équipement ne reboote pas. Correctif : on **capture le device à l'armement**
+(pendant execute) et le callback / `performScheduledReload(device)` l'utilisent.
+`reload cancel` annule sur le même scheduler.
+
+Validation : `cisco-reload-in-scheduler.test.ts` — le reboot (powerOff+powerOn)
+se déclenche après l'écoulement (scheduler virtuel), `reload cancel` l'empêche ;
+11/11 tests reload verts.
+
 ## Suite
 
 - `tcpdump` (capture live, réutiliser `PacketCaptureLog`).
