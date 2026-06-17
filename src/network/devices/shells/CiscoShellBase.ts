@@ -103,6 +103,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     device.powerOff();
     device.powerOn();
     this.mode = 'user';
+    this.terminalMonitor = false;
   }
 
   protected attachLoggingToDevice(device: TDevice): void {
@@ -129,6 +130,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
   protected terminalHistorySize: number = 20;
+  protected terminalMonitor = false;
 
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
@@ -429,7 +431,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── FSM Transitions ───────────────────────────────────────────
 
   protected cmdExit(): string {
-    if (this.mode === 'user') return 'Connection closed.';
+    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
+    if (this.mode === 'privileged') this.terminalMonitor = false;
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
@@ -652,7 +655,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show calendar', 'Display hardware calendar', () =>
       showCalendar());
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
-      showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize));
+      `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
+      + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`);
     trie.register('show processes memory', 'Display per-process memory', () =>
       showProcessesMemory());
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
@@ -728,10 +732,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
-      if (sub === 'monitor') return '';
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor') return '';
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
