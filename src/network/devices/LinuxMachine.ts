@@ -85,6 +85,8 @@ import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerCon
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import { SshSessionTable } from './linux/network/SshSessionTable';
+import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
+import { decodeEthernetFrame, makeLoopbackIcmpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -877,6 +879,10 @@ export abstract class LinuxMachine extends EndHost
     const sessionView = this.renderSessionView(trimmed);
     if (sessionView !== null) return sessionView;
 
+    if (this.isTcpdumpCommand(trimmed)) {
+      return this.runTcpdumpCommand(trimmed);
+    }
+
     // Fast path: no network command → straight to bash interpreter.
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
@@ -1099,11 +1105,17 @@ export abstract class LinuxMachine extends EndHost
       },
       clearInterfaceIP(name: string): void {
         const port = self.ports.get(name);
-        if (port) port.clearIP();
+        if (!port) return;
+        const ip = port.getIPAddress();
+        const cidr = port.getSubnetMask()?.toCIDR() ?? 0;
+        port.clearIP();
+        if (ip) self.getBus().publish({ topic: 'host.address.changed', payload: { ...self.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
       setInterfaceAdmin(name: string, enabled: boolean): void {
         const port = self.ports.get(name);
-        if (port) port.setUp(enabled);
+        if (!port) return;
+        port.setUp(enabled);
+        self.getBus().publish({ topic: 'host.link.state-changed', payload: { ...self.hostRef(), iface: name, up: enabled } });
       },
       isDHCPConfigured(name: string): boolean {
         return self.isDHCPConfigured(name);
@@ -1656,6 +1668,84 @@ export abstract class LinuxMachine extends EndHost
 
   subscribeCapture(listener: (pkt: import('./linux/network/PacketCaptureLog').CapturedPacket) => void): () => void {
     return this.executor.captureLog.subscribe(listener);
+  }
+
+  private isTcpdumpCommand(command: string): boolean {
+    const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
+    if (LinuxMachine.splitTopLevel(noSudo, '|').length > 1) return false;
+    return noSudo.split(/\s+/)[0] === 'tcpdump';
+  }
+
+  private async runTcpdumpCommand(command: string): Promise<string> {
+    const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
+    const tokens = LinuxMachine.tokenizeArgs(noSudo).slice(1);
+    return runTcpdump(tokens, this.buildTcpdumpDeps());
+  }
+
+  private buildTcpdumpDeps(): TcpdumpDeps {
+    const self = this;
+    return {
+      interfaceNames(): string[] {
+        return ['lo', ...self.ports.keys()];
+      },
+      interfaceExists(name: string): boolean {
+        return name === 'lo' || self.ports.has(name);
+      },
+      interfaceUp(name: string): boolean {
+        if (name === 'lo') return true;
+        return self.ports.get(name)?.getIsUp() ?? false;
+      },
+      openCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
+        return self.openTcpdumpCapture(iface, sink);
+      },
+      now(): Date {
+        return new Date();
+      },
+      delay(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      },
+      readFile(path: string): string | null {
+        return self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.cwd));
+      },
+      writeFile(path: string, content: string): boolean {
+        const abs = self.executor.vfs.normalizePath(path, self.executor.cwd);
+        return self.executor.vfs.writeFile(abs, content, 0, 0, 0o022);
+      },
+      dirWritable(path: string): boolean {
+        const abs = self.executor.vfs.normalizePath(path, self.executor.cwd);
+        const dir = abs.slice(0, abs.lastIndexOf('/')) || '/';
+        return self.executor.vfs.exists(dir) && !dir.startsWith('/sys') && !dir.startsWith('/proc');
+      },
+    };
+  }
+
+  private openTcpdumpCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
+    const bus = this.getBus();
+    const id = this.id;
+    const unsubs: Array<() => void> = [];
+    const wantPort = iface !== 'lo';
+    const wantLoopback = iface === 'lo' || iface === 'any';
+
+    if (wantPort) {
+      const match = (p: { deviceId: string; portName: string }) =>
+        p.deviceId === id && (iface === 'any' || p.portName === iface);
+      unsubs.push(bus.subscribeWhere('port.frame.received', match,
+        (e) => sink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'in', new Date()))));
+      unsubs.push(bus.subscribeWhere('port.frame.tx-requested', match,
+        (e) => sink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'out', new Date()))));
+    }
+
+    if (wantLoopback) {
+      const accept = (toIp: string) => iface === 'lo' || toIp.startsWith('127.');
+      unsubs.push(bus.subscribeWhere('host.icmp.echo-sent',
+        (p) => p.deviceId === id && accept(p.toIp),
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-request', new Date()))));
+      unsubs.push(bus.subscribeWhere('host.icmp.echo-reply',
+        (p) => p.deviceId === id && accept(p.toIp),
+        (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
+    }
+
+    return () => { for (const u of unsubs) u(); };
   }
 
   crontabEditTemplate(user: string): string {

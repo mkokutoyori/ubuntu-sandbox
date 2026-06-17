@@ -36,6 +36,19 @@ function setupLAN() {
   return { pc1, pc2, sw };
 }
 
+function setupWindowsLAN() {
+  const pc1 = new WindowsPC('WPC1', 0, 0);
+  const pc2 = new WindowsPC('WPC2', 100, 0);
+  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+
+  const cable1 = new Cable('c1');
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  const cable2 = new Cable('c2');
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+
+  return { pc1, pc2, sw };
+}
+
 /** Helper to run tcpdump and trigger traffic in parallel */
 async function captureWithTraffic(
   capturer: LinuxPC, 

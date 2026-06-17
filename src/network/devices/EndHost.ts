@@ -280,7 +280,7 @@ export abstract class EndHost extends Equipment {
   }
 
   /** Common host identity stamped on every `host.*` event. */
-  private hostRef() {
+  protected hostRef() {
     return { deviceId: this.id, hostname: this.hostname };
   }
 
@@ -662,6 +662,11 @@ export abstract class EndHost extends Equipment {
     Logger.info(this.id, 'host:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
 
+    this.getBus().publish({
+      topic: 'host.address.changed',
+      payload: { ...this.hostRef(), iface: ifName, ip: ip.toString(), cidr: mask.toCIDR(), added: true },
+    });
+
     // Send gratuitous ARP (RFC 5227) to announce new IP and update neighbors' caches
     if (port.isConnected()) {
       const gratuitousARP: ARPPacket = {
@@ -981,10 +986,10 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Always learn sender's MAC→IP mapping — real Linux does this even when
-    // the interface has no IP configured yet (e.g. during bootstrap).
     const existing = this.arpTable.get(arp.senderIP.toString());
-    if (!existing || existing.type !== 'static') {
+    const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
+    const skipUnsolicited = isGratuitous && !existing && port.getIPAddress() !== null;
+    if (!skipUnsolicited && (!existing || existing.type !== 'static')) {
       this.arpTable.set(arp.senderIP.toString(), {
         mac: arp.senderMAC,
         iface: portName,
@@ -1966,14 +1971,19 @@ export abstract class EndHost extends Equipment {
   /** Fabricate successful echo results for traffic that never leaves the host. */
   private localEchoResults(targetIP: IPAddress, count: number): PingResult[] {
     const results: PingResult[] = [];
+    const ip = targetIP.toString();
     for (let seq = 1; seq <= count; seq++) {
+      this.pingIdCounter++;
+      const id = this.pingIdCounter;
+      this.emitIcmpEchoSent({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, size: 64 });
+      this.emitIcmpEchoReply({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, rttMs: 0.01 });
       results.push({
         success: true,
         rttMs: 0.01,
         ttl: this.defaultTTL,
         seq,
         bytes: 64,
-        fromIP: targetIP.toString(),
+        fromIP: ip,
       });
     }
     return results;

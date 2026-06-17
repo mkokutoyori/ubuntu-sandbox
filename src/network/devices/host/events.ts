@@ -68,6 +68,18 @@ export interface HostRouteRemovedPayload extends HostDeviceRef {
   iface: string;
 }
 
+export interface HostLinkStateChangedPayload extends HostDeviceRef {
+  iface: string;
+  up: boolean;
+}
+
+export interface HostAddressChangedPayload extends HostDeviceRef {
+  iface: string;
+  ip: string;
+  cidr: number;
+  added: boolean;
+}
+
 // ── ICMPv4 / ICMPv6 ────────────────────────────────────────────────────
 
 export interface HostIcmpEchoSentPayload extends HostDeviceRef {
@@ -204,6 +216,8 @@ export type HostDomainEvent =
   | { topic: 'host.ndp.entry-expired'; payload: HostNdpEntryExpiredPayload }
   | { topic: 'host.routing.route-added'; payload: HostRouteAddedPayload }
   | { topic: 'host.routing.route-removed'; payload: HostRouteRemovedPayload }
+  | { topic: 'host.link.state-changed'; payload: HostLinkStateChangedPayload }
+  | { topic: 'host.address.changed'; payload: HostAddressChangedPayload }
   | { topic: 'host.icmp.echo-sent'; payload: HostIcmpEchoSentPayload }
   | { topic: 'host.icmp.echo-reply'; payload: HostIcmpEchoReplyPayload }
   | { topic: 'host.icmp.echo-timeout'; payload: HostIcmpEchoTimeoutPayload }

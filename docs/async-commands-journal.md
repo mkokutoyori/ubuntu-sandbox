@@ -346,6 +346,42 @@ Validation : `linux-tcpdump-stream-ui.test.ts` (4), `cisco-show-processes.test.t
 (3), e2e `tcpdump.spec.ts` (1 : capture live + résumé). Régressions tcpdump/SSH
 verts (223).
 
+## tcpdump bloc (batterie GitHub 1-150)
+
+Les 150 tests ajoutés sur GitHub exercent le chemin bloc (`executeCommand`)
+et non plus le streaming : `tcpdump` doit capturer du vrai trafic ICMP/ARP/IP
+pendant une fenêtre, valider toute la CLI et les filtres BPF, puis rendre le
+résumé.
+
+- Nouveau module `network/tcpdump/` : `CaptureFrame` (modèle riche L2/L3/L4 +
+  décodeur `EthernetFrame` et synthèse octets pour le hexdump), `TcpdumpCli`
+  (parseur d'options/validation : `-i/-c/-s/-y/-w/-r/-C`, `-n/-nn`,
+  `-t/-tt/-ttt/-tttt`, `-e/-v/-vv/-vvv/-q`, `-x/-xx/-X/-XX/-A`, `-D`,
+  `--help/--version/--list-interfaces/--list-link-types`), `TcpdumpFilter`
+  (compilateur d'expression BPF : `ip/ip6/arp/tcp/udp/icmp/icmp6`,
+  `host/src/dst`, `net … /cidr` & `mask`, `port/portrange/range`, `proto`,
+  `ether`, `vlan`, `less/greater`, parenthèses, `and/or/not`, slices
+  `ip[..]`/`tcp[tcpflags]`), `TcpdumpFormat` (bannière, footer, lignes
+  ICMP/ARP/TCP/UDP + horodatages + hexdump), `TcpdumpRunner` (driver async
+  piloté par un `TcpdumpDeps`).
+- `LinuxMachine.executeCommand` intercepte `tcpdump` et le route vers le runner
+  async ; `openTcpdumpCapture` branche la capture promiscuous sur le bus
+  (`port.frame.received`/`port.frame.tx-requested` filtrés par device+iface) et,
+  pour `lo`/`any`, sur `host.icmp.echo-sent`/`echo-reply`. `-w` sérialise dans le
+  VFS, `-r` relit (magic `TCPDUMPSIM1`, erreurs « No such file »/« bad dump file »).
+- `EndHost.localEchoResults` émet désormais `host.icmp.echo-sent/reply` (le ping
+  loopback est du vrai trafic ICMP, visible par `tcpdump -i lo`).
+- `EndHost.handleARP` : alignement Linux `arp_accept=0` — une interface déjà
+  configurée n'apprend plus un voisin *nouveau* depuis un ARP gratuit (seules
+  les entrées existantes sont rafraîchies). Le cache reste froid pour une cible
+  jamais résolue, donc un ping déclenche un vrai « who-has » que tcpdump capture.
+
+Validation : `tcpdump.test.ts` (100) + `tcpdump2.test.ts` (50) verts ; suite
+`network-v2` sans régression (seul `other-commands.test.ts` #163, pré-existant
+et sans rapport, échoue). Le chemin streaming (`tryStartTcpdump`) inchangé.
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
+- Reprendre `ip monitor` (infrastructure d'événements `host.link.state-changed`
+  / `host.address.changed` déjà posée).
