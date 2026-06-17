@@ -111,6 +111,23 @@ Validation : `cisco-switch-debug-subscription.test.ts` — 2/2 verts ; le test
 routeur reste vert après refactor ; régressions STP / switch CLI vertes
 (`cisco-stp`, `cisco-switch-exec-commands`, `switch-cli`).
 
+### UI — indicateur de commandes background actives
+
+Exigence du cahier des charges (« Indicateur visuel signalant qu'une ou
+plusieurs commandes background sont actives »).
+
+- `InfoBar` (`TerminalView.tsx`) affiche désormais un témoin pulsant à droite
+  dès qu'au moins un job `mode: background` tourne : libellé du job s'il est
+  unique (`● IOS debug output`), sinon `● N background tasks`. Piloté par
+  `session.listAsyncJobs()` ; rafraîchi à chaque `notify` du socle via le
+  `useSyncExternalStore` déjà en place.
+- Rappel comportement réel : `debug spanning-tree` n'imprime que sur un
+  événement STP réel (transition de port, BPDU, changement de topologie). Sur un
+  switch isolé et déjà convergé, il n'y a rien à streamer — conforme à IOS. Le
+  témoin permet désormais de voir que l'abonnement est bien armé.
+
+Validation : `terminal-infobar-indicator.test.tsx` — 3/3 verts.
+
 ## Suite
 
 - Event Subscription : Firewall → PC Linux → PC Windows.
