@@ -40,6 +40,7 @@ import {
   type HostObservables,
 } from './host/observables';
 import { HostSignalRefreshActor } from './host/actors';
+import { PacketCaptureSource } from './host/PacketCaptureSource';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, TCPPacket,
@@ -282,6 +283,27 @@ export abstract class EndHost extends Equipment {
   /** Common host identity stamped on every `host.*` event. */
   private hostRef() {
     return { deviceId: this.id, hostname: this.hostname };
+  }
+
+  private _packetCapture: PacketCaptureSource | null = null;
+
+  getPacketCaptureSource(): PacketCaptureSource {
+    if (!this._packetCapture) {
+      this._packetCapture = new PacketCaptureSource({
+        ipForIface: (iface) => {
+          const port = this.getInterfaces().find((p) => p.getName() === iface);
+          const ip = port?.getIPAddress();
+          return ip ? ip.toString() : null;
+        },
+      });
+    }
+    return this._packetCapture;
+  }
+
+  override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
+    super.setEventBus(bus);
+    if (bus) this.getPacketCaptureSource().attachToBus(bus, this.id);
+    else this._packetCapture?.detachFromBus();
   }
 
   /** Attach (or rebind) the host signal-refresh actor to the current bus. */

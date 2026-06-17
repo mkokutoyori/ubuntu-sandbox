@@ -742,6 +742,63 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartTcpdump(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const m = /^(sudo\s+)?tcpdump(?:\s+(.*))?$/.exec(commandLine.trim());
+    if (!m) return false;
+
+    const elevated = m[1] !== undefined || this.shell.user === 'root';
+    const argv = (m[2] ?? '').trim().length > 0 ? (m[2] as string).trim().split(/\s+/) : [];
+    const opts = parseTcpdumpOptions(argv);
+
+    if (!elevated) {
+      this.addLine(`tcpdump: ${opts.iface}: You don't have permission to capture on that device`, 'error');
+      this.addLine('(socket: Operation not permitted)', 'error');
+      this.notify();
+      return true;
+    }
+
+    const source = dev.getPacketCaptureSource();
+    let captured = 0;
+    let unsubscribe: (() => void) | null = null;
+    const summary = (ctx: import('@/terminal/async').AsyncJobContext): void => {
+      ctx.sink.line(`${captured} packet${captured === 1 ? '' : 's'} captured`);
+      ctx.sink.line(`${captured} packet${captured === 1 ? '' : 's'} received by filter`);
+      ctx.sink.line('0 packets dropped by kernel');
+    };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: (ctx) => new Promise<void>((resolve) => {
+        ctx.sink.line('tcpdump: verbose output suppressed, use -v[v]... for full protocol decode');
+        ctx.sink.line(`listening on ${opts.iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes`);
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = source.subscribe((line) => {
+          if (ctx.cancelled()) return;
+          ctx.sink.line(line);
+          captured++;
+          if (opts.count !== null && captured >= opts.count) {
+            unsubscribe?.();
+            unsubscribe = null;
+            summary(ctx);
+            resolve();
+          }
+        });
+        ctx.onCancel(() => {
+          unsubscribe?.();
+          unsubscribe = null;
+          resolve();
+        });
+      }),
+      onInterrupt: (ctx) => summary(ctx),
+    });
+    return job !== null;
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -808,6 +865,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
+    if (this.tryStartTcpdump(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -3031,6 +3089,31 @@ export function shouldExecuteSegment(
   if (connector === ';') return true;
   if (connector === '&&') return previousExitCode === 0;
   return previousExitCode !== 0;
+}
+
+function parseTcpdumpOptions(argv: string[]): { iface: string; count: number | null } {
+  let iface = 'eth0';
+  let count: number | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('-')) continue;
+    const chars = a.slice(1);
+    for (let c = 0; c < chars.length; c++) {
+      const ch = chars[c];
+      if (ch === 'i' || ch === 'c') {
+        const glued = chars.slice(c + 1);
+        const value = glued !== '' ? glued : (argv[++i] ?? '');
+        if (ch === 'i') {
+          iface = value || iface;
+        } else {
+          const n = Number.parseInt(value, 10);
+          count = Number.isNaN(n) ? null : n;
+        }
+        break;
+      }
+    }
+  }
+  return { iface, count };
 }
 
 function hasSftpError(output: readonly string[]): boolean {

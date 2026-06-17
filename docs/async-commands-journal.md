@@ -111,7 +111,53 @@ Validation : `cisco-switch-debug-subscription.test.ts` — 2/2 verts ; le test
 routeur reste vert après refactor ; régressions STP / switch CLI vertes
 (`cisco-stp`, `cisco-switch-exec-commands`, `switch-cli`).
 
+## Real-Time Monitoring Commands
+
+### PC Linux / Firewall — `tcpdump …` (capture live en avant-plan)
+
+Première commande de la catégorie « monitoring temps réel », sur le même socle.
+Couvre aussi le besoin Firewall, le firewall étant un `LinuxPC` (cf. CLAUDE.md).
+
+État de départ : `cmdTcpdump` (`LinuxNetCommands`) rendait un **dump unique** du
+`PacketCaptureLog` puis rendait la main — exactement le « dump unique » que cette
+itération veut remplacer par un affichage progressif bloquant.
+
+- `PacketCaptureSource` (`src/network/devices/host/PacketCaptureSource.ts`) :
+  source de capture live bridgée au bus du device. Réutilise le cœur générique
+  `DebugBroadcast` (set d'abonnés + suivi/détachement des souscriptions bus) et
+  formate des lignes tcpdump réalistes à partir des vrais événements
+  `host.icmp.echo-sent` / `host.icmp.echo-reply` (`IP src > dst: ICMP echo
+  request/reply, id, seq, length`), `host.arp.request-sent` (`ARP, Request
+  who-has … tell …`) et `host.arp.entry-learned` (`ARP, Reply … is-at …`).
+  Filtrage strict par `deviceId`.
+- `EndHost.getPacketCaptureSource()` + `EndHost.setEventBus` attache/détache la
+  source (même schéma que le routeur/switch). Posé sur `EndHost` pour couvrir
+  Linux et Windows d'un coup.
+- `LinuxTerminalSession.tryStartTcpdump` intercepte `tcpdump` / `sudo tcpdump`
+  avant la délégation au shell bash et démarre un job **foreground streaming**
+  (socle unifié, comme `tail -f`) : en-tête `listening on …`, lignes diffusées au
+  fil de l'eau (prompt verrouillé), `-c <count>` arrête proprement après N
+  paquets, et Ctrl+C (hook `onInterrupt`) imprime le résumé `N packets
+  captured / N received by filter / 0 dropped by kernel`. Privilège root requis
+  (sinon `You don't have permission to capture on that device`).
+- Le chemin exécuteur (`LinuxCommandExecutor` → `cmdTcpdump`) reste inchangé pour
+  l'usage non-interactif / pipe (suite `linux-lan-ssh-suite`), donc zéro
+  régression.
+
+Critères couverts : streaming temps réel ligne par ligne, prompt bloqué
+(foreground), interruption propre via Ctrl+C avec résumé final, arrêt automatique
+sur `-c`, isolation des sessions (chaque terminal a son runtime/abonnement),
+impact sur l'état interne réel (lignes issues des vrais événements du bus du
+device), privilège root respecté, message d'erreur fidèle à l'OS.
+
+Validation : `linux-tcpdump-live.test.ts` — 5/5 verts (stream ICMP live + prompt
+bloqué, refus non-root, résumé Ctrl+C, arrêt `-c`, isolation inter-sessions) ;
+`linux-lan-ssh-suite` (dump exécuteur) + tests d'abonnement Cisco restent verts
+(222/222).
+
 ## Suite
 
-- Event Subscription : Firewall → PC Linux → PC Windows.
-- Puis Real-Time Monitoring, puis Background Commands.
+- Event Subscription : compléter PC Windows (`Get-WinEvent -Wait`, etc.).
+- Real-Time Monitoring : capture live des handshakes TCP (rendre
+  `PacketCaptureLog` observable), `ping`/`traceroute` progressifs, `watch`.
+- Puis Background Commands.
