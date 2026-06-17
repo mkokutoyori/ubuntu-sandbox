@@ -448,8 +448,9 @@ const SshContextBanner: React.FC<{
 };
 
 /** Info bar at the top of the terminal */
-const InfoBar: React.FC<{ theme: TerminalTheme; session: TerminalSession }> = ({ theme, session }) => {
+export const InfoBar: React.FC<{ theme: TerminalTheme; session: TerminalSession }> = ({ theme, session }) => {
   const info = session.getInfoBarContent();
+  const bgJobs = session.listAsyncJobs().filter((j) => j.mode === 'background' && j.running);
   return (
     <div
       className="flex items-center justify-between px-3 py-1 text-xs select-none shrink-0"
@@ -460,7 +461,15 @@ const InfoBar: React.FC<{ theme: TerminalTheme; session: TerminalSession }> = ({
       }}
     >
       <span>{info.left}</span>
-      {info.right && <span style={{ fontSize: '10px', opacity: 0.6 }}>{info.right}</span>}
+      <span className="flex items-center gap-3">
+        {bgJobs.length > 0 && (
+          <span className="flex items-center gap-1" style={{ fontSize: '10px', color: theme.pagerColor || '#facc15' }}>
+            <span className="animate-pulse">●</span>
+            {bgJobs.length === 1 ? bgJobs[0].label : `${bgJobs.length} background tasks`}
+          </span>
+        )}
+        {info.right && <span style={{ fontSize: '10px', opacity: 0.6 }}>{info.right}</span>}
+      </span>
     </div>
   );
 };

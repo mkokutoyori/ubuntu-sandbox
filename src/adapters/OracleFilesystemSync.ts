@@ -155,9 +155,16 @@ export class OracleFilesystemSync {
         const externalPid = dev?.externalPidForOsPid?.(pid);
         if (externalPid === undefined) return;
         const db = this.ctx.resolveDatabase(deviceId);
-        const sp = db?.instance.getServerProcessByPid(externalPid);
-        if (!db || !sp) return;
-        db.endSessionByOsKill(sp.sessionSid);
+        if (!db) return;
+        // A dedicated server process death ends just that one session.
+        const sp = db.instance.getServerProcessByPid(externalPid);
+        if (sp) {
+          db.endSessionByOsKill(sp.sessionSid);
+          return;
+        }
+        // A background process death is either fatal (instance crash) or
+        // transparently restarted by PMON — the instance decides.
+        db.instance.handleBackgroundProcessDeath(externalPid);
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-created', (e) => {

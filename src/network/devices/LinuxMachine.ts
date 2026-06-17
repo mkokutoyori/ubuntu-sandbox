@@ -1616,6 +1616,26 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
+  async pingStreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      ttl?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHostnameOverWire(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    const outcome = await this.executePingStream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: LinuxShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];

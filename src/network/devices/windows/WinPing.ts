@@ -11,6 +11,7 @@
  */
 
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
+import { IPAddress } from '../../core/types';
 import { requireWindowsService } from './WinFeatureGate';
 
 const PING_HELP = `
@@ -46,11 +47,15 @@ Options:
     -4             Force using IPv4.
     -6             Force using IPv6.`.trim();
 
-export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<string> {
-  if (args.length === 0 || args.includes('/?') || args.includes('/help')) {
-    return PING_HELP;
-  }
+export interface ParsedWinPing {
+  count: number;
+  size: number;
+  ttl?: number;
+  targetStr: string;
+  continuous: boolean;
+}
 
+export function parseWinPingArgs(args: string[]): ParsedWinPing {
   let count = 4;
   let size = 32;
   let ttl: number | undefined;
@@ -62,10 +67,58 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     if (a === '-n' && args[i + 1]) { count = parseInt(args[i + 1], 10); i++; }
     else if (a === '-l' && args[i + 1]) { size = parseInt(args[i + 1], 10); i++; }
     else if (a === '-i' && args[i + 1]) { ttl = parseInt(args[i + 1], 10); i++; }
-    else if ((a === '-c' || a === '-w' || a === '-r' || a === '-s' || a === '-v') && args[i + 1]) { i++; } // skip unsupported value args
-    else if (a === '-t') { continuous = true; count = 10; } // cap continuous at 10
+    else if ((a === '-c' || a === '-w' || a === '-r' || a === '-s' || a === '-v') && args[i + 1]) { i++; }
+    else if (a === '-t') { continuous = true; count = 10; }
     else if (!a.startsWith('-')) { targetStr = args[i]; }
   }
+  return { count, size, ttl, targetStr, continuous };
+}
+
+export function formatWinPingHeader(targetIP: IPAddress, size: number): string {
+  return `\nPinging ${targetIP} with ${size} bytes of data:`;
+}
+
+export function formatWinPingReplyLine(r: PingResult, size: number): string {
+  if (r.success) {
+    const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
+    return `Reply from ${r.fromIP}: bytes=${size} time=${ms} TTL=${r.ttl}`;
+  }
+  if (r.error?.includes('Time to live exceeded')) {
+    const match = r.error.match(/from ([\d.]+)/);
+    return `Reply from ${match ? match[1] : 'unknown'}: TTL expired in transit.`;
+  }
+  if (r.error?.includes('Destination unreachable')) {
+    const match = r.error.match(/from ([\d.]+)/);
+    return `Reply from ${match ? match[1] : 'unknown'}: Destination host unreachable.`;
+  }
+  return 'Request timed out.';
+}
+
+export function formatWinPingStats(targetIP: string, count: number, results: PingResult[]): string[] {
+  const received = results.filter(r => r.success);
+  const lost = count - received.length;
+  const lines = [
+    '',
+    `Ping statistics for ${targetIP}:`,
+    `    Packets: Sent = ${count}, Received = ${received.length}, Lost = ${lost} (${count === 0 ? 0 : Math.round((lost / count) * 100)}% loss),`,
+  ];
+  if (received.length > 0) {
+    const rtts = received.map(r => Math.round(r.rttMs));
+    const min = Math.min(...rtts);
+    const max = Math.max(...rtts);
+    const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
+    lines.push('Approximate round trip times in milli-seconds:');
+    lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
+  }
+  return lines;
+}
+
+export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<string> {
+  if (args.length === 0 || args.includes('/?') || args.includes('/help')) {
+    return PING_HELP;
+  }
+
+  const { count, size, ttl, targetStr } = parseWinPingArgs(args);
 
   if (!targetStr) return PING_HELP;
 
@@ -87,49 +140,12 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
 }
 
 function formatPingOutput(targetIP: IPAddress, count: number, size: number, results: PingResult[]): string {
-  const lines: string[] = [];
-  lines.push(`\nPinging ${targetIP} with ${size} bytes of data:`);
-
-  const received = results.filter(r => r.success);
-  const lost = count - received.length;
-
+  const lines: string[] = [formatWinPingHeader(targetIP, size)];
   if (results.length === 0) {
     for (let i = 0; i < count; i++) lines.push('PING: transmit failed. General failure.');
   } else {
-    for (const r of results) {
-      if (r.success) {
-        const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
-        lines.push(`Reply from ${r.fromIP}: bytes=${size} time=${ms} TTL=${r.ttl}`);
-      } else if (r.error) {
-        if (r.error.includes('Time to live exceeded')) {
-          const match = r.error.match(/from ([\d.]+)/);
-          const fromIP = match ? match[1] : 'unknown';
-          lines.push(`Reply from ${fromIP}: TTL expired in transit.`);
-        } else if (r.error.includes('Destination unreachable')) {
-          const match = r.error.match(/from ([\d.]+)/);
-          const fromIP = match ? match[1] : 'unknown';
-          lines.push(`Reply from ${fromIP}: Destination host unreachable.`);
-        } else {
-          lines.push('Request timed out.');
-        }
-      } else {
-        lines.push('Request timed out.');
-      }
-    }
+    for (const r of results) lines.push(formatWinPingReplyLine(r, size));
   }
-
-  lines.push('');
-  lines.push(`Ping statistics for ${targetIP}:`);
-  lines.push(`    Packets: Sent = ${count}, Received = ${received.length}, Lost = ${lost} (${Math.round((lost / count) * 100)}% loss),`);
-
-  if (received.length > 0) {
-    const rtts = received.map(r => Math.round(r.rttMs));
-    const min = Math.min(...rtts);
-    const max = Math.max(...rtts);
-    const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
-    lines.push('Approximate round trip times in milli-seconds:');
-    lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
-  }
-
+  lines.push(...formatWinPingStats(targetIP.toString(), count, results));
   return lines.join('\n');
 }

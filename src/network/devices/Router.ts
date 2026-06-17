@@ -361,8 +361,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     super.setEventBus(bus);
     if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
-    if (bus) this.getDebugService().attachToBus(bus, this.id);
-    else this._debugService?.detachFromBus();
+    this._debugService?.attachToBus(this.getBus(), this.id);
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 
@@ -2155,6 +2154,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getDebugService(): RouterDebugService {
     if (!this._debugService) this._debugService = new RouterDebugService();
+    this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
   }
 

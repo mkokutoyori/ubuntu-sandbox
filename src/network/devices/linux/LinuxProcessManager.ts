@@ -273,13 +273,20 @@ export class LinuxProcessManager {
    * Termination signals (TERM, KILL, INT, QUIT, HUP) remove the process.
    * STOP transitions to T; CONT resumes to S. PID 1 is protected.
    */
-  kill(pid: number, signal: Signal): boolean {
+  kill(pid: number, signal: Signal, opts?: { silent?: boolean }): boolean {
     const p = this.processes.get(pid);
     const delivered = !!p && pid !== INIT_PID;
-    this.publish({
-      topic: 'linux.process.signalled',
-      payload: { deviceId: this.deviceId, pid, comm: p?.comm ?? '', signal, delivered },
-    });
+    // `silent` removals (the simulator reaping a process-table overlay entry,
+    // e.g. Oracle un-registering a background process) are bookkeeping, not a
+    // signal a user or the OS actually delivered — so they don't publish
+    // `linux.process.signalled`. Otherwise subscribers can't tell an internal
+    // cleanup apart from a real `kill`/`pkill`.
+    if (!opts?.silent) {
+      this.publish({
+        topic: 'linux.process.signalled',
+        payload: { deviceId: this.deviceId, pid, comm: p?.comm ?? '', signal, delivered },
+      });
+    }
     if (!p) return false;
     if (pid === INIT_PID) return false;
 

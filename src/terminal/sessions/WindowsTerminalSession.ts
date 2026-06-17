@@ -19,6 +19,9 @@ import {
   type InputMode,
 } from './TerminalSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
+import type { PingResult } from '@/network/devices/EndHost';
+import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
@@ -309,6 +312,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
     // Ctrl+C
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.asyncRuntime.interruptForeground()) return true;
       this.addLine(`${this.getPrompt()}${this.input}^C`, 'warning');
       this.input = '';
       this.notify();
@@ -328,7 +332,60 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Command execution (root cmd mode) ──────────────────────────
 
+  private tryStartWinPingStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'ping') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const parsed = parseWinPingArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const count = parsed.continuous ? 0 : parsed.count;
+    const results: PingResult[] = [];
+    let label = parsed.targetStr;
+    const emitStats = (ctx: AsyncJobContext) => {
+      for (const line of formatWinPingStats(label, results.length, results)) ctx.sink.line(line);
+    };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const outcome = await dev.pingStreamInSession(parsed.targetStr, {
+          count,
+          ttl: parsed.ttl,
+          timeoutMs: 2000,
+          intervalMs: 1000,
+          onResolved: (ip) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size)); },
+          onResult: (r) => { results.push(r); ctx.sink.line(formatWinPingReplyLine(r, parsed.size)); },
+          shouldStop: () => ctx.cancelled(),
+          sleep: (ms) => ctx.delay(ms),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved && results.length === 0) {
+          ctx.sink.error(outcome.reason === 'name'
+            ? `Ping request could not find host ${parsed.targetStr}. Please check the name and try again.`
+            : 'Request timed out.');
+          return;
+        }
+        emitStats(ctx);
+      },
+      onInterrupt: (ctx) => emitStats(ctx),
+    });
+    return job !== null;
+  }
+
   protected onEnter(): void {
+    if (this.hasForegroundAsyncJob) {
+      this.input = '';
+      this._inputBuf = '';
+      this.notify();
+      return;
+    }
     // Drain BOTH buffers so tests / drivers that keep using
     // `setInputBuf` after the sub-shell stack has fully unwound still
     // reach the local cmd.exe instead of being silently swallowed.
@@ -373,6 +430,8 @@ export class WindowsTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
+
+    if (this.tryStartWinPingStream(trimmed)) return;
 
     // SSH client info / unsupported forms — handled by the shared
     // launcher first so the OpenSSH usage / version line is uniform

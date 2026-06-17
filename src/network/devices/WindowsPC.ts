@@ -626,6 +626,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.syncHostsFile(hostname);
   }
 
+  async pingStreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      ttl?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPAddress) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHostname(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip);
+    const outcome = await this.executePingStream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
   /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.

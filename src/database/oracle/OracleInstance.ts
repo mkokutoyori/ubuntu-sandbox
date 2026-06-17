@@ -94,6 +94,29 @@ export class OracleInstance {
   private _archiveLogMode: boolean;
   private _pidCounter: number = 1000;
 
+  /** Allocate the next OS-style pid from the instance-wide pid space shared
+   *  by background processes, dedicated server processes and the listener. */
+  private nextPid(): number {
+    return this._pidCounter++;
+  }
+
+  /**
+   * Background processes whose death is fatal to the instance. Killing any
+   * of them from the OS terminates the whole instance — equivalent to a
+   * SHUTDOWN ABORT — exactly as real Oracle does when PMON/SMON/LGWR/DBWn/
+   * CKPT die. Every other background process (RECO/MMON/MMNL/ARCn/…) is
+   * non-fatal: PMON simply restarts it under a fresh pid.
+   */
+  private static readonly CRITICAL_BG_PROCESSES: ReadonlySet<string> = new Set([
+    'PMON', 'SMON', 'DBW0', 'LGWR', 'CKPT',
+  ]);
+
+  /** ORA error each critical background process raises when it dies, used
+   *  in the alert-log "terminating the instance due to error N" banner. */
+  private static readonly BG_TERMINATION_ERROR: Readonly<Record<string, number>> = {
+    PMON: 472, SMON: 474, LGWR: 470, DBW0: 471, CKPT: 469,
+  };
+
   // ── Database identity & SCN ──────────────────────────────────────
   /** DBID — computed once per database like CREATE DATABASE does (lazy
    *  so the deviceId injected after construction participates, giving
@@ -703,7 +726,7 @@ export class OracleInstance {
       procs.push(['ARC0', 'Archiver 0']);
     }
     this._backgroundProcesses = procs.map(([name, description]) => ({
-      name, pid: this._pidCounter++, description,
+      name, pid: this.nextPid(), description,
     }));
     for (const p of this._backgroundProcesses) {
       this.getBus().publish({
@@ -717,6 +740,55 @@ export class OracleInstance {
     return [...this._backgroundProcesses];
   }
 
+  getBackgroundProcessByPid(pid: number): BackgroundProcess | undefined {
+    return this._backgroundProcesses.find(p => p.pid === pid);
+  }
+
+  /**
+   * React to an OS-level kill of one of this instance's background
+   * processes (e.g. `kill -9 <ora_pmon pid>`). A critical process death
+   * crashes the entire instance — the next startup performs instance
+   * (crash) recovery, since no checkpoint was taken. A non-critical
+   * process is transparently restarted by PMON under a fresh pid.
+   *
+   * @returns 'crashed' | 'restarted', or 'unknown' when the pid is not a
+   *   live background process of this instance.
+   */
+  handleBackgroundProcessDeath(pid: number): 'crashed' | 'restarted' | 'unknown' {
+    if (this._state === 'SHUTDOWN') return 'unknown';
+    const proc = this.getBackgroundProcessByPid(pid);
+    if (!proc) return 'unknown';
+
+    if (OracleInstance.CRITICAL_BG_PROCESSES.has(proc.name)) {
+      // Capture PMON's pid for the banner before shutdown() tears the
+      // process list down (PMON itself is the reaper, or the victim).
+      const pmonPid = this.getBackgroundProcesses().find(p => p.name === 'PMON')?.pid ?? proc.pid;
+      const errno = OracleInstance.BG_TERMINATION_ERROR[proc.name] ?? 474;
+      this.logAlert(`${proc.name} (ospid: ${proc.pid}): terminated with error`);
+      this.logAlert(`PMON (ospid: ${pmonPid}): terminating the instance due to error ${errno}`);
+      this.logAlert(`Instance terminated by PMON, pid = ${pmonPid}`);
+      // Fatal death == SHUTDOWN ABORT: skips the checkpoint, leaving the
+      // instance needing recovery on the next startup.
+      this.shutdown('ABORT');
+      return 'crashed';
+    }
+
+    // Non-fatal: PMON restarts the dead process. Reap the old pid from the
+    // host process table, then advertise the replacement under a new pid.
+    this.getBus().publish({
+      topic: 'oracle.instance.background-process-stopped',
+      payload: { ...this.ref(), name: proc.name, pid: proc.pid },
+    });
+    proc.pid = this.nextPid();
+    this.logAlert(`Process termination detected (ospid: ${pid})`);
+    this.logAlert(`Restarting dead background process ${proc.name}`);
+    this.getBus().publish({
+      topic: 'oracle.instance.background-process-started',
+      payload: { ...this.ref(), name: proc.name, pid: proc.pid, description: proc.description },
+    });
+    return 'restarted';
+  }
+
   private _serverProcesses = new Map<number, ServerProcess>();
 
   serverProcessCommand(local: boolean): string {
@@ -728,7 +800,7 @@ export class OracleInstance {
   spawnServerProcess(args: {
     sessionSid: number; serial: number; username: string; osUser: string; local: boolean;
   }): ServerProcess {
-    const proc: ServerProcess = { pid: this._pidCounter++, ...args };
+    const proc: ServerProcess = { pid: this.nextPid(), ...args };
     this._serverProcesses.set(args.sessionSid, proc);
     this.getBus().publish({
       topic: 'oracle.instance.server-process-started',
