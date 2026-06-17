@@ -472,6 +472,7 @@ export class LinuxLogManager {
     };
     // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
+    this.emitToFollowers(entry);
 
     // The on-disk /var/log/* files are written by rsyslog: when that daemon
     // is stopped they freeze, but `journalctl` keeps working.
@@ -518,28 +519,32 @@ export class LinuxLogManager {
   }
 
   private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {
-    let entries = [...this.journal];
+    return this.journal.filter((e) => this.entryMatches(e, unit, priority, pid));
+  }
 
-    if (unit) {
-      entries = entries.filter(e => {
-        // Match unit name against tag or unit field
-        if (e.unit && e.unit.includes(unit)) return true;
-        if (e.tag && e.tag.includes(unit)) return true;
-        // Match "systemd" unit to entries with tag "systemd" or unit containing "systemd"
-        return false;
-      });
+  private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
+    if (unit && !((e.unit && e.unit.includes(unit)) || (e.tag && e.tag.includes(unit)))) return false;
+    if (priority >= 0 && e.priority > priority) return false;
+    if (pid >= 0 && e.pid !== pid) return false;
+    return true;
+  }
+
+  private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
+
+  /** Subscribe to live journal lines (journalctl -f). Returns an unsubscribe. */
+  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
+    const sub = { unit: opts.unit ?? '', priority: opts.priority ?? -1, pid: opts.pid ?? -1, listener };
+    this.followSubs.add(sub);
+    return () => { this.followSubs.delete(sub); };
+  }
+
+  private emitToFollowers(entry: JournalEntry): void {
+    if (this.followSubs.size === 0) return;
+    for (const sub of this.followSubs) {
+      if (this.entryMatches(entry, sub.unit, sub.priority, sub.pid)) {
+        sub.listener(this.formatEntry(entry, 'short', []));
+      }
     }
-
-    if (priority >= 0) {
-      // Show entries at this priority or more severe (lower number)
-      entries = entries.filter(e => e.priority <= priority);
-    }
-
-    if (pid >= 0) {
-      entries = entries.filter(e => e.pid === pid);
-    }
-
-    return entries;
   }
 
   private formatEntry(entry: JournalEntry, format: string, outputFields: string[]): string {

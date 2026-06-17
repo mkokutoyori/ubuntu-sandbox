@@ -221,6 +221,41 @@ test('probe: linux watch (real-time refresh)', async ({ page }) => {
   });
 });
 
+test('probe: linux top (refreshing)', async ({ page }) => {
+  const id = await addDevice(page, 'linux-pc', 400, 300);
+  await openTerminal(page, id);
+  await typeCmd(page, 'top -d 0.5');
+  await page.waitForTimeout(900);
+  const t1 = await modalText(page);
+  const inputsDuring = await visibleTextInputs(page);
+  await page.waitForTimeout(1400);
+  const t2 = await modalText(page);
+  await page.screenshot({ path: '/tmp/probe/linux-top.png' });
+  record({
+    probe: 'linux top',
+    hasHeader: /top -/.test(t2) && /%Cpu/.test(t2),
+    promptLockedWhileRunning: inputsDuring === 0,
+    refreshedInPlace: Math.abs(t2.split('\n').length - t1.split('\n').length) <= 2,
+  });
+});
+
+test('probe: linux journalctl -f (live follow)', async ({ page }) => {
+  const id = await addDevice(page, 'linux-pc', 400, 300);
+  await openTerminal(page, id);
+  await typeCmd(page, 'journalctl -f');
+  await page.waitForTimeout(600);
+  const lockedDuring = await visibleTextInputs(page);
+  await page.evaluate((devId) => {
+    const store = (window as Record<string, unknown>).__networkStore as { getState(): { deviceInstances: Map<string, Record<string, unknown>> } };
+    const dev = store.getState().deviceInstances.get(devId) as Record<string, unknown>;
+    const e = dev.executeCommand as ((c: string) => Promise<string> | string) | undefined;
+    return e ? Promise.resolve(e.call(dev, 'logger probeFollowLineXYZ')) : null;
+  }, id);
+  const streamed = await page.locator('[data-testid="terminal-modal"]').getByText('probeFollowLineXYZ', { exact: false }).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+  await page.screenshot({ path: '/tmp/probe/linux-journalctl-f.png' });
+  record({ probe: 'linux journalctl -f', promptLockedWhileRunning: lockedDuring === 0, streamedNewEntry: streamed });
+});
+
 test.afterAll(() => {
   writeFileSync('/tmp/probe/report.json', JSON.stringify(findings, null, 2));
 });

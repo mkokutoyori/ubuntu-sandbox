@@ -246,7 +246,30 @@ Constats :
 Validation : `linux-watch-stream-ui.test.ts` (2/2) + probe Playwright
 (`hasHeader`, `promptLockedWhileRunning`, `refreshedInPlace`).
 
+## PC Linux : `top` (monitoring) et `journalctl -f` (event subscription)
+
+- **Mutualisation** : extraction d'un `startRepaintingMonitor(commandLine,
+  intervalMs)` dans `LinuxTerminalSession` (repeint une frame en place chaque
+  intervalle, prompt verrouillé, Ctrl+C). `watch` et `top` l'utilisent tous les
+  deux. `LinuxMachine.runWatchFrameInSession` renommé `runCommandFrameInSession`
+  (générique : exécute n'importe quelle commande dans la session et renvoie sa
+  sortie via `executor.executeInSession`).
+- **`top`** : `tryStartTopStream` parse `-d` pour l'intervalle (3 s défaut),
+  réutilise `cmdTop` via le moniteur générique. `-n`/`-b` (batch) → laissé au
+  one-shot.
+- **`journalctl -f`** : event subscription. `LinuxLogManager.followJournal(opts,
+  listener)` — abonnés filtrés (unit/priority/pid) notifiés depuis `addEntry`
+  (point unique déjà existant), formatés via `formatEntry('short')` réutilisé ;
+  `filterEntries` refactoré sur le même `entryMatches`. La session affiche
+  d'abord la queue (`journalctl -n 10` réutilisé) puis stream les nouvelles
+  lignes en direct (filtre `-u` live), Ctrl+C se désabonne.
+
+Validation : `linux-top-journalctl-stream-ui.test.ts` (2/2) + probes Playwright
+(`top` : header/%Cpu, prompt verrouillé, repaint ; `journalctl -f` : entrée
+`logger` streamée en direct, prompt verrouillé). Régressions journal/logging :
+121/121.
+
 ## Suite
 
-- Event Subscription : `journalctl -f` (suivi live du journal systemd).
-- Background Commands : `top` (refresh plein écran), `tcpdump` (capture live).
+- `tcpdump` (capture live, réutiliser `PacketCaptureLog`).
+- Background listing : `show processes` / `ps` reflétant `listAsyncJobs()`.

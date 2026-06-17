@@ -792,18 +792,11 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private tryStartWatchStream(commandLine: string): boolean {
+  private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'watch') return false;
-    let parsed: ReturnType<typeof parseWatchArgs>;
-    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
-    if (parsed.command.length === 0) return false;
-
     const shell = this.shell;
-    const intervalMs = Math.max(100, parsed.intervalSeconds * 1000);
     let baseLen = this.lines.length;
 
     const job = this.startAsyncCommand({
@@ -813,13 +806,69 @@ export class LinuxTerminalSession extends TerminalSession {
       prepare: () => { baseLen = this.lines.length; return true; },
       run: async (ctx) => {
         while (!ctx.cancelled()) {
-          const frame = dev.runWatchFrameInSession(commandLine, shell);
+          const frame = dev.runCommandFrameInSession(commandLine, shell);
           this.lines = this.lines.slice(0, baseLen);
           for (const line of frame.split('\n')) this.addLine(line);
           this.notify();
           await ctx.delay(intervalMs);
         }
       },
+    });
+    return job !== null;
+  }
+
+  private tryStartWatchStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'watch') return false;
+    let parsed: ReturnType<typeof parseWatchArgs>;
+    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
+    if (parsed.command.length === 0) return false;
+    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000));
+  }
+
+  private tryStartTopStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'top') return false;
+    if (toks.includes('-n') || toks.includes('-b')) return false;
+    const dIdx = toks.indexOf('-d');
+    const delay = dIdx >= 0 ? parseFloat(toks[dIdx + 1]) : 3;
+    const intervalMs = Math.max(100, (Number.isFinite(delay) && delay > 0 ? delay : 3) * 1000);
+    return this.startRepaintingMonitor(commandLine, intervalMs);
+  }
+
+  private tryStartJournalFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'journalctl') return false;
+    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const shell = this.shell;
+
+    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
+    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
+    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
+    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
+    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
+    const initialCommand = ['journalctl', ...initialArgs].join(' ');
+
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
+        for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = dev.followJournal({ unit }, (line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
     });
     return job !== null;
   }
@@ -892,6 +941,8 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
+    if (this.tryStartTopStream(trimmed)) return;
+    if (this.tryStartJournalFollow(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
