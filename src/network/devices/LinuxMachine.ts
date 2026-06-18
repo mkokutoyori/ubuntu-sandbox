@@ -1745,7 +1745,9 @@ export abstract class LinuxMachine extends EndHost
         (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
     }
 
-    unsubs.push(this.subscribeCapture((pkt) => sink(makeTcpFrame(pkt, iface === 'any' ? 'eth0' : iface))));
+    const tcpIface = iface === 'any' ? 'eth0' : iface;
+    for (const pkt of this.executor.captureLog.all()) sink(makeTcpFrame(pkt, tcpIface));
+    unsubs.push(this.subscribeCapture((pkt) => sink(makeTcpFrame(pkt, tcpIface))));
 
     return () => { for (const u of unsubs) u(); };
   }

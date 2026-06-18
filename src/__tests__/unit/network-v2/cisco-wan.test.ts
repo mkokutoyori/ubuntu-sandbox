@@ -417,11 +417,13 @@ describe('ARP', () => {
     await configureHostsStatic(topology.hosts);
   });
 
-  it('devrait populer la table ARP via ARP gratuits lors de la configuration', async () => {
-    // Gratuitous ARPs sent by hosts during IP configuration populate neighbors' caches.
+  it('devrait peupler la table ARP des voisins du même LAN', async () => {
+    // A configured host resolves neighbors on first traffic (Linux arp_accept=0:
+    // gratuitous ARPs do not create new entries, they only refresh existing ones).
     const pc = topology.hosts.lan1[0] as LinuxPC;
+    await pc.executeCommand('ping -c 1 192.168.1.2');
+    await pc.executeCommand('ping -c 1 192.168.1.3');
     const arpTable = await pc.executeCommand('arp -n');
-    // pc1 was configured first; later hosts on LAN1 sent gratuitous ARPs it received.
     expect(arpTable).toContain('192.168.1.2');
     expect(arpTable).toContain('192.168.1.3');
   });

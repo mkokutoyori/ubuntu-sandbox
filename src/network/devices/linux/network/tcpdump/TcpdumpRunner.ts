@@ -72,18 +72,20 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<strin
   if (target !== 0) {
     await new Promise<void>((resolve) => {
       let settled = false;
+      let unsubscribe: (() => void) | null = null;
       const finish = () => {
         if (settled) return;
         settled = true;
-        unsubscribe();
+        unsubscribe?.();
         resolve();
       };
-      const unsubscribe = deps.openCapture(opt.iface, (frame) => {
+      unsubscribe = deps.openCapture(opt.iface, (frame) => {
         if (!filter.predicate(frame)) return;
         collected.push(frame);
         if (target !== null && collected.length >= target) finish();
       });
-      deps.delay(CAPTURE_WINDOW_MS).then(finish);
+      if (settled) unsubscribe();
+      else deps.delay(CAPTURE_WINDOW_MS).then(finish);
     });
   }
 
