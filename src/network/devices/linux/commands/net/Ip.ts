@@ -115,7 +115,14 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
     addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.addStaticRoute(new IPAddress(network), mask, new IPAddress(gateway), metric ?? 100)) {
+        const net4 = new IPAddress(network);
+        if (!net4.networkAddress(mask).equals(net4)) {
+          return `Error: an inet prefix is expected rather than "${network}/${cidr}".`;
+        }
+        const exists = net.getRoutingTable().some(
+          r => r.network.toString() === net4.toString() && r.mask.toCIDR() === cidr);
+        if (exists) return 'RTNETLINK answers: File exists';
+        if (!net.addStaticRoute(net4, mask, new IPAddress(gateway), metric ?? 100)) {
           return 'RTNETLINK answers: Network is unreachable';
         }
         return '';
