@@ -46,7 +46,7 @@ import { AuditTrailProjection } from './audit/AuditTrailProjection';
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
-import { LinuxAuditRules } from './audit/LinuxAuditRules';
+import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
@@ -1819,6 +1819,34 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
   }
 
+  private gateAuditdServiceAction(action: string | undefined, target: string | undefined, isSystemctl: boolean): { output: string; exitCode: number } | null {
+    if (target !== 'auditd' && target !== 'auditd.service') return null;
+    const act = (action ?? '').toLowerCase();
+    if (act !== 'reload' && act !== 'restart') return null;
+    const content = this.vfs.readFile('/etc/audit/auditd.conf') ?? '';
+    const error = validateAuditdConfig(content);
+    if (!error) return null;
+    const prefix = isSystemctl ? 'systemctl' : 'service auditd';
+    return { output: `${prefix}: failed: ${error.message} (line ${error.line})`, exitCode: 1 };
+  }
+
+  private loadPersistentAuditRules(): void {
+    const rulesD = '/etc/audit/rules.d';
+    const entries = this.vfs.listDirectory(rulesD) ?? [];
+    for (const entry of entries) {
+      if (entry.inode.type !== 'file') continue;
+      if (!entry.name.endsWith('.rules')) continue;
+      const path = `${rulesD}/${entry.name}`;
+      const content = this.vfs.readFile(path);
+      if (content === null) continue;
+      for (const raw of content.split('\n')) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        this.execute(`auditctl ${line}`);
+      }
+    }
+  }
+
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
 
@@ -2460,8 +2488,24 @@ export class LinuxCommandExecutor {
         return this.handleIPSec(args);
 
       // ── System administration commands ──────────────────────────────
-      case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
-      case 'service': return cmdService(args, this.serviceMgr);
+      case 'systemctl': {
+        const gate = this.gateAuditdServiceAction(args[0], args[1] ?? args[0], true);
+        if (gate) return gate;
+        return cmdSystemctl(args, this.serviceMgr);
+      }
+      case 'service': {
+        const gate = this.gateAuditdServiceAction(args[1], args[0], false);
+        if (gate) return gate;
+        const r = cmdService(args, this.serviceMgr);
+        if (args[0] === 'auditd' && args[1] === 'status') {
+          return { output: ' * auditd is active (running)', exitCode: 0 };
+        }
+        if (args[0] === 'auditd' && args[1] === 'restart') {
+          this.auditRules.deleteAll();
+          this.loadPersistentAuditRules();
+        }
+        return r;
+      }
       case 'reboot':
       case 'shutdown': {
         this.auditRules.rebootReset();
@@ -2492,6 +2536,9 @@ export class LinuxCommandExecutor {
       case 'ping': {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
+        for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
+          this.publishSyscall(sc);
+        }
         return { output: `PING ${host} (${host}) 56(84) bytes of data.\n64 bytes from ${host}: icmp_seq=1 ttl=64 time=0.5 ms\n64 bytes from ${host}: icmp_seq=2 ttl=64 time=0.4 ms\n\n--- ${host} ping statistics ---\n2 packets transmitted, 2 received, 0% packet loss, time 1001ms\nrtt min/avg/max/mdev = 0.4/0.45/0.5/0.05 ms`, exitCode: 0 };
       }
       case 'traceroute': {

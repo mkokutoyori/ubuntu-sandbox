@@ -46,6 +46,10 @@ const KNOWN_SYSCALLS: ReadonlySet<string> = new Set([
   'sendmsg', 'recvmsg', 'shutdown', 'setsockopt', 'getsockopt',
   'init_module', 'finit_module', 'delete_module',
   'ptrace', 'reboot', 'sethostname', 'setdomainname',
+  'settimeofday', 'gettimeofday', 'clock_settime', 'clock_gettime',
+  'adjtimex', 'time', 'stime',
+  'epoll_create', 'epoll_wait', 'select', 'pselect6', 'poll', 'ppoll',
+  'pipe', 'pipe2', 'dup', 'dup2', 'dup3', 'fcntl',
 ]);
 
 const KNOWN_ARCHES: ReadonlySet<string> = new Set(['b32', 'b64']);
@@ -54,8 +58,12 @@ const KNOWN_FIELDS: ReadonlySet<string> = new Set([
   'arch', 'uid', 'gid', 'euid', 'egid', 'auid', 'suid', 'sgid', 'fsuid', 'fsgid',
   'pid', 'ppid', 'path', 'dir', 'perm', 'success', 'exit', 'msgtype', 'inode',
   'devmajor', 'devminor', 'obj_user', 'obj_role', 'obj_type', 'subj_user',
-  'subj_role', 'subj_type', 'key',
+  'subj_role', 'subj_type', 'subj_sen', 'subj_clr', 'key',
+  'exe', 'comm', 'ses', 'sessionid', 'fstype', 'a0', 'a1', 'a2', 'a3',
+  'filetype', 'gid', 'egid',
 ]);
+
+const MAX_VALID_SYSCALL_ID = 600;
 
 const FILTER_KEYWORDS: ReadonlySet<string> = new Set(['task', 'exit', 'user', 'exclude']);
 const ACTION_KEYWORDS: ReadonlySet<string> = new Set(['always', 'never']);
@@ -245,9 +253,11 @@ export class LinuxAuditRules {
       if (/^-?\d+$/.test(s)) {
         const n = parseInt(s, 10);
         if (n < 0) return fail(`invalid syscall id: must be non-negative (got '${s}')`);
+        if (n > MAX_VALID_SYSCALL_ID) return fail(`invalid syscall id: ${n} exceeds maximum (${MAX_VALID_SYSCALL_ID})`);
         syscalls.push(s);
         continue;
       }
+      if (/[*?\[\]]/.test(s)) return fail(`invalid syscall name: shell glob characters not allowed (got '${s}')`);
       if (!KNOWN_SYSCALLS.has(s)) return fail(`unknown syscall: '${s}'`);
       syscalls.push(s);
     }
@@ -492,6 +502,7 @@ function validateKey(key: string | undefined): string | null {
   if (key === undefined) return null;
   if (key.length === 0) return 'invalid key: must not be empty';
   if (key.length > MAX_KEY_LEN) return `invalid key: length exceeds ${MAX_KEY_LEN}-character limit`;
+  if (!/^[\x21-\x7e]+$/.test(key)) return 'invalid key: non-ASCII or whitespace characters not allowed';
   return null;
 }
 
@@ -545,7 +556,7 @@ function defaultAuditdConf(): string {
     'local_events = yes',
     'write_logs = yes',
     'log_file = /var/log/audit/audit.log',
-    'log_format = ENRICHED',
+    'log_format = RAW',
     'log_group = adm',
     'priority_boost = 4',
     'flush = INCREMENTAL_ASYNC',
@@ -569,6 +580,65 @@ function defaultAuditdConf(): string {
     'tcp_max_per_addr = 1',
     'tcp_client_max_idle = 0',
     'transport = TCP',
+    'dispatcher = /sbin/audispd',
     '',
   ].join('\n');
+}
+
+const AUDITD_VALID_KEYS: ReadonlySet<string> = new Set([
+  'local_events', 'write_logs', 'log_file', 'log_format', 'log_group',
+  'priority_boost', 'flush', 'freq', 'max_log_file', 'num_logs',
+  'max_log_file_action', 'space_left', 'space_left_action', 'admin_space_left',
+  'admin_space_left_action', 'disk_full_action', 'disk_error_action',
+  'backlog_limit', 'rate_limit', 'name_format', 'verify_email', 'enable_krb5',
+  'krb5_principal', 'krb5_key_file', 'tcp_listen_queue', 'tcp_max_per_addr',
+  'tcp_client_max_idle', 'tcp_client_ports', 'tcp_listen_port', 'transport',
+  'dispatcher', 'distribute_network', 'q_depth', 'overflow_action',
+  'plugin_dir', 'use_libwrap', 'name', 'admin_space_left_action',
+]);
+
+const AUDITD_VALID_LOG_FORMATS: ReadonlySet<string> = new Set(['RAW', 'ENRICHED', 'NOLOG']);
+
+const AUDITD_VALID_ACTIONS: ReadonlySet<string> = new Set([
+  'IGNORE', 'SYSLOG', 'EXEC', 'SUSPEND', 'SINGLE', 'HALT', 'KEEP_LOGS',
+  'ROTATE', 'EMAIL', 'NOTIFY',
+]);
+
+export interface AuditdConfigError {
+  line: number;
+  message: string;
+}
+
+export function validateAuditdConfig(content: string): AuditdConfigError | null {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim();
+    if (!raw || raw.startsWith('#')) continue;
+    const eq = raw.indexOf('=');
+    if (eq === -1) return { line: i + 1, message: `auditd.conf: malformed line (no '='): '${raw}'` };
+    const key = raw.slice(0, eq).trim();
+    const value = raw.slice(eq + 1).trim();
+    if (!AUDITD_VALID_KEYS.has(key)) {
+      return { line: i + 1, message: `auditd.conf: unknown parameter '${key}'` };
+    }
+    if (key === 'log_format' && !AUDITD_VALID_LOG_FORMATS.has(value)) {
+      return { line: i + 1, message: `auditd.conf: invalid log_format value '${value}'` };
+    }
+    if (key === 'max_log_file') {
+      const n = parseInt(value, 10);
+      if (!Number.isInteger(n) || n < 1) return { line: i + 1, message: `auditd.conf: max_log_file must be >= 1 (got '${value}')` };
+    }
+    if (key === 'num_logs') {
+      const n = parseInt(value, 10);
+      if (!Number.isInteger(n) || n < 1) return { line: i + 1, message: `auditd.conf: num_logs must be >= 1 (got '${value}')` };
+    }
+    if (key === 'freq') {
+      const n = parseInt(value, 10);
+      if (!Number.isInteger(n) || n < 0) return { line: i + 1, message: `auditd.conf: freq must be a non-negative integer (got '${value}')` };
+    }
+    if (key === 'max_log_file_action' && !AUDITD_VALID_ACTIONS.has(value)) {
+      return { line: i + 1, message: `auditd.conf: invalid max_log_file_action '${value}'` };
+    }
+  }
+  return null;
 }

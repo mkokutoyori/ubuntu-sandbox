@@ -11,7 +11,10 @@ export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
     switch (args[i]) {
       case '-m': case '--message': filter.type = args[++i]; break;
       case '-ui': case '--uid': filter.key = 'uid'; filter.value = args[++i]; break;
-      case '-ua': case '--acct': filter.key = 'acct'; filter.value = args[++i]; break;
+      case '-ua': case '--loginuid': filter.key = 'auid'; filter.value = args[++i]; break;
+      case '-u': case '--user': filter.key = 'uid'; filter.value = args[++i]; break;
+      case '-x': case '--exe': filter.key = 'exe'; filter.value = args[++i]; break;
+      case '-c': case '--comm': filter.key = 'comm'; filter.value = args[++i]; break;
       case '-k': case '--key': filter.key = 'key'; filter.value = args[++i]; break;
       case '-f': case '--file': filter.key = 'name'; filter.value = args[++i]; break;
       case '-i': case '--interpret': interpret = true; break;
