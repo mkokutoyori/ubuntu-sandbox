@@ -26,6 +26,13 @@ import { BashParser } from '@/bash/parser/BashParser';
 export interface ExternalCommandResult {
   output: string;
   exitCode: number;
+  /**
+   * Optional pure stderr stream. When present, `output` is the command's
+   * stdout (fd 1) and `stderr` its fd 2 — letting the shell route them to
+   * separate redirections. When absent, the legacy model applies (the
+   * whole `output` is treated as stderr iff the exit code is non-zero).
+   */
+  stderr?: string;
 }
 
 /**
@@ -99,6 +106,13 @@ export class BashInterpreter {
   private executeCommand: ExternalCommandFn;
   private io: IOContext | null;
   private output: string[] = [];
+  /**
+   * Pure stderr stream, mirrored from `output` whenever content is routed
+   * to fd 2 (e.g. `cmd >&2`). `output` stays the merged terminal view (so
+   * a bare `executeCommand` still returns everything a TTY would show);
+   * this lets a caller's `2>` redirection peel stderr off coherently.
+   */
+  private stderrParts: string[] = [];
   private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
@@ -165,8 +179,9 @@ export class BashInterpreter {
   }
 
   /** Execute a Program AST. Returns combined output and exit code. */
-  execute(program: Program): { output: string; exitCode: number } {
+  execute(program: Program): { output: string; exitCode: number; stderr: string } {
     this.output = [];
+    this.stderrParts = [];
     try {
       this.visitCommandList(program.body);
     } catch (e) {
@@ -181,7 +196,7 @@ export class BashInterpreter {
       }
     }
     this.fireExitTrap();
-    return { output: this.output.join(''), exitCode: this.env.lastExitCode };
+    return { output: this.output.join(''), exitCode: this.env.lastExitCode, stderr: this.stderrParts.join('') };
   }
 
   /** Run the EXIT trap (if any), preserving the parent script's exit code. */
@@ -386,7 +401,12 @@ export class BashInterpreter {
     const hasAnyRedirect = node.redirections.some(r =>
       r.op === '>' || r.op === '>>' || r.op === '>&' || r.fd === 2);
     const savedOutput = hasAnyRedirect ? this.output : null;
-    if (hasAnyRedirect) this.output = [];
+    const savedStderr = hasAnyRedirect ? this.stderrParts : null;
+    if (hasAnyRedirect) { this.output = []; this.stderrParts = []; }
+
+    // Whether the command produced a genuinely separate stderr stream
+    // (only external commands that opt in via the `stderr` field do).
+    let explicitStderr: string | null = null;
 
     // Check for function
     const fn = this.functions.get(cmdName);
@@ -404,7 +424,23 @@ export class BashInterpreter {
         const fullArgs = pipeInput ? [...args, pipeInput] : args;
         const envSnapshot = Object.fromEntries(this.env.getAll());
         const result = normalizeResult(this.executeCommand(fullArgs, envSnapshot));
-        if (result.output) {
+        if (result.stderr !== undefined) {
+          // The command separates fd 1 / fd 2. Stdout flows normally;
+          // stderr is mirrored to the pure stderr stream (and, with no
+          // fd-2 redirection, also to the merged terminal view).
+          explicitStderr = result.stderr;
+          if (result.output) {
+            this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+          }
+          if (result.stderr) {
+            if (hasAnyRedirect) {
+              this.stderrParts.push(result.stderr);
+            } else {
+              this.output.push(ensureTrailingNewline(result.stderr));
+              this.stderrParts.push(result.stderr);
+            }
+          }
+        } else if (result.output) {
           // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
           this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
         }
@@ -417,8 +453,13 @@ export class BashInterpreter {
     // Apply output redirections
     if (hasAnyRedirect && savedOutput !== null) {
       const capturedOutput = this.output.join('');
+      const capturedStderr = this.stderrParts.join('');
       this.output = savedOutput;
-      this.applyRedirections(node.redirections, capturedOutput, cmdExec);
+      this.stderrParts = savedStderr ?? [];
+      this.applyRedirections(
+        node.redirections, capturedOutput, cmdExec,
+        explicitStderr !== null ? capturedStderr : undefined,
+      );
     }
   }
 
@@ -586,14 +627,28 @@ export class BashInterpreter {
     redirections: import('@/bash/parser/ASTNode').Redirection[],
     capturedOutput: string,
     cmdExec: (cmd: string) => string,
+    capturedStderr?: string,
   ): void {
     if (!this.io) {
       if (capturedOutput) this.output.push(capturedOutput);
+      if (capturedStderr) this.output.push(capturedStderr);
+      return;
+    }
+
+    // Explicit-stream mode: the command separated fd 1 / fd 2, so route
+    // each to its own redirection target (or the terminal) independently —
+    // no exit-code heuristic needed.
+    if (capturedStderr !== undefined) {
+      this.applyRedirectionsExplicit(redirections, capturedOutput, capturedStderr, cmdExec);
       return;
     }
 
     let stdoutHandled = false;
     let stderrHandled = false;
+    // `cmd >&2` duplicates stdout onto fd 2 — the captured output is then
+    // stderr and must be mirrored to the pure stderr stream so a parent
+    // `2>` redirection can peel it off.
+    let dupToStderr = false;
     const isError = this.env.lastExitCode !== 0;
 
     for (const redir of redirections) {
@@ -609,6 +664,7 @@ export class BashInterpreter {
           if (/^\d+$/.test(target)) {
             // Merge — output stays captured and flows to stdout below.
             stderrHandled = true;
+            if (target === '2') dupToStderr = true;
           } else {
             this.io.writeFile(path, capturedOutput, false);
             stdoutHandled = true;
@@ -642,12 +698,58 @@ export class BashInterpreter {
     if (!stdoutHandled && !stderrHandled && capturedOutput) {
       this.output.push(capturedOutput);
     } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
-      // stdout wasn't redirected but stderr was — show stdout
+      // stdout wasn't redirected but stderr was — show stdout (unless this
+      // was a `>&2` dup, in which case the content IS stderr).
       this.output.push(capturedOutput);
+      if (dupToStderr) this.stderrParts.push(capturedOutput);
     } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
       // stderr wasn't redirected but stdout was — show stderr
       this.output.push(capturedOutput);
+      this.stderrParts.push(capturedOutput);
     }
+  }
+
+  /**
+   * Route a command that produced genuinely separate stdout / stderr
+   * streams. Each fd goes to its own redirection target (`>`/`>>` → fd 1,
+   * `2>`/`2>>` → fd 2) or, when not redirected, to the merged terminal
+   * view — with stderr also mirrored to the pure stderr stream.
+   */
+  private applyRedirectionsExplicit(
+    redirections: import('@/bash/parser/ASTNode').Redirection[],
+    stdout: string,
+    stderr: string,
+    cmdExec: (cmd: string) => string,
+  ): void {
+    if (!this.io) {
+      if (stdout) this.output.push(stdout);
+      if (stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
+      return;
+    }
+    let stdoutHandled = false;
+    let stderrHandled = false;
+    for (const redir of redirections) {
+      const target = expandWord(redir.target, this.env, cmdExec);
+      const path = this.io.resolvePath(target);
+      const append = redir.op === '>>' || redir.op === '&>>';
+      try {
+        if (redir.op === '>&' && /^\d+$/.test(target)) {
+          // fd dup (`>&2`): treat as stderr-handled so the stdout stream
+          // is the only thing left to flush to the terminal.
+          stderrHandled = stderrHandled || target === '2';
+        } else if (redir.op === '>' || redir.op === '>>') {
+          const fd = redir.fd ?? 1;
+          if (fd === 1) { this.io.writeFile(path, stdout, append); stdoutHandled = true; }
+          else if (fd === 2) { this.io.writeFile(path, stderr, append); stderrHandled = true; }
+        }
+      } catch (e) {
+        if (e instanceof Error) this.output.push(e.message + '\n');
+        this.env.lastExitCode = 1;
+        return;
+      }
+    }
+    if (!stdoutHandled && stdout) this.output.push(stdout);
+    if (!stderrHandled && stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
   }
 
   // ─── If ───────────────────────────────────────────────────────

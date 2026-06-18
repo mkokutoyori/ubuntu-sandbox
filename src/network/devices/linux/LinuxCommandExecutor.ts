@@ -2980,12 +2980,13 @@ export class LinuxCommandExecutor {
       if (exitOnError && r.exitCode !== 0) { exitCode = r.exitCode; break; }
     }
 
-    // --report forwards only stderr; a normal run interleaves both on the
-    // terminal. The pure-stderr stream is also returned so the caller's
-    // `2>` redirection peels it off coherently.
+    // Return fd 1 and fd 2 as separate streams. The interpreter merges
+    // them for the terminal but routes each to its own redirection — so
+    // `run-parts … 2> err.log` peels off exactly the scripts' stderr, and
+    // `--report` (which suppresses stdout) surfaces only that stderr.
     const stderr = stderrChunks.join('\n');
-    const visible = report ? stderr : [...stdoutChunks, ...stderrChunks].join('\n');
-    return { output: visible, exitCode, stderr } as { output: string; exitCode: number };
+    const stdout = report ? '' : stdoutChunks.join('\n');
+    return { output: stdout, exitCode, stderr } as { output: string; exitCode: number };
   }
 
   /**

@@ -22,6 +22,11 @@ export interface ScriptResult {
   exitCode: number;
   /** Final environment variables after execution (for state sync). */
   env?: Record<string, string>;
+  /**
+   * Pure stderr stream (content routed to fd 2). `output` remains the
+   * merged terminal view; this lets callers route stderr independently.
+   */
+  stderr?: string;
 }
 
 /**

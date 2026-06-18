@@ -117,6 +117,8 @@ describe('cron integration — run-parts and periodic directories', () => {
   it('CI-15 run-parts executes every script in a directory', async () => {
     await pc.executeCommand('mkdir -p /tmp/parts');
     await pc.executeCommand('echo "touch /tmp/part-ran" > /tmp/parts/job1');
+    // run-parts only runs executable scripts (like the real binary).
+    await pc.executeCommand('chmod +x /tmp/parts/job1');
     await pc.executeCommand('run-parts /tmp/parts');
     expect(vfsOf(pc).exists('/tmp/part-ran')).toBe(true);
   });
@@ -124,13 +126,16 @@ describe('cron integration — run-parts and periodic directories', () => {
   it('CI-16 run-parts --test lists without executing', async () => {
     await pc.executeCommand('mkdir -p /tmp/parts2');
     await pc.executeCommand('echo "touch /tmp/nope2" > /tmp/parts2/job1');
+    await pc.executeCommand('chmod +x /tmp/parts2/job1');
     const out = await pc.executeCommand('run-parts --test /tmp/parts2');
     expect(out).toContain('/tmp/parts2/job1');
     expect(vfsOf(pc).exists('/tmp/nope2')).toBe(false);
   });
 
   it('CI-17 a script in /etc/cron.daily runs via the system crontab at 06:25', async () => {
+    // cron.daily scripts are executable; run-parts skips non-exec files.
     vfsOf(pc).writeFile('/etc/cron.daily/report', 'touch /tmp/daily-ran\n', 0, 0, 0o022);
+    await pc.executeCommand('chmod +x /etc/cron.daily/report');
     pc.cronTick(new Date(2030, 0, 1, 6, 25));
     expect(vfsOf(pc).exists('/tmp/daily-ran')).toBe(true);
   });
