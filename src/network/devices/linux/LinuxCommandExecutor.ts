@@ -2932,6 +2932,11 @@ export class LinuxCommandExecutor {
       umask: this.umask,
     });
 
+    // PAM logs the su attempt and session open to auth.log (authpriv).
+    const prev = this.suStack[this.suStack.length - 1];
+    this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
+    this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
+
     // Switch user
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;

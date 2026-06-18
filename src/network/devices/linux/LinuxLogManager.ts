@@ -407,7 +407,7 @@ export class LinuxLogManager {
     // Validate output format
     const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
     if (!validFormats.includes(outputFormat)) {
-      return `Unknown output format "${outputFormat}".`;
+      return `Invalid argument: unknown output format "${outputFormat}".`;
     }
 
     // Filter entries

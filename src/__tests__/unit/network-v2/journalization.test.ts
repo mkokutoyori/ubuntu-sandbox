@@ -282,7 +282,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('33. should support writing multiline outputs using embedded newline symbols \\n', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger -e "line number one\\nline number two"');
+      await pc.executeCommand("logger -e 'line number one\\nline number two'");
       const syslog = await pc.executeCommand('cat /var/log/syslog');
       expect(syslog).toContain('line number one');
       expect(syslog).toContain('line number two');
@@ -1282,7 +1282,12 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('174. should deny unprivileged users access to read system core auth.log files', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('su user -c "cat /var/log/auth.log"');
+      // The simulator's default 'user' is an administrator (member of the adm
+      // group, like the Ubuntu primary user), so it can legitimately read
+      // 0640 root:adm logs. Use a freshly created, plain (non-adm) user to
+      // exercise the deny-by-permission path.
+      await pc.executeCommand('useradd -m -s /bin/bash plainuser');
+      const output = await pc.executeCommand('su plainuser -c "cat /var/log/auth.log"');
       expect(output.toLowerCase()).toMatch(/permission denied|error/);
     });
 
@@ -1433,7 +1438,9 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('196. should prevent raw shell escape sequence injections in logging payload parsers', async () => {
       const pc = setupLinuxHost();
-      await pc.executeCommand('logger "auth alert: $(whoami) injection test"');
+      // Single-quote the payload so the shell does not perform command
+      // substitution — the literal "$(whoami)" must be logged verbatim.
+      await pc.executeCommand("logger 'auth alert: $(whoami) injection test'");
       const syslog = await pc.executeCommand('cat /var/log/syslog');
       expect(syslog).not.toContain('root injection test'); // shell macro must not evaluate inside payload
     });
