@@ -2861,8 +2861,11 @@ export class LinuxCommandExecutor {
   private handleSu(args: string[]): { output: string; exitCode: number } {
     let loginShell = false;
     let targetUser = 'root';
-    for (const arg of args) {
+    let command: string | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
       if (arg === '-' || arg === '-l' || arg === '--login') { loginShell = true; continue; }
+      if (arg === '-c' || arg === '--command') { command = args.slice(i + 1).join(' '); break; }
       if (!arg.startsWith('-')) targetUser = arg;
     }
 
@@ -2885,9 +2888,25 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
+    if (loginShell) this.cwd = user.home;
 
-    if (loginShell) {
-      this.cwd = user.home;
+    // `su <user> -c "<command>"` runs a single command as the target user
+    // and immediately restores the caller's identity.
+    if (command !== null) {
+      let output: string;
+      try {
+        output = this.execute(command);
+      } finally {
+        const prev = this.suStack.pop();
+        if (prev) {
+          this.userMgr.currentUser = prev.user;
+          this.userMgr.currentUid = prev.uid;
+          this.userMgr.currentGid = prev.gid;
+          this.cwd = prev.cwd;
+          this.umask = prev.umask;
+        }
+      }
+      return { output, exitCode: 0 };
     }
 
     return { output: '', exitCode: 0 };

@@ -45,6 +45,24 @@ interface DmesgEntry {
   message: string;
 }
 
+const JOURNALCTL_HELP = `journalctl [OPTIONS...] [MATCHES...]
+
+Query the journal.
+
+Options:
+  -n --lines=INTEGER   Number of journal entries to show
+  -r --reverse         Show the newest entries first
+  -u --unit=UNIT       Show logs from the specified unit
+  -p --priority=RANGE  Show entries with the specified priority
+  -k --dmesg           Show kernel message log from the current boot
+  -o --output=STRING   Change journal output mode
+  -b --boot[=ID]       Show data only from the specified boot
+  -N --fields          List all field names currently used
+  --since=DATE         Show entries not older than the specified date
+  --until=DATE         Show entries not newer than the specified date
+     --no-pager        Do not pipe output into a pager
+  -h --help            Show this help text`;
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -290,6 +308,12 @@ export class LinuxLogManager {
   executeJournalctl(args: string[]): string {
     for (const arg of args) {
       if (arg === '--version') return 'systemd 249 (249.11-0ubuntu3)';
+      if (arg === '-h' || arg === '--help') return JOURNALCTL_HELP;
+      if (arg === '-N' || arg === '--fields') {
+        return ['MESSAGE', 'PRIORITY', 'SYSLOG_FACILITY', 'SYSLOG_IDENTIFIER',
+          '_PID', '_UID', '_GID', '_HOSTNAME', '_TRANSPORT', '_SYSTEMD_UNIT',
+          '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP'].join('\n');
+      }
       if (arg === '--disk-usage') return this.cmdDiskUsage();
       if (arg === '--list-boots') return this.cmdListBoots();
       if (arg === '--rotate') return 'Rotating journal files...';
@@ -308,23 +332,50 @@ export class LinuxLogManager {
     let priorityFilter = -1;
     let pidFilter = -1;
     let outputFields: string[] = [];
+    let kernelOnly = false;
+    let sinceMs = -1;
+    let untilMs = -1;
 
     let i = 0;
     while (i < args.length) {
       switch (args[i]) {
         case '-n':
-        case '--lines':
-          n = parseInt(args[++i]) || 0;
+        case '--lines': {
+          const v = args[++i] ?? '';
+          if (!/^\d+$/.test(v)) return `journalctl: invalid number of lines: "${v}".`;
+          n = parseInt(v, 10);
           i++; break;
+        }
         case '-r':
         case '--reverse':
           reverse = true; i++; break;
         case '-q':
         case '--quiet':
           quiet = true; i++; break;
+        case '-k':
+        case '--dmesg':
+          kernelOnly = true; i++; break;
+        case '-x': case '--catalog':
+        case '-f': case '--follow':
+          i++; break;
         case '-b':
-        case '--boot':
-          i++; break;  // always current boot in simulator
+        case '--boot': {
+          const nxt = args[i + 1];
+          if (nxt && /^-?\d+$/.test(nxt)) {
+            if (parseInt(nxt, 10) < 0) return `Failed to look up boot ${nxt}: no such boot ID`;
+            i++;
+          }
+          i++; break;
+        }
+        case '-D': case '--directory': {
+          const dir = args[++i] ?? '';
+          if (dir.startsWith('/sys') || dir.startsWith('/proc')) return `Failed to open directory ${dir}: error`;
+          i++; break;
+        }
+        case '--since': case '-S':
+          sinceMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
+        case '--until': case '-U':
+          untilMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
         case '--no-pager':
           i++; break;  // no-op
         case '-o':
@@ -345,14 +396,9 @@ export class LinuxLogManager {
           i++; break;
         }
         default: {
-          // Check for _PID=N
-          if (args[i].startsWith('_PID=')) {
-            pidFilter = parseInt(args[i].slice(5));
-          }
-          // Check for --output-fields=
-          if (args[i].startsWith('--output-fields=')) {
-            outputFields = args[i].slice(16).split(',');
-          }
+          if (args[i].startsWith('--facility')) { i++; break; }
+          if (args[i].startsWith('_PID=')) pidFilter = parseInt(args[i].slice(5));
+          if (args[i].startsWith('--output-fields=')) outputFields = args[i].slice(16).split(',');
           i++; break;
         }
       }
@@ -361,11 +407,14 @@ export class LinuxLogManager {
     // Validate output format
     const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
     if (!validFormats.includes(outputFormat)) {
-      return `Invalid output format: ${outputFormat}`;
+      return `Unknown output format "${outputFormat}".`;
     }
 
     // Filter entries
     let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
+    if (kernelOnly) entries = entries.filter((e) => e.facility === FACILITY_NAMES.kern);
+    if (sinceMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() >= sinceMs);
+    if (untilMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() <= untilMs);
 
     // Hide entries with timestamps in the future. The boot-time canned
     // messages (kernel + systemd + sshd "Server listening on …") are
@@ -392,8 +441,8 @@ export class LinuxLogManager {
     // Format output
     const lines = entries.map(e => this.formatEntry(e, outputFormat, outputFields));
 
-    // Add header unless quiet or non-short format
-    if (!quiet && (outputFormat === 'short' || outputFormat === 'short-iso')) {
+    // Add header unless quiet, reversed, or non-short format
+    if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso')) {
       const first = this.journal[0];
       const last = this.journal[this.journal.length - 1];
       if (first && last) {
@@ -408,63 +457,73 @@ export class LinuxLogManager {
   // ── dmesg command ──────────────────────────────────────────────
   executeDmesg(args: string[], uid: number): string {
     let humanTime = false;
-    let clearBuf = false;
+    let clearBuf = false;      // -c: print then clear
+    let clearOnly = false;     // -C: clear, no print
+    let raw = false;
     let levelFilter: string[] = [];
+    let setConsoleLevel: number | null = null;
 
     let i = 0;
     while (i < args.length) {
-      switch (args[i]) {
-        case '-T':
-        case '--ctime':
-          humanTime = true; i++; break;
-        case '-c':
-        case '--read-clear':
-          clearBuf = true; i++; break;
-        case '-H':
-        case '--human':
-          humanTime = true; i++; break;
-        case '-l':
-        case '--level': {
-          const levels = args[++i] || '';
-          levelFilter = levels.split(',').map(l => l.trim());
+      const a = args[i];
+      switch (a) {
+        case '-T': case '--ctime': case '-H': case '--human': humanTime = true; i++; break;
+        case '-c': case '--read-clear': clearBuf = true; i++; break;
+        case '-C': case '--clear': clearOnly = true; i++; break;
+        case '-r': case '--raw': raw = true; i++; break;
+        case '-x': case '--decode': i++; break;
+        case '-w': case '--follow': case '-d': case '--show-delta': i++; break;
+        case '-h': case '--help':
+          return 'Usage:\n dmesg [options]\n\nDisplay or control the kernel ring buffer.\n\nOptions:\n -C, --clear        clear the kernel ring buffer\n -c, --read-clear   read and clear all messages\n -T, --ctime        show human-readable timestamp\n -l, --level <list> restrict output to defined levels\n -n, --console-level <level> set level of messages printed to console\n -r, --raw          print the raw message buffer\n -x, --decode       decode facility and level\n -h, --help         display this help\n -V, --version      display version';
+        case '-V': case '--version':
+          return 'dmesg from util-linux 2.37.2';
+        case '-n': case '--console-level': {
+          const lvl = args[++i] ?? '';
+          const n = /^\d+$/.test(lvl) ? parseInt(lvl, 10) : (PRIORITY_NAMES[lvl] ?? -1);
+          if (n < 1 || n > 8) return `dmesg: invalid console level: ${lvl}`;
+          setConsoleLevel = n; i++; break;
+        }
+        case '-l': case '--level': {
+          levelFilter = (args[++i] || '').split(',').map(l => l.trim()).filter(Boolean);
           i++; break;
         }
-        default: {
-          if (args[i].startsWith('--level=')) {
-            levelFilter = args[i].slice(8).split(',').map(l => l.trim());
-          }
+        case '-f': case '--facility': i += 2; break;
+        default:
+          if (a.startsWith('--level=')) levelFilter = a.slice(8).split(',').map(l => l.trim()).filter(Boolean);
           i++; break;
-        }
       }
     }
 
-    // Permission check for -c
-    if (clearBuf && uid !== 0) {
+    // Privileged operations: clearing the buffer and setting console level.
+    if ((clearBuf || clearOnly || setConsoleLevel !== null) && uid !== 0) {
       return 'dmesg: read kernel buffer failed: Permission denied';
     }
 
-    // Filter by level
+    if (setConsoleLevel !== null) return '';
+
+    if (clearOnly) { this.dmesgBuffer = []; return ''; }
+
+    // Validate level filter names.
+    for (const l of levelFilter) {
+      if (PRIORITY_NAMES[l] === undefined) return `dmesg: unknown level '${l}'`;
+    }
+
     let entries = [...this.dmesgBuffer];
     if (levelFilter.length > 0) {
-      const levelNums = levelFilter.map(l => PRIORITY_NAMES[l] ?? -1).filter(n => n >= 0);
+      const levelNums = levelFilter.map(l => PRIORITY_NAMES[l]);
       entries = entries.filter(e => levelNums.includes(e.level));
     }
 
-    // Format output
     const lines = entries.map(e => {
+      if (raw) return e.message;
       if (humanTime) {
         const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
         return `[${fmtHumanDate(ts)}] ${e.message}`;
       }
-      const secs = e.offsetSec.toFixed(6);
-      const padded = secs.padStart(12, ' ');
-      return `[${padded}] ${e.message}`;
+      return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
     });
 
-    // Clear buffer after display
-    if (clearBuf) {
-      this.dmesgBuffer = [];
-    }
+    if (clearBuf) this.dmesgBuffer = [];
 
     return lines.join('\n');
   }
@@ -489,6 +548,14 @@ export class LinuxLogManager {
     };
     // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
+    // Kernel-facility messages also land in the kernel ring buffer (dmesg).
+    if (opts.facility === FACILITY_NAMES.kern) {
+      this.dmesgBuffer.push({
+        offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
+        level: opts.priority,
+        message: opts.message,
+      });
+    }
     this.emitToFollowers(entry);
 
     // The on-disk /var/log/* files are written by rsyslog: when that daemon
@@ -536,10 +603,32 @@ export class LinuxLogManager {
   }
 
   private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
-    if (unit && !((e.unit && e.unit.includes(unit)) || (e.tag && e.tag.includes(unit)))) return false;
+    if (unit) {
+      const u = unit.replace(/\.service$/, '');
+      const hit = (e.unit && e.unit.includes(u))
+        || (e.tag && e.tag.includes(u))
+        || e.message.startsWith(`${u}.service`)
+        || e.message.includes(`${u}.service:`)
+        || e.message.includes(`${u}[`);
+      if (!hit) return false;
+    }
     if (priority >= 0 && e.priority > priority) return false;
     if (pid >= 0 && e.pid !== pid) return false;
     return true;
+  }
+
+  private parseJournalTime(spec: string): number {
+    const s = spec.trim().toLowerCase();
+    if (s === '' || s === 'now') return Date.now();
+    const ago = s.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*(ago)?$/);
+    if (ago) {
+      const mult: Record<string, number> = {
+        second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
+      };
+      return Date.now() - parseInt(ago[1], 10) * mult[ago[2]];
+    }
+    const t = Date.parse(spec);
+    return isNaN(t) ? Date.now() : t;
   }
 
   private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
@@ -702,6 +791,12 @@ export class LinuxLogManager {
       { offset: 0.100000, level: 6, msg: 'CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz' },
       { offset: 0.500000, level: 6, msg: 'NET: Registered PF_INET protocol family' },
       { offset: 0.600000, level: 6, msg: 'NET: Registered PF_INET6 protocol family' },
+      { offset: 0.300000, level: 6, msg: 'PCI: Using configuration type 1 for base access' },
+      { offset: 0.310000, level: 6, msg: 'pci 0000:00:01.0: PIIX/ICH IDE controller' },
+      { offset: 0.320000, level: 6, msg: 'usbcore: registered new interface driver usbfs' },
+      { offset: 0.330000, level: 6, msg: 'usbcore: registered new interface driver hub' },
+      { offset: 0.340000, level: 6, msg: 'e1000: Intel(R) PRO/1000 Network Driver' },
+      { offset: 0.350000, level: 6, msg: 'e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up' },
       { offset: 1.000000, level: 6, msg: 'EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)' },
       { offset: 1.200000, level: 6, msg: 'EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro' },
     ];

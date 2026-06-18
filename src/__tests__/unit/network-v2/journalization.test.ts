@@ -518,7 +518,9 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('70. should parse systemd log directories configuration safely if customized with -D', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('journalctl -D /var/log/journal');
-      expect(output).not.toContain('error');
+      // A valid directory must not raise an open/parse error (log payloads may
+      // legitimately contain the word "error", e.g. "errors=remount-ro").
+      expect(output.toLowerCase()).not.toMatch(/failed to open|no journal files/);
     });
 
     it('71. should throw error on opening corrupted journal folders via -D', async () => {
@@ -622,13 +624,13 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('86. should support interface console logging level configurations (dmesg -n)', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('dmesg -n 1');
+      const output = await pc.executeCommand('sudo dmesg -n 1');
       expect(output.trim()).toBe('');
     });
 
     it('87. should clear kernel ring buffer logging tables via dmesg -C', async () => {
       const pc = setupLinuxHost();
-      const clearCmd = await pc.executeCommand('dmesg -C');
+      const clearCmd = await pc.executeCommand('sudo dmesg -C');
       expect(clearCmd.trim()).toBe('');
       const output = await pc.executeCommand('dmesg');
       expect(output.trim()).toBe('');
@@ -637,7 +639,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('88. should output and then flush the ring logs database using dmesg -c', async () => {
       const pc = setupLinuxHost();
       const originalOutput = await pc.executeCommand('dmesg');
-      const printAndClear = await pc.executeCommand('dmesg -c');
+      const printAndClear = await pc.executeCommand('sudo dmesg -c');
       expect(printAndClear).toBe(originalOutput);
       const remainingLogs = await pc.executeCommand('dmesg');
       expect(remainingLogs.trim()).toBe('');
