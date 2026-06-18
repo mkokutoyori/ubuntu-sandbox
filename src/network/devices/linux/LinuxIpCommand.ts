@@ -25,6 +25,7 @@ export interface IpInterfaceInfo {
   isDHCP: boolean;
   counters: { framesIn: number; framesOut: number; bytesIn: number; bytesOut: number };
   ipv6?: IpInterfaceV6Address[];
+  secondaryIPs?: Array<{ ip: string; cidr: number }>;
 }
 
 export interface IpInterfaceV6Address {
@@ -64,6 +65,8 @@ export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
   configureInterface(ifName: string, ip: string, cidr: number): string;
+  addInterfaceIP?(ifName: string, ip: string, cidr: number): string;
+  removeInterfaceAddress?(ifName: string, ip: string): string;
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
@@ -396,6 +399,10 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamil
     const brd = broadcastAddress(info.ip, info.cidr);
     const brdStr = brd ? ` brd ${brd}` : '';
     lines.push(`    inet ${info.ip}/${info.cidr}${brdStr}${dynFlag} scope ${scope} ${info.name}`);
+    for (const sec of info.secondaryIPs ?? []) {
+      const secBrd = broadcastAddress(sec.ip, sec.cidr);
+      lines.push(`    inet ${sec.ip}/${sec.cidr}${secBrd ? ` brd ${secBrd}` : ''} scope ${scope} secondary ${info.name}`);
+    }
   }
 
   if (family !== 'inet') {
@@ -456,7 +463,7 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   const cidr = parseInt(addrStr.slice(slashIdx + 1), 10);
   if (isNaN(cidr) || cidr < 1 || cidr > 32) return 'Error: invalid prefix length.';
 
-  return ctx.configureInterface(devName, ip, cidr);
+  return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, cidr) : ctx.configureInterface(devName, ip, cidr);
 }
 
 function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
@@ -477,6 +484,7 @@ function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
 
   if (addrStr) {
     const ip = addrStr.split('/')[0];
+    if (ctx.removeInterfaceAddress) return ctx.removeInterfaceAddress(devName, ip);
     const info = ctx.getInterfaceInfo(devName);
     if (info && info.ip !== ip) {
       return 'RTNETLINK answers: Cannot assign requested address';

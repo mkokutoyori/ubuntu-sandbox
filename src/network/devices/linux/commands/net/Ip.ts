@@ -60,7 +60,30 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
           prefixLength: entry.prefixLength,
           scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
         })),
+        secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };
+    },
+    addInterfaceIP(ifName: string, ip: string, cidr: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        const mask = SubnetMask.fromCIDR(cidr);
+        const addr = new IPAddress(ip);
+        if (!port.getIPAddress()) net.configureInterface(ifName, addr, mask);
+        else port.addSecondaryIP(addr, mask);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    removeInterfaceAddress(ifName: string, ip: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      const addr = IPAddress.tryParse(ip);
+      if (!addr) return 'RTNETLINK answers: Cannot assign requested address';
+      if (port.getIPAddress()?.equals(addr)) { net.clearInterfaceIP(ifName); return ''; }
+      if (port.getSecondaryIPs().some(e => e.ip.equals(addr))) { port.removeSecondaryIP(addr); return ''; }
+      return 'RTNETLINK answers: Cannot assign requested address';
     },
     getIPv6RoutingTable() {
       return net.getIPv6RoutingTable().map(r => ({
