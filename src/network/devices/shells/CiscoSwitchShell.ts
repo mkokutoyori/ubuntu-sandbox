@@ -52,7 +52,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private selectedAcl: string | null = null;
   private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
-  private debugFlags = new Set<string>();
 
   constructor() {
     super();
@@ -62,9 +61,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── ISwitchShell ────────────────────────────────────────────────
 
   execute(sw: Switch, input: string): string {
-    const stpDebug = [...this.debugFlags].some(
-      (f) => f.toLowerCase().includes('spanning tree') || f.toLowerCase().includes('all '));
-    const before = stpDebug ? new Map(sw._getSTPStates()) : null;
+    const dbg = (sw as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void; isStpEnabled(): boolean } }).getDebugService?.();
+    this.attachDebugSource(dbg);
+    if (input.trim() === '') return this.drainDebugConsole();
+    const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
     let out = this.executeOnDevice(sw, input) as string;
     if (before) {
       const events = this.stpDebugEvents(sw, before);
@@ -1130,38 +1130,54 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (isNaN(id)) return "% Invalid input detected at '^' marker.";
         return this.showMstInstances(id);
       });
-      t.register('show debugging', 'Display active debugging', () => {
-        if (this.debugFlags.size === 0) return 'No debugging is enabled';
-        return [...this.debugFlags].sort().join('\n');
-      });
-      t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        this.debugFlags.add(`Spanning Tree ${what} debugging is on`);
-        this.switchDebug()?.enable(what);
-        return `Spanning Tree ${what} debugging is on`;
-      });
-      t.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        for (const f of [...this.debugFlags]) if (f.startsWith('Spanning Tree')) this.debugFlags.delete(f);
-        this.switchDebug()?.disable(what);
-        return `Spanning Tree ${what} debugging is off`;
-      });
-      t.registerGreedy('debug', 'Enable debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        this.debugFlags.add(`${what} debugging is on`);
-        return `${what} debugging is on`;
-      });
-      t.registerGreedy('undebug', 'Disable debugging', () => {
-        this.debugFlags.clear();
-        this.switchDebug()?.disableAll();
-        return 'All possible debugging has been turned off';
-      });
-      t.register('no debug all', 'Disable debugging', () => {
-        this.debugFlags.clear();
-        this.switchDebug()?.disableAll();
-        return 'All possible debugging has been turned off';
-      });
     }
+    this.registerSwitchDebugCommands();
+  }
+
+  private registerSwitchDebugCommands(): void {
+    const p = this.privilegedTrie;
+    const svc = () => this.switchDebug();
+    const guard = (raw: string): boolean => /[A-Z]/.test((raw.trim().split(/\s+/)[0]) ?? '');
+
+    p.register('show debugging', 'Display active debugging', () =>
+      this.mode === 'user' ? "% Invalid input detected at '^' marker." : (svc()?.format() ?? 'No debugging is enabled'));
+
+    p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? 'All possible debugging is on');
+    p.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
+      const what = a.join(' ') || 'all';
+      svc()?.enable('spanning-tree ' + what);
+      return `Spanning Tree ${what} debugging is on`;
+    });
+    p.registerGreedy('debug mac address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
+    p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
+    p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enable('link') ?? '');
+    p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
+      if (guard(raw ?? '')) return "% Invalid input detected at '^' marker.";
+      const arg = a.join(' ');
+      const service = svc();
+      if (!service || !service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      return service.enable(arg);
+    });
+
+    p.register('no debug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
+    p.register('undebug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
+    p.register('u all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
+    p.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
+      const what = a.join(' ') || 'all';
+      svc()?.disable('spanning-tree ' + what);
+      return `Spanning Tree ${what} debugging is off`;
+    });
+    p.registerGreedy('no debug mac address-table', 'Disable MAC table debugging', () => svc()?.disable('mac') ?? '');
+    p.registerGreedy('no debug link-state', 'Disable link-state debugging', () => svc()?.disable('link') ?? '');
+    const undebugScope = (arg: string): string => {
+      const service = svc();
+      if (!service) return '';
+      if (arg.trim() === '' || arg.trim() === 'all') return service.disableAll();
+      if (!service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      return service.disable(arg);
+    };
+    p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
+    p.registerGreedy('u', 'Disable debugging', (a) => undebugScope(a.join(' ')));
   }
 
   private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {

@@ -35,7 +35,9 @@ export type DebugCategory =
   | 'radius'
   | 'tacacs'
   | 'ntp.events'
-  | 'ntp.packets';
+  | 'ntp.packets'
+  | 'lldp.packets'
+  | 'cdp.packets';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -115,6 +117,35 @@ export class RouterDebugService implements TerminalDebugSource {
       const p = e.payload;
       this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
     }));
+
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; icmpType?: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string } } };
+      if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
+      const ip = f.payload;
+      return {
+        src: ip.sourceIP?.toString?.() ?? '?',
+        dst: ip.destinationIP?.toString?.() ?? '?',
+        proto: ip.protocol ?? 0,
+        icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
+      };
+    };
+    const onFrame = (frame: unknown, dir: 'rcvd' | 'sent') => {
+      const ip = decodeIp(frame);
+      if (!ip) return;
+      this.emit('ip.packet', `IP: s=${ip.src}, d=${ip.dst}, len, ${dir} (proto ${ip.proto})`);
+      if (ip.proto === 1) {
+        const kind = ip.icmpType === 'echo-reply' ? 'echo reply' : ip.icmpType === 'echo-request' ? 'echo request' : (ip.icmpType ?? 'message');
+        this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+      }
+    };
+    this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
+      if (!mine(e.payload)) return;
+      onFrame((e.payload as { frame: unknown }).frame, 'rcvd');
+    }));
+    this.broadcast.track(bus.subscribe('port.frame.tx-requested', (e) => {
+      if (!mine(e.payload)) return;
+      onFrame((e.payload as { frame: unknown }).frame, 'sent');
+    }));
   }
 
   detachFromBus(): void {
@@ -160,6 +191,8 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'tacacs': return 'TACACS+';
       case 'ntp.events': return 'NTP events';
       case 'ntp.packets': return 'NTP packets';
+      case 'lldp.packets': return 'LLDP packets';
+      case 'cdp.packets': return 'CDP packets';
     }
   }
 

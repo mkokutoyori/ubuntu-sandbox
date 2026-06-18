@@ -96,6 +96,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.d().powerOff();
     this.d().powerOn();
     this.mode = 'user';
+    this.terminalMonitor = false;
+    this.debugConsole.length = 0;
+    (this.d() as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
     return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
   }
 
@@ -104,6 +107,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     device.powerOn();
     this.mode = 'user';
     this.terminalMonitor = false;
+    this.debugConsole.length = 0;
+    (device as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
   }
 
   protected attachLoggingToDevice(device: TDevice): void {
@@ -131,6 +136,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalWidth: number = 80;
   protected terminalHistorySize: number = 20;
   protected terminalMonitor = false;
+  protected readonly debugConsole: string[] = [];
+  private debugSourceAttached = false;
+
+  protected attachDebugSource(src?: { subscribe(listener: (line: string) => void): () => void } | null): void {
+    if (this.debugSourceAttached || !src) return;
+    this.debugSourceAttached = true;
+    src.subscribe((line) => {
+      if (!this.terminalMonitor) return;
+      this.debugConsole.push(line);
+      if (this.debugConsole.length > 500) this.debugConsole.shift();
+    });
+  }
+
+  protected drainDebugConsole(): string {
+    if (this.debugConsole.length === 0) return '';
+    const out = this.debugConsole.join('\n');
+    this.debugConsole.length = 0;
+    return out;
+  }
 
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
@@ -357,6 +381,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
+    const firstWord = cmdPart.split(/\s+/)[0];
+    if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
@@ -895,6 +923,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       debugSvc()?.disable('standby') ?? '');
     this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
       debugSvc()?.disable('ip.eigrp') ?? '');
+    const genericDebug = () => (this.d() as unknown as { getDebugService?: () => { enable(c: string): string; disable(c: string): string } }).getDebugService?.();
+    this.privilegedTrie.registerGreedy('debug lldp', 'Debug LLDP', () => genericDebug()?.enable('lldp.packets') ?? 'LLDP packets debugging is on');
+    this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
+    this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
+    this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());

@@ -288,6 +288,18 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
 
 export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   // debug commands
+  trie.register('debug ip dhcp server', 'Debug DHCP server', () => {
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerPacket(true);
+    s.setDebugServerEvents(true);
+    return 'DHCP server debugging is on';
+  });
+  trie.register('no debug ip dhcp server', 'Disable DHCP server debugging', () => {
+    const s = getRouter()._getDHCPServerInternal();
+    s.setDebugServerPacket(false);
+    s.setDebugServerEvents(false);
+    return 'DHCP server debugging is off';
+  });
   trie.register('debug ip dhcp server packet', 'Debug DHCP server packets', () => {
     getRouter()._getDHCPServerInternal().setDebugServerPacket(true);
     return 'DHCP server packet debugging is on';
