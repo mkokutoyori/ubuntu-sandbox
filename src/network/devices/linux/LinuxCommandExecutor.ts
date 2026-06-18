@@ -43,6 +43,8 @@ import type { SocketTable } from '../../core/SocketTable';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
+import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
 import { LinuxAuditRules } from './audit/LinuxAuditRules';
 import { PortsFilesystem } from './ports/PortsFilesystem';
@@ -246,6 +248,9 @@ export class LinuxCommandExecutor {
   readonly auditRules: LinuxAuditRules;
   /** Reactive bridge feeding security events into the audit trail. */
   private auditTrail: AuditTrailProjection | null = null;
+  private fsAuditProjection: FileSystemAuditProjection | null = null;
+  private bus: IEventBus | null = null;
+  private attachedDeviceId: string | null = null;
   /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
   private serviceJournal: LinuxServiceJournalProjection | null = null;
   /** `at` deferred-job spool, drained by the `atd` daemon. */
@@ -347,25 +352,7 @@ export class LinuxCommandExecutor {
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
-    this.auditRules.bindActorContextProvider(() => {
-      const u = this.userMgr.currentUser;
-      const uid = this.userMgr.currentUid;
-      const gid = this.userMgr.currentGid;
-      const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : uid;
-      return {
-        pid: this.shellPid ?? 1,
-        ppid: this.shellPpid ?? 1,
-        uid: loginUid,
-        euid: uid,
-        gid: loginUid,
-        egid: gid,
-        auid: loginUid,
-        comm: 'bash',
-        exe: '/bin/bash',
-        tty: 'pts/0',
-        success: this.lastExitCode === 0,
-      };
-    });
+    this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
 
     // ── NSS provisioning ────────────────────────────────────────────
@@ -582,22 +569,22 @@ export class LinuxCommandExecutor {
    * service layer publish deviceId-scoped domain events.
    */
   attachEventBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.attachedDeviceId = deviceId;
     this.processMgr.attachBus(bus, deviceId);
     this.serviceMgr.attachBus(bus, deviceId);
     this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
-    // The syslog daemon's lifecycle drives /var/log/* file coherence.
     this.logMgr.attachBus(bus, deviceId);
-    // Record systemd "Started/Stopped <unit>" lines in the journal.
     this.serviceJournal?.dispose();
     this.serviceJournal = new LinuxServiceJournalProjection(bus, this.logMgr, deviceId);
-    // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
-    // Feed security events into the kernel audit trail, reactively.
     this.auditTrail?.dispose();
     this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
+    this.fsAuditProjection?.dispose();
+    this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
@@ -1778,6 +1765,58 @@ export class LinuxCommandExecutor {
     return vars;
   }
 
+  private snapshotActor(): import('./audit/LinuxAuditRules').AuditActorContext {
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
+    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : uid;
+    return {
+      pid: this.shellPid ?? 1,
+      ppid: this.shellPpid ?? 1,
+      uid: loginUid,
+      euid: uid,
+      gid: loginUid,
+      egid: gid,
+      auid: loginUid,
+      comm: 'bash',
+      exe: '/bin/bash',
+      tty: 'pts/0',
+      success: this.lastExitCode === 0,
+    };
+  }
+
+  private publishFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void {
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onAccess(path, perm, syscall);
+      return;
+    }
+    const actor = this.snapshotActor();
+    const payload: FileAccessedPayload = {
+      deviceId: this.attachedDeviceId, path, perm,
+      syscall: syscall ?? (perm === 'x' ? 'execve' : perm === 'w' ? 'open' : perm === 'a' ? 'chmod' : 'openat'),
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.fs.accessed', payload });
+  }
+
+  private publishSyscall(syscall: string, path?: string): void {
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onSyscall(syscall, path);
+      return;
+    }
+    const actor = this.snapshotActor();
+    const payload: SyscallInvokedPayload = {
+      deviceId: this.attachedDeviceId, syscall, path,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.syscall.invoked', payload });
+  }
+
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
 
@@ -1803,20 +1842,20 @@ export class LinuxCommandExecutor {
     }
 
     // Audit: report command execution against exec (-p x) watch rules.
-    this.auditRules.onAccess(`/usr/bin/${cmd}`, 'x');
-    this.auditRules.onAccess(`/bin/${cmd}`, 'x');
+    this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+    this.publishFsAccess(`/bin/${cmd}`, 'x');
 
     switch (cmd) {
       // File commands
       case 'touch': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
-          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w');
+          this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w');
         }
         return { output: cmdTouch(c, args), exitCode: 0 };
       }
       case 'ls': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
-          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'r');
+          this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
         const out = cmdLs(c, args);
         const isErr = out.includes('cannot access');
@@ -1838,7 +1877,7 @@ export class LinuxCommandExecutor {
           }
         }
         for (const arg of fileArgs) {
-          this.auditRules.onAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
+          this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');
@@ -1851,38 +1890,38 @@ export class LinuxCommandExecutor {
       }
       case 'cp': {
         const paths = args.filter(a => !a.startsWith('-'));
-        for (const p of paths) this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
         return { output: cmdCp(c, args), exitCode: 0 };
       }
       case 'mv': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'w', 'rename');
-          this.auditRules.onSyscall('rename', abs);
+          this.publishFsAccess(abs, 'w', 'rename');
+          this.publishSyscall('rename', abs);
         }
         return { output: cmdMv(c, args), exitCode: 0 };
       }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'w', 'unlink');
-          this.auditRules.onSyscall('unlink', abs);
+          this.publishFsAccess(abs, 'w', 'unlink');
+          this.publishSyscall('unlink', abs);
         }
         return { output: cmdRm(c, args), exitCode: 0 };
       }
       case 'mkdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'w', 'mkdir');
-          this.auditRules.onSyscall('mkdir', abs);
+          this.publishFsAccess(abs, 'w', 'mkdir');
+          this.publishSyscall('mkdir', abs);
         }
         return { output: cmdMkdir(c, args), exitCode: 0 };
       }
       case 'rmdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'w', 'rmdir');
-          this.auditRules.onSyscall('rmdir', abs);
+          this.publishFsAccess(abs, 'w', 'rmdir');
+          this.publishSyscall('rmdir', abs);
         }
         return { output: cmdRmdir(c, args), exitCode: 0 };
       }
@@ -1892,8 +1931,8 @@ export class LinuxCommandExecutor {
         const sc = isSymlink ? 'symlink' : 'link';
         for (const p of paths) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'w', sc);
-          this.auditRules.onSyscall(sc, abs);
+          this.publishFsAccess(abs, 'w', sc);
+          this.publishSyscall(sc, abs);
         }
         return { output: cmdLn(c, args), exitCode: 0 };
       }
@@ -1965,16 +2004,16 @@ export class LinuxCommandExecutor {
       case 'chmod': {
         for (const p of args.filter(a => !a.startsWith('-') && !/^[0-7]+$|^[ugoa]?[+=-]/.test(a))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'a', 'chmod');
-          this.auditRules.onSyscall('chmod', abs);
+          this.publishFsAccess(abs, 'a', 'chmod');
+          this.publishSyscall('chmod', abs);
         }
         return { output: cmdChmod(c, args), exitCode: 0 };
       }
       case 'chown': {
         for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.auditRules.onAccess(abs, 'a', 'chown');
-          this.auditRules.onSyscall('chown', abs);
+          this.publishFsAccess(abs, 'a', 'chown');
+          this.publishSyscall('chown', abs);
         }
         return { output: cmdChown(c, args), exitCode: 0 };
       }

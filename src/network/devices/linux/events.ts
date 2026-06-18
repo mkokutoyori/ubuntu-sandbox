@@ -119,6 +119,43 @@ export interface PortBoundPayload extends PortRef {
 /** A listening socket was closed — a service stopped accepting connections. */
 export type PortReleasedPayload = PortBoundPayload;
 
+export type FileAccessPerm = 'r' | 'w' | 'x' | 'a';
+
+export interface FileAccessedPayload extends LinuxDeviceRef {
+  path: string;
+  perm: FileAccessPerm;
+  syscall: string;
+  pid: number;
+  ppid: number;
+  uid: number;
+  euid: number;
+  gid: number;
+  egid: number;
+  auid: number;
+  comm: string;
+  exe: string;
+  tty: string;
+  success: boolean;
+  exit: number;
+}
+
+export interface SyscallInvokedPayload extends LinuxDeviceRef {
+  syscall: string;
+  path?: string;
+  pid: number;
+  ppid: number;
+  uid: number;
+  euid: number;
+  gid: number;
+  egid: number;
+  auid: number;
+  comm: string;
+  exe: string;
+  tty: string;
+  success: boolean;
+  exit: number;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type LinuxProcessServiceDomainEvent =
@@ -139,4 +176,6 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.service.unmasked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.failed'; payload: ServiceFailedPayload }
   | { topic: 'linux.port.bound'; payload: PortBoundPayload }
-  | { topic: 'linux.port.released'; payload: PortReleasedPayload };
+  | { topic: 'linux.port.released'; payload: PortReleasedPayload }
+  | { topic: 'linux.fs.accessed'; payload: FileAccessedPayload }
+  | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload };
