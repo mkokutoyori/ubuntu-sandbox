@@ -2178,7 +2178,8 @@ export class LinuxCommandExecutor {
       // Logging commands
       case 'logger': {
         const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
-        return { output: out, exitCode: out ? 1 : 0 };
+        const isErr = out.startsWith('logger:') || out.startsWith('Usage');
+        return { output: out, exitCode: isErr ? 1 : 0 };
       }
       case 'journalctl': {
         const out = this.logMgr.executeJournalctl(args);

@@ -46,7 +46,9 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
       const pc = setupLinuxHost();
       await pc.executeCommand('logger "process wake"');
       const syslog = await pc.executeCommand('cat /var/log/syslog');
-      expect(syslog).toMatch(/[A-Za-z]{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+HostPC/);
+      // Syslog lines carry "<Mon DD HH:MM:SS> <hostname> ...": assert that
+      // timestamp+hostname shape (the hostname is the device's, not hard-coded).
+      expect(syslog).toMatch(/[A-Za-z]{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\S+\s/);
     });
 
     it('3. should write message with custom tag using logger -t', async () => {

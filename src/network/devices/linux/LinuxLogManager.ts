@@ -8,8 +8,8 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
-  emerg: 0, alert: 1, crit: 2, err: 3,
-  warning: 4, notice: 5, info: 6, debug: 7,
+  emerg: 0, emergency: 0, panic: 0, alert: 1, crit: 2, err: 3, error: 3,
+  warning: 4, warn: 4, notice: 5, info: 6, debug: 7,
 };
 const PRIORITY_LABELS: Record<number, string> = {
   0: 'emerg', 1: 'alert', 2: 'crit', 3: 'err',
@@ -20,14 +20,9 @@ const PRIORITY_LABELS: Record<number, string> = {
 const FACILITY_NAMES: Record<string, number> = {
   kern: 0, user: 1, mail: 2, daemon: 3,
   auth: 4, syslog: 5, lpr: 6, news: 7,
-  cron: 8, local0: 16, local1: 17, local2: 18,
+  cron: 8, authpriv: 10, ftp: 11,
+  local0: 16, local1: 17, local2: 18,
   local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
-};
-
-// ── Log file routing ─────────────────────────────────────────────
-const FACILITY_LOG_FILES: Record<string, string> = {
-  auth: '/var/log/auth.log',
-  kern: '/var/log/kern.log',
 };
 
 // ── Journal entry ────────────────────────────────────────────────
@@ -145,37 +140,59 @@ export class LinuxLogManager {
     let tag = currentUser;
     let priority = 'user.notice';
     let includePid = false;
+    let toStderr = false;
+    let expandNewlines = false;
+    let fromFile: string | null = null;
     const msgParts: string[] = [];
 
     let i = 0;
     while (i < args.length) {
-      switch (args[i]) {
-        case '-t': tag = args[++i] || tag; i++; break;
-        case '-p': priority = args[++i] || priority; i++; break;
-        case '-i': includePid = true; i++; break;
-        case '-s': i++; break; // stderr flag, no-op in simulator
-        default: msgParts.push(args[i]); i++; break;
-      }
+      const a = args[i];
+      if (a === '-t' || a === '--tag') { tag = args[++i] ?? tag; i++; }
+      else if (a === '-p' || a === '--priority') { priority = args[++i] ?? priority; i++; }
+      else if (a === '-i' || a === '--id') { includePid = true; i++; }
+      else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
+      else if (a === '-e') { expandNewlines = true; i++; }
+      else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
+      else { msgParts.push(a); i++; }
     }
 
-    // Parse facility.priority
     const parsed = this.parsePriority(priority);
     if (!parsed) return `logger: unknown priority name: ${priority}`;
 
-    const message = msgParts.join(' ');
+    let messages: string[];
+    if (fromFile !== null) {
+      const content = this.vfs.readFile(fromFile);
+      if (content === null) return `logger: ${fromFile}: No such file or directory`;
+      messages = content.split('\n').filter((l) => l.length > 0);
+    } else {
+      if (args.length === 0) return 'Usage: logger [options] [<message>]';
+      let msg = msgParts.join(' ');
+      if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
+      if (msg.length > 2048) msg = msg.slice(0, 2048);
+      messages = [msg];
+    }
+
+    const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
     const pid = includePid ? this.nextPid++ : 0;
+    const echoed: string[] = [];
+    for (const message of messages) {
+      this.addEntry({
+        priority: parsed.priority,
+        facility: parsed.facility,
+        unit: '',
+        tag: safeTag,
+        message,
+        pid,
+        hostname: this.hostname,
+      });
+      if (toStderr) {
+        const last = this.journal[this.journal.length - 1];
+        echoed.push(this.formatSyslogLine(last));
+      }
+    }
 
-    this.addEntry({
-      priority: parsed.priority,
-      facility: parsed.facility,
-      unit: '',
-      tag,
-      message,
-      pid,
-      hostname: this.hostname,
-    });
-
-    return '';
+    return echoed.join('\n');
   }
 
   /**
@@ -468,7 +485,7 @@ export class LinuxLogManager {
       tag: opts.tag,
       message: opts.message,
       pid: opts.pid,
-      hostname: opts.hostname,
+      hostname: this.currentHostname(),
     };
     // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
@@ -481,12 +498,8 @@ export class LinuxLogManager {
     const facilityName = this.facilityName(opts.facility);
     const logLine = this.formatSyslogLine(entry);
 
-    this.appendToLogFile('/var/log/syslog', logLine);
-
-    // Route to facility-specific log
-    const specificFile = FACILITY_LOG_FILES[facilityName];
-    if (specificFile) {
-      this.appendToLogFile(specificFile, logLine);
+    for (const file of this.routeLogFiles(facilityName, opts.priority)) {
+      this.appendToLogFile(file, logLine);
     }
 
     if (this.attachedBus && this.attachedDeviceId) {
@@ -604,12 +617,16 @@ export class LinuxLogManager {
   }
 
   private parsePriority(spec: string): { facility: number; priority: number } | null {
+    // Whole numeric priority: PRI = facility*8 + severity.
+    if (/^\d+$/.test(spec)) {
+      const n = parseInt(spec, 10);
+      if (n < 0 || n > 191) return null;
+      return { facility: Math.floor(n / 8), priority: n % 8 };
+    }
     const dot = spec.indexOf('.');
     if (dot >= 0) {
-      const facName = spec.slice(0, dot);
-      const priName = spec.slice(dot + 1);
-      const fac = FACILITY_NAMES[facName];
-      const pri = PRIORITY_NAMES[priName];
+      const fac = FACILITY_NAMES[spec.slice(0, dot)];
+      const pri = PRIORITY_NAMES[spec.slice(dot + 1)];
       if (fac === undefined || pri === undefined) return null;
       return { facility: fac, priority: pri };
     }
@@ -617,6 +634,23 @@ export class LinuxLogManager {
     const pri = PRIORITY_NAMES[spec];
     if (pri === undefined) return null;
     return { facility: 1, priority: pri };
+  }
+
+  private currentHostname(): string {
+    const h = this.vfs.readFile('/etc/hostname');
+    return h ? h.trim() : this.hostname;
+  }
+
+  private routeLogFiles(facilityName: string, priority: number): string[] {
+    const files = ['/var/log/syslog'];
+    if (facilityName === 'auth' || facilityName === 'authpriv') files.push('/var/log/auth.log');
+    else if (facilityName === 'kern') files.push('/var/log/kern.log');
+    else if (facilityName === 'cron') files.push('/var/log/cron.log');
+    else if (facilityName === 'mail') {
+      files.push('/var/log/mail.log');
+      if (priority <= PRIORITY_NAMES.err) files.push('/var/log/mail.err');
+    }
+    return files;
   }
 
   private resolvePriority(val: string): number {
