@@ -459,8 +459,11 @@ export class BashLexer {
       if (ch === '}' && !value) break;
       // [ and ] at start of word are test brackets; mid-word they're glob chars
       if ((ch === '[' || ch === ']') && !value) break;
-      // Other operator starts
-      if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}') break;
+      // Other operator starts. `#` is excluded: a word-initial `#` is
+      // already consumed as a comment by scanToken, so any `#` reaching
+      // scanWord is mid-word and thus a literal character — bash only
+      // begins a comment at a word boundary (`echo a#b` prints `a#b`).
+      if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}' && ch !== '#') break;
 
       // Escape — keep both bytes in the raw value so downstream
       // glob/quote-removal can tell escaped meta-chars (`\*`, `\?`,
