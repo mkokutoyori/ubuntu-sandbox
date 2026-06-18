@@ -121,7 +121,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
   'pkill', 'pgrep', 'pidof', 'killall',
-  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice',
+  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
@@ -346,6 +346,7 @@ export class LinuxCommandExecutor {
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
+    this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.isServer = isServer;
 
     // ── NSS provisioning ────────────────────────────────────────────
@@ -1767,7 +1768,8 @@ export class LinuxCommandExecutor {
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
       'ausearch', 'aureport', 'auditctl', 'logrotate',
-      'iptables', 'iptables-save', 'iptables-restore'];
+      'iptables', 'iptables-save', 'iptables-restore',
+      'reboot', 'shutdown'];
     const sudoRequired = ['chown', 'chgrp'];
     if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
         && !this.userMgr.getUserGroups(this.userMgr.currentUser).some(g => g.name === 'sudo' || g.name === 'wheel')) {
@@ -1983,8 +1985,8 @@ export class LinuxCommandExecutor {
       case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
       case 'auditctl': {
-        const out = cmdAuditctl(this.auditRules, args);
-        return { output: out, exitCode: out.startsWith('auditctl:') ? 1 : 0 };
+        const r = cmdAuditctl(this.auditRules, args);
+        return { output: r.output, exitCode: r.exitCode };
       }
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
@@ -2347,6 +2349,11 @@ export class LinuxCommandExecutor {
       // ── System administration commands ──────────────────────────────
       case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
       case 'service': return cmdService(args, this.serviceMgr);
+      case 'reboot':
+      case 'shutdown': {
+        this.auditRules.rebootReset();
+        return { output: '', exitCode: 0 };
+      }
       case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };

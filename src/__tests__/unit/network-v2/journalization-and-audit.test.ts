@@ -172,7 +172,7 @@ describe('ausearch / aureport / auditctl', () => {
   });
 
   it('auditctl -s shows the subsystem status', () => {
-    expect(cmdAuditctl(new LinuxAuditRules(seeded(), new VirtualFileSystem()), ['-s'])).toContain('enabled 1');
+    expect(cmdAuditctl(new LinuxAuditRules(seeded(), new VirtualFileSystem()), ['-s']).output).toContain('enabled 1');
   });
 });
 

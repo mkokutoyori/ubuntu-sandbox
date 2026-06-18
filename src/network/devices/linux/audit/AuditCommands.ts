@@ -1,16 +1,6 @@
-/**
- * Audit-subsystem commands — `ausearch`, `aureport`, `auditctl`.
- *
- * These are the user-facing query/control tools of the Linux audit trail.
- * They read the {@link LinuxAuditLog} the {@link AuditTrailProjection} keeps
- * coherent and the {@link LinuxAuditRules} set, so the CLI view and the
- * on-disk `/var/log/audit/audit.log` always agree.
- */
-
 import type { LinuxAuditLog, AuditQuery } from './LinuxAuditLog';
-import type { LinuxAuditRules } from './LinuxAuditRules';
+import type { LinuxAuditRules, AuditEnabled, AuditFailureMode } from './LinuxAuditRules';
 
-/** Event separator `ausearch` prints between records. */
 const EVENT_SEPARATOR = '----';
 
 export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
@@ -39,8 +29,30 @@ export function cmdAureport(auditLog: LinuxAuditLog, args: string[]): string {
       'Number of logins: 0', 'Number of failed logins: 0'].join('\n');
   }
   if (args.includes('-x') || args.includes('--executable')) {
-    return ['Executable Summary Report', '=================================',
-      'total  file', '0'].join('\n');
+    const counts = new Map<string, number>();
+    for (const r of auditLog.all()) {
+      const exe = String(r.get('exe') ?? '');
+      if (!exe) continue;
+      counts.set(exe, (counts.get(exe) ?? 0) + 1);
+    }
+    const lines = ['Executable Summary Report', '================================='];
+    if (counts.size === 0) lines.push('total  file', '0');
+    else {
+      lines.push('total  file');
+      for (const [exe, n] of counts) lines.push(`${String(n).padStart(5)}  ${exe}`);
+    }
+    return lines.join('\n');
+  }
+  if (args.includes('-p') || args.includes('--pid')) {
+    const counts = new Map<string, number>();
+    for (const r of auditLog.all()) {
+      const exe = String(r.get('exe') ?? '');
+      if (!exe) continue;
+      counts.set(exe, (counts.get(exe) ?? 0) + 1);
+    }
+    const lines = ['Process ID Summary Report', '================================='];
+    for (const [exe, n] of counts) lines.push(`${String(n).padStart(5)}  ${exe}`);
+    return lines.join('\n');
   }
   if (args.includes('-c') || args.includes('--config')) {
     return ['Config Summary Report', '=============================',
@@ -73,49 +85,153 @@ export function cmdAureport(auditLog: LinuxAuditLog, args: string[]): string {
   return lines.join('\n');
 }
 
-/** `auditctl` — query / control the audit subsystem (status, rules). */
-export function cmdAuditctl(rules: LinuxAuditRules, args: string[]): string {
-  if (args[0] === '-s' || args[0] === '--status') return rules.status();
-  if (args[0] === '-l' || args[0] === '--list') return rules.list();
-  if (args[0] === '-D' || args[0] === '--delete-all') { rules.deleteAll(); return 'No rules'; }
+const AUDITCTL_VERSION = 'auditctl version 3.0.7';
 
-  if (args[0] === '-e') {
-    const v = parseInt(args[1] ?? '', 10);
-    if (v !== 0 && v !== 1) return 'auditctl: invalid enable value';
-    rules.setEnabled(v);
-    return `enabled ${v}`;
-  }
+const AUDITCTL_HELP = [
+  'usage: auditctl [options]',
+  '    -a <l,a>                    Append rule to end of <l>ist',
+  '    -A <l,a>                    Prepend rule at start of <l>ist',
+  '    -b <backlog>                Set max number of outstanding audit buffers',
+  '    -d <l,a>                    Delete rule from <l>ist',
+  '    -D                          Delete all rules and watches',
+  '    -e [0|1|2]                  Set enabled flag (0=off, 1=on, 2=locked until reboot)',
+  '    -f [0|1|2]                  Set failure mode (0=silent, 1=printk, 2=panic)',
+  '    -F f=v                      Build rule: field name, operator(=,!=,<,>,<=,>=), value',
+  '    -h                          Show this help',
+  '    --help                      Show this help',
+  '    -k <key>                    Set filter key on audit rule',
+  '    -l                          List all rules',
+  '    -p [r|w|x|a]                Set permissions filter on watch',
+  '    -q                          Suppress informational messages',
+  '    -r <rate>                   Set limit in messages/sec (0=none)',
+  '    -R <file>                   Read rules from file',
+  '    -s                          Report status',
+  '    -S syscall                  Build rule: syscall name or number',
+  '    -v                          Print version',
+  '    -w <path>                   Insert watch at <path>',
+  '    -W <path>                   Remove watch at <path>',
+].join('\n');
 
-  // -w <path> -p <perms> -k <key>   (add)  /  -W ... (remove)
-  if (args[0] === '-w' || args[0] === '-W') {
-    const path = args[1];
-    if (!path) return 'auditctl: watch path required';
-    let perms = 'wa';
-    let key: string | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === '-p') perms = args[++i] ?? perms;
-      else if (args[i] === '-k') key = args[++i];
+export interface AuditctlOutcome {
+  output: string;
+  exitCode: number;
+}
+
+export function cmdAuditctl(rules: LinuxAuditRules, args: string[]): AuditctlOutcome {
+  const argv = args.length === 1 && args[0].trim() === '' ? [] : args;
+  if (argv.length === 0) return out('usage: auditctl [options]', 1);
+
+  let i = 0;
+  if (argv[0] === '-q') i++;
+
+  if (i >= argv.length) return out('usage: auditctl [options]', 1);
+
+  const head = argv[i];
+  switch (head) {
+    case '-h': case '--help':
+      return out(AUDITCTL_HELP, 0);
+    case '-v': case '--version':
+      return out(AUDITCTL_VERSION, 0);
+    case '-s': case '--status':
+      if (argv.length - i > 1) return err('invalid: extra arguments after -s');
+      return out(rules.status(), 0);
+    case '-l': case '--list':
+      if (argv.length - i > 1) return err('invalid: extra arguments after -l');
+      return out(rules.list(), 0);
+    case '-D': case '--delete-all': {
+      const r = rules.deleteAll();
+      if (!r.ok) return err(r.error!);
+      return out('No rules\nNo rules deleted', 0);
     }
-    if (args[0] === '-W') { rules.removeWatch(path); return ''; }
-    const err = rules.addWatch(path, perms, key);
-    return err ?? '';
-  }
-
-  // -a <action,filter> -S <syscall> -k <key>   (syscall rule)
-  if (args[0] === '-a' || args[0] === '-A') {
-    const spec = (args[1] ?? '').split(',');
-    const action = spec[0] ?? 'always';
-    const filter = spec[1] ?? 'exit';
-    const syscalls: string[] = [];
-    let key: string | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === '-S') syscalls.push(args[++i]);
-      else if (args[i] === '-k') key = args[++i];
+    case '-e': {
+      const v = parseInt(argv[i + 1] ?? '', 10);
+      if (!(v === 0 || v === 1 || v === 2)) return err('invalid enable value (must be 0, 1, or 2)');
+      const r = rules.setEnabled(v as AuditEnabled);
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
     }
-    if (syscalls.length === 0) return 'auditctl: syscall (-S) required';
-    rules.addSyscallRule({ action, filter, syscalls, key });
-    return '';
+    case '-f': {
+      const v = parseInt(argv[i + 1] ?? '', 10);
+      if (!(v === 0 || v === 1 || v === 2)) return err('invalid failure flag (must be 0, 1, or 2)');
+      const r = rules.setFailure(v as AuditFailureMode);
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
+    }
+    case '-b': {
+      const raw = argv[i + 1];
+      const n = parseInt(raw ?? '', 10);
+      if (raw === undefined || !/^-?\d+$/.test(raw) || Number.isNaN(n)) return err('invalid: backlog value must be a non-negative integer');
+      const r = rules.setBacklogLimit(n);
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
+    }
+    case '-r': {
+      const raw = argv[i + 1];
+      const n = parseInt(raw ?? '', 10);
+      if (raw === undefined || !/^-?\d+$/.test(raw) || Number.isNaN(n)) return err('invalid: rate value must be a non-negative integer');
+      const r = rules.setRateLimit(n);
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
+    }
+    case '-w': case '-W': {
+      const path = argv[i + 1];
+      if (!path || path.startsWith('-')) return err('invalid: missing path argument for watch');
+      let perms: string | undefined;
+      let key: string | undefined;
+      for (let j = i + 2; j < argv.length; j++) {
+        if (argv[j] === '-p') {
+          perms = argv[++j];
+          if (perms === undefined) return err("option '-p' invalid: missing argument for option");
+        } else if (argv[j] === '-k') {
+          key = argv[++j];
+          if (key === undefined) return err("option '-k' invalid: missing argument for option");
+        } else return err(`unrecognized argument ${argv[j]}`);
+      }
+      const r = head === '-w' ? rules.addWatch(path, perms, key) : rules.removeWatch(path, perms);
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
+    }
+    case '-a': case '-A': case '-d': {
+      const spec = (argv[i + 1] ?? '').split(',');
+      if (spec.length !== 2) return err('invalid: rule spec must be <action,filter> (e.g. always,exit)');
+      const [action, filter] = spec;
+      const syscalls: string[] = [];
+      const fields: string[] = [];
+      let key: string | undefined;
+      for (let j = i + 2; j < argv.length; j++) {
+        if (argv[j] === '-S') {
+          const v = argv[++j];
+          if (v === undefined || v.startsWith('-')) return err("option '-S' invalid: missing argument for option");
+          syscalls.push(v);
+        } else if (argv[j] === '-F') {
+          const v = argv[++j];
+          if (v === undefined || v.startsWith('-')) return err("option '-F' invalid: missing argument for option");
+          fields.push(v);
+        } else if (argv[j] === '-k') {
+          key = argv[++j];
+          if (key === undefined) return err("option '-k' invalid: missing argument for option");
+        } else return err(`unrecognized argument ${argv[j]}`);
+      }
+      const r = head === '-d'
+        ? rules.deleteSyscallRule(action, filter, syscalls, fields, key)
+        : rules.addSyscallRule(action, filter, syscalls, fields, key, head === '-A' ? 'prepend' : 'append');
+      if (!r.ok) return err(r.error!);
+      return out('', 0);
+    }
+    case '-R': {
+      const file = argv[i + 1];
+      if (!file) return err("option '-R' invalid: missing file argument");
+      return err(`Unable to read ${file}: No such file or directory`);
+    }
+    default:
+      return err(`unrecognized option '${head}'`);
   }
+}
 
-  return 'usage: auditctl [options]';
+function out(output: string, exitCode: number): AuditctlOutcome {
+  return { output, exitCode };
+}
+
+function err(message: string): AuditctlOutcome {
+  return { output: `auditctl: ${message}`, exitCode: 1 };
 }

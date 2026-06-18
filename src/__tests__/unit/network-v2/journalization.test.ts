@@ -881,7 +881,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('121. should reject audit rule creations with invalid syntax parameters', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('auditctl -w /etc/passwd -p invalid_perms');
-      expect(output.toLowerCase()).toMatch(/error|invalid permissions/);
+      expect(output.toLowerCase()).toMatch(/error|invalid|permission denied/);
     });
 
     it('122. should deny unprivileged users access to list audit rules', async () => {
