@@ -86,7 +86,7 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
-import { decodeEthernetFrame, makeLoopbackIcmpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -1719,7 +1719,7 @@ export abstract class LinuxMachine extends EndHost
     };
   }
 
-  private openTcpdumpCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
+  openTcpdumpCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
     const bus = this.getBus();
     const id = this.id;
     const unsubs: Array<() => void> = [];
@@ -1744,6 +1744,8 @@ export abstract class LinuxMachine extends EndHost
         (p) => p.deviceId === id && accept(p.toIp),
         (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
     }
+
+    unsubs.push(this.subscribeCapture((pkt) => sink(makeTcpFrame(pkt, iface === 'any' ? 'eth0' : iface))));
 
     return () => { for (const u of unsubs) u(); };
   }

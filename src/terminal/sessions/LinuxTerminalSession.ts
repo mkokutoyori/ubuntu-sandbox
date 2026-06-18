@@ -12,7 +12,9 @@
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
-import { parseTcpdumpArgs, tcpdumpHeader, tcpdumpFooter, formatTcpdumpPacket, packetMatchesPort } from '@/network/devices/linux/LinuxNetCommands';
+import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
+import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
+import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
 import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
@@ -843,27 +845,51 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0] !== 'tcpdump') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const opts = parseTcpdumpArgs(toks.slice(1));
+    if (/[|<>]/.test(commandLine)) return false;
 
+    const inv = parseInvocation(toks.slice(1));
+    if (inv.kind !== 'capture' || inv.options.readFile || inv.options.writeFile) {
+      const job = this.startAsyncCommand({
+        mode: 'foreground',
+        kind: 'streaming',
+        command: commandLine,
+        prepare: () => true,
+        run: async (ctx) => {
+          const out = await dev.executeCommand(commandLine);
+          if (out) for (const l of out.split('\n')) ctx.sink.line(l);
+        },
+      });
+      return job !== null;
+    }
+
+    const opts = inv.options;
+    const filter = compileFilter(opts.filterTokens);
     let captured = 0;
+    let prev: Date | null = null;
     let unsubscribe: (() => void) | null = null;
-    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooter(captured)) ctx.sink.line(l); };
+    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooterLines(captured, captured)) ctx.sink.line(l); };
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
-      prepare: (ctx) => { for (const h of tcpdumpHeader(opts.iface)) ctx.sink.line(h); return true; },
+      prepare: (ctx) => {
+        if (filter.ok === false) { ctx.sink.line(filter.message); return false; }
+        for (const h of tcpdumpBanner(opts)) ctx.sink.line(h);
+        return true;
+      },
       run: async (ctx) => {
+        if (filter.ok === false) return;
+        if (opts.count === 0) { footer(ctx); return; }
         await new Promise<void>((resolve) => {
           const finish = () => { unsubscribe?.(); unsubscribe = null; resolve(); };
           if (ctx.cancelled()) { resolve(); return; }
-          unsubscribe = dev.subscribeCapture((pkt) => {
-            if (!packetMatchesPort(pkt, opts.portFilter)) return;
-            ctx.sink.line(formatTcpdumpPacket(pkt));
+          unsubscribe = dev.openTcpdumpCapture(opts.iface, (frame) => {
+            if (filter.ok && !filter.predicate(frame)) return;
+            ctx.sink.line(formatCaptureFrame(frame, opts, prev));
+            prev = frame.at;
             captured++;
-            if (captured >= opts.count) finish();
+            if (opts.count !== null && captured >= opts.count) finish();
           });
           ctx.onCancel(finish);
         });

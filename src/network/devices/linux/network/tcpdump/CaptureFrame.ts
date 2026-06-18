@@ -258,6 +258,58 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
   base.l4 = 'other';
 }
 
+export function makeTcpFrame(
+  pkt: {
+    at: Date; srcIp: string; srcPort: number; dstIp: string; dstPort: number;
+    flags: string; seq: number; ack: number; length: number;
+  },
+  iface: string,
+): CaptureFrame {
+  const f = pkt.flags;
+  const flags = {
+    syn: f.includes('S'),
+    ack: f.includes('.'),
+    fin: f.includes('F'),
+    rst: f.includes('R'),
+    psh: f.includes('P'),
+    urg: f.includes('U'),
+  };
+  const total = 40 + pkt.length;
+  const header = [
+    0x45, 0, ...u16(total), ...u16(0), ...u16(0x4000), 64, IP_PROTO_TCP, ...u16(0),
+    ...ipBytes(pkt.srcIp), ...ipBytes(pkt.dstIp),
+  ];
+  const tcp = [...u16(pkt.srcPort), ...u16(pkt.dstPort)];
+  return {
+    at: pkt.at,
+    iface,
+    direction: 'in',
+    linkType: 'EN10MB',
+    srcMac: '00:00:00:00:00:00',
+    dstMac: '00:00:00:00:00:00',
+    etherType: ETHERTYPE_IPV4,
+    l3: 'ipv4',
+    l4: 'tcp',
+    length: total,
+    srcIp: pkt.srcIp,
+    dstIp: pkt.dstIp,
+    ttl: 64,
+    ipId: 0,
+    ipProtocol: IP_PROTO_TCP,
+    ipTotalLength: total,
+    ipHeaderLen: 20,
+    srcPort: pkt.srcPort,
+    dstPort: pkt.dstPort,
+    payloadLength: pkt.length,
+    tcpFlags: flags,
+    tcpSeq: pkt.seq,
+    tcpAck: pkt.ack,
+    tcpWindow: 0,
+    raw: [...header, ...tcp],
+    rawLinkOffset: 0,
+  };
+}
+
 export function makeLoopbackIcmpFrame(
   fromIp: string,
   toIp: string,
