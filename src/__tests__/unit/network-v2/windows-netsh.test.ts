@@ -229,7 +229,7 @@ describe('Group 4: netsh interface ip delete address', () => {
       const result = await pc.executeCommand(
         'netsh interface ip delete address "Ethernet 0" addr=192.168.1.10'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       // After removing IP, the interface should show no IP

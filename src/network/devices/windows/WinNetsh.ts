@@ -674,6 +674,10 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     if (ip) {
       lines.push(`    IP Address:                           ${ip}`);
       lines.push(`    Subnet Prefix:                        ${ip}/${mask?.toCIDR() || 24} (mask ${mask || '255.255.255.0'})`);
+      for (const sec of port.getSecondaryIPs()) {
+        lines.push(`    IP Address:                           ${sec.ip}`);
+        lines.push(`    Subnet Prefix:                        ${sec.ip}/${sec.mask.toCIDR()} (mask ${sec.mask})`);
+      }
     }
     // Only show gateway on interfaces that have an IP configured
     if (ip && ctx.defaultGateway) {
@@ -947,16 +951,19 @@ function handleAddAddress(ctx: WinCommandContext, joined: string): string {
   if (!port) return `The interface "${ifName}" was not found.`;
 
   const existingIp = port.getIPAddress();
-  if (existingIp && existingIp.toString() === ip) {
+  if ((existingIp && existingIp.toString() === ip)
+    || port.getSecondaryIPs().some(e => e.ip.toString() === ip)) {
     return `The object already exists.`;
   }
 
   try {
-    ctx.configureInterface(portName, new IPAddress(ip), new SubnetMask(mask));
-    if (gateway) {
-      ctx.setDefaultGateway(new IPAddress(gateway));
+    if (existingIp) {
+      port.addSecondaryIP(new IPAddress(ip), new SubnetMask(mask));
+    } else {
+      ctx.configureInterface(portName, new IPAddress(ip), new SubnetMask(mask));
+      if (gateway) ctx.setDefaultGateway(new IPAddress(gateway));
     }
-    return 'Ok.';
+    return '';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
@@ -1160,11 +1167,19 @@ function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   }
 
   const ifName = match[1].trim();
+  const ipStr = match[2];
   const portName = resolveAdapterName(ifName, ctx.ports);
-  if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+  const port = ctx.ports.get(portName);
+  if (!port) return `The interface "${ifName}" was not found.`;
 
-  ctx.clearInterfaceIP(portName);
-  return 'Ok.';
+  if (ipStr) {
+    const addr = new IPAddress(ipStr);
+    if (port.getIPAddress()?.equals(addr)) ctx.clearInterfaceIP(portName);
+    else port.removeSecondaryIP(addr);
+  } else {
+    ctx.clearInterfaceIP(portName);
+  }
+  return '';
 }
 
 // ─── netsh interface ipv6 ───────────────────────────────────────────
