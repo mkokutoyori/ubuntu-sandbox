@@ -867,6 +867,15 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  /** Add an on-link (directly-connected) static route via an interface, no gateway. */
+  addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0): boolean {
+    if (!this.ports.has(iface)) return false;
+    this.routingTable.push({ network, mask, nextHop: null, iface, type: 'static', metric });
+    Logger.info(this.id, 'host:route-add',
+      `${this.name}: on-link route ${network}/${mask.toCIDR()} dev ${iface} metric ${metric}`);
+    return true;
+  }
+
   /**
    * Remove a route by network/mask match.
    * Returns true if a route was removed.

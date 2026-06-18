@@ -153,6 +153,21 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
+    addDeviceRoute(network: string, cidr: number, iface: string): string {
+      try {
+        const mask = SubnetMask.fromCIDR(cidr);
+        const net4 = new IPAddress(network);
+        if (!net4.networkAddress(mask).equals(net4)) {
+          return `Error: an inet prefix is expected rather than "${network}/${cidr}".`;
+        }
+        if (!net.addDeviceRoute(net4, mask, iface, 0)) {
+          return `Cannot find device "${iface}"`;
+        }
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
     deleteDefaultRoute(): string {
       if (!net.getDefaultGateway()) return 'RTNETLINK answers: No such process';
       net.clearDefaultGateway();

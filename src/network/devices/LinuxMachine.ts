@@ -1129,6 +1129,9 @@ export abstract class LinuxMachine extends EndHost
       addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean {
         return self.addStaticRoute(network, mask, gw, metric ?? 100);
       },
+      addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean {
+        return self.addDeviceRoute(network, mask, iface, metric ?? 0);
+      },
       removeRoute(network: IPAddress, mask: SubnetMask): boolean {
         return self.removeRoute(network, mask);
       },

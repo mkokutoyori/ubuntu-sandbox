@@ -72,6 +72,7 @@ export interface IpNetworkContext {
   getIPv6RoutingTable?(): IpV6RouteEntry[];
   addDefaultRoute(gateway: string): string;
   addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string;
+  addDeviceRoute?(network: string, cidr: number, iface: string): string;
   deleteDefaultRoute(): string;
   deleteRoute(network: string, cidr: number): string;
   getNeighborTable(): IpNeighborEntry[];
@@ -624,9 +625,12 @@ function ipRouteShow(ctx: IpNetworkContext): string {
     } else if (route.type === 'connected') {
       const srcStr = route.srcIp ? ` src ${route.srcIp}` : '';
       lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric}`);
-    } else {
-      // static
+    } else if (route.nextHop) {
+      // static via a gateway
       lines.push(`${route.network}/${route.cidr} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric}`);
+    } else {
+      // static on-link (dev route, no gateway)
+      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto static scope link metric ${route.metric}`);
     }
   }
 
@@ -672,7 +676,14 @@ function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
   const cidr = parseInt(prefix.slice(slashIdx + 1), 10);
   if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
 
+  const devIdx = args.indexOf('dev');
   const viaIdx = args.indexOf('via');
+
+  // On-link route: "ip route add <net>/<cidr> dev <iface>" (no gateway).
+  if (viaIdx === -1 && devIdx !== -1 && args[devIdx + 1]) {
+    if (ctx.addDeviceRoute) return ctx.addDeviceRoute(network, cidr, args[devIdx + 1]);
+  }
+
   if (viaIdx === -1 || !args[viaIdx + 1]) return 'Error: "via" is required.';
   const gateway = args[viaIdx + 1];
 
