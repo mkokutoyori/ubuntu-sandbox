@@ -2779,24 +2779,253 @@ export class LinuxCommandExecutor {
     }
   }
 
+  /** Monotonic source of per-child PIDs ($$) for run-parts' isolated scripts. */
+  private runPartsChildPid = 90000;
+
+  private static readonly RUN_PARTS_USAGE =
+    "Usage: run-parts [OPTION...] DIRECTORY\n" +
+    "Options:\n" +
+    "  --test          print the names of the scripts which would be run, but don't run them\n" +
+    "  --list          print the names of all valid files, don't run them\n" +
+    "  --verbose       print script names before running them\n" +
+    "  --report        only output the stderr of the scripts that produced output\n" +
+    "  --reverse       reverse the scripts' execution order\n" +
+    "  --exit-on-error exit as soon as a script returns a non-zero exit code\n" +
+    "  --umask=UMASK   sets umask to UMASK before running the scripts\n" +
+    "  --arg=ARGUMENT  pass ARGUMENT to the scripts (may be repeated)\n" +
+    "  --regex=PATTERN validate filenames against custom PATTERN\n" +
+    "  --help          display this help and exit\n" +
+    "  --version       output version information and exit";
+
+  /**
+   * Faithful Debian/LSB `run-parts(8)`.
+   *
+   * Each valid, executable script in DIRECTORY is run in its own child
+   * (distinct $$, /dev/null stdin, the run-parts umask, and the inherited
+   * environment) — mirroring the real binary which `fork`+`exec`s every
+   * part. The filename ruleset is the LSB one (`[a-zA-Z0-9_-]+`, no dots
+   * so `*.dpkg-old`/`*.swp` are skipped) unless overridden by `--regex`.
+   */
   private handleRunParts(args: string[]): { output: string; exitCode: number } {
-    const dir = args.find((a) => !a.startsWith('-'));
-    if (!dir) return { output: 'Usage: run-parts [--test] [--report] DIRECTORY', exitCode: 1 };
-    const path = this.vfs.normalizePath(dir, this.cwd);
-    const entries = this.vfs.listDirectory(path);
-    if (!entries) return { output: `run-parts: failed to open directory ${dir}`, exitCode: 1 };
-    const test = args.includes('--test');
-    const out: string[] = [];
-    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(entry.name)) continue;
-      const filePath = `${path}/${entry.name}`;
-      if (test) { out.push(filePath); continue; }
-      const content = this.vfs.readFile(filePath);
-      if (content === null) continue;
-      const result = this.execute(content);
-      if (result) out.push(result);
+    const USAGE = LinuxCommandExecutor.RUN_PARTS_USAGE;
+    const invalid = (msg: string) => ({ output: `run-parts: ${msg}`, exitCode: 1 });
+
+    let test = false, list = false, reverse = false, verbose = false, report = false, exitOnError = false;
+    const scriptArgs: string[] = [];
+    let umaskOverride: number | null = null;
+    let regexSrc: string | null = null;
+    let dirArg: string | null = null;
+
+    // Options must precede the single DIRECTORY operand, exactly like the
+    // real getopt-based parser (no permutation: a flag after the path is
+    // an error).
+    const valueFor = (inline: string | null, i: { v: number }, opt: string): string | null => {
+      if (inline !== null) return inline;
+      if (i.v + 1 >= args.length) return null;
+      return args[++i.v];
+    };
+
+    const idx = { v: 0 };
+    for (; idx.v < args.length; idx.v++) {
+      const tok = args[idx.v];
+      if (dirArg !== null) {
+        return invalid(`invalid argument '${tok}' (DIRECTORY must be the last argument)`);
+      }
+      if (tok === '--') { continue; }
+      if (tok.startsWith('--')) {
+        const eq = tok.indexOf('=');
+        const key = eq === -1 ? tok : tok.slice(0, eq);
+        const inline = eq === -1 ? null : tok.slice(eq + 1);
+        switch (key) {
+          case '--test': test = true; break;
+          case '--list': list = true; break;
+          case '--reverse': reverse = true; break;
+          case '--verbose': verbose = true; break;
+          case '--report': report = true; break;
+          case '--exit-on-error': exitOnError = true; break;
+          case '--help': return { output: USAGE, exitCode: 0 };
+          case '--version': return { output: 'run-parts (Ubuntu Sandbox) 5.0', exitCode: 0 };
+          case '--arg': {
+            const v = valueFor(inline, idx, 'arg');
+            if (v === null) return invalid("option '--arg' requires an argument");
+            scriptArgs.push(v);
+            break;
+          }
+          case '--umask': {
+            const v = valueFor(inline, idx, 'umask');
+            if (v === null) return invalid("option '--umask' requires an argument");
+            const m = parseRunPartsUmask(v);
+            if (m === null) return invalid(`invalid umask value: ${v}`);
+            umaskOverride = m;
+            break;
+          }
+          case '--regex': {
+            const v = valueFor(inline, idx, 'regex');
+            if (v === null) return invalid("option '--regex' requires an argument");
+            regexSrc = v;
+            break;
+          }
+          default:
+            return invalid(`invalid option -- '${key.replace(/^--/, '')}'`);
+        }
+      } else if (tok.startsWith('-') && tok !== '-') {
+        // Short option cluster (-tv, -a value, …). Unknown letters abort
+        // with the usage banner, like the real binary.
+        const letters = tok.slice(1).split('');
+        for (let li = 0; li < letters.length; li++) {
+          switch (letters[li]) {
+            case 't': test = true; break;
+            case 'l': list = true; break;
+            case 'v': verbose = true; break;
+            case 'r': report = true; break;
+            case 'a': {
+              const v = valueFor(null, idx, 'arg');
+              if (v === null) return invalid("option requires an argument -- 'a'");
+              scriptArgs.push(v);
+              break;
+            }
+            case 'h': return { output: USAGE, exitCode: 0 };
+            default:
+              return { output: `run-parts: invalid option -- '${letters[li]}'\n${USAGE}`, exitCode: 1 };
+          }
+        }
+      } else {
+        dirArg = tok;
+      }
     }
-    return { output: out.join('\n'), exitCode: 0 };
+
+    if (list && test) return invalid('invalid usage: --list and --test are mutually exclusive');
+
+    if (dirArg === null) {
+      // No operand at all → bare usage; an operand that was swallowed by a
+      // preceding option leaves nothing to run.
+      return { output: `run-parts: error: missing operand\n${USAGE}`, exitCode: 1 };
+    }
+
+    // Resolve and validate DIRECTORY (follows symlinks like the real tool).
+    // Relative paths are resolved against the interpreter's live PWD — which
+    // a preceding `cd` in the same command line has already updated (the
+    // executor's own this.cwd only catches up after the line completes).
+    const baseCwd = this._cmdEnv?.['PWD'] ?? this.cwd;
+    const absDir = this.vfs.normalizePath(dirArg, baseCwd);
+    const dirInode = this.vfs.resolveInode(absDir);
+    if (!dirInode) {
+      return { output: `run-parts: failed to open directory ${dirArg}: No such file or directory`, exitCode: 1 };
+    }
+    if (dirInode.type !== 'directory') {
+      return { output: `run-parts: ${dirArg}: Not a directory`, exitCode: 1 };
+    }
+    if (!this.checkPermission(dirInode, 'r') || !this.checkPermission(dirInode, 'x')) {
+      return { output: `run-parts: failed to open directory ${dirArg}: Permission denied`, exitCode: 1 };
+    }
+
+    // Compile the filename filter once. A bad --regex is a hard error.
+    let nameRe: RegExp;
+    try {
+      nameRe = regexSrc !== null
+        ? new RegExp(`^(?:${regexSrc})$`)
+        : /^[a-zA-Z0-9_-]+$/;
+    } catch {
+      return { output: `run-parts: invalid regex: ${regexSrc}`, exitCode: 1 };
+    }
+
+    // Display paths keep the caller's spelling of DIRECTORY (relative or
+    // absolute), exactly as `run-parts --test ./dir` does.
+    const displayBase = dirArg.replace(/\/+$/, '');
+    const entries = (this.vfs.listDirectory(absDir) ?? [])
+      .filter((e) => e.inode.type !== 'directory' && nameRe.test(e.name));
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    if (reverse) entries.reverse();
+
+    // --list: every valid filename, executable or not.
+    if (list) {
+      return { output: entries.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+    }
+
+    // --test: only the files that *would* run (valid name + executable).
+    if (test) {
+      const runnable = entries.filter((e) => {
+        const resolved = this.vfs.resolveInode(`${absDir}/${e.name}`);
+        return !!resolved && resolved.type !== 'directory'
+          && (resolved.permissions & 0o111) !== 0 && this.checkPermission(resolved, 'x');
+      });
+      return { output: runnable.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+    }
+
+    // Execute. Children inherit the invoker's exported environment (the
+    // interpreter snapshot carries every `export`ed var plus HOME/USER/PATH);
+    // their cwd is the invoker's PWD and never leaks back to the parent.
+    const childEnv = { ...(this._cmdEnv ?? this.buildEnvVars()) };
+    childEnv['PWD'] = baseCwd;
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let exitCode = 0;
+    for (const e of entries) {
+      const absPath = `${absDir}/${e.name}`;
+      const resolved = this.vfs.resolveInode(absPath); // follow symlinks
+      if (!resolved || resolved.type === 'directory') continue; // broken symlink / dir
+      const hasExecBit = (resolved.permissions & 0o111) !== 0;
+      if (!hasExecBit) continue; // not marked executable → silently skipped
+      if (!this.checkPermission(resolved, 'x')) {
+        // The file is a script but this user may not exec it.
+        stderrChunks.push(`run-parts: failed to run ${absPath}: Permission denied`);
+        if (exitOnError) { exitCode = 126; break; }
+        continue;
+      }
+
+      if (verbose) stderrChunks.push(`run-parts: running ${absPath}`);
+      const r = this.runPartsRunScript(absPath, scriptArgs, umaskOverride, childEnv);
+      if (r.stdout) stdoutChunks.push(r.stdout);
+      if (r.stderr) stderrChunks.push(r.stderr);
+      if (exitOnError && r.exitCode !== 0) { exitCode = r.exitCode; break; }
+    }
+
+    // --report forwards only stderr; a normal run interleaves both on the
+    // terminal. The pure-stderr stream is also returned so the caller's
+    // `2>` redirection peels it off coherently.
+    const stderr = stderrChunks.join('\n');
+    const visible = report ? stderr : [...stdoutChunks, ...stderrChunks].join('\n');
+    return { output: visible, exitCode, stderr } as { output: string; exitCode: number };
+  }
+
+  /**
+   * Run one run-parts child in isolation: a fresh $$ pid, /dev/null stdin,
+   * the requested umask, and a copy of the exported environment. The
+   * child's cwd / env mutations never leak back to the parent shell.
+   */
+  private runPartsRunScript(
+    absPath: string,
+    scriptArgs: string[],
+    umaskOverride: number | null,
+    childEnv: Record<string, string>,
+  ): { stdout: string; stderr: string; exitCode: number } {
+    const content = this.vfs.readFile(absPath);
+    if (content === null) return { stdout: '', stderr: '', exitCode: 127 };
+    if (content.includes('\u0000')) return { stdout: '', stderr: '', exitCode: 126 }; // binary, not a script
+
+    const childPid = ++this.runPartsChildPid;
+    const savedUmask = this.umask;
+    if (umaskOverride !== null) this.umask = umaskOverride;
+    try {
+      const result = runScriptContent(
+        content,
+        absPath,
+        scriptArgs,
+        (argv, env) => this.dispatchFromInterpreter(argv, env),
+        childEnv,
+        this.buildIOContext(),
+        { pid: childPid, ppid: this.shellPid, initialExitCode: 0 },
+        this.aliases,
+        this.functions,
+      );
+      return {
+        stdout: (result.output ?? '').replace(/\n$/, ''),
+        stderr: (result.stderr ?? '').replace(/\n$/, ''),
+        exitCode: result.exitCode ?? 0,
+      };
+    } finally {
+      this.umask = savedUmask;
+    }
   }
 
   // ─── Permission checking ──────────────────────────────────────────
@@ -4243,4 +4472,17 @@ function checksumVfs(content: string, cmd: string): string {
 function basenameOf(path: string): string {
   const i = path.lastIndexOf('/');
   return i >= 0 ? path.slice(i + 1) : path;
+}
+
+/**
+ * Parse a `run-parts --umask` value. Accepts a 3- or 4-digit octal mask
+ * (optionally surrounded by whitespace) in the range 000..0777. Returns
+ * the numeric mask, or null when the value is not a valid umask.
+ */
+function parseRunPartsUmask(raw: string): number | null {
+  const v = raw.trim();
+  if (!/^[0-7]{3,4}$/.test(v)) return null;
+  const n = parseInt(v, 8);
+  if (Number.isNaN(n) || n > 0o777) return null;
+  return n;
 }
