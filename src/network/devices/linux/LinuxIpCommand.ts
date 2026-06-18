@@ -428,6 +428,39 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   // ip addr add <ip>/<cidr> dev <name>
   let addrStr: string | null = null;
   let devName: string | null = null;
+  const unknown: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) {
+      devName = args[i + 1];
+      i++;
+    } else if (!addrStr && !args[i].startsWith('-')) {
+      addrStr = args[i];
+    } else {
+      unknown.push(args[i]);
+    }
+  }
+
+  if (!addrStr) return 'Error: either "local" or "peer" address is required.';
+  if (unknown.length > 0) {
+    return `Error: garbage instead of arguments "${unknown.join(' ')}", try "ip addr help".`;
+  }
+  if (!devName) return 'Error: "dev" argument is required, try "ip addr help".';
+
+  const slashIdx = addrStr.indexOf('/');
+  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
+
+  const ip = addrStr.slice(0, slashIdx);
+  const cidr = parseInt(addrStr.slice(slashIdx + 1), 10);
+  if (isNaN(cidr) || cidr < 1 || cidr > 32) return 'Error: invalid prefix length.';
+
+  return ctx.configureInterface(devName, ip, cidr);
+}
+
+function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
+  // ip addr del <ip>/<cidr> dev <name>
+  let addrStr: string | null = null;
+  let devName: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -438,31 +471,15 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
     }
   }
 
-  if (!addrStr) return 'Error: either "local" or "peer" address is required.';
-  if (!devName) return 'Not enough information: "dev" argument is required.';
+  if (!devName) return 'Error: "dev" argument is required, try "ip addr help".';
 
-  const slashIdx = addrStr.indexOf('/');
-  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
-
-  const ip = addrStr.slice(0, slashIdx);
-  const cidr = parseInt(addrStr.slice(slashIdx + 1), 10);
-  if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
-
-  return ctx.configureInterface(devName, ip, cidr);
-}
-
-function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
-  // ip addr del <ip>/<cidr> dev <name>
-  let devName: string | null = null;
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'dev' && args[i + 1]) {
-      devName = args[i + 1];
-      i++;
+  if (addrStr) {
+    const ip = addrStr.split('/')[0];
+    const info = ctx.getInterfaceInfo(devName);
+    if (!info || info.ip !== ip) {
+      return 'RTNETLINK answers: Cannot assign requested address';
     }
   }
-
-  if (!devName) return 'Not enough information: "dev" argument is required.';
 
   return ctx.removeInterfaceIP(devName);
 }

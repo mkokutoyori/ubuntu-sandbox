@@ -22,9 +22,18 @@ import { getNUDState } from '../../../EndHost';
 export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
   return {
     getInterfaceNames(): string[] {
-      return [...net.getPorts().keys()];
+      return ['lo', ...net.getPorts().keys()];
     },
     getInterfaceInfo(name: string): IpInterfaceInfo | null {
+      if (name === 'lo') {
+        return {
+          name: 'lo', mac: '00:00:00:00:00:00',
+          ip: '127.0.0.1', mask: '255.0.0.0', cidr: 8,
+          mtu: 65536, isUp: true, isConnected: true, isDHCP: false,
+          counters: { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 },
+          ipv6: [{ address: '::1', prefixLength: 128, scope: 'global' as const }],
+        };
+      }
       const port = net.getPorts().get(name);
       if (!port) return null;
       const ip = port.getIPAddress();
