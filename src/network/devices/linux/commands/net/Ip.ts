@@ -22,7 +22,7 @@ import { getNUDState } from '../../../EndHost';
 export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
   return {
     getInterfaceNames(): string[] {
-      return ['lo', ...net.getPorts().keys()];
+      return [...net.getPorts().keys()];
     },
     getInterfaceInfo(name: string): IpInterfaceInfo | null {
       if (name === 'lo') {

@@ -331,27 +331,29 @@ function ipAddrFlush(ctx: IpNetworkContext, args: string[]): string {
 }
 
 function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
-  // Parse "dev <name>" filter
+  // Filter by "dev <name>" or a bare interface name (iproute2 accepts both).
+  const SCOPE_KW = new Set(['scope', 'to', 'label', 'up', 'down', 'permanent', 'dynamic', 'primary', 'secondary']);
   let filterDev: string | null = null;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'dev' && args[i + 1]) {
-      filterDev = args[i + 1];
-      break;
+    if (args[i] === 'dev' && args[i + 1]) { filterDev = args[i + 1]; break; }
+    if (!filterDev && !args[i].startsWith('-') && args[i] !== 'show' && args[i] !== 'list'
+      && !SCOPE_KW.has(args[i]) && !/^(scope|to|label)$/.test(args[i - 1] ?? '')) {
+      filterDev = args[i];
     }
   }
+
+  const allNames = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
 
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
-    const names = ctx.getInterfaceNames();
-    const idx = names.indexOf(filterDev) + 1;
+    const idx = allNames.indexOf(filterDev) + 1;
     return formatAddrInterface(info, idx, family);
   }
 
-  const names = ctx.getInterfaceNames();
   const lines: string[] = [];
-  for (let i = 0; i < names.length; i++) {
-    const info = ctx.getInterfaceInfo(names[i]);
+  for (let i = 0; i < allNames.length; i++) {
+    const info = ctx.getInterfaceInfo(allNames[i]);
     if (!info) continue;
     if (lines.length > 0) lines.push('');
     lines.push(formatAddrInterface(info, i + 1, family));
@@ -445,7 +447,7 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   if (unknown.length > 0) {
     return `Error: garbage instead of arguments "${unknown.join(' ')}", try "ip addr help".`;
   }
-  if (!devName) return 'Error: "dev" argument is required, try "ip addr help".';
+  if (!devName) return 'Not enough information: "dev" argument is required.';
 
   const slashIdx = addrStr.indexOf('/');
   if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
@@ -471,12 +473,12 @@ function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
     }
   }
 
-  if (!devName) return 'Error: "dev" argument is required, try "ip addr help".';
+  if (!devName) return 'Not enough information: "dev" argument is required.';
 
   if (addrStr) {
     const ip = addrStr.split('/')[0];
     const info = ctx.getInterfaceInfo(devName);
-    if (!info || info.ip !== ip) {
+    if (info && info.ip !== ip) {
       return 'RTNETLINK answers: Cannot assign requested address';
     }
   }
