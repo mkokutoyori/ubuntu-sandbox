@@ -347,6 +347,25 @@ export class LinuxCommandExecutor {
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
+    this.auditRules.bindActorContextProvider(() => {
+      const u = this.userMgr.currentUser;
+      const uid = this.userMgr.currentUid;
+      const gid = this.userMgr.currentGid;
+      const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : uid;
+      return {
+        pid: this.shellPid ?? 1,
+        ppid: this.shellPpid ?? 1,
+        uid: loginUid,
+        euid: uid,
+        gid: loginUid,
+        egid: gid,
+        auid: loginUid,
+        comm: 'bash',
+        exe: '/bin/bash',
+        tty: 'pts/0',
+        success: this.lastExitCode === 0,
+      };
+    });
     this.isServer = isServer;
 
     // ── NSS provisioning ────────────────────────────────────────────

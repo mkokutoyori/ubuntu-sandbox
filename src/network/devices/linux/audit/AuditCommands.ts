@@ -18,9 +18,19 @@ export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
     }
   }
 
-  const records = auditLog.query(filter);
-  if (records.length === 0) return '<no matches>';
-  return records.map((r) => r.render()).join(`\n${EVENT_SEPARATOR}\n`);
+  const matched = auditLog.query(filter);
+  if (matched.length === 0) return '<no matches>';
+  const serials = new Set(matched.map((r) => r.serial));
+  const events = auditLog.all().filter((r) => serials.has(r.serial));
+  const groups = new Map<number, typeof events>();
+  for (const r of events) {
+    const list = groups.get(r.serial) ?? [];
+    list.push(r);
+    groups.set(r.serial, list);
+  }
+  return [...groups.values()]
+    .map((recs) => recs.map((r) => r.render()).join('\n'))
+    .join(`\n${EVENT_SEPARATOR}\n`);
 }
 
 export function cmdAureport(auditLog: LinuxAuditLog, args: string[]): string {

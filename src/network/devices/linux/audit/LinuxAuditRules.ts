@@ -67,6 +67,20 @@ export interface RuleOpResult {
   error?: string;
 }
 
+export interface AuditActorContext {
+  pid: number;
+  ppid: number;
+  uid: number;
+  euid: number;
+  gid: number;
+  egid: number;
+  auid: number;
+  comm: string;
+  exe: string;
+  tty: string;
+  success: boolean;
+}
+
 const OK: RuleOpResult = { ok: true };
 const fail = (error: string): RuleOpResult => ({ ok: false, error });
 const LOCKED_MSG = 'error: audit system is in immutable mode (locked), cannot change rules until reboot';
@@ -83,6 +97,7 @@ export class LinuxAuditRules {
   private locked = false;
 
   private auditdPidProvider: (() => number | undefined) | null = null;
+  private actorContextProvider: (() => AuditActorContext) | null = null;
 
   constructor(
     private readonly auditLog: LinuxAuditLog,
@@ -100,6 +115,10 @@ export class LinuxAuditRules {
 
   bindAuditdPidProvider(provider: () => number | undefined): void {
     this.auditdPidProvider = provider;
+  }
+
+  bindActorContextProvider(provider: () => AuditActorContext): void {
+    this.actorContextProvider = provider;
   }
 
   get enabled(): AuditEnabled { return this.enabledFlag; }
@@ -369,12 +388,13 @@ export class LinuxAuditRules {
     this.addSyscallRule(action, filter, syscalls, fields, key, position);
   }
 
-  onAccess(path: string, perm: 'r' | 'w' | 'x'): void {
+  onAccess(path: string, perm: 'r' | 'w' | 'x', syscallHint?: string): void {
     if (this.enabledFlag === 0) return;
     for (const w of this.watches) {
       if (!w.perms.includes(perm)) continue;
       if (path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'))) {
-        this.fire(perm === 'x' ? 'execve' : perm === 'w' ? 'open' : 'openat', path, w.key);
+        const syscall = syscallHint ?? defaultSyscallFor(perm);
+        this.fire(syscall, path, w.key);
       }
     }
   }
@@ -391,12 +411,68 @@ export class LinuxAuditRules {
 
   private fire(syscall: string, path: string | undefined, key?: string): void {
     if (this.enabledFlag === 0) return;
-    const fields: Record<string, string | number> = {
-      arch: 'c000003e', syscall, success: 'yes', exit: 0, key: key ?? '(none)',
+    const ctx = this.actorContextProvider?.() ?? DEFAULT_ACTOR;
+    const exit = ctx.success ? 0 : -13;
+    const syscallFields: Record<string, string | number> = {
+      arch: 'c000003e',
+      syscall,
+      success: ctx.success ? 'yes' : 'no',
+      exit,
+      a0: '0', a1: '0', a2: '0', a3: '0',
+      items: path !== undefined ? 1 : 0,
+      ppid: ctx.ppid,
+      pid: ctx.pid,
+      auid: ctx.auid,
+      uid: ctx.uid,
+      gid: ctx.gid,
+      euid: ctx.euid,
+      egid: ctx.egid,
+      suid: ctx.euid,
+      sgid: ctx.egid,
+      fsuid: ctx.euid,
+      fsgid: ctx.egid,
+      tty: ctx.tty,
+      ses: '1',
+      comm: ctx.comm,
+      exe: ctx.exe,
+      key: key ?? '(none)',
+      res: ctx.success ? 'success' : 'failed',
     };
-    if (path !== undefined) { fields.exe = path; fields.name = path; }
-    this.auditLog.record('SYSCALL', fields);
+    const parts: Array<{ type: string; fields?: Record<string, string | number> }> =
+      [{ type: 'SYSCALL', fields: syscallFields }];
+    if (path !== undefined) {
+      parts.push({ type: 'PATH', fields: {
+        item: 0,
+        name: path,
+        inode: '0',
+        dev: '00:00',
+        mode: '0100644',
+        ouid: 0,
+        ogid: 0,
+        rdev: '00:00',
+        nametype: writingSyscall(syscall) ? 'NORMAL' : 'PARENT',
+      } });
+    }
+    this.auditLog.recordEvent(parts);
   }
+}
+
+const DEFAULT_ACTOR: AuditActorContext = {
+  pid: 1, ppid: 0, uid: 0, euid: 0, gid: 0, egid: 0, auid: 0,
+  comm: 'kernel', exe: '/sbin/init', tty: '(none)', success: true,
+};
+
+function defaultSyscallFor(perm: 'r' | 'w' | 'x'): string {
+  if (perm === 'x') return 'execve';
+  if (perm === 'w') return 'open';
+  return 'openat';
+}
+
+function writingSyscall(syscall: string): boolean {
+  return ['open', 'openat', 'creat', 'write', 'chmod', 'fchmod', 'fchmodat',
+    'chown', 'fchown', 'mkdir', 'mkdirat', 'rmdir', 'unlink', 'unlinkat',
+    'rename', 'renameat', 'renameat2', 'symlink', 'symlinkat', 'link', 'linkat',
+    'truncate', 'ftruncate'].includes(syscall);
 }
 
 function canonPerms(input: string): string | null {
@@ -482,6 +558,16 @@ function defaultAuditdConf(): string {
     'admin_space_left_action = SUSPEND',
     'disk_full_action = SUSPEND',
     'disk_error_action = SUSPEND',
+    'backlog_limit = 64',
+    'rate_limit = 0',
+    'name_format = NONE',
+    'verify_email = yes',
+    'enable_krb5 = no',
+    'krb5_principal = auditd',
+    'tcp_listen_queue = 5',
+    'tcp_max_per_addr = 1',
+    'tcp_client_max_idle = 0',
+    'transport = TCP',
     '',
   ].join('\n');
 }
