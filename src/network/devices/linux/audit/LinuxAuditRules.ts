@@ -388,7 +388,7 @@ export class LinuxAuditRules {
     this.addSyscallRule(action, filter, syscalls, fields, key, position);
   }
 
-  onAccess(path: string, perm: 'r' | 'w' | 'x', syscallHint?: string): void {
+  onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string): void {
     if (this.enabledFlag === 0) return;
     for (const w of this.watches) {
       if (!w.perms.includes(perm)) continue;
@@ -462,9 +462,10 @@ const DEFAULT_ACTOR: AuditActorContext = {
   comm: 'kernel', exe: '/sbin/init', tty: '(none)', success: true,
 };
 
-function defaultSyscallFor(perm: 'r' | 'w' | 'x'): string {
+function defaultSyscallFor(perm: 'r' | 'w' | 'x' | 'a'): string {
   if (perm === 'x') return 'execve';
   if (perm === 'w') return 'open';
+  if (perm === 'a') return 'chmod';
   return 'openat';
 }
 

@@ -1837,6 +1837,9 @@ export class LinuxCommandExecutor {
             return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
           }
         }
+        for (const arg of fileArgs) {
+          this.auditRules.onAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
+        }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');
         return { output: out, exitCode: isError ? 1 : 0 };
@@ -1846,18 +1849,54 @@ export class LinuxCommandExecutor {
         const expanded = args.map(a => this.expandEnvVars(a));
         return { output: cmdEcho(c, expanded), exitCode: 0 };
       }
-      case 'cp': return { output: cmdCp(c, args), exitCode: 0 };
-      case 'mv': return { output: cmdMv(c, args), exitCode: 0 };
+      case 'cp': {
+        const paths = args.filter(a => !a.startsWith('-'));
+        for (const p of paths) this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        return { output: cmdCp(c, args), exitCode: 0 };
+      }
+      case 'mv': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'w', 'rename');
+          this.auditRules.onSyscall('rename', abs);
+        }
+        return { output: cmdMv(c, args), exitCode: 0 };
+      }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
-          this.auditRules.onSyscall('unlink', this.vfs.normalizePath(p, this.cwd));
-          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w');
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'w', 'unlink');
+          this.auditRules.onSyscall('unlink', abs);
         }
         return { output: cmdRm(c, args), exitCode: 0 };
       }
-      case 'mkdir': return { output: cmdMkdir(c, args), exitCode: 0 };
-      case 'rmdir': return { output: cmdRmdir(c, args), exitCode: 0 };
-      case 'ln': return { output: cmdLn(c, args), exitCode: 0 };
+      case 'mkdir': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'w', 'mkdir');
+          this.auditRules.onSyscall('mkdir', abs);
+        }
+        return { output: cmdMkdir(c, args), exitCode: 0 };
+      }
+      case 'rmdir': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'w', 'rmdir');
+          this.auditRules.onSyscall('rmdir', abs);
+        }
+        return { output: cmdRmdir(c, args), exitCode: 0 };
+      }
+      case 'ln': {
+        const isSymlink = args.includes('-s');
+        const paths = args.filter(a => !a.startsWith('-'));
+        const sc = isSymlink ? 'symlink' : 'link';
+        for (const p of paths) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'w', sc);
+          this.auditRules.onSyscall(sc, abs);
+        }
+        return { output: cmdLn(c, args), exitCode: 0 };
+      }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };
 
@@ -1923,8 +1962,22 @@ export class LinuxCommandExecutor {
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
-      case 'chmod': return { output: cmdChmod(c, args), exitCode: 0 };
-      case 'chown': return { output: cmdChown(c, args), exitCode: 0 };
+      case 'chmod': {
+        for (const p of args.filter(a => !a.startsWith('-') && !/^[0-7]+$|^[ugoa]?[+=-]/.test(a))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'a', 'chmod');
+          this.auditRules.onSyscall('chmod', abs);
+        }
+        return { output: cmdChmod(c, args), exitCode: 0 };
+      }
+      case 'chown': {
+        for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.auditRules.onAccess(abs, 'a', 'chown');
+          this.auditRules.onSyscall('chown', abs);
+        }
+        return { output: cmdChown(c, args), exitCode: 0 };
+      }
       case 'chgrp': return { output: cmdChgrp(c, args), exitCode: 0 };
       case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
