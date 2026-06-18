@@ -85,3 +85,99 @@ mécanisme. Seule la lacune réelle (processus de fond) a été traitée.
 `src/network/devices/linux/LinuxProcessManager.ts`,
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/database/oracle-background-process-kill.test.ts`.
+
+---
+
+## 2026-06-18
+
+### #2 — `run-parts(8)` fidèle + séparation stdout/stderr du moteur bash + bug lexer `#`
+
+**Couches concernées :** OS Linux (shell/commandes), moteur bash (lexer +
+interpréteur), processus & permissions. Déclencheur : la suite TDD
+`src/__tests__/unit/network-v2/run-parts.test.ts` (150 scénarios) — **82
+passants / 68 échecs** au départ.
+
+**Défaillances constatées (structurelles, pas cosmétiques).**
+
+1. **`run-parts` n'était qu'un bouchon.** `LinuxCommandExecutor.handleRunParts`
+   ne connaissait que `--test`, n'appliquait pas le bit exécutable (il
+   exécutait n'importe quel fichier), ignorait `--list/--reverse/--verbose/`
+   `--report/--exit-on-error/--arg/--umask/--regex`, ne propageait pas les
+   codes de sortie, n'isolait pas les scripts (pas de `$$`, d'env, d'umask
+   propres) et ne vérifiait aucune permission.
+2. **Le moteur bash ne savait pas séparer stdout de stderr.** La sortie d'une
+   commande était un seul bloc routé vers stdout ou stderr **selon le code de
+   retour** : `echo x >&2` (exit 0) était donc indistinguable de stdout, et
+   aucune commande ne pouvait exposer un vrai fd 2 → `--report` et
+   `… 2> fichier` impossibles à rendre fidèlement.
+3. **Bug du lexer bash : `#` en milieu de mot était traité comme un
+   commentaire.** `isOperatorStart` cassait le mot sur `#`, si bien que
+   `echo a#b` donnait `a` et qu'un fichier nommé `script#` était créé sous le
+   nom `script`. Le vrai bash ne démarre un commentaire qu'en début de mot.
+
+**Corrections (enhancement de l'existant).**
+
+- **Lot 1 — réécriture de `handleRunParts`** en implémentation Debian/LSB
+  complète : parsing getopt-like (options avant l'unique opérande
+  DIRECTORY), filtre de noms `[a-zA-Z0-9_-]+` surchargé par `--regex`,
+  exécution de chaque script dans un enfant isolé via le `runScriptContent`
+  **existant** (PID `$$` distinct, umask de run-parts, env exporté de
+  l'appelant, cwd résolu sur le `PWD` vivant de l'interpréteur — un `cd`
+  préalable sur la même ligne est honoré), suivi des symlinks, saut des
+  binaires/sous-répertoires/non-exécutables, refus `Permission denied` si le
+  script est exécutable mais interdit à l'utilisateur, validation du
+  répertoire et propagation de `--exit-on-error`. → **82 → 134**.
+- **Lot 2 — flux stderr réel dans `BashInterpreter`** (rétro-compatible) :
+  un `stderrParts` séparé, alimenté quand un contenu est routé vers fd 2
+  (`>&2`) et retourné en plus de `output` (qui reste la vue terminal
+  fusionnée). `ExternalCommandResult.stderr` optionnel + nouveau
+  `applyRedirectionsExplicit` pour router fd 1 / fd 2 indépendamment quand la
+  commande sépare ses flux ; le comportement legacy (heuristique sur le code
+  retour) est conservé quand aucun stderr n'est fourni. `run-parts` retourne
+  désormais ses deux flux séparément. → **134 → 137**.
+- **Lot 3 — fidélité du lexer** : un `#` atteignant `scanWord` est forcément
+  en milieu de mot (un `#` initial est déjà consommé par `scanToken`) → il
+  est conservé comme caractère littéral. → **150 / 150**.
+
+**Anti-doublon / réutilisation.** Aucune création *from scratch* :
+l'exécution des scripts réutilise `runScriptContent` (déjà la brique
+d'exécution bash), la résolution de répertoire/permissions réutilise
+`vfs.resolveInode` + `checkPermission`, l'env enfant réutilise
+`buildEnvVars`/`_cmdEnv`. La séparation stderr étend les structures
+existantes (`ScriptResult`, `ExternalCommandResult`) sans casser les ~380
+tests du moteur bash.
+
+**Tests non réalistes adaptés** (sur invitation explicite de l'utilisateur,
+chaque cas étant soit auto-contradictoire soit dépendant d'un bug) :
+suite exécutée en **root** (run-parts est un outil cron/root ; `user` est
+sudoer) → les cas de chute de privilège (`su user -c …`) et l'env root
+deviennent cohérents ; `105` (hostname = hostname configuré, pas le label du
+device) ; `112/118` (échappement shell corrigé pour produire un vrai script
+valide) ; `124/137` (assertion alignée sur ce que le script imprime
+réellement) ; `131` (un nom de répertoire littéral exotique est traité sans
+injection, pas une erreur) ; `141` (fragment `aureport` mal classé → recadré
+sur le rejet d'option inconnue de run-parts). Régression `cron-integration`
+CI-15/16/17 corrigée à la source : les scripts cron sont rendus exécutables
+(l'ancien run-parts bugué exécutait les non-exécutables).
+
+**Validation.**
+- `run-parts.test.ts` : **150/150**.
+- Moteur bash (`unit/bash/` + builtins) : **383+ tests verts**, 0 régression.
+- Régression complète `unit/network-v2/` : **8024 passants**, les seuls
+  échecs résiduels (135) sont **pré-existants et hors-sujet** — `auditctl`
+  (89, commande root-only) et `other-commands` (46, CLI Cisco L2) —
+  confirmés identiques sur la base `origin/mandeng` avant ces travaux.
+
+**Limite connue / suite possible.** Les suites `auditctl` et `other-commands`
+échouent à la base parce que l'utilisateur interactif par défaut d'un
+`LinuxPC` est `user` (non-root) : les commandes d'administration root-only y
+sont refusées. Les faire tourner sous un contexte root (comme la suite
+run-parts) les rendrait cohérentes — chantier distinct, non couvert ici.
+
+**Fichiers touchés :**
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/bash/interpreter/BashInterpreter.ts`,
+`src/bash/runtime/ScriptRunner.ts`,
+`src/bash/lexer/BashLexer.ts`,
+`src/__tests__/unit/network-v2/run-parts.test.ts`,
+`src/__tests__/unit/network-v2/cron-integration.test.ts`.
