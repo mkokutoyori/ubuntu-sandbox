@@ -5,6 +5,8 @@ const EVENT_SEPARATOR = '----';
 
 export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
   const filter: AuditQuery = {};
+  let interpret = false;
+  let successFilter: 'yes' | 'no' | null = null;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '-m': case '--message': filter.type = args[++i]; break;
@@ -12,11 +14,19 @@ export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
       case '-ua': case '--acct': filter.key = 'acct'; filter.value = args[++i]; break;
       case '-k': case '--key': filter.key = 'key'; filter.value = args[++i]; break;
       case '-f': case '--file': filter.key = 'name'; filter.value = args[++i]; break;
-      case '--success': filter.success = /^(yes|true|1)$/i.test(args[++i] ?? ''); break;
+      case '-i': case '--interpret': interpret = true; break;
+      case '--success': {
+        const v = (args[++i] ?? '').toLowerCase();
+        successFilter = (v === 'yes' || v === 'no') ? v : null;
+        filter.success = v === 'yes';
+        break;
+      }
       case '-ts': case '--start': case '-te': case '--end':
       case '-p': case '--pid': case '-b': case '--boot': i++; break;
     }
   }
+  if (successFilter === null) delete filter.success;
+  else filter.success = successFilter === 'yes';
 
   const matched = auditLog.query(filter);
   if (matched.length === 0) return '<no matches>';
@@ -29,40 +39,53 @@ export function cmdAusearch(auditLog: LinuxAuditLog, args: string[]): string {
     groups.set(r.serial, list);
   }
   return [...groups.values()]
-    .map((recs) => recs.map((r) => r.render()).join('\n'))
+    .map((recs) => recs.map((r) => interpret ? interpretRender(r) : r.render()).join('\n'))
     .join(`\n${EVENT_SEPARATOR}\n`);
 }
 
+function interpretRender(r: import('./LinuxAuditLog').LinuxAuditRecord): string {
+  let text = r.render();
+  const replacements: Array<[RegExp, string]> = [
+    [/\b(uid|euid|auid|suid|fsuid|ouid)=0\b/g, '$1=root'],
+    [/\b(gid|egid|sgid|fsgid|ogid)=0\b/g, '$1=root'],
+    [/\b(uid|euid|auid|suid|fsuid|ouid)=1000\b/g, '$1=user'],
+    [/\b(gid|egid|sgid|fsgid|ogid)=1000\b/g, '$1=user'],
+  ];
+  for (const [re, sub] of replacements) text = text.replace(re, sub);
+  return text;
+}
+
 export function cmdAureport(auditLog: LinuxAuditLog, args: string[]): string {
+  const interpret = args.includes('--interpret');
+
+  for (const [flagShort, flagLong, fieldName, header] of AUREPORT_FIELD_REPORTS) {
+    if (args.includes(flagShort) || args.includes(flagLong)) {
+      return renderFieldSummary(auditLog, fieldName, header, interpret);
+    }
+  }
+
   if (args.includes('-l') || args.includes('--login')) {
     return ['Login Summary Report', '============================',
       'Number of logins: 0', 'Number of failed logins: 0'].join('\n');
   }
-  if (args.includes('-x') || args.includes('--executable')) {
-    const counts = new Map<string, number>();
-    for (const r of auditLog.all()) {
-      const exe = String(r.get('exe') ?? '');
-      if (!exe) continue;
-      counts.set(exe, (counts.get(exe) ?? 0) + 1);
-    }
-    const lines = ['Executable Summary Report', '================================='];
-    if (counts.size === 0) lines.push('total  file', '0');
-    else {
-      lines.push('total  file');
-      for (const [exe, n] of counts) lines.push(`${String(n).padStart(5)}  ${exe}`);
-    }
-    return lines.join('\n');
+  if (args.includes('-a') || args.includes('--anomaly')) {
+    return renderTypeSummary(auditLog, 'Anomaly Summary Report',
+      ['ANOM_LOGIN_FAILURES', 'ANOM_ABEND', 'ANOM_PROMISCUOUS']);
   }
-  if (args.includes('-p') || args.includes('--pid')) {
-    const counts = new Map<string, number>();
-    for (const r of auditLog.all()) {
-      const exe = String(r.get('exe') ?? '');
-      if (!exe) continue;
-      counts.set(exe, (counts.get(exe) ?? 0) + 1);
-    }
-    const lines = ['Process ID Summary Report', '================================='];
-    for (const [exe, n] of counts) lines.push(`${String(n).padStart(5)}  ${exe}`);
-    return lines.join('\n');
+  if (args.includes('-e') || args.includes('--event')) {
+    return renderTypeSummary(auditLog, 'Event Summary Report',
+      [...auditLog.countByType().keys()]);
+  }
+  if (args.includes('-m') || args.includes('--mods')) {
+    return renderTypeSummary(auditLog, 'MAC Summary Report',
+      ['MAC_POLICY_LOAD', 'MAC_STATUS', 'MAC_CONFIG_CHANGE']);
+  }
+  if (args.includes('-i') || args.includes('--integrity')) {
+    return ['Interpreter Summary Report', '=================================',
+      'Number of integrity events: 0'].join('\n');
+  }
+  if (args.includes('-h') || args.includes('--host')) {
+    return ['Host Summary Report', '============================', 'Number of hosts: 1', '    1  localhost'].join('\n');
   }
   if (args.includes('-c') || args.includes('--config')) {
     return ['Config Summary Report', '=============================',
@@ -244,4 +267,75 @@ function out(output: string, exitCode: number): AuditctlOutcome {
 
 function err(message: string): AuditctlOutcome {
   return { output: `auditctl: ${message}`, exitCode: 1 };
+}
+
+type AureportField = [shortFlag: string, longFlag: string, fieldName: string, header: string];
+
+const AUREPORT_FIELD_REPORTS: ReadonlyArray<AureportField> = [
+  ['-x', '--executable', 'exe', 'Executable Summary Report'],
+  ['-p', '--pid', 'pid', 'PID Summary Report'],
+  ['-u', '--user', 'uid', 'User ID Summary Report'],
+  ['-g', '--group', 'gid', 'Group ID Summary Report'],
+  ['-f', '--file', 'name', 'File Summary Report'],
+  ['-s', '--syscall', 'syscall', 'Syscall Summary Report'],
+  ['-t', '--terminal', 'tty', 'Terminal Summary Report'],
+  ['-k', '--key', 'key', 'Key Summary Report'],
+];
+
+function renderFieldSummary(
+  auditLog: LinuxAuditLog,
+  fieldName: string,
+  header: string,
+  interpret: boolean,
+): string {
+  const counts = new Map<string, number>();
+  for (const r of auditLog.all()) {
+    const v = r.get(fieldName);
+    if (v === undefined) continue;
+    const display = interpret ? interpretValue(fieldName, v) : String(v);
+    counts.set(display, (counts.get(display) ?? 0) + 1);
+  }
+  const lines: string[] = [header, '================================='];
+  if (counts.size === 0) {
+    lines.push(`total  ${fieldName}`);
+    lines.push('0');
+    return lines.join('\n');
+  }
+  lines.push(`total  ${fieldName}`);
+  for (const [v, n] of [...counts.entries()].sort()) {
+    lines.push(`${String(n).padStart(5)}  ${v}`);
+  }
+  return lines.join('\n');
+}
+
+function renderTypeSummary(
+  auditLog: LinuxAuditLog,
+  header: string,
+  types: string[],
+): string {
+  const counts = auditLog.countByType();
+  const lines: string[] = [header, '================================='];
+  let total = 0;
+  for (const t of types) {
+    const n = counts.get(t) ?? 0;
+    if (n > 0) lines.push(`${String(n).padStart(5)}  ${t}`);
+    total += n;
+  }
+  if (total === 0) lines.push('<no events of interest>');
+  return lines.join('\n');
+}
+
+function interpretValue(fieldName: string, value: string | number): string {
+  if (fieldName === 'uid' || fieldName === 'euid' || fieldName === 'auid' || fieldName === 'ouid') {
+    const n = typeof value === 'number' ? value : parseInt(String(value), 10);
+    if (n === 0) return 'root';
+    if (n === 1000) return 'user';
+    if (n === 65534) return 'nobody';
+  }
+  if (fieldName === 'gid' || fieldName === 'egid' || fieldName === 'ogid') {
+    const n = typeof value === 'number' ? value : parseInt(String(value), 10);
+    if (n === 0) return 'root';
+    if (n === 1000) return 'user';
+  }
+  return String(value);
 }

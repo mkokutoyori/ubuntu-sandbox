@@ -251,6 +251,7 @@ export class LinuxCommandExecutor {
   private fsAuditProjection: FileSystemAuditProjection | null = null;
   private bus: IEventBus | null = null;
   private attachedDeviceId: string | null = null;
+  private currentCommandHead: string | null = null;
   /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
   private serviceJournal: LinuxServiceJournalProjection | null = null;
   /** `at` deferred-job spool, drained by the `atd` daemon. */
@@ -1452,10 +1453,8 @@ export class LinuxCommandExecutor {
   execute(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
+    this.currentCommandHead = extractCommandHead(trimmed);
 
-    // Keep /proc/<pid>/ tree in sync with the live process table before any
-    // command runs (cheap diff). Real Linux exposes per-process subdirs via
-    // procfs; the simulator emulates this lazily here.
     this.syncProcPids();
 
     // Track command in history (store the raw input, like bash)
@@ -1769,6 +1768,9 @@ export class LinuxCommandExecutor {
     const uid = this.userMgr.currentUid;
     const gid = this.userMgr.currentGid;
     const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : uid;
+    const head = this.currentCommandHead;
+    const comm = head ?? 'bash';
+    const exe = head ? resolveExePath(head) : '/bin/bash';
     return {
       pid: this.shellPid ?? 1,
       ppid: this.shellPpid ?? 1,
@@ -1777,8 +1779,8 @@ export class LinuxCommandExecutor {
       gid: loginUid,
       egid: gid,
       auid: loginUid,
-      comm: 'bash',
-      exe: '/bin/bash',
+      comm,
+      exe,
       tty: 'pts/0',
       success: this.lastExitCode === 0,
     };
@@ -4598,6 +4600,49 @@ function basenameOf(path: string): string {
  * (optionally surrounded by whitespace) in the range 000..0777. Returns
  * the numeric mask, or null when the value is not a valid umask.
  */
+const STANDARD_BIN_PATHS: Record<string, string> = {
+  bash: '/bin/bash', sh: '/bin/sh', echo: '/bin/echo', cat: '/bin/cat',
+  ls: '/bin/ls', cp: '/bin/cp', mv: '/bin/mv', rm: '/bin/rm', touch: '/bin/touch',
+  mkdir: '/bin/mkdir', rmdir: '/bin/rmdir', ln: '/bin/ln', chmod: '/bin/chmod',
+  chown: '/bin/chown', chgrp: '/bin/chgrp', su: '/bin/su', sudo: '/usr/bin/sudo',
+  whoami: '/usr/bin/whoami', head: '/usr/bin/head', tail: '/usr/bin/tail',
+  grep: '/bin/grep', sed: '/bin/sed', awk: '/usr/bin/awk', sort: '/usr/bin/sort',
+  uniq: '/usr/bin/uniq', wc: '/usr/bin/wc', cut: '/usr/bin/cut', tr: '/usr/bin/tr',
+  date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
+  ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
+  xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
+  wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
+  sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
+  netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',
+  passwd: '/usr/bin/passwd', useradd: '/usr/sbin/useradd', userdel: '/usr/sbin/userdel',
+  usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',
+  systemctl: '/bin/systemctl', service: '/usr/sbin/service',
+  crontab: '/usr/bin/crontab', 'run-parts': '/bin/run-parts',
+  auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
+  reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
+  journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
+};
+
+function resolveExePath(name: string): string {
+  return STANDARD_BIN_PATHS[name] ?? `/usr/bin/${name}`;
+}
+
+function extractCommandHead(input: string): string | null {
+  let s = input.trimStart();
+  while (/^[A-Za-z_][A-Za-z_0-9]*=/.test(s)) {
+    const sp = s.search(/\s/);
+    if (sp === -1) return null;
+    s = s.slice(sp + 1).trimStart();
+  }
+  const m = s.match(/^([A-Za-z_][A-Za-z_0-9.-]*)/);
+  if (!m) return null;
+  const head = m[1];
+  if (head === 'sudo' || head === 'nohup' || head === 'time') {
+    return extractCommandHead(s.slice(head.length));
+  }
+  return head;
+}
+
 function parseRunPartsUmask(raw: string): number | null {
   const v = raw.trim();
   if (!/^[0-7]{3,4}$/.test(v)) return null;
