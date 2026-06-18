@@ -803,6 +803,9 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   }
   const network = new IPAddress(netStr);
   const mask = new SubnetMask(maskStr);
+  if (!(netStr === '0.0.0.0' && maskStr === '0.0.0.0') && !network.networkAddress(mask).equals(network)) {
+    return '%Inconsistent address and mask';
+  }
   const remaining = args.slice(cursor + 2);
   let outIface: string | null = null;
   let nextHopStr: string | null = null;

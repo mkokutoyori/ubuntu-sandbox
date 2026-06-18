@@ -747,14 +747,16 @@ describe('Cisco IOS Interface Subnet configurations', () => {
     expect(output).toContain('%'); // Rejected on layer-2 port
   });
 
-  it('84. should allow setting IP configurations once Switchport is changed to layer 3', async () => {
+  it('84. should reject IP on physical ports of an L2-only switch (no routed ports)', async () => {
+    // The simulated switch is a pure Layer-2 device: physical ports cannot be
+    // converted to routed L3 ports, so an IP address stays rejected.
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
     await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('no switchport');
     const output = await sw.executeCommand('ip address 10.1.1.1 255.255.255.0');
-    expect(output.trim()).toBe('');
+    expect(output).toContain('%');
   });
 
   it('85. should support virtual software loopback interface allocations', async () => {

@@ -53,6 +53,13 @@ export function showIpRoute(router: Router): string {
   const table = router.getRoutingTable();
   const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, ' +
     'D - EIGRP, B - BGP, * - candidate default', ''];
+  const def = table.find(r => r.type === 'default'
+    || (r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0));
+  if (def && def.nextHop) {
+    lines.push(`Gateway of last resort is ${def.nextHop} to network 0.0.0.0`, '');
+  } else {
+    lines.push('Gateway of last resort is not set', '');
+  }
   const sorted = [...table].sort((a, b) => {
     const order: Record<string, number> = {
       connected: 0, ospf: 1, eigrp: 2, bgp: 3, rip: 4, static: 5, default: 6,

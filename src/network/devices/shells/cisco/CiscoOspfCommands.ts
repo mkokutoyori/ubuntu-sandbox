@@ -2241,6 +2241,13 @@ function showIpRouteAll(router: Router): string {
   const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
     '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
     ''];
+  const def = rt.find((r: any) => r.type === 'default'
+    || (r.network.toString() === '0.0.0.0' && maskToCIDR(r.mask.toString()) === 0));
+  if (def && def.nextHop) {
+    lines.push(`Gateway of last resort is ${def.nextHop} to network 0.0.0.0`, '');
+  } else {
+    lines.push('Gateway of last resort is not set', '');
+  }
   for (const r of rt) {
     const netStr = r.network.toString();
     const cidr = maskToCIDR(r.mask.toString());

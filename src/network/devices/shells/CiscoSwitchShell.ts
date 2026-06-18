@@ -21,7 +21,7 @@ import type { Switch } from '../Switch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
-import { MACAddress } from '../../core/types';
+import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion } from './cisco/CiscoCommonShow';
@@ -522,6 +522,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(false);
           return '';
         }));
+
+    // ── SVI (management Vlan interface) L3 addressing ──
+    // L2-only switch: physical ports cannot hold an IP. A management SVI
+    // (interface Vlan N) may, mirroring a real Layer-2 switch.
+    this.configIfTrie.registerGreedy('ip address', 'Set the SVI IP address', (args) => {
+      const iface = this.selectedInterface ?? '';
+      if (!/^vlan/i.test(iface)) {
+        return '% IP addresses may not be configured on L2 links.';
+      }
+      if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const ip = new IPAddress(args[0]);
+      const mask = new SubnetMask(args[1]);
+      return this.applyToSelectedInterfaces(p => {
+        this.d().getPort(p)?.configureIP(ip, mask);
+        return '';
+      });
+    });
+    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () =>
+      this.applyToSelectedInterfaces(p => { this.d().getPort(p)?.clearIP(); return ''; }));
 
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
