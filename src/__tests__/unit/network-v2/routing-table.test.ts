@@ -313,7 +313,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
 
       const result = await pc.executeCommand('route add 172.16.0.0 mask 255.255.0.0 192.168.1.254 metric 10');
-      expect(result).toContain('OK!');
+      expect(result.trim()).toBe('');
 
       const output = await pc.executeCommand('route print');
       expect(output).toContain('172.16.0.0');
@@ -329,7 +329,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       expect(output).toContain('172.16.0.0');
 
       const delResult = await pc.executeCommand('route delete 172.16.0.0 mask 255.255.0.0');
-      expect(delResult).toContain('OK!');
+      expect(delResult.trim()).toBe('');
 
       output = await pc.executeCommand('route print');
       expect(output).not.toContain('172.16.0.0');

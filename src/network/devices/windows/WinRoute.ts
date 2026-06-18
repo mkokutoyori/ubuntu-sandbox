@@ -67,25 +67,25 @@ Examples:
     > route DELETE 3ffe::/32`.trim();
 
 export function cmdRoute(ctx: WinCommandContext, args: string[]): string {
-  if (args.length === 0 || args[0].toLowerCase() === 'print') {
-    return showRoutePrint(ctx);
-  }
-
   if (args.includes('/?') || args.includes('/help')) {
     return ROUTE_HELP;
   }
 
-  if (args[0].toLowerCase() === 'add' && args.length >= 2) {
-    return routeAdd(ctx, args.slice(1));
+  // Strip leading switches: -f (flush), -p (persistent), -4/-6.
+  const flags = new Set<string>();
+  while (args.length > 0 && args[0].startsWith('-')) {
+    flags.add(args[0].toLowerCase());
+    args = args.slice(1);
   }
 
-  if (args[0].toLowerCase() === 'delete' && args.length >= 2) {
-    return routeDelete(ctx, args.slice(1));
+  if (args.length === 0 || args[0].toLowerCase() === 'print') {
+    return showRoutePrint(ctx);
   }
 
-  if (args[0].toLowerCase() === 'change') {
-    return 'The route modification failed: Element not found.';
-  }
+  const command = args[0].toLowerCase();
+  if (command === 'add' && args.length >= 2) return routeAdd(ctx, args.slice(1));
+  if (command === 'delete' && args.length >= 2) return routeDelete(ctx, args.slice(1));
+  if (command === 'change' && args.length >= 2) return routeChange(ctx, args.slice(1));
 
   return ROUTE_HELP;
 }
@@ -94,7 +94,7 @@ function routeAdd(ctx: WinCommandContext, args: string[]): string {
   if (args[0] === 'default' && args[1]) {
     try {
       ctx.setDefaultGateway(new IPAddress(args[1]));
-      return ' OK!';
+      return '';
     } catch (e: any) {
       return `The route addition failed: ${e.message}`;
     }
@@ -102,7 +102,7 @@ function routeAdd(ctx: WinCommandContext, args: string[]): string {
 
   const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
   if (maskIdx === -1 || maskIdx + 2 >= args.length) {
-    return 'Usage: route add <dest> mask <mask> <gateway> [metric <n>]';
+    return 'The route addition failed: The parameter is incorrect, invalid syntax.';
   }
 
   try {
@@ -122,22 +122,58 @@ function routeAdd(ctx: WinCommandContext, args: string[]): string {
 
     if (destStr === '0.0.0.0' && maskStr === '0.0.0.0') {
       ctx.setDefaultGateway(gw);
-      return ' OK!';
+      return '';
+    }
+
+    if (!dest.networkAddress(mask).equals(dest)) {
+      return 'The route addition failed: The specified mask parameter is invalid. (Destination & Mask) != Destination.';
     }
 
     if (!ctx.addStaticRoute(dest, mask, gw, metric)) {
       return 'The route addition failed: the gateway is not reachable.';
     }
-    return ' OK!';
+    return '';
   } catch (e: any) {
     return `The route addition failed: ${e.message}`;
+  }
+}
+
+function routeChange(ctx: WinCommandContext, args: string[]): string {
+  const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
+  if (maskIdx === -1 || maskIdx + 2 >= args.length) {
+    return 'The route change failed: The parameter is incorrect, invalid syntax.';
+  }
+  try {
+    const dest = new IPAddress(args[maskIdx - 1] || args[0]);
+    const mask = new SubnetMask(args[maskIdx + 1]);
+    const gw = new IPAddress(args[maskIdx + 2]);
+    let metric = 1;
+    const metricIdx = args.findIndex(a => a.toLowerCase() === 'metric');
+    if (metricIdx !== -1 && args[metricIdx + 1]) metric = parseInt(args[metricIdx + 1], 10);
+    ctx.removeRoute(dest, mask);
+    ctx.addStaticRoute(dest, mask, gw, metric);
+    return '';
+  } catch (e: any) {
+    return `The route change failed: ${e.message}`;
   }
 }
 
 function routeDelete(ctx: WinCommandContext, args: string[]): string {
   if (args[0] === 'default' || args[0] === '0.0.0.0') {
     ctx.clearDefaultGateway();
-    return ' OK!';
+    return '';
+  }
+
+  // Wildcard match (e.g. "route delete 10.*").
+  if (args[0].includes('*')) {
+    const prefix = args[0].slice(0, args[0].indexOf('*'));
+    let removed = 0;
+    for (const r of ctx.getRoutingTable()) {
+      if (r.network.toString().startsWith(prefix)) {
+        if (ctx.removeRoute(r.network, r.mask)) removed++;
+      }
+    }
+    return removed > 0 ? '' : 'The route deletion failed: Element not found.';
   }
 
   try {
@@ -146,12 +182,15 @@ function routeDelete(ctx: WinCommandContext, args: string[]): string {
     const maskIdx = args.findIndex(a => a.toLowerCase() === 'mask');
     if (maskIdx !== -1 && args[maskIdx + 1]) {
       mask = new SubnetMask(args[maskIdx + 1]);
+    } else {
+      const match = ctx.getRoutingTable().find(r => r.network.toString() === args[0]);
+      if (match) mask = match.mask;
     }
 
     if (!ctx.removeRoute(dest, mask)) {
       return 'The route deletion failed: Element not found.';
     }
-    return ' OK!';
+    return '';
   } catch (e: any) {
     return `The route deletion failed: ${e.message}`;
   }
