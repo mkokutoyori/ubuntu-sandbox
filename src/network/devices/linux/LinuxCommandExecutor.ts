@@ -44,6 +44,7 @@ import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
+import { LinuxAuditRules } from './audit/LinuxAuditRules';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
@@ -120,7 +121,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
   'pkill', 'pgrep', 'pidof', 'killall',
-  'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
+  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
@@ -136,6 +137,22 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
+
+interface LogrotateOpts {
+  rotate: number;
+  schedule: string;
+  compress: boolean;
+  delaycompress: boolean;
+  copytruncate: boolean;
+  missingok: boolean;
+  nocreate: boolean;
+  dateext: boolean;
+  size: number | null;
+  sharedscripts: boolean;
+  postrotate: string | null;
+  prerotate: string | null;
+  create: { mode: number; uid: number; gid: number } | null;
+}
 
 function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
   const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
@@ -226,6 +243,7 @@ export class LinuxCommandExecutor {
   readonly logMgr: LinuxLogManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
   readonly auditLog: LinuxAuditLog;
+  readonly auditRules: LinuxAuditRules;
   /** Reactive bridge feeding security events into the audit trail. */
   private auditTrail: AuditTrailProjection | null = null;
   /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
@@ -325,6 +343,7 @@ export class LinuxCommandExecutor {
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.auditLog = new LinuxAuditLog(this.vfs);
+    this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.isServer = isServer;
@@ -333,6 +352,13 @@ export class LinuxCommandExecutor {
     // Seed the canonical NSS-backed system files (a fresh Ubuntu
     // install ships these). Each is created only when missing so an
     // operator's runtime edits survive a reboot.
+    if (this.vfs.readFile('/etc/logrotate.conf') == null) {
+      this.vfs.writeFile('/etc/logrotate.conf',
+        '# see "man logrotate" for details\nweekly\nrotate 4\ncreate\n\n'
+        + '/var/log/syslog\n/var/log/auth.log\n{\n\trotate 4\n\tweekly\n\tmissingok\n\tnotifempty\n}\n\n'
+        + 'include /etc/logrotate.d\n', 0, 0, 0o022);
+      this.vfs.mkdirp('/etc/logrotate.d', 0o755, 0, 0);
+    }
     if (this.vfs.readFile('/etc/services')  == null) this.vfs.writeFile('/etc/services',  ETC_SERVICES,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
     if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
@@ -1740,7 +1766,7 @@ export class LinuxCommandExecutor {
     // simulator's interactive operator manages the firewall directly.
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
-      'ausearch', 'aureport', 'auditctl',
+      'ausearch', 'aureport', 'auditctl', 'logrotate',
       'iptables', 'iptables-save', 'iptables-restore'];
     const sudoRequired = ['chown', 'chgrp'];
     if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
@@ -1755,10 +1781,22 @@ export class LinuxCommandExecutor {
       return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
     }
 
+    // Audit: report command execution against exec (-p x) watch rules.
+    this.auditRules.onAccess(`/usr/bin/${cmd}`, 'x');
+    this.auditRules.onAccess(`/bin/${cmd}`, 'x');
+
     switch (cmd) {
       // File commands
-      case 'touch': return { output: cmdTouch(c, args), exitCode: 0 };
+      case 'touch': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w');
+        }
+        return { output: cmdTouch(c, args), exitCode: 0 };
+      }
       case 'ls': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'r');
+        }
         const out = cmdLs(c, args);
         const isErr = out.includes('cannot access');
         return { output: out, exitCode: isErr ? 2 : 0 };
@@ -1789,7 +1827,13 @@ export class LinuxCommandExecutor {
       }
       case 'cp': return { output: cmdCp(c, args), exitCode: 0 };
       case 'mv': return { output: cmdMv(c, args), exitCode: 0 };
-      case 'rm': return { output: cmdRm(c, args), exitCode: 0 };
+      case 'rm': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          this.auditRules.onSyscall('unlink', this.vfs.normalizePath(p, this.cwd));
+          this.auditRules.onAccess(this.vfs.normalizePath(p, this.cwd), 'w');
+        }
+        return { output: cmdRm(c, args), exitCode: 0 };
+      }
       case 'mkdir': return { output: cmdMkdir(c, args), exitCode: 0 };
       case 'rmdir': return { output: cmdRmdir(c, args), exitCode: 0 };
       case 'ln': return { output: cmdLn(c, args), exitCode: 0 };
@@ -1938,7 +1982,10 @@ export class LinuxCommandExecutor {
       case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
       case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
-      case 'auditctl': return { output: cmdAuditctl(this.auditLog, args), exitCode: 0 };
+      case 'auditctl': {
+        const out = cmdAuditctl(this.auditRules, args);
+        return { output: out, exitCode: out.startsWith('auditctl:') ? 1 : 0 };
+      }
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -2189,6 +2236,7 @@ export class LinuxCommandExecutor {
         const out = this.logMgr.executeDmesg(args, this.userMgr.currentUid);
         return { output: out, exitCode: out.includes('Permission denied') ? 1 : 0 };
       }
+      case 'logrotate': return this.cmdLogrotate(args);
 
       // Hostname
       case 'hostname': {
@@ -3785,6 +3833,173 @@ export class LinuxCommandExecutor {
   }
 
   /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
+  private cmdLogrotate(args: string[]): { output: string; exitCode: number } {
+    let force = false;
+    let dryRun = false;
+    let stateFile: string | null = null;
+    const confPaths: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-f' || a === '--force') force = true;
+      else if (a === '-d' || a === '--debug') dryRun = true;
+      else if (a === '-v' || a === '--verbose' || a === '-m' || a === '--mail') { /* ignore */ }
+      else if (a === '-s' || a === '--state') stateFile = args[++i] ?? null;
+      else if (!a.startsWith('-')) confPaths.push(a);
+    }
+    if (confPaths.length === 0) confPaths.push('/etc/logrotate.conf');
+
+    const logs: string[] = [];
+    const opt: LogrotateOpts = {
+      rotate: 4, schedule: 'weekly', compress: false, delaycompress: false,
+      copytruncate: false, missingok: false, nocreate: false, dateext: false,
+      size: null, sharedscripts: false, postrotate: null, prerotate: null, create: null,
+    };
+    for (const cp of confPaths) {
+      const abs = this.vfs.normalizePath(cp, this.cwd);
+      const raw = this.vfs.readFile(abs);
+      if (raw === null) return { output: `error: cannot open configuration file ${cp}: No such file or directory`, exitCode: 1 };
+      const err = this.parseLogrotateConf(raw, abs, logs, opt);
+      if (err) return { output: err, exitCode: 1 };
+    }
+    if (logs.length === 0) return { output: '', exitCode: 0 };
+
+    const out: string[] = [];
+    let anyRotated = false;
+    for (const log of logs) {
+      const abs = this.vfs.normalizePath(log, this.cwd);
+      if (dryRun) { out.push(`considering log ${abs}`); continue; }
+      if (!this.vfs.exists(abs)) {
+        if (opt.missingok) continue;
+        return { output: `error: ${abs} does not exist, skipping`, exitCode: 1 };
+      }
+      if (!this.shouldRotateLog(abs, opt, force)) continue;
+      if (opt.prerotate && !opt.sharedscripts) {
+        this.execute(opt.prerotate);
+        if (this.lastExitCode !== 0) continue;
+      }
+      this.rotateOneLog(abs, opt);
+      anyRotated = true;
+      if (opt.postrotate && !opt.sharedscripts) this.execute(opt.postrotate);
+    }
+    if (!dryRun && opt.sharedscripts && anyRotated && opt.postrotate) this.execute(opt.postrotate);
+
+    if (stateFile && !dryRun) {
+      const content = 'logrotate state -- version 2\n'
+        + logs.map((l) => `"${this.vfs.normalizePath(l, this.cwd)}" ${new Date().toISOString().slice(0, 10)}`).join('\n') + '\n';
+      this.vfs.writeFile(this.vfs.normalizePath(stateFile, this.cwd), content,
+        this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+    }
+    return { output: out.join('\n'), exitCode: 0 };
+  }
+
+  private shouldRotateLog(abs: string, opt: LogrotateOpts, force: boolean): boolean {
+    if (force) return true;
+    if (opt.size !== null) return (this.vfs.readFile(abs) ?? '').length >= opt.size;
+    return false; // schedule-based: never due within a fresh boot window
+  }
+
+  private rotateOneLog(abs: string, opt: LogrotateOpts): void {
+    const content = this.vfs.readFile(abs) ?? '';
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
+
+    if (opt.copytruncate) {
+      this.vfs.writeFile(`${abs}.1`, content, uid, gid, this.umask);
+      this.vfs.writeFile(abs, '', uid, gid, this.umask);
+      return;
+    }
+
+    if (opt.dateext) {
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      this.vfs.writeFile(`${abs}-${stamp}`, content, uid, gid, this.umask);
+    } else {
+      this.shiftBackups(abs, opt);
+      const compressed = opt.compress && !opt.delaycompress;
+      this.vfs.writeFile(`${abs}.1${compressed ? '.gz' : ''}`, content, uid, gid, this.umask);
+    }
+
+    this.vfs.deleteFile(abs);
+    if (!opt.nocreate) {
+      const c = opt.create;
+      this.vfs.createFileAt(abs, '', c ? c.mode : 0o640, c ? c.uid : 0, c ? c.gid : 4);
+    }
+  }
+
+  private shiftBackups(abs: string, opt: LogrotateOpts): void {
+    for (const suffix of ['', '.gz']) this.vfs.deleteFile(`${abs}.${opt.rotate}${suffix}`);
+    for (let i = opt.rotate - 1; i >= 1; i--) {
+      for (const suffix of ['', '.gz']) {
+        const src = `${abs}.${i}${suffix}`;
+        if (this.vfs.exists(src)) {
+          this.vfs.writeFile(`${abs}.${i + 1}${suffix}`, this.vfs.readFile(src) ?? '', 0, 4, this.umask);
+          this.vfs.deleteFile(src);
+        }
+      }
+    }
+  }
+
+  private parseLogrotateConf(raw: string, confPath: string, logs: string[], opt: LogrotateOpts): string | null {
+    const accepted = new Set(['notifempty', 'ifempty', 'olddir', 'noolddir', 'su', 'include',
+      'maxage', 'minsize', 'dateformat', 'extension', 'compresscmd', 'uncompresscmd', 'compressext',
+      'force', 'copy', 'nocopy', 'nosharedscripts', 'start', 'mail', 'nomail', 'shred', 'noshred',
+      'dateyesterday', 'maxsize', 'firstaction', 'lastaction', 'compressoptions']);
+    const lines = raw.replace(/\\n/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+      if (!line || line.startsWith('#') || line === '{' || line === '}') continue;
+      if (line.startsWith('/')) {
+        line = line.replace(/\s*\{$/, '').trim();
+        for (const p of line.split(/\s+/)) if (p.startsWith('/')) logs.push(p);
+        continue;
+      }
+      const tok = line.replace(/=/g, ' ').split(/\s+/).filter(Boolean);
+      const key = tok[0];
+      switch (key) {
+        case 'rotate': opt.rotate = parseInt(tok[1], 10) || opt.rotate; break;
+        case 'daily': opt.schedule = 'daily'; break;
+        case 'weekly': opt.schedule = 'weekly'; break;
+        case 'monthly': opt.schedule = 'monthly'; break;
+        case 'yearly': opt.schedule = 'yearly'; break;
+        case 'compress': opt.compress = true; break;
+        case 'nocompress': opt.compress = false; break;
+        case 'delaycompress': opt.delaycompress = true; break;
+        case 'copytruncate': opt.copytruncate = true; break;
+        case 'missingok': opt.missingok = true; break;
+        case 'nomissingok': opt.missingok = false; break;
+        case 'nocreate': opt.nocreate = true; break;
+        case 'create': opt.create = this.parseLogrotateCreate(tok.slice(1)); opt.nocreate = false; break;
+        case 'dateext': opt.dateext = true; break;
+        case 'size': opt.size = this.parseLogrotateSize(tok[1]); break;
+        case 'sharedscripts': opt.sharedscripts = true; break;
+        case 'postrotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.postrotate = body.join('\n'); break; }
+        case 'prerotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.prerotate = body.join('\n'); break; }
+        default:
+          if (accepted.has(key)) break;
+          return `error: ${confPath}:${i + 1} bad line, unknown option '${key}'`;
+      }
+    }
+    return null;
+  }
+
+  private parseLogrotateCreate(toks: string[]): { mode: number; uid: number; gid: number } {
+    let mode = 0o640, uid = 0, gid = 0;
+    if (toks[0] && /^[0-7]+$/.test(toks[0])) mode = parseInt(toks[0], 8);
+    const owner = toks[1] ? this.userMgr.getUser(toks[1]) : null;
+    if (owner) uid = owner.uid;
+    const grp = toks[2] ? this.userMgr.getGroup(toks[2]) : undefined;
+    if (grp) gid = grp.gid;
+    return { mode, uid, gid };
+  }
+
+  private parseLogrotateSize(v: string): number {
+    const m = /^(\d+)\s*([kKmMgG]?)/.exec(v ?? '');
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    const unit = m[2].toLowerCase();
+    return unit === 'k' ? n * 1024 : unit === 'm' ? n * 1024 * 1024 : unit === 'g' ? n * 1024 * 1024 * 1024 : n;
+  }
+
   private cmdLsof(args: string[]): string {
     const filterPid = ((): number | null => {
       const i = args.indexOf('-p');

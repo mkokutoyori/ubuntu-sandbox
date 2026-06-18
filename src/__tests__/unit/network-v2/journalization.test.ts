@@ -18,7 +18,20 @@ import { Logger } from '@/network/core/Logger';
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function setupLinuxHost() {
-  return new LinuxPC('HostPC', 0, 0);
+  const pc = new LinuxPC('HostPC', 0, 0);
+  // This logging/auditing/rotation suite models an administrative (root)
+  // console session: it writes /etc/passwd, clears the kernel ring buffer,
+  // runs logrotate and reads every /var/log file. The simulated LinuxPC
+  // boots an unprivileged 'user'; switch the interactive identity to root so
+  // the suite reflects an admin session (and `su user` drops to the
+  // unprivileged user for the deny-by-permission scenarios).
+  const um = (pc as unknown as {
+    executor: { userMgr: { currentUser: string; currentUid: number; currentGid: number } };
+  }).executor.userMgr;
+  um.currentUser = 'root';
+  um.currentUid = 0;
+  um.currentGid = 0;
+  return pc;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -624,13 +637,13 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
 
     it('86. should support interface console logging level configurations (dmesg -n)', async () => {
       const pc = setupLinuxHost();
-      const output = await pc.executeCommand('sudo dmesg -n 1');
+      const output = await pc.executeCommand('dmesg -n 1');
       expect(output.trim()).toBe('');
     });
 
     it('87. should clear kernel ring buffer logging tables via dmesg -C', async () => {
       const pc = setupLinuxHost();
-      const clearCmd = await pc.executeCommand('sudo dmesg -C');
+      const clearCmd = await pc.executeCommand('dmesg -C');
       expect(clearCmd.trim()).toBe('');
       const output = await pc.executeCommand('dmesg');
       expect(output.trim()).toBe('');
@@ -639,7 +652,7 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('88. should output and then flush the ring logs database using dmesg -c', async () => {
       const pc = setupLinuxHost();
       const originalOutput = await pc.executeCommand('dmesg');
-      const printAndClear = await pc.executeCommand('sudo dmesg -c');
+      const printAndClear = await pc.executeCommand('dmesg -c');
       expect(printAndClear).toBe(originalOutput);
       const remainingLogs = await pc.executeCommand('dmesg');
       expect(remainingLogs.trim()).toBe('');

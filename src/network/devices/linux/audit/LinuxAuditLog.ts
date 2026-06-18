@@ -79,6 +79,9 @@ export class LinuxAuditLog {
 
   constructor(private readonly vfs: VirtualFileSystem) {
     this.vfs.mkdirp(AUDIT_PATHS.dir, 0o750, 0, 0);
+    // Materialise an empty audit.log so its root-only perms apply even before
+    // the first record (unprivileged reads are denied).
+    this.materialize();
   }
 
   /**
