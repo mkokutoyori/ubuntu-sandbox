@@ -781,13 +781,24 @@ function handleInterfaceIpSet(ctx: WinCommandContext, joined: string): string {
   }
 
   if (lower.startsWith('address')) {
-    if (lower.match(/address\s+.*\s+dhcp/)) {
+    if (/(?:^|\s)(?:source\s*=\s*)?dhcp\b/.test(lower)) {
       return handleSetAddressDhcp(ctx, joined);
+    }
+    if (/(?:^|\s)(?:source\s*=\s*)?static\b/.test(lower)) {
+      return handleSetAddressStatic(ctx, joined);
+    }
+    const mode = joined.trim().split(/\s+/)[2];
+    if (mode && !/^[\d.]+$/.test(mode) && !/^(?:name|address|addr|mask|gateway)=/i.test(mode)) {
+      return 'The syntax supplied for this command is not valid. Check help for the correct syntax.';
     }
     return handleSetAddressStatic(ctx, joined);
   }
 
   return 'Usage: set address|dns [name=]<string> [source=]dhcp|static ...';
+}
+
+function unquote(name: string): string {
+  return name.trim().replace(/^["']|["']$/g, '').trim();
 }
 
 function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string {
@@ -801,37 +812,37 @@ function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string 
     return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
   }
 
-  const ifName = match[1].trim();
+  const ifName = unquote(match[1]);
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);
-  if (!port) return `The interface "${ifName}" was not found.`;
+  if (!port) return `Error: The interface "${ifName}" was not found.`;
 
   try {
     ctx.configureInterface(portName, new IPAddress(match[2]), new SubnetMask(match[3]));
     if (match[4]) {
       ctx.setDefaultGateway(new IPAddress(match[4]));
     }
-    return 'Ok.';
+    return '';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
 }
 
 function handleSetAddressDhcp(ctx: WinCommandContext, joined: string): string {
-  const match = joined.match(/address\s+"([^"]+)"\s+dhcp/i)
-    || joined.match(/address\s+(?:name=)?(.+?)\s+dhcp/i);
+  const match = joined.match(/address\s+"([^"]+)"\s+(?:source=)?dhcp/i)
+    || joined.match(/address\s+(?:name=)?(.+?)\s+(?:source=)?dhcp/i);
 
   if (!match) {
-    return 'Usage: netsh interface ip set address "name" dhcp';
+    return 'Usage: netsh interface ip set address "name" source=dhcp';
   }
 
-  const ifName = match[1].trim();
+  const ifName = unquote(match[1]);
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);
-  if (!port) return `The interface "${ifName}" was not found.`;
+  if (!port) return `Error: The interface "${ifName}" was not found.`;
 
   ctx.setAddressDhcp(portName);
-  return 'Ok.';
+  return '';
 }
 
 function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
