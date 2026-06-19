@@ -26,6 +26,18 @@ import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 
 export type ConnectTransport = 'beq' | 'tcp';
+
+/**
+ * Credentials presented for an `AS SYSDBA` / `AS SYSOPER` connection.
+ * The authentication path depends on the transport:
+ *  - `beq` (local `sqlplus / as sysdba`) → OS authentication (dba group);
+ *  - `tcp` (remote / Oracle Net) → password-file authentication.
+ */
+export interface AdminConnectAuth {
+  username?: string;
+  password?: string;
+  transport?: ConnectTransport;
+}
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from './OracleConfig';
@@ -495,13 +507,60 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   /**
-   * Connect as SYSDBA (no password check, sets user to SYS).
+   * Reject a remote `AS SYSDBA`/`AS SYSOPER` attempt that failed
+   * password-file authentication (not in the password file, or wrong
+   * password). Real Oracle returns ORA-01017 and records the failed
+   * privileged logon (SESSIONID 0).
    */
-  connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
-    // OS-group enforcement: SYSDBA requires the OS user to be in the dba group.
-    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      this.rejectOsAuthentication('SYSDBA', osCtx);
+  private rejectPasswordFileAuth(role: 'SYSDBA' | 'SYSOPER', osCtx: OsSecurityContext, user: string): never {
+    this.catalog.recordAudit({
+      sessionId: 0, username: user, actionName: 'LOGON', returncode: 1017,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: role, statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(
+      `Failed ${role} logon: user=${user} password-file authentication failed (ORA-01017)`);
+    this.publishConnectionTrace({
+      username: user, sessionId: 0, serial: 0, osCtx,
+      authMethod: role, role, outcome: 'FAILURE', returncode: 1017,
+    });
+    throw new Error(ORACLE_ERRORS.ORA_01017);
+  }
+
+  /**
+   * Authorize an administrative connection. Local bequeath connections
+   * (`sqlplus / as sysdba`) authenticate against the OS dba group; remote
+   * Oracle Net connections (`sqlplus sys/pw@host as sysdba`) authenticate
+   * against the external password file — OS group membership on the
+   * client is irrelevant there, exactly as on a real instance.
+   */
+  private authorizeAdminConnect(
+    role: 'SYSDBA' | 'SYSOPER',
+    osCtx: OsSecurityContext,
+    auth?: AdminConnectAuth,
+  ): void {
+    if ((auth?.transport ?? 'beq') === 'tcp') {
+      const user = (auth?.username || 'SYS').toUpperCase();
+      const ok = this.catalog.isPasswordFileMember(user, role)
+        && this.catalog.authenticate(user, auth?.password ?? '');
+      if (!ok) this.rejectPasswordFileAuth(role, osCtx, user);
+      return;
     }
+    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
+      this.rejectOsAuthentication(role, osCtx);
+    }
+  }
+
+  /**
+   * Connect as SYSDBA. Local bequeath uses OS authentication; a remote
+   * connection (transport 'tcp') verifies the supplied user against the
+   * password file. The session always assumes the SYS schema.
+   */
+  connectAsSysdba(
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
+    auth?: AdminConnectAuth,
+  ): { sid: number; executor: OracleExecutor } {
+    this.authorizeAdminConnect('SYSDBA', osCtx, auth);
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -555,10 +614,11 @@ export class OracleDatabase implements SqlCommandHost {
    * Connect as SYSOPER — limited admin role (PUBLIC schema, no user-data access).
    * Like SYSDBA, requires OS dba group membership.
    */
-  connectAsSysoper(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
-    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      this.rejectOsAuthentication('SYSOPER', osCtx);
-    }
+  connectAsSysoper(
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
+    auth?: AdminConnectAuth,
+  ): { sid: number; executor: OracleExecutor } {
+    this.authorizeAdminConnect('SYSOPER', osCtx, auth);
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 

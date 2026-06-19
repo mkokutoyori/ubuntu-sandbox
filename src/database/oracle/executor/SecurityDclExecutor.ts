@@ -24,7 +24,7 @@ import { OracleError } from '../../engine/types/DatabaseError';
 import type { OracleStorage } from '../OracleStorage';
 import type { OracleCatalog } from '../OracleCatalog';
 import type { PrivilegeEnforcer } from '../security/PrivilegeEnforcer';
-import { ORACLE_SYSTEM_PRIVILEGES } from '../security/systemPrivileges';
+import { ORACLE_SYSTEM_PRIVILEGES, isAdministrativePrivilege } from '../security/systemPrivileges';
 
 export interface SecurityDclDeps {
   storage: OracleStorage;
@@ -61,7 +61,11 @@ export class SecurityDclExecutor {
     const expanded: { name: string; fromAll: boolean }[] = [];
     for (const priv of privileges) {
       if (priv.toUpperCase() === 'ALL PRIVILEGES') {
-        for (const p of ORACLE_SYSTEM_PRIVILEGES) expanded.push({ name: p, fromAll: true });
+        // GRANT ALL PRIVILEGES never includes the administrative
+        // (password-file) privileges — they are granted explicitly only.
+        for (const p of ORACLE_SYSTEM_PRIVILEGES) {
+          if (!isAdministrativePrivilege(p)) expanded.push({ name: p, fromAll: true });
+        }
       } else {
         expanded.push({ name: priv, fromAll: false });
       }
@@ -145,7 +149,13 @@ export class SecurityDclExecutor {
             if (grantee.toUpperCase() === 'SYS') {
               throw new OracleError(1931, 'role/privilege cannot be granted to SYS');
             }
-            catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+            if (isAdministrativePrivilege(priv)) {
+              // Administrative privileges land in the password file
+              // (V$PWFILE_USERS), not DBA_SYS_PRIVS.
+              catalog.grantAdminPrivilege(grantee, priv);
+            } else {
+              catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+            }
           }
         }
       }
@@ -208,6 +218,12 @@ export class SecurityDclExecutor {
               throw new OracleError(1924, `role '${privU}' not granted or does not exist`);
             }
             catalog.revokeRole(grantee, entry.name);
+          } else if (isAdministrativePrivilege(entry.name)) {
+            const hadPriv = catalog.isPasswordFileMember(granteeU, privU);
+            if (!hadPriv && !entry.fromAll) {
+              throw new OracleError(1927, `cannot REVOKE privileges you did not grant`);
+            }
+            catalog.revokeAdminPrivilege(grantee, entry.name);
           } else {
             const hadPriv = catalog.getSysPrivilegeGrants().some(p => p.grantee === granteeU && p.privilege === privU)
               || catalog.getTablePrivilegeGrants().some(p => p.grantee === granteeU && p.privilege === privU);

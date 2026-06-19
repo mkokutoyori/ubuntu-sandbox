@@ -218,7 +218,10 @@ export function createSQLPlusSession(
     // exactly what a real client prints (ERROR: ORA-12541: …).
     loginOutput = ['ERROR:', netError];
   } else if (asSysdba || (connArg === '/' && asSysdba)) {
-    loginOutput = session.login('SYS', '', true);
+    // For `sqlplus sys/pw@host as sysdba` the credentials drive
+    // password-file authentication; `sqlplus / as sysdba` is a local
+    // bequeath connection (username/password empty → OS authentication).
+    loginOutput = session.login(username || 'SYS', password, true);
   } else if (username) {
     loginOutput = session.login(username, password);
   } else {

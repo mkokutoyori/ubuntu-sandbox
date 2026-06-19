@@ -181,3 +181,93 @@ run-parts) les rendrait cohérentes — chantier distinct, non couvert ici.
 `src/bash/lexer/BashLexer.ts`,
 `src/__tests__/unit/network-v2/run-parts.test.ts`,
 `src/__tests__/unit/network-v2/cron-integration.test.ts`.
+## 2026-06-19
+
+### #3 — Authentification SYSDBA/SYSOPER : OS (bequeath local) vs password file (distant)
+
+**Couches concernées :** Oracle (auth/privilèges) ↔ Réseau (Oracle Net/TNS) ↔
+Accès (OS dba group / password file).
+
+**Symptômes / défaillances constatées.**
+
+1. **`sqlplus sys/<n'importe quoi>@hôte as sysdba` se connectait toujours.**
+   Le chemin `AS SYSDBA` appelait `session.login('SYS', '', true)` : le mot de
+   passe saisi était **jeté**, et l'autorisation d'une connexion *distante* se
+   basait sur le groupe `dba` du **client local** (`captureOsContext` du poste
+   qui lance sqlplus) au lieu du **password file de l'hôte cible**. Un attaquant
+   membre de `dba` sur sa propre machine obtenait donc SYSDBA sur n'importe
+   quelle base distante, sans connaître aucun mot de passe.
+
+2. **Les privilèges administratifs fuyaient dans `DBA_SYS_PRIVS`.**
+   `GRANT SYSDBA TO bob` était stocké comme un privilège système ordinaire
+   (`grantSystemPrivilege`) et apparaissait dans `DBA_SYS_PRIVS` — ce qu'Oracle
+   ne fait jamais (SYSDBA/SYSOPER vivent dans le password file, exposés par
+   `V$PWFILE_USERS`, pas dans `SYS.SYSAUTH$`).
+
+3. **`V$PWFILE_USERS` était vide sur une instance neuve.** La vue dérivait des
+   grants système, or SYS n'avait aucun grant `SYSDBA` semé → roster vide,
+   alors qu'un vrai Oracle liste toujours SYS (SYSDBA + SYSOPER).
+
+4. **`GRANT ALL PRIVILEGES` incluait SYSDBA/SYSOPER** (présents dans
+   `ORACLE_SYSTEM_PRIVILEGES`), ce qui n'est pas le cas sur un vrai Oracle.
+
+**Comportement réel d'Oracle reproduit.**
+- `sqlplus / as sysdba` → *OS authentication* : appartenance au groupe OS dba.
+- `sqlplus user/pw@host as sysdba` → *password-file authentication* : l'utilisateur
+  doit être membre du password file pour le privilège demandé **et** présenter le
+  bon mot de passe ; le groupe OS du client est ignoré. Échec → ORA-01017.
+- `V$PWFILE_USERS` liste SYS par défaut ; `GRANT/REVOKE SYSDBA` ajoute/retire un
+  membre ; `DBA_SYS_PRIVS` ne contient jamais les privilèges administratifs.
+
+**Implémentation (structurelle).**
+- **Modèle password file dédié** dans `OracleCatalog` (`adminPrivileges:
+  Map<user, Set<priv>>`), seedé `SYS → {SYSDBA, SYSOPER}` (SYSTEM volontairement
+  exclu). Méthodes : `grantAdminPrivilege`, `revokeAdminPrivilege`,
+  `isPasswordFileMember`, `getPasswordFileMembers`. Les privilèges admin ne
+  transitent plus par le registre des privilèges système.
+- **Set canonique** `ADMINISTRATIVE_PRIVILEGES` + `isAdministrativePrivilege()`
+  dans `security/systemPrivileges.ts` (source unique, réutilisée partout).
+- `SecurityDclExecutor` : GRANT/REVOKE routent les privilèges admin vers le
+  password file ; exclusion des privilèges admin de l'expansion `ALL PRIVILEGES`.
+- `V$PWFILE_USERS` lit désormais `getPasswordFileMembers()` (et non plus un
+  filtrage de `DBA_SYS_PRIVS`).
+- **`OracleDatabase.authorizeAdminConnect(role, osCtx, auth)`** : un seul point de
+  décision OS-vs-password-file selon le `transport` ('beq' → groupe dba ;
+  'tcp' → password file via `catalog.isPasswordFileMember` + `catalog.authenticate`).
+  `connectAsSysdba` / `connectAsSysoper` acceptent un `AdminConnectAuth`
+  (`{username, password, transport}`) ; nouveau reject `rejectPasswordFileAuth`
+  (audit + alert log + trace, ORA-01017).
+- `SQLPlusSession.login` propage username/password/transport ; `database.ts`
+  transmet les vrais identifiants au lieu de `('SYS','')`.
+
+**Bug de fond découvert et corrigé (cohérence du transport entre CONNECT).**
+Le `transport` de la session était **collant** : après un `CONNECT user/pw@alias`
+(tcp), un `CONNECT / AS SYSDBA` local réutilisait 'tcp' → tentative d'auth
+password file avec mot de passe vide → ORA-01017 (régression de bootstrap).
+`handleConnect` réinitialise désormais le transport à 'beq' pour toute connexion
+locale (bare `/` ou `user/pw` sans `@`), 'tcp' uniquement quand un identifiant de
+connexion est résolu.
+
+**Anti-doublon.** Réutilisation du modèle existant (`V$PWFILE_USERS`,
+`catalog.authenticate`, `ConnectTransport`, `rejectOsAuthentication`) ; aucun
+nouveau sous-système. Le set de privilèges admin, jusque-là dupliqué dans
+`v_pwfile_users.ts`, est désormais centralisé dans `systemPrivileges.ts`.
+
+**Tests.**
+- Nouveau : `src/__tests__/unit/database/oracle-sysdba-password-file.test.ts`
+  (V$PWFILE_USERS liste SYS ; SYSTEM exclu ; GRANT/REVOKE SYSDBA ⇄ password file
+  sans fuite DBA_SYS_PRIVS ; ALL PRIVILEGES n'inclut pas SYSDBA ; sysdba distant
+  bon/mauvais mot de passe ; non-membre refusé ; membre granté OK ; bequeath
+  local intact).
+- Non-régression : suite `database/` complète (**128 fichiers, 3037 tests**) +
+  `network-v2` (oracle-tools, sudo/su/passwd/sqlplus) → 0 régression. Lint propre.
+
+**Fichiers touchés :**
+`src/database/oracle/security/systemPrivileges.ts`,
+`src/database/oracle/OracleCatalog.ts`,
+`src/database/oracle/executor/SecurityDclExecutor.ts`,
+`src/database/oracle/views/v_pwfile_users.ts`,
+`src/database/oracle/OracleDatabase.ts`,
+`src/database/oracle/commands/SQLPlusSession.ts`,
+`src/terminal/commands/database.ts`,
+`src/__tests__/unit/database/oracle-sysdba-password-file.test.ts`.
