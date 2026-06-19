@@ -313,3 +313,70 @@ aucune nouvelle infrastructure.
 **Fichiers touchés :**
 `src/database/oracle/OracleDatabase.ts`,
 `src/__tests__/unit/database/oracle-sysdba-password-file.test.ts`.
+
+---
+
+## 2026-06-20 — `auditctl` / `auditd` : vraie implémentation métier + intégration réactive
+
+**Couches concernées :** OS Linux (audit kernel + daemon), bus d'événements,
+filesystem, processus/accès. Déclencheur : 3 suites TDD —
+`auditctl.test.ts` (100), `auditctl-other.test.ts` (150),
+`other-audit.test.ts` (150). Départ : **61 / 400** passants.
+
+**Défaillances constatées.** Le module `audit/` n'était qu'une ébauche :
+`cmdAuditctl` (121 lignes) ne gérait qu'un sous-ensemble de `-w/-s/-l/-D/-e`,
+les watches n'avaient que perms+clé, pas de règles syscall (`-S`/`-F`/action),
+pas d'état global (`-f`/`-r`/`-b`, lock `-e 2`), pas de persistance, status
+codé en dur. Les enregistrements n'avaient ni le format de champ auditd
+(quotes), ni le groupage SYSCALL+PATH par serial, ni le contexte acteur
+(auid/pid/euid/comm/exe). `aureport`/`ausearch` minimalistes.
+
+**Corrections (enhancement de l'existant, pas de from-scratch).**
+- `LinuxAuditRules` : modèle métier complet — watches (perms canon rwxa+d,
+  dédup, remplacement même-chemin), règles syscall ordonnées (`-A` prepend /
+  `-a` append), validation action/filter/arch/syscall/`-F` op, précédence des
+  règles `never`, familles de syscalls (open↔openat…), état global +
+  lock immutable, persistance bidirectionnelle vers `/etc/audit/audit.rules`
+  + replay (`loadFromDisk`/`loadRulesText`).
+- `LinuxAuditLog` : format de champ fidèle (quotes sur key/name/exe/comm…),
+  `recordEvent([...])` partageant un serial (groupage SYSCALL+PATH),
+  `audit.log` matérialisé 0600.
+- `AuditCommands` : `cmdAuditctl` getopt complet ; `aureport`
+  `-x/-p/-u/-g/-f/-s/-t/-k/-a/-e/-m/-i/-h/-l/-c` + `--interpret` ;
+  `ausearch` `-k/-f/-x/-c/-u/-ua/-ui/--success/-i` avec groupage par event.
+- **Intégration réactive** : deux topics bus `linux.fs.accessed` /
+  `linux.syscall.invoked` (typés dans `linux/events.ts`), publiés par
+  `LinuxCommandExecutor` ; nouvelle **`FileSystemAuditProjection`** abonnée au
+  bus (scopée `deviceId`) qui route vers `LinuxAuditRules` — calquée sur
+  `AuditTrailProjection`/`LinuxLogManager` existants. Le contexte acteur
+  voyage dans l'event (plus de provider live périmé). PID d'`auditd` réel via
+  `LinuxServiceManager` ; `service/systemctl auditd reload|restart` valident
+  `auditd.conf` puis rejouent `rules.d`.
+- Effets de bord corrigés à la source : DAC sur les redirections shell
+  (`>>` refusé sans droit d'écriture), session PAM auditée sur `su`
+  (USER_START/USER_END), `reboot` qui lève le lock immutable, bug lexer
+  `#` (campagne run-parts) déjà en place.
+
+**Validation.**
+- **`auditctl` 100/100**, `auditctl-other` **137/150**, `other-audit`
+  **144/150** → **381 / 400** (départ 61).
+- Non-régression : `journalization` 200/200, `journalization-and-audit`
+  30/30, moteur `bash` 383/383, `sudo-su-passwd` 101/101.
+
+**Limites connues (sous-systèmes non simulés, hors périmètre).** Les ~19
+restants exigent : montage `mount -o ro,remount`, `sysfs` (/sys/power/state),
+sémantique du bit setuid (euid=0 pour passwd/su), codes d'échec d'exec
+(exit=-13), héritage de watch récursif par fork, suspension sur disque plein,
+fichier de règles monté en lecture seule. À traiter si ces couches sont
+ajoutées.
+
+**Fichiers touchés :**
+`src/network/devices/linux/audit/LinuxAuditRules.ts`,
+`src/network/devices/linux/audit/LinuxAuditLog.ts`,
+`src/network/devices/linux/audit/AuditCommands.ts`,
+`src/network/devices/linux/audit/FileSystemAuditProjection.ts` (nouveau),
+`src/network/devices/linux/events.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/auditctl.test.ts`,
+`src/__tests__/unit/network-v2/auditctl-other.test.ts`,
+`src/__tests__/unit/other-audit.test.ts`.
