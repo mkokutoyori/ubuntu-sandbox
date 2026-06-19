@@ -386,7 +386,7 @@ export class LinuxAuditRules {
         else if (head === '-b' && parts[1]) this.setBacklogLimit(parseInt(parts[1], 10));
         else if (head === '-w') this.replayWatch(parts);
         else if (head === '-a' || head === '-A') this.replaySyscall(parts, head === '-A' ? 'prepend' : 'append');
-      } catch { /* malformed line — skip */ }
+      } catch {  }
     }
   }
 
@@ -421,8 +421,6 @@ export class LinuxAuditRules {
     if (this.isExcludedByNeverDir(path)) return;
     const isDelete = syscallHint !== undefined && DELETE_SYSCALLS.has(syscallHint);
     for (const w of this.watches) {
-      // A delete watch (-p d) fires on unlink/rmdir/rename even though the
-      // underlying access perm is 'w'.
       const permMatch = w.perms.includes(perm) || (isDelete && w.perms.includes('d'));
       if (!permMatch) continue;
       if (path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'))) {
@@ -438,7 +436,6 @@ export class LinuxAuditRules {
     const matches = (r: AuditSyscallRule): boolean =>
       (r.syscalls.includes('all') || family.some((s) => r.syscalls.includes(s)))
       && this.matchesFields(r, path);
-    // `never` rules take precedence: a matching exclusion suppresses the event.
     if (this.syscallRules.some((r) => r.action === 'never' && matches(r))) return;
     if (this.isExcludedByNeverDir(path)) return;
     for (const r of this.syscallRules) {
@@ -447,7 +444,7 @@ export class LinuxAuditRules {
     }
   }
 
-  /** A `-a never,exit -F dir=…` rule also excludes path-based watches. */
+  
   private isExcludedByNeverDir(path: string | undefined): boolean {
     if (path === undefined) return false;
     for (const r of this.syscallRules) {

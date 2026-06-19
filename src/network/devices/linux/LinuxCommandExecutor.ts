@@ -1707,8 +1707,6 @@ export class LinuxCommandExecutor {
         if (existing && existing.type === 'directory') {
           throw new Error(`bash: ${path}: Is a directory`);
         }
-        // Honour DAC: writing an existing file requires write permission;
-        // creating a new one requires write+search on the parent directory.
         if (existing) {
           if (!this.checkPermission(existing, 'w')) {
             this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
@@ -1913,10 +1911,6 @@ export class LinuxCommandExecutor {
       return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
     }
 
-    // Audit: report command execution against exec (-p x) watch rules
-    // and against -a … -S execve syscall rules. A command invoked by an
-    // absolute / relative path is watched under that very path; a bare
-    // name is resolved against the standard bin locations.
     if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
       const abs = this.vfs.normalizePath(cmd, this.cwd);
       this.publishFsAccess(abs, 'x', 'execve');
@@ -3417,8 +3411,6 @@ export class LinuxCommandExecutor {
     const prev = this.suStack[this.suStack.length - 1];
     this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
     this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
-    // The kernel auditor records the PAM session lifecycle (USER_START /
-    // CRED_ACQ) just as `su` opening a session does on a real host.
     this.recordPamSession('USER_START', user.username, user.uid, prev.uid, 'PAM_session_open');
 
     // Switch user
