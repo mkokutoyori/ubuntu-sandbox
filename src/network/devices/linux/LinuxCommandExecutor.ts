@@ -1706,6 +1706,18 @@ export class LinuxCommandExecutor {
         if (existing && existing.type === 'directory') {
           throw new Error(`bash: ${path}: Is a directory`);
         }
+        // Honour DAC: writing an existing file requires write permission;
+        // creating a new one requires write+search on the parent directory.
+        if (existing) {
+          if (!this.checkPermission(existing, 'w')) {
+            throw new Error(`bash: ${path}: Permission denied`);
+          }
+        } else {
+          const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
+          if (parent && parent.type === 'directory' && !this.checkPermission(parent, 'w')) {
+            throw new Error(`bash: ${path}: Permission denied`);
+          }
+        }
         this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
       },
       readFile: (path: string) => {
@@ -1875,10 +1887,18 @@ export class LinuxCommandExecutor {
     }
 
     // Audit: report command execution against exec (-p x) watch rules
-    // and against -a … -S execve syscall rules.
-    this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
-    this.publishSyscall('execve', `/usr/bin/${cmd}`);
-    this.publishFsAccess(`/bin/${cmd}`, 'x');
+    // and against -a … -S execve syscall rules. A command invoked by an
+    // absolute / relative path is watched under that very path; a bare
+    // name is resolved against the standard bin locations.
+    if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
+      const abs = this.vfs.normalizePath(cmd, this.cwd);
+      this.publishFsAccess(abs, 'x', 'execve');
+      this.publishSyscall('execve', abs);
+    } else {
+      this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+      this.publishFsAccess(`/bin/${cmd}`, 'x');
+      this.publishSyscall('execve', resolveExePath(cmd));
+    }
 
     switch (cmd) {
       // File commands

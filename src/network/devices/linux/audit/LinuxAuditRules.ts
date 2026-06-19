@@ -119,6 +119,10 @@ export class LinuxAuditRules {
     if (!this.vfs.exists(AUDIT_PATHS.rules)) {
       this.vfs.writeFile(AUDIT_PATHS.rules, '## auditctl-managed rules\n', 0, 0, 0o037);
     }
+    if (!this.vfs.exists('/etc/audit/rules.d/audit.rules')) {
+      this.vfs.writeFile('/etc/audit/rules.d/audit.rules',
+        '## persistent audit rules — loaded by augenrules at boot\n', 0, 0, 0o037);
+    }
   }
 
   bindAuditdPidProvider(provider: () => number | undefined): void {
