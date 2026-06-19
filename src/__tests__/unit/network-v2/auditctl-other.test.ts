@@ -211,7 +211,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       
       await pc.executeCommand('cat /tmp/edit.txt');
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('key="sym_self_watch"'); // verify fallback or editor access logs
+      expect(auditLog).toContain('key="editor_watch"');
     });
 
     it('17. should watch the dynamic resolution of relative symbolic links', async () => {
@@ -309,7 +309,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -w /var/log/cron.log -p wa -k cron_p_watch');
       await pc.executeCommand('touch /var/log/cron.log');
       const list = await pc.executeCommand('auditctl -l');
-      expect(list).toContain('cron_log');
+      expect(list).toContain('cron_p_watch');
     });
 
     it('27. should log file creations using openat syscall rules', async () => {

@@ -418,8 +418,13 @@ export class LinuxAuditRules {
 
   onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string, ctx?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
+    if (this.isExcludedByNeverDir(path)) return;
+    const isDelete = syscallHint !== undefined && DELETE_SYSCALLS.has(syscallHint);
     for (const w of this.watches) {
-      if (!w.perms.includes(perm)) continue;
+      // A delete watch (-p d) fires on unlink/rmdir/rename even though the
+      // underlying access perm is 'w'.
+      const permMatch = w.perms.includes(perm) || (isDelete && w.perms.includes('d'));
+      if (!permMatch) continue;
       if (path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'))) {
         const syscall = syscallHint ?? defaultSyscallFor(perm);
         this.fire(syscall, path, w.key, ctx);
@@ -430,13 +435,31 @@ export class LinuxAuditRules {
   onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
     const family = SYSCALL_ALIASES[syscall] ?? [syscall];
+    const matches = (r: AuditSyscallRule): boolean =>
+      (r.syscalls.includes('all') || family.some((s) => r.syscalls.includes(s)))
+      && this.matchesFields(r, path);
+    // `never` rules take precedence: a matching exclusion suppresses the event.
+    if (this.syscallRules.some((r) => r.action === 'never' && matches(r))) return;
+    if (this.isExcludedByNeverDir(path)) return;
     for (const r of this.syscallRules) {
       if (r.action === 'never') continue;
-      if (r.syscalls.includes('all') || family.some((s) => r.syscalls.includes(s))) {
-        if (!this.matchesFields(r, path)) continue;
-        this.fire(syscall, path, r.key, ctx);
+      if (matches(r)) this.fire(syscall, path, r.key, ctx);
+    }
+  }
+
+  /** A `-a never,exit -F dir=…` rule also excludes path-based watches. */
+  private isExcludedByNeverDir(path: string | undefined): boolean {
+    if (path === undefined) return false;
+    for (const r of this.syscallRules) {
+      if (r.action !== 'never') continue;
+      for (const f of r.fields) {
+        if ((f.name === 'dir' || f.name === 'path') && f.op === '=' &&
+            (path === f.value || path.startsWith(f.value.replace(/\/?$/, '/')))) {
+          return true;
+        }
       }
     }
+    return false;
   }
 
   private matchesFields(rule: AuditSyscallRule, path: string | undefined): boolean {
@@ -514,15 +537,19 @@ function writingSyscall(syscall: string): boolean {
     'truncate', 'ftruncate'].includes(syscall);
 }
 
+const DELETE_SYSCALLS: ReadonlySet<string> = new Set([
+  'unlink', 'unlinkat', 'rmdir', 'rename', 'renameat', 'renameat2',
+]);
+
 function canonPerms(input: string): string | null {
   if (input.length === 0) return null;
   const seen = new Set<string>();
   for (const ch of input) {
-    if (ch !== 'r' && ch !== 'w' && ch !== 'x' && ch !== 'a') return null;
+    if (ch !== 'r' && ch !== 'w' && ch !== 'x' && ch !== 'a' && ch !== 'd') return null;
     seen.add(ch);
   }
   let out = '';
-  for (const ch of ['r', 'w', 'x', 'a'] as const) if (seen.has(ch)) out += ch;
+  for (const ch of ['r', 'w', 'x', 'a', 'd'] as const) if (seen.has(ch)) out += ch;
   return out;
 }
 

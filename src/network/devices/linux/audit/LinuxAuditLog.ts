@@ -143,7 +143,7 @@ export class LinuxAuditLog {
   }
 
   private materialize(): void {
-    this.vfs.writeFile(AUDIT_PATHS.log, this.renderAuditLog(), 0, 0, 0o037);
+    this.vfs.writeFile(AUDIT_PATHS.log, this.renderAuditLog(), 0, 0, 0o177);
   }
 }
 
