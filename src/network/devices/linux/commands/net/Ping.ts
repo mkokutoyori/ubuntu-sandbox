@@ -113,6 +113,9 @@ export const pingCommand: LinuxCommand = {
   complete: completePingFlags,
 
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
+      ctx.executor.publishAuditSyscall(sc);
+    }
     return runPing(ctx, args, 'ping');
   },
 };

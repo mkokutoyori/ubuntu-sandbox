@@ -1803,6 +1803,9 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
+  publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
+  publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
+
   private publishSyscall(syscall: string, path?: string): void {
     if (!this.bus || !this.attachedDeviceId) {
       this.auditRules.onSyscall(syscall, path);
@@ -1871,15 +1874,19 @@ export class LinuxCommandExecutor {
       return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
     }
 
-    // Audit: report command execution against exec (-p x) watch rules.
+    // Audit: report command execution against exec (-p x) watch rules
+    // and against -a … -S execve syscall rules.
     this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+    this.publishSyscall('execve', `/usr/bin/${cmd}`);
     this.publishFsAccess(`/bin/${cmd}`, 'x');
 
     switch (cmd) {
       // File commands
       case 'touch': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
-          this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w');
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'open');
+          this.publishSyscall('open', abs);
         }
         return { output: cmdTouch(c, args), exitCode: 0 };
       }
@@ -2496,10 +2503,14 @@ export class LinuxCommandExecutor {
       case 'service': {
         const gate = this.gateAuditdServiceAction(args[1], args[0], false);
         if (gate) return gate;
-        const r = cmdService(args, this.serviceMgr);
         if (args[0] === 'auditd' && args[1] === 'status') {
           return { output: ' * auditd is active (running)', exitCode: 0 };
         }
+        if (args[0] === 'auditd' && args[1] === 'reload') {
+          this.loadPersistentAuditRules();
+          return { output: '', exitCode: 0 };
+        }
+        const r = cmdService(args, this.serviceMgr);
         if (args[0] === 'auditd' && args[1] === 'restart') {
           this.auditRules.deleteAll();
           this.loadPersistentAuditRules();

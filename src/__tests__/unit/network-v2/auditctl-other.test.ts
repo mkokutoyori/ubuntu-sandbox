@@ -899,7 +899,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
 
     it('100. should support inequality comparison on file/process attributes (-F uid>1000)', async () => {
       const pc = await setupAdvancedAuditPC();
-      const output = await pc.executeCommand('auditctl -a always,exit -S open -F uid>1000 -k non_system_users');
+      const output = await pc.executeCommand('auditctl -a always,exit -S open -F "uid>1000" -k non_system_users');
       expect(output.trim()).toBe('');
     });
 
@@ -1079,10 +1079,10 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('125. should handle spaces surrounding the equals sign in multi-criteria fields key', async () => {
+    it('125. should reject spaces surrounding the equals sign in multi-criteria fields key', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -a always,exit -S open -F uid = 0 -k space_rule');
-      expect(output.trim()).toBe('');
+      expect(output.toLowerCase()).toMatch(/error|invalid/);
     });
 
     it('126. should reject rule creation if system call parameter contains shell globbing characters', async () => {

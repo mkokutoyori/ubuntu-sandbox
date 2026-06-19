@@ -502,7 +502,7 @@ function validateKey(key: string | undefined): string | null {
   if (key === undefined) return null;
   if (key.length === 0) return 'invalid key: must not be empty';
   if (key.length > MAX_KEY_LEN) return `invalid key: length exceeds ${MAX_KEY_LEN}-character limit`;
-  if (!/^[\x21-\x7e]+$/.test(key)) return 'invalid key: non-ASCII or whitespace characters not allowed';
+  if (!/^[\x20-\x7e]+$/.test(key)) return 'invalid key: non-ASCII characters not allowed';
   return null;
 }
 
@@ -527,6 +527,9 @@ function parseField(raw: string): FieldParseOk | (RuleOpResult & { ok: false }) 
 
   if (name === 'arch' && !KNOWN_ARCHES.has(value)) {
     return fail(`-F: unknown architecture: ${value}`);
+  }
+  if (name === 'fstype' && !/^0x[0-9a-fA-F]+$/.test(value)) {
+    return fail(`-F: invalid fstype: must be hex (got '${value}')`);
   }
   return { ok: true, field: { name, op, value } };
 }
