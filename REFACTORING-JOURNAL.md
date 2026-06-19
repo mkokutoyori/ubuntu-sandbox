@@ -1385,3 +1385,97 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   reçus est l'étape suivante.
 - **OSPFv3** conserve son propre chemin hors-bande (`v3ComputeRoutes` lit
   directement les tables de routage des pairs) — à traiter séparément.
+
+---
+
+## Entrée n°27 — 2026-06-19 — Switch L2 : plan de gestion SVI (ping/ARP/ICMP réellement sur le câble)
+
+### Défaillances constatées
+
+Le commutateur de niveau 2 (`Switch` / `CiscoSwitch`) n'avait **aucun plan de
+gestion L3** fonctionnel, contrairement à un vrai Catalyst :
+
+1. **`ping` était un stub** : `% Ping not yet implemented on switch.` — le
+   switch ne pouvait pas vérifier la connectivité de son réseau de gestion.
+2. **L'adresse d'une SVI partait dans le vide** : `interface Vlan N` /
+   `ip address …` appelait `getPort('Vlan1')?.configureIP(...)`. Or aucun port
+   physique ne s'appelle `Vlan1`, donc `getPort` renvoyait `undefined` et
+   l'adresse n'était **jamais stockée** (`show ip interface brief` montrait une
+   ligne `Vlan1` figée et codée en dur).
+3. **`interface Vlan N` n'était même pas reconnu** : `virtualInterfaceName` ne
+   gérait que les `Port-channel`. Entrer dans une SVI échouait.
+4. **`no shutdown` sur une SVI** renvoyait `% Error` (la SVI n'étant pas un port).
+5. Aucune validation : on pouvait « entrer » dans `interface Vlan9999`
+   (hors plage 1–4094), et `speed`/`duplex` étaient acceptés sur une interface
+   virtuelle où ils n'ont pas de sens.
+
+### Correction (structurelle)
+
+Nouveau module **`SwitchSvi`** (`src/network/devices/SwitchSvi.ts`) : un plan de
+gestion L3 minimal mais fidèle (IP/masque par VLAN, état admin, ARP, écho ICMP).
+Il **ne duplique pas** la pile hôte de `EndHost` (2918 lignes, couplée aux
+sockets/DNS/routage) : il s'appuie sur les **primitives partagées**
+(`core/types` : `createIPv4Packet`, `ARPPacket`, `ICMPPacket`) et **réutilise le
+plan de données L2 existant** du switch.
+
+- **Émission** : `egressOnVlan(vlan, frame)` rejoue la **même décision
+  flood / unicast** que `handleFrame` pour le trafic de transit (extraction d'un
+  point unique, pas de copie). Une trame issue de la SVI quitte le switch
+  exactement comme celle d'un hôte connecté → **tout passe par le câble**.
+- **Réception** : `intercept(vlan, port, frame)` est appelé dans `handleFrame`
+  après l'apprentissage MAC. Il répond à l'ARP visant l'IP de la SVI, répond à
+  l'écho ICMP, et règle les `echo-reply` du ping en cours. L'ARP de diffusion
+  est traité **mais laissé inonder** (retour `false`), l'unicast adressé à la
+  SVI est **consommé** (retour `true`).
+- **ARP** : aucune deuxième table — la SVI lit/écrit la **table ARP de gestion
+  existante** du switch via `lookupArp`/`learnArp`.
+- **MAC** : toutes les SVI partagent le **MAC de bridge** (1er port), comme le
+  vrai IOS.
+- **Ping** : `executePingSequence` calque l'API de `Router`. La livraison sur
+  câble étant **synchrone** (`Cable.transmit`), l'aller-retour ARP/écho se
+  règle dans la pile d'appel — déterministe, sans minuterie temps-réel.
+
+Déduplication CLI : extraction de **`ciscoPing.ts`** (`parsePingArgs` +
+`formatCiscoPing`, le rendu `Success rate is N percent`) — destiné à être
+partagé par les shells routeur et switch (le switch l'utilise déjà ; la
+migration du routeur suivra). Le switch borne `repeat` (`MAX_PING_REPEAT`)
+puisque les sondes sont pilotées de façon synchrone.
+
+Côté shell (`CiscoSwitchShell`) : `virtualInterfaceName` reconnaît `Vlan N` ;
+`ip address`/`no ip address`, `shutdown`/`no shutdown` ciblent la SVI ; `ping`
+(user + privileged) passe par le pipeline async partagé (`_pendingAsync`) ;
+`show ip interface brief` est rendu dynamiquement ; `speed`/`duplex` et les
+VLAN hors plage sont rejetés (`%`), conformément à IOS.
+
+### Fichiers
+
+`src/network/devices/SwitchSvi.ts` (nouveau),
+`src/network/devices/shells/cisco/ciscoPing.ts` (nouveau, partagé),
+`src/network/devices/Switch.ts` (plan SVI + `egressOnVlan` + hook `intercept`),
+`src/network/devices/shells/CiscoSwitchShell.ts` (SVI, ping, show),
+`src/__tests__/unit/network-v2/switch-svi.test.ts` (nouveau).
+
+### Validation
+
+- Nouveau `switch-svi.test.ts` : **8 tests verts** — adressage SVI, ping
+  aller-retour réel sur le câble (`Success rate is 100 percent` + MAC du pair
+  apprise), réponse à l'écho d'un hôte, 0 % si injoignable, `repeat`, SVI
+  admin-down muette, rejet `speed`/`duplex` et VLAN hors plage.
+- `other-commands.test.ts` (suite Cisco L2) : **154 → 156 verts**, aucune
+  régression (les 4 corrections SVI compensées en supprimant 2 régressions
+  introduites — `speed`/`duplex` et `interface Vlan9999`).
+- Fichiers neufs : **lint propre**, tsc propre.
+
+### Limites connues / suites futures
+
+- **Indexation des ports du switch (bug de fidélité)** : un switch « 24 ports »
+  crée `FastEthernet0/0`…`0/23`. Un vrai Catalyst est **1-indexé**
+  (`0/1`…`0/24`, pas de `Fa0/0`). Le helper de test `setupManagementLAN` câble
+  `FastEthernet0/24` (inexistant) et **plante au montage** — ce qui bloque ~9
+  tests « Management Plane » indépendamment du plan SVI. La correction
+  (réindexation 1-based) touche ~53 fichiers de test : **migration dédiée à
+  faire dans un commit séparé**.
+- Le routeur garde encore son propre parseur/rendu de ping ; sa migration vers
+  `ciscoPing.ts` (déduplication finale) est l'étape suivante.
+- SSH/telnet sortants, `crypto key generate rsa`, gating VTY : hors périmètre de
+  ce commit (plan de gestion *protocolaire*, à traiter ensuite).

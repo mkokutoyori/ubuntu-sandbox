@@ -29,7 +29,9 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { SwitchSvi, type SviInterface } from './SwitchSvi';
+import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -188,6 +190,21 @@ export abstract class Switch extends Equipment {
   private psecAgingTimer: TimerHandle | null = null;
   private psecAgingScheduler: IScheduler | null = null;
   private psecUnsubscribers: Array<() => void> = [];
+
+  // ─── L3 Management Plane (SVIs) ────────────────────────────────
+  private readonly svi: SwitchSvi = new SwitchSvi({
+    deviceId: this.id,
+    getHostname: () => this.getHostname(),
+    getBridgeMac: () => this.getBridgeMac(),
+    egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
+    vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+    lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
+    learnArp: (ip, mac, iface) => {
+      const existing = this.arpTable.get(ip);
+      if (existing && existing.type === 'static') return;
+      this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'dynamic' });
+    },
+  });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
@@ -1031,6 +1048,14 @@ export abstract class Switch extends Equipment {
       }
     }
 
+    // ─── Step 2.5: Management plane (SVI) intercept ─────────────
+    // A frame addressed to one of our SVIs is consumed here (the box is the
+    // destination, not a transit bridge). Broadcast ARP for an SVI is answered
+    // but still allowed to flood, so `intercept` returns false for it.
+    if (this.svi.intercept(ingressVlan, portName, frame)) {
+      return;
+    }
+
     // ─── Step 3: Forwarding Decision ────────────────────────────
     // In learning state: learn MACs but do NOT forward frames
     if (stpState === 'learning') {
@@ -1162,6 +1187,64 @@ export abstract class Switch extends Equipment {
         this.sendFrame(portName, this.addTag(frame, vlan));
       }
     }
+  }
+
+  // ─── L3 Management Plane (SVI) plumbing ───────────────────────────
+
+  /** Bridge base MAC — shared by every SVI, like real Catalyst hardware. */
+  getBridgeMac(): MACAddress {
+    const first = this.getPorts()[0];
+    return first ? first.getMAC() : MACAddress.broadcast();
+  }
+
+  /** True when `vlan` has at least one up, cabled member port. */
+  private vlanHasActivePort(vlan: number): boolean {
+    for (const [portName, cfg] of this.switchportConfigs) {
+      const port = this.getPort(portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      if (cfg.mode === 'access' ? cfg.accessVlan === vlan : cfg.trunkAllowedVlans.has(vlan)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Source a frame from the management plane onto `vlan`: reuse the very same
+   * unknown-unicast/flood vs known-unicast decision the data plane makes for
+   * transit frames, so an SVI packet leaves exactly like a host's would.
+   */
+  private egressOnVlan(vlan: number, frame: EthernetFrame): void {
+    const dstMAC = frame.dstMAC.toString().toLowerCase();
+    const dstOctets = frame.dstMAC.getOctets();
+    const isGroup = frame.dstMAC.isBroadcast() || (dstOctets[0] & 0x01) === 0x01;
+    const entry = isGroup ? undefined : this.macTable.get(`${vlan}:${dstMAC}`);
+    if (entry) {
+      this.forwardToPort(entry.port, frame, vlan);
+    } else {
+      this.floodFrame('', frame, vlan);
+    }
+  }
+
+  // ─── SVI configuration API (used by the vendor shell) ─────────────
+
+  /** `interface Vlan N` — materialise the SVI (admin-down, no IP) if new. */
+  ensureSvi(vlan: number): void { this.svi.ensure(vlan); }
+  configureSviIp(vlan: number, ip: IPAddress, mask: SubnetMask): void {
+    this.svi.configure(vlan, ip, mask);
+  }
+  clearSviIp(vlan: number): void { this.svi.clearIp(vlan); }
+  setSviAdminUp(vlan: number, up: boolean): void { this.svi.setAdminUp(vlan, up); }
+  hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
+  getSvis(): SviInterface[] { return this.svi.list(); }
+  getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
+  isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }
+
+  /** Drive ICMP echoes from the management SVI (mirrors Router API). */
+  executePingSequence(
+    target: IPAddress, count = 5, timeoutMs = 2000, sourceIPStr?: string,
+  ): Promise<CiscoPingRow[]> {
+    return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
   }
 
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────

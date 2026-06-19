@@ -23,6 +23,7 @@ import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
+import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion } from './cisco/CiscoCommonShow';
 
@@ -191,13 +192,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip interface brief', 'Display IP interface brief', () => {
-        // L2 switch: only SVIs/mgmt carry IPs (none by default here).
-        return [
-          'Interface              IP-Address      OK? Method Status                Protocol',
-          'Vlan1                  unassigned      YES unset  administratively down down',
-        ].join('\n');
-      });
+      t.register('show ip interface brief', 'Display IP interface brief', () =>
+        this.showIpInterfaceBrief());
       t.registerGreedy('show access-lists', 'Display ACLs', () => {
         if (this.acls.size === 0) return '';
         const out: string[] = [];
@@ -528,21 +524,21 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // (interface Vlan N) may, mirroring a real Layer-2 switch.
     this.configIfTrie.registerGreedy('ip address', 'Set the SVI IP address', (args) => {
       const iface = this.selectedInterface ?? '';
-      if (!/^vlan/i.test(iface)) {
+      const vlan = this.sviVlanId(iface);
+      if (vlan === null) {
         return '% IP addresses may not be configured on L2 links.';
       }
       if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
         return "% Invalid input detected at '^' marker.";
       }
-      const ip = new IPAddress(args[0]);
-      const mask = new SubnetMask(args[1]);
-      return this.applyToSelectedInterfaces(p => {
-        this.d().getPort(p)?.configureIP(ip, mask);
-        return '';
-      });
+      this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
+      return '';
     });
-    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () =>
-      this.applyToSelectedInterfaces(p => { this.d().getPort(p)?.clearIP(); return ''; }));
+    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan !== null) this.d().clearSviIp(vlan);
+      return '';
+    });
 
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
@@ -1290,14 +1286,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return this.showLogging(this.d());
     });
 
-    this.userTrie.registerGreedy('ping', 'Send echo messages', () => {
-      return `Type escape sequence to abort.\n% Ping not yet implemented on switch.`;
-    });
+    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+  }
+
+  /**
+   * Drive a management-plane ping from an SVI. Uses the shared async pipeline
+   * (`_pendingAsync`) and the shared IOS renderer, exactly like the router.
+   */
+  private handlePing(args: string[]): string {
+    const parsed = parsePingArgs(args);
+    if (parsed.error) return parsed.error;
+    const target = new IPAddress(parsed.target);
+    this._pendingAsync = this.d()
+      .executePingSequence(target, parsed.count, parsed.timeoutMs, parsed.sourceIP ?? undefined)
+      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    return '';
   }
 
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
+    this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+
     this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
       const full = this.showMACAddressTable(this.d());
       if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
@@ -1545,6 +1555,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
       const virt = this.virtualInterfaceName(args.join(' '));
       if (virt) {
+        const vlan = this.sviVlanId(virt);
+        if (vlan !== null) {
+          if (vlan < 1 || vlan > 4094) return "% Invalid input detected at '^' marker.";
+          this.d().ensureSvi(vlan);
+        }
         this.selectedInterface = virt;
         this.selectedInterfaceRange = [virt];
         this.mode = 'config-if';
@@ -1749,8 +1764,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
-      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
-        recordIf(`${sub} ${args.join(' ')}`.trim()));
+      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
+        // These are physical-port-only; an SVI is a virtual L3 interface and
+        // rejects them just like real IOS does.
+        if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+          return "% Invalid input detected at '^' marker.";
+        }
+        return recordIf(`${sub} ${args.join(' ')}`.trim());
+      });
     }
 
     const removeIf = (prefix: string) => {
@@ -1824,19 +1845,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.d().getPort(portName);
-        if (port) { port.setUp(false); return ''; }
-        return '% Error';
-      });
+      return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
     });
 
     this.configIfTrie.register('no shutdown', 'Enable interface', () => {
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.d().getPort(portName);
-        if (port) { port.setUp(true); return ''; }
-        return '% Error';
-      });
+      return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, true));
     });
 
     this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
@@ -2565,8 +2578,46 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
    * L2-only switch (returns null → "% Invalid interface name").
    */
   private virtualInterfaceName(input: string): string | null {
-    const m = input.replace(/\s+/g, '').match(/^(?:po|port-?channel)(\d+)$/i);
-    return m ? `Port-channel${m[1]}` : null;
+    const compact = input.replace(/\s+/g, '');
+    const po = compact.match(/^(?:po|port-?channel)(\d+)$/i);
+    if (po) return `Port-channel${po[1]}`;
+    // SVI: `interface Vlan N` (the switch's L3 management interface).
+    const vl = compact.match(/^(?:vl|vlan)(\d+)$/i);
+    if (vl) return `Vlan${vl[1]}`;
+    return null;
+  }
+
+  /** Extract the VLAN id from an SVI interface name ("Vlan10" → 10). */
+  private sviVlanId(iface: string): number | null {
+    const m = /^vlan(\d+)$/i.exec(iface);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  /** `show ip interface brief` — the switch carries IPs only on SVIs. */
+  private showIpInterfaceBrief(): string {
+    const header = 'Interface              IP-Address      OK? Method Status                Protocol';
+    const svis = this.d().getSvis();
+    const rows = svis.map(svi => {
+      const name = `Vlan${svi.vlan}`;
+      const ip = svi.ip ? svi.ip.toString() : 'unassigned';
+      const method = svi.ip ? 'manual' : 'unset';
+      const status = svi.adminUp ? 'up' : 'administratively down';
+      const proto = svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down';
+      return `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
+    });
+    if (rows.length === 0) {
+      rows.push(`Vlan1                  unassigned      YES unset  administratively down down`);
+    }
+    return [header, ...rows].join('\n');
+  }
+
+  /** `[no] shutdown` for either a physical port or a management SVI. */
+  private setIfAdminState(iface: string, up: boolean): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan !== null) { this.d().setSviAdminUp(vlan, up); return ''; }
+    const port = this.d().getPort(iface);
+    if (port) { port.setUp(up); return ''; }
+    return '% Error';
   }
 
   private resolveInterfaceName(input: string): string | null {
