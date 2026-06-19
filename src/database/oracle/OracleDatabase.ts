@@ -84,6 +84,12 @@ export interface ConnectionInfo {
   connectedAt: Date;
   sid: number;
   serial: number;
+  /** Administrative role of the session — drives the LOGOFF audit record. */
+  role?: 'NORMAL' | 'SYSDBA' | 'SYSOPER';
+  /** Authentication method recorded at logon (PASSWORD/EXTERNAL/SYSDBA/…). */
+  authMethod?: string;
+  /** OS identity captured at logon, replayed in the LOGOFF trace. */
+  osCtx?: OsSecurityContext;
 }
 
 /** Stored PL/SQL unit (procedure, function, or package) */
@@ -439,6 +445,8 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'NORMAL',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -463,6 +471,7 @@ export class OracleDatabase implements SqlCommandHost {
       user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
       : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
       : 'PASSWORD';
+    connInfo.authMethod = authMethod;
     const session = this.openSession({
       sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
       transport,
@@ -570,6 +579,9 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'SYSDBA',
+      authMethod: 'SYSDBA',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -628,6 +640,9 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'SYSOPER',
+      authMethod: 'SYSOPER',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -669,10 +684,13 @@ export class OracleDatabase implements SqlCommandHost {
     const conn = this.connections.get(sid);
     if (conn) {
       this.catalog.recordLogoff(conn.username, sid);
-      this.instance.logAlertEvent(`Logoff: user=${conn.username} sid=${sid}`);
+      const role = conn.role ?? 'NORMAL';
+      this.instance.logAlertEvent(
+        `Logoff: user=${conn.username} sid=${sid}${role === 'NORMAL' ? '' : ` as ${role}`}`);
       this.publishConnectionTrace({
         username: conn.username, sessionId: sid, serial: conn.serial,
-        osCtx: DEFAULT_OS_CONTEXT, authMethod: 'PASSWORD', role: 'NORMAL',
+        osCtx: conn.osCtx ?? DEFAULT_OS_CONTEXT,
+        authMethod: conn.authMethod ?? 'PASSWORD', role,
         outcome: 'LOGOFF', returncode: 0,
       });
     }

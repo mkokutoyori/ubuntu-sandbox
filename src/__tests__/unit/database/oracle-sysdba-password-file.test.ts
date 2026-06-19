@@ -155,3 +155,19 @@ describe('local bequeath AS SYSDBA is unaffected (OS authentication)', () => {
     expect(run(sh, 'SHOW USER')).toMatch(/USER is "SYS"/i);
   });
 });
+
+describe('the LOGOFF audit record carries the session role', () => {
+  it('a SYSDBA disconnect is audited as LOGOFF with SYSTEM_PRIVILEGE_USED = SYSDBA', () => {
+    const srv = new LinuxServer('linux-server', 'orcl', 0, 0);
+    // First SYSDBA session connects then disconnects (logoff trace).
+    SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell.dispose();
+
+    // A fresh SYSDBA session inspects the persistent audit journal.
+    const sh = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
+    const out = run(sh,
+      "SELECT system_privilege_used FROM unified_audit_trail " +
+      "WHERE action_name = 'LOGOFF' AND dbusername = 'SYS';");
+    expect(out).toMatch(/SYSDBA/);
+    expect(out).not.toMatch(/CREATE SESSION/);
+  });
+});

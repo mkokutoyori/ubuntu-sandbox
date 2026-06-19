@@ -271,3 +271,45 @@ nouveau sous-système. Le set de privilèges admin, jusque-là dupliqué dans
 `src/database/oracle/commands/SQLPlusSession.ts`,
 `src/terminal/commands/database.ts`,
 `src/__tests__/unit/database/oracle-sysdba-password-file.test.ts`.
+
+---
+
+## 2026-06-19 (suite)
+
+### #4 — Le rôle administratif d'une session est perdu à la déconnexion (cohérence auth ↔ audit)
+
+**Couches concernées :** Oracle (sessions) ↔ Audit (DBA/UNIFIED_AUDIT_TRAIL,
+connection traces).
+
+**Symptôme / défaillance constatée.**
+`OracleDatabase.disconnect()` publiait toujours la trace de LOGOFF avec
+`role: 'NORMAL'`, `authMethod: 'PASSWORD'` et `osCtx: DEFAULT_OS_CONTEXT`, y
+compris pour une session ouverte `AS SYSDBA`/`AS SYSOPER`. Conséquence :
+`UNIFIED_AUDIT_TRAIL` montrait le LOGOFF d'une session SYSDBA avec
+`SYSTEM_PRIVILEGE_USED = 'CREATE SESSION'` au lieu de `SYSDBA`, et l'OS user /
+machine réels du logon étaient remplacés par le contexte par défaut — une
+déconnexion privilégiée devenait indistinguable d'une déconnexion ordinaire.
+Sur un vrai Oracle, le LOGOFF d'une session SYSDBA est un audit obligatoire
+qui conserve le rôle administratif.
+
+**Implémentation (structurelle).**
+- `ConnectionInfo` porte désormais le `role`, l'`authMethod` et l'`osCtx`
+  capturés **au logon** (les trois sites : `connect`, `connectAsSysdba`,
+  `connectAsSysoper`).
+- `disconnect()` rejoue ces valeurs réelles dans la trace de LOGOFF (et logge
+  `as SYSDBA`/`as SYSOPER` dans l'alert log) au lieu de constantes en dur.
+
+**Anti-doublon.** Réutilisation de la trace existante (`publishConnectionTrace`)
+et du journal d'audit (`AuditJournal.getConnectionTraces` → `UNIFIED_AUDIT_TRAIL`) ;
+aucune nouvelle infrastructure.
+
+**Tests.**
+- Ajout au fichier `oracle-sysdba-password-file.test.ts` : un LOGOFF SYSDBA est
+  audité `action_name = 'LOGOFF'` avec `system_privilege_used = 'SYSDBA'`
+  (et non `CREATE SESSION`).
+- Non-régression : suites audit/sécurité + `database/` complète
+  (**128 fichiers, 3038 tests**) → 0 régression. Lint propre.
+
+**Fichiers touchés :**
+`src/database/oracle/OracleDatabase.ts`,
+`src/__tests__/unit/database/oracle-sysdba-password-file.test.ts`.
