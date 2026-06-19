@@ -1830,6 +1830,17 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
+  private resolveAusearchUserArgs(args: string[]): string[] {
+    const out = [...args];
+    for (let i = 0; i < out.length - 1; i++) {
+      if ((out[i] === '-u' || out[i] === '-ua' || out[i] === '-ui') && !/^\d+$/.test(out[i + 1])) {
+        const u = this.userMgr.getUser(out[i + 1]);
+        if (u) out[i + 1] = String(u.uid);
+      }
+    }
+    return out;
+  }
+
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
@@ -2165,7 +2176,7 @@ export class LinuxCommandExecutor {
       }
       case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };
       case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
-      case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
+      case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
       case 'auditctl': {
         const r = cmdAuditctl(this.auditRules, args);
@@ -3379,6 +3390,9 @@ export class LinuxCommandExecutor {
     const prev = this.suStack[this.suStack.length - 1];
     this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
     this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
+    // The kernel auditor records the PAM session lifecycle (USER_START /
+    // CRED_ACQ) just as `su` opening a session does on a real host.
+    this.recordPamSession('USER_START', user.username, user.uid, prev.uid, 'PAM_session_open');
 
     // Switch user
     this.userMgr.currentUser = user.username;
@@ -3393,19 +3407,28 @@ export class LinuxCommandExecutor {
       try {
         output = this.execute(command);
       } finally {
-        const prev = this.suStack.pop();
-        if (prev) {
-          this.userMgr.currentUser = prev.user;
-          this.userMgr.currentUid = prev.uid;
-          this.userMgr.currentGid = prev.gid;
-          this.cwd = prev.cwd;
-          this.umask = prev.umask;
+        const popped = this.suStack.pop();
+        if (popped) {
+          this.userMgr.currentUser = popped.user;
+          this.userMgr.currentUid = popped.uid;
+          this.userMgr.currentGid = popped.gid;
+          this.cwd = popped.cwd;
+          this.umask = popped.umask;
         }
+        this.recordPamSession('USER_END', user.username, user.uid, prev.uid, 'PAM_session_close');
       }
       return { output, exitCode: 0 };
     }
 
     return { output: '', exitCode: 0 };
+  }
+
+  private recordPamSession(type: 'USER_START' | 'USER_END', acct: string, uid: number, byUid: number, op: string): void {
+    this.auditLog.record(type, {
+      pid: this.shellPid ?? 1, uid: byUid, auid: byUid, ses: 1,
+      msg: `op=${op} grantors=pam_unix acct="${acct}" exe="/bin/su" hostname=? addr=? terminal=pts/0 PAM_session=${op} res=success`,
+      acct, res: 'success',
+    });
   }
 
   /** Handle exit/logout — pops su stack if in su session */
