@@ -1710,11 +1710,13 @@ export class LinuxCommandExecutor {
         // creating a new one requires write+search on the parent directory.
         if (existing) {
           if (!this.checkPermission(existing, 'w')) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
             throw new Error(`bash: ${path}: Permission denied`);
           }
         } else {
           const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
           if (parent && parent.type === 'directory' && !this.checkPermission(parent, 'w')) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
             throw new Error(`bash: ${path}: Permission denied`);
           }
         }
@@ -1811,6 +1813,19 @@ export class LinuxCommandExecutor {
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
       auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
       success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.fs.accessed', payload });
+  }
+
+  private publishFsAccessOutcome(path: string, perm: FileAccessPerm, syscall: string, success: boolean): void {
+    if (!this.bus || !this.attachedDeviceId) return;
+    const actor = this.snapshotActor();
+    const payload: FileAccessedPayload = {
+      deviceId: this.attachedDeviceId, path, perm, syscall,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success, exit: success ? 0 : -13,
     };
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }

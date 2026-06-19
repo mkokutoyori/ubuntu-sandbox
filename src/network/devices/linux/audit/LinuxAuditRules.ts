@@ -402,30 +402,39 @@ export class LinuxAuditRules {
     this.addSyscallRule(action, filter, syscalls, fields, key, position);
   }
 
-  onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string): void {
+  onAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint?: string, ctx?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
     for (const w of this.watches) {
       if (!w.perms.includes(perm)) continue;
       if (path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'))) {
         const syscall = syscallHint ?? defaultSyscallFor(perm);
-        this.fire(syscall, path, w.key);
+        this.fire(syscall, path, w.key, ctx);
       }
     }
   }
 
-  onSyscall(syscall: string, path?: string): void {
+  onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
     for (const r of this.syscallRules) {
       if (r.action === 'never') continue;
       if (r.syscalls.includes(syscall) || r.syscalls.includes('all')) {
-        this.fire(syscall, path, r.key);
+        if (!this.matchesFields(r, path)) continue;
+        this.fire(syscall, path, r.key, ctx);
       }
     }
   }
 
-  private fire(syscall: string, path: string | undefined, key?: string): void {
+  private matchesFields(rule: AuditSyscallRule, path: string | undefined): boolean {
+    for (const f of rule.fields) {
+      if (f.name === 'path' && path !== undefined && f.op === '=' && path !== f.value) return false;
+      if (f.name === 'dir' && path !== undefined && f.op === '=' && !path.startsWith(f.value.replace(/\/?$/, '/')) && path !== f.value) return false;
+    }
+    return true;
+  }
+
+  private fire(syscall: string, path: string | undefined, key?: string, ctxArg?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
-    const ctx = this.actorContextProvider?.() ?? DEFAULT_ACTOR;
+    const ctx = ctxArg ?? this.actorContextProvider?.() ?? DEFAULT_ACTOR;
     const exit = ctx.success ? 0 : -13;
     const syscallFields: Record<string, string | number> = {
       arch: 'c000003e',
