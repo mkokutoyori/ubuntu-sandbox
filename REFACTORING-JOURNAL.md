@@ -1475,7 +1475,36 @@ VLAN hors plage sont rejetés (`%`), conformément à IOS.
   tests « Management Plane » indépendamment du plan SVI. La correction
   (réindexation 1-based) touche ~53 fichiers de test : **migration dédiée à
   faire dans un commit séparé**.
-- Le routeur garde encore son propre parseur/rendu de ping ; sa migration vers
-  `ciscoPing.ts` (déduplication finale) est l'étape suivante.
+- ~~Le routeur garde encore son propre parseur/rendu de ping~~ → fait
+  (Entrée n°28).
 - SSH/telnet sortants, `crypto key generate rsa`, gating VTY : hors périmètre de
   ce commit (plan de gestion *protocolaire*, à traiter ensuite).
+
+---
+
+## Entrée n°28 — 2026-06-19 — Dédup : le routeur réutilise `ciscoPing.ts`
+
+### Défaillance constatée
+
+Suite à l'Entrée n°27, le rendu IOS du ping (`Type escape sequence to abort.` /
+`Success rate is N percent (s/t)` / `round-trip min/avg/max`) **existait en
+double** : une copie privée `_formatCiscoPing` dans `CiscoIOSShell`, et la
+version partagée `ciscoPing.ts`. Le parsing des options (`repeat`/`timeout`/
+`size`/`source`) était lui aussi dupliqué entre routeur et switch.
+
+### Correction
+
+`CiscoIOSShell._handlePing` utilise désormais `parsePingArgs` +
+`formatCiscoPing` du module partagé ; la méthode privée `_formatCiscoPing`
+(31 lignes) est supprimée. Le rendu est **identique au bit près** (taille par
+défaut 100 octets). Bilan : **−74 lignes**, une seule source de vérité pour le
+ping Cisco (routeur + switch).
+
+### Fichiers
+
+`src/network/devices/shells/CiscoIOSShell.ts`.
+
+### Validation
+
+- `router-architecture`, `no-ip-address`, `nat-icmp-pat`, `switch-svi` :
+  **28 tests verts**, aucune régression. Aucune nouvelle erreur lint/tsc.

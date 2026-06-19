@@ -22,6 +22,7 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import { IPAddress } from '../../core/types';
+import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -795,63 +796,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Ping Command ────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
-    if (args.length === 0) {
-      return '% Ping requires a target IP address.';
-    }
+    const parsed = parsePingArgs(args);
+    if (parsed.error) return parsed.error;
 
-    let target = '';
-    let count = 5;
-    let timeoutMs = 2000;
-    let sourceIP: string | null = null;
-
-    let i = 0;
-    target = args[i++]?.trim() || '';
-
-    while (i < args.length) {
-      const kw = args[i]?.toLowerCase();
-      if (kw === 'source' && args[i + 1]) {
-        sourceIP = args[i + 1];
-        i += 2;
-      } else if (kw === 'repeat' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) count = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'size' && args[i + 1]) {
-        i += 2;
-      } else {
-        i++;
-      }
-    }
-
-    if (!target) {
-      return '% Ping requires a target IP address.';
-    }
-
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-
+    const router = this.d();
+    let sourceIP = parsed.sourceIP;
     if (sourceIP) {
-      const router = this.d();
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
     }
 
-    const targetIP = new IPAddress(target);
-    const router = this.d();
-
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
-      return this._formatCiscoPing(target, count, timeoutMs, results);
-    });
+    const targetIP = new IPAddress(parsed.target);
+    this._pendingAsync = router
+      .executePingSequence(targetIP, parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
 
     return '';
   }
@@ -968,37 +926,5 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       }
     }
     return null;
-  }
-
-  private _formatCiscoPing(
-    target: string,
-    count: number,
-    timeoutMs: number,
-    results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>,
-  ): string {
-    const lines: string[] = [];
-    lines.push(`Type escape sequence to abort.`);
-    lines.push(`Sending ${count}, 100-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
-
-    const chars = results.map(r => r.success ? '!' : '.');
-    if (results.length === 0) {
-      for (let i = 0; i < count; i++) chars.push('.');
-    }
-    lines.push(chars.join(''));
-
-    const successes = results.filter(r => r.success).length;
-    const total = results.length || count;
-    const pct = Math.round((successes / total) * 100);
-    lines.push(`Success rate is ${pct} percent (${successes}/${total})`);
-
-    if (successes > 0) {
-      const rtts = results.filter(r => r.success).map(r => r.rttMs);
-      const min = Math.min(...rtts);
-      const max = Math.max(...rtts);
-      const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-      lines[lines.length - 1] += `, round-trip min/avg/max = ${min.toFixed(0)}/${avg.toFixed(0)}/${max.toFixed(0)} ms`;
-    }
-
-    return lines.join('\n');
   }
 }
