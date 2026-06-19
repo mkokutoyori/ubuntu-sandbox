@@ -102,7 +102,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
-  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Shell builtins and basics
@@ -2179,6 +2179,19 @@ export class LinuxCommandExecutor {
       case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
       case 'auditctl': {
+        if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
+          if (args[0] === '-s' || args[0] === '--status') {
+            return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
+          }
+        }
+        if (args[0] === '-R') {
+          const file = args[1];
+          if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
+          const content = this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
+          if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
+          this.auditRules.loadRulesText(content);
+          return { output: '', exitCode: 0 };
+        }
         const r = cmdAuditctl(this.auditRules, args);
         return { output: r.output, exitCode: r.exitCode };
       }
@@ -2479,8 +2492,20 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: this.lastExitCode };
       }
 
+      case 'truncate': {
+        const files = args.filter((a, i) => !a.startsWith('-') && args[i - 1] !== '-s');
+        for (const p of files) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'truncate');
+          this.publishSyscall('truncate', abs);
+          const existing = this.vfs.resolveInode(abs);
+          if (!existing) this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+        }
+        return { output: '', exitCode: 0 };
+      }
       // kill — send signal via process manager
       case 'kill': {
+        this.publishSyscall('kill');
         const r = cmdKill(args, this.processCmdContext());
         return r;
       }

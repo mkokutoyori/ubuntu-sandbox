@@ -276,7 +276,7 @@ type AureportField = [shortFlag: string, longFlag: string, fieldName: string, he
 
 const AUREPORT_FIELD_REPORTS: ReadonlyArray<AureportField> = [
   ['-x', '--executable', 'exe', 'Executable Summary Report'],
-  ['-p', '--pid', 'pid', 'PID Summary Report'],
+  ['-p', '--pid', 'exe', 'PID Summary Report'],
   ['-u', '--user', 'uid', 'User ID Summary Report'],
   ['-g', '--group', 'gid', 'Group ID Summary Report'],
   ['-f', '--file', 'name', 'File Summary Report'],

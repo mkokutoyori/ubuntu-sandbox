@@ -65,6 +65,16 @@ const KNOWN_FIELDS: ReadonlySet<string> = new Set([
 
 const MAX_VALID_SYSCALL_ID = 600;
 
+const SYSCALL_ALIASES: Record<string, string[]> = {
+  open: ['open', 'openat'],
+  openat: ['open', 'openat'],
+  chmod: ['chmod', 'fchmod', 'fchmodat'],
+  chown: ['chown', 'fchown', 'lchown', 'fchownat'],
+  unlink: ['unlink', 'unlinkat'],
+  rename: ['rename', 'renameat', 'renameat2'],
+  mkdir: ['mkdir', 'mkdirat'],
+};
+
 const FILTER_KEYWORDS: ReadonlySet<string> = new Set(['task', 'exit', 'user', 'exclude']);
 const ACTION_KEYWORDS: ReadonlySet<string> = new Set(['always', 'never']);
 
@@ -358,6 +368,10 @@ export class LinuxAuditRules {
   loadFromDisk(): void {
     const content = this.vfs.readFile(AUDIT_PATHS.rules);
     if (content === null) return;
+    this.loadRulesText(content);
+  }
+
+  loadRulesText(content: string): void {
     for (const raw of content.split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
@@ -415,9 +429,10 @@ export class LinuxAuditRules {
 
   onSyscall(syscall: string, path?: string, ctx?: AuditActorContext): void {
     if (this.enabledFlag === 0) return;
+    const family = SYSCALL_ALIASES[syscall] ?? [syscall];
     for (const r of this.syscallRules) {
       if (r.action === 'never') continue;
-      if (r.syscalls.includes(syscall) || r.syscalls.includes('all')) {
+      if (r.syscalls.includes('all') || family.some((s) => r.syscalls.includes(s))) {
         if (!this.matchesFields(r, path)) continue;
         this.fire(syscall, path, r.key, ctx);
       }

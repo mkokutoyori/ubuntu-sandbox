@@ -377,7 +377,8 @@ describe('Linux auditctl Advanced Integration Suite', () => {
       await pc.executeCommand('auditctl -a always,exit -S kill -k process_kills');
       await pc.executeCommand('kill -9 9999'); // Mock trigger
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
-      expect(auditLog).toContain('key="fs_delete"'); // or fallback to general signal logs
+      expect(auditLog).toContain('key="process_kills"');
+      expect(auditLog).toContain('syscall=kill');
     });
 
     it('35. should log pam session validation errors with failed status on incorrect login inputs', async () => {
