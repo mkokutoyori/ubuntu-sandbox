@@ -1272,6 +1272,7 @@ export class LinuxCommandExecutor {
       case 'kill': {
         // Bash resolves %jobspec before invoking kill(2). Do the same so
         // we can also drop the corresponding job from the table.
+        this.publishSyscall('kill');
         return this.runKillWithJobspecs(args);
       }
       default: return null;
@@ -1961,6 +1962,7 @@ export class LinuxCommandExecutor {
         }
         for (const arg of fileArgs) {
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
+          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd));
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');

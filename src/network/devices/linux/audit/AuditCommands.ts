@@ -221,7 +221,7 @@ export function cmdAuditctl(rules: LinuxAuditRules, args: string[]): AuditctlOut
         } else if (argv[j] === '-k') {
           key = argv[++j];
           if (key === undefined) return err("option '-k' invalid: missing argument for option");
-        } else return err(`unrecognized argument ${argv[j]}`);
+        } else return err(`invalid: unrecognized argument ${argv[j]}`);
       }
       const r = head === '-w' ? rules.addWatch(path, perms, key) : rules.removeWatch(path, perms);
       if (!r.ok) return err(r.error!);
@@ -246,7 +246,7 @@ export function cmdAuditctl(rules: LinuxAuditRules, args: string[]): AuditctlOut
         } else if (argv[j] === '-k') {
           key = argv[++j];
           if (key === undefined) return err("option '-k' invalid: missing argument for option");
-        } else return err(`unrecognized argument ${argv[j]}`);
+        } else return err(`invalid: unrecognized argument ${argv[j]}`);
       }
       const r = head === '-d'
         ? rules.deleteSyscallRule(action, filter, syscalls, fields, key)
