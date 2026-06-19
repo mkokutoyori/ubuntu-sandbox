@@ -113,6 +113,24 @@ export interface PingResult {
   fromIP: string;
 }
 
+export interface TracerouteProbeResult {
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  icmpCode?: number;
+}
+
+export interface TracerouteHopResult {
+  hop: number;
+  ip?: string;
+  rttMs?: number;
+  timeout: boolean;
+  unreachable?: boolean;
+  icmpCode?: number;
+  probes: TracerouteProbeResult[];
+}
+
 // ─── UDP socket layer (RFC 768) ──────────────────────────────────────
 
 /** A UDP datagram as delivered to a bound listener. */
@@ -2114,7 +2132,8 @@ export abstract class EndHost extends Equipment {
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
     firstTtl: number = 1,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }>> {
+    hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean },
+  ): Promise<TracerouteHopResult[]> {
     const route = this.resolveRoute(targetIP);
     if (!route) return [];
 
@@ -2126,12 +2145,15 @@ export abstract class EndHost extends Equipment {
     try {
       nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
-      return [{ hop: firstTtl, timeout: true, probes: [{ responded: false }] }];
+      const unresolved: TracerouteHopResult = { hop: firstTtl, timeout: true, probes: [{ responded: false }] };
+      hooks?.onHop?.(unresolved);
+      return [unresolved];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }> = [];
+    const hops: TracerouteHopResult[] = [];
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
+      if (hooks?.shouldStop?.()) break;
       const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> = [];
       let destinationReached = false;
 
@@ -2216,7 +2238,7 @@ export abstract class EndHost extends Equipment {
       const firstUnreachable = probes.find(p => p.unreachable);
       const allTimeout = probes.every(p => !p.responded);
 
-      const hop = {
+      const hop: TracerouteHopResult = {
         hop: ttl,
         ip: firstResponded?.ip,
         rttMs: firstResponded?.rttMs,
@@ -2227,6 +2249,7 @@ export abstract class EndHost extends Equipment {
       };
 
       hops.push(hop);
+      hooks?.onHop?.(hop);
 
       if (destinationReached) break;
       if (firstUnreachable) break;

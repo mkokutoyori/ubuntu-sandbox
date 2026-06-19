@@ -11,6 +11,35 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
+export interface ParsedTracerouteArgs {
+  targetStr: string;
+  maxHops: number;
+  probesPerHop: number;
+  firstTtl: number;
+  numeric: boolean;
+}
+
+export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
+  const parsed: ParsedTracerouteArgs = {
+    targetStr: '',
+    maxHops: 30,
+    probesPerHop: 3,
+    firstTtl: 1,
+    numeric: false,
+  };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-n') { parsed.numeric = true; continue; }
+    if (a === '-I' || a === '-U') continue;
+    if ((a === '-m' || a === '-t') && args[i + 1]) { parsed.maxHops = parseInt(args[i + 1], 10); i++; continue; }
+    if (a === '-q' && args[i + 1]) { parsed.probesPerHop = parseInt(args[i + 1], 10); i++; continue; }
+    if (a === '-f' && args[i + 1]) { parsed.firstTtl = parseInt(args[i + 1], 10); i++; continue; }
+    if (a === '-w' && args[i + 1]) { i++; continue; }
+    if (!a.startsWith('-')) { parsed.targetStr = a; }
+  }
+  return parsed;
+}
+
 export const tracerouteCommand: LinuxCommand = {
   name: 'traceroute',
   needsNetworkContext: true,
@@ -33,21 +62,7 @@ export const tracerouteCommand: LinuxCommand = {
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     if (args.length === 0) return 'Usage: traceroute [-InU] [-m maxhops] [-q nqueries] [-f first_ttl] <destination>';
 
-    let targetStr = '';
-    let maxHops = 30;
-    let probesPerHop = 3;
-    let firstTtl = 1;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-n') continue;
-      if (a === '-I' || a === '-U') continue; // ICMP/UDP mode switch — cosmetic in simulation
-      if ((a === '-m' || a === '-t') && args[i + 1]) { maxHops = parseInt(args[i + 1], 10); i++; continue; }
-      if (a === '-q' && args[i + 1]) { probesPerHop = parseInt(args[i + 1], 10); i++; continue; }
-      if (a === '-f' && args[i + 1]) { firstTtl = parseInt(args[i + 1], 10); i++; continue; }
-      if (a === '-w' && args[i + 1]) { i++; continue; } // timeout — skip
-      if (!a.startsWith('-')) { targetStr = a; }
-    }
-
+    const { targetStr, maxHops, probesPerHop, firstTtl } = parseTracerouteArgs(args);
     if (!targetStr) return 'Usage: traceroute [-InU] [-m maxhops] [-q nqueries] [-f first_ttl] <destination>';
 
     const targetIP = await ctx.net.resolveHostname(targetStr);

@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, type TracerouteHopResult, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
@@ -1789,6 +1789,32 @@ export abstract class LinuxMachine extends EndHost
     opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
     const outcome = await this.executePingStream(ip, opts);
     return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
+  async tracerouteStreamInSession(
+    targetStr: string,
+    opts: {
+      maxHops?: number;
+      probesPerHop?: number;
+      firstTtl?: number;
+      timeoutMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onHop: (hop: TracerouteHopResult) => void;
+      shouldStop: () => boolean;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const ip = await this.resolveHostnameOverWire(targetStr);
+    if (!ip) return { resolved: false };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    await this.executeTraceroute(
+      ip,
+      opts.maxHops,
+      opts.timeoutMs ?? 2000,
+      opts.probesPerHop,
+      opts.firstTtl,
+      { onHop: opts.onHop, shouldStop: opts.shouldStop },
+    );
+    return { resolved: true };
   }
 
   /** Tab completion against a specific shell session's cwd/env. */

@@ -380,6 +380,36 @@ Validation : `tcpdump.test.ts` (100) + `tcpdump2.test.ts` (50) verts ; suite
 `network-v2` sans régression (seul `other-commands.test.ts` #163, pré-existant
 et sans rapport, échoue). Le chemin streaming (`tryStartTcpdump`) inchangé.
 
+## Real-Time Monitoring — PC Linux : `traceroute` en streaming
+
+- **Constat** : `ping`, `tail -f`, `watch`, `top`, `journalctl -f`, `tcpdump`
+  passaient déjà par le pipeline, mais `traceroute` restait sur le chemin
+  synchrone (`tracerouteCommand.run` → un seul bloc rendu en fin d'exécution),
+  alors que le vrai traceroute imprime chaque saut au fil de sa résolution.
+- **Anti-duplication** : parseur d'arguments extrait en `parseTracerouteArgs`
+  (`linux/commands/net/Traceroute.ts`) et partagé entre la commande bloc et le
+  streaming (le bloc historique reste byte-identique). Formatage extrait en
+  `formatTracerouteHeader` / `formatTracerouteHopLine` (`LinuxFormatHelpers.ts`),
+  réutilisés par `formatTracerouteOutput` (bloc) et par le streaming — zéro
+  duplication de rendu.
+- **Modèle** : `EndHost.executeTraceroute` accepte un couple de hooks
+  (`onHop` appelé dès qu'un saut se stabilise, `shouldStop` sondé entre les
+  sauts pour un Ctrl+C prompt). Aucune logique de terminal dans le modèle ;
+  types de domaine exportés (`TracerouteHopResult` / `TracerouteProbeResult`).
+- **Controller** : `LinuxMachine.tracerouteStreamInSession` (résolution d'hôte
+  sur le fil puis `executeTraceroute` câblé aux hooks), et
+  `LinuxTerminalSession.tryStartTracerouteStream` intercepte `traceroute` (hors
+  pipes/redirections) en job foreground streaming : header puis une ligne par
+  saut au fil de l'eau, prompt verrouillé, Ctrl+C → `^C` + arrêt de la boucle de
+  sondes. Hôte inconnu → `traceroute: unknown host …` ; aucune route → ` * * *
+  Network is unreachable`, comme le bloc.
+
+Validation : `traceroute-stream-ui.test.ts` (2/2 : job streaming engagé dès
+l'Enter avec header rendu de façon asynchrone et tous les sauts, puis
+déverrouillage ; interruption Ctrl+C). Régressions traceroute bloc / conformance
+/ icmp / ipv4 / ping / aide / complétion + autres UI streaming : 145/145. Aucune
+nouvelle erreur de lint.
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).

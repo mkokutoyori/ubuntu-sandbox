@@ -11,11 +11,12 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
+import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
-import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
+import { formatPingHeader, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
@@ -795,6 +796,38 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartTracerouteStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'traceroute') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const parsed = parseTracerouteArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        let hopCount = 0;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: parsed.probesPerHop,
+          firstTtl: parsed.firstTtl,
+          onResolved: (ip, hostname) => ctx.sink.line(formatTracerouteHeader(ip, parsed.maxHops, hostname)),
+          onHop: (hop) => { hopCount++; ctx.sink.line(formatTracerouteHopLine(hop)); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved) { ctx.sink.error(`traceroute: unknown host ${parsed.targetStr}`); return; }
+        if (hopCount === 0) ctx.sink.line(' * * * Network is unreachable');
+      },
+    });
+    return job !== null;
+  }
+
   private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -1004,6 +1037,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
+    if (this.tryStartTracerouteStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;
