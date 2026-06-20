@@ -1880,6 +1880,7 @@ export class LinuxCommandExecutor {
           }
         }
         this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
+        this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);

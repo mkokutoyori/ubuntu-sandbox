@@ -17,6 +17,7 @@ export interface AuditWatch {
   path: string;
   perms: string;
   key?: string;
+  inode?: number;
 }
 
 export interface AuditSyscallRule {
@@ -217,7 +218,7 @@ export class LinuxAuditRules {
       this.watches.splice(idx, 1);
     }
 
-    const watch: AuditWatch = { path, perms, key };
+    const watch: AuditWatch = { path, perms, key, inode: this.vfs.resolveInode(path)?.id };
     this.watches.push(watch);
     if (/[wa]/.test(perms)) {
       const unsub = this.vfs.onWrite(path, () => this.fire('open', path, key));
@@ -420,13 +421,31 @@ export class LinuxAuditRules {
     if (this.enabledFlag === 0) return;
     if (this.isExcludedByNeverDir(path)) return;
     const isDelete = syscallHint !== undefined && DELETE_SYSCALLS.has(syscallHint);
+    const accessedInode = this.vfs.resolveInode(path)?.id;
     for (const w of this.watches) {
       const permMatch = w.perms.includes(perm) || (isDelete && w.perms.includes('d'));
       if (!permMatch) continue;
-      if (path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'))) {
+      const pathMatch = path === w.path || path.startsWith(w.path.replace(/\/?$/, '/'));
+      const inodeMatch = path !== w.path
+        && w.inode !== undefined && accessedInode !== undefined
+        && accessedInode === w.inode;
+      if (pathMatch || inodeMatch) {
         const syscall = syscallHint ?? defaultSyscallFor(perm);
         this.fire(syscall, path, w.key, ctx);
       }
+    }
+  }
+
+  onAccessIndirect(path: string, perm: 'r' | 'w' | 'x' | 'a', syscallHint: string, ctx?: AuditActorContext): void {
+    if (this.enabledFlag === 0) return;
+    if (this.isExcludedByNeverDir(path)) return;
+    const accessedInode = this.vfs.resolveInode(path)?.id;
+    for (const w of this.watches) {
+      if (!w.perms.includes(perm)) continue;
+      if (path === w.path) continue;
+      const descendant = path.startsWith(w.path.replace(/\/?$/, '/'));
+      const inodeMatch = w.inode !== undefined && accessedInode !== undefined && accessedInode === w.inode;
+      if (descendant || inodeMatch) this.fire(syscallHint, path, w.key, ctx);
     }
   }
 
