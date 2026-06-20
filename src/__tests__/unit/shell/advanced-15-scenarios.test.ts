@@ -1017,11 +1017,9 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'su - bob');
-    if (t.currentInputMode.type === 'password') {
-      t.setPasswordBuf('bob'); t.handleKey(key('Enter')); await flush();
-    }
-    await typeSub(t, 'whoami');
+    // su from a non-root account authenticates as the target; over a
+    // non-interactive SSH channel the password is supplied on stdin.
+    await typeSub(t, 'echo bob | su - bob -c whoami');
     expectAnyLine(t, /^bob$/);
   });
 

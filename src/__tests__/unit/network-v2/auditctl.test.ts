@@ -17,7 +17,7 @@ import { Logger } from '@/network/core/Logger';
 
 async function setupLinuxPC() {
   const pc = new LinuxPC('SecurityHost', 0, 0);
-  await pc.executeCommand('su -');
+  await pc.executeCommand('sudo su -');
   return pc;
 }
 

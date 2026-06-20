@@ -454,7 +454,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
 
   test('§A37 — Windows→Linux: file deleted via SSH is gone on the device directly', async () => {
     const { winA, linuxSrv } = await buildLan();
-    await linuxSrv.executeCommand('echo bye > /tmp/toremove.txt');
+    // Owned by alice so she may unlink it from the sticky /tmp directory.
+    await linuxSrv.executeCommand('sh -c "echo bye > /tmp/toremove.txt && chown alice:alice /tmp/toremove.txt"');
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');

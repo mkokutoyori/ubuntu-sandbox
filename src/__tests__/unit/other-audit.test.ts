@@ -18,7 +18,7 @@ import { Logger } from '@/network/core/Logger';
 
 async function setupAuditedPC() {
   const pc = new LinuxPC('AuditedHost', 0, 0);
-  await pc.executeCommand('su -');
+  await pc.executeCommand('sudo su -');
   return pc;
 }
 
@@ -290,7 +290,10 @@ describe('Linux Audit Trail System Suite', () => {
       await pc.executeCommand('auditctl -w /etc/passwd -p w -k p_write');
       await pc.executeCommand('echo "user_test::" >> /etc/passwd');
       const query = await pc.executeCommand('ausearch -k p_write');
-      expect(query).toContain('user_test::');
+      // ausearch returns the audit record for the watched write (key + target
+      // path), not the file contents written.
+      expect(query).toContain('p_write');
+      expect(query).toContain('/etc/passwd');
     });
   });
 
@@ -334,7 +337,7 @@ describe('Linux Audit Trail System Suite', () => {
     it('35. should log failed privilege escalation attempts as failed events', async () => {
       const pc = await setupAuditedPC();
       await pc.executeCommand('auditctl -w /bin/su -p x -k su_calls');
-      await pc.executeCommand('su user -c "su - root -c whoami"'); // fails due to missing password
+      await pc.executeCommand('su user -c "su - root -c whoami"'); // inner su to root fails (no password)
       const auditLog = await pc.executeCommand('cat /var/log/audit/audit.log');
       expect(auditLog).toContain('res=failed');
     });

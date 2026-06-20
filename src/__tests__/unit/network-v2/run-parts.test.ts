@@ -20,7 +20,7 @@ async function setupRunPartsPC() {
   const pc = new LinuxPC('RunPartsPC', 0, 0);
   // run-parts is a root/cron utility, so the suite is exercised as root.
   // (`user` is a sudoer; this is the realistic invoker for cron parts.)
-  await pc.executeCommand('su -');
+  await pc.executeCommand('sudo su -');
   return pc;
 }
 

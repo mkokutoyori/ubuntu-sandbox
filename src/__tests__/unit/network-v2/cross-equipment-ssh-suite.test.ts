@@ -2000,9 +2000,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
     {
       name: 'aliased sudo via SSH escalates exactly like the canonical command',
       setup: async (l) => {
-        await l.linux2.executeCommand('su - alice');
-        await l.linux2.executeCommand("echo \"alias please='sudo'\" >> /home/alice/.bashrc");
-        await l.linux2.executeCommand('sudo sh -c "chown alice:alice /home/alice/.bashrc"');
+        await l.linux2.executeCommand(`sudo sh -c "echo \\"alias please='sudo'\\" >> /home/alice/.bashrc && chown alice:alice /home/alice/.bashrc"`);
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "please whoami"',
       contains: [/^root$/m],

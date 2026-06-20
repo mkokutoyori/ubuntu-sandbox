@@ -18,7 +18,7 @@ import { Logger } from '@/network/core/Logger';
 
 async function setupAdvancedAuditPC() {
   const pc = new LinuxPC('AdvAuditPC', 0, 0);
-  await pc.executeCommand('su -');
+  await pc.executeCommand('sudo su -');
   return pc;
 }
 

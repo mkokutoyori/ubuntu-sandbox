@@ -143,6 +143,13 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
+/** Binaries shipped setuid-root on a stock Ubuntu; seeded mode 04755 so the
+ *  setuid behaviour (euid→0 on execve) is driven by the real VFS mode bit. */
+const SETUID_ROOT_BINARIES: readonly string[] = [
+  'passwd', 'su', 'sudo', 'chsh', 'chfn', 'newgrp', 'gpasswd',
+  'ping', 'mount', 'umount', 'crontab',
+];
+
 interface LogrotateOpts {
   rotate: number;
   schedule: string;
@@ -347,6 +354,7 @@ export class LinuxCommandExecutor {
     this.vfs = new VirtualFileSystem();
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
     this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
+    this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
@@ -1622,7 +1630,9 @@ export class LinuxCommandExecutor {
       // `sudo -S` authenticates against the invoking user's password,
       // piped in on stdin. A wrong password is rejected and audited
       // through PAM, exactly as on a real host.
-      if (readsStdinPassword) {
+      const last0 = cmdArgs[cmdArgs.length - 1];
+      const passwordPiped = !!last0 && last0.includes('\n');
+      if (readsStdinPassword && passwordPiped) {
         const last = cmdArgs[cmdArgs.length - 1];
         const supplied = last && last.includes('\n')
           ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
@@ -1685,6 +1695,11 @@ export class LinuxCommandExecutor {
     if (cmdArgs.length === 0) {
       if (savedUser) { this.userMgr.currentUser = savedUser.user; this.userMgr.currentUid = savedUser.uid; this.userMgr.currentGid = savedUser.gid; }
       return { output: '', exitCode: 0 };
+    }
+
+    if (isSudo) {
+      this.publishFsAccess('/usr/bin/sudo', 'x', 'execve');
+      this.publishSyscall('execve', '/usr/bin/sudo');
     }
 
     const actualCmd = isSudo ? cmdArgs[0] : cmd;
@@ -1952,20 +1967,37 @@ export class LinuxCommandExecutor {
     return vars;
   }
 
+  private seedSetuidBinaries(): void {
+    for (const name of SETUID_ROOT_BINARIES) {
+      const path = resolveExePath(name);
+      if (!this.vfs.exists(path)) {
+        this.vfs.writeFile(path, `#!/bin/sh\n# ${name}\n`, 0, 0, 0o022);
+      }
+      this.vfs.chown(path, 0, 0);
+      this.vfs.chmod(path, 0o4755);
+    }
+  }
+
   private snapshotActor(): import('./audit/LinuxAuditRules').AuditActorContext {
-    const uid = this.userMgr.currentUid;
+    const cur = this.userMgr.currentUid;
     const gid = this.userMgr.currentGid;
-    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : uid;
+    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : cur;
     const head = this.currentCommandHead;
     const comm = head ?? 'bash';
     const exe = head ? resolveExePath(head) : '/bin/bash';
+    // Effective uid: 0 when already privileged (sudo/su to root), or when the
+    // running binary carries the setuid bit and is owned by root, exactly as
+    // the kernel raises euid on execve of an suid file (read from the VFS).
+    const exeInode = head ? this.vfs.resolveInode(exe) : null;
+    const suidRoot = !!exeInode && (exeInode.permissions & 0o4000) !== 0 && exeInode.uid === 0;
+    const euid = cur === 0 ? 0 : (suidRoot ? 0 : cur);
     return {
       pid: this.shellPid ?? 1,
       ppid: this.shellPpid ?? 1,
       uid: loginUid,
-      euid: uid,
+      euid,
       gid: loginUid,
-      egid: gid,
+      egid: euid === 0 ? 0 : gid,
       auid: loginUid,
       comm,
       exe,
@@ -2111,8 +2143,12 @@ export class LinuxCommandExecutor {
 
     if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
       const abs = this.vfs.normalizePath(cmd, this.cwd);
-      this.publishFsAccess(abs, 'x', 'execve');
-      this.publishSyscall('execve', abs);
+      const canExec = this.userMgr.currentUid === 0 || this.path(abs).canExecute();
+      this.publishFsAccessOutcome(abs, 'x', 'execve', canExec);
+      this.publishSyscallOutcome('execve', abs, canExec, canExec ? 0 : -13);
+      if (!canExec && this.vfs.exists(abs)) {
+        return { output: `${cmd}: Permission denied`, exitCode: 126 };
+      }
     } else {
       this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
       this.publishFsAccess(`/bin/${cmd}`, 'x');
@@ -2456,7 +2492,7 @@ export class LinuxCommandExecutor {
       case 'sudo': return this.handleSudoCmd(args);
 
       // su - switch user
-      case 'su': return this.handleSu(args);
+      case 'su': return this.handleSu(args, stdin);
 
       // source / . — execute file in current shell context
       case 'source':
@@ -3637,7 +3673,7 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleSu(args: string[]): { output: string; exitCode: number } {
+  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
     let loginShell = false;
     let targetUser = 'root';
     let command: string | null = null;
@@ -3652,6 +3688,26 @@ export class LinuxCommandExecutor {
     if (!user) return { output: `su: user ${targetUser} does not exist`, exitCode: 1 };
     if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
       return { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 };
+    }
+
+    // A non-root caller must authenticate as the target account. The password
+    // arrives on stdin (e.g. `echo pw | su user`); without a valid one su
+    // fails and auditd records the PAM authentication failure. Root su's free.
+    if (this.userMgr.currentUid !== 0) {
+      const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
+      if (!this.userMgr.checkPassword(user.username, supplied)) {
+        this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
+        this.publishSyscall('execve', resolveExePath('su'));
+        const byUid = this.userMgr.currentUid;
+        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : byUid;
+        this.auditLog.record('USER_AUTH', {
+          pid: this.shellPid ?? 1, uid: byUid, auid: loginUid, ses: 1,
+          msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
+          acct: user.username, res: 'failed',
+        });
+        this.logMgr.logAuth('su', `FAILED su for ${user.username} by ${this.userMgr.currentUser}(uid=${byUid})`);
+        return { output: 'su: Authentication failure', exitCode: 1 };
+      }
     }
 
     // Save current context to suStack
