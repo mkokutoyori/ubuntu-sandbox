@@ -89,6 +89,21 @@ export class VfsPath {
     return canon === null ? null : new VfsPath(this.vfs, canon, '/', this.actor);
   }
 
+  get actorUid(): number {
+    return this.actor.uid;
+  }
+
+  ownedByActor(): boolean {
+    if (this.actor.uid === 0) return true;
+    const node = this.inode();
+    return !!node && node.uid === this.actor.uid;
+  }
+
+  isWritableDir(): boolean {
+    const node = this.inode();
+    return !!node && node.type === 'directory' && this.canWrite() && this.canExecute();
+  }
+
   canRead(): boolean {
     return this.allows('r');
   }

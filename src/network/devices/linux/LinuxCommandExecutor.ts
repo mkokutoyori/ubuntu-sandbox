@@ -2251,7 +2251,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'a', 'chmod');
           this.publishSyscall('chmod', abs);
         }
-        return { output: cmdChmod(c, args), exitCode: 0 };
+        const out = cmdChmod(c, args);
+        return { output: out, exitCode: out.startsWith('chmod:') ? 1 : 0 };
       }
       case 'chown': {
         for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
@@ -2259,9 +2260,13 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'a', 'chown');
           this.publishSyscall('chown', abs);
         }
-        return { output: cmdChown(c, args), exitCode: 0 };
+        const out = cmdChown(c, args);
+        return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
       }
-      case 'chgrp': return { output: cmdChgrp(c, args), exitCode: 0 };
+      case 'chgrp': {
+        const out = cmdChgrp(c, args);
+        return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
+      }
       case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
         const result = cmdUmask(c, args);

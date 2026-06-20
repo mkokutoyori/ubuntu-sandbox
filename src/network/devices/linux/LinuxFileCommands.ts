@@ -5,6 +5,12 @@
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
+import type { PathActor } from './VfsPath';
+
+export function actorOf(ctx: ShellContext): PathActor {
+  const gids = (ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? []).map((g) => g.gid);
+  return { uid: ctx.uid, gid: ctx.gid, gids };
+}
 
 // ANSI color codes matching GNU ls defaults (LS_COLORS)
 const C = {
@@ -458,8 +464,7 @@ export function cmdRm(ctx: ShellContext, args: string[]): string {
     paths.push(arg);
   }
 
-  const gids = (ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? []).map((g) => g.gid);
-  const actor = { uid: ctx.uid, gid: ctx.gid, gids };
+  const actor = actorOf(ctx);
 
   for (const p of paths) {
     // Expand globs
