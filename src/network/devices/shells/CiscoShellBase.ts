@@ -1749,9 +1749,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
-          update.loginMethod = args[0] === 'authentication' && args[1] ? `authentication ${args[1]}` : args[0] ?? 'local';
+          // bare `login` → authenticate with the line password; `login local`
+          // → local user DB; `login authentication …` → AAA.
+          const sub = args[0]?.toLowerCase();
+          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
         } else if (kw === 'password') {
-          update.password = args.slice(1).join(' ') || args[0];
+          update.linePassword = args.slice(1).join(' ') || args[0];
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
@@ -1781,6 +1784,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } else if (kw === 'rotary' && args[0]) {
           update.rotaryGroup = parseInt(args[0], 10);
         } else if (kw === 'no' && args.length > 0) {
+          const sub = args[0]?.toLowerCase();
+          // `no password` clears the line secret (empty string → explicitly
+          // unset, distinct from "never configured"); `no login` disables auth.
+          if (sub === 'password') update.linePassword = '';
+          else if (sub === 'login') update.login = 'none';
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);

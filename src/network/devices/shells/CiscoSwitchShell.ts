@@ -1948,6 +1948,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('!');
     }
 
+    // VTY line configuration (transport input, login, password, …).
+    const vtyLines = sw._getVtyLineConfig().renderAllCisco();
+    if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
+
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);

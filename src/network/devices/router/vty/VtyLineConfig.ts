@@ -13,7 +13,7 @@
  * schema change.
  */
 
-export type VtyLoginMode = 'none' | 'local' | 'aaa';
+export type VtyLoginMode = 'none' | 'local' | 'aaa' | 'password';
 export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
 
 export interface VtyLineConfigInit {
@@ -29,6 +29,8 @@ export interface VtyLineConfigInit {
   readonly aclOutbound?: string;
   readonly transportInput?: VtyTransport;
   readonly login?: VtyLoginMode;
+  /** `password …` configured on the line (line-local auth secret). */
+  readonly linePassword?: string;
   readonly privilege?: number;
   readonly authenticationMode?: 'password' | 'aaa' | 'none';
   readonly screenLengthLines?: number;
@@ -48,6 +50,7 @@ export class VtyLineConfig {
   readonly aclOutbound: string | null;
   readonly transportInput: VtyTransport | null;
   readonly login: VtyLoginMode | null;
+  readonly linePassword: string | null;
   readonly privilege: number | null;
   readonly authenticationMode: 'password' | 'aaa' | 'none' | null;
   readonly screenLengthLines: number | null;
@@ -66,6 +69,7 @@ export class VtyLineConfig {
     this.aclOutbound        = init.aclOutbound ?? null;
     this.transportInput     = init.transportInput ?? null;
     this.login              = init.login ?? null;
+    this.linePassword       = init.linePassword ?? null;
     this.privilege          = init.privilege ?? null;
     this.authenticationMode = init.authenticationMode ?? null;
     this.screenLengthLines  = init.screenLengthLines ?? null;
@@ -86,6 +90,7 @@ export class VtyLineConfig {
       aclOutbound:        patch.aclOutbound        ?? this.aclOutbound        ?? undefined,
       transportInput:     patch.transportInput     ?? this.transportInput     ?? undefined,
       login:              patch.login              ?? this.login              ?? undefined,
+      linePassword:       patch.linePassword       ?? this.linePassword       ?? undefined,
       privilege:          patch.privilege          ?? this.privilege          ?? undefined,
       authenticationMode: patch.authenticationMode ?? this.authenticationMode ?? undefined,
       screenLengthLines:  patch.screenLengthLines  ?? this.screenLengthLines  ?? undefined,
@@ -101,14 +106,25 @@ export class VtyLineConfig {
     }
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
+    if (this.linePassword) lines.push(` password ${this.linePassword}`);
     if (this.login !== null) {
       if (this.login === 'local') lines.push(' login local');
       else if (this.login === 'aaa') lines.push(' login authentication default');
+      else if (this.login === 'password') lines.push(' login');
       else lines.push(' no login');
     }
     if (this.privilege !== null) lines.push(` privilege level ${this.privilege}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
     return lines;
+  }
+
+  /**
+   * True when the line authenticates with a line password (`login`) but none
+   * has been configured — IOS then refuses incoming sessions on that line
+   * ("Password required, but none set"). Drives the incoming-VTY verdict.
+   */
+  requiresPasswordButUnset(): boolean {
+    return this.login === 'password' && !this.linePassword;
   }
 
   /** Huawei VRP `display current-configuration` block for the user-interface. */

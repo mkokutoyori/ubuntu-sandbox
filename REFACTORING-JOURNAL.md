@@ -1983,3 +1983,56 @@ description générique) — conservé.
   régression**.
 - Suite `network-v2` complète : **8368 verts**, seuls les échecs pré-existants
   de `other-commands` (17) subsistent.
+
+---
+
+## Entrée n°37 — 2026-06-20 — VTY : socle du modèle d'authentification de ligne (mot de passe + mode login + rendu)
+
+### Défaillance constatée
+
+Le modèle VTY partagé était **mal câblé et fragmenté** :
+- `VtyLineConfig` (router/vty) ne savait représenter que `login none|local|aaa`
+  — **impossible** d'exprimer le `login` simple (auth par mot de passe de
+  ligne) — et **ne stockait pas le mot de passe**.
+- Le handler config-line partagé écrivait `update.loginMethod` / `update.password`
+  que `VtyLineConfig.withFields` **ignorait** (champs inexistants) : la config
+  `login`/`password` des VTY n'était donc jamais réellement mémorisée.
+- Le switch ne rendait **aucune** ligne `line vty` dans `show running-config`.
+- (Au passage : deux classes `VtyLineConfig` coexistent — `router/vty` (utilisée
+  par les shells) et `router/aaa` (testée isolément) — duplication à consolider.)
+
+Conséquence : la condition exacte testée par les tests 81/98 (« login actif +
+pas de mot de passe ») n'était pas représentable.
+
+### Correction (socle, additif)
+
+- `VtyLineConfig` (router/vty) : ajout du mode `login: 'password'` (auth par
+  mot de passe de ligne) et du champ `linePassword`, avec rendu IOS
+  (` password …` / ` login`) et un prédicat **`requiresPasswordButUnset()`**
+  (login par mot de passe mais aucun mot de passe → IOS refuse la session) qui
+  servira de verdict de connexion entrante.
+- Handler config-line partagé **recâblé** : `login`/`login local`/`login
+  authentication` → `login` correct ; `password X` → `linePassword` ;
+  `no password`/`no login` → effacement. Suppression des écritures mortes
+  `loginMethod`/`password`.
+- `show running-config` du switch : rendu des blocs `line vty` (via
+  `_getVtyLineConfig().renderAllCisco()`).
+
+### Fichiers
+
+`src/network/devices/router/vty/VtyLineConfig.ts`,
+`src/network/devices/shells/CiscoShellBase.ts`,
+`src/network/devices/shells/CiscoSwitchShell.ts`.
+
+### Validation
+
+- Suites AAA/SSH/show routeur + switch (`cisco-huawei-aaa-security`,
+  `cisco-aaa-acl`, `cross-equipment-ssh-suite`, `cisco-router-operational-show`,
+  `switch-cli`, `cisco-switch-reference-scenarios`) : **381 verts**, aucune
+  régression (le routeur rend désormais correctement les directives VTY).
+
+### Suite (incrément dédié)
+
+Avec ce socle en place, le **verdict de connexion entrante** (`findHostByAddress`
+conscient des SVI + client telnet LinuxPC + appel à `requiresPasswordButUnset`)
+débloque les tests 81 (avertissement `login`) et 98 (rejet télnet entrant).
