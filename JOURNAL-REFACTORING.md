@@ -864,3 +864,41 @@ Non-régression Windows/PowerShell (cmd, cmdlets, services, processus) :
 `src/network/devices/windows/WinSystemCommands.ts`,
 `src/network/devices/WindowsPC.ts`,
 `src/__tests__/unit/network-v2/windows-scheduled-tasks.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Linux : `cron` déclenche les jobs récurrents sur l'horloge simulée (TDD)
+
+**Constat.** Toute l'infrastructure cron existait (`CronSchedule.isDue`,
+`CronJob`, `parseCrontab`, `SystemCron` lisant `/etc/crontab` + `/etc/cron.d`,
+`CronEngine.tick`) mais `CronEngine` n'était **jamais instancié** : du code mort.
+Les crontabs étaient stockées, jamais exécutées — pas d'activité récurrente en
+arrière-plan, contrairement à un vrai daemon `cron`.
+
+**Méthode TDD.** Tests d'abord (rouge confirmé : les jobs ne se déclenchaient
+pas), puis implémentation. Pas de commentaires dans le code (rappel du
+mainteneur honoré).
+
+**Câblage au temps simulé.** `LinuxCommandExecutor` instancie paresseusement
+un `CronEngine` (source `SystemCron` sur le vfs, `runner` = `execute`,
+`now()` = heure simulée). `advanceTime(ms)` fait progresser un curseur cron
+**minute par minute** entre l'instant précédent et le nouveau, appelant
+`tick()` à chaque frontière de minute : un job `* * * * *` se déclenche une
+fois par minute écoulée, un `*/2` une minute sur deux, etc. Le daemon est
+démarré paresseusement (`@reboot`) à la première tick quand le service `cron`
+est actif ; no-op tant que `cron` est arrêté. Garde-fou de 20 000 itérations
+contre les avances pathologiques.
+
+**Bug attrapé en TDD.** Le curseur était initialisé *après* l'avance de
+l'horloge, donc la première fenêtre ne tickait jamais ; corrigé en capturant
+l'instant *avant* l'avance.
+
+**Résultat.** Nouveau test `linux-cron-scheduling` (4) : déclenchement à la
+minute, trois fois sur trois minutes, `*/2` deux fois sur quatre minutes, et
+rien quand `cron` est arrêté. Non-régression cron/processus/jobs/service/SSH :
+299 (suites cron) + 302 (process/jobs/ssh) verts, aucune contamination des
+suites `at`/background par les ticks cron.
+
+**Fichiers touchés :**
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/linux-cron-scheduling.test.ts` (nouveau).

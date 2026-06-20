@@ -7,6 +7,8 @@ import { LinuxUserManager } from './LinuxUserManager';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
 import { cronAllowed } from './cron/CronPermissions';
+import { CronEngine } from './cron/CronEngine';
+import { SystemCron } from './cron/SystemCron';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -331,6 +333,9 @@ export class LinuxCommandExecutor {
   /** Simulated host clock — drives background-job completion over time. */
   private readonly clock = new HostClock();
   private readonly wallEpoch = Date.now();
+  private cronEngine?: CronEngine;
+  private cronStarted = false;
+  private cronCursorMs = 0;
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
   readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
@@ -1294,9 +1299,47 @@ export class LinuxCommandExecutor {
   }
 
   advanceTime(ms: number): void {
+    const before = this.clock.now();
     this.clock.advance(ms);
     this.reapDueBackgroundJobs();
     this.fireDueAtJobs();
+    this.tickCron(before);
+  }
+
+  private ensureCronEngine(): CronEngine {
+    if (this.cronEngine) return this.cronEngine;
+    const source = new SystemCron({
+      readFile: (p) => this.vfs.readFile(p),
+      listDirectory: (p) => this.vfs.listDirectory(p) ?? null,
+    });
+    this.cronEngine = new CronEngine({
+      sources: [source],
+      runner: (command) => {
+        const output = this.execute(command);
+        return { output, exitCode: this.lastExitCode };
+      },
+      syslog: () => { void 0; },
+      deliverMail: () => { void 0; },
+      homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
+      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      now: () => this.simulatedDate(),
+    });
+    return this.cronEngine;
+  }
+
+  private tickCron(fromMs: number): void {
+    if (this.serviceMgr.status('cron')?.state !== 'active') return;
+    const engine = this.ensureCronEngine();
+    if (!this.cronStarted) {
+      this.cronStarted = true;
+      this.cronCursorMs = fromMs;
+      engine.start();
+    }
+    let guard = 0;
+    while (this.cronCursorMs + 60_000 <= this.clock.now() && guard++ < 20_000) {
+      this.cronCursorMs += 60_000;
+      engine.tick(new Date(this.wallEpoch + this.cronCursorMs));
+    }
   }
 
   private fireDueAtJobs(): void {
