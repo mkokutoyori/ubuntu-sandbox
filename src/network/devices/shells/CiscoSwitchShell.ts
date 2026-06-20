@@ -1938,6 +1938,18 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
 
+    // Local AAA users (`username NAME privilege N secret …`).
+    const users = sw._listLocalUsers().filter(u => !u.factoryDefault);
+    if (users.length > 0) {
+      for (const u of users) {
+        const field = u.secretAlgo === 'type-7'
+          ? `password ${renderPasswordField(u.secret, 'type-7', false)}`
+          : `secret ${renderSecretField(u.secret, u.secretAlgo)}`;
+        lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
+      }
+      lines.push('!');
+    }
+
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);

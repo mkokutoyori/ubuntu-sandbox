@@ -1889,3 +1889,50 @@ ignorés, soit absents. D'où les échecs « Management Plane » :
   **44** (base de comptes locaux préservée au reload) nécessitent un vrai
   modèle d'authentification VTY/AAA entrante côté switch — fonctionnalité
   distincte, prochain incrément.
+
+---
+
+## Entrée n°35 — 2026-06-20 — Switch L2 : base de comptes locaux + télnet sortant injoignable
+
+### Défaillances constatées
+
+- **Test 44** : `username admin password secret` n'était pas mémorisé (le switch
+  n'avait pas de base de comptes locaux ; le handler partagé appelle
+  `dev._upsertCiscoUsername`, inexistant côté switch), donc `username …`
+  n'apparaissait pas dans le running-config et ne survivait pas à un reload.
+- **Test 87** : `telnet <injoignable>` sur un switch sans interface de gestion
+  renvoyait `% No usable interface for outbound Telnet` (ne matchait pas
+  `/unreachable|error|failed/`).
+
+### Correction
+
+- **Base de comptes locaux sur le `Switch`** : réutilisation des composants AAA
+  du routeur (`NetworkOsCredentialStore`, `NetworkOsAccount`). Ajout de
+  `getCredentialStore`, `_upsertCiscoUsername`, `_listLocalUsers`,
+  `_removeLocalUser` — le handler `username` partagé fonctionne donc tel quel
+  sur le switch. Rendu `username NAME privilege N secret …` dans
+  `buildRunningConfig`, et **restauration au reload** via `applyConfigText`
+  (parsing des lignes `username …`). Ajout aussi de `_getVtyLineConfig`
+  (`VtyLineConfigStore`) pour que la config `line vty` persiste réellement.
+- **Télnet sortant** : message « no source interface » reformulé en
+  `% Destination unreachable; …`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (credential store, vty store, parsing username),
+`src/network/devices/shells/CiscoSwitchShell.ts` (rendu username),
+`src/network/devices/shells/CiscoShellBase.ts` (message télnet).
+
+### Validation
+
+- `other-commands` : **19 → 17** (44 + 87). Non-régression : `switch-cli`,
+  `cisco-switch-reference-scenarios`, `cross-equipment-ssh-suite`,
+  `command-trie-hygiene` = **302 verts**.
+
+### Limites connues (reste du cluster AAA/VTY)
+
+- **81** (avertissement `login` sans mot de passe) : `VtyLineConfig` n'expose
+  pas le mot de passe de ligne — nécessite d'étendre le modèle VTY partagé.
+- **98** (rejet d'une connexion télnet/SSH **entrante** selon la config VTY) :
+  nécessite un modèle de connexion entrante (listener TCP de gestion + auth
+  VTY) côté switch — incrément dédié.

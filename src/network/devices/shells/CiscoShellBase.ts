@@ -1044,7 +1044,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const ip = p.getIPAddress();
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
-    if (!sourceIp) return `Trying ${display} ...\n% No usable interface for outbound Telnet`;
+    if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
     const remote = findHostByAddress(host);
     if (!remote || remote.poweredOff || remote.interfaceDown) {

@@ -51,6 +51,10 @@ import {
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
+import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -1386,6 +1390,22 @@ export abstract class Switch extends Equipment {
       let g: RegExpMatchArray | null;
       if ((g = line.match(/^hostname\s+(\S+)/))) {
         this.hostname = g[1]; this.name = g[1]; curVlan = null; curIface = null;
+      } else if ((g = line.match(/^username\s+(\S+)(.*)$/))) {
+        curVlan = null; curIface = null;
+        const rest = g[2];
+        const pm = rest.match(/privilege\s+(\d+)/);
+        const sm = rest.match(/\b(secret|password)\s+(?:(\d)\s+)?(\S+)/);
+        let secret: string | undefined;
+        let secretAlgo: PasswordHashAlgorithm | undefined;
+        if (sm) {
+          secret = sm[3];
+          const d = sm[2];
+          secretAlgo = d === '7' ? 'type-7' : d === '8' ? 'sha256' : d === '9' ? 'scrypt'
+            : d === '0' ? 'plain' : (sm[1] === 'secret' ? 'md5' : 'plain');
+        }
+        this._upsertCiscoUsername(g[1], {
+          privilege: pm ? parseInt(pm[1], 10) : undefined, secret, secretAlgo,
+        });
       } else if ((g = line.match(/^vlan\s+(\d+)$/))) {
         curVlan = parseInt(g[1], 10); curIface = null;
         if (!this.vlans.has(curVlan)) this.createVLAN(curVlan);
@@ -1442,6 +1462,41 @@ export abstract class Switch extends Equipment {
   /** @internal `ip default-gateway` (L2 switch management route). */
   _setDefaultGateway(ip: string): void { this._ipDefaultGateway = ip; }
   getDefaultGateway(): string { return this._ipDefaultGateway; }
+
+  // ─── Local user database (`username …`) ───────────────────────────
+  private _credentialStore: NetworkOsCredentialStore | null = null;
+  getCredentialStore(): NetworkOsCredentialStore {
+    if (!this._credentialStore) {
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    }
+    return this._credentialStore;
+  }
+  /** @internal `username NAME [privilege N] [secret|password …]`. */
+  _upsertCiscoUsername(name: string, kv: {
+    privilege?: number; secret?: string; secretAlgo?: PasswordHashAlgorithm;
+    nopassword?: boolean; description?: string;
+  }): void {
+    const store = this.getCredentialStore();
+    let account = store.get(name) ?? NetworkOsAccount.create({ name });
+    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+    if (kv.nopassword) account = account.withSecret('', 'plain');
+    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+    if (kv.description) account = account.withDescription(kv.description);
+    if (account.factoryDefault) account = account.asOperatorOwned();
+    store.upsert(account);
+  }
+  _removeLocalUser(name: string): void { this.getCredentialStore().remove(name); }
+
+  // ─── VTY line configuration (`line vty …`) ────────────────────────
+  private readonly _vtyLineConfig = new VtyLineConfigStore();
+  /** @internal Used by the shared config-line handlers. */
+  _getVtyLineConfig(): VtyLineConfigStore { return this._vtyLineConfig; }
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
+    return this.getCredentialStore().list().map(a => ({
+      name: a.name, privilege: a.privilege, secret: a.secret,
+      secretAlgo: a.passwordHashAlgorithm, factoryDefault: a.factoryDefault,
+    }));
+  }
 
   // ─── ARP Snoop-learn into management table ──────────────────────
 
