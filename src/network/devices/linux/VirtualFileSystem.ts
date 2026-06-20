@@ -61,9 +61,19 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
+  private readOnlyResolver?: (path: string) => boolean;
 
   constructor() {
     this.initializeRootFS();
+  }
+
+  setReadOnlyResolver(resolver: (path: string) => boolean): void {
+    this.readOnlyResolver = resolver;
+  }
+
+  isReadOnly(path: string): boolean {
+    if (!this.readOnlyResolver) return false;
+    return this.readOnlyResolver(this.canonicalKey(path));
   }
 
   private initializeRootFS(): void {
@@ -513,6 +523,7 @@ export class VirtualFileSystem {
     if (inode?.type === 'file') {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
+      if (this.isReadOnly(path)) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
       const previous = inode.content;
       if (append) {
@@ -533,6 +544,7 @@ export class VirtualFileSystem {
     }
 
     if (!inode) {
+      if (this.isReadOnly(path)) return false;
       // Ensure parent directories exist (auto-create like mkdir -p)
       const lastSlash = path.lastIndexOf('/');
       if (lastSlash > 0) {

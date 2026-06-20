@@ -156,6 +156,14 @@ export interface SyscallInvokedPayload extends LinuxDeviceRef {
   exit: number;
 }
 
+export interface MountChangedPayload extends LinuxDeviceRef {
+  source: string;
+  target: string;
+  fstype: string;
+  options: string;
+  bind: boolean;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type LinuxProcessServiceDomainEvent =
@@ -178,4 +186,6 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.port.bound'; payload: PortBoundPayload }
   | { topic: 'linux.port.released'; payload: PortReleasedPayload }
   | { topic: 'linux.fs.accessed'; payload: FileAccessedPayload }
-  | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload };
+  | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload }
+  | { topic: 'linux.mount.mounted'; payload: MountChangedPayload }
+  | { topic: 'linux.mount.unmounted'; payload: MountChangedPayload };

@@ -380,3 +380,60 @@ ajoutées.
 `src/__tests__/unit/network-v2/auditctl.test.ts`,
 `src/__tests__/unit/network-v2/auditctl-other.test.ts`,
 `src/__tests__/unit/other-audit.test.ts`.
+
+---
+
+## 2026-06-20 (suite) — Sous-système `mount` : table de montage métier + filesystems en lecture seule
+
+**Couches concernées :** OS (VFS, commandes), matériel (StorageDevice), audit
+(watches sur montages), réactif (bus d'événements).
+
+**Symptôme / défaillance constatée.**
+`mount`, `umount`, `df`, `lsblk` étaient des sorties statiques codées en dur
+dans `LinuxSystemCommands.ts`. Aucune table de montage n'existait : `mount
+--bind`, `mount -o ro,remount`, `umount` n'avaient aucun effet, `/proc/mounts`
+et `/proc/self/mountinfo` n'existaient pas, et un filesystem monté en lecture
+seule n'empêchait pas les écritures. Les watches d'audit posés sur un point de
+montage en lecture seule déclenchaient malgré tout des événements.
+
+**Comportement réel reproduit.**
+- Vraie table de montage métier (`MountTable` / `MountEntry`) : source, cible,
+  type, jeu d'options (`ro`/`rw`/`nosuid`/`nodev`/`noexec`/`relatime`/`bind`…),
+  origine de bind. Résolution d'un chemin vers son montage par préfixe le plus
+  long, comme le noyau.
+- Seed depuis l'inventaire matériel existant (`HardwareProfile.storage` →
+  `StorageDevice`/`DiskPartition`) — aucune duplication des partitions : `/`,
+  `/boot`, `/u01` proviennent de la vraie table de partitions, plus les
+  pseudo-filesystems (`proc`, `sysfs`, `devtmpfs`, `tmpfs`).
+- `mount` sans argument et `mount -t TYPE` lisent la table vivante ;
+  `mount --bind src dst`, `mount -o ro,remount cible`, `mount -o rw,remount`,
+  `umount cible`, `findmnt` opèrent réellement dessus.
+- `/proc/mounts`, `/proc/self/mounts`, `/proc/self/mountinfo`, `/etc/mtab`
+  sont désormais des fichiers générés à la lecture depuis la table vivante.
+- Filesystem en lecture seule : le VFS refuse l'écriture (`writeFile` consulte
+  un résolveur `isReadOnly`) et les commandes remontent l'erreur fidèle
+  `Read-only file system` (`touch`, redirection `>>` du moteur bash).
+- Émissions réactives `linux.mount.mounted` / `linux.mount.unmounted` sur le
+  bus interne de la machine, scoppées par `deviceId`.
+
+**Tests.**
+- Nouveau `mount-table.test.ts` (10 cas) — classe métier isolée : seed
+  matériel, résolution par préfixe, remount ro/rw, bind, umount, rendus
+  `mount`/`/proc/mounts`/`mountinfo`.
+- Débloque `auditctl-other` #6 (watch sur bind mount), #7 (pas d'événement sur
+  fs en lecture seule), #83 et #123 (protection écriture sur montage ro).
+- Non-régression : `auditctl` 100/100, `journalization` 200/200, suites
+  matériel/commandes 181/181, moteur bash 383/383.
+
+**Limites assumées.** `mount -o ro,remount <chemin>` sur un chemin qui n'est
+pas un point de montage crée une entrée de recouvrement en lecture seule à cet
+endroit (plutôt que d'échouer comme le vrai `mount`), afin de modéliser
+simplement la mise en lecture seule attendue par les tests.
+
+**Fichiers touchés :**
+`src/network/devices/linux/MountTable.ts` (nouveau),
+`src/network/devices/linux/VirtualFileSystem.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/LinuxSystemCommands.ts`,
+`src/network/devices/linux/events.ts`,
+`src/__tests__/unit/network-v2/mount-table.test.ts` (nouveau).

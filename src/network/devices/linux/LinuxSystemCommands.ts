@@ -194,39 +194,6 @@ export function cmdFree(args: string[], memory: MemoryProfile): string {
   return memory.toFree(human, wide, unit, total);
 }
 
-export function cmdMount(ctx: ShellContext, args: string[]): string {
-  // mount with no args: show mounted filesystems
-  if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
-    return [
-      '/dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)',
-      'tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)',
-      'tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)',
-      '/dev/sda2 on /boot type ext4 (rw,relatime)',
-      '/dev/sdb1 on /u01 type ext4 (rw,relatime)',
-      'proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)',
-      'sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)',
-    ].join('\n');
-  }
-
-  // mount -t type : filter
-  const tIdx = args.indexOf('-t');
-  if (tIdx >= 0) {
-    const fsType = args[tIdx + 1] || 'ext4';
-    const allMounts = [
-      { dev: '/dev/sda1', mp: '/', type: 'ext4', opts: 'rw,relatime,errors=remount-ro' },
-      { dev: '/dev/sda2', mp: '/boot', type: 'ext4', opts: 'rw,relatime' },
-      { dev: '/dev/sdb1', mp: '/u01', type: 'ext4', opts: 'rw,relatime' },
-      { dev: 'tmpfs', mp: '/dev/shm', type: 'tmpfs', opts: 'rw,nosuid,nodev' },
-    ];
-    return allMounts
-      .filter(m => m.type === fsType)
-      .map(m => `${m.dev} on ${m.mp} type ${m.type} (${m.opts})`)
-      .join('\n');
-  }
-
-  return 'mount: only root can do that';
-}
-
 export function cmdLsblk(args: string[]): string {
   const all = args.includes('-a') || args.includes('--all');
   const fs = args.includes('-f') || args.includes('--fs');

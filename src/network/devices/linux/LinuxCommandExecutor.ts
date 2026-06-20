@@ -36,7 +36,8 @@ import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
-import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
+import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
+import { MountTable, MountEntry } from './MountTable';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
@@ -121,7 +122,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
-  'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
@@ -210,6 +211,7 @@ function stateLabel(s: string): string {
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
+  readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
   /**
    * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
@@ -340,6 +342,8 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.mountTable = MountTable.fromHardware(this.hardware.storage);
+    this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
     this.userMgr = new LinuxUserManager(this.vfs);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
@@ -549,6 +553,10 @@ export class LinuxCommandExecutor {
   private registerHardwareProcFiles(): void {
     this.vfs.registerGeneratedFile('/proc/cpuinfo', () => this.hardware.cpu.toProcCpuinfo());
     this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
+    this.vfs.registerGeneratedFile('/proc/mounts', () => this.mountTable.toProcMounts());
+    this.vfs.registerGeneratedFile('/proc/self/mounts', () => this.mountTable.toProcMounts());
+    this.vfs.registerGeneratedFile('/proc/self/mountinfo', () => this.mountTable.toMountInfo());
+    this.vfs.registerGeneratedFile('/etc/mtab', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/uptime', () => {
       const up = this.lifecycle.uptimeSeconds();
       return `${up}.00 ${up}.00\n`;
@@ -1697,6 +1705,142 @@ export class LinuxCommandExecutor {
     return result;
   }
 
+  private handleMount(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
+      return { output: this.mountTable.toMountOutput(), exitCode: 0 };
+    }
+
+    const options: string[] = [];
+    const positionals: string[] = [];
+    let fstype: string | undefined;
+    let bind = false;
+    let readOnly = false;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-o' || a === '--options') {
+        const v = args[++i] ?? '';
+        for (const o of v.split(',')) if (o.trim()) options.push(o.trim());
+      } else if (a === '-t' || a === '--types') {
+        fstype = args[++i];
+      } else if (a === '--bind' || a === '-B') {
+        bind = true;
+      } else if (a === '--rbind' || a === '-R') {
+        bind = true;
+      } else if (a === '-r' || a === '--read-only') {
+        readOnly = true;
+      } else if (a === '-w' || a === '--rw') {
+        options.push('rw');
+      } else if (a === '-l' || a === '-a' || a === '-v' || a === '--make-private' || a === '-n') {
+        continue;
+      } else if (a.startsWith('-')) {
+        continue;
+      } else {
+        positionals.push(a);
+      }
+    }
+
+    if (readOnly) options.push('ro');
+
+    if (positionals.length === 0) {
+      if (fstype) return { output: this.mountTable.toMountOutput(fstype), exitCode: 0 };
+      return { output: this.mountTable.toMountOutput(), exitCode: 0 };
+    }
+
+    if (bind) {
+      if (positionals.length < 2) {
+        return { output: 'mount: missing mount point', exitCode: 1 };
+      }
+      const source = this.vfs.normalizePath(positionals[0], this.cwd);
+      const target = this.vfs.normalizePath(positionals[1], this.cwd);
+      if (!this.vfs.exists(target)) this.vfs.mkdirp(target, 0o755, this.ctx().uid, this.ctx().gid);
+      const entry = this.mountTable.bind(source, target, options);
+      this.publishMountEvent('linux.mount.mounted', entry);
+      return { output: '', exitCode: 0 };
+    }
+
+    if (options.includes('remount')) {
+      const target = this.vfs.normalizePath(positionals[positionals.length - 1], this.cwd);
+      const entry = this.mountTable.remount(target, options);
+      this.publishMountEvent('linux.mount.mounted', entry);
+      return { output: '', exitCode: 0 };
+    }
+
+    if (positionals.length < 2) {
+      return { output: `mount: ${positionals[0]}: can't find in /etc/fstab.`, exitCode: 1 };
+    }
+    const source = this.vfs.normalizePath(positionals[0], this.cwd);
+    const target = this.vfs.normalizePath(positionals[1], this.cwd);
+    if (!this.vfs.exists(target)) this.vfs.mkdirp(target, 0o755, this.ctx().uid, this.ctx().gid);
+    const entry = this.mountTable.mount(new MountEntry({
+      source,
+      target,
+      fstype: fstype ?? 'ext4',
+      options: options.length > 0 ? options : ['rw', 'relatime'],
+    }));
+    this.publishMountEvent('linux.mount.mounted', entry);
+    return { output: '', exitCode: 0 };
+  }
+
+  private handleUmount(args: string[]): { output: string; exitCode: number } {
+    const positionals = args.filter((a) => !a.startsWith('-'));
+    if (positionals.length === 0) {
+      return { output: 'umount: bad usage', exitCode: 1 };
+    }
+    const raw = positionals[0];
+    const target = this.vfs.normalizePath(raw, this.cwd);
+    const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
+    if (!entry || !this.mountTable.umount(entry.target)) {
+      return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
+    }
+    this.publishMountEvent('linux.mount.unmounted', entry);
+    return { output: '', exitCode: 0 };
+  }
+
+  private handleFindmnt(args: string[]): { output: string; exitCode: number } {
+    let fstype: string | undefined;
+    const positionals: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-t' || a === '--types') fstype = args[++i];
+      else if (a === '-n' || a === '--noheadings' || a === '-l' || a === '--list') continue;
+      else if (a.startsWith('-')) continue;
+      else positionals.push(a);
+    }
+
+    let entries = this.mountTable.list();
+    if (fstype) entries = entries.filter((e) => e.fstype === fstype);
+    if (positionals.length > 0) {
+      const target = this.vfs.normalizePath(positionals[0], this.cwd);
+      const match = this.mountTable.find(target) ?? this.mountTable.resolve(target);
+      if (!match) return { output: '', exitCode: 1 };
+      entries = [match];
+    }
+
+    const noHeadings = args.includes('-n') || args.includes('--noheadings');
+    const rows = entries.map((e) => `${e.target} ${e.source} ${e.fstype} ${e.optionString()}`);
+    const out = noHeadings ? rows : ['TARGET SOURCE FSTYPE OPTIONS', ...rows];
+    return { output: out.join('\n'), exitCode: 0 };
+  }
+
+  private publishMountEvent(
+    topic: 'linux.mount.mounted' | 'linux.mount.unmounted',
+    entry: MountEntry,
+  ): void {
+    if (!this.bus || !this.attachedDeviceId) return;
+    this.bus.publish({
+      topic,
+      payload: {
+        deviceId: this.attachedDeviceId,
+        source: entry.source,
+        target: entry.target,
+        fstype: entry.fstype,
+        options: entry.optionString(),
+        bind: entry.isBind,
+      },
+    });
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
@@ -1706,6 +1850,9 @@ export class LinuxCommandExecutor {
         const existing = this.vfs.resolveInode(absPath);
         if (existing && existing.type === 'directory') {
           throw new Error(`bash: ${path}: Is a directory`);
+        }
+        if (this.mountTable.isReadOnly(absPath)) {
+          throw new Error(`bash: ${path}: Read-only file system`);
         }
         if (existing) {
           if (!this.checkPermission(existing, 'w')) {
@@ -1924,11 +2071,17 @@ export class LinuxCommandExecutor {
     switch (cmd) {
       // File commands
       case 'touch': {
+        const roErrors: string[] = [];
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
+          if (!this.vfs.exists(abs) && this.mountTable.isReadOnly(abs)) {
+            roErrors.push(`touch: cannot touch '${p}': Read-only file system`);
+            continue;
+          }
           this.publishFsAccess(abs, 'w', 'open');
           this.publishSyscall('open', abs);
         }
+        if (roErrors.length > 0) return { output: roErrors.join('\n'), exitCode: 1 };
         return { output: cmdTouch(c, args), exitCode: 0 };
       }
       case 'ls': {
@@ -2593,8 +2746,9 @@ export class LinuxCommandExecutor {
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
-      case 'mount': return { output: cmdMount(c, args), exitCode: 0 };
-      case 'umount': return { output: '', exitCode: 0 };
+      case 'mount': return this.handleMount(args);
+      case 'umount': return this.handleUmount(args);
+      case 'findmnt': return this.handleFindmnt(args);
       case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
       case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
