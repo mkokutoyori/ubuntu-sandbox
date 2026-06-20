@@ -834,6 +834,15 @@ export class VirtualFileSystem {
     return had;
   }
 
+  /** Drop a per-group ACL entry. */
+  removeGroupAcl(path: string, group: string): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode?.aclGroups) return false;
+    const had = inode.aclGroups.delete(group);
+    if (had) inode.ctime = Date.now();
+    return had;
+  }
+
   /** Read all ACL entries on `path` as plain records (or null for missing inode). */
   getAcls(path: string): { users: Array<[string, number]>; groups: Array<[string, number]> } | null {
     const inode = this.resolveInode(path);

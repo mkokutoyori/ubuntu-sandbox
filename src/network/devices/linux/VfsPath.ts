@@ -4,6 +4,8 @@ export interface PathActor {
   uid: number;
   gid: number;
   gids?: number[];
+  user?: string;
+  groupNames?: string[];
 }
 
 export class PathError extends Error {
@@ -119,6 +121,14 @@ export class VfsPath {
   private allows(mode: 'r' | 'w' | 'x'): boolean {
     const node = this.inode();
     if (!node) return false;
+    if (this.actor.uid === 0) return true;
+    if (this.actor.user) {
+      const bit = mode === 'r' ? 0o4 : mode === 'w' ? 0o2 : 0o1;
+      const acl = this.vfs.checkAclAccess(
+        this.value, this.actor.user, this.actor.groupNames ?? [], bit,
+      );
+      if (acl !== null) return acl;
+    }
     return this.vfs.checkAccess(node, mode, this.actor.uid, this.actor.gid, this.actor.gids ?? []);
   }
 

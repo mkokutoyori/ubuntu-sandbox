@@ -8,8 +8,14 @@ import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
 
 export function actorOf(ctx: ShellContext): PathActor {
-  const gids = (ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? []).map((g) => g.gid);
-  return { uid: ctx.uid, gid: ctx.gid, gids };
+  const groups = ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? [];
+  return {
+    uid: ctx.uid,
+    gid: ctx.gid,
+    gids: groups.map((g) => g.gid),
+    user: ctx.userMgr.currentUser,
+    groupNames: groups.map((g) => g.name),
+  };
 }
 
 // ANSI color codes matching GNU ls defaults (LS_COLORS)
@@ -370,7 +376,7 @@ export function cmdCat(ctx: ShellContext, args: string[]): string {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const inode = ctx.vfs.resolveInode(path, true);
-    if (inode && ctx.uid !== 0 && !canReadInode(inode, ctx)) {
+    if (inode && ctx.uid !== 0 && !ctx.vfs.path(path, '/', actorOf(ctx)).canRead()) {
       return `cat: ${arg}: Permission denied`;
     }
     const content = ctx.vfs.readFile(path);

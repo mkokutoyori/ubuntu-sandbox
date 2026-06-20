@@ -159,12 +159,12 @@ interface LogrotateOpts {
 }
 
 function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
-  const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
+  const m = /^([ug])(?::([^:]*))?(?::([rwx-]{0,3}))?$/.exec(entry);
   if (!m) return null;
   const kind = m[1] === 'u' ? 'user' : 'group';
   const name = m[2] ?? '';
   let perms = 0;
-  for (const c of m[3]) {
+  for (const c of m[3] ?? '') {
     if (c === 'r') perms |= 0o4;
     else if (c === 'w') perms |= 0o2;
     else if (c === 'x') perms |= 0o1;
@@ -3490,10 +3490,13 @@ export class LinuxCommandExecutor {
 
   /** Check if current user has permission (r/w/x) on an inode */
   private currentPathActor(): import('./VfsPath').PathActor {
+    const groups = this.userMgr.getUserGroups(this.userMgr.currentUser);
     return {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
-      gids: this.userMgr.getUserGroups(this.userMgr.currentUser).map((g) => g.gid),
+      gids: groups.map((g) => g.gid),
+      user: this.userMgr.currentUser,
+      groupNames: groups.map((g) => g.name),
     };
   }
 
@@ -3948,6 +3951,7 @@ export class LinuxCommandExecutor {
         if (!parsed) return { output: `setfacl: Option -m: Invalid argument near character ${entry}`, exitCode: 2 };
         if (mode === 'remove') {
           if (parsed.kind === 'user') this.vfs.removeUserAcl(abs, parsed.name);
+          else if (parsed.kind === 'group') this.vfs.removeGroupAcl(abs, parsed.name);
         } else if (parsed.kind === 'user') {
           this.vfs.setUserAcl(abs, parsed.name, parsed.perms);
         } else if (parsed.kind === 'group') {

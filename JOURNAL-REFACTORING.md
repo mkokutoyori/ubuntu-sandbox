@@ -639,3 +639,42 @@ Incohérent avec un vrai Linux.
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/perm-ownership-dac.test.ts` (nouveau),
 `src/__tests__/unit/network-v2/dir-mutation-dac.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — ACL POSIX honorées par le DAC shell (`setfacl`/`getfacl`)
+
+**Couches concernées :** OS (DAC shell via `VfsPath`), VFS (ACL), commandes.
+
+**Constat.** Le DAC shell (`VfsPath.checkAccess`) ne consultait que les bits
+owner/group/other. Les ACL POSIX posées par `setfacl` n'avaient d'effet que
+côté SFTP (`PermissionCheckingFSDecorator`/`checkAclAccess`), pas pour `cat`,
+`mkdir`, `rm`, etc. Incohérence entre les deux chemins d'accès.
+
+**Corrections (réutilisation de l'existant, pas de duplication).**
+- `VfsPath.allows()` consulte désormais l'ACL via la méthode **déjà
+  existante** `VirtualFileSystem.checkAclAccess(path, user, groups, need)` —
+  la même que SFTP — avant de retomber sur les bits de mode (ordre POSIX :
+  root → ACL → bits). L'acteur (`PathActor`) porte maintenant `user` et
+  `groupNames`, peuplés par `actorOf()` et `currentPathActor()`.
+- `cmdCat` utilise `VfsPath.canRead()` (ACL-aware) au lieu de son ancien
+  contrôle bits-only `canReadInode`.
+- `setfacl -x` corrigé : la regex d'entrée ACL acceptait seulement
+  `u:name:perms` ; elle accepte désormais `u:name` (suppression). Ajout de
+  `VirtualFileSystem.removeGroupAcl()` et du retrait de groupe dans `setfacl`.
+
+**Effets.** Un `setfacl -m u:user:r` rend un fichier 600 lisible par `cat`
+pour cet utilisateur ; un `setfacl -m g:team:r` accorde l'accès par
+appartenance de groupe supplémentaire ; un `setfacl -m u:user:rwx` sur un
+répertoire autorise `mkdir` à l'intérieur ; `setfacl -x` rétablit le refus.
+
+**Tests.** `acl-dac.test.ts` (4 cas) : lecture accordée par ACL user, par ACL
+de groupe, retrait d'ACL, écriture de répertoire via ACL. Non-régression :
+suites DAC/SFTP/SSH/commandes/bash vertes (965 combinés).
+
+**Fichiers touchés :**
+`src/network/devices/linux/VfsPath.ts`,
+`src/network/devices/linux/VirtualFileSystem.ts`,
+`src/network/devices/linux/LinuxFileCommands.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/acl-dac.test.ts` (nouveau).
