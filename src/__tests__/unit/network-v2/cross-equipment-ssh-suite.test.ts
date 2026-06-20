@@ -1401,7 +1401,7 @@ describe('§20 — Environment forwarding', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitUserEnvironment.*/PermitUserEnvironment yes/" /etc/ssh/sshd_config');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
-        await l.linux2.executeCommand('mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh"');
       },
       on: l => l.linux1,
       cmd: 'ssh alice@10.0.0.2 \'echo $MOOD\'',
@@ -1830,7 +1830,7 @@ describe('§27 — Strict-mode permission coherence', () => {
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chmod 0777 /home/alice/.ssh/authorized_keys');
+        await l.linux2.executeCommand('sudo chmod 0777 /home/alice/.ssh/authorized_keys');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
@@ -1841,7 +1841,7 @@ describe('§27 — Strict-mode permission coherence', () => {
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chown -R bob:bob /home/alice/.ssh');
+        await l.linux2.executeCommand('sudo sh -c "chown -R bob:bob /home/alice/.ssh"');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
@@ -2002,7 +2002,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('su - alice');
         await l.linux2.executeCommand("echo \"alias please='sudo'\" >> /home/alice/.bashrc");
-        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+        await l.linux2.executeCommand('sudo sh -c "chown alice:alice /home/alice/.bashrc"');
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "please whoami"',
       contains: [/^root$/m],
@@ -2012,7 +2012,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
       name: 'shell function defined remotely is invoked through SSH',
       setup: async (l) => {
         await l.linux2.executeCommand(`sudo sh -c 'echo "myfn() { echo CUSTOM:\\$1; }" >> /home/alice/.bashrc'`);
-        await l.linux2.executeCommand('sudo chown alice:alice /home/alice/.bashrc');
+        await l.linux2.executeCommand('sudo sh -c "sudo chown alice:alice /home/alice/.bashrc"');
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "myfn ping"',
       contains: [/^CUSTOM:ping$/m],
@@ -2336,7 +2336,7 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'cd + pwd reports the requested remote working directory',
       setup: async (l) => {
-        await l.linux2.executeCommand('mkdir -p /var/tmp/run');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/run"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
         );
@@ -2370,7 +2370,7 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rm removes a remote file',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo doomed > /tmp/zap && chown alice:alice /tmp/zap');
+        await l.linux2.executeCommand('sudo sh -c "echo doomed > /tmp/zap && chown alice:alice /tmp/zap"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
         );
@@ -2381,7 +2381,7 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rename moves a remote file in one step',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo moveme > /tmp/from && chown alice:alice /tmp/from');
+        await l.linux2.executeCommand('sudo sh -c "echo moveme > /tmp/from && chown alice:alice /tmp/from"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
         );
@@ -2535,7 +2535,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename within same directory',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo r1 > /tmp/r1 && chown alice:alice /tmp/r1');
+        await l.linux2.executeCommand('sudo sh -c "echo r1 > /tmp/r1 && chown alice:alice /tmp/r1"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
         );
@@ -2546,7 +2546,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename across directories',
       setup: async (l) => {
-        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
         );
@@ -2568,7 +2568,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename source vanishes from the original path',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo gone > /tmp/gone && chown alice:alice /tmp/gone');
+        await l.linux2.executeCommand('sudo sh -c "echo gone > /tmp/gone && chown alice:alice /tmp/gone"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
         );
@@ -2579,7 +2579,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'mv alias works exactly like rename',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv');
+        await l.linux2.executeCommand('sudo sh -c "echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv"');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
         );

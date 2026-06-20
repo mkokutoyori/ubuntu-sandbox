@@ -449,7 +449,7 @@ describe('§6 — mkdir creates remote directories', () => {
     },
     {
       name: 'mkdir relative to cwd creates underneath it',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/base && chown alice:alice /tmp/base'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/base && chown alice:alice /tmp/base"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['cd /tmp/base', 'mkdir leaf', 'cd leaf', 'pwd']),
       contains: [/Remote working directory: \/tmp\/base\/leaf/],
@@ -477,7 +477,7 @@ describe('§7 — rmdir removes empty directories', () => {
   const rows: Row[] = [
     {
       name: 'rmdir on an empty dir removes it; subsequent cd fails',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/togo && chown alice:alice /tmp/togo'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/togo && chown alice:alice /tmp/togo"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/togo', 'cd /tmp/togo']),
       contains: [/Not a directory|No such/i],
@@ -485,7 +485,7 @@ describe('§7 — rmdir removes empty directories', () => {
     {
       name: 'rmdir on a non-empty directory fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/full && echo x > /tmp/full/x && chown -R alice:alice /tmp/full');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/full && echo x > /tmp/full/x && chown -R alice:alice /tmp/full"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/full']),
@@ -499,7 +499,7 @@ describe('§7 — rmdir removes empty directories', () => {
     },
     {
       name: 'rmdir on a regular file fails (not a directory)',
-      setup: async (l) => { await l.pc2.executeCommand('echo nope > /tmp/notadir && chown alice:alice /tmp/notadir'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo nope > /tmp/notadir && chown alice:alice /tmp/notadir"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/notadir']),
       contains: [/rmdir failed|Not a directory|Failure/i],
@@ -527,14 +527,14 @@ describe('§8 — rm / delete remove remote files', () => {
   const rows: Row[] = [
     {
       name: 'rm of a regular file removes it',
-      setup: async (l) => { await l.pc2.executeCommand('echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/doomed.txt', 'ls /tmp']),
       excludes: ['doomed.txt'],
     },
     {
       name: 'delete is an alias for rm',
-      setup: async (l) => { await l.pc2.executeCommand('echo bye > /tmp/aliased && chown alice:alice /tmp/aliased'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo bye > /tmp/aliased && chown alice:alice /tmp/aliased"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['delete /tmp/aliased', 'ls /tmp']),
       excludes: ['aliased'],
@@ -547,7 +547,7 @@ describe('§8 — rm / delete remove remote files', () => {
     },
     {
       name: 'rm of a directory is refused (not a regular file)',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/dir-rm && chown alice:alice /tmp/dir-rm'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/dir-rm && chown alice:alice /tmp/dir-rm"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/dir-rm']),
       contains: [/unlink failed|directory|Failure/i],
@@ -555,7 +555,7 @@ describe('§8 — rm / delete remove remote files', () => {
     {
       name: 'multiple rms in one batch keep going through errors',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo 1 > /tmp/r1 && echo 2 > /tmp/r2 && chown alice:alice /tmp/r1 /tmp/r2');
+        await l.pc2.executeCommand('sudo sh -c "echo 1 > /tmp/r1 && echo 2 > /tmp/r2 && chown alice:alice /tmp/r1 /tmp/r2"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/r1', 'rm /tmp/ghost', 'rm /tmp/r2', 'ls /tmp']),
@@ -692,7 +692,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename old new moves the file',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from && chown alice:alice /tmp/from');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/from && chown alice:alice /tmp/from"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from /tmp/to']));
       },
       on: l => l.pc2,
@@ -702,7 +702,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename leaves no file at the source',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from2 && chown alice:alice /tmp/from2');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/from2 && chown alice:alice /tmp/from2"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from2 /tmp/to2']));
       },
       on: l => l.pc2,
@@ -713,7 +713,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'mv is an alias for rename',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']));
       },
       on: l => l.pc2,
@@ -723,7 +723,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename when destination already exists fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb');
+        await l.pc2.executeCommand('sudo sh -c "echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']),
@@ -759,7 +759,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 600 /tmp/secret sets mode 0600',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo s > /tmp/secret && chown alice:alice /tmp/secret');
+        await l.pc2.executeCommand('sudo sh -c "echo s > /tmp/secret && chown alice:alice /tmp/secret"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 600 /tmp/secret']));
       },
       on: l => l.pc2,
@@ -769,7 +769,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 755 on a directory updates its mode',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/dir-perm && chown alice:alice /tmp/dir-perm');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/dir-perm && chown alice:alice /tmp/dir-perm"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 755 /tmp/dir-perm']));
       },
       on: l => l.pc2,
@@ -1873,7 +1873,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'put into a directory the user cannot write fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/locked && chown root:root /var/locked && chmod 700 /var/locked');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /var/locked && chown root:root /var/locked && chmod 700 /var/locked"');
         await l.pc1.executeCommand('echo hi > /tmp/h');
       },
       on: l => l.pc1,
@@ -1883,7 +1883,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'get of a file the user cannot read fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo secret > /tmp/hidden && chown root:root /tmp/hidden && chmod 600 /tmp/hidden');
+        await l.pc2.executeCommand('sudo sh -c "echo secret > /tmp/hidden && chown root:root /tmp/hidden && chmod 600 /tmp/hidden"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['get /tmp/hidden /tmp/hidden']),
@@ -1892,7 +1892,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'rm of a file owned by another user without write perm fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo nope > /tmp/keepme && chown root:root /tmp/keepme && chmod 644 /tmp/keepme');
+        await l.pc2.executeCommand('sudo sh -c "echo nope > /tmp/keepme && chown root:root /tmp/keepme && chmod 644 /tmp/keepme"');
         await l.pc2.executeCommand('chmod 755 /tmp');
       },
       on: l => l.pc1,
@@ -1902,7 +1902,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'chmod by a non-owner fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo o > /tmp/owned && chown root:root /tmp/owned && chmod 600 /tmp/owned');
+        await l.pc2.executeCommand('sudo sh -c "echo o > /tmp/owned && chown root:root /tmp/owned && chmod 600 /tmp/owned"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod 777 /tmp/owned']),
@@ -1911,8 +1911,8 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'setfacl deny on a directory blocks put even when world-writable',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/acl && chmod 777 /var/acl');
-        await l.pc2.executeCommand('setfacl -m u:alice:--- /var/acl');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /var/acl && chmod 777 /var/acl"');
+        await l.pc2.executeCommand('sudo sh -c "setfacl -m u:alice:--- /var/acl"');
         await l.pc1.executeCommand('echo a > /tmp/a');
       },
       on: l => l.pc1,
@@ -1932,7 +1932,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'sticky bit on /tmp prevents alice from deleting bob\'s file',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo b > /tmp/bobs && chown bob:bob /tmp/bobs && chmod 644 /tmp/bobs');
+        await l.pc2.executeCommand('sudo sh -c "echo b > /tmp/bobs && chown bob:bob /tmp/bobs && chmod 644 /tmp/bobs"');
         await l.pc2.executeCommand('chmod 1777 /tmp');
       },
       on: l => l.pc1,

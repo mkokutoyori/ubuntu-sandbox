@@ -135,7 +135,7 @@ describe('cron integration — run-parts and periodic directories', () => {
   it('CI-17 a script in /etc/cron.daily runs via the system crontab at 06:25', async () => {
     // cron.daily scripts are executable; run-parts skips non-exec files.
     vfsOf(pc).writeFile('/etc/cron.daily/report', 'touch /tmp/daily-ran\n', 0, 0, 0o022);
-    await pc.executeCommand('chmod +x /etc/cron.daily/report');
+    await pc.executeCommand('sudo chmod +x /etc/cron.daily/report');
     pc.cronTick(new Date(2030, 0, 1, 6, 25));
     expect(vfsOf(pc).exists('/tmp/daily-ran')).toBe(true);
   });
