@@ -673,22 +673,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ].join('\n\n');
     });
 
-    trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show bfd summary', 'Display BFD summary', () => ' No BFD sessions configured.');
     trie.register('show table-map', 'Display table-maps', () => ' No table-maps configured.');
     trie.registerGreedy('show mls qos', 'Display MLS QoS', () => ' MLS QoS is disabled.');
     trie.register('show ip nbar protocol-discovery', 'Display NBAR discovery', () => ' NBAR protocol discovery is not enabled.');
     trie.registerGreedy('show queueing interface', 'Display interface queueing', () => ' Interface uses FIFO queueing.');
-    trie.registerGreedy('show interfaces', 'Display interface info', (args, raw) => {
-      const tail = args[args.length - 1]?.toLowerCase();
-      const router = getRouter();
-      if (tail === 'rate-limit') return ' Rate limiting is not configured on this interface.';
-      const ifName = Show.resolveInterfaceName?.(router, args.join(' ')) ?? args.join(' ');
-      const sub = args[args.length - 1]?.toLowerCase();
-      if (sub === 'accounting') return `${args.slice(0, -1).join(' ')}\n  No accounting protocols configured.`;
-      if (sub === 'switchport') return Show.showInterfaceSwitchport(router, ifName);
-      return Show.showInterface(router, ifName);
-    });
     trie.registerGreedy('show traffic-shape', 'Display traffic shaping', (args) => {
       if (args[0]?.toLowerCase() === 'statistics') return ' No traffic shaping statistics.';
       return ' No traffic shaping configured.';
@@ -718,12 +707,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.register('show configuration', 'Display saved configuration', () =>
       this.startupConfig ?? '% startup-config is not present');
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
-    trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they
     // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
-    trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
 
     // DHCP show commands

@@ -82,12 +82,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     segmentRoutingMpls?: boolean; discardRouteExternal?: boolean;
   };
 
-  trie.registerGreedy('log-adjacency-changes', 'Log adjacency changes', (args) => {
-    const e = extra();
-    e.logAdjacencyChanges = true;
-    if (args[0]?.toLowerCase() === 'detail') e.logAdjacencyChangesDetail = true;
-    return '';
-  });
   trie.registerGreedy('maximum-paths', 'Forward equal-cost paths', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) extra().maximumPaths = n;
@@ -1114,7 +1108,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 // ─── Show Commands ───────────────────────────────────────────────────
 
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.register('show ip ospf neighbor', 'Display OSPF neighbor table', () => showIpOspfNeighbor(getRouter()));
   trie.registerGreedy('show ip ospf neighbor', 'Display OSPF neighbor table (filtered)', (args) => {
     if (!args.length || args[0].toLowerCase() === 'detail') return showIpOspfNeighbor(getRouter());
     const full = showIpOspfNeighbor(getRouter());

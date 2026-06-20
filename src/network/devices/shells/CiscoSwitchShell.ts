@@ -362,12 +362,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // ── clear / recovery ──
     this.privilegedTrie.register('clear ip arp inspection statistics',
       'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
-    this.privilegedTrie.registerGreedy('clear errdisable interface',
-      'Recover an err-disabled port', (args) => {
-        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
-        this.d()._clearArpInspectionErrDisable(portName);
-        return '';
-      });
     this.privilegedTrie.registerGreedy('clear spanning-tree detected-protocols',
       'Restart protocol migration', () => '');
     this.privilegedTrie.registerGreedy('clear spanning-tree counters',

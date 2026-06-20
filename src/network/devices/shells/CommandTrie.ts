@@ -69,6 +69,16 @@ export class CommandTrie {
   private root: CommandNode;
   private canonicalDescriptions = new Map<string, string>();
 
+  /**
+   * Optional diagnostic observer, fired whenever a registration overwrites a
+   * path that already had an action on the same trie. Off by default (zero
+   * production cost); tests enable it to assert the command tree is free of
+   * accidental duplicate registrations (a duplicate silently shadows the
+   * earlier handler, which is almost always a bug). Set back to `null` to
+   * disable.
+   */
+  static overwriteObserver: ((info: { path: string; kind: 'register' | 'registerGreedy' }) => void) | null = null;
+
   constructor() {
     this.root = this.createNode('', 'Root');
   }
@@ -152,6 +162,9 @@ export class CommandTrie {
       node = child;
     }
 
+    if (node.action && CommandTrie.overwriteObserver) {
+      CommandTrie.overwriteObserver({ path, kind: 'register' });
+    }
     node.action = action;
     if (params) node.params = params;
   }
@@ -177,6 +190,9 @@ export class CommandTrie {
       node = child;
     }
 
+    if (node.action && CommandTrie.overwriteObserver) {
+      CommandTrie.overwriteObserver({ path, kind: 'registerGreedy' });
+    }
     node.action = action;
     node.greedy = true;
   }

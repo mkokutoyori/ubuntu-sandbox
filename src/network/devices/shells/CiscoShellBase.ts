@@ -651,7 +651,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
       showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
-    trie.register('show snmp', 'Display SNMP status', () => showSnmp(this.cs()));
     trie.register('show snmp community', 'Display SNMP communities', () => showSnmpCommunity(this.cs()));
     trie.register('show snmp host', 'Display SNMP hosts', () => showSnmpHost(this.cs()));
     trie.register('show snmp group', 'Display SNMP groups', () => showSnmpGroup(this.cs()));
@@ -1271,7 +1270,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     flag('ip http server', 'ip http server', 'HTTP server');
     flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
     flag('ip source-route', 'ip source-route', 'IP source-route');
-    flag('ip domain-lookup', 'ip domain-lookup', 'DNS lookup');
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without

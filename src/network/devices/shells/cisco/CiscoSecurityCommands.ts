@@ -441,7 +441,6 @@ export function buildSecuritySubmodeCommands(
   pmapClassTrie.registerGreedy('priority', 'Reserve bandwidth for priority', (args) => { addAction(ctx, 'priority', args); return ''; });
   pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
   pmapClassTrie.register('fair-queue', 'Enable WFQ', () => { addAction(ctx, 'fair-queue', []); return ''; });
-  pmapClassTrie.register('random-detect', 'Enable WRED', () => { addAction(ctx, 'random-detect', []); return ''; });
   pmapClassTrie.registerGreedy('random-detect', 'WRED configuration', (args) => { addAction(ctx, 'random-detect', args); return ''; });
   pmapClassTrie.registerGreedy('shape', 'Traffic shape', (args) => { addAction(ctx, 'shape', args); return ''; });
   pmapClassTrie.registerGreedy('service-policy', 'Nested service-policy', (args) => { addAction(ctx, 'service-policy', args); return ''; });

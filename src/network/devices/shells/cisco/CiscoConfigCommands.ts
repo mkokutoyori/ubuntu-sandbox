@@ -13,7 +13,6 @@ import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
-import { registerArpConfigCommands } from './CiscoArpCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -257,8 +256,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
-  // ARP config commands (shared with switch via CiscoArpCommands)
-  registerArpConfigCommands(trie, () => ctx.r());
+  // ARP config commands are registered once for both vendors by the shared
+  // CiscoShellBase (registerArpConfigCommands on the config trie); no need to
+  // register them again here.
 
   // IPv6 static routes
   trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {

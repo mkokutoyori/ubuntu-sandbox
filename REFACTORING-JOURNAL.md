@@ -1689,3 +1689,81 @@ formes traitées, chacune ayant nécessité une passe dédiée :
 - **Labs de diagnostic `__tests__/debug/cisco-l2/`** : laissés en l'état
   (0-based) — ce sont des *dumps* non assertifs, à **régénérer** contre le
   device 1-based séparément.
+
+---
+
+## Entrée n°32 — 2026-06-20 — Arbre de commandes : élimination des doublons d'enregistrement (trie CLI)
+
+### Défaillance constatée
+
+`CommandTrie.register`/`registerGreedy` **écrasent silencieusement** l'action
+d'un chemin déjà enregistré (`node.action = action`). Or tout l'enregistrement
+des shells se fait à la construction, avant toute commande — donc un chemin
+enregistré deux fois sur le même trie rend la **première registration morte**
+(jamais exécutée) et masque parfois la *bonne* implémentation derrière une plus
+ancienne. C'est de la duplication pure, et une source de bugs latents.
+
+Détection par **vérité d'exécution** (instrumentation du trie pendant la
+construction de chaque équipement, capture de la pile pour localiser les deux
+sites) — bien plus fiable qu'une analyse statique (qui produit des faux
+positifs quand un même nom de paramètre `trie`/`t` est réutilisé par des
+fonctions ciblant des tries différents). Résultat : **34 doublons** côté
+routeur Cisco, 6 côté switch (et 44 côté Huawei, traités plus tard).
+
+### Correction
+
+Suppression des **registrations perdantes** (mortes), garantissant **zéro
+changement de comportement** (le gagnant — la dernière registration, déjà
+active — est conservé). 24 doublons accidentels supprimés :
+
+- **Cluster crypto** (le plus gros) : `CiscoIPSecShowCommands` et
+  `CiscoIPSecIKEv1Commands` enregistraient tous deux `clear/debug/no debug
+  crypto isakmp|ipsec|ikev2`, `clear crypto session`, `undebug all`,
+  `show crypto engine brief|configuration` (12). Les versions ShowCommands
+  étaient mortes → supprimées.
+- `crypto isakmp keepalive` / `no …` (doublon interne IKEv1).
+- OSPF : `log-adjacency-changes`, `show ip ospf neighbor` (greedy adjacent).
+- Routeur (`CiscoIOSShell`) : `show ip route`, `show interfaces`, `show ip cef`,
+  `show ip traffic` (perdants ; gagnants dans les builders dédiés).
+- `random-detect` (register + registerGreedy adjacents), `clear errdisable
+  interface` (switch, perdant moins capable), `show snmp` (handlers identiques),
+  `ip domain-lookup`/`no …` (toggle `flag()` perdant ; gagnant = register direct).
+- `arp`/`no arp` : `registerArpConfigCommands` était appelé **deux fois** sur le
+  trie config du routeur (via `buildConfigCommands` *et* la base partagée) ;
+  l'appel routeur redondant est retiré (la base couvre les deux vendeurs).
+
+### Garde structurelle (anti-régression)
+
+Ajout d'un **observateur d'écrasement** optionnel sur `CommandTrie`
+(`overwriteObserver`, `null` par défaut → coût nul en prod). Nouveau test
+`command-trie-hygiene.test.ts` : construit routeur + switch Cisco et **échoue
+si un doublon accidentel apparaît**. Les rares doublons *intentionnels*
+restants (base partagée + override vendeur) sont explicitement en liste blanche
+et documentés.
+
+### Doublons restants (intentionnels ou bug à traiter ailleurs)
+
+- **base/override** (8) : `aaa`, `username`, `ip ssh`, `ip cef`/`no ip cef`,
+  `show ssh`, `no ip routing`, `show mac address-table` — la base partagée
+  fournit un défaut que le module spécifique au vendeur surcharge ;
+  supprimer la base casserait l'autre vendeur. Listés en garde.
+- **`copy` (bug latent)** : la version *simple* (`copy complete`) écrase la
+  version *riche* (`copy running-config startup-config` → `onSave()`). C'est la
+  cause de l'échec du cluster « Storage & Configuration Lifecycle » de
+  `other-commands` — à corriger dans le commit dédié config-lifecycle (changer
+  le gagnant change le comportement, hors périmètre « dédup »).
+- **Huawei** (44 doublons) : même traitement, commit dédié.
+
+### Fichiers
+
+`CommandTrie.ts` (observateur), `CiscoIPSecShowCommands.ts`,
+`CiscoIPSecIKEv1Commands.ts`, `CiscoOspfCommands.ts`, `CiscoIOSShell.ts`,
+`CiscoSecurityCommands.ts`, `CiscoSwitchShell.ts`, `CiscoShellBase.ts`,
+`cisco/CiscoConfigCommands.ts`, `command-trie-hygiene.test.ts` (nouveau).
+
+### Validation
+
+- `command-trie-hygiene` : 2/2 verts (doublons accidentels = 0).
+- `network-v2` complet : `other-commands` inchangé (37 — échecs config-lifecycle
+  pré-existants), **aucune régression** sur 8389 tests. Aucune nouvelle erreur
+  lint/tsc.
