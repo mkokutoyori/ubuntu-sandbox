@@ -32,6 +32,7 @@ import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
+import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { AliasTable } from '@/bash/runtime/AliasTable';
@@ -59,7 +60,7 @@ import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcess
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
-import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
+import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
@@ -327,6 +328,8 @@ export class LinuxCommandExecutor {
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+  /** Simulated host clock — drives background-job completion over time. */
+  private readonly clock = new HostClock();
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
   readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
@@ -1249,6 +1252,8 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    job.durationMs = parseBackgroundDurationMs(cmdLine);
+    job.completesAt = this.clock.now() + job.durationMs;
     // `$!` — PID of the most-recently backgrounded process. Bash exposes
     // this through the special parameter table; we propagate it via the
     // environment so `echo $!` / `kill -15 $!` resolve correctly.
@@ -1276,6 +1281,94 @@ export class LinuxCommandExecutor {
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
     return lines.join('\n');
+  }
+
+  /** Current simulated-clock time in milliseconds. */
+  simulatedNow(): number {
+    return this.clock.now();
+  }
+
+  /**
+   * Advance the simulated host clock and let any background jobs whose
+   * duration has elapsed finish. Models real time passing so `sleep N &`
+   * actually takes N seconds, processes accrue CPU time, and `jobs`/`ps`
+   * reflect completion.
+   */
+  advanceTime(ms: number): void {
+    this.clock.advance(ms);
+    this.reapDueBackgroundJobs();
+  }
+
+  /** Mark every running background job whose completion instant has passed
+   *  as finished (the process becomes a zombie awaiting the shell's reap). */
+  private reapDueBackgroundJobs(): void {
+    const now = this.clock.now();
+    for (const job of this.jobTable.list()) {
+      if (!job.isRunning() || job.completesAt === undefined) continue;
+      if (job.completesAt <= now) this.completeBackgroundJob(job);
+    }
+  }
+
+  /** Finish one background job: accrue its CPU time, settle its exit status,
+   *  and zombify its process so a later reap removes it from the table. */
+  private completeBackgroundJob(job: import('./jobs/LinuxJob').LinuxJob): void {
+    job.cpuTimeMs = job.durationMs ?? 0;
+    job.wallTimeMs = job.durationMs ?? 0;
+    job.complete({ exitCode: job.exitCode ?? 0 });
+    const proc = this.processMgr.get(job.pid);
+    if (proc) {
+      proc.cpuTime = job.cpuTimeMs;
+      this.processMgr.setState(job.pid, 'Z');
+    }
+  }
+
+  /** Bash prints `[N]+ Done cmd` for finished jobs just before the next
+   *  prompt; producing that line also reaps the zombie and drops the job. */
+  private drainFinishedJobNotices(): string[] {
+    const out: string[] = [];
+    const now = this.clock.now();
+    for (const job of this.jobTable.list()) {
+      if (!job.isFinished() || job.notified) continue;
+      if (job.completesAt === undefined || job.completesAt > now) continue;
+      const marker = this.jobTable.isCurrent(job.id) ? '+'
+        : this.jobTable.isPrevious(job.id) ? '-' : ' ';
+      const label = job.state === 'Done' ? 'Done'
+        : job.state === 'Killed' ? `Killed` : `Exit ${job.exitCode ?? 1}`;
+      out.push(`[${job.id}]${marker}  ${label.padEnd(20)}${stripTrailingAmp(job.command)}`);
+      job.notified = true;
+      this.processMgr.reap(job.pid);
+      this.jobTable.remove(job.id);
+    }
+    return out;
+  }
+
+  /** Real `wait`: advance the clock to the targeted jobs' completion, settle
+   *  them, and drop them silently (wait consumes the status, no notice). */
+  private handleWait(args: string[]): string {
+    const specs = args.filter((a) => !a.startsWith('-'));
+    const running = this.jobTable.list().filter((j) => j.isRunning());
+    let targets = running;
+    if (specs.length > 0) {
+      targets = [];
+      for (const spec of specs) {
+        const job = spec.startsWith('%')
+          ? this.jobTable.resolve(spec)
+          : this.jobTable.list().find((j) => j.pid === Number(spec));
+        if (job && job.isRunning()) targets.push(job);
+      }
+    }
+    let last = 0;
+    for (const job of targets) {
+      if (job.completesAt !== undefined) {
+        this.clock.advanceTo(job.completesAt);
+        this.completeBackgroundJob(job);
+        last = job.exitCode ?? 0;
+        this.processMgr.reap(job.pid);
+        this.jobTable.remove(job.id);
+      }
+    }
+    this.lastExitCode = last;
+    return '';
   }
 
   /**
@@ -1307,7 +1400,7 @@ export class LinuxCommandExecutor {
         return r.output;
       }
       case 'bg':     return cmdBg(args, ctx).output;
-      case 'wait':   return cmdWait(args, ctx).output;
+      case 'wait':   return this.handleWait(args);
       case 'disown': return cmdDisown(args, ctx).output;
       case 'pstree': return cmdPstree(args, ctx).output;
       case 'kill': {
@@ -1495,6 +1588,27 @@ export class LinuxCommandExecutor {
   }
 
   execute(input: string): string {
+    this.executeDepth++;
+    try {
+      const top = this.executeDepth === 1;
+      let notices: string[] = [];
+      if (top) {
+        this.reapDueBackgroundJobs();
+        notices = this.drainFinishedJobNotices();
+      }
+      const out = this.executeCore(input);
+      if (top && notices.length > 0) {
+        return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
+      }
+      return out;
+    } finally {
+      this.executeDepth--;
+    }
+  }
+
+  private executeDepth = 0;
+
+  private executeCore(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
     this.currentCommandHead = extractCommandHead(trimmed);
@@ -4985,6 +5099,27 @@ export class LinuxCommandExecutor {
  * True when the input ends with an unquoted `&` that is not part of
  * `&&`. Used to detect a backgrounded command.
  */
+/** Strip a single trailing ` &` (job announcement) from a command line. */
+function stripTrailingAmp(command: string): string {
+  return command.replace(/\s*&\s*$/, '');
+}
+
+/**
+ * How long a backgrounded command runs, in simulated ms. `sleep N[smhd]`
+ * yields its real duration; everything else is treated as instantaneous
+ * (completes on the next prompt). This is what makes `sleep 60 &` actually
+ * occupy 60 simulated seconds.
+ */
+function parseBackgroundDurationMs(cmdLine: string): number {
+  const m = /\bsleep\s+(\d+(?:\.\d+)?)\s*([smhd]?)\b/.exec(cmdLine);
+  if (!m) return 0;
+  const value = parseFloat(m[1]);
+  const unit = m[2] || 's';
+  const factor = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000
+    : unit === 'd' ? 86_400_000 : 1_000;
+  return Math.round(value * factor);
+}
+
 function endsWithUnquotedAmp(input: string): boolean {
   let quote: '"' | "'" | null = null;
   let escaped = false;

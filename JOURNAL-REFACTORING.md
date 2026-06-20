@@ -733,3 +733,58 @@ suite complète (15659 passants ; restent des échecs pré-existants Cisco
 `src/network/devices/linux/LinuxServiceManager.ts`,
 `src/network/devices/linux/LinuxProcessCommands.ts`,
 `src/terminal/flows/LinuxFlowBuilder.ts`.
+
+---
+
+## 2026-06-20 (suite) — Processus / jobs : exécution en arrière-plan sur une horloge simulée (TDD)
+
+**Constat.** La couche service/processus/job n'avait aucune notion de temps :
+un `sleep 60 &` se terminait instantanément, `wait` était un no-op, et aucun
+processus ne « tournait » réellement en arrière-plan. Le premier pas vers une
+couche OS réaliste est donc une **horloge** déterministe et des jobs dont la
+complétion est différée dans le temps simulé.
+
+**Méthode TDD.** Tests d'abord (rouge confirmé : `HostClock` introuvable,
+`advanceTime`/`simulatedNow` absents), puis implémentation.
+
+**`HostClock` — horloge monotone simulée.** Classe métier
+(`host/lifecycle/HostClock.ts`) : le temps n'avance que lorsqu'on l'avance
+(`advance`/`advanceTo`), jamais tout seul ni en arrière. Elle pilote toute
+behaviour temporelle (complétion de jobs, accrual CPU, timers) de façon
+déterministe, sans dépendre de l'horloge murale.
+
+**Jobs d'arrière-plan réalistes.** Un job backgroundé (`&`) reçoit une durée
+(`durationMs`) déduite de la commande (`sleep N` même imbriqué, p. ex.
+`ssh … sleep 60 &`) et un instant de fin (`completesAt`). Tant que l'horloge
+n'a pas atteint cet instant, le job reste `Running` (visible dans `jobs`/`ps`).
+`advanceTime(ms)` fait avancer l'horloge et complète les jobs échus : le
+processus devient zombie (`Z`), accumule son temps CPU, puis est moissonné.
+
+**`[N]+ Done` au prochain prompt.** Bash imprime la notice de fin juste avant
+le prompt suivant ; `drainFinishedJobNotices` ne draine **que** les jobs
+complétés par l'horloge (`completesAt <= now`), laissant les jobs tués par un
+événement externe (déconnexion SSH du distant éteint) à `fg`/`jobs` — un
+garde-fou qui évite de voler la sémantique « Connection closed by … ».
+
+**`wait` réel.** `wait` / `wait %n` / `wait <pid>` avance l'horloge jusqu'à la
+complétion des jobs ciblés (tous les jobs en cours par défaut), les règle et
+consomme leur statut sans notice, mettant à jour `$?`.
+
+**Garde de profondeur.** Le drainage des notices ne se fait qu'au niveau du
+prompt (top-level `execute`), pas dans les `execute` récursifs — ce qui rend le
+changement non cassant : les suites existantes qui n'avancent pas le temps
+voient leurs jobs rester `Running` comme avant.
+
+**Résultat.** Nouveaux tests `host-clock` (6) + `linux-background-jobs` (7) =
+13/13. Suites processus/jobs/service de non-régression : 141/141. Suite SSH LAN
+réparée (les 3 cas de job-control d'arrière-plan ssh : durée déduite d'un
+`sleep` imbriqué + garde de drainage). Aucune régression nette sur la suite
+complète (restent les échecs pré-existants Cisco `other-commands` et un test
+Windows `netsh`).
+
+**Fichiers touchés :**
+`src/network/devices/host/lifecycle/HostClock.ts` (nouveau),
+`src/network/devices/linux/jobs/LinuxJob.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/host-clock.test.ts` (nouveau),
+`src/__tests__/unit/network-v2/linux-background-jobs.test.ts` (nouveau).
