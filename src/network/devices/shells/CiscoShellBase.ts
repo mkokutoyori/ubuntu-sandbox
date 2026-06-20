@@ -1418,9 +1418,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        _setDomainName?: (name: string) => void;
+      };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      else dev._setDomainName?.(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
@@ -1431,9 +1435,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        _setDomainName?: (name: string) => void;
+      };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
+      else dev._setDomainName?.('');
       return '';
     });
     // `ip host <name> <ip>` — static hostname → IP mapping consulted by

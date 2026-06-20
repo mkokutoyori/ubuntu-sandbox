@@ -1835,3 +1835,57 @@ massivement (14 tests). Causes structurelles :
   une vraie base d'utilisateurs locaux côté switch (`_upsertCiscoUsername`,
   rendu `username …` dans `buildRunningConfig`, restauration avec round-trip du
   hash de secret) — fonctionnalité AAA distincte, à traiter séparément.
+
+---
+
+## Entrée n°34 — 2026-06-20 — Switch L2 : plan de gestion (domaine, clés RSA/SSH, default-gateway)
+
+### Défaillances constatées
+
+Le switch n'avait aucun état de plan de gestion : `ip domain-name`,
+`crypto key generate rsa`, `ip ssh version`, `ip default-gateway` étaient soit
+ignorés, soit absents. D'où les échecs « Management Plane » :
+
+- `ip ssh version 2` sans clés RSA ne refusait pas (IOS exige les clés d'hôte).
+- `crypto key generate rsa` inexistant.
+- `ip domain-name` partait dans le vide (le handler partagé n'écrit que via
+  `getManagementService()`, que le switch n'a pas) et n'apparaissait pas dans
+  le running-config.
+- `ip default-gateway` (route de gestion d'un switch L2) inexistant.
+
+### Correction
+
+- **État de gestion minimal sur le `Switch`** : `domainName`, `hasRsaKeys`,
+  `ipDefaultGateway` + accesseurs (`_setDomainName`, `_generateRsaKeys`,
+  `hasRsaKeys`, `_setDefaultGateway`, …).
+- **Réutilisation du handler partagé `ip domain-name`** : ajout d'un *fallback*
+  device-level (`dev._setDomainName?.()`) quand `getManagementService()` est
+  absent — le routeur (qui a le service) est inchangé, le switch est couvert
+  par le même handler (DRY, pas de doublon de trie).
+- **Commandes switch** (`CiscoSwitchShell`) : `crypto key generate rsa` (exige
+  un domaine, pose les clés, sortie « RSA key pair generated ») ;
+  `ip ssh version N` refusée sans clés (« Please create RSA keys… ») ;
+  `ip default-gateway` / `no …`.
+- **Rendu** : `buildRunningConfig` émet `ip domain-name …` et
+  `ip default-gateway …`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (état + accesseurs),
+`src/network/devices/shells/CiscoShellBase.ts` (fallback `ip domain-name`),
+`src/network/devices/shells/CiscoSwitchShell.ts` (commandes + rendu).
+
+### Validation
+
+- Cluster « Management Plane » : **8 → 3** ; `other-commands` global :
+  **24 → 19**. `command-trie-hygiene` 2/2 (aucun nouveau doublon).
+- Non-régression : `switch-cli`, `cisco-switch-reference-scenarios`,
+  `cisco-router-operational-show`, `cisco-interface-description` = **83 verts**.
+
+### Limites connues (cluster AAA/VTY à traiter ensemble)
+
+- **81 / 87 / 98** (avertissement `login` sans mot de passe ; rejet des
+  connexions SSH/Telnet entrantes selon la config VTY + sous-réseau SVI) et
+  **44** (base de comptes locaux préservée au reload) nécessitent un vrai
+  modèle d'authentification VTY/AAA entrante côté switch — fonctionnalité
+  distincte, prochain incrément.

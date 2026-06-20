@@ -1580,6 +1580,41 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
+    // ── Management plane: SSH host keys, domain, default-gateway ──
+    this.configTrie.registerGreedy('crypto key generate rsa', 'Generate RSA host keys', () => {
+      if (!this.d().getDomainName()) {
+        return '% Please define a domain-name first.';
+      }
+      this.d()._generateRsaKeys();
+      const fqdn = `${this.d().getHostname()}.${this.d().getDomainName()}`;
+      return [
+        `The name for the keys will be: ${fqdn}`,
+        '% The key modulus size is 512 bits',
+        '% Generating 512 bit RSA keys, keys will be non-exportable...[OK]',
+        'RSA key pair generated',
+      ].join('\n');
+    });
+    this.configTrie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
+      return '% Keys to be removed are named ' + `${this.d().getHostname()}.${this.d().getDomainName()}` + '.';
+    });
+    this.configTrie.registerGreedy('ip ssh version', 'Set the SSH version', () => {
+      // SSH requires RSA host keys (`crypto key generate rsa`) first — IOS
+      // refuses to bring SSH up without them.
+      if (!this.d().hasRsaKeys()) {
+        return 'Please create RSA keys to enable SSH (and of at least 768 bits for SSH v2).';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('ip default-gateway', 'Set the management default gateway', (args) => {
+      if (!args[0] || !IPAddress.isValid(args[0])) return "% Invalid input detected at '^' marker.";
+      this.d()._setDefaultGateway(args[0]);
+      return '';
+    });
+    this.configTrie.register('no ip default-gateway', 'Remove the management default gateway', () => {
+      this.d()._setDefaultGateway('');
+      return '';
+    });
+
     this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
       this.d()._getDHCPSnoopingConfig().enabled = true;
       return '';
@@ -1899,6 +1934,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const enablePassword = sw.getEnablePassword();
     if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false)}`);
     if (enableSecret || enablePassword) lines.push('!');
+
+    if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
+    if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
 
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;

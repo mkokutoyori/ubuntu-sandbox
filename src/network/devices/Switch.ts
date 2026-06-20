@@ -1429,6 +1429,20 @@ export abstract class Switch extends Equipment {
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
 
+  // ─── Management plane: domain / SSH host keys / default-gateway ────
+  private _domainName = '';
+  private _hasRsaKeys = false;
+  private _ipDefaultGateway = '';
+  /** @internal `ip domain-name` (device fallback for the shared handler). */
+  _setDomainName(name: string): void { this._domainName = name; }
+  getDomainName(): string { return this._domainName; }
+  /** @internal `crypto key generate rsa`. */
+  _generateRsaKeys(): void { this._hasRsaKeys = true; }
+  hasRsaKeys(): boolean { return this._hasRsaKeys; }
+  /** @internal `ip default-gateway` (L2 switch management route). */
+  _setDefaultGateway(ip: string): void { this._ipDefaultGateway = ip; }
+  getDefaultGateway(): string { return this._ipDefaultGateway; }
+
   // ─── ARP Snoop-learn into management table ──────────────────────
 
   /**
