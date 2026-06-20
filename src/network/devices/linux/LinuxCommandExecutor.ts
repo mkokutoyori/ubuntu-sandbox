@@ -330,6 +330,10 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
   /** Simulated host clock — drives background-job completion over time. */
   private readonly clock = new HostClock();
+  /** Wall-clock instant mapped to simulated time 0, so the clock can report a
+   *  believable calendar date (used by `at`/`atq`). It cancels out of every
+   *  comparison, keeping job firing deterministic regardless of its value. */
+  private readonly wallEpoch = Date.now();
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
   readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
@@ -1288,15 +1292,34 @@ export class LinuxCommandExecutor {
     return this.clock.now();
   }
 
+  /** Simulated wall-clock instant (calendar date) for the current time. */
+  private simulatedDate(): Date {
+    return new Date(this.wallEpoch + this.clock.now());
+  }
+
   /**
    * Advance the simulated host clock and let any background jobs whose
    * duration has elapsed finish. Models real time passing so `sleep N &`
    * actually takes N seconds, processes accrue CPU time, and `jobs`/`ps`
-   * reflect completion.
+   * reflect completion. The deferred-execution daemon (`atd`) also runs any
+   * `at` jobs whose scheduled instant the clock has now reached.
    */
   advanceTime(ms: number): void {
     this.clock.advance(ms);
     this.reapDueBackgroundJobs();
+    this.fireDueAtJobs();
+  }
+
+  /** atd: run every spooled `at` job whose scheduled time the clock has
+   *  reached, then drop it from the spool. No-op while atd is stopped. */
+  private fireDueAtJobs(): void {
+    if (this.serviceMgr.status('atd')?.state !== 'active') return;
+    const now = this.simulatedDate().getTime();
+    for (const job of this.atQueue.list()) {
+      if (job.runAt.getTime() > now) break;
+      this.atQueue.remove(job.id);
+      try { this.execute(job.command); } catch { /* atd discards job failures */ }
+    }
   }
 
   /** Mark every running background job whose completion instant has passed
@@ -2531,7 +2554,7 @@ export class LinuxCommandExecutor {
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
       case 'at': {
         const atdActive = this.serviceMgr.status('atd')?.state === 'active';
-        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive);
+        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive, this.simulatedDate());
         return { output: out, exitCode: atdActive ? 0 : 1 };
       }
       case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };

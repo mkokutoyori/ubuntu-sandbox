@@ -788,3 +788,40 @@ Windows `netsh`).
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/host-clock.test.ts` (nouveau),
 `src/__tests__/unit/network-v2/linux-background-jobs.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — `atd` : les jobs différés `at` se déclenchent sur l'horloge simulée (TDD)
+
+**Constat.** Le spool `at` existait (`LinuxAtQueue`, `cmdAt`/`atq`/`atrm`) mais,
+comme le notait son propre commentaire, « the simulator does not fire jobs on a
+timer » : un `at now + 1 minute` restait éternellement en file, jamais exécuté.
+Aucune activité daemon réelle dans le temps — exactement le contraire d'« un
+vrai OS avec des choses qui tournent en arrière-plan ».
+
+**Méthode TDD.** Tests d'abord (rouge confirmé : les jobs ne se déclenchaient
+pas, le fichier cible n'apparaissait jamais), puis implémentation.
+
+**Base de temps unifiée.** `at` parse désormais sa spécification (`now + N`,
+`HH:MM`) relativement à l'**heure simulée** (`simulatedDate()` =
+`wallEpoch + clock.now()`), et non plus `Date.now()`. Le `wallEpoch` (instant
+mural correspondant au temps simulé 0) ne sert qu'à afficher une date crédible
+dans `atq` ; il s'annule dans toute comparaison, gardant le déclenchement
+déterministe.
+
+**Déclenchement réel par `atd`.** `advanceTime(ms)` fait avancer l'horloge
+puis, après la moisson des jobs d'arrière-plan, exécute via `fireDueAtJobs`
+chaque job `at` dont l'instant programmé est atteint (`runAt <= now`), dans
+l'ordre chronologique (la file est triée, on s'arrête au premier non-échu),
+avant de le retirer du spool. No-op tant que `atd` est arrêté — fidèle à un
+hôte réel où le daemon down ne traite rien.
+
+**Résultat.** Nouveau test `linux-at-scheduling` (5) : un job ne s'exécute qu'une
+fois l'horloge arrivée à son heure, le spool est vidé après exécution, les jobs
+se déclenchent dans l'ordre, `atrm` annule avant l'heure, et un `atd` arrêté ne
+déclenche rien. Non-régression processus/jobs/service/SSH LAN : 317/317.
+
+**Fichiers touchés :**
+`src/network/devices/linux/jobs/LinuxAtQueue.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/linux-at-scheduling.test.ts` (nouveau).
