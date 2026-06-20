@@ -2150,7 +2150,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'unlink');
           this.publishSyscall('unlink', abs);
         }
-        return { output: cmdRm(c, args), exitCode: 0 };
+        const out = cmdRm(c, args);
+        return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
       }
       case 'mkdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {

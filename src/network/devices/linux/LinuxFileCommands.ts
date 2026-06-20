@@ -436,15 +436,26 @@ export function cmdMv(ctx: ShellContext, args: string[]): string {
 export function cmdRm(ctx: ShellContext, args: string[]): string {
   let recursive = false;
   let force = false;
+  let preserveRoot = true;
   const paths: string[] = [];
 
   for (const arg of args) {
-    if (arg.startsWith('-')) {
-      if (arg.includes('r') || arg.includes('R')) recursive = true;
-      if (arg.includes('f')) force = true;
-    } else {
-      paths.push(arg);
+    if (arg === '--') continue;
+    if (arg.startsWith('--')) {
+      if (arg === '--recursive') recursive = true;
+      else if (arg === '--force') force = true;
+      else if (arg === '--no-preserve-root') preserveRoot = false;
+      else if (arg === '--preserve-root') preserveRoot = true;
+      continue;
     }
+    if (arg.startsWith('-') && arg.length > 1) {
+      for (const ch of arg.slice(1)) {
+        if (ch === 'r' || ch === 'R') recursive = true;
+        else if (ch === 'f') force = true;
+      }
+      continue;
+    }
+    paths.push(arg);
   }
 
   for (const p of paths) {
@@ -452,6 +463,9 @@ export function cmdRm(ctx: ShellContext, args: string[]): string {
     const expanded = expandGlob(ctx, p);
     for (const ep of expanded) {
       const absPath = ctx.vfs.normalizePath(ep, ctx.cwd);
+      if (absPath === '/' && recursive && preserveRoot) {
+        return `rm: it is dangerous to operate recursively on '/'\nrm: use --no-preserve-root to override this failsafe`;
+      }
       const inode = ctx.vfs.resolveInode(absPath, false);
       if (!inode) {
         if (!force) return `rm: cannot remove '${ep}': No such file or directory`;

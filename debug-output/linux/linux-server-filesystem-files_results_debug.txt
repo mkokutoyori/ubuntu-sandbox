@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-filesystem-files
-Generated: 2026-06-20T06:31:20.081Z
+Generated: 2026-06-20T06:38:01.384Z
 Engine: linux
 host=L-SRV-FS-DBG (linux-server) — focus: système de fichiers & opérations fichiers
 Total commands: 327
@@ -82,93 +82,93 @@ $ [23/327]> ls -l
 
 $ [24/327]> ls -la
   total 16
-  drwxrwxrwt  2 root root 0 Jun 20 06:31 .
-  drwxr-xr-x 17 root root 0 Jun 20 06:31 ..
+  drwxrwxrwt  2 root root 0 Jun 20 06:38 .
+  drwxr-xr-x 17 root root 0 Jun 20 06:38 ..
 
 $ [25/327]> ls -al /etc
   total 392
-  drwxr-xr-x 18 root root    0 Jun 20 06:31 .
-  drwxr-xr-x 17 root root    0 Jun 20 06:31 ..
-  -rw-r--r--  1 root root  377 Jun 20 06:31 adduser.conf
-  drwxr-xr-x  3 root root    0 Jun 20 06:31 audit
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 cron.d
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 cron.daily
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 cron.hourly
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 cron.monthly
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 cron.weekly
-  -rw-r--r--  1 root root  420 Jun 20 06:31 crontab
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 default
-  -rw-r--r--  1 root root  169 Jun 20 06:31 group
-  -rw-r--r--  1 root root  164 Jun 20 06:31 group-
-  -rw-r-----  1 root root  136 Jun 20 06:31 gshadow
-  -rw-------  1 root root  131 Jun 20 06:31 gshadow-
-  -rw-r--r--  1 root root   13 Jun 20 06:31 hostname
-  -rw-r--r--  1 root root  144 Jun 20 06:31 hosts
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 iptables
-  -rw-r--r--  1 root root   19 Jun 20 06:31 issue.net
-  -rw-r--r--  1 root root  421 Jun 20 06:31 login.defs
-  -rw-r--r--  1 root root  163 Jun 20 06:31 logrotate.conf
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 logrotate.d
-  -rw-r--r--  1 root root  104 Jun 20 06:31 lsb-release
-  -rw-r--r--  1 root root   33 Jun 20 06:31 machine-id
-  -rw-r--r--  1 root root   67 Jun 20 06:31 motd
-  -r--r--r--  1 root root    0 Jun 20 06:31 mtab
-  -rw-r--r--  1 root root   96 Jun 20 06:31 networks
-  -rw-r--r--  1 root root  510 Jun 20 06:31 nsswitch.conf
-  -rw-r--r--  1 root root  302 Jun 20 06:31 os-release
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 pam.d
-  -rw-r--r--  1 root root  295 Jun 20 06:31 passwd
-  -rw-r--r--  1 root root  295 Jun 20 06:31 passwd-
-  -rw-r--r--  1 root root 3042 Jun 20 06:31 protocols
-  -rw-r--r--  1 root root    0 Jun 20 06:31 resolv.conf
-  -rw-r--r--  1 root root  583 Jun 20 06:31 rpc
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 security
-  -rw-r--r--  1 root root 3290 Jun 20 06:31 services
-  -rw-r-----  1 root root  252 Jun 20 06:31 shadow
-  -rw-------  1 root root  252 Jun 20 06:31 shadow-
-  -rw-r--r--  1 root root   18 Jun 20 06:31 shells
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 skel
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 ssh
-  -rw-r--r--  1 root root   72 Jun 20 06:31 subgid
-  -rw-r--r--  1 root root   72 Jun 20 06:31 subuid
-  -r--r-----  1 root root   47 Jun 20 06:31 sudoers
-  drwxr-xr-x  2 root root    0 Jun 20 06:31 sudoers.d
-  drwxr-xr-x  3 root root    0 Jun 20 06:31 systemd
-  -rw-r--r--  1 root root    8 Jun 20 06:31 timezone
-  drwxr-xr-x  3 root root    0 Jun 20 06:31 ufw
+  drwxr-xr-x 18 root root    0 Jun 20 06:38 .
+  drwxr-xr-x 17 root root    0 Jun 20 06:38 ..
+  -rw-r--r--  1 root root  377 Jun 20 06:38 adduser.conf
+  drwxr-xr-x  3 root root    0 Jun 20 06:38 audit
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 cron.d
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 cron.daily
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 cron.hourly
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 cron.monthly
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 cron.weekly
+  -rw-r--r--  1 root root  420 Jun 20 06:38 crontab
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 default
+  -rw-r--r--  1 root root  169 Jun 20 06:38 group
+  -rw-r--r--  1 root root  164 Jun 20 06:38 group-
+  -rw-r-----  1 root root  136 Jun 20 06:38 gshadow
+  -rw-------  1 root root  131 Jun 20 06:38 gshadow-
+  -rw-r--r--  1 root root   13 Jun 20 06:38 hostname
+  -rw-r--r--  1 root root  144 Jun 20 06:38 hosts
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 iptables
+  -rw-r--r--  1 root root   19 Jun 20 06:38 issue.net
+  -rw-r--r--  1 root root  421 Jun 20 06:38 login.defs
+  -rw-r--r--  1 root root  163 Jun 20 06:38 logrotate.conf
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 logrotate.d
+  -rw-r--r--  1 root root  104 Jun 20 06:38 lsb-release
+  -rw-r--r--  1 root root   33 Jun 20 06:38 machine-id
+  -rw-r--r--  1 root root   67 Jun 20 06:38 motd
+  -r--r--r--  1 root root    0 Jun 20 06:38 mtab
+  -rw-r--r--  1 root root   96 Jun 20 06:38 networks
+  -rw-r--r--  1 root root  510 Jun 20 06:38 nsswitch.conf
+  -rw-r--r--  1 root root  302 Jun 20 06:38 os-release
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 pam.d
+  -rw-r--r--  1 root root  295 Jun 20 06:38 passwd
+  -rw-r--r--  1 root root  295 Jun 20 06:38 passwd-
+  -rw-r--r--  1 root root 3042 Jun 20 06:38 protocols
+  -rw-r--r--  1 root root    0 Jun 20 06:38 resolv.conf
+  -rw-r--r--  1 root root  583 Jun 20 06:38 rpc
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 security
+  -rw-r--r--  1 root root 3290 Jun 20 06:38 services
+  -rw-r-----  1 root root  252 Jun 20 06:38 shadow
+  -rw-------  1 root root  252 Jun 20 06:38 shadow-
+  -rw-r--r--  1 root root   18 Jun 20 06:38 shells
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 skel
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 ssh
+  -rw-r--r--  1 root root   72 Jun 20 06:38 subgid
+  -rw-r--r--  1 root root   72 Jun 20 06:38 subuid
+  -r--r-----  1 root root   47 Jun 20 06:38 sudoers
+  drwxr-xr-x  2 root root    0 Jun 20 06:38 sudoers.d
+  drwxr-xr-x  3 root root    0 Jun 20 06:38 systemd
+  -rw-r--r--  1 root root    8 Jun 20 06:38 timezone
+  drwxr-xr-x  3 root root    0 Jun 20 06:38 ufw
 
 $ [26/327]> ls -lh /var/log
   total 48
-  drwxr-x--- 2 root root    0 Jun 20 06:31 audit
-  -rw-r----- 1 root adm   156 Jun 20 06:31 auth.log
-  -rw-r----- 1 root adm  1976 Jun 20 06:31 boot.log
-  -rw-r----- 1 root adm  1386 Jun 20 06:31 kern.log
-  -rw-r--r-- 1 root root    2 Jun 20 06:31 lastlog
-  -rw-r----- 1 root adm  2278 Jun 20 06:31 syslog
+  drwxr-x--- 2 root root    0 Jun 20 06:38 audit
+  -rw-r----- 1 root adm   156 Jun 20 06:38 auth.log
+  -rw-r----- 1 root adm  1976 Jun 20 06:38 boot.log
+  -rw-r----- 1 root adm  1386 Jun 20 06:38 kern.log
+  -rw-r--r-- 1 root root    2 Jun 20 06:38 lastlog
+  -rw-r----- 1 root adm  2278 Jun 20 06:38 syslog
 
 $ [27/327]> ls -lha /
   total 168
-  drwxr-xr-x 17 root root 0 Jun 20 06:31 .
-  drwxr-xr-x 17 root root 0 Jun 20 06:31 ..
-  lrwxrwxrwx  1 root root 7 Jun 20 06:31 bin -> usr/bin
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 boot
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 dev
-  drwxr-xr-x 18 root root 0 Jun 20 06:31 etc
-  drwxr-xr-x  7 root root 0 Jun 20 06:31 home
-  lrwxrwxrwx  1 root root 7 Jun 20 06:31 lib -> usr/lib
-  lrwxrwxrwx  1 root root 9 Jun 20 06:31 lib64 -> usr/lib64
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 media
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 mnt
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 opt
-  drwxr-xr-x 19 root root 0 Jun 20 06:31 proc
-  drwx------  2 root root 0 Jun 20 06:31 root
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 run
-  lrwxrwxrwx  1 root root 8 Jun 20 06:31 sbin -> usr/sbin
-  drwxr-xr-x  2 root root 0 Jun 20 06:31 srv
-  drwxr-xr-x  6 root root 0 Jun 20 06:31 sys
-  drwxrwxrwt  2 root root 0 Jun 20 06:31 tmp
-  drwxr-xr-x  7 root root 0 Jun 20 06:31 usr
-  drwxr-xr-x 12 root root 0 Jun 20 06:31 var
+  drwxr-xr-x 17 root root 0 Jun 20 06:38 .
+  drwxr-xr-x 17 root root 0 Jun 20 06:38 ..
+  lrwxrwxrwx  1 root root 7 Jun 20 06:38 bin -> usr/bin
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 boot
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 dev
+  drwxr-xr-x 18 root root 0 Jun 20 06:38 etc
+  drwxr-xr-x  7 root root 0 Jun 20 06:38 home
+  lrwxrwxrwx  1 root root 7 Jun 20 06:38 lib -> usr/lib
+  lrwxrwxrwx  1 root root 9 Jun 20 06:38 lib64 -> usr/lib64
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 media
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 mnt
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 opt
+  drwxr-xr-x 19 root root 0 Jun 20 06:38 proc
+  drwx------  2 root root 0 Jun 20 06:38 root
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 run
+  lrwxrwxrwx  1 root root 8 Jun 20 06:38 sbin -> usr/sbin
+  drwxr-xr-x  2 root root 0 Jun 20 06:38 srv
+  drwxr-xr-x  6 root root 0 Jun 20 06:38 sys
+  drwxrwxrwt  2 root root 0 Jun 20 06:38 tmp
+  drwxr-xr-x  7 root root 0 Jun 20 06:38 usr
+  drwxr-xr-x 12 root root 0 Jun 20 06:38 var
 
 $ [28/327]> ls -a
   .   ..
@@ -180,7 +180,7 @@ $ [30/327]> ls -d */
   ls: cannot access '*/': No such file or directory
 
 $ [31/327]> ls -ld /etc
-  drwxr-xr-x 18 root root 0 Jun 20 06:31 /etc
+  drwxr-xr-x 18 root root 0 Jun 20 06:38 /etc
 
 $ [32/327]> ls -R /etc
   /etc:
@@ -253,30 +253,30 @@ $ [32/327]> ls -R /etc
 
 $ [33/327]> ls -lt /var/log
   total 48
-  -rw-r----- 1 root adm  2278 Jun 20 06:31 syslog
-  -rw-r----- 1 root adm   156 Jun 20 06:31 auth.log
-  -rw-r----- 1 root adm  1386 Jun 20 06:31 kern.log
-  -rw-r----- 1 root adm  1976 Jun 20 06:31 boot.log
-  drwxr-x--- 2 root root    0 Jun 20 06:31 audit
-  -rw-r--r-- 1 root root    2 Jun 20 06:31 lastlog
+  -rw-r----- 1 root adm  2278 Jun 20 06:38 syslog
+  -rw-r--r-- 1 root root    2 Jun 20 06:38 lastlog
+  -rw-r----- 1 root adm   156 Jun 20 06:38 auth.log
+  -rw-r----- 1 root adm  1386 Jun 20 06:38 kern.log
+  -rw-r----- 1 root adm  1976 Jun 20 06:38 boot.log
+  drwxr-x--- 2 root root    0 Jun 20 06:38 audit
 
 $ [34/327]> ls -ltr /var/log
   total 48
-  -rw-r----- 1 root adm  2278 Jun 20 06:31 syslog
-  -rw-r----- 1 root adm   156 Jun 20 06:31 auth.log
-  -rw-r----- 1 root adm  1386 Jun 20 06:31 kern.log
-  -rw-r----- 1 root adm  1976 Jun 20 06:31 boot.log
-  drwxr-x--- 2 root root    0 Jun 20 06:31 audit
-  -rw-r--r-- 1 root root    2 Jun 20 06:31 lastlog
+  -rw-r----- 1 root adm  2278 Jun 20 06:38 syslog
+  -rw-r--r-- 1 root root    2 Jun 20 06:38 lastlog
+  -rw-r----- 1 root adm   156 Jun 20 06:38 auth.log
+  -rw-r----- 1 root adm  1386 Jun 20 06:38 kern.log
+  -rw-r----- 1 root adm  1976 Jun 20 06:38 boot.log
+  drwxr-x--- 2 root root    0 Jun 20 06:38 audit
 
 $ [35/327]> ls -lS /var/log
   total 48
-  -rw-r----- 1 root adm  2278 Jun 20 06:31 syslog
-  -rw-r----- 1 root adm  1976 Jun 20 06:31 boot.log
-  -rw-r----- 1 root adm  1386 Jun 20 06:31 kern.log
-  -rw-r----- 1 root adm   156 Jun 20 06:31 auth.log
-  -rw-r--r-- 1 root root    2 Jun 20 06:31 lastlog
-  drwxr-x--- 2 root root    0 Jun 20 06:31 audit
+  -rw-r----- 1 root adm  2278 Jun 20 06:38 syslog
+  -rw-r----- 1 root adm  1976 Jun 20 06:38 boot.log
+  -rw-r----- 1 root adm  1386 Jun 20 06:38 kern.log
+  -rw-r----- 1 root adm   156 Jun 20 06:38 auth.log
+  -rw-r--r-- 1 root root    2 Jun 20 06:38 lastlog
+  drwxr-x--- 2 root root    0 Jun 20 06:38 audit
 
 $ [36/327]> ls -lr
   total 0
@@ -630,16 +630,16 @@ $ [70/327]> touch fichier1.txt
 <empty>
 
 $ [71/327]> ls -l fichier1.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 fichier1.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 fichier1.txt
 
 $ [72/327]> touch fichier2.txt fichier3.txt fichier4.txt
 <empty>
 
 $ [73/327]> ls -l fichier*.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 fichier1.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 fichier2.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 fichier3.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 fichier4.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 fichier1.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 fichier2.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 fichier3.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 fichier4.txt
 
 $ [74/327]> echo "ligne unique" > simple.txt
 <empty>
@@ -680,7 +680,7 @@ $ [84/327]> touch -t 202001010000 daté.txt
 <empty>
 
 $ [85/327]> ls -l daté.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 daté.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 daté.txt
 
 $ [86/327]> touch fichier1.txt
 <empty>
@@ -690,9 +690,9 @@ $ [87/327]> stat fichier1.txt
     Size: 0	Blocks: 0	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 401	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-06-20T06:31:20.102Z
-  Modify: 2026-06-20T06:31:20.102Z
-  Change: 2026-06-20T06:31:20.098Z
+  Access: 2026-06-20T06:38:01.399Z
+  Modify: 2026-06-20T06:38:01.399Z
+  Change: 2026-06-20T06:38:01.397Z
 
 $ [88/327]> touch /repertoire/inexistant_xyz/fichier.txt
 <empty>
@@ -703,7 +703,7 @@ $ [89/327]> mkdir projet
 <empty>
 
 $ [90/327]> ls -ld projet
-  drwxr-xr-x 2 root root 0 Jun 20 06:31 projet
+  drwxr-xr-x 2 root root 0 Jun 20 06:38 projet
 
 $ [91/327]> mkdir -p projet/src/lib/utils
 <empty>
@@ -743,7 +743,7 @@ $ [95/327]> mkdir -m 700 securisé
 <empty>
 
 $ [96/327]> ls -ld securisé
-  drwxr-xr-x 2 root root 0 Jun 20 06:31 securisé
+  drwxr-xr-x 2 root root 0 Jun 20 06:38 securisé
 
 $ [97/327]> mkdir projet
   mkdir: cannot create directory 'projet'
@@ -818,8 +818,8 @@ $ [116/327]> cp -p simple.txt preserve.txt
 <empty>
 
 $ [117/327]> ls -l preserve.txt simple.txt
-  -rw-r--r-- 1 root root 27 Jun 20 06:31 preserve.txt
-  -rw-r--r-- 1 root root 27 Jun 20 06:31 simple.txt
+  -rw-r--r-- 1 root root 27 Jun 20 06:38 preserve.txt
+  -rw-r--r-- 1 root root 27 Jun 20 06:38 simple.txt
 
 $ [118/327]> cp -v lettres.txt verbose.txt
 <empty>
@@ -845,7 +845,7 @@ $ [124/327]> mv copie.txt renomme.txt
 <empty>
 
 $ [125/327]> ls -l renomme.txt copie.txt
-  -rw-r--r-- 1 root root 27 Jun 20 06:31 renomme.txt
+  -rw-r--r-- 1 root root 27 Jun 20 06:38 renomme.txt
   ls: cannot access 'copie.txt': No such file or directory
 
 $ [126/327]> mkdir destination
@@ -926,15 +926,16 @@ $ [150/327]> rm
 <empty>
 
 $ [151/327]> rm -rf /
-<empty>
+  rm: it is dangerous to operate recursively on '/'
+  rm: use --no-preserve-root to override this failsafe
 
 $ [152/327]> rm /etc/passwd
-  rm: cannot remove '/etc/passwd': No such file or directory
+<empty>
 
 
 --- [153] § liens — ln ---
 $ [153/327]> cd /tmp
-  bash: cd: /tmp: No such file or directory
+<empty>
 
 $ [154/327]> echo "cible du lien" > cible_lien.txt
 <empty>
@@ -943,8 +944,8 @@ $ [155/327]> ln cible_lien.txt lien_dur.txt
 <empty>
 
 $ [156/327]> ls -li cible_lien.txt lien_dur.txt
-  428 -rw-r--r-- 2 root root 14 Jun 20 06:31 cible_lien.txt
-  428 -rw-r--r-- 2 root root 14 Jun 20 06:31 lien_dur.txt
+  427 -rw-r--r-- 2 root root 14 Jun 20 06:38 cible_lien.txt
+  427 -rw-r--r-- 2 root root 14 Jun 20 06:38 lien_dur.txt
 
 $ [157/327]> cat lien_dur.txt
   cible du lien
@@ -953,7 +954,7 @@ $ [158/327]> ln -s cible_lien.txt lien_symbolique.txt
 <empty>
 
 $ [159/327]> ls -l lien_symbolique.txt
-  lrwxrwxrwx 1 root root 14 Jun 20 06:31 lien_symbolique.txt -> cible_lien.txt
+  lrwxrwxrwx 1 root root 14 Jun 20 06:38 lien_symbolique.txt -> cible_lien.txt
 
 $ [160/327]> cat lien_symbolique.txt
   cible du lien
@@ -962,7 +963,7 @@ $ [161/327]> ln -s /etc/passwd lien_passwd
 <empty>
 
 $ [162/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 root root 11 Jun 20 06:31 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 root root 11 Jun 20 06:38 lien_passwd -> /etc/passwd
 
 $ [163/327]> readlink lien_symbolique.txt
   cible_lien.txt
@@ -977,7 +978,7 @@ $ [166/327]> ln -s cible_inexistante_xyz lien_casse
 <empty>
 
 $ [167/327]> ls -l lien_casse
-  lrwxrwxrwx 1 root root 21 Jun 20 06:31 lien_casse -> cible_inexistante_xyz
+  lrwxrwxrwx 1 root root 21 Jun 20 06:38 lien_casse -> cible_inexistante_xyz
 
 $ [168/327]> readlink lien_casse
   cible_inexistante_xyz
@@ -986,7 +987,7 @@ $ [169/327]> ln -sf /etc/hostname lien_passwd
   ln: failed to create hard link 'lien_passwd'
 
 $ [170/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 root root 11 Jun 20 06:31 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 root root 11 Jun 20 06:38 lien_passwd -> /etc/passwd
 
 $ [171/327]> ln
   ln: missing operand
@@ -1000,13 +1001,23 @@ $ [173/327]> cat /etc/passwd
   cat: /etc/passwd: No such file or directory
 
 $ [174/327]> cat /etc/os-release
-  cat: /etc/os-release: No such file or directory
+  PRETTY_NAME="Ubuntu 22.04.4 LTS"
+  NAME="Ubuntu"
+  VERSION_ID="22.04"
+  VERSION="22.04.4 LTS (Jammy Jellyfish)"
+  VERSION_CODENAME=jammy
+  ID=ubuntu
+  ID_LIKE=debian
+  HOME_URL="https://www.ubuntu.com/"
+  SUPPORT_URL="https://help.ubuntu.com/"
+  BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+  UBUNTU_CODENAME=jammy
 
 $ [175/327]> cat -n /etc/passwd
   cat: /etc/passwd: No such file or directory
 
 $ [176/327]> cat -A /etc/hostname
-  cat: /etc/hostname: No such file or directory
+  linux-server
 
 $ [177/327]> cat -b /etc/passwd
   cat: /etc/passwd: No such file or directory
@@ -1036,10 +1047,10 @@ $ [185/327]> tail -c 30 /etc/passwd
   tail: cannot open '/etc/passwd' for reading: No such file or directory
 
 $ [186/327]> head -n 1 /etc/os-release
-<empty>
+  PRETTY_NAME="Ubuntu 22.04.4 LTS"
 
 $ [187/327]> tail -n 1 /etc/os-release
-  tail: cannot open '/etc/os-release' for reading: No such file or directory
+  UBUNTU_CODENAME=jammy
 
 $ [188/327]> cat /fichier/inexistant_xyz
   cat: /fichier/inexistant_xyz: No such file or directory
@@ -1053,19 +1064,31 @@ $ [190/327]> stat /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
 
 $ [191/327]> stat /etc
-  stat: cannot stat '/etc': No such file or directory
+    File: /etc
+    Size: 0	Blocks: 0	IO Block: 4096	directory
+  Device: 0h/0d	Inode: 9	Links: 18
+  Access: (755/drwxr-xr-x)  Uid: ( 0/ root)   Gid: ( 0/ root)
+  Access: 2026-06-20T06:38:01.378Z
+  Modify: 2026-06-20T06:38:01.405Z
+  Change: 2026-06-20T06:38:01.378Z
 
 $ [192/327]> stat -c "%n %s %a %U:%G" /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
 
 $ [193/327]> stat -c "%F" /etc
-  stat: cannot stat '/etc': No such file or directory
+  directory
 
 $ [194/327]> stat -c "%F" /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
 
 $ [195/327]> stat --format="%a %n" /etc/hostname
-  stat: cannot stat '/etc/hostname': No such file or directory
+    File: /etc/hostname
+    Size: 13	Blocks: 8	IO Block: 4096	regular file
+  Device: 0h/0d	Inode: 53	Links: 1
+  Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
+  Access: 2026-06-20T06:38:01.409Z
+  Modify: 2026-06-20T06:38:01.383Z
+  Change: 2026-06-20T06:38:01.378Z
 
 $ [196/327]> stat -t /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
@@ -1074,13 +1097,13 @@ $ [197/327]> file /etc/passwd
   /etc/passwd: cannot open `/etc/passwd' (No such file or directory)
 
 $ [198/327]> file /etc
-  /etc: cannot open `/etc' (No such file or directory)
+  /etc: directory
 
 $ [199/327]> file /bin/ls
   /bin/ls: cannot open `/bin/ls' (No such file or directory)
 
 $ [200/327]> file /etc/hostname
-  /etc/hostname: cannot open `/etc/hostname' (No such file or directory)
+  /etc/hostname: ASCII text
 
 $ [201/327]> wc /etc/passwd
   wc: /etc/passwd: No such file or directory
@@ -1106,58 +1129,423 @@ $ [207/327]> file /fichier/inexistant_xyz
 
 --- [208] § recherche — find ---
 $ [208/327]> find /etc -maxdepth 1
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/iptables
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/default
+  /etc/skel
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/security
+  /etc/pam.d
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/audit
+  /etc/systemd
+  /etc/logrotate.conf
+  /etc/logrotate.d
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/ssh
+  /etc/motd
+  /etc/issue.net
 
 $ [209/327]> find /etc -maxdepth 1 -type f
-<empty>
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/logrotate.conf
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/motd
+  /etc/issue.net
 
 $ [210/327]> find /etc -maxdepth 1 -type d
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/iptables
+  /etc/default
+  /etc/skel
+  /etc/security
+  /etc/pam.d
+  /etc/audit
+  /etc/systemd
+  /etc/logrotate.d
+  /etc/ssh
 
 $ [211/327]> find /etc -name "*.conf"
-<empty>
+  /etc/ufw/ufw.conf
+  /etc/ufw/sysctl.conf
+  /etc/resolv.conf
+  /etc/adduser.conf
+  /etc/security/pwquality.conf
+  /etc/security/faillock.conf
+  /etc/audit/auditd.conf
+  /etc/logrotate.conf
+  /etc/nsswitch.conf
 
 $ [212/327]> find /etc -maxdepth 2 -name "host*"
-<empty>
+  /etc/hostname
+  /etc/hosts
 
 $ [213/327]> find / -maxdepth 2 -name passwd
 <empty>
 
 $ [214/327]> find /var -type d -maxdepth 2
-<empty>
+  /var
+  /var/lib
+  /var/lib/dhcp
+  /var/log
+  /var/log/audit
+  /var/tmp
+  /var/cache
+  /var/spool
+  /var/spool/mail
+  /var/spool/cron
+  /var/local
+  /var/opt
+  /var/backups
+  /var/run
+  /var/run/faillock
+  /var/mail
 
 $ [215/327]> find /etc -maxdepth 1 -type f -name "p*"
-<empty>
+  /etc/protocols
+  /etc/passwd-
 
 $ [216/327]> find /tmp -maxdepth 1
   /tmp
+  /tmp/202001010000
+  /tmp/a
+  /tmp/d
+  /tmp/700
+  /tmp/copie_vers
   /tmp/cible_lien.txt
   /tmp/lien_dur.txt
   /tmp/lien_symbolique.txt
 
 $ [217/327]> find /etc -maxdepth 1 -size +1k
-<empty>
+  /etc/services
+  /etc/protocols
 
 $ [218/327]> find /etc -maxdepth 1 -newer /etc/hostname
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/iptables
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/default
+  /etc/skel
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/security
+  /etc/pam.d
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/audit
+  /etc/systemd
+  /etc/logrotate.conf
+  /etc/logrotate.d
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/ssh
+  /etc/motd
+  /etc/issue.net
 
 $ [219/327]> find /etc -maxdepth 1 -perm 644
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/iptables
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/default
+  /etc/skel
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/security
+  /etc/pam.d
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/audit
+  /etc/systemd
+  /etc/logrotate.conf
+  /etc/logrotate.d
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/ssh
+  /etc/motd
+  /etc/issue.net
 
 $ [220/327]> find /etc -maxdepth 1 -user root
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/iptables
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/default
+  /etc/skel
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/security
+  /etc/pam.d
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/audit
+  /etc/systemd
+  /etc/logrotate.conf
+  /etc/logrotate.d
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/ssh
+  /etc/motd
+  /etc/issue.net
 
 $ [221/327]> find /etc -name "*.conf" -type f
-<empty>
+  /etc/ufw/ufw.conf
+  /etc/ufw/sysctl.conf
+  /etc/resolv.conf
+  /etc/adduser.conf
+  /etc/security/pwquality.conf
+  /etc/security/faillock.conf
+  /etc/audit/auditd.conf
+  /etc/logrotate.conf
+  /etc/nsswitch.conf
 
 $ [222/327]> find /etc -maxdepth 1 -empty
-<empty>
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/iptables
+  /etc/resolv.conf
+  /etc/logrotate.d
+  /etc/mtab
 
 $ [223/327]> find /chemin_inexistant_xyz
 <empty>
 
 $ [224/327]> find /etc -truc
-<empty>
+  /etc
+  /etc/cron.hourly
+  /etc/cron.daily
+  /etc/cron.weekly
+  /etc/cron.monthly
+  /etc/cron.d
+  /etc/sudoers.d
+  /etc/ufw
+  /etc/ufw/applications.d
+  /etc/ufw/applications.d/openssh-server
+  /etc/ufw/applications.d/apache2
+  /etc/ufw/applications.d/nginx
+  /etc/ufw/ufw.conf
+  /etc/ufw/sysctl.conf
+  /etc/ufw/before.rules
+  /etc/ufw/after.rules
+  /etc/ufw/before6.rules
+  /etc/ufw/after6.rules
+  /etc/ufw/user.rules
+  /etc/ufw/user6.rules
+  /etc/iptables
+  /etc/hostname
+  /etc/crontab
+  /etc/hosts
+  /etc/shells
+  /etc/os-release
+  /etc/lsb-release
+  /etc/sudoers
+  /etc/resolv.conf
+  /etc/default
+  /etc/default/useradd
+  /etc/default/locale
+  /etc/skel
+  /etc/skel/.bash_logout
+  /etc/skel/.bashrc
+  /etc/skel/.profile
+  /etc/login.defs
+  /etc/adduser.conf
+  /etc/security
+  /etc/security/pwquality.conf
+  /etc/security/faillock.conf
+  /etc/pam.d
+  /etc/pam.d/common-password
+  /etc/shadow
+  /etc/group
+  /etc/gshadow
+  /etc/subuid
+  /etc/subgid
+  /etc/audit
+  /etc/audit/rules.d
+  /etc/audit/rules.d/audit.rules
+  /etc/audit/auditd.conf
+  /etc/audit/audit.rules
+  /etc/systemd
+  /etc/systemd/system
+  /etc/systemd/system/multi-user.target.wants
+  /etc/systemd/system/multi-user.target.wants/ssh.service
+  /etc/systemd/system/multi-user.target.wants/cron.service
+  /etc/systemd/system/multi-user.target.wants/rsyslog.service
+  /etc/systemd/system/multi-user.target.wants/auditd.service
+  /etc/systemd/system/multi-user.target.wants/atd.service
+  /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
+  /etc/systemd/system/multi-user.target.wants/systemd-journald.service
+  /etc/systemd/system/multi-user.target.wants/systemd-logind.service
+  /etc/systemd/system/multi-user.target.wants/dbus.service
+  /etc/systemd/system/multi-user.target.wants/networking.service
+  /etc/systemd/system/multi-user.target.wants/ufw.service
+  /etc/systemd/system/multi-user.target.wants/apparmor.service
+  /etc/systemd/system/multi-user.target.wants/oracle-ohasd.service
+  /etc/logrotate.conf
+  /etc/logrotate.d
+  /etc/services
+  /etc/protocols
+  /etc/networks
+  /etc/rpc
+  /etc/nsswitch.conf
+  /etc/passwd-
+  /etc/shadow-
+  /etc/group-
+  /etc/gshadow-
+  /etc/mtab
+  /etc/machine-id
+  /etc/timezone
+  /etc/ssh
+  /etc/ssh/ssh_host_ed25519_key.pub
+  /etc/ssh/ssh_host_ed25519_key
+  /etc/ssh/sshd_config
+  /etc/motd
+  /etc/issue.net
 
 
 --- [225] § localisation — which/whereis/locate/type ---
@@ -1198,13 +1586,16 @@ $ [235/327]> command -v cd
   cd
 
 $ [236/327]> locate passwd
-<empty>
+  /usr/sbin/chpasswd
+  /etc/passwd-
 
 $ [237/327]> updatedb
 <empty>
 
 $ [238/327]> locate hostname
-<empty>
+  /usr/bin/hostname
+  /etc/hostname
+  /proc/sys/kernel/hostname
 
 $ [239/327]> which
 <empty>
@@ -1221,43 +1612,43 @@ $ [242/327]> touch perm.txt
 <empty>
 
 $ [243/327]> ls -l perm.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 perm.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [244/327]> chmod 644 perm.txt
 <empty>
 
 $ [245/327]> ls -l perm.txt
-  -rw-r--r-- 1 root root 0 Jun 20 06:31 perm.txt
+  -rw-r--r-- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [246/327]> chmod 755 perm.txt
 <empty>
 
 $ [247/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Jun 20 06:31 perm.txt
+  -rwxr-xr-x 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [248/327]> chmod u+x perm.txt
 <empty>
 
 $ [249/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Jun 20 06:31 perm.txt
+  -rwxr-xr-x 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [250/327]> chmod g-w perm.txt
 <empty>
 
 $ [251/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Jun 20 06:31 perm.txt
+  -rwxr-xr-x 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [252/327]> chmod o=r perm.txt
 <empty>
 
 $ [253/327]> ls -l perm.txt
-  -rwxr-xr-- 1 root root 0 Jun 20 06:31 perm.txt
+  -rwxr-xr-- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [254/327]> chmod a+x perm.txt
 <empty>
 
 $ [255/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Jun 20 06:31 perm.txt
+  -rwxr-xr-x 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [256/327]> chmod 600 perm.txt
 <empty>
@@ -1272,7 +1663,7 @@ $ [259/327]> chmod -R 700 permdir
 <empty>
 
 $ [260/327]> ls -ld permdir
-  drwx------ 2 root root 0 Jun 20 06:31 permdir
+  drwx------ 2 root root 0 Jun 20 06:38 permdir
 
 $ [261/327]> umask
   0022
@@ -1293,7 +1684,7 @@ $ [266/327]> touch apres_umask.txt
 <empty>
 
 $ [267/327]> ls -l apres_umask.txt
-  -rw------- 1 root root 0 Jun 20 06:31 apres_umask.txt
+  -rw------- 1 root root 0 Jun 20 06:38 apres_umask.txt
 
 $ [268/327]> chmod 999 perm.txt
 <empty>
@@ -1310,25 +1701,25 @@ $ [271/327]> chown root perm.txt
 <empty>
 
 $ [272/327]> ls -l perm.txt
-  ---------- 1 root root 0 Jun 20 06:31 perm.txt
+  ---------- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [273/327]> chown root:root perm.txt
 <empty>
 
 $ [274/327]> ls -l perm.txt
-  ---------- 1 root root 0 Jun 20 06:31 perm.txt
+  ---------- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [275/327]> chgrp root perm.txt
 <empty>
 
 $ [276/327]> ls -l perm.txt
-  ---------- 1 root root 0 Jun 20 06:31 perm.txt
+  ---------- 1 root root 0 Jun 20 06:38 perm.txt
 
 $ [277/327]> chown -R root:root permdir
 <empty>
 
 $ [278/327]> ls -ld permdir
-  drwx------ 2 root root 0 Jun 20 06:31 permdir
+  drwx------ 2 root root 0 Jun 20 06:38 permdir
 
 $ [279/327]> chown utilisateur_inexistant_xyz perm.txt
 <empty>
@@ -1369,16 +1760,16 @@ $ [290/327]> realpath ..
   /
 
 $ [291/327]> readlink -f /etc/passwd
-<empty>
+  /etc/passwd
 
 $ [292/327]> mktemp
-  /tmp/tmp.almc78mka6
+  /tmp/tmp.5hbhac1h0a
 
 $ [293/327]> mktemp -d
-  /tmp/tmp.nhv2ffr1qe
+  /tmp/tmp.9hhhm73iyw
 
 $ [294/327]> mktemp /tmp/debug.XXXXXX
-  /tmp/tmp.fyhle7cbog
+  /tmp/tmp.uqxnttsypx
 
 $ [295/327]> basename
 <empty>
@@ -1435,14 +1826,21 @@ $ [301/327]> lsblk -a
 
 $ [302/327]> df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G    1K   50G   1% /
+  /dev/sda1        50G   41K   50G   1% /
   tmpfs           500M     0  500M   0% /dev/shm
   tmpfs           5.0M  4.0K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 $ [303/327]> cat /proc/mounts | head
-  cat: /proc/mounts: No such file or directory
+  /dev/sda1 / ext4 rw,relatime,errors=remount-ro 0 0
+  /dev/sda2 /boot ext4 rw,relatime 0 0
+  udev /dev devtmpfs rw,nosuid,relatime 0 0
+  tmpfs /dev/shm tmpfs rw,nosuid,nodev 0 0
+  proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+  tmpfs /run/lock tmpfs rw,nosuid,nodev,noexec,relatime,size=5120k 0 0
+  sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+  /dev/sdb1 /u01 ext4 rw,relatime 0 0
 
 $ [304/327]> cat /etc/fstab
   cat: /etc/fstab: No such file or directory
@@ -1456,16 +1854,20 @@ $ [306/327]> mount /dev/inexistant_xyz /mnt
 
 --- [307] § redirections & pipes composés ---
 $ [307/327]> ls /etc > /tmp/liste_etc.txt
-  ls: cannot access '/etc': No such file or directory
+<empty>
 
 $ [308/327]> wc -l /tmp/liste_etc.txt
-        0 /tmp/liste_etc.txt
+        9 /tmp/liste_etc.txt
 
 $ [309/327]> ls /var >> /tmp/liste_etc.txt
-  ls: cannot access '/var': No such file or directory
+<empty>
 
 $ [310/327]> cat /tmp/liste_etc.txt | head -5
-<empty>
+  adduser.conf    group-          lsb-release     resolv.conf     subuid
+  audit           gshadow         machine-id      rpc             sudoers
+  cron.d          gshadow-        motd            security        sudoers.d
+  cron.daily      hostname        mtab            services        systemd
+  cron.hourly     hosts           networks        shadow          timezone
 
 $ [311/327]> cat /etc/passwd | wc -l
   1
@@ -1474,28 +1876,48 @@ $ [312/327]> cat /etc/passwd | grep root
 <empty>
 
 $ [313/327]> find /etc -maxdepth 1 -type f | wc -l
-<empty>
+  30
 
 $ [314/327]> ls /etc | sort | head
-  ls: cannot access '/etc': No such file or directory
+  adduser.conf    group-          lsb-release     resolv.conf     subuid
+  audit           gshadow         machine-id      rpc             sudoers
+  cron.d          gshadow-        motd            security        sudoers.d
+  cron.daily      hostname        mtab            services        systemd
+  cron.hourly     hosts           networks        shadow          timezone
+  cron.monthly    iptables        nsswitch.conf   shadow-         ufw
+  cron.weekly     issue.net       os-release      shells
+  crontab         login.defs      pam.d           skel
+  default         logrotate.conf  passwd-         ssh
+  group           logrotate.d     protocols       subgid
 
 $ [315/327]> ls /etc 2> /tmp/err.txt; cat /tmp/err.txt
-  ls: cannot access '/etc': No such file or directory
+  adduser.conf    group-          lsb-release     resolv.conf     subuid
+  audit           gshadow         machine-id      rpc             sudoers
+  cron.d          gshadow-        motd            security        sudoers.d
+  cron.daily      hostname        mtab            services        systemd
+  cron.hourly     hosts           networks        shadow          timezone
+  cron.monthly    iptables        nsswitch.conf   shadow-         ufw
+  cron.weekly     issue.net       os-release      shells
+  crontab         login.defs      pam.d           skel
+  default         logrotate.conf  passwd-         ssh
+  group           logrotate.d     protocols       subgidcat: /tmp/err.txt: No such file or directory
 
 $ [316/327]> cat < /etc/hostname
-<empty>
+  linux-server
 
 $ [317/327]> echo "test $(hostname)"
-  test localhost
+  test linux-server
 
 $ [318/327]> echo "il y a $(ls /etc | wc -l) entrées dans /etc"
-  il y a 1 entrées dans /etc
+  il y a 10 entrées dans /etc
 
 $ [319/327]> cat /tmp/liste_etc.txt | tail -3 > /tmp/fin.txt
 <empty>
 
 $ [320/327]> cat /tmp/fin.txt
-<empty>
+  default         logrotate.conf  passwd-         ssh
+  group           logrotate.d     protocols       subgidbackups  lib      log      opt      spool
+  cache    local    mail     run      tmp
 
 
 --- [321] § mal formées — fin de transcript ---
@@ -1509,13 +1931,22 @@ $ [323/327]> cat
 <empty>
 
 $ [324/327]> ls -
-  apres_umask.txt      lien_casse           liste_etc.txt
-  cible_lien.txt       lien_dur.txt         perm.txt
-  err.txt              lien_passwd          permdir
-  fin.txt              lien_symbolique.txt
+  202001010000         copie_vers           lien_passwd
+  700                  d                    lien_symbolique.txt
+  a                    fin.txt              liste_etc.txt
+  apres_umask.txt      lien_casse           perm.txt
+  cible_lien.txt       lien_dur.txt         permdir
 
 $ [325/327]> find
   /tmp
+  202001010000
+  a
+  a/b
+  d
+  d/e
+  d/e/f
+  700
+  copie_vers
   cible_lien.txt
   lien_dur.txt
   lien_symbolique.txt
@@ -1523,7 +1954,6 @@ $ [325/327]> find
   permdir
   apres_umask.txt
   liste_etc.txt
-  err.txt
   fin.txt
 
 $ [326/327]> stat
