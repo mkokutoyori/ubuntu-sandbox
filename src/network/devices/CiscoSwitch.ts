@@ -228,9 +228,12 @@ export class CiscoSwitch extends Switch {
   // ─── Vendor Hooks ──────────────────────────────────────────────
 
   protected getPortName(index: number, total: number): string {
+    // Real Catalyst interfaces are 1-indexed: a 24-port switch is
+    // FastEthernet0/1…0/24 with GigabitEthernet0/1… uplinks — there is no
+    // FastEthernet0/0.
     return index < 24
-      ? `FastEthernet0/${index}`
-      : `GigabitEthernet0/${index - 24}`;
+      ? `FastEthernet0/${index + 1}`
+      : `GigabitEthernet0/${index - 23}`;
   }
 
   protected getInitialSTPState(): STPPortState {

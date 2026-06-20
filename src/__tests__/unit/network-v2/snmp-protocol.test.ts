@@ -49,8 +49,8 @@ describe('SNMP — system MIB get', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -68,8 +68,8 @@ describe('SNMP — system MIB get', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -87,8 +87,8 @@ describe('SNMP — system MIB get', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -106,8 +106,8 @@ describe('SNMP — community ACL', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -126,8 +126,8 @@ describe('SNMP — get-next walks the MIB', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -144,8 +144,8 @@ describe('SNMP — interface table', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -160,8 +160,8 @@ describe('SNMP — interface table', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -181,8 +181,8 @@ describe('SNMP — sysLocation / sysContact', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -199,8 +199,8 @@ describe('SNMP — Cisco↔Huawei interop', () => {
     const nms = new CiscoRouter('NMS');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); nms.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -216,8 +216,8 @@ describe('SNMP — traps', () => {
     const collector = new CiscoRouter('COL');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     router.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -254,8 +254,8 @@ describe('SNMP — wire format', () => {
         }
       }
     });
-    cable.connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cable.connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

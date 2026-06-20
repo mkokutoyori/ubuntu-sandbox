@@ -27,9 +27,9 @@ function setupLinuxLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -40,9 +40,9 @@ function setupWindowsLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -639,9 +639,9 @@ describe('EndHost ARP table management', () => {
     const pc2 = new LinuxPC('PC2', 100, 0);
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
     const cable1 = new Cable('c1');
-    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
@@ -680,9 +680,9 @@ describe('Cisco IOS arp commands', () => {
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
     const cable1 = new Cable('c1');
-    cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     return { r1, pc1, sw };
   }

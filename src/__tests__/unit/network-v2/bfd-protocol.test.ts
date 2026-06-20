@@ -40,7 +40,7 @@ describe('BFD — single-side session', () => {
   it('ensureSession creates a Down session with a unique discriminator', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getBfdAgent().ensureSession('GigabitEthernet0/0', '10.0.0.2');
     const s = r.getBfdAgent().getSession('GigabitEthernet0/0', '10.0.0.2');
@@ -57,8 +57,8 @@ describe('BFD — two-side handshake brings session Up', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -97,7 +97,7 @@ describe('BFD — wire format', () => {
         }
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getBfdAgent().ensureSession('GigabitEthernet0/0', '10.0.0.2');
 
@@ -115,8 +115,8 @@ describe('BFD — reactive bus', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     const transitions: Array<{ deviceId: string; oldState: string; newState: string }> = [];
@@ -138,8 +138,8 @@ describe('BFD — link-down brings session down', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     r1.getBfdAgent().ensureSession('GigabitEthernet0/0', '10.0.0.2');
@@ -157,7 +157,7 @@ describe('BFD — admin-down', () => {
   it('setAdmin(false) drives the session to admin-down', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getBfdAgent().ensureSession('GigabitEthernet0/0', '10.0.0.2');
     r.getBfdAgent().setAdmin('GigabitEthernet0/0', '10.0.0.2', false);
@@ -172,8 +172,8 @@ describe('BFD — Cisco↔Huawei interop', () => {
     const huawei = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cisco.setEventBus(bus); huawei.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     cisco.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     huawei.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -195,8 +195,8 @@ describe('BFD — show bfd neighbors', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

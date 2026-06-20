@@ -1623,3 +1623,69 @@ n'enregistre que des serveurs réellement atteignables et le fil reste prioritai
 - **Stratégie 1** délivre encore via `DirectServerChannel` (appel d'objet) plutôt
   que par le broadcast/relais ; le fil étant prioritaire, c'est un fallback rare,
   mais sa suppression complète (tout-fil) est un incrément ultérieur.
+
+---
+
+## Entrée n°31 — 2026-06-19 — Switch Cisco : indexation 1-based des ports (fidélité Catalyst)
+
+### Défaillance constatée
+
+Un commutateur Cisco « 24 ports » créait `FastEthernet0/0`…`0/23`. Un vrai
+Catalyst est **1-indexé** : `FastEthernet0/1`…`0/24` (et liaisons montantes
+`GigabitEthernet0/1`…), **il n'existe pas de `FastEthernet0/0`**. Conséquences :
+
+1. **Bug de fidélité** : numérotation des interfaces non conforme au matériel réel.
+2. **Tests bloqués au montage** : le helper `setupManagementLAN` câblait
+   `FastEthernet0/24` (le 24ᵉ port, en 1-based) — inexistant en 0-based — d'où un
+   crash `_setCableNoNotify` qui faisait échouer ~9 tests « Management Plane »
+   (ping/SSH/telnet sur SVI) indépendamment du plan SVI de l'entrée n°27.
+
+### Correction
+
+`CiscoSwitch.getPortName` passe en 1-based : `index < 24 ? FastEthernet0/${index+1}
+: GigabitEthernet0/${index-23}`. Le routeur (`GigabitEthernet0/0`-based) et le
+switch Huawei (`GigabitEthernet0/0/N`) ne sont **pas** touchés.
+
+### Migration des références de tests (87 fichiers, ~1300 occurrences)
+
+Fait crucial qui rend la migration sûre : `FastEthernet` est **exclusif au
+switch Cisco** (le routeur n'utilise que `GigabitEthernet`). Toute référence
+`FastEthernet0/N` est donc du contexte switch et se décale de +1 sans risque
+de toucher un port de routeur.
+
+Décalage `N → N+1` **borné à `N ≤ 23`**, ce qui protège automatiquement les
+références déjà correctes en 1-based (`FastEthernet0/24` du helper) et le port
+volontairement invalide (`FastEthernet0/99` d'un test d'erreur). Catégories de
+formes traitées, chacune ayant nécessité une passe dédiée :
+
+- littéraux simples `FastEthernet0/N`, `Fa0/N`, `fa0/N` ;
+- littéraux **échappés** dans les regex (`FastEthernet0\/N`) ;
+- **template literals** de boucle (`FastEthernet0/${i}`) — bornes de boucle
+  ajustées à la main (la variable sert parfois aussi à dériver un VLAN) ;
+- **plages** `interface range fa0/X-Y` — la borne de fin (nombre nu) décalée ;
+- classes de caractères regex (`/Fa0\/[01]/` → `/Fa0\/[12]/`) ;
+- **liaisons montantes Gig du switch** (`<sw>.getPort('GigabitEthernet0/0')`)
+  décalées au cas par cas, sans toucher les `GigabitEthernet` des routeurs sur
+  la même ligne.
+
+### Fichiers
+
+`src/network/devices/CiscoSwitch.ts` (device, 1-based) + 65 fichiers de tests
+`unit/network-v2/`.
+
+### Validation
+
+- `unit/network-v2` : retour à la **baseline pré-migration** (seuls subsistent
+  les échecs pré-existants `other-commands` et `auditctl-other`), **zéro
+  nouvelle régression** sur 8366 tests.
+- `other-commands` (suite L2) : bloc « Management Plane » **15 → 8 échecs**
+  (les 7 tests SVI ping/connectivité, jusque-là bloqués par le crash de montage,
+  passent désormais). `switch-svi` : 8/8.
+
+### Limites connues / suites futures
+
+- **Switch Huawei** (`GigabitEthernet0/0/N`) toujours 0-based — même correction
+  à appliquer dans un commit dédié (367 références de tests).
+- **Labs de diagnostic `__tests__/debug/cisco-l2/`** : laissés en l'état
+  (0-based) — ce sont des *dumps* non assertifs, à **régénérer** contre le
+  device 1-based séparément.

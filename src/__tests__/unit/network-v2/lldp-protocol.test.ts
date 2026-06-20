@@ -80,8 +80,8 @@ describe('LLDP — discovery', () => {
   it('switch <-> switch discovery uses the Bridge capability', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                           s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                           s2.getPort('FastEthernet0/1')!);
     await enableLldp(s1);
     await enableLldp(s2);
     const n = s1.getLldpAgent().getNeighbors()[0];
@@ -164,12 +164,12 @@ describe('LLDP — global knobs', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await enableLldp(sw);
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('no lldp transmit');
     await sw.executeCommand('end');
     const out = await sw.executeCommand('show lldp interface');
-    expect(out).toMatch(/FastEthernet0\/0:[\s\S]*Tx: disabled/);
-    expect(out).toMatch(/FastEthernet0\/1:[\s\S]*Tx: enabled/);
+    expect(out).toMatch(/FastEthernet0\/1:[\s\S]*Tx: disabled/);
+    expect(out).toMatch(/FastEthernet0\/2:[\s\S]*Tx: enabled/);
   });
 
   it('show lldp neighbors detail exposes chassis-id, port-id, system desc', async () => {
@@ -235,9 +235,9 @@ describe('LLDP — frame is link-local', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!,
-                           sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!,
                            sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!,
+                           sw.getPort('FastEthernet0/2')!);
     await enableLldp(r1);
     await enableLldp(r2);
     await enableLldp(sw);

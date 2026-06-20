@@ -32,7 +32,7 @@ function setupManagementLAN() {
   const r1 = new CiscoRouter('R1', 0, 0);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   const cable2 = new Cable('c2');
   cable2.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/24')!);
@@ -129,7 +129,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       expect(await sw.getPrompt()).toBe('Switch(config-if)#');
       await sw.executeCommand('exit');
       expect(await sw.getPrompt()).toBe('Switch(config)#');
@@ -149,7 +149,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       await sw.executeCommand('end');
       expect(await sw.getPrompt()).toBe('Switch#');
     });
@@ -368,7 +368,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       await sw.executeCommand('description ManagementPort');
       await sw.executeCommand('end');
       const run = await sw.executeCommand('show running-config');
@@ -993,7 +993,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       await sw.executeCommand('description ProdLink');
       await sw.executeCommand('no description');
       await sw.executeCommand('end');
@@ -1012,10 +1012,10 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(running).not.toContain('banner motd');
     });
 
-    it('111. should clear specific ports statistics using clear counters FastEthernet0/1', async () => {
+    it('111. should clear specific ports statistics using clear counters FastEthernet0/2', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
-      const output = await sw.executeCommand('clear counters FastEthernet0/1');
+      const output = await sw.executeCommand('clear counters FastEthernet0/2');
       expect(output).not.toContain('%');
     });
 
@@ -1166,15 +1166,15 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output).toContain('Mac Address Table');
     });
 
-    it('130. should support interface configuration checks on show interfaces FastEthernet0/1', async () => {
+    it('130. should support interface configuration checks on show interfaces FastEthernet0/2', async () => {
       const { sw } = setupIsolatedSwitch();
-      const output = await sw.executeCommand('show interfaces FastEthernet0/1');
-      expect(output).toContain('FastEthernet0/1');
+      const output = await sw.executeCommand('show interfaces FastEthernet0/2');
+      expect(output).toContain('FastEthernet0/2');
     });
 
     it('131. should display administrative up status inside show interfaces when active', async () => {
       const { sw } = setupIsolatedSwitch();
-      const output = await sw.executeCommand('show interfaces FastEthernet0/1');
+      const output = await sw.executeCommand('show interfaces FastEthernet0/2');
       expect(output.toLowerCase()).toContain('up');
     });
 
@@ -1253,15 +1253,15 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output).toContain('NAME:');
     });
 
-    it('144. should support show mac address-table dynamic interface FastEthernet0/1 filters', async () => {
+    it('144. should support show mac address-table dynamic interface FastEthernet0/2 filters', async () => {
       const { sw } = setupIsolatedSwitch();
-      const output = await sw.executeCommand('show mac address-table interface FastEthernet0/1');
+      const output = await sw.executeCommand('show mac address-table interface FastEthernet0/2');
       expect(output).toContain('Mac Address Table');
     });
 
     it('145. should show port details with specific configuration metrics on show interface switchport', async () => {
       const { sw } = setupIsolatedSwitch();
-      const output = await sw.executeCommand('show interfaces FastEthernet0/1 switchport');
+      const output = await sw.executeCommand('show interfaces FastEthernet0/2 switchport');
       expect(output).toContain('Switchport: Enabled');
     });
 
@@ -1334,11 +1334,11 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('155. should reject configuring IP address directly on physical ports (interface FastEthernet0/1)', async () => {
+    it('155. should reject configuring IP address directly on physical ports (interface FastEthernet0/2)', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('ip address 10.0.0.1 255.255.255.0');
       expect(output.toLowerCase()).toContain('%'); // Only SVIs are allowed to have IP addresses on pure L2 switches
     });
@@ -1347,16 +1347,16 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('no switchport');
       expect(output.toLowerCase()).toContain('%'); // L3 interface mode not supported on typical Layer 2 Switch
     });
 
-    it('157. should reject configuring sub-interfaces on physical L2 ports (interface FastEthernet0/1.10)', async () => {
+    it('157. should reject configuring sub-interfaces on physical L2 ports (interface FastEthernet0/2.10)', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      const output = await sw.executeCommand('interface FastEthernet0/1.10');
+      const output = await sw.executeCommand('interface FastEthernet0/2.10');
       expect(output.toLowerCase()).toContain('%');
     });
 
@@ -1390,7 +1390,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('switchport access vlan 999');
       // Typically Cisco IOS says % Access VLAN 999 does not exist. Creating vlan 999
       expect(output).toBeDefined();
@@ -1400,7 +1400,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('switchport trunk encapsulation isl');
       expect(output.toLowerCase()).toContain('%'); // ISL deprecated/unsupported
     });
@@ -1466,7 +1466,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('standby 1 ip 10.0.0.254');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1475,7 +1475,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('ip ospf cost 10');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1514,7 +1514,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('encapsulation dot1q 10');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1577,7 +1577,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('ip helper-address 10.0.0.1');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1614,7 +1614,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('ip nhrp map 10.0.0.1 192.168.1.1');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1623,7 +1623,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('encapsulation frame-relay');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1632,7 +1632,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('encapsulation ppp');
       expect(output.toLowerCase()).toContain('%');
     });
@@ -1649,7 +1649,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('clock rate 64000');
       expect(output.toLowerCase()).toContain('%'); // DTE/DCE clock rate restricted to Serial routing ports
     });
@@ -1658,7 +1658,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('encapsulation hdlc');
       expect(output.toLowerCase()).toContain('%');
     });

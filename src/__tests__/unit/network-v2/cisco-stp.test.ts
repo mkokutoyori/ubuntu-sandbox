@@ -92,13 +92,13 @@ describe('Cisco STP — MST sub-mode', () => {
 describe('Cisco STP — interface config', () => {
   it('per-interface spanning-tree commands recognized', async () => {
     const sw = await cfgSwitch();
-    await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('interface FastEthernet0/2');
     for (const c of ['spanning-tree portfast', 'spanning-tree bpduguard enable',
       'spanning-tree bpdufilter enable', 'spanning-tree cost 19',
       'spanning-tree port-priority 64', 'spanning-tree guard root']) {
       expect(await sw.executeCommand(c)).not.toMatch(/Invalid input|Unrecognized/);
     }
     expect(await sw.executeCommand(
-      'do show spanning-tree interface FastEthernet0/1')).not.toMatch(/Invalid input/);
+      'do show spanning-tree interface FastEthernet0/2')).not.toMatch(/Invalid input/);
   });
 });

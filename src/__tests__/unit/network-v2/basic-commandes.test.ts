@@ -22,9 +22,9 @@ function setupLinuxTopology() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -35,9 +35,9 @@ function setupWindowsTopology() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -742,7 +742,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('interface FastEthernet0/2');
     const output = await sw.executeCommand('ip address 10.1.1.1 255.255.255.0');
     expect(output).toContain('%'); // Rejected on layer-2 port
   });
@@ -753,7 +753,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('interface FastEthernet0/2');
     await sw.executeCommand('no switchport');
     const output = await sw.executeCommand('ip address 10.1.1.1 255.255.255.0');
     expect(output).toContain('%');

@@ -29,9 +29,9 @@ function setupLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -42,9 +42,9 @@ function setupWindowsLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }

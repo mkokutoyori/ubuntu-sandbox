@@ -123,10 +123,10 @@ describe('VTP — server pushes its DB to a client', () => {
     const client = new CiscoSwitch('switch-cisco', 'S2', 8);
     await setupAsServer(server, 'LAB');
     await setupAsClient(client, 'LAB');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('w').connect(server.getPort('FastEthernet0/0')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            client.getPort('FastEthernet0/1')!);
 
     expect(client.getVLAN(50)).toBeUndefined();
     await server.executeCommand('configure terminal');
@@ -149,10 +149,10 @@ describe('VTP — server pushes its DB to a client', () => {
     await client.executeCommand('vtp mode client');
     await client.executeCommand('end');
     expect(client.getVtpAgent().getConfig().domain).toBe('');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('w').connect(server.getPort('FastEthernet0/0')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            client.getPort('FastEthernet0/1')!);
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 60');
     await server.executeCommand('end');
@@ -167,10 +167,10 @@ describe('VTP — security gates', () => {
     const client = new CiscoSwitch('switch-cisco', 'S2', 8);
     await setupAsServer(server, 'LAB');
     await setupAsClient(client, 'PROD');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('w').connect(server.getPort('FastEthernet0/0')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            client.getPort('FastEthernet0/1')!);
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 99');
     await server.executeCommand('end');
@@ -191,10 +191,10 @@ describe('VTP — security gates', () => {
     await client.executeCommand('vtp password wrong');
     await client.executeCommand('vtp mode client');
     await client.executeCommand('end');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('w').connect(server.getPort('FastEthernet0/0')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            client.getPort('FastEthernet0/1')!);
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 77');
     await server.executeCommand('end');
@@ -211,8 +211,8 @@ describe('VTP — wire format', () => {
     client.setEventBus(bus);
     await setupAsServer(server, 'LAB');
     await setupAsClient(client, 'LAB');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
     const cable = new Cable('w');
     cable.setEventBus(bus);
 
@@ -225,8 +225,8 @@ describe('VTP — wire format', () => {
         };
       }
     });
-    cable.connect(server.getPort('FastEthernet0/0')!,
-                  client.getPort('FastEthernet0/0')!);
+    cable.connect(server.getPort('FastEthernet0/1')!,
+                  client.getPort('FastEthernet0/1')!);
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 8');
     await server.executeCommand('end');
@@ -245,10 +245,10 @@ describe('VTP — reactive bus', () => {
     client.setEventBus(bus);
     await setupAsServer(server, 'LAB');
     await setupAsClient(client, 'LAB');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('w').connect(server.getPort('FastEthernet0/0')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(server, 'FastEthernet0/1');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            client.getPort('FastEthernet0/1')!);
 
     const synced: Array<{ deviceId: string; vlansAdded: number[] }> = [];
     bus.subscribe('vtp.db.synced', (e) => synced.push(e.payload));
@@ -287,14 +287,14 @@ describe('VTP — transparent mode', () => {
     await transparent.executeCommand('vtp mode transparent');
     await transparent.executeCommand('end');
     await setupAsClient(client, 'LAB');
-    await makeTrunk(server, 'FastEthernet0/0');
-    await makeTrunk(transparent, 'FastEthernet0/0');
+    await makeTrunk(server, 'FastEthernet0/1');
     await makeTrunk(transparent, 'FastEthernet0/1');
-    await makeTrunk(client, 'FastEthernet0/0');
-    new Cable('a').connect(server.getPort('FastEthernet0/0')!,
-                            transparent.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(transparent.getPort('FastEthernet0/1')!,
-                            client.getPort('FastEthernet0/0')!);
+    await makeTrunk(transparent, 'FastEthernet0/2');
+    await makeTrunk(client, 'FastEthernet0/1');
+    new Cable('a').connect(server.getPort('FastEthernet0/1')!,
+                            transparent.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(transparent.getPort('FastEthernet0/2')!,
+                            client.getPort('FastEthernet0/1')!);
 
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 11');

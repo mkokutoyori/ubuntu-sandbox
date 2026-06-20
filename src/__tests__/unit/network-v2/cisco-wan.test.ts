@@ -79,25 +79,25 @@ function createTopology() {
   const lan4_pc3 = new LinuxPC('linux-pc', 'LAN4-PC3', 200, 300);
 
   // Câbles LAN : chaque PC vers son switch
-  const cLan1_1 = new Cable('cLan1-1'); cLan1_1.connect(lan1_pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
-  const cLan1_2 = new Cable('cLan1-2'); cLan1_2.connect(lan1_pc2.getPort('eth0')!, sw1.getPort('FastEthernet0/2')!);
-  const cLan1_3 = new Cable('cLan1-3'); cLan1_3.connect(lan1_pc3.getPort('eth0')!, sw1.getPort('FastEthernet0/3')!);
-  const cLan1_router = new Cable('cLan1-router'); cLan1_router.connect(r1.getPort('GigabitEthernet0/0')!, sw1.getPort('GigabitEthernet0/0')!);
+  const cLan1_1 = new Cable('cLan1-1'); cLan1_1.connect(lan1_pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/2')!);
+  const cLan1_2 = new Cable('cLan1-2'); cLan1_2.connect(lan1_pc2.getPort('eth0')!, sw1.getPort('FastEthernet0/3')!);
+  const cLan1_3 = new Cable('cLan1-3'); cLan1_3.connect(lan1_pc3.getPort('eth0')!, sw1.getPort('FastEthernet0/4')!);
+  const cLan1_router = new Cable('cLan1-router'); cLan1_router.connect(r1.getPort('GigabitEthernet0/0')!, sw1.getPort('GigabitEthernet0/1')!);
 
-  const cLan2_1 = new Cable('cLan2-1'); cLan2_1.connect(lan2_pc1.getPort('eth0')!, sw2.getPort('FastEthernet0/1')!);
-  const cLan2_2 = new Cable('cLan2-2'); cLan2_2.connect(lan2_pc2.getPort('eth0')!, sw2.getPort('FastEthernet0/2')!);
-  const cLan2_3 = new Cable('cLan2-3'); cLan2_3.connect(lan2_pc3.getPort('eth0')!, sw2.getPort('FastEthernet0/3')!);
-  const cLan2_router = new Cable('cLan2-router'); cLan2_router.connect(r2.getPort('GigabitEthernet0/0')!, sw2.getPort('GigabitEthernet0/0')!);
+  const cLan2_1 = new Cable('cLan2-1'); cLan2_1.connect(lan2_pc1.getPort('eth0')!, sw2.getPort('FastEthernet0/2')!);
+  const cLan2_2 = new Cable('cLan2-2'); cLan2_2.connect(lan2_pc2.getPort('eth0')!, sw2.getPort('FastEthernet0/3')!);
+  const cLan2_3 = new Cable('cLan2-3'); cLan2_3.connect(lan2_pc3.getPort('eth0')!, sw2.getPort('FastEthernet0/4')!);
+  const cLan2_router = new Cable('cLan2-router'); cLan2_router.connect(r2.getPort('GigabitEthernet0/0')!, sw2.getPort('GigabitEthernet0/1')!);
 
-  const cLan3_1 = new Cable('cLan3-1'); cLan3_1.connect(lan3_pc1.getPort('eth0')!, sw3.getPort('FastEthernet0/1')!);
-  const cLan3_2 = new Cable('cLan3-2'); cLan3_2.connect(lan3_pc2.getPort('eth0')!, sw3.getPort('FastEthernet0/2')!);
-  const cLan3_3 = new Cable('cLan3-3'); cLan3_3.connect(lan3_pc3.getPort('eth0')!, sw3.getPort('FastEthernet0/3')!);
-  const cLan3_router = new Cable('cLan3-router'); cLan3_router.connect(r3.getPort('GigabitEthernet0/0')!, sw3.getPort('GigabitEthernet0/0')!);
+  const cLan3_1 = new Cable('cLan3-1'); cLan3_1.connect(lan3_pc1.getPort('eth0')!, sw3.getPort('FastEthernet0/2')!);
+  const cLan3_2 = new Cable('cLan3-2'); cLan3_2.connect(lan3_pc2.getPort('eth0')!, sw3.getPort('FastEthernet0/3')!);
+  const cLan3_3 = new Cable('cLan3-3'); cLan3_3.connect(lan3_pc3.getPort('eth0')!, sw3.getPort('FastEthernet0/4')!);
+  const cLan3_router = new Cable('cLan3-router'); cLan3_router.connect(r3.getPort('GigabitEthernet0/0')!, sw3.getPort('GigabitEthernet0/1')!);
 
-  const cLan4_1 = new Cable('cLan4-1'); cLan4_1.connect(lan4_pc1.getPort('eth0')!, sw4.getPort('FastEthernet0/1')!);
-  const cLan4_2 = new Cable('cLan4-2'); cLan4_2.connect(lan4_pc2.getPort('eth0')!, sw4.getPort('FastEthernet0/2')!);
-  const cLan4_3 = new Cable('cLan4-3'); cLan4_3.connect(lan4_pc3.getPort('eth0')!, sw4.getPort('FastEthernet0/3')!);
-  const cLan4_router = new Cable('cLan4-router'); cLan4_router.connect(r4.getPort('GigabitEthernet0/0')!, sw4.getPort('GigabitEthernet0/0')!);
+  const cLan4_1 = new Cable('cLan4-1'); cLan4_1.connect(lan4_pc1.getPort('eth0')!, sw4.getPort('FastEthernet0/2')!);
+  const cLan4_2 = new Cable('cLan4-2'); cLan4_2.connect(lan4_pc2.getPort('eth0')!, sw4.getPort('FastEthernet0/3')!);
+  const cLan4_3 = new Cable('cLan4-3'); cLan4_3.connect(lan4_pc3.getPort('eth0')!, sw4.getPort('FastEthernet0/4')!);
+  const cLan4_router = new Cable('cLan4-router'); cLan4_router.connect(r4.getPort('GigabitEthernet0/0')!, sw4.getPort('GigabitEthernet0/1')!);
 
   // Câbles inter-routeurs
   const cR1R2 = new Cable('cR1R2'); cR1R2.connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/1')!);

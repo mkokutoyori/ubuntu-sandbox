@@ -162,8 +162,8 @@ describe('Logging — Linux iptables drops appear in /var/log/kern.log', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
     cli.powerOn(); srv.powerOn();
-    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -182,8 +182,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     const srv = new CiscoRouter('SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -203,8 +203,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     const srv = new CiscoRouter('SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -230,8 +230,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); win.setEventBus(bus); sw.setEventBus(bus);
     cli.powerOn(); win.powerOn();
-    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     win.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -256,8 +256,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     const srv = new HuaweiRouter('SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cli.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -291,8 +291,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     const srv = new CiscoRouter('SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

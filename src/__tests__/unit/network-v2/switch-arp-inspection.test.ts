@@ -82,7 +82,7 @@ describe('DAI — base semantics', () => {
     let dropped = 0;
     bus.subscribe('arp.inspected', (e) => { if (e.payload.verdict === 'drop') dropped++; });
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
     expect(dropped).toBe(0);
@@ -94,12 +94,12 @@ describe('DAI — base semantics', () => {
     const events: Array<{ reason: string }> = [];
     bus.subscribe('arp.violation', (e) => events.push(e.payload));
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST2_MAC, BCAST, HOST1_IP, HOST2_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
     expect(events.length).toBe(1);
     expect(events[0].reason).toBe('binding-mismatch');
-    expect(sw._getArpInspectionPortStats('FastEthernet0/0')!.dropped).toBe(1);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.dropped).toBe(1);
     expect(sw._getArpTableInternal().has(HOST1_IP)).toBe(false);
   });
 
@@ -108,16 +108,16 @@ describe('DAI — base semantics', () => {
     cfg.vlans.add(1);
     sw._getSnoopingBindings().push({
       macAddress: HOST1_MAC, ipAddress: HOST1_IP, lease: 86400,
-      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/0',
+      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/1',
     });
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
-    const stats = sw._getArpInspectionPortStats('FastEthernet0/0')!;
+    const stats = sw._getArpInspectionPortStats('FastEthernet0/1')!;
     expect(stats.forwarded).toBe(1);
     expect(stats.dropped).toBe(0);
-    expect(sw._getArpTableInternal().get(HOST1_IP)?.iface).toBe('FastEthernet0/0');
+    expect(sw._getArpTableInternal().get(HOST1_IP)?.iface).toBe('FastEthernet0/1');
   });
 
   it('binding-port mismatch drops the frame (host moved to wrong port)', () => {
@@ -125,13 +125,13 @@ describe('DAI — base semantics', () => {
     cfg.vlans.add(1);
     sw._getSnoopingBindings().push({
       macAddress: HOST1_MAC, ipAddress: HOST1_IP, lease: 86400,
-      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/0',
+      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/1',
     });
 
-    injectArp(sw, 'FastEthernet0/1',
+    injectArp(sw, 'FastEthernet0/2',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
-    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.droppedBindingMismatch).toBe(1);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/2')!.droppedBindingMismatch).toBe(1);
   });
 });
 
@@ -142,12 +142,12 @@ describe('DAI — trusted ports', () => {
     const sw = setupSwitch();
     const cfg = sw._getArpInspectionConfig();
     cfg.vlans.add(1);
-    cfg.trustedPorts.add('FastEthernet0/0');
+    cfg.trustedPorts.add('FastEthernet0/1');
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST2_MAC, BCAST, HOST1_IP, HOST2_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
-    const s = sw._getArpInspectionPortStats('FastEthernet0/0')!;
+    const s = sw._getArpInspectionPortStats('FastEthernet0/1')!;
     expect(s.forwarded).toBe(1);
     expect(s.dropped).toBe(0);
   });
@@ -163,13 +163,13 @@ describe('DAI — extra validations', () => {
     cfg.validate.srcMac = true;
     sw._getSnoopingBindings().push({
       macAddress: HOST1_MAC, ipAddress: HOST1_IP, lease: 86400,
-      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/0',
+      type: 'dhcp-snooping', vlan: 1, port: 'FastEthernet0/1',
     });
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST2_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
-    expect(sw._getArpInspectionPortStats('FastEthernet0/0')!.droppedSrcMacMismatch).toBe(1);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.droppedSrcMacMismatch).toBe(1);
   });
 
   it('validate ip drops 0.0.0.0 sender (probe addresses are filtered)', () => {
@@ -178,10 +178,10 @@ describe('DAI — extra validations', () => {
     cfg.vlans.add(1);
     cfg.validate.ip = true;
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, '0.0.0.0', HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
-    expect(sw._getArpInspectionPortStats('FastEthernet0/0')!.droppedInvalidIp).toBe(1);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.droppedInvalidIp).toBe(1);
   });
 });
 
@@ -200,13 +200,13 @@ describe('DAI — ARP ACL filter', () => {
       ],
     });
 
-    injectArp(sw, 'FastEthernet0/0',
-      makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
-    expect(sw._getArpInspectionPortStats('FastEthernet0/0')!.forwarded).toBe(1);
-
     injectArp(sw, 'FastEthernet0/1',
+      makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
+    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.forwarded).toBe(1);
+
+    injectArp(sw, 'FastEthernet0/2',
       makeArpFrame(HOST2_MAC, BCAST, HOST2_IP, HOST2_MAC, VICTIM_IP, '00:00:00:00:00:00'));
-    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.droppedAclDeny).toBe(1);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/2')!.droppedAclDeny).toBe(1);
   });
 });
 
@@ -218,20 +218,20 @@ describe('DAI — rate limit + err-disable', () => {
     const sw = setupSwitch(bus);
     const cfg = sw._getArpInspectionConfig();
     cfg.vlans.add(1);
-    cfg.rateLimits.set('FastEthernet0/0', 2);
+    cfg.rateLimits.set('FastEthernet0/1', 2);
 
     const errd: Array<{ port: string }> = [];
     bus.subscribe('arp.errdisable.set', (e) => errd.push(e.payload));
 
     for (let i = 0; i < 5; i++) {
-      injectArp(sw, 'FastEthernet0/0',
+      injectArp(sw, 'FastEthernet0/1',
         makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
     }
 
     expect(errd.length).toBe(1);
-    expect(errd[0].port).toBe('FastEthernet0/0');
-    expect(sw.getPort('FastEthernet0/0')!.getIsUp()).toBe(false);
-    expect(sw._getArpInspectionPortStats('FastEthernet0/0')!.droppedRateLimit).toBeGreaterThan(0);
+    expect(errd[0].port).toBe('FastEthernet0/1');
+    expect(sw.getPort('FastEthernet0/1')!.getIsUp()).toBe(false);
+    expect(sw._getArpInspectionPortStats('FastEthernet0/1')!.droppedRateLimit).toBeGreaterThan(0);
   });
 
   it('clears err-disable explicitly and brings the port back up', () => {
@@ -239,19 +239,19 @@ describe('DAI — rate limit + err-disable', () => {
     const sw = setupSwitch(bus);
     const cfg = sw._getArpInspectionConfig();
     cfg.vlans.add(1);
-    cfg.rateLimits.set('FastEthernet0/0', 1);
+    cfg.rateLimits.set('FastEthernet0/1', 1);
 
     for (let i = 0; i < 5; i++) {
-      injectArp(sw, 'FastEthernet0/0',
+      injectArp(sw, 'FastEthernet0/1',
         makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
     }
-    expect(sw.getPort('FastEthernet0/0')!.getIsUp()).toBe(false);
+    expect(sw.getPort('FastEthernet0/1')!.getIsUp()).toBe(false);
 
     const recovered: Array<{ port: string }> = [];
     bus.subscribe('arp.errdisable.cleared', (e) => recovered.push(e.payload));
-    expect(sw._clearArpInspectionErrDisable('FastEthernet0/0')).toBe(true);
+    expect(sw._clearArpInspectionErrDisable('FastEthernet0/1')).toBe(true);
     expect(recovered.length).toBe(1);
-    expect(sw.getPort('FastEthernet0/0')!.getIsUp()).toBe(true);
+    expect(sw.getPort('FastEthernet0/1')!.getIsUp()).toBe(true);
   });
 });
 
@@ -264,22 +264,22 @@ describe('DAI — management ARP snoop-learn', () => {
     const learned: Array<{ ip: string; mac: string; vlan: number }> = [];
     bus.subscribe('arp.snoop.learned', (e) => learned.push(e.payload));
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
     expect(learned.length).toBe(1);
     expect(learned[0]).toMatchObject({ ip: HOST1_IP, mac: HOST1_MAC, vlan: 1 });
     const arp = sw._getArpTableInternal().get(HOST1_IP)!;
     expect(arp.mac.toString().toLowerCase()).toBe(HOST1_MAC);
-    expect(arp.iface).toBe('FastEthernet0/0');
+    expect(arp.iface).toBe('FastEthernet0/1');
     expect(arp.type).toBe('dynamic');
   });
 
   it('never overwrites a static management ARP entry', () => {
     const sw = setupSwitch();
-    sw._addStaticARP(HOST1_IP, new MACAddress(VICTIM_MAC), 'FastEthernet0/2');
+    sw._addStaticARP(HOST1_IP, new MACAddress(VICTIM_MAC), 'FastEthernet0/3');
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
     const arp = sw._getArpTableInternal().get(HOST1_IP)!;
@@ -303,9 +303,9 @@ describe('DAI — Cisco CLI', () => {
     await sw.executeCommand('permit ip host 10.0.0.1 mac host aa:aa:aa:00:00:01');
     await sw.executeCommand('exit');
     await sw.executeCommand('ip arp inspection filter HOSTS vlan 10 static');
-    await sw.executeCommand('interface FastEthernet0/0');
-    await sw.executeCommand('ip arp inspection trust');
     await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('ip arp inspection trust');
+    await sw.executeCommand('interface FastEthernet0/2');
     await sw.executeCommand('ip arp inspection limit rate 20');
     await sw.executeCommand('end');
 
@@ -315,8 +315,8 @@ describe('DAI — Cisco CLI', () => {
     expect(cfg.validate.srcMac).toBe(true);
     expect(cfg.validate.ip).toBe(true);
     expect(cfg.errDisableRecoverySec).toBe(60);
-    expect(cfg.trustedPorts.has('FastEthernet0/0')).toBe(true);
-    expect(cfg.rateLimits.get('FastEthernet0/1')).toBe(20);
+    expect(cfg.trustedPorts.has('FastEthernet0/1')).toBe(true);
+    expect(cfg.rateLimits.get('FastEthernet0/2')).toBe(20);
     expect(cfg.vlanAclFilters.get(10)?.aclName).toBe('HOSTS');
     expect(cfg.vlanAclFilters.get(10)?.staticMode).toBe(true);
 
@@ -346,12 +346,12 @@ describe('DAI — Cisco CLI', () => {
     const sw = setupSwitch();
     sw._getArpInspectionConfig().vlans.add(1);
 
-    injectArp(sw, 'FastEthernet0/0',
+    injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST2_MAC, BCAST, HOST1_IP, HOST2_MAC, VICTIM_IP, '00:00:00:00:00:00'));
 
     const out = await sw.executeCommand('show ip arp inspection statistics');
     expect(out).toMatch(/Interface/);
-    expect(out).toMatch(/Fa0\/0/);
+    expect(out).toMatch(/Fa0\/1/);
   });
 });
 
@@ -362,8 +362,8 @@ describe('DAI — end-to-end with LinuxPC', () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     const pc2 = new LinuxPC('PC2', 0, 0);
     const sw = setupSwitch();
-    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 

@@ -50,7 +50,7 @@ describe('cdpToNeighborDTO', () => {
     const row: CdpNeighbor = {
       localPort: 'Gi0/0',
       remoteHost: 'SW1',
-      remotePort: 'Fa0/3',
+      remotePort: 'Fa0/4',
       remoteType: 'switch-cisco',
       remotePlatform: 'cisco WS-C2960',
       remoteCapability: 'Switch',
@@ -60,7 +60,7 @@ describe('cdpToNeighborDTO', () => {
     expect(cdpToNeighborDTO([row])).toEqual([{
       localPort: 'Gi0/0',
       remoteHost: 'SW1',
-      remotePort: 'Fa0/3',
+      remotePort: 'Fa0/4',
       remoteType: 'switch-cisco',
       remotePlatform: 'cisco WS-C2960',
       remoteCapability: 'Switch',

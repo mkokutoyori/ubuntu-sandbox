@@ -35,8 +35,8 @@ describe('LACP — pure helpers', () => {
 describe('LACP — single switch', () => {
   it('channel-group adds the port to a logical group', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
-    await configureChannelGroup(sw, 'FastEthernet0/0', 1, 'active');
-    const info = sw.getLacpAgent().getPortInfo('FastEthernet0/0');
+    await configureChannelGroup(sw, 'FastEthernet0/1', 1, 'active');
+    const info = sw.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(info?.groupId).toBe(1);
     expect(info?.mode).toBe('active');
   });
@@ -44,22 +44,22 @@ describe('LACP — single switch', () => {
   it('static mode "on" bundles a port immediately on link-up', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const peer = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(sw, 'FastEthernet0/0', 1, 'on');
-    new Cable('w').connect(sw.getPort('FastEthernet0/0')!,
-                            peer.getPort('FastEthernet0/0')!);
-    const info = sw.getLacpAgent().getPortInfo('FastEthernet0/0');
+    await configureChannelGroup(sw, 'FastEthernet0/1', 1, 'on');
+    new Cable('w').connect(sw.getPort('FastEthernet0/1')!,
+                            peer.getPort('FastEthernet0/1')!);
+    const info = sw.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(info?.bundled).toBe(true);
     expect(info?.state).toBe('bundled');
   });
 
   it('no channel-group removes the port from the group', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
-    await configureChannelGroup(sw, 'FastEthernet0/0', 1, 'active');
+    await configureChannelGroup(sw, 'FastEthernet0/1', 1, 'active');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('no channel-group');
     await sw.executeCommand('end');
-    expect(sw.getLacpAgent().getPortInfo('FastEthernet0/0')).toBeUndefined();
+    expect(sw.getLacpAgent().getPortInfo('FastEthernet0/1')).toBeUndefined();
   });
 });
 
@@ -67,12 +67,12 @@ describe('LACP — negotiation across a cable', () => {
   it('active/active bundles both ports', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    const i1 = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
-    const i2 = s2.getLacpAgent().getPortInfo('FastEthernet0/0');
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    const i1 = s1.getLacpAgent().getPortInfo('FastEthernet0/1');
+    const i2 = s2.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(i1?.bundled).toBe(true);
     expect(i2?.bundled).toBe(true);
   });
@@ -80,36 +80,36 @@ describe('LACP — negotiation across a cable', () => {
   it('active/passive bundles both ports', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'passive');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
-    expect(s2.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'passive');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(true);
+    expect(s2.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(true);
   });
 
   it('passive/passive stays standalone (neither side advertises)', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'passive');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'passive');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(false);
-    expect(s2.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(false);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'passive');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'passive');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(false);
+    expect(s2.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(false);
   });
 
   it('two member ports in the same group bundle together (active/active)', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
     await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
+    await configureChannelGroup(s1, 'FastEthernet0/2', 1, 'active');
     await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
-    new Cable('a').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(s1.getPort('FastEthernet0/1')!,
+    await configureChannelGroup(s2, 'FastEthernet0/2', 1, 'active');
+    new Cable('a').connect(s1.getPort('FastEthernet0/1')!,
                             s2.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(s1.getPort('FastEthernet0/2')!,
+                            s2.getPort('FastEthernet0/2')!);
     const members = s1.getLacpAgent().getGroupMembers(1);
     expect(members.length).toBe(2);
     expect(members.every(m => m.bundled)).toBe(true);
@@ -126,10 +126,10 @@ describe('LACP — reactive bus', () => {
     const bundled: Array<{ deviceId: string; port: string }> = [];
     bus.subscribe('lacp.port.bundled', (e) => bundled.push(e.payload));
 
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
 
     expect(bundled.some(b => b.deviceId === s1.id)).toBe(true);
     expect(bundled.some(b => b.deviceId === s2.id)).toBe(true);
@@ -141,14 +141,14 @@ describe('LACP — reactive bus', () => {
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
     s1.setEventBus(bus);
     s2.setEventBus(bus);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
 
     const unbundled: Array<{ deviceId: string; cause: string }> = [];
     bus.subscribe('lacp.port.unbundled', (e) => unbundled.push(e.payload));
-    s1.getPort('FastEthernet0/0')!.setUp(false);
+    s1.getPort('FastEthernet0/1')!.setUp(false);
     expect(unbundled.some(u => u.deviceId === s1.id && u.cause === 'link-down')).toBe(true);
   });
 });
@@ -172,10 +172,10 @@ describe('LACP — wire format', () => {
         };
       }
     });
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    cable.connect(s1.getPort('FastEthernet0/0')!,
-                  s2.getPort('FastEthernet0/0')!);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    cable.connect(s1.getPort('FastEthernet0/1')!,
+                  s2.getPort('FastEthernet0/1')!);
 
     expect(seen).not.toBeNull();
     expect(seen!.dst).toBe(LACP_SLOW_MAC);
@@ -187,19 +187,19 @@ describe('LACP — show etherchannel', () => {
   it('show etherchannel summary reports bundled ports', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
     const out = await s1.executeCommand('show etherchannel summary');
     expect(out).toMatch(/Number of channel-groups in use: 1/);
     expect(out).toMatch(/1\s+Port-channel1\s+LACP/);
-    expect(out).toMatch(/Fa0\/0\(P\)/);
+    expect(out).toMatch(/Fa0\/1\(P\)/);
   });
 
   it('running-config emits channel-group lines', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
-    await configureChannelGroup(sw, 'FastEthernet0/0', 5, 'active');
+    await configureChannelGroup(sw, 'FastEthernet0/1', 5, 'active');
     const out = await sw.executeCommand('show running-config');
     expect(out).toMatch(/channel-group 5 mode active/);
   });
@@ -251,11 +251,11 @@ describe('LACP — Huawei Eth-Trunk parity', () => {
     await huawei.executeCommand('eth-trunk 1');
     await huawei.executeCommand('quit');
     await huawei.executeCommand('quit');
-    await configureChannelGroup(cisco, 'FastEthernet0/0', 1, 'active');
+    await configureChannelGroup(cisco, 'FastEthernet0/1', 1, 'active');
     new Cable('w').connect(huawei.getPort('GigabitEthernet0/0/0')!,
-                            cisco.getPort('FastEthernet0/0')!);
+                            cisco.getPort('FastEthernet0/1')!);
     expect(huawei.getLacpAgent().getPortInfo('GigabitEthernet0/0/0')?.bundled).toBe(true);
-    expect(cisco.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
+    expect(cisco.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(true);
   });
 });
 
@@ -265,10 +265,10 @@ describe('LACP — receive timeouts (802.3ad §43.4.12)', () => {
   async function buildBundledPair() {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
-    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.bundled).toBe(true);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/1')?.bundled).toBe(true);
     return { s1, s2 };
   }
 
@@ -282,14 +282,14 @@ describe('LACP — receive timeouts (802.3ad §43.4.12)', () => {
 
     // current_while at slow rate: 3 × 30 s.
     vi.advanceTimersByTime(91_000);
-    const expired = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    const expired = s1.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(expired?.state).toBe('expired');
     expect(expired?.bundled).toBe(false);
     expect(expired?.partner).not.toBeNull(); // kept one short interval
 
     // EXPIRED → DEFAULTED after the grace interval.
     vi.advanceTimersByTime(4_000);
-    const defaulted = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    const defaulted = s1.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(defaulted?.state).toBe('standalone');
     expect(defaulted?.partner).toBeNull();
   });
@@ -300,13 +300,13 @@ describe('LACP — receive timeouts (802.3ad §43.4.12)', () => {
 
     s2.getLacpAgent().stop();
     vi.advanceTimersByTime(91_000);
-    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/0')?.state).toBe('expired');
+    expect(s1.getLacpAgent().getPortInfo('FastEthernet0/1')?.state).toBe('expired');
 
     // Partner comes back and speaks again.
     s2.getLacpAgent().start();
-    s2.getLacpAgent().advertise('FastEthernet0/0');
+    s2.getLacpAgent().advertise('FastEthernet0/1');
 
-    const revived = s1.getLacpAgent().getPortInfo('FastEthernet0/0');
+    const revived = s1.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect(revived?.bundled).toBe(true);
     expect(revived?.state).toBe('bundled');
   });
@@ -317,9 +317,9 @@ describe('LACP — receive timeouts (802.3ad §43.4.12)', () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
     s1.setEventBus(bus); s2.setEventBus(bus);
-    await configureChannelGroup(s1, 'FastEthernet0/0', 1, 'active');
-    await configureChannelGroup(s2, 'FastEthernet0/0', 1, 'active');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+    await configureChannelGroup(s1, 'FastEthernet0/1', 1, 'active');
+    await configureChannelGroup(s2, 'FastEthernet0/1', 1, 'active');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
 
     const causes: string[] = [];
     bus.subscribe('lacp.port.unbundled', (e) => causes.push((e.payload as { cause: string }).cause));

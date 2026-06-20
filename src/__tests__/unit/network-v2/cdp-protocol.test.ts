@@ -56,8 +56,8 @@ describe('CDP — bidirectional discovery', () => {
   it('two switches cabled together discover each other', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
-    new Cable('w').connect(sw1.getPort('FastEthernet0/0')!,
-                            sw2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(sw1.getPort('FastEthernet0/1')!,
+                            sw2.getPort('FastEthernet0/1')!);
     expect(sw1.getCdpAgent().getNeighbors()[0]?.remoteHost).toBe('SW2');
     expect(sw2.getCdpAgent().getNeighbors()[0]?.remoteHost).toBe('SW1');
   });
@@ -172,16 +172,16 @@ describe('CDP — reactive events', () => {
 describe('CDP — frame is link-local (never crosses a switch)', () => {
   it('CDP frames are consumed at the switch and not flooded', () => {
     // Topology:  R1 ─ SW ─ R2
-    // R1 cables into SW.Fa0/0; R2 cables into SW.Fa0/1. SW must NOT
+    // R1 cables into SW.Fa0/1; R2 cables into SW.Fa0/2. SW must NOT
     // forward CDP between them. Real switches consume the multicast
     // 01:00:0c:cc:cc:cc and treat the protocol as terminating.
     const r1 = new CiscoRouter('R1');
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!,
-                           sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!,
                            sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!,
+                           sw.getPort('FastEthernet0/2')!);
 
     // SW sees both routers as neighbours (one per port).
     const swNbrs = sw.getCdpAgent().getNeighbors();
@@ -249,12 +249,12 @@ describe('CDP — Cisco CLI', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('no cdp enable');
     await sw.executeCommand('end');
 
-    expect(sw.getCdpAgent().isPortEnabled('FastEthernet0/0')).toBe(false);
-    const out = await sw.executeCommand('show running-config interface FastEthernet0/0');
+    expect(sw.getCdpAgent().isPortEnabled('FastEthernet0/1')).toBe(false);
+    const out = await sw.executeCommand('show running-config interface FastEthernet0/1');
     expect(out).toMatch(/no cdp enable/);
   });
 
@@ -262,13 +262,13 @@ describe('CDP — Cisco CLI', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('no cdp enable');
     await sw.executeCommand('end');
 
     const out = await sw.executeCommand('show cdp interface');
-    expect(out).not.toMatch(/FastEthernet0\/0 is/);
-    expect(out).toMatch(/FastEthernet0\/1 is/);
+    expect(out).not.toMatch(/FastEthernet0\/1 is/);
+    expect(out).toMatch(/FastEthernet0\/2 is/);
   });
 });
 
@@ -303,14 +303,14 @@ describe('CDP — native VLAN mismatch detection (%CDP-4-NATIVE_VLAN_MISMATCH)',
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
     s1.setEventBus(bus); s2.setEventBus(bus);
-    await trunkWithNative(s1, 'FastEthernet0/0', 1);
-    await trunkWithNative(s2, 'FastEthernet0/0', 99);
+    await trunkWithNative(s1, 'FastEthernet0/1', 1);
+    await trunkWithNative(s2, 'FastEthernet0/1', 99);
 
     const mismatches: Array<{ deviceId: string; localVlan: number; remoteVlan: number }> = [];
     bus.subscribe('cdp.native-vlan.mismatch', (e) =>
       mismatches.push(e.payload as { deviceId: string; localVlan: number; remoteVlan: number }));
 
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
 
     // Both ends detect it (each sees the other's hello).
     expect(mismatches.some(m => m.deviceId === s1.id && m.localVlan === 1 && m.remoteVlan === 99)).toBe(true);
@@ -322,13 +322,13 @@ describe('CDP — native VLAN mismatch detection (%CDP-4-NATIVE_VLAN_MISMATCH)',
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
     s1.setEventBus(bus); s2.setEventBus(bus);
-    await trunkWithNative(s1, 'FastEthernet0/0', 99);
-    await trunkWithNative(s2, 'FastEthernet0/0', 99);
+    await trunkWithNative(s1, 'FastEthernet0/1', 99);
+    await trunkWithNative(s2, 'FastEthernet0/1', 99);
 
     const mismatches: unknown[] = [];
     bus.subscribe('cdp.native-vlan.mismatch', (e) => mismatches.push(e.payload));
 
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
 
     expect(mismatches).toHaveLength(0);
   });

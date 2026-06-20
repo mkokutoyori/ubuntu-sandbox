@@ -51,7 +51,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
   it('should transition (config)# → (config-if)# via interface', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     expect(sw.getPrompt()).toBe('Switch1(config-if)#');
   });
 
@@ -65,7 +65,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
   it('should exit from (config-if)# to (config)# via exit', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     expect(sw.getPrompt()).toBe('Switch1(config-if)#');
     await sw.executeCommand('exit');
     expect(sw.getPrompt()).toBe('Switch1(config)#');
@@ -74,7 +74,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
   it('should exit twice from (config-if)# to # via two exits', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('exit');
     await sw.executeCommand('exit');
     expect(sw.getPrompt()).toBe('Switch1#');
@@ -83,7 +83,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
   it('should return to # from any config mode via end', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     expect(sw.getPrompt()).toBe('Switch1(config-if)#');
     await sw.executeCommand('end');
     expect(sw.getPrompt()).toBe('Switch1#');
@@ -137,16 +137,16 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
   it('should return ambiguous error for "s" in config-if mode', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/0');
+    await sw.executeCommand('int fa0/1');
     // In config-if mode, "s" matches shutdown and switchport — ambiguous
     const result = await sw.executeCommand('s');
     expect(result).toContain('Ambiguous');
   });
 
-  it('should resolve interface abbreviation fa0/1', async () => {
+  it('should resolve interface abbreviation fa0/2', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    const result = await sw.executeCommand('int fa0/1');
+    const result = await sw.executeCommand('int fa0/2');
     expect(sw.getPrompt()).toBe('Switch1(config-if)#');
   });
 
@@ -155,7 +155,7 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
     const sw26 = new CiscoSwitch('switch-cisco', 'SW', 26);
     await sw26.executeCommand('enable');
     await sw26.executeCommand('configure terminal');
-    await sw26.executeCommand('int gi0/0');
+    await sw26.executeCommand('int gi0/1');
     expect(sw26.getPrompt()).toBe('SW(config-if)#');
   });
 });
@@ -185,12 +185,12 @@ describe('T-CLI-03: Configuration Persistence', () => {
   it('should show shutdown in running-config after interface shutdown', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/1');
+    await sw.executeCommand('int fa0/2');
     await sw.executeCommand('shutdown');
     await sw.executeCommand('end');
 
     const config = await sw.executeCommand('show running-config');
-    expect(config).toContain('interface FastEthernet0/1');
+    expect(config).toContain('interface FastEthernet0/2');
     expect(config).toContain('shutdown');
   });
 
@@ -200,8 +200,8 @@ describe('T-CLI-03: Configuration Persistence', () => {
     const c1 = new Cable('c1');
     const c2 = new Cable('c2');
 
-    c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 255.255.255.0');
@@ -213,7 +213,7 @@ describe('T-CLI-03: Configuration Persistence', () => {
     // Shutdown the port
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/1');
+    await sw.executeCommand('int fa0/2');
     await sw.executeCommand('shutdown');
 
     // Port should be down — ping should fail
@@ -236,7 +236,7 @@ describe('T-CLI-03: Configuration Persistence', () => {
   it('should show switchport access vlan in running-config', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/0');
+    await sw.executeCommand('int fa0/1');
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('end');
 
@@ -247,7 +247,7 @@ describe('T-CLI-03: Configuration Persistence', () => {
   it('should show trunk mode in running-config', async () => {
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/3');
+    await sw.executeCommand('int fa0/4');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('end');
 
@@ -269,8 +269,8 @@ describe('T-L2-01: VLAN Isolation', () => {
 
     const c1 = new Cable('c1');
     const c2 = new Cable('c2');
-    c1.connect(pcA.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    c2.connect(pcB.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    c1.connect(pcA.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    c2.connect(pcB.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pcA.executeCommand('ifconfig eth0 192.168.1.10 255.255.255.0');
     await pcB.executeCommand('ifconfig eth0 192.168.1.20 255.255.255.0');
@@ -284,7 +284,7 @@ describe('T-L2-01: VLAN Isolation', () => {
     await sw.executeCommand('conf t');
     await sw.executeCommand('vlan 10');
     await sw.executeCommand('exit');
-    await sw.executeCommand('int fa0/0');
+    await sw.executeCommand('int fa0/1');
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('end');
 
@@ -310,14 +310,14 @@ describe('T-L2-01: VLAN Isolation', () => {
     await sw.executeCommand('vlan 10');
     await sw.executeCommand('name SERVERS');
     await sw.executeCommand('exit');
-    await sw.executeCommand('int fa0/0');
+    await sw.executeCommand('int fa0/1');
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('end');
 
     const result = await sw.executeCommand('show vlan brief');
     expect(result).toContain('SERVERS');
     expect(result).toContain('10');
-    expect(result).toContain('Fa0/0');
+    expect(result).toContain('Fa0/1');
   });
 });
 
@@ -396,7 +396,7 @@ describe('T-L2-03: 802.1Q Trunking', () => {
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/3');
+    await sw.executeCommand('int fa0/4');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('end');
 
@@ -410,7 +410,7 @@ describe('T-L2-03: 802.1Q Trunking', () => {
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('int fa0/3');
+    await sw.executeCommand('int fa0/4');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk native vlan 99');
     await sw.executeCommand('end');
@@ -426,16 +426,16 @@ describe('T-L2-03: 802.1Q Trunking', () => {
     const pcA = new LinuxPC('PC-A');
     const pcB = new LinuxPC('PC-B');
 
-    // PC-A → SW1 fa0/0, SW1 fa0/3 (trunk) → SW2 fa0/3 (trunk), SW2 fa0/0 → PC-B
-    new Cable('c1').connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(sw1.getPort('FastEthernet0/3')!, sw2.getPort('FastEthernet0/3')!);
-    new Cable('c3').connect(pcB.getPort('eth0')!, sw2.getPort('FastEthernet0/0')!);
+    // PC-A → SW1 fa0/1, SW1 fa0/4 (trunk) → SW2 fa0/4 (trunk), SW2 fa0/1 → PC-B
+    new Cable('c1').connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(sw1.getPort('FastEthernet0/4')!, sw2.getPort('FastEthernet0/4')!);
+    new Cable('c3').connect(pcB.getPort('eth0')!, sw2.getPort('FastEthernet0/1')!);
 
     // Configure trunk on interconnect
     for (const sw of [sw1, sw2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('conf t');
-      await sw.executeCommand('int fa0/3');
+      await sw.executeCommand('int fa0/4');
       await sw.executeCommand('switchport mode trunk');
       await sw.executeCommand('end');
     }
@@ -460,8 +460,8 @@ describe('T-L2-04: MAC Address Table', () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
 
-    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 255.255.255.0');
@@ -473,8 +473,8 @@ describe('T-L2-04: MAC Address Table', () => {
 
     const table = sw.getMACTable();
     expect(table.length).toBeGreaterThanOrEqual(2);
-    expect(table.some(e => e.port === 'FastEthernet0/0')).toBe(true);
     expect(table.some(e => e.port === 'FastEthernet0/1')).toBe(true);
+    expect(table.some(e => e.port === 'FastEthernet0/2')).toBe(true);
   });
 
   it('should display MAC table via show mac address-table', async () => {
@@ -483,8 +483,8 @@ describe('T-L2-04: MAC Address Table', () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
 
-    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 255.255.255.0');
@@ -495,8 +495,8 @@ describe('T-L2-04: MAC Address Table', () => {
 
     expect(output).toContain('Mac Address Table');
     expect(output).toContain('DYNAMIC');
-    expect(output).toContain('FastEthernet0/0');
     expect(output).toContain('FastEthernet0/1');
+    expect(output).toContain('FastEthernet0/2');
   });
 
   it('should age out MAC entries', () => {
@@ -512,7 +512,7 @@ describe('T-L2-04: MAC Address Table', () => {
     const key = '1:00:00:00:00:00:01';
     // Use the internal add API — addStaticMAC creates static entries, but we want dynamic
     // Instead, send a frame directly through the switch
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const frame = {
       srcMAC: new MACAddress('00:00:00:00:00:01'),
       dstMAC: MACAddress.broadcast(),
@@ -537,7 +537,7 @@ describe('T-L2-04: MAC Address Table', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
 
     // Inject a frame to learn a MAC
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const frame = {
       srcMAC: new MACAddress('00:00:00:00:00:01'),
       dstMAC: MACAddress.broadcast(),
@@ -563,20 +563,20 @@ describe('T-L2-05: Interface Range', () => {
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('interface range fa0/0-3');
+    await sw.executeCommand('interface range fa0/1-4');
     expect(sw.getPrompt()).toBe('SW1(config-if)#');
 
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('end');
 
     // All 4 ports should be in VLAN 10
-    for (let i = 0; i <= 3; i++) {
+    for (let i = 1; i <= 4; i++) {
       const cfg = sw.getSwitchportConfig(`FastEthernet0/${i}`);
       expect(cfg?.accessVlan).toBe(10);
     }
 
-    // Ports 4+ should still be in VLAN 1
-    const cfg4 = sw.getSwitchportConfig('FastEthernet0/4');
+    // Ports 5+ should still be in VLAN 1
+    const cfg4 = sw.getSwitchportConfig('FastEthernet0/5');
     expect(cfg4?.accessVlan).toBe(1);
   });
 
@@ -586,17 +586,17 @@ describe('T-L2-05: Interface Range', () => {
 
     await sw.executeCommand('enable');
     await sw.executeCommand('conf t');
-    await sw.executeCommand('interface range fa0/4-7');
+    await sw.executeCommand('interface range fa0/5-8');
     await sw.executeCommand('shutdown');
     await sw.executeCommand('end');
 
-    for (let i = 4; i <= 7; i++) {
+    for (let i = 5; i <= 8; i++) {
       const port = sw.getPort(`FastEthernet0/${i}`);
       expect(port?.getIsUp()).toBe(false);
     }
 
-    // Ports 0-3 should still be up
-    for (let i = 0; i <= 3; i++) {
+    // Ports 1-4 should still be up
+    for (let i = 1; i <= 4; i++) {
       const port = sw.getPort(`FastEthernet0/${i}`);
       expect(port?.getIsUp()).toBe(true);
     }
@@ -626,30 +626,30 @@ describe('T-L2-06: Show Commands', () => {
   it('show interfaces status should list all ports', async () => {
     await sw.executeCommand('enable');
     const result = await sw.executeCommand('show interfaces status');
-    expect(result).toContain('Fa0/0');
     expect(result).toContain('Fa0/1');
     expect(result).toContain('Fa0/2');
     expect(result).toContain('Fa0/3');
+    expect(result).toContain('Fa0/4');
   });
 
   it('show running-config should reflect current state', async () => {
     await sw.executeCommand('enable');
     const result = await sw.executeCommand('show running-config');
     expect(result).toContain('hostname SW1');
-    expect(result).toContain('interface FastEthernet0/0');
+    expect(result).toContain('interface FastEthernet0/1');
     expect(result).toContain('switchport mode access');
     expect(result).toContain('end');
   });
 
   it('show spanning-tree should show port states', async () => {
     const peer = new CiscoSwitch('switch-cisco', 'PEER', 4);
-    new Cable('stp-link').connect(sw.getPort('FastEthernet0/0')!, peer.getPort('FastEthernet0/0')!);
+    new Cable('stp-link').connect(sw.getPort('FastEthernet0/1')!, peer.getPort('FastEthernet0/1')!);
     await sw.executeCommand('enable');
     const result = await sw.executeCommand('show spanning-tree');
     expect(result).toContain('VLAN0001');
     expect(result).toContain('ieee');
     expect(result).toContain('FWD');
-    expect(result).toContain('Fa0/0');
+    expect(result).toContain('Fa0/1');
   });
 
   it('show startup-config should show "not present" initially', async () => {

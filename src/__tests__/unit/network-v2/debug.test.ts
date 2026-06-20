@@ -24,10 +24,10 @@ function setupDebugLAN() {
   const pc2 = new LinuxPC('PC2', 100, 0);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
 
   return { sw, pc1, pc2, cable1, cable2 };
 }
@@ -407,7 +407,7 @@ describe('Cisco IOS Debugging System Suite', () => {
       await sw.executeCommand('terminal monitor');
 
       cable1.disconnect();
-      cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+      cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
       
       const consoleLog = await sw.executeCommand('');
       expect(consoleLog.toLowerCase()).toMatch(/link|up|state|change/);

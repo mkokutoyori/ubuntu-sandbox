@@ -21,15 +21,15 @@ describe('Inter-VLAN routing (router-on-a-stick, 802.1Q subinterfaces)', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 26, 100, 0);
     const h10 = new LinuxPC('linux-pc', 'H10', -100, 0);
     const h20 = new LinuxPC('linux-pc', 'H20', -100, 100);
-    new Cable('up').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    new Cable('a').connect(h10.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
-    new Cable('b').connect(h20.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
+    new Cable('up').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('a').connect(h10.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
+    new Cable('b').connect(h20.getPort('eth0')!, sw.getPort('FastEthernet0/4')!);
 
     await run(sw, ['enable', 'configure terminal',
       'vlan 10', 'exit', 'vlan 20', 'exit',
-      'interface FastEthernet0/2', 'switchport mode access', 'switchport access vlan 10', 'exit',
-      'interface FastEthernet0/3', 'switchport mode access', 'switchport access vlan 20', 'exit',
-      'interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode trunk',
+      'interface FastEthernet0/3', 'switchport mode access', 'switchport access vlan 10', 'exit',
+      'interface FastEthernet0/4', 'switchport mode access', 'switchport access vlan 20', 'exit',
+      'interface FastEthernet0/2', 'switchport trunk encapsulation dot1q', 'switchport mode trunk',
       'switchport trunk allowed vlan 10,20', 'exit', 'end']);
     await run(r, ['enable', 'configure terminal',
       'interface GigabitEthernet0/0', 'no ip address', 'no shutdown', 'exit',

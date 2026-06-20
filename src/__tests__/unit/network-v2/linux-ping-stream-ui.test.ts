@@ -30,8 +30,8 @@ beforeEach(async () => {
   pc2 = new LinuxPC('linux-pc', 'PC2', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 0, 0);
   pc1.powerOn(); pc2.powerOn(); sw.powerOn();
-  new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-  new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   await pc1.executeCommand('ifconfig eth0 192.168.1.10');
   await pc2.executeCommand('ifconfig eth0 192.168.1.20');
   session = new LinuxTerminalSession('term-1', pc1);

@@ -51,19 +51,19 @@ describe('DTP — negotiation across a cable', () => {
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode dynamic auto');
     await s1.executeCommand('end');
     await s2.executeCommand('enable');
     await s2.executeCommand('configure terminal');
-    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('interface FastEthernet0/1');
     await s2.executeCommand('switchport mode dynamic auto');
     await s2.executeCommand('end');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
-    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
-    expect(s1.getSwitchportConfig('FastEthernet0/0')!.mode).toBe('access');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
+    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
+    expect(s1.getSwitchportConfig('FastEthernet0/1')!.mode).toBe('access');
   });
 
   it('desirable/auto negotiates trunk on both sides', async () => {
@@ -71,20 +71,20 @@ describe('DTP — negotiation across a cable', () => {
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode dynamic desirable');
     await s1.executeCommand('end');
     await s2.executeCommand('enable');
     await s2.executeCommand('configure terminal');
-    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('interface FastEthernet0/1');
     await s2.executeCommand('switchport mode dynamic auto');
     await s2.executeCommand('end');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
-    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
-    expect(s1.getSwitchportConfig('FastEthernet0/0')!.mode).toBe('trunk');
-    expect(s2.getSwitchportConfig('FastEthernet0/0')!.mode).toBe('trunk');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
+    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
+    expect(s1.getSwitchportConfig('FastEthernet0/1')!.mode).toBe('trunk');
+    expect(s2.getSwitchportConfig('FastEthernet0/1')!.mode).toBe('trunk');
   });
 
   it('desirable/desirable negotiates trunk', async () => {
@@ -93,14 +93,14 @@ describe('DTP — negotiation across a cable', () => {
     for (const sw of [s1, s2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/0');
+      await sw.executeCommand('interface FastEthernet0/1');
       await sw.executeCommand('switchport mode dynamic desirable');
       await sw.executeCommand('end');
     }
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
-    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
+    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
   });
 
   it('access/desirable keeps the access side access', async () => {
@@ -108,18 +108,18 @@ describe('DTP — negotiation across a cable', () => {
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode access');
     await s1.executeCommand('end');
     await s2.executeCommand('enable');
     await s2.executeCommand('configure terminal');
-    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('interface FastEthernet0/1');
     await s2.executeCommand('switchport mode dynamic desirable');
     await s2.executeCommand('end');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
-    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
+    expect(s2.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
   });
 
   it('nonegotiate stops sending DTP frames and forces local trunk', async () => {
@@ -130,20 +130,20 @@ describe('DTP — negotiation across a cable', () => {
     s2.setEventBus(bus);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode trunk');
     await s1.executeCommand('switchport nonegotiate');
     await s1.executeCommand('end');
-    expect(s1.getDtpAgent().getAdminMode('FastEthernet0/0')).toBe('nonegotiate');
+    expect(s1.getDtpAgent().getAdminMode('FastEthernet0/1')).toBe('nonegotiate');
 
     const sent: string[] = [];
     bus.subscribe('dtp.frame.sent', (e) => {
       if (e.payload.deviceId === s1.id) sent.push(e.payload.port);
     });
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
     expect(sent.length).toBe(0);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
   });
 });
 
@@ -159,16 +159,16 @@ describe('DTP — reactive events', () => {
 
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode dynamic desirable');
     await s1.executeCommand('end');
     await s2.executeCommand('enable');
     await s2.executeCommand('configure terminal');
-    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('interface FastEthernet0/1');
     await s2.executeCommand('switchport mode dynamic auto');
     await s2.executeCommand('end');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
 
     expect(changes.some(c => c.newOperationalMode === 'trunk')).toBe(true);
   });
@@ -182,21 +182,21 @@ describe('DTP — reactive events', () => {
     for (const sw of [s1, s2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/0');
+      await sw.executeCommand('interface FastEthernet0/1');
       await sw.executeCommand('switchport mode dynamic desirable');
       await sw.executeCommand('end');
     }
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
 
     const linkChanges: Array<{ reason: string }> = [];
     bus.subscribe('dtp.mode.changed', (e) => {
       if (e.payload.deviceId === s1.id) linkChanges.push(e.payload);
     });
 
-    s1.getPort('FastEthernet0/0')!.setUp(false);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
+    s1.getPort('FastEthernet0/1')!.setUp(false);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
     expect(linkChanges.some(c => c.reason === 'link-down')).toBe(true);
   });
 });
@@ -223,12 +223,12 @@ describe('DTP — wire format', () => {
     for (const sw of [s1, s2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/0');
+      await sw.executeCommand('interface FastEthernet0/1');
       await sw.executeCommand('switchport mode dynamic desirable');
       await sw.executeCommand('end');
     }
-    cable.connect(s1.getPort('FastEthernet0/0')!,
-                  s2.getPort('FastEthernet0/0')!);
+    cable.connect(s1.getPort('FastEthernet0/1')!,
+                  s2.getPort('FastEthernet0/1')!);
 
     expect(seen).not.toBeNull();
     expect(seen!.dst).toBe(DTP_MULTICAST_MAC);
@@ -241,28 +241,28 @@ describe('DTP — running-config + show dtp', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
-    await sw.executeCommand('switchport mode dynamic auto');
     await sw.executeCommand('interface FastEthernet0/1');
-    await sw.executeCommand('switchport mode dynamic desirable');
+    await sw.executeCommand('switchport mode dynamic auto');
     await sw.executeCommand('interface FastEthernet0/2');
+    await sw.executeCommand('switchport mode dynamic desirable');
+    await sw.executeCommand('interface FastEthernet0/3');
     await sw.executeCommand('switchport nonegotiate');
     await sw.executeCommand('end');
     const r = sw.getRunningConfig();
-    expect(r).toMatch(/interface FastEthernet0\/0[\s\S]*?switchport mode dynamic auto/);
-    expect(r).toMatch(/interface FastEthernet0\/1[\s\S]*?switchport mode dynamic desirable/);
-    expect(r).toMatch(/interface FastEthernet0\/2[\s\S]*?switchport nonegotiate/);
+    expect(r).toMatch(/interface FastEthernet0\/1[\s\S]*?switchport mode dynamic auto/);
+    expect(r).toMatch(/interface FastEthernet0\/2[\s\S]*?switchport mode dynamic desirable/);
+    expect(r).toMatch(/interface FastEthernet0\/3[\s\S]*?switchport nonegotiate/);
   });
 
-  it('show dtp interface FastEthernet0/0 reports admin/operational state', async () => {
+  it('show dtp interface FastEthernet0/1 reports admin/operational state', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode dynamic desirable');
     await sw.executeCommand('end');
-    const out = await sw.executeCommand('show dtp interface FastEthernet0/0');
-    expect(out).toMatch(/DTP information for FastEthernet0\/0/);
+    const out = await sw.executeCommand('show dtp interface FastEthernet0/1');
+    expect(out).toMatch(/DTP information for FastEthernet0\/1/);
     expect(out).toMatch(/DYN-DESIRABLE/);
   });
 
@@ -270,7 +270,7 @@ describe('DTP — running-config + show dtp', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode dynamic auto');
     await sw.executeCommand('end');
     const out = await sw.executeCommand('show dtp');
@@ -290,16 +290,16 @@ describe('DTP — peer aging (silent neighbour)', () => {
     s1.setEventBus(bus); s2.setEventBus(bus);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
-    await s1.executeCommand('interface FastEthernet0/0');
+    await s1.executeCommand('interface FastEthernet0/1');
     await s1.executeCommand('switchport mode dynamic desirable');
     await s1.executeCommand('end');
     await s2.executeCommand('enable');
     await s2.executeCommand('configure terminal');
-    await s2.executeCommand('interface FastEthernet0/0');
+    await s2.executeCommand('interface FastEthernet0/1');
     await s2.executeCommand('switchport mode dynamic auto');
     await s2.executeCommand('end');
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('trunk');
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('trunk');
 
     const reasons: string[] = [];
     bus.subscribe('dtp.mode.changed', (e) => reasons.push((e.payload as { reason: string }).reason));
@@ -309,7 +309,7 @@ describe('DTP — peer aging (silent neighbour)', () => {
     s2.getDtpAgent().stop();
     vi.advanceTimersByTime(5 * 30_000 + 6_000);
 
-    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/0')).toBe('access');
+    expect(s1.getDtpAgent().getOperationalMode('FastEthernet0/1')).toBe('access');
     expect(reasons).toContain('peer-loss');
   });
 });

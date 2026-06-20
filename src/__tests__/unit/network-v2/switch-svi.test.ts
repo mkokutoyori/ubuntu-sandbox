@@ -14,7 +14,7 @@ function lan() {
   const sw = new CiscoSwitch('sw1', 'Switch', 24, 0, 0);
   const pc = new LinuxPC('PC1', 0, 0);
   const cable = new Cable('c1');
-  cable.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   return { sw, pc, cable };
 }
 
