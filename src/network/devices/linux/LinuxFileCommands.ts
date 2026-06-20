@@ -458,25 +458,39 @@ export function cmdRm(ctx: ShellContext, args: string[]): string {
     paths.push(arg);
   }
 
+  const gids = (ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? []).map((g) => g.gid);
+  const actor = { uid: ctx.uid, gid: ctx.gid, gids };
+
   for (const p of paths) {
     // Expand globs
     const expanded = expandGlob(ctx, p);
     for (const ep of expanded) {
-      const absPath = ctx.vfs.normalizePath(ep, ctx.cwd);
+      const path = ctx.vfs.path(ep, ctx.cwd, actor);
+      const absPath = path.value;
       if (absPath === '/' && recursive && preserveRoot) {
         return `rm: it is dangerous to operate recursively on '/'\nrm: use --no-preserve-root to override this failsafe`;
       }
-      const inode = ctx.vfs.resolveInode(absPath, false);
+      const inode = path.lstatNode();
       if (!inode) {
         if (!force) return `rm: cannot remove '${ep}': No such file or directory`;
         continue;
       }
-      if (inode.type === 'directory') {
-        if (recursive) {
-          ctx.vfs.rmrf(absPath);
-        } else {
-          return `rm: cannot remove '${ep}': Is a directory`;
+      if (inode.type === 'directory' && !recursive) {
+        return `rm: cannot remove '${ep}': Is a directory`;
+      }
+      if (ctx.uid !== 0) {
+        const parent = path.parent();
+        const pnode = parent.inode();
+        if (pnode && (!parent.canWrite() || !parent.canExecute())) {
+          return `rm: cannot remove '${ep}': Permission denied`;
         }
+        if (pnode && (pnode.permissions & 0o1000) !== 0
+            && inode.uid !== ctx.uid && pnode.uid !== ctx.uid) {
+          return `rm: cannot remove '${ep}': Operation not permitted`;
+        }
+      }
+      if (inode.type === 'directory') {
+        ctx.vfs.rmrf(absPath);
       } else {
         ctx.vfs.deleteFile(absPath);
       }

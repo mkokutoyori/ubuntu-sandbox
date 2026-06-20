@@ -545,3 +545,50 @@ l'existence ? »).**
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/vfs-realpath.test.ts` (nouveau),
 `src/__tests__/unit/network-v2/vfs-path.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — `rm` : failsafe `--preserve-root` + contrôle d'accès DAC à la suppression
+
+**Couches concernées :** OS (commande `rm`, DAC), VFS.
+
+**Constat (mis au jour par le nouveau resolver `realpath`).** Dans le lab de
+debug filesystem, `cat /etc/passwd` échouait à partir de l'étape 173 : le
+fichier avait disparu. Deux défaillances réelles en cause :
+1. **`rm -rf /`** (étape 151) effaçait silencieusement tout le VFS — aucun
+   garde-fou `--preserve-root` (pourtant activé par défaut sur GNU `rm`).
+2. **`rm /etc/passwd`** (étape 152) réussissait alors que l'utilisateur
+   courant est `user` (uid 1000) non privilégié : `rm` n'appliquait **aucun
+   contrôle d'accès**. Or, supprimer une entrée exige les droits `w`+`x` sur le
+   **répertoire parent** (ici `/etc`, possédé par root en 0755).
+
+Le bug n°2 était invisible avant car `realpath`/`readlink` étaient cassés ;
+le resolver corrigé l'a fait remonter.
+
+**Corrections.**
+- `--preserve-root` par défaut : `rm -rf /` est refusé
+  (`rm: it is dangerous to operate recursively on '/'`), `--no-preserve-root`
+  lève le garde-fou. Parsing des options revu (flags courts caractère par
+  caractère — `--force` n'active plus `r` par erreur — et longs explicites).
+- **DAC à la suppression** via la classe `VfsPath` : pour un acteur non-root,
+  `rm` vérifie `w`+`x` sur le parent (`parent.canWrite() && canExecute()`,
+  sinon `Permission denied`) puis applique la règle du **sticky bit** (`/tmp`
+  en 1777 : on ne peut supprimer que ses propres fichiers, sinon `Operation
+  not permitted`). `rm` renvoie désormais un code de sortie non nul en cas
+  d'échec. Ordre des contrôles aligné sur GNU (« Is a directory » avant le
+  contrôle de droits).
+
+**Tests.**
+- `rm-preserve-root.test.ts` (9 cas) : refus de `rm -rf /` + FS intact,
+  `--no-preserve-root` (root), suppression récursive normale, non-misparse de
+  `--force`, refus pour `user` sur `/etc/passwd` (y compris `-f`), autorisation
+  pour root et pour le propriétaire dans son home, sticky bit `/tmp`.
+- Non-régression : suite `network-v2` complète sans nouvelle défaillance (les
+  44 échecs `other-commands` Cisco et les 16 échecs audit hors-périmètre sont
+  pré-existants, vérifiés identiques avec le changement remisé) ; bash 383/383,
+  commandes/SFTP/journal verts.
+
+**Fichiers touchés :**
+`src/network/devices/linux/LinuxFileCommands.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/rm-preserve-root.test.ts` (nouveau).
