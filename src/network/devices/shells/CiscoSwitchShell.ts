@@ -1472,7 +1472,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
       const startup = this.d().getStartupConfig();
-      return startup ? `Startup config (serialized):\n${startup}` : 'startup-config is not present';
+      return startup ? startup : '% startup-config is not present';
     });
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {

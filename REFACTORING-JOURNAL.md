@@ -1767,3 +1767,71 @@ et documentés.
 - `network-v2` complet : `other-commands` inchangé (37 — échecs config-lifecycle
   pré-existants), **aucune régression** sur 8389 tests. Aucune nouvelle erreur
   lint/tsc.
+
+---
+
+## Entrée n°33 — 2026-06-20 — Switch L2 : cycle de vie de la configuration (NVRAM texte, copy/write/erase fidèles IOS)
+
+### Défaillances constatées
+
+Le cluster « Storage & Configuration Lifecycle » de la suite L2 échouait
+massivement (14 tests). Causes structurelles :
+
+1. **NVRAM sérialisée en JSON** : `show startup-config` affichait
+   `Startup config (serialized):\n{"hostname":…}` au lieu du texte IOS. La
+   NVRAM du switch était un `JSON.stringify` de l'état (`serializeConfig`),
+   doublant la représentation déjà produite par `buildRunningConfig`.
+2. **`copy` masqué** (bug latent de l'entrée n°32) : un `copy` *simple*
+   (`X → Y: copy complete`), enregistré pour **les modes user ET privileged**
+   via `registerCommonShowCommands`, écrasait le `copy` *riche* (run→start,
+   restore, flash). D'où : `copy run start` ne sauvegardait pas, `copy` était
+   accepté en mode user (au lieu d'être refusé), et la gestion d'erreurs
+   (NVRAM vide, fichier absent) ne s'exécutait jamais.
+3. **`erase startup-config`** n'effaçait rien sur le switch (`_eraseStartupConfig`
+   inexistant) et n'affichait pas `complete`.
+4. **`copy running-config startup-config`** ne prévenait pas
+   (`Destination filename …`).
+5. **Pas de système de fichiers flash** (`copy run flash:X` / `copy flash:X run`).
+
+### Correction (structurelle)
+
+- **NVRAM = texte** (`Switch`) : `writeMemory()` capture le running-config
+  *rendu* (`getRunningConfig()`), `show startup-config` l'affiche, et `reload`
+  le **rejoue** via un parseur (`applyConfigText`) — une seule représentation,
+  comme le vrai IOS qui relit le startup-config au boot. `serializeConfig`
+  (JSON) supprimé. Ajout de `_eraseStartupConfig`, `_restoreStartupConfig`,
+  `_applyConfigText`.
+- **`copy` unifié** (base partagée) : suppression du `copy` simple shadow ; un
+  seul handler greedy gère toutes les paires source/destination (un
+  enregistrement exact `copy running-config startup-config` créait un nœud
+  intermédiaire masquant les autres destinations au greedy). Abréviations IOS
+  (`copy run start`) normalisées. Refus en mode user (privileged-only).
+- **Sémantique fidèle** : prompt `Destination filename [startup-config]?` ;
+  `Erase of nvram: complete` ; NVRAM vide → `%% Non-volatile configuration
+  memory is not present` ; source flash absente → `%Error opening … (No such
+  file or directory)`.
+- **Flash simulé** (`Switch`) : `_writeFlashFile`/`_readFlashFile` (Map en
+  mémoire) — `copy run flash:X` puis `copy flash:X run` fonctionne ; un fichier
+  jamais écrit est en erreur. Le routeur (sans ces méthodes) conserve son
+  comportement via gardes `typeof … === 'function'`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (NVRAM texte + flash + parseur),
+`src/network/devices/shells/CiscoShellBase.ts` (copy/write/erase unifiés),
+`src/network/devices/shells/CiscoSwitchShell.ts` (show startup-config / write),
+`command-trie-hygiene.test.ts` (retrait de `copy` de la liste blanche — dédupé).
+
+### Validation
+
+- Cluster config-lifecycle : **14 → 1 échec** (13 corrigés). `other-commands`
+  global : **37 → 24**.
+- Non-régression routeur (base partagée) : `cisco-router-operational-show`
+  + `cross-equipment-ssh-suite` = **238 verts**. `command-trie-hygiene` : 2/2.
+
+### Limite connue
+
+- **Test 44** (base de comptes locaux du switch préservée au reload) : nécessite
+  une vraie base d'utilisateurs locaux côté switch (`_upsertCiscoUsername`,
+  rendu `username …` dans `buildRunningConfig`, restauration avec round-trip du
+  hash de secret) — fonctionnalité AAA distincte, à traiter séparément.

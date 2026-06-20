@@ -634,13 +634,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args));
 
-    trie.registerGreedy('copy', 'Copy file/configuration', (args) => {
-      const src = args[0];
-      const dst = args[1];
-      if (!src) return '% Incomplete command.';
-      if (dst) return `${src} → ${dst}: copy complete`;
-      return `Destination filename [${src}]?\n${src} copied`;
-    });
+    // NOTE: `copy` is a privileged-EXEC command — it is registered once, with
+    // full file-system semantics, in registerPrivilegedExtras (the rich
+    // handler). Registering a simple stub here too (this method runs for both
+    // the user and privileged tries) used to shadow it AND leak `copy` into
+    // user EXEC; that has been removed.
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
@@ -811,36 +809,69 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.privilegedTrie.register('copy running-config startup-config', 'Save configuration', () => {
-      return this.onSave();
-    });
+    const saveRunningToStartup = () =>
+      `Destination filename [startup-config]?\n${this.onSave()}`;
 
-    this.privilegedTrie.register('write memory', 'Save configuration', () => {
-      return this.onSave();
-    });
-    this.privilegedTrie.register('write erase', 'Erase saved configuration', () => {
-      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
-      dev._eraseStartupConfig?.();
-      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
-    });
-    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', () => {
-      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
-      dev._eraseStartupConfig?.();
-      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
-    });
+    this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+
+    const eraseNvram = () => {
+      (this.d() as unknown as { _eraseStartupConfig?: () => void })._eraseStartupConfig?.();
+      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]\nErase of nvram: complete';
+    };
+    this.privilegedTrie.register('write erase', 'Erase saved configuration', eraseNvram);
+    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', eraseNvram);
+    this.privilegedTrie.register('erase nvram:', 'Erase NVRAM', eraseNvram);
+
+    // Single greedy `copy` handler so any source/destination pair is consumed
+    // as arguments (an exact `copy running-config startup-config` registration
+    // would create an intermediate node that hides other destinations from the
+    // greedy match). IOS keyword abbreviations (`copy run start`) are expanded.
+    const norm = (a: string): string => {
+      const t = a.toLowerCase();
+      if (t && 'running-config'.startsWith(t)) return 'running-config';
+      if (t && 'startup-config'.startsWith(t)) return 'startup-config';
+      return t;
+    };
     this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
-      const src = args[0]?.toLowerCase();
-      const dst = args[1]?.toLowerCase();
-      if (!src || !dst) return '% Incomplete command.';
-      if (src === 'running-config' && dst === 'startup-config') return this.onSave();
-      if ((src === 'startup-config' || src.startsWith('flash:')) && dst === 'running-config') {
-        const dev = this.d() as unknown as { _restoreStartupConfig?: () => boolean };
-        dev._restoreStartupConfig?.();
+      if (!args[0] || !args[1]) return '% Incomplete command.';
+      const src = norm(args[0]);
+      const dst = norm(args[1]);
+      const dev = this.d() as unknown as {
+        _restoreStartupConfig?: () => boolean;
+        _readFlashFile?: (name: string) => string | null;
+        _writeFlashFile?: (name: string, content: string) => void;
+        _applyConfigText?: (text: string) => void;
+        getRunningConfig?: () => string;
+      };
+
+      if (src === 'running-config' && dst === 'startup-config') return saveRunningToStartup();
+
+      if (dst === 'running-config' && (src === 'startup-config' || src === 'nvram:')) {
+        // Devices that model NVRAM (the switch) report an empty NVRAM; the
+        // router keeps its shell-level snapshot, so preserve the OK path.
+        if (typeof dev._restoreStartupConfig === 'function' && !dev._restoreStartupConfig()) {
+          return '%% Non-volatile configuration memory is not present';
+        }
         return 'Destination filename [running-config]?\n[OK]';
       }
-      if (src === 'running-config' && (dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:'))) {
-        return `Destination filename [${dst}]?\nWriting ${dst} ... [OK]`;
+
+      const fileSrc = src.startsWith('flash:') || src.startsWith('tftp:') || src.startsWith('ftp:');
+      const fileDst = dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:') || dst.startsWith('nvram:');
+
+      if (dst === 'running-config' && fileSrc) {
+        if (typeof dev._readFlashFile === 'function') {
+          const content = dev._readFlashFile(args[0]);
+          if (content == null) return `%Error opening ${args[0]} (No such file or directory)`;
+          dev._applyConfigText?.(content);
+        }
+        return 'Destination filename [running-config]?\n[OK]';
       }
+
+      if (src === 'running-config' && fileDst) {
+        dev._writeFlashFile?.(args[1], dev.getRunningConfig?.() ?? '');
+        return `Destination filename [${args[1]}]?\nWriting ${args[1]} ... [OK]`;
+      }
+
       return `[OK]`;
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {

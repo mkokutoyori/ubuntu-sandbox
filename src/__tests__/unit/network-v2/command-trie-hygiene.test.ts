@@ -31,13 +31,9 @@ const ROUTER_ALLOWED = new Set([
   'no ip routing',              // base negation ← router CiscoOspfCommands
   'aaa', 'username', 'ip ssh',  // base mgmt defaults ← CiscoSecurityCommands
   'show ssh',                   // base mgmt default ← CiscoSecurityCommands
-  // Known latent bug tracked for the config-lifecycle fix: the simple `copy`
-  // greedy shadows the rich one that performs `copy run start` → onSave().
-  'copy',
 ]);
 
 const SWITCH_ALLOWED = new Set([
-  'copy',                       // same `copy` latent bug (shared base)
   'show mac address-table',     // base default ← CiscoSwitchShell (real table)
 ]);
 

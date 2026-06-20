@@ -1330,7 +1330,10 @@ export abstract class Switch extends Equipment {
   }
 
   writeMemory(): string {
-    this.startupConfig = this.serializeConfig();
+    // NVRAM holds the rendered running-config TEXT — the same representation
+    // `show startup-config` displays and `reload` re-applies. Real IOS stores
+    // and re-parses config text; we do the same instead of a private blob.
+    this.startupConfig = this.getRunningConfig();
     return '[OK]';
   }
 
@@ -1338,69 +1341,74 @@ export abstract class Switch extends Equipment {
     return this.startupConfig;
   }
 
-  private serializeConfig(): string {
-    const config: any = {
-      hostname: this.hostname,
-      vlans: [] as any[],
-      ports: [] as any[],
-      macAgingTime: this.macAgingTime,
-    };
-
-    for (const [id, vlan] of this.vlans) {
-      if (id !== 1) {
-        config.vlans.push({ id, name: vlan.name });
-      }
-    }
-
-    for (const [portName, cfg] of this.switchportConfigs) {
-      const port = this.getPort(portName);
-      config.ports.push({
-        name: portName,
-        mode: cfg.mode,
-        accessVlan: cfg.accessVlan,
-        trunkNativeVlan: cfg.trunkNativeVlan,
-        trunkAllowedVlans: Array.from(cfg.trunkAllowedVlans),
-        isUp: port ? port.getIsUp() : true,
-      });
-    }
-
-    return JSON.stringify(config);
+  /** @internal Erase NVRAM (`erase startup-config` / `write erase`). */
+  _eraseStartupConfig(): void {
+    this.startupConfig = null;
   }
 
+  /** @internal Re-apply NVRAM onto the live config (`copy startup-config
+   *  running-config`). Returns false when NVRAM is empty. */
+  _restoreStartupConfig(): boolean {
+    if (!this.startupConfig) return false;
+    this.applyConfigText(this.startupConfig);
+    return true;
+  }
+
+  /** @internal Re-apply an arbitrary saved config text (`copy flash:X
+   *  running-config`). */
+  _applyConfigText(text: string): void { this.applyConfigText(text); }
+
+  // ── Simulated flash file system (config backups) ──────────────────
+  private flashFiles = new Map<string, string>();
+  /** @internal `copy running-config flash:X` — store a named config file. */
+  _writeFlashFile(name: string, content: string): void { this.flashFiles.set(name, content); }
+  /** @internal `copy flash:X running-config` — read it back (null if absent). */
+  _readFlashFile(name: string): string | null { return this.flashFiles.get(name) ?? null; }
+
   private restoreFromStartupConfig(): void {
-    if (!this.startupConfig) return;
-    try {
-      const config = JSON.parse(this.startupConfig);
-      this.hostname = config.hostname || this.hostname;
-      this.macAgingTime = config.macAgingTime || 300;
+    if (this.startupConfig) this.applyConfigText(this.startupConfig);
+  }
 
-      // Restore VLANs
-      for (const v of config.vlans || []) {
-        this.createVLAN(v.id, v.name);
+  /**
+   * Re-apply a saved running-config (text) to live switch state. Parses the
+   * canonical lines emitted by the vendor shell's `buildRunningConfig` —
+   * hostname, VLAN database and per-interface switchport settings — which is
+   * exactly the state the previous JSON snapshot restored, but from the single
+   * text representation now shared with `show startup-config`.
+   */
+  private applyConfigText(text: string): void {
+    let curVlan: number | null = null;
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '!' ||
+          line.startsWith('Building config') || line.startsWith('Current configuration')) continue;
+      let g: RegExpMatchArray | null;
+      if ((g = line.match(/^hostname\s+(\S+)/))) {
+        this.hostname = g[1]; this.name = g[1]; curVlan = null; curIface = null;
+      } else if ((g = line.match(/^vlan\s+(\d+)$/))) {
+        curVlan = parseInt(g[1], 10); curIface = null;
+        if (!this.vlans.has(curVlan)) this.createVLAN(curVlan);
+      } else if (curVlan !== null && (g = line.match(/^name\s+(.+)/))) {
+        this.renameVLAN(curVlan, g[1]);
+      } else if ((g = line.match(/^interface\s+(\S+)/))) {
+        curIface = g[1]; curVlan = null;
+      } else if (curIface) {
+        const cfg = this.switchportConfigs.get(curIface);
+        if (!cfg) continue;
+        if (/^switchport mode trunk/.test(line)) cfg.mode = 'trunk';
+        else if (/^switchport mode access/.test(line)) cfg.mode = 'access';
+        else if ((g = line.match(/^switchport access vlan\s+(\d+)/))) cfg.accessVlan = parseInt(g[1], 10);
+        else if ((g = line.match(/^switchport trunk native vlan\s+(\d+)/))) cfg.trunkNativeVlan = parseInt(g[1], 10);
+        else if (/^shutdown$/.test(line)) { const p = this.getPort(curIface); if (p) p.setUp(false); }
       }
-
-      // Restore port configs
-      for (const p of config.ports || []) {
-        const cfg = this.switchportConfigs.get(p.name);
-        if (cfg) {
-          cfg.mode = p.mode;
-          cfg.accessVlan = p.accessVlan;
-          cfg.trunkNativeVlan = p.trunkNativeVlan;
-          cfg.trunkAllowedVlans = new Set(p.trunkAllowedVlans);
-        }
-        const port = this.getPort(p.name);
-        if (port) port.setUp(p.isUp);
+    }
+    // Rebuild access-VLAN port membership from the restored switchport config.
+    for (const [portName, cfg] of this.switchportConfigs) {
+      if (cfg.mode === 'access') {
+        const vlan = this.vlans.get(cfg.accessVlan);
+        if (vlan) vlan.ports.add(portName);
       }
-
-      // Rebuild VLAN port assignments
-      for (const [portName, cfg] of this.switchportConfigs) {
-        if (cfg.mode === 'access') {
-          const vlan = this.vlans.get(cfg.accessVlan);
-          if (vlan) vlan.ports.add(portName);
-        }
-      }
-    } catch {
-      Logger.error(this.id, 'switch:restore-error', `${this.name}: failed to restore startup config`);
     }
   }
 
