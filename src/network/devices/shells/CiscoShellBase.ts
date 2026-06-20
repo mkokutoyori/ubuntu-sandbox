@@ -596,7 +596,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
-    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.registerGreedy('show flash:', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();

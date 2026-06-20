@@ -362,11 +362,6 @@ export function buildTrafficBehaviorView(t: CommandTrie, ctx: HuaweiPolicyShellC
     ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: true });
     return '';
   });
-  t.register('statistic enable', 'Enable statistics', () => {
-    const name = ctx.getSelectedBehavior(); if (!name) return '';
-    ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: true });
-    return '';
-  });
   t.register('undo statistics enable', 'Disable statistics', () => {
     const name = ctx.getSelectedBehavior(); if (!name) return '';
     ctx.r().getTrafficPolicyStore().getBehavior(name)?.addAction({ kind: 'statistic', enabled: false });

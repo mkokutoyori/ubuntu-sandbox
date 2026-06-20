@@ -1936,3 +1936,50 @@ ignorés, soit absents. D'où les échecs « Management Plane » :
 - **98** (rejet d'une connexion télnet/SSH **entrante** selon la config VTY) :
   nécessite un modèle de connexion entrante (listener TCP de gestion + auth
   VTY) côté switch — incrément dédié.
+
+---
+
+## Entrée n°36 — 2026-06-20 — Trie CLI : suppression des enregistrements de raccourcis
+
+### Défaillance constatée
+
+Le `CommandTrie` résout déjà les abréviations par *préfixe unique* (`sh` →
+`show`, `conf t` → `configure terminal`, `wr mem` → `write memory`). Or
+quelques commandes enregistraient en plus une **épellation abrégée explicite**
+— pur doublon « qui ne devrait pas être dans le trie ».
+
+### Détection
+
+Repérage précis (instrumentation à la construction) : une registration P est un
+raccourci si son chemin est une **abréviation token-à-token** d'un autre chemin
+enregistré Q (même nombre de tokens, chaque token de P préfixe de celui de Q,
+≥1 strict) **et** partage la **même description** — signature d'un copier-coller
+d'auteur. Cela évite les faux positifs `ip`/`ipv6`, `exec`/`exec-timeout`
+(préfixes de chaîne mais mots-clés canoniques distincts).
+
+Faux positif écarté manuellement : `no ip ospf authentication` n'est **pas** un
+raccourci de `no ip ospf authentication-key` (commandes IOS distinctes, même
+description générique) — conservé.
+
+### Correction
+
+5 enregistrements de raccourcis supprimés (la résolution par préfixe les couvre,
+**comportement inchangé**) :
+- `u` / `u all` (switch) → `undebug` / `undebug all` (handlers identiques).
+- `show flash` → `show flash:` (base).
+- `show ipv6 access-list` → `show ipv6 access-lists` (ACL).
+- `statistic enable` → `statistics enable` (Huawei policy).
+
+### Fichiers
+
+`CiscoSwitchShell.ts`, `CiscoShellBase.ts`, `cisco/CiscoAclCommands.ts`,
+`huawei/HuaweiPolicyCommands.ts`.
+
+### Validation
+
+- `show flash` (test 33), ACL (47), Huawei parity : verts. `u all` résout
+  toujours vers `undebug all` (préfixe), sortie identique — le test 58, déjà en
+  échec avant (sortie attendue « disabled »), reste inchangé : **aucune
+  régression**.
+- Suite `network-v2` complète : **8368 verts**, seuls les échecs pré-existants
+  de `other-commands` (17) subsistent.

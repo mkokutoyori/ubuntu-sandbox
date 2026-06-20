@@ -1172,7 +1172,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     p.register('no debug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
     p.register('undebug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
-    p.register('u all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
     p.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
       const what = a.join(' ') || 'all';
       svc()?.disable('spanning-tree ' + what);
@@ -1188,7 +1187,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return service.disable(arg);
     };
     p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
-    p.registerGreedy('u', 'Disable debugging', (a) => undebugScope(a.join(' ')));
   }
 
   private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {

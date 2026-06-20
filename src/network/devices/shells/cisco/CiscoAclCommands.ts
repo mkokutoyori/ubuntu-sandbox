@@ -653,7 +653,6 @@ export function runningConfigInterfaceACL(router: Router, ifName: string): strin
 export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show access-lists', 'Display all access lists', (args) => showAccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ip access-lists', 'Display IP access lists', (args) => showAccessLists(getRouter(), args[0]));
-  trie.registerGreedy('show ipv6 access-list', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
 }
 
