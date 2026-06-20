@@ -902,3 +902,34 @@ suites `at`/background par les ticks cron.
 **Fichiers touchés :**
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/linux-cron-scheduling.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Windows : tâches planifiées récurrentes (parité avec cron, TDD)
+
+**Constat.** Côté Windows, seules les tâches uniques (`/SC ONCE`) se
+déclenchaient. Pour atteindre la parité avec `cron`, le Planificateur doit
+gérer les tâches **récurrentes** (`/SC MINUTE`, `/SC HOURLY`, `/SC DAILY`,
+modulo `/MO n`).
+
+**Méthode TDD.** Tests d'abord (rouge confirmé : les tâches récurrentes ne se
+réarmaient pas), puis implémentation. Aucun commentaire ajouté dans le code.
+
+**Réarmement sur l'horloge.** `schtasks /create` calcule désormais un
+`intervalMs` selon `/SC` (× `/MO`) et un premier `runAt` (à `/ST` ou
+maintenant + intervalle). `fireDueScheduledTasks` boucle tant que `runAt <=
+now` : il exécute le programme puis réarme `runAt += intervalMs` (ou le désarme
+pour `/SC ONCE`), si bien qu'un grand saut d'horloge rejoue chaque occurrence
+manquée. Le helper d'exécution a été scindé (`runScheduledProgram` lance le
+programme et note la dernière exécution sans toucher au planning) pour que
+`schtasks /run` lance la tâche sans perturber sa récurrence.
+
+**Résultat.** `windows-scheduled-tasks` passe de 4 à 8 tests : `/SC MINUTE`
+toutes les minutes, `/MO 2` une minute sur deux, `/SC DAILY` une fois par jour
+à `/ST`, et arrêt du réarmement quand le service `Schedule` est stoppé.
+Non-régression Windows/PowerShell : 31 + 541 verts.
+
+**Fichiers touchés :**
+`src/network/devices/windows/WinSystemCommands.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/__tests__/unit/network-v2/windows-scheduled-tasks.test.ts`.

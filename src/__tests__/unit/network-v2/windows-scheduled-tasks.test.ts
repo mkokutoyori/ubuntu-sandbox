@@ -52,3 +52,45 @@ describe('schtasks — scheduled tasks fire on the simulated clock', () => {
     expect(await win.executeCmdCommand('tasklist')).not.toContain('nosched.exe');
   });
 });
+
+function count(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+describe('schtasks — recurring tasks re-arm on the simulated clock', () => {
+  let win: WindowsPC;
+  beforeEach(() => {
+    resetCounters();
+    resetDeviceCounters();
+    win = pc();
+  });
+
+  it('a /SC MINUTE task fires every minute', async () => {
+    await win.executeCmdCommand('schtasks /create /tn Min /sc minute /tr C:\\m\\min.exe');
+    win.advanceTime(3 * 60_000);
+    expect(count(await win.executeCmdCommand('tasklist'), 'min.exe')).toBe(3);
+  });
+
+  it('a /SC MINUTE /MO 2 task fires every two minutes', async () => {
+    await win.executeCmdCommand('schtasks /create /tn Min2 /sc minute /mo 2 /tr C:\\m\\min2.exe');
+    win.advanceTime(4 * 60_000);
+    expect(count(await win.executeCmdCommand('tasklist'), 'min2.exe')).toBe(2);
+  });
+
+  it('a /SC DAILY task fires once per day at its start time', async () => {
+    await win.executeCmdCommand('schtasks /create /tn Daily /sc daily /st 12:00 /tr C:\\d\\daily.exe');
+    win.advanceTime(13 * 60 * 60_000); // 13h: past day-0 12:00
+    expect(count(await win.executeCmdCommand('tasklist'), 'daily.exe')).toBe(1);
+    win.advanceTime(24 * 60 * 60_000); // 37h: past day-1 12:00
+    expect(count(await win.executeCmdCommand('tasklist'), 'daily.exe')).toBe(2);
+  });
+
+  it('a recurring task stops firing once Schedule is stopped', async () => {
+    await win.executeCmdCommand('schtasks /create /tn MinStop /sc minute /tr C:\\m\\minstop.exe');
+    win.advanceTime(60_000);
+    const after1 = count(await win.executeCmdCommand('tasklist'), 'minstop.exe');
+    await win.executeCmdCommand('net stop Schedule');
+    win.advanceTime(5 * 60_000);
+    expect(count(await win.executeCmdCommand('tasklist'), 'minstop.exe')).toBe(after1);
+  });
+});

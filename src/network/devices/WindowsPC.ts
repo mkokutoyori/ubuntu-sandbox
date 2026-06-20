@@ -1381,8 +1381,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (this.svcMgr.getService('Schedule')?.state !== 'Running') return;
     const now = this.simulatedDate();
     for (const task of this.scheduledTasks.values()) {
-      if (task.runAt && task.runAt.getTime() <= now.getTime()) {
-        WinSys.fireScheduledTask(task, this.procMgr, now);
+      let guard = 0;
+      while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
+        WinSys.runScheduledProgram(task, this.procMgr, now);
+        task.runAt = task.intervalMs
+          ? new Date(task.runAt.getTime() + task.intervalMs)
+          : undefined;
       }
     }
   }

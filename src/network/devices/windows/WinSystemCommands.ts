@@ -27,6 +27,7 @@ export interface WinScheduledTask {
   state: string;
   command?: string;
   runAt?: Date;
+  intervalMs?: number;
   lastRunTime?: Date;
   lastResult?: string;
 }
@@ -254,10 +255,18 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const sc = flagVal('/sc')?.toUpperCase();
     const st = flagVal('/st');
+    const mo = Number(flagVal('/mo')) || 1;
+    const base = ctx.now();
     const task: WinScheduledTask = {
       taskName: tn, taskPath: '\\', state: 'Ready', command: flagVal('/tr'),
     };
-    if (st && (!sc || sc === 'ONCE')) task.runAt = parseSchtasksTime(st, ctx.now());
+    const recurUnit = sc === 'MINUTE' ? 60_000 : sc === 'HOURLY' ? 3_600_000 : sc === 'DAILY' ? 86_400_000 : 0;
+    if (recurUnit > 0) {
+      task.intervalMs = mo * recurUnit;
+      task.runAt = st ? parseSchtasksTime(st, base) : new Date(base.getTime() + task.intervalMs);
+    } else if (st && (!sc || sc === 'ONCE')) {
+      task.runAt = parseSchtasksTime(st, base);
+    }
     ctx.scheduledTasks.set(tn.toLowerCase(), task);
     return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
   }
@@ -272,7 +281,7 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const task = ctx.scheduledTasks.get(tn.toLowerCase());
     if (!task) return 'ERROR: The system cannot find the file specified.';
-    fireScheduledTask(task, ctx.processManager, ctx.now());
+    runScheduledProgram(task, ctx.processManager, ctx.now());
     return `SUCCESS: Attempted to run the scheduled task "${tn}".`;
   }
   if (action === '/end' || action === '/change') {
@@ -281,7 +290,7 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
 }
 
-export function fireScheduledTask(
+export function runScheduledProgram(
   task: WinScheduledTask,
   pm: WinSystemProcessManager,
   now: Date,
@@ -289,7 +298,6 @@ export function fireScheduledTask(
   task.lastRunTime = now;
   task.lastResult = '0x0';
   task.state = 'Ready';
-  task.runAt = undefined;
   if (!task.command) return;
   const target = task.command.replace(/^["']|["']$/g, '');
   const leaf = target.split(/[\\/]/).pop() ?? target;
