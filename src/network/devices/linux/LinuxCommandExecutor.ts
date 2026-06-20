@@ -2134,7 +2134,8 @@ export class LinuxCommandExecutor {
       case 'cp': {
         const paths = args.filter(a => !a.startsWith('-'));
         for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
-        return { output: cmdCp(c, args), exitCode: 0 };
+        const outCp = cmdCp(c, args);
+        return { output: outCp, exitCode: outCp.startsWith('cp:') ? 1 : 0 };
       }
       case 'mv': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -2142,7 +2143,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'rename');
           this.publishSyscall('rename', abs);
         }
-        return { output: cmdMv(c, args), exitCode: 0 };
+        const outMv = cmdMv(c, args);
+        return { output: outMv, exitCode: outMv.startsWith('mv:') ? 1 : 0 };
       }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -2159,7 +2161,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'mkdir');
           this.publishSyscall('mkdir', abs);
         }
-        return { output: cmdMkdir(c, args), exitCode: 0 };
+        const outMk = cmdMkdir(c, args);
+        return { output: outMk, exitCode: outMk.startsWith('mkdir:') ? 1 : 0 };
       }
       case 'rmdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -2167,7 +2170,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'rmdir');
           this.publishSyscall('rmdir', abs);
         }
-        return { output: cmdRmdir(c, args), exitCode: 0 };
+        const outRd = cmdRmdir(c, args);
+        return { output: outRd, exitCode: outRd.startsWith('rmdir:') ? 1 : 0 };
       }
       case 'ln': {
         const isSymlink = args.includes('-s');
@@ -2178,7 +2182,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', sc);
           this.publishSyscall(sc, abs);
         }
-        return { output: cmdLn(c, args), exitCode: 0 };
+        const outLn = cmdLn(c, args);
+        return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };

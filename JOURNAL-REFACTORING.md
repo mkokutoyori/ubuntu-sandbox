@@ -592,3 +592,50 @@ le resolver corrigé l'a fait remonter.
 `src/network/devices/linux/LinuxFileCommands.ts`,
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/rm-preserve-root.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Cohérence des droits d'accès : DAC généralisé aux commandes mutantes
+
+**Couches concernées :** OS (commandes fichiers/permissions, DAC), VFS,
+classe `VfsPath`.
+
+**Constat.** Après `rm`, le reste des commandes mutantes n'appliquait **aucun
+contrôle d'accès** : un utilisateur non privilégié pouvait `chmod`/`chown` des
+fichiers root, créer/supprimer des entrées dans des répertoires système, etc.
+Incohérent avec un vrai Linux.
+
+**Corrections (via la classe `VfsPath` et un acteur `uid/gid/groupes`).**
+- Helper partagé `actorOf(ctx)` + nouvelles méthodes `VfsPath.ownedByActor()`
+  et `VfsPath.isWritableDir()` (répertoire existant + `w` + `x`).
+- **`chmod`** : seul le propriétaire (ou root) peut changer les permissions
+  (`Operation not permitted` sinon).
+- **`chown`** : seul root peut changer le propriétaire ; le changement de
+  groupe seul suit la règle de `chgrp`.
+- **`chgrp`** (et la partie groupe de `chown`) : il faut posséder le fichier
+  **et** appartenir au groupe cible.
+- **`mkdir`/`rmdir`/`cp`/`mv`/`ln`** : création/suppression d'une entrée exige
+  `w`+`x` sur le répertoire parent ; `cp` exige aussi `r` sur la source ; `mv`
+  vérifie le parent source **et** le parent destination, plus la règle du
+  sticky bit ; `mkdir -p` vérifie le premier ancêtre existant.
+- Toutes ces commandes renvoient désormais un code de sortie non nul et le
+  message réaliste (`Permission denied` / `Operation not permitted`) en cas de
+  refus ; root conserve son contournement.
+
+**Tests.**
+- `perm-ownership-dac.test.ts` (5 cas) : chmod/chown/chgrp refusés pour `user`,
+  autorisés pour le propriétaire / root.
+- `dir-mutation-dac.test.ts` (9 cas) : mkdir/cp/mv/rmdir/ln refusés dans `/etc`
+  pour `user`, autorisés dans le home et pour root, refus de déplacer un
+  fichier root hors de `/etc`.
+- Non-régression : suites commandes/bash/journal/SFTP vertes, suite
+  `network-v2` complète sans nouvelle défaillance (échecs Cisco `other-commands`
+  et audit hors-périmètre pré-existants).
+
+**Fichiers touchés :**
+`src/network/devices/linux/VfsPath.ts`,
+`src/network/devices/linux/LinuxFileCommands.ts`,
+`src/network/devices/linux/LinuxPermCommands.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/perm-ownership-dac.test.ts` (nouveau),
+`src/__tests__/unit/network-v2/dir-mutation-dac.test.ts` (nouveau).
