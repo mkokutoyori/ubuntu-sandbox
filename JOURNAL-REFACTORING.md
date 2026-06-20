@@ -678,3 +678,58 @@ suites DAC/SFTP/SSH/commandes/bash vertes (965 combinés).
 `src/network/devices/linux/LinuxFileCommands.ts`,
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/acl-dac.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Audit : daemon auditd réel, modèle de credentials, sémantique des watches
+
+**Couches concernées :** OS (auditd, processus, services, credentials), VFS
+(inode, setuid), bus réactif, commandes.
+
+**Modèle métier `LinuxAuditDaemon` (acteur réactif).** auditd devient un vrai
+démon piloté par le cycle de vie du service : il s'abonne au bus
+(`linux.service.started/stopped`, `linux.process.signalled`), possède l'état
+`running/stopped/suspended` et le modèle de config parsé depuis
+`auditd.conf`. Il émet `DAEMON_START`/`DAEMON_END`/`DAEMON_CONFIG`, recharge
+les règles de `rules.d` au démarrage et sur `SIGHUP` (en ignorant les lignes
+corrompues), et **suspend la journalisation** quand l'espace disque passe sous
+`space_left`/`admin_space_left` (action `SUSPEND`), en cohérence avec le modèle
+de stockage matériel/mount. La validation de `auditd.conf` passe par un
+`configCheck` du gestionnaire de services (consulté au start/restart/reload).
+`service status` rend la sortie systemd `active (running)`. `kill` non-jobspec
+est délégué à l'interpréteur (substitution `$(pgid auditd)`), ajout d'une
+commande `pgid`.
+
+**Modèle de credentials.** `euid` passe à 0 à l'`execve` d'un binaire
+setuid-root, lu depuis le **vrai bit setuid du VFS** (passwd/su/sudo/ping/mount
+semés en 04755 root). `sudo` publie son propre `execve` et `sudo -S` retombe
+sur le mode NOPASSWD sans mot de passe pipé. L'`execve` d'un binaire non
+exécutable est audité `exit=-13`, et `rm` d'un fichier absent journalise
+`unlink success=no`.
+
+**`su` authentifié.** Un appelant non-root doit fournir le mot de passe du
+compte cible (sur stdin) ; sinon `su` échoue et auditd journalise un
+`USER_AUTH res=failed`. Root commute librement. Le flux interactif `su`
+transmet le mot de passe validé à `su(1)` (un seul contrôle pour les deux
+chemins).
+
+**Sémantique des watches.** Les watches mémorisent l'inode cible : un watch de
+fichier suit les liens durs et survit au renommage du répertoire parent. Les
+écritures par redirection bash (`echo >>`) sont auditées (descendants et
+même-inode) sans double-déclenchement.
+
+**Résultat.** Suites audit `auditctl` (100), `auditctl-other` (150),
+`other-audit` (150), `journalization` (200) = **600/600**. Tests reposant sur
+un `su` sans mot de passe adaptés au modèle réaliste (escalade via
+`sudo su -`, `su` non-root authentifié par mot de passe pipé, fixtures `/tmp`
+possédées par l'utilisateur consommateur). Aucune régression nette sur la
+suite complète (15659 passants ; restent des échecs pré-existants Cisco
+`other-commands` et un test Windows `netsh`).
+
+**Fichiers touchés (principaux) :**
+`src/network/devices/linux/audit/LinuxAuditDaemon.ts` (nouveau),
+`src/network/devices/linux/audit/LinuxAuditRules.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/LinuxServiceManager.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/terminal/flows/LinuxFlowBuilder.ts`.
