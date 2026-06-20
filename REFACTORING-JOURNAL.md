@@ -1508,3 +1508,62 @@ ping Cisco (routeur + switch).
 
 - `router-architecture`, `no-ip-address`, `nat-icmp-pat`, `switch-svi` :
   **28 tests verts**, aucune régression. Aucune nouvelle erreur lint/tsc.
+
+---
+
+## Entrée n°29 — 2026-06-20 — IPSec : sélection du pair découplée du registre global (god-mode)
+
+### Défaillance constatée
+
+Le transport IKE est déjà entièrement sur le fil : `IPSecEngine.initiateIkeWire`
+émet l'offre via `Router._sendIkeUdp` (vraie trame UDP/500 → IP → Ethernet →
+`sendFrame` → port → câble), et le pair la reçoit via `handleIkeUdp` dans son
+plan de données. **Mais la sélection du pair restait god-mode** : `determinePeer`
+gateait chaque pair configuré (`crypto map … set peer X`) par
+`IPSecEngine.findRouterByIP(peerIP)`, qui **parcourt le registre global**
+(`Equipment.getAllEquipment()`) pour vérifier qu'un `Router` porte cette IP
+quelque part dans la simulation, avant même de regarder la table de routage.
+
+C'est doublement faux par rapport à un vrai IOS :
+
+1. **Couplage au registre global** — un routeur réel ne « sait » pas si un objet
+   pair existe ailleurs ; il ne connaît que sa config et sa FIB.
+2. **Sémantique de failover incorrecte** — un pair configuré mais momentanément
+   injoignable était *écarté* (au lieu d'être tenté puis abandonné via DPD),
+   parce que `findRouterByIP` répond sur l'existence de l'objet, pas sur la
+   joignabilité réelle.
+
+### Correction (structurelle)
+
+`determinePeer` ne consulte plus que la **table de routage locale**
+(`lookupRoute`) : on sélectionne le premier pair configuré pour lequel la FIB a
+une route, exactement comme IOS. L'établissement réel se joue ensuite sur le fil
+(`_sendIkeUdp`) et échoue proprement (`createFailedIKESA`) si aucun pair ne
+répond. Le gate `findRouterByIP` disparaît du chemin de sélection.
+
+`findRouterByIP` **reste** utilisé par la détection NAT-T (`findRouterBehindNAT`)
+— pas de code mort. Cette résolution NAT-T par scan du registre est la
+**prochaine cible** (migration vers une détection par observation NAT-D à la
+réception, le NAT étant déjà réellement appliqué sur le câble par l'équipement
+intermédiaire).
+
+### Fichiers
+
+`src/network/ipsec/IPSecEngine.ts` (`determinePeer`).
+
+### Validation
+
+- Suite IPSec complète (8 fichiers : failures, ikev1-psk, ikev2-psk, advanced,
+  nat-dpd, ike-messages, modes-pfs, dpd-wire) : **47 tests verts**, aucune
+  régression — les tunnels se forment toujours, NAT-T et DPD inclus, en
+  s'appuyant uniquement sur le routage + le fil.
+- Lint : **inchangé** (52 = 52 ; dette `as any` pré-existante du fichier non
+  aggravée). Aucune nouvelle erreur introduite par la modification.
+
+### Limites connues / suite
+
+- **NAT-T god-mode** (`getApparentSourceIP` / `findRouterBehindNAT` /
+  `findEquipmentByIP`) : prédiction de l'adresse post-NAT par introspection des
+  règles iptables d'un autre équipement. À remplacer par l'observation de la
+  source réelle des paquets IKE reçus (le NAT étant déjà appliqué sur le câble)
+  + détection NAT-D conforme RFC 3947. Incrément dédié.

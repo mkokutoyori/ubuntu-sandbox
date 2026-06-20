@@ -1977,21 +1977,22 @@ export class IPSecEngine implements IProtocolEngine {
 
   private determinePeer(entry: CryptoMapEntry, egressIface: string, pkt: IPv4Packet): string | null {
     if (entry.peers.length > 0 && entry.peers[0] !== '0.0.0.0') {
-      // Try primary peer first, then backup peers — check reachability
+      // Try primary peer first, then backup peers (RFC-style failover).
+      // Reachability is determined solely by the local routing table — exactly
+      // like real IOS, which never introspects a global device registry to
+      // decide whether a configured peer "exists". If the FIB has a route to
+      // the peer we select it; IKE then travels on the wire (`_sendIkeUdp`) and
+      // fails gracefully if no peer actually answers.
       for (const peerIP of entry.peers) {
-        const peerRouter = IPSecEngine.findRouterByIP(peerIP);
-        if (!peerRouter) continue;
-        // Verify we can actually reach this peer (route via connected interface)
         try {
-          const peerAddr = new IPAddress(peerIP);
-          const route = (this.router as any).lookupRoute?.(peerAddr);
+          const route = (this.router as any).lookupRoute?.(new IPAddress(peerIP));
           if (route) return peerIP;
         } catch {
-          // lookupRoute throws or no route — peer unreachable, try next
+          // lookupRoute throws or no route — peer unreachable, try next backup
           continue;
         }
       }
-      // If none reachable, return first peer (will fail gracefully)
+      // None has a route — return the primary peer (IKE will fail gracefully)
       return entry.peers[0];
     }
     // Tunnel protection: peer is the tunnel destination (from config)
