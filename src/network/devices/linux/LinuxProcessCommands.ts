@@ -648,7 +648,9 @@ export function cmdService(args: string[], sm: LinuxServiceManager): SysCtlResul
   switch (action) {
     case 'status':
       return {
-        output: ` * ${u.name} ${u.state === 'active' ? 'is running' : 'is not running'}`,
+        output: u.state === 'active'
+          ? ` * ${u.name} is running\n   Active: active (running)`
+          : ` * ${u.name} is not running\n   Active: inactive (dead)`,
         exitCode: u.state === 'active' ? 0 : 3,
       };
     case 'start': {

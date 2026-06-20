@@ -134,6 +134,7 @@ const BASE_UNITS: DefaultUnit[] = [
     description: 'Security Auditing Service',
     type: 'forking',
     execStart: '/sbin/auditd',
+    execReload: '/sbin/auditctl -R /etc/audit/audit.rules',
     after: ['local-fs.target'],
     enabledByDefault: true,
     startByDefault: true,
@@ -428,6 +429,14 @@ export class LinuxServiceManager {
     if (!unit.ok) return unit;
     const u = unit.unit;
     if (u.state === 'active') return { ok: true };
+    const check = this.configChecks.get(u.name);
+    if (check) {
+      const verdict = check();
+      if (!verdict.ok) {
+        this.markFailed(u.name, verdict.error ?? 'configuration check failed');
+        return verdict;
+      }
+    }
     const r = this.activate(u);
     if (r.ok) this.emitLifecycle('start', u.name);
     return r;

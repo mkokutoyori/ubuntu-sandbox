@@ -46,6 +46,7 @@ import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
+import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
 import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
 import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
@@ -124,7 +125,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount', 'findmnt',
-  'pkill', 'pgrep', 'pidof', 'killall',
+  'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   // Networking
@@ -252,6 +253,7 @@ export class LinuxCommandExecutor {
   /** Reactive bridge feeding security events into the audit trail. */
   private auditTrail: AuditTrailProjection | null = null;
   private fsAuditProjection: FileSystemAuditProjection | null = null;
+  private auditDaemon: LinuxAuditDaemon | null = null;
   private bus: IEventBus | null = null;
   private attachedDeviceId: string | null = null;
   private currentCommandHead: string | null = null;
@@ -607,6 +609,16 @@ export class LinuxCommandExecutor {
     this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
     this.fsAuditProjection?.dispose();
     this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
+    this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
+    this.auditDaemon?.dispose();
+    this.auditDaemon = new LinuxAuditDaemon(bus, deviceId, {
+      auditLog: this.auditLog,
+      rules: this.auditRules,
+      vfs: this.vfs,
+      serviceMgr: this.serviceMgr,
+      freeSpaceMb: () => this.auditFreeSpaceMb(),
+      kernelRelease: () => this.identity.kernel.release,
+    });
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
@@ -1291,8 +1303,10 @@ export class LinuxCommandExecutor {
       case 'disown': return cmdDisown(args, ctx).output;
       case 'pstree': return cmdPstree(args, ctx).output;
       case 'kill': {
-        // Bash resolves %jobspec before invoking kill(2). Do the same so
-        // we can also drop the corresponding job from the table.
+        // Only intercept when a %jobspec is present; otherwise let the bash
+        // interpreter expand the arguments (command substitution, globs) and
+        // dispatch kill(2) against real PIDs.
+        if (!args.some((a) => a.startsWith('%'))) return null;
         this.publishSyscall('kill');
         return this.runKillWithJobspecs(args);
       }
@@ -2038,32 +2052,36 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
   }
 
-  private gateAuditdServiceAction(action: string | undefined, target: string | undefined, isSystemctl: boolean): { output: string; exitCode: number } | null {
-    if (target !== 'auditd' && target !== 'auditd.service') return null;
-    const act = (action ?? '').toLowerCase();
-    if (act !== 'reload' && act !== 'restart') return null;
-    const content = this.vfs.readFile('/etc/audit/auditd.conf') ?? '';
-    const error = validateAuditdConfig(content);
-    if (!error) return null;
-    const prefix = isSystemctl ? 'systemctl' : 'service auditd';
-    return { output: `${prefix}: failed: ${error.message} (line ${error.line})`, exitCode: 1 };
+  private checkAuditdConfig(): { ok: boolean; error?: string } {
+    const conf = this.vfs.readFile('/etc/audit/auditd.conf') ?? '';
+    const confErr = validateAuditdConfig(conf);
+    if (confErr) return { ok: false, error: `auditd: failed: ${confErr.message} (line ${confErr.line})` };
+    return { ok: true };
   }
 
-  private loadPersistentAuditRules(): void {
+  private auditdRulesetWarning(): string {
     const rulesD = '/etc/audit/rules.d';
-    const entries = this.vfs.listDirectory(rulesD) ?? [];
-    for (const entry of entries) {
-      if (entry.inode.type !== 'file') continue;
-      if (!entry.name.endsWith('.rules')) continue;
-      const path = `${rulesD}/${entry.name}`;
-      const content = this.vfs.readFile(path);
-      if (content === null) continue;
+    const invalid: string[] = [];
+    for (const entry of this.vfs.listDirectory(rulesD) ?? []) {
+      if (entry.inode.type !== 'file' || !entry.name.endsWith('.rules')) continue;
+      const content = this.vfs.readFile(`${rulesD}/${entry.name}`) ?? '';
       for (const raw of content.split('\n')) {
         const line = raw.trim();
         if (!line || line.startsWith('#')) continue;
-        this.execute(`auditctl ${line}`);
+        if (!line.startsWith('-')) invalid.push(`${entry.name}: '${line}'`);
       }
     }
+    if (invalid.length === 0) return '';
+    return `augenrules: failed to load some rules (invalid syntax): ${invalid.join(', ')}`;
+  }
+
+  private auditFreeSpaceMb(): number {
+    const root = this.mountTable.resolve('/var/log/audit');
+    const partGib = this.hardware.storage
+      .flatMap((d) => d.partitions)
+      .find((p) => p.mountPoint === (root?.target ?? '/'))?.sizeGib;
+    const capacityMb = Math.round((partGib ?? 48) * 1024);
+    return capacityMb;
   }
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
@@ -2375,6 +2393,9 @@ export class LinuxCommandExecutor {
           if (args[0] === '-s' || args[0] === '--status') {
             return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
           }
+        }
+        if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
+          return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
         }
         if (args[0] === '-R') {
           const file = args[1];
@@ -2715,6 +2736,15 @@ export class LinuxCommandExecutor {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
       }
+      case 'pgid': {
+        const name = args.find(a => !a.startsWith('-'));
+        if (!name) return { output: 'usage: pgid <name>', exitCode: 1 };
+        const svcPid = this.serviceMgr.status(name)?.mainPid;
+        if (svcPid) return { output: String(svcPid), exitCode: 0 };
+        const procs = this.processMgr.list({ comm: name });
+        if (procs.length > 0) return { output: String(procs[0].pgid ?? procs[0].pid), exitCode: 0 };
+        return { output: '', exitCode: 1 };
+      }
       case 'pidof': {
         const r = cmdPidof(args, this.processCmdContext());
         return r;
@@ -2759,26 +2789,23 @@ export class LinuxCommandExecutor {
 
       // ── System administration commands ──────────────────────────────
       case 'systemctl': {
-        const gate = this.gateAuditdServiceAction(args[0], args[1] ?? args[0], true);
-        if (gate) return gate;
-        return cmdSystemctl(args, this.serviceMgr);
+        const unit = (args[1] ?? '').replace(/\.service$/, '');
+        if (unit === 'auditd' && args[0] === 'restart') this.auditRules.deleteAll();
+        const out = cmdSystemctl(args, this.serviceMgr);
+        if (unit === 'auditd' && args[0] === 'restart' && out.exitCode === 0) {
+          const warn = this.auditdRulesetWarning();
+          if (warn) return { output: warn, exitCode: 0 };
+        }
+        return out;
       }
       case 'service': {
-        const gate = this.gateAuditdServiceAction(args[1], args[0], false);
-        if (gate) return gate;
-        if (args[0] === 'auditd' && args[1] === 'status') {
-          return { output: ' * auditd is active (running)', exitCode: 0 };
+        if (args[0] === 'auditd' && args[1] === 'restart') this.auditRules.deleteAll();
+        const out = cmdService(args, this.serviceMgr);
+        if (args[0] === 'auditd' && args[1] === 'restart' && out.exitCode === 0) {
+          const warn = this.auditdRulesetWarning();
+          if (warn) return { output: warn, exitCode: 0 };
         }
-        if (args[0] === 'auditd' && args[1] === 'reload') {
-          this.loadPersistentAuditRules();
-          return { output: '', exitCode: 0 };
-        }
-        const r = cmdService(args, this.serviceMgr);
-        if (args[0] === 'auditd' && args[1] === 'restart') {
-          this.auditRules.deleteAll();
-          this.loadPersistentAuditRules();
-        }
-        return r;
+        return out;
       }
       case 'reboot':
       case 'shutdown': {
