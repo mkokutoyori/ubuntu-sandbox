@@ -964,6 +964,7 @@ export abstract class LinuxMachine extends EndHost
   private async tryNetworkCommand(input: string): Promise<string | null> {
     const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
     const firstCmd = noSudo.split(/[\s|;&]/)[0];
+    if (firstCmd) this.executor.setCommandHead(firstCmd);
 
     // 0. man command — render a manual page from registry metadata
     if (firstCmd === 'man') {

@@ -2001,6 +2001,8 @@ export class LinuxCommandExecutor {
     return out;
   }
 
+  setCommandHead(name: string): void { this.currentCommandHead = name; }
+
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
@@ -2016,6 +2018,22 @@ export class LinuxCommandExecutor {
       uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
       auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
       success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.syscall.invoked', payload });
+  }
+
+  private publishSyscallOutcome(syscall: string, path: string | undefined, success: boolean, exit?: number): void {
+    const actor = { ...this.snapshotActor(), success };
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onSyscall(syscall, path, actor);
+      return;
+    }
+    const payload: SyscallInvokedPayload = {
+      deviceId: this.attachedDeviceId, syscall, path,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success, exit: exit ?? (success ? 0 : -13),
     };
     this.bus.publish({ topic: 'linux.syscall.invoked', payload });
   }
@@ -2050,6 +2068,7 @@ export class LinuxCommandExecutor {
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
+    if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
     // Root-only commands — reject if not root. `ufw` is intentionally
     // absent: like `iptables` (which the device router runs un-gated), the
@@ -2150,8 +2169,9 @@ export class LinuxCommandExecutor {
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'unlink');
-          this.publishSyscall('unlink', abs);
+          const exists = this.vfs.exists(abs);
+          if (exists) this.publishFsAccess(abs, 'w', 'unlink');
+          this.publishSyscallOutcome('unlink', abs, exists, exists ? 0 : -2);
         }
         const out = cmdRm(c, args);
         return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
