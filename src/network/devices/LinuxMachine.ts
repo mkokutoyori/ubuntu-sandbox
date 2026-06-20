@@ -51,6 +51,13 @@ import type {
   IpRouteEntry,
   IpNeighborEntry,
   IpXfrmContext,
+  IpMonitorObject,
+} from './linux/LinuxIpCommand';
+import {
+  formatIpMonitorLink,
+  formatIpMonitorAddr,
+  formatIpMonitorRoute,
+  formatIpMonitorNeigh,
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
 import {
@@ -1769,6 +1776,65 @@ export abstract class LinuxMachine extends EndHost
 
   followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
     return this.executor.logMgr.followJournal(opts, listener);
+  }
+
+  monitorNetlink(
+    opts: { objects: ReadonlySet<IpMonitorObject>; labelled: boolean },
+    listener: (block: string) => void,
+  ): () => void {
+    const ctx = buildIpCtx(this.net, this.xfrmCtx);
+    const bus = this.getBus();
+    const id = this.id;
+    const labelled = opts.labelled;
+    const subs: Array<() => void> = [];
+
+    if (opts.objects.has('link')) {
+      subs.push(bus.subscribe('host.link.state-changed', (e) => {
+        if (e.payload.deviceId !== id) return;
+        const block = formatIpMonitorLink(ctx, { iface: e.payload.iface }, labelled);
+        if (block !== null) listener(block);
+      }));
+    }
+    if (opts.objects.has('addr')) {
+      subs.push(bus.subscribe('host.address.changed', (e) => {
+        if (e.payload.deviceId !== id) return;
+        listener(formatIpMonitorAddr(ctx, {
+          iface: e.payload.iface, ip: e.payload.ip, cidr: e.payload.cidr, deleted: !e.payload.added,
+        }, labelled));
+      }));
+    }
+    if (opts.objects.has('route')) {
+      subs.push(bus.subscribe('host.routing.route-added', (e) => {
+        if (e.payload.deviceId !== id) return;
+        listener(formatIpMonitorRoute({
+          destination: e.payload.destination, mask: e.payload.mask, gateway: e.payload.gateway,
+          iface: e.payload.iface, metric: e.payload.metric, deleted: false,
+        }, labelled));
+      }));
+      subs.push(bus.subscribe('host.routing.route-removed', (e) => {
+        if (e.payload.deviceId !== id) return;
+        listener(formatIpMonitorRoute({
+          destination: e.payload.destination, mask: e.payload.mask, gateway: null,
+          iface: e.payload.iface, metric: 0, deleted: true,
+        }, labelled));
+      }));
+    }
+    if (opts.objects.has('neigh')) {
+      subs.push(bus.subscribe('host.arp.entry-learned', (e) => {
+        if (e.payload.deviceId !== id) return;
+        listener(formatIpMonitorNeigh({
+          ip: e.payload.ip, mac: e.payload.mac, iface: e.payload.iface, state: 'REACHABLE', deleted: false,
+        }, labelled));
+      }));
+      subs.push(bus.subscribe('host.arp.entry-expired', (e) => {
+        if (e.payload.deviceId !== id) return;
+        listener(formatIpMonitorNeigh({
+          ip: e.payload.ip, mac: e.payload.mac, iface: '', state: 'STALE', deleted: true,
+        }, labelled));
+      }));
+    }
+
+    return () => { for (const unsub of subs) unsub(); };
   }
 
   async pingStreamInSession(

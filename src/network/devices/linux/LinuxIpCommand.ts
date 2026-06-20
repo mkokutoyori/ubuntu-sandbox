@@ -303,6 +303,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'x':
       return ipXfrm(ctx, subArgs);
 
+    case 'monitor':
+      return '';
+
     default:
       return `Object "${object}" is unknown, try "ip help".`;
   }
@@ -564,6 +567,111 @@ function formatLinkInterface(info: IpInterfaceInfo, idx: number): string {
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
 
   return lines.join('\n');
+}
+
+export type IpMonitorObject = 'link' | 'addr' | 'route' | 'neigh';
+
+export interface IpMonitorLinkChange {
+  iface: string;
+}
+
+export interface IpMonitorAddrChange {
+  iface: string;
+  ip: string;
+  cidr: number;
+  deleted: boolean;
+}
+
+export interface IpMonitorRouteChange {
+  destination: string;
+  mask: string;
+  gateway: string | null;
+  iface: string;
+  metric: number;
+  deleted: boolean;
+}
+
+export interface IpMonitorNeighChange {
+  ip: string;
+  mac: string;
+  iface: string;
+  state: string;
+  deleted: boolean;
+}
+
+export interface IpMonitorSpec {
+  objects: Set<IpMonitorObject>;
+  labelled: boolean;
+}
+
+const IP_MONITOR_ALIASES: Record<string, IpMonitorObject> = {
+  link: 'link', l: 'link',
+  address: 'addr', addr: 'addr', a: 'addr',
+  route: 'route', r: 'route',
+  neigh: 'neigh', neighbour: 'neigh', neighbor: 'neigh', n: 'neigh',
+};
+
+const IP_MONITOR_ALL: IpMonitorObject[] = ['link', 'addr', 'route', 'neigh'];
+
+export function parseIpMonitorSpec(args: string[]): IpMonitorSpec | { error: string } {
+  if (args.length === 0) return { objects: new Set(IP_MONITOR_ALL), labelled: true };
+  const objects = new Set<IpMonitorObject>();
+  for (const arg of args) {
+    if (arg === 'all') { for (const o of IP_MONITOR_ALL) objects.add(o); continue; }
+    const mapped = IP_MONITOR_ALIASES[arg];
+    if (!mapped) return { error: `Error: argument "${arg}" is wrong: unknown object, try "ip monitor help".` };
+    objects.add(mapped);
+  }
+  return { objects, labelled: objects.size > 1 };
+}
+
+function monitorLabel(object: IpMonitorObject, labelled: boolean): string {
+  if (!labelled) return '';
+  switch (object) {
+    case 'link': return '[LINK]';
+    case 'addr': return '[ADDR]';
+    case 'route': return '[ROUTE]';
+    case 'neigh': return '[NEIGH]';
+  }
+}
+
+export function formatIpMonitorLink(
+  ctx: IpNetworkContext, change: IpMonitorLinkChange, labelled: boolean,
+): string | null {
+  const info = ctx.getInterfaceInfo(change.iface);
+  if (!info) return null;
+  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  return monitorLabel('link', labelled) + formatLinkInterface(info, idx);
+}
+
+export function formatIpMonitorAddr(
+  ctx: IpNetworkContext, change: IpMonitorAddrChange, labelled: boolean,
+): string {
+  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  const brd = broadcastAddress(change.ip, change.cidr);
+  const brdStr = brd ? ` brd ${brd}` : '';
+  const head = `${idx}: ${change.iface}    inet ${change.ip}/${change.cidr}${brdStr} scope global ${change.iface}`;
+  const body = '       valid_lft forever preferred_lft forever';
+  const prefix = monitorLabel('addr', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${head}\n${body}`;
+}
+
+export function formatIpMonitorRoute(change: IpMonitorRouteChange, labelled: boolean): string {
+  const cidr = new SubnetMask(change.mask).toCIDR();
+  const dest = cidr === 0 ? 'default' : `${change.destination}/${cidr}`;
+  const via = change.gateway ? ` via ${change.gateway}` : '';
+  const metricStr = change.metric > 0 ? ` metric ${change.metric}` : '';
+  const line = `${dest}${via} dev ${change.iface}${metricStr}`;
+  const prefix = monitorLabel('route', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${line}`;
+}
+
+export function formatIpMonitorNeigh(change: IpMonitorNeighChange, labelled: boolean): string {
+  const dev = change.iface ? ` dev ${change.iface}` : '';
+  const lladdr = change.mac ? ` lladdr ${change.mac}` : '';
+  const line = `${change.ip}${dev}${lladdr} ${change.state}`;
+  const prefix = monitorLabel('neigh', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${line}`;
 }
 
 function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {

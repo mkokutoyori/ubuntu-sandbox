@@ -892,6 +892,10 @@ export abstract class EndHost extends Equipment {
 
     Logger.info(this.id, 'host:route-add',
       `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);
+    this.emitRouteAdded({
+      destination: network.toString(), mask: mask.toString(),
+      gateway: nextHop.toString(), iface: gwIface, metric, type: 'static',
+    });
     return true;
   }
 
@@ -901,6 +905,10 @@ export abstract class EndHost extends Equipment {
     this.routingTable.push({ network, mask, nextHop: null, iface, type: 'static', metric });
     Logger.info(this.id, 'host:route-add',
       `${this.name}: on-link route ${network}/${mask.toCIDR()} dev ${iface} metric ${metric}`);
+    this.emitRouteAdded({
+      destination: network.toString(), mask: mask.toString(),
+      gateway: null, iface, metric, type: 'static',
+    });
     return true;
   }
 
@@ -909,11 +917,18 @@ export abstract class EndHost extends Equipment {
    * Returns true if a route was removed.
    */
   removeRoute(network: IPAddress, mask: SubnetMask): boolean {
-    const before = this.routingTable.length;
+    const removed = this.routingTable.find(
+      r => r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static',
+    );
     this.routingTable = this.routingTable.filter(
       r => !(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')
     );
-    return this.routingTable.length < before;
+    if (removed) {
+      this.emitRouteRemoved({
+        destination: network.toString(), mask: mask.toString(), iface: removed.iface,
+      });
+    }
+    return removed !== undefined;
   }
 
   // ─── ARP Table ─────────────────────────────────────────────────

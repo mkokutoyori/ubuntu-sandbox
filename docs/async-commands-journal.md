@@ -410,8 +410,52 @@ déverrouillage ; interruption Ctrl+C). Régressions traceroute bloc / conforman
 / icmp / ipv4 / ping / aide / complétion + autres UI streaming : 145/145. Aucune
 nouvelle erreur de lint.
 
+## Event Subscription — PC Linux : `ip monitor`
+
+Commande d'abonnement netlink (`ip monitor [all|link|address|route|neigh]`)
+branchée sur le socle, en réutilisant l'infrastructure d'événements du bus
+hôte plutôt qu'une mécanique parallèle.
+
+- **Modèle** : `EndHost.addStaticRoute` / `addDeviceRoute` / `removeRoute`
+  émettent désormais `host.routing.route-added` / `host.routing.route-removed`
+  via les helpers `emitRouteAdded` / `emitRouteRemoved` **déjà présents mais
+  jamais appelés** — un manque latent : ces topics étaient écoutés par
+  `HostSignalRefreshActor` (rafraîchissement du signal de routes) sans jamais
+  être publiés. Les publier complète le comportement attendu **et** alimente
+  `ip monitor route` en vrais évènements. `host.link.state-changed`,
+  `host.address.changed`, `host.arp.entry-learned/expired` étaient déjà émis.
+- **Présentation** (fonctions pures, `LinuxIpCommand.ts`, à côté des formateurs
+  `ip` existants) : `formatIpMonitorLink` réutilise `formatLinkInterface` (même
+  bloc que `ip link show`), `formatIpMonitorAddr/Route/Neigh` rendent une ligne
+  netlink réaliste depuis le payload de l'évènement (le `[ADDR]Deleted …` montre
+  l'adresse retirée, que `formatAddrInterface` ne pourrait plus afficher après
+  purge). `parseIpMonitorSpec` (alias `address|addr|a`, `route|r`, `neigh|n`,
+  `all`) résout l'ensemble d'objets et le préfixe `[LINK]/[ADDR]/[ROUTE]/[NEIGH]`
+  (affiché seulement en multi-objets, comme iproute2).
+- **Modèle/abonnement** : `LinuxMachine.monitorNetlink(opts, listener)` —
+  même schéma que `followJournal` — s'abonne aux topics du bus du device
+  (`this.getBus()`), filtre par `deviceId`, formate et pousse chaque bloc.
+  Retourne un désabonnement propre.
+- **Controller** : `LinuxTerminalSession.tryStartIpMonitor` intercepte
+  `ip [opts] monitor …` (hors pipes/redirections), démarre un job
+  `mode: foreground`, `kind: subscription` : prompt verrouillé, lignes en
+  direct, Ctrl+C se désabonne et libère le prompt. `executeIpCommand` rend `''`
+  pour `monitor` en non-interactif (script/SSH) — pas de faux « unknown ».
+
+Critères couverts : abonnement temps réel ligne par ligne, prompt bloquant
+(foreground) avec interruption Ctrl+C propre, isolation des sessions (chaque
+terminal a son propre runtime/abonnement), impact réel sur l'état (les lignes
+proviennent des vrais évènements de mutation d'interface/route/voisin).
+
+Validation : `linux-ip-monitor-stream-ui.test.ts` — 3/3 (stream LINK/ADDR/ROUTE
+labellisé + prompt verrouillé + arrêt Ctrl+C ; filtre mono-objet non labellisé ;
+isolation de deux sessions concurrentes). Régressions : streaming UI 34/34,
+tests `route` 527/527, ARP/host 34/34. Aucune nouvelle erreur de type ni de lint
+(le seul échec `network-v2`, `other-commands.test.ts` #163, est pré-existant et
+sans rapport). 
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
-- Reprendre `ip monitor` (infrastructure d'événements `host.link.state-changed`
-  / `host.address.changed` déjà posée).
+- Câbler l'émission `host.routing.route-*` sur la route par défaut
+  (`setDefaultGateway`) pour que `ip monitor route` couvre aussi la default.

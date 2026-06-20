@@ -13,6 +13,7 @@ import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
+import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
@@ -970,6 +971,36 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartIpMonitor(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'ip') return false;
+    let i = 1;
+    while (i < toks.length && toks[i].startsWith('-')) i++;
+    if (toks[i] !== 'monitor') return false;
+
+    const spec = parseIpMonitorSpec(toks.slice(i + 1));
+    if ('error' in spec) { this.addLine(spec.error); return true; }
+
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'subscription',
+      command: commandLine,
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = dev.monitorNetlink({ objects: spec.objects, labelled: spec.labelled }, (block) => {
+          for (const line of block.split('\n')) ctx.sink.line(line);
+        });
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
+    });
+    return job !== null;
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1041,6 +1072,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;
+    if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
