@@ -437,3 +437,53 @@ simplement la mise en lecture seule attendue par les tests.
 `src/network/devices/linux/LinuxSystemCommands.ts`,
 `src/network/devices/linux/events.ts`,
 `src/__tests__/unit/network-v2/mount-table.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Sous-système `sysfs` (`/sys`) généré depuis l'inventaire matériel
+
+**Couches concernées :** OS (VFS pseudo-fichiers), matériel (HardwareProfile),
+audit (watches sur `/sys`).
+
+**Symptôme / défaillance constatée.**
+Le répertoire `/sys` était vide : aucune arborescence sysfs. Conséquences :
+`cat /sys/power/state`, `cat /sys/class/net/eth0/address`,
+`cat /sys/block/sda/queue/rotational` échouaient (« No such file or
+directory »), et surtout `auditctl -w /sys/power/state` était **rejeté** car
+`addWatch` exige que le répertoire parent existe — impossible de poser un
+watch sur sysfs.
+
+**Comportement réel reproduit.**
+- Vraie classe métier `SysfsTree` qui rend l'arborescence sysfs **à partir du
+  modèle matériel existant** (`HardwareProfile`), sans aucune duplication :
+  - `/sys/power/state`, `/sys/power/disk` ;
+  - `/sys/devices/virtual/dmi/id/*` (product_uuid, product_name,
+    product_serial, sys_vendor, chassis_type, bios_*, board_*) cohérents avec
+    `dmidecode` ;
+  - `/sys/devices/system/cpu/{online,present,possible,…}` dérivés de
+    `CpuSpec.logicalCpus` ;
+  - `/sys/block/<dev>/{size,removable,ro,queue/rotational,
+    queue/logical_block_size,device/model,device/vendor}` et
+    `/sys/block/<dev>/<part>/{size,partition,ro}` dérivés de
+    `StorageDevice`/`DiskPartition` (le flag `rotational` reflète HDD vs
+    SSD/NVMe) ;
+  - `/sys/class/net/<iface>/{address,mtu,operstate,carrier,speed,type}`
+    dérivés de `NetworkAdapter`, plus l'interface `lo`.
+- Chaque feuille est un **fichier généré à la lecture** (même mécanisme que
+  procfs), donc sysfs ne peut pas diverger de l'inventaire matériel ; un
+  `setHardware()` re-sème l'arborescence et les valeurs scalaires suivent la
+  référence vivante.
+- Bonus : `/proc/sys/kernel/hostname` est désormais un vrai fichier généré
+  (suivant `/etc/hostname`).
+
+**Tests.**
+- Nouveau `sysfs-tree.test.ts` (6 cas) — classe métier isolée : power, DMI,
+  topologie CPU, géométrie bloc + rotational HDD/SSD, classe réseau.
+- Débloque `auditctl-other` #12 (watch sur `/sys/power/state`).
+- Non-régression : `auditctl` 100/100, `journalization` 200/200, suites
+  matériel/commandes 397/397 combinées, moteur bash 383/383.
+
+**Fichiers touchés :**
+`src/network/devices/linux/Sysfs.ts` (nouveau),
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/sysfs-tree.test.ts` (nouveau).

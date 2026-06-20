@@ -38,6 +38,7 @@ import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
 import { MountTable, MountEntry } from './MountTable';
+import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
@@ -443,6 +444,8 @@ export class LinuxCommandExecutor {
     // Materialise the system identity onto /etc and /proc.
     this.seedIdentityFiles();
     this.registerKernelProcFiles();
+    // Expose the hardware inventory as a sysfs (/sys) pseudo-filesystem.
+    this.registerSysfsFiles();
   }
 
   /**
@@ -472,6 +475,21 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
+  }
+
+  /**
+   * Expose the hardware inventory as a `/sys` pseudo-filesystem. Every leaf
+   * generates on read from the live {@link HardwareProfile}, so sysfs stays
+   * coherent with `lsblk`, `dmidecode` and the NIC inventory.
+   */
+  private registerSysfsFiles(): void {
+    const tree = new SysfsTree(() => this.hardware);
+    for (const leaf of tree.leaves()) {
+      const slash = leaf.path.lastIndexOf('/');
+      if (slash > 0) this.vfs.mkdirp(leaf.path.slice(0, slash), 0o755, 0, 0);
+      this.vfs.registerGeneratedFile(leaf.path, leaf.read);
+    }
   }
 
   /** Tracked set of PIDs currently materialized under /proc as per-pid dirs. */
@@ -571,6 +589,7 @@ export class LinuxCommandExecutor {
    */
   setHardware(profile: HardwareProfile): void {
     this.hardware = profile;
+    this.registerSysfsFiles();
   }
 
   /**
