@@ -1567,3 +1567,59 @@ intermédiaire).
   règles iptables d'un autre équipement. À remplacer par l'observation de la
   source réelle des paquets IKE reçus (le NAT étant déjà appliqué sur le câble)
   + détection NAT-D conforme RFC 3947. Incrément dédié.
+
+---
+
+## Entrée n°30 — 2026-06-20 — DHCP : fin du scan global god-mode pour les hôtes câblés (isolation de sous-réseau)
+
+### Défaillance constatée
+
+Le client DHCP essaie déjà **le fil d'abord** (`WireDhcpChannel` : vrai DISCOVER
+broadcast UDP 68→67 sur le câble, OFFER dans l'inbox au retour synchrone — voir
+Entrée n°25). Mais `EndHost.autoDiscoverDHCPServers` conservait une **Stratégie 2
+god-mode** : si la marche de topologie (Stratégie 1) ne trouvait rien, il
+**scannait le registre global** (`Equipment.getAllEquipment()`) et enregistrait
+*tout* serveur DHCP de la simulation comme `DirectServerChannel`.
+
+Conséquence : un hôte **physiquement isolé** (broadcast n'atteignant aucun
+serveur, aucun relais `ip helper-address`) pouvait quand même obtenir un bail
+d'un serveur qu'il **ne peut pas toucher**, par simple appel d'objet — rupture
+totale de l'isolation de sous-réseau, l'antithèse du principe « tout passe par le
+câble ».
+
+### Correction (structurelle)
+
+La Stratégie 2 (scan global) est désormais **gatée sur l'absence totale de
+câble** : `const hasCabledInterface = [...ports].some(p => p.getCable())`. Dès
+qu'un hôte possède **au moins une interface câblée**, il ne peut plus tomber sur
+le registre global — il dépend exclusivement du **broadcast réel sur le segment
+local** (déjà tenté en premier sur le fil) ou d'un **relais configuré**, comme un
+vrai client DHCP. Le scan global ne subsiste **que** pour les hôtes jamais câblés
+(pure commodité de tests unitaires hors topologie).
+
+Stratégie 1 (marche de câbles, topologie-consciente) est conservée : elle
+n'enregistre que des serveurs réellement atteignables et le fil reste prioritaire.
+
+### Fichiers
+
+`src/network/devices/EndHost.ts` (`autoDiscoverDHCPServers`, garde Stratégie 2).
+
+### Validation
+
+- DHCP unitaire (7 fichiers : `dhcp_complete`, `dhcp_fixes`,
+  `dhcp-client-wire-channel`, `dhcp-relay-wire`, `dhcp-server-identifier`,
+  `dhcp-resolv-conf`, `cisco-dhcp-pool-options`) : **76 verts**.
+- Suites élargies acquérant des baux en topologie câblée (netsh DHCP/DNS, netsh,
+  cisco-wan, huawei-vrp, basic-commandes, windows-consistency,
+  linux-command-options) : **302 verts**.
+- Debug topologies réelles (`protocols/dhcp`, `router/cisco-router-dhcp-nat`,
+  `linux-networking`) : **3 verts** (montage OK, aucun crash).
+- **681 tests au total, zéro régression** — confirmant empiriquement que les
+  hôtes câblés obtenaient déjà leurs baux par le fil/Stratégie 1 et que le scan
+  global était un fallback god-mode redondant. Lint inchangé (4 = 4).
+
+### Limites connues / suite
+
+- **Stratégie 1** délivre encore via `DirectServerChannel` (appel d'objet) plutôt
+  que par le broadcast/relais ; le fil étant prioritaire, c'est un fallback rare,
+  mais sa suppression complète (tout-fil) est un incrément ultérieur.

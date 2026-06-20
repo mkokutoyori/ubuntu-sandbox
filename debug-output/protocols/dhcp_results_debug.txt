@@ -229,18 +229,9 @@ Total steps: 300
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [55/300] lhq lhq$ ip addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [56/300] lhq lhq$ ip route show
   10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
@@ -248,11 +239,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.601 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.372 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.601/0.601/0.601/0.000 ms
+  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -385,18 +376,9 @@ Total steps: 300
   bound to 10.2.2.10 -- renewal in 43200 seconds.
 
 [64/300] lbr lbr$ ip addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
 
 [65/300] lbr lbr$ ip route show
   10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
@@ -404,11 +386,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.658 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.364 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.658/0.658/0.658/0.000 ms
+  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -541,18 +523,9 @@ Total steps: 300
   bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [73/300] ldc ldc$ ip addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [74/300] ldc ldc$ ip route show
   10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
@@ -560,29 +533,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.373 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.351 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
+  rtt min/avg/max/mdev = 0.351/0.351/0.351/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.417 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.229 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.417/0.417/0.417/0.000 ms
+  rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.751 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.399 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.751/0.751/0.751/0.000 ms
+  rtt min/avg/max/mdev = 0.399/0.399/0.399/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -592,23 +565,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.609 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.518 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.609/0.609/0.609/0.000 ms
+  rtt min/avg/max/mdev = 0.518/0.518/0.518/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.628 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.356 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.628/0.628/0.628/0.000 ms
+  rtt min/avg/max/mdev = 0.356/0.356/0.356/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -727,18 +700,9 @@ Total steps: 300
   }
 
 [92/300] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [93/300] lhq lhq$ cat /etc/resolv.conf
   search acme.example
@@ -759,18 +723,9 @@ Total steps: 300
   }
 
 [95/300] lbr lbr$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
 
 [96/300] lbr lbr$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -790,18 +745,9 @@ Total steps: 300
   }
 
 [98/300] ldc ldc$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [99/300] ldc ldc$ cat /etc/resolv.conf
   nameserver 10.3.3.10
@@ -893,18 +839,9 @@ Total steps: 300
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [106/300] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [107/300] whq whq$ ipconfig /renew
   Windows IP Configuration
@@ -949,18 +886,9 @@ Total steps: 300
   bound to 10.2.2.10 -- renewal in 43200 seconds.
 
 [110/300] lbr lbr$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
 
 [111/300] wbr wbr$ ipconfig /renew
   Windows IP Configuration
@@ -1005,18 +933,9 @@ Total steps: 300
   bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [114/300] ldc ldc$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [115/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1028,17 +947,8 @@ Total steps: 300
   released 10.1.1.10
 
 [117/300] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [118/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -1090,17 +1000,8 @@ Total steps: 300
   released 10.2.2.10
 
 [121/300] lbr lbr$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
 
 [122/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -1152,17 +1053,8 @@ Total steps: 300
   released 10.3.3.11
 
 [125/300] ldc ldc$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [126/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1547,18 +1439,9 @@ Total steps: 300
   bound to 10.3.3.1 -- renewal in 43200 seconds.
 
 [198/300] ldc ldc$ ip addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [199/300] rdc R-DC# show ip dhcp relay statistics
   Memory usage         36028
@@ -1744,35 +1627,35 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.416 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.239 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.416/0.416/0.416/0.000 ms
+  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.310 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.132 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
+  rtt min/avg/max/mdev = 0.132/0.132/0.132/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.426 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.211 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.426/0.426/0.426/0.000 ms
+  rtt min/avg/max/mdev = 0.211/0.211/0.211/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.416 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.322 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.416/0.416/0.416/0.000 ms
+  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1820,27 +1703,27 @@ Total steps: 300
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.635 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.427 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.635/0.635/0.635/0.000 ms
+  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.171 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.107 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.171/0.171/0.171/0.000 ms
+  rtt min/avg/max/mdev = 0.107/0.107/0.107/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.549 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.226 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.549/0.549/0.549/0.000 ms
+  rtt min/avg/max/mdev = 0.226/0.226/0.226/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1876,7 +1759,7 @@ Total steps: 300
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
@@ -1908,11 +1791,11 @@ Total steps: 300
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.420 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.466 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.420/0.420/0.420/0.000 ms
+  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -2000,18 +1883,9 @@ Total steps: 300
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [243/300] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [244/300] rhq R-HQ# show ip dhcp conflict
   IP address        Detection method   Detection time
@@ -2203,17 +2077,8 @@ Total steps: 300
   bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [270/300] lhq lhq$ ip -6 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [271/300] whq whq$ ipconfig /all
   Windows IP Configuration
@@ -2407,18 +2272,9 @@ Total steps: 300
    Check dhcp-chaddr            : Disable
 
 [291/300] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [292/300] whq whq$ ipconfig
   Windows IP Configuration
@@ -2447,18 +2303,9 @@ Total steps: 300
   
 
 [293/300] lbr lbr$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
 
 [294/300] wbr wbr$ ipconfig
   Windows IP Configuration
@@ -2487,18 +2334,9 @@ Total steps: 300
   
 
 [295/300] ldc ldc$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
 
 [296/300] rhq R-HQ# show ip dhcp server statistics
   Memory usage         36028

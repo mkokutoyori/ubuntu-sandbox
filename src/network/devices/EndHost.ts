@@ -837,8 +837,18 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    // Strategy 2: Fallback — scan all Equipment instances (for tests without cables)
-    if (this.dhcpClient['connectedServers'].length === 0) {
+    // Strategy 2: Fallback — scan all Equipment instances.
+    //
+    // This is a pure unit-test convenience for hosts that were never cabled
+    // into a topology. A host that HAS at least one cabled interface must never
+    // reach a DHCP server it cannot physically touch: real DHCP relies on a
+    // broadcast on the local segment (already attempted first over the wire) or
+    // a configured relay (ip helper-address). Letting a cabled host pull a lease
+    // from a globally-scanned server would break subnet isolation — exactly the
+    // god-mode shortcut this refactoring is removing. So the global scan is
+    // gated on the host being entirely uncabled.
+    const hasCabledInterface = [...this.ports.values()].some((p) => p.getCable());
+    if (!hasCabledInterface && this.dhcpClient['connectedServers'].length === 0) {
       for (const equip of Equipment.getAllEquipment()) {
         if (equip === this) continue;
         tryRegisterRouter(equip);
