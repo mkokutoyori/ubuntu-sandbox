@@ -82,10 +82,7 @@ export class LinuxJob {
   cpuTimeMs = 0;
   wallTimeMs = 0;
 
-  // ─── simulated background timing ───────────────────────────────────
-  /** How long the job runs, in simulated milliseconds (sleep duration …). */
   durationMs?: number;
-  /** Simulated-clock instant at which the job finishes (start + duration). */
   completesAt?: number;
 
   constructor(init: LinuxJobInit) {

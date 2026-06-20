@@ -330,9 +330,6 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
   /** Simulated host clock — drives background-job completion over time. */
   private readonly clock = new HostClock();
-  /** Wall-clock instant mapped to simulated time 0, so the clock can report a
-   *  believable calendar date (used by `at`/`atq`). It cancels out of every
-   *  comparison, keeping job firing deterministic regardless of its value. */
   private readonly wallEpoch = Date.now();
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
@@ -1292,38 +1289,26 @@ export class LinuxCommandExecutor {
     return this.clock.now();
   }
 
-  /** Simulated wall-clock instant (calendar date) for the current time. */
   private simulatedDate(): Date {
     return new Date(this.wallEpoch + this.clock.now());
   }
 
-  /**
-   * Advance the simulated host clock and let any background jobs whose
-   * duration has elapsed finish. Models real time passing so `sleep N &`
-   * actually takes N seconds, processes accrue CPU time, and `jobs`/`ps`
-   * reflect completion. The deferred-execution daemon (`atd`) also runs any
-   * `at` jobs whose scheduled instant the clock has now reached.
-   */
   advanceTime(ms: number): void {
     this.clock.advance(ms);
     this.reapDueBackgroundJobs();
     this.fireDueAtJobs();
   }
 
-  /** atd: run every spooled `at` job whose scheduled time the clock has
-   *  reached, then drop it from the spool. No-op while atd is stopped. */
   private fireDueAtJobs(): void {
     if (this.serviceMgr.status('atd')?.state !== 'active') return;
     const now = this.simulatedDate().getTime();
     for (const job of this.atQueue.list()) {
       if (job.runAt.getTime() > now) break;
       this.atQueue.remove(job.id);
-      try { this.execute(job.command); } catch { /* atd discards job failures */ }
+      try { this.execute(job.command); } catch { void 0; }
     }
   }
 
-  /** Mark every running background job whose completion instant has passed
-   *  as finished (the process becomes a zombie awaiting the shell's reap). */
   private reapDueBackgroundJobs(): void {
     const now = this.clock.now();
     for (const job of this.jobTable.list()) {
@@ -1332,8 +1317,6 @@ export class LinuxCommandExecutor {
     }
   }
 
-  /** Finish one background job: accrue its CPU time, settle its exit status,
-   *  and zombify its process so a later reap removes it from the table. */
   private completeBackgroundJob(job: import('./jobs/LinuxJob').LinuxJob): void {
     job.cpuTimeMs = job.durationMs ?? 0;
     job.wallTimeMs = job.durationMs ?? 0;
@@ -1345,8 +1328,6 @@ export class LinuxCommandExecutor {
     }
   }
 
-  /** Bash prints `[N]+ Done cmd` for finished jobs just before the next
-   *  prompt; producing that line also reaps the zombie and drops the job. */
   private drainFinishedJobNotices(): string[] {
     const out: string[] = [];
     const now = this.clock.now();
@@ -1365,8 +1346,6 @@ export class LinuxCommandExecutor {
     return out;
   }
 
-  /** Real `wait`: advance the clock to the targeted jobs' completion, settle
-   *  them, and drop them silently (wait consumes the status, no notice). */
   private handleWait(args: string[]): string {
     const specs = args.filter((a) => !a.startsWith('-'));
     const running = this.jobTable.list().filter((j) => j.isRunning());
@@ -5122,17 +5101,10 @@ export class LinuxCommandExecutor {
  * True when the input ends with an unquoted `&` that is not part of
  * `&&`. Used to detect a backgrounded command.
  */
-/** Strip a single trailing ` &` (job announcement) from a command line. */
 function stripTrailingAmp(command: string): string {
   return command.replace(/\s*&\s*$/, '');
 }
 
-/**
- * How long a backgrounded command runs, in simulated ms. `sleep N[smhd]`
- * yields its real duration; everything else is treated as instantaneous
- * (completes on the next prompt). This is what makes `sleep 60 &` actually
- * occupy 60 simulated seconds.
- */
 function parseBackgroundDurationMs(cmdLine: string): number {
   const m = /\bsleep\s+(\d+(?:\.\d+)?)\s*([smhd]?)\b/.exec(cmdLine);
   if (!m) return 0;

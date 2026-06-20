@@ -25,13 +25,9 @@ export interface WinScheduledTask {
   taskName: string;
   taskPath: string;
   state: string;
-  /** Program/command to run (`/TR`). */
   command?: string;
-  /** Next scheduled run instant for one-time tasks; cleared once fired. */
   runAt?: Date;
-  /** Last time the Task Scheduler actually ran this task. */
   lastRunTime?: Date;
-  /** Last run result code (`0x0` on success). */
   lastResult?: string;
 }
 
@@ -61,7 +57,6 @@ export interface WinSystemContext {
   readonly currentUser: string;
   isServiceRunning(name: string): boolean;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
-  /** Current simulated wall-clock instant (drives `schtasks` scheduling). */
   now(): Date;
 }
 
@@ -262,8 +257,6 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     const task: WinScheduledTask = {
       taskName: tn, taskPath: '\\', state: 'Ready', command: flagVal('/tr'),
     };
-    // Only one-time tasks (`/SC ONCE`, or a bare `/ST` with no schedule) are
-    // armed to fire; recurring schedules are stored but not yet driven.
     if (st && (!sc || sc === 'ONCE')) task.runAt = parseSchtasksTime(st, ctx.now());
     ctx.scheduledTasks.set(tn.toLowerCase(), task);
     return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
@@ -288,11 +281,6 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
 }
 
-/**
- * Run a scheduled task's program now: spawn its image (so `tasklist` and
- * `Get-Process` see it), record the run, and disarm a one-time trigger.
- * Shared by `schtasks /run` and the Task Scheduler's clock-driven firing.
- */
 export function fireScheduledTask(
   task: WinScheduledTask,
   pm: WinSystemProcessManager,
@@ -312,8 +300,6 @@ export function fireScheduledTask(
   });
 }
 
-/** Parse a `schtasks /ST` time-of-day (`HH:MM[:SS]`) into the next instant
- *  at or after `base`. Rolls to the following day when already past. */
 function parseSchtasksTime(st: string, base: Date): Date {
   const m = st.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return new Date(base);
@@ -323,7 +309,6 @@ function parseSchtasksTime(st: string, base: Date): Date {
   return d;
 }
 
-/** Format an instant the way `schtasks /query` shows the Next Run Time. */
 function fmtSchtasksDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;

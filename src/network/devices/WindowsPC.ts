@@ -199,10 +199,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Event-log store. */
   readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
 
-  /** Simulated host clock — drives Task Scheduler firing over time. */
   private readonly clock = new HostClock();
-  /** Fixed wall-clock instant mapped to simulated time 0, so `schtasks /ST`
-   *  time-of-day maths is deterministic regardless of the real date/TZ. */
   private readonly wallEpoch = new Date(2026, 5, 20).getTime();
 
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
@@ -1367,28 +1364,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  /** Current simulated wall-clock instant. */
   private simulatedDate(): Date {
     return new Date(this.wallEpoch + this.clock.now());
   }
 
-  /** Current simulated-clock time in milliseconds (test/automation hook). */
   simulatedNow(): number {
     return this.clock.now();
   }
 
-  /**
-   * Advance the simulated host clock; the Task Scheduler then runs any
-   * one-time `schtasks` whose start time the clock has now reached. Models
-   * deferred work actually happening as time passes on a real host.
-   */
   advanceTime(ms: number): void {
     this.clock.advance(ms);
     this.fireDueScheduledTasks();
   }
 
-  /** Task Scheduler: fire every armed task whose run time the clock has
-   *  reached. No-op while the Schedule service is stopped. */
   private fireDueScheduledTasks(): void {
     if (this.svcMgr.getService('Schedule')?.state !== 'Running') return;
     const now = this.simulatedDate();
