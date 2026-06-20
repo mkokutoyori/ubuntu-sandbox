@@ -487,3 +487,61 @@ watch sur sysfs.
 `src/network/devices/linux/Sysfs.ts` (nouveau),
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/sysfs-tree.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Résolution de chemins : `realpath(3)` réel + classe métier `VfsPath`
+
+**Couches concernées :** OS (VFS, résolution de chemins, DAC), commandes
+(`realpath`, `readlink`, `cat`).
+
+**Constat (réponse à la question « existe-t-il un resolver qui garantit
+l'existence ? »).**
+- `resolveInode()` est le vrai resolver vérifiant l'existence (marche l'arbre
+  inode par inode, suit les symlinks, renvoie `null` si un composant manque) ;
+  `exists()`/`lstat()`/`getType()` en dérivent.
+- `normalizePath()` n'est qu'un **normaliseur lexical** : il ne vérifie aucune
+  existence et réduit `..` au niveau texte *avant* toute résolution de symlink
+  (contraire à la sémantique noyau). C'est pourtant lui que la plupart des
+  commandes utilisaient.
+- Il manquait un resolver canonique style `realpath(3)` (existence + symlinks
+  intermédiaires). `realpath` était déclarée mais sans handler (cassée),
+  `readlink` n'était qu'un stub qui réécho son argument.
+
+**Corrections.**
+1. `VirtualFileSystem.realpath(path, cwd, requireFinal)` : canonicalisation
+   réelle — résolution composant par composant, expansion des symlinks
+   intermédiaires, `..` appliqué sur le chemin *résolu*, détection de boucles
+   de symlinks, et vérification d'existence. `requireFinal=false` reproduit
+   `realpath -m` / `readlink -f`.
+2. Câblage des commandes `realpath` (`-m`/`-e`/`-q`) et `readlink`
+   (`-f`/`-e`/`-m` + lecture de cible simple) sur ce resolver.
+3. Nouvelle **classe métier `VfsPath`** (passée en paramètre à la place d'un
+   `string`), liée au VFS et à un acteur (`uid`/`gid`/groupes), qui regroupe
+   tous les contrôles : `exists`/`isFile`/`isDirectory`/`isSymlink`,
+   `canRead`/`canWrite`/`canExecute`, `realpath`, `parent`/`join`, et des
+   assertions `assertExists`/`assertReadable`/`assertWritable`/… levant un
+   `PathError` typé (`ENOENT`/`EACCES`/`ENOTDIR`). Factory `vfs.path(input,
+   cwd, actor)` et helper `this.path()` côté exécuteur (lie l'acteur courant).
+4. **Centralisation du DAC** : `VirtualFileSystem.checkAccess(inode, mode, uid,
+   gid, gids)` devient la seule implémentation des droits POSIX ; `canWriteFile`,
+   `canWriteInParent` et `LinuxCommandExecutor.checkPermission` y délèguent
+   (suppression de trois copies de la même logique). `VfsPath` l'utilise aussi.
+5. Adoption démonstrative : `cat`, `realpath`, `readlink` utilisent désormais
+   `VfsPath`.
+
+**Tests.**
+- `vfs-realpath.test.ts` (9 cas) : `.`/`..`, relatifs, composant manquant,
+  symlink simple/relatif, `..` après symlink, boucles.
+- `vfs-path.test.ts` (9 cas) : existence/type, DAC read/write par acteur,
+  assertions + `PathError`, realpath portant l'acteur, `join`/`parent`.
+- Non-régression : aucune nouvelle défaillance (audit hors-périmètre
+  inchangé), `journalization` 200/200, commandes/SFTP/matériel verts,
+  moteur bash 383/383.
+
+**Fichiers touchés :**
+`src/network/devices/linux/VfsPath.ts` (nouveau),
+`src/network/devices/linux/VirtualFileSystem.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/__tests__/unit/network-v2/vfs-realpath.test.ts` (nouveau),
+`src/__tests__/unit/network-v2/vfs-path.test.ts` (nouveau).

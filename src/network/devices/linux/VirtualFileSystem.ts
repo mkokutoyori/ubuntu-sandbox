@@ -5,6 +5,7 @@
 
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
+import { VfsPath, type PathActor } from './VfsPath';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -290,6 +291,48 @@ export class VirtualFileSystem {
     return '/' + resolved.join('/');
   }
 
+  path(input: string, cwd = '/', actor?: PathActor): VfsPath {
+    return new VfsPath(this, input, cwd, actor);
+  }
+
+  realpath(path: string, cwd = '/', requireFinal = true): string | null {
+    const input = path.startsWith('/')
+      ? path
+      : cwd.replace(/\/$/, '') + '/' + path;
+    let remaining = input.split('/').filter(Boolean);
+    const out: string[] = [];
+    let links = 0;
+
+    while (remaining.length > 0) {
+      const comp = remaining.shift()!;
+      if (comp === '.') continue;
+      if (comp === '..') { out.pop(); continue; }
+
+      const candidate = '/' + [...out, comp].join('/');
+      const node = this.resolveInode(candidate, false);
+
+      if (!node) {
+        if (remaining.length === 0 && !requireFinal) {
+          out.push(comp);
+          break;
+        }
+        return null;
+      }
+
+      if (node.type === 'symlink') {
+        if (++links > 40) return null;
+        const targetParts = node.target.split('/').filter(Boolean);
+        if (node.target.startsWith('/')) out.length = 0;
+        remaining = [...targetParts, ...remaining];
+        continue;
+      }
+
+      out.push(comp);
+    }
+
+    return '/' + out.join('/');
+  }
+
   /**
    * Resolve a path to its inode, following symlinks.
    * Returns null if path doesn't exist.
@@ -493,23 +536,28 @@ export class VirtualFileSystem {
   /** POSIX-ish write check on an existing file: root bypass, owner→
    *  user-w, group→group-w, other→other-w. Generated pseudo-files are
    *  treated as writable so /proc no-op writes still succeed. */
-  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
+  checkAccess(
+    inode: INode,
+    mode: 'r' | 'w' | 'x',
+    uid: number,
+    gid: number,
+    gids: number[] = [],
+  ): boolean {
     if (uid === 0) return true;
-    if (inode.generator) return true;
-    const m = inode.permissions;
-    if (uid === inode.uid) return (m & 0o200) !== 0;
-    if (gid === inode.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    if (mode === 'w' && inode.generator) return true;
+    const perms = inode.permissions & 0o777;
+    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+    if (inode.uid === uid) return ((perms >> 6) & bit) !== 0;
+    if (inode.gid === gid || gids.includes(inode.gid)) return ((perms >> 3) & bit) !== 0;
+    return (perms & bit) !== 0;
   }
 
-  /** POSIX-ish write check on a directory: needed both to create a new
-   *  child and to delete an existing one. */
+  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
+    return this.checkAccess(inode, 'w', uid, gid);
+  }
+
   private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
-    if (uid === 0) return true;
-    const m = parent.permissions;
-    if (uid === parent.uid) return (m & 0o200) !== 0;
-    if (gid === parent.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    return this.checkAccess(parent, 'w', uid, gid);
   }
 
   writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false): boolean {

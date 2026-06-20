@@ -2,7 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
-import { VirtualFileSystem } from './VirtualFileSystem';
+import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
@@ -444,7 +444,6 @@ export class LinuxCommandExecutor {
     // Materialise the system identity onto /etc and /proc.
     this.seedIdentityFiles();
     this.registerKernelProcFiles();
-    // Expose the hardware inventory as a sysfs (/sys) pseudo-filesystem.
     this.registerSysfsFiles();
   }
 
@@ -478,11 +477,6 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
   }
 
-  /**
-   * Expose the hardware inventory as a `/sys` pseudo-filesystem. Every leaf
-   * generates on read from the live {@link HardwareProfile}, so sysfs stays
-   * coherent with `lsblk`, `dmidecode` and the NIC inventory.
-   */
   private registerSysfsFiles(): void {
     const tree = new SysfsTree(() => this.hardware);
     for (const leaf of tree.leaves()) {
@@ -2118,11 +2112,9 @@ export class LinuxCommandExecutor {
           const content = stdin.endsWith('\n') ? stdin.slice(0, -1) : stdin;
           return { output: content, exitCode: 0 };
         }
-        // Permission check: can user read this file?
         for (const arg of fileArgs) {
-          const path = this.vfs.normalizePath(arg, this.cwd);
-          const inode = this.vfs.resolveInode(path);
-          if (inode && !this.checkPermission(inode, 'r')) {
+          const p = this.path(arg);
+          if (p.exists() && !p.canRead()) {
             return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
           }
         }
@@ -3048,7 +3040,43 @@ export class LinuxCommandExecutor {
         };
 
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
-      case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
+      case 'readlink': {
+        const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
+        const targets = args.filter(a => !a.startsWith('-'));
+        const out: string[] = [];
+        let failed = false;
+        for (const t of targets) {
+          const p = this.path(t);
+          if (canon) {
+            const r = p.realpath(args.includes('-e'));
+            if (!r) { failed = true; continue; }
+            out.push(r.value);
+          } else {
+            const node = p.lstatNode();
+            if (!node || node.type !== 'symlink') { failed = true; continue; }
+            out.push(node.target);
+          }
+        }
+        return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };
+      }
+      case 'realpath': {
+        const quiet = args.includes('-q');
+        const noExist = args.includes('-m');
+        const targets = args.filter(a => !a.startsWith('-'));
+        if (targets.length === 0) targets.push('.');
+        const lines: string[] = [];
+        let exit = 0;
+        for (const t of targets) {
+          const r = this.path(t).realpath(!noExist);
+          if (!r) {
+            exit = 1;
+            if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
+          } else {
+            lines.push(r.value);
+          }
+        }
+        return { output: lines.join('\n'), exitCode: exit };
+      }
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
@@ -3450,28 +3478,21 @@ export class LinuxCommandExecutor {
   // ─── Permission checking ──────────────────────────────────────────
 
   /** Check if current user has permission (r/w/x) on an inode */
-  private checkPermission(inode: { permissions: number; uid: number; gid: number }, mode: 'r' | 'w' | 'x'): boolean {
-    const uid = this.userMgr.currentUid;
-    if (uid === 0) return true; // root can do anything
+  private currentPathActor(): import('./VfsPath').PathActor {
+    return {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      gids: this.userMgr.getUserGroups(this.userMgr.currentUser).map((g) => g.gid),
+    };
+  }
 
-    const perms = inode.permissions & 0o7777;
-    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+  private path(input: string): import('./VfsPath').VfsPath {
+    return this.vfs.path(input, this.cwd, this.currentPathActor());
+  }
 
-    // Owner
-    if (inode.uid === uid) {
-      return !!((perms >> 6) & bit);
-    }
-
-    // Group
-    const gid = this.userMgr.currentGid;
-    const userGroups = this.userMgr.getUserGroups(this.userMgr.currentUser);
-    const isInGroup = inode.gid === gid || userGroups.some(g => g.gid === inode.gid);
-    if (isInGroup) {
-      return !!((perms >> 3) & bit);
-    }
-
-    // Other
-    return !!(perms & bit);
+  private checkPermission(inode: INode, mode: 'r' | 'w' | 'x'): boolean {
+    const a = this.currentPathActor();
+    return this.vfs.checkAccess(inode, mode, a.uid, a.gid, a.gids);
   }
 
   // ─── su handler ──────────────────────────────────────────────────
