@@ -825,3 +825,42 @@ déclenche rien. Non-régression processus/jobs/service/SSH LAN : 317/317.
 `src/network/devices/linux/jobs/LinuxAtQueue.ts`,
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/__tests__/unit/network-v2/linux-at-scheduling.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Windows : mise à niveau de la couche tâches planifiées sur l'horloge simulée (TDD)
+
+**Constat.** Le côté Windows était en retard sur le côté Linux : aucune
+`HostClock`, pas d'`advanceTime`, et le Planificateur de tâches (`schtasks`,
+`Register-ScheduledTask`) ne faisait que **stocker** des définitions — jamais
+exécutées dans le temps. C'est l'équivalent Windows du trou `at`/`atd` qu'on
+venait de combler côté Linux.
+
+**Méthode TDD.** Tests d'abord (rouge confirmé : `advanceTime is not a
+function`), puis implémentation.
+
+**Parité de l'horloge.** `WindowsPC` reçoit la même `HostClock` déterministe
+que `LinuxCommandExecutor`, avec un `wallEpoch` fixe (minuit local d'une date
+figée) pour que l'arithmétique heure-du-jour de `/ST HH:MM` soit reproductible
+indépendamment du fuseau et de la date réelle. `simulatedDate()` =
+`wallEpoch + clock.now()` ; `simulatedNow()` exposé pour l'automatisation.
+
+**Déclenchement réel par le Planificateur.** `schtasks /create /SC ONCE /ST`
+arme désormais un `runAt` (et mémorise `/TR`). `advanceTime(ms)` fait avancer
+l'horloge puis exécute via `fireDueScheduledTasks` chaque tâche dont l'instant
+est atteint : le programme `/TR` est lancé (visible dans `tasklist` /
+`Get-Process`), `Last Run Time`/`Last Result` sont mis à jour, et le
+déclencheur unique est désarmé (pas de double exécution). `schtasks /run`
+exécute immédiatement via le même helper partagé `fireScheduledTask`. No-op
+tant que le service `Schedule` est arrêté — fidèle à un hôte réel.
+
+**Résultat.** Nouveau test `windows-scheduled-tasks` (4) : une tâche unique ne
+s'exécute qu'une fois l'horloge arrivée à `/ST`, jamais deux fois, `schtasks
+/run` la lance sur-le-champ, et un service `Schedule` arrêté ne déclenche rien.
+Non-régression Windows/PowerShell (cmd, cmdlets, services, processus) :
+374 + 252 + … verts.
+
+**Fichiers touchés :**
+`src/network/devices/windows/WinSystemCommands.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/__tests__/unit/network-v2/windows-scheduled-tasks.test.ts` (nouveau).

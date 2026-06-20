@@ -25,6 +25,14 @@ export interface WinScheduledTask {
   taskName: string;
   taskPath: string;
   state: string;
+  /** Program/command to run (`/TR`). */
+  command?: string;
+  /** Next scheduled run instant for one-time tasks; cleared once fired. */
+  runAt?: Date;
+  /** Last time the Task Scheduler actually ran this task. */
+  lastRunTime?: Date;
+  /** Last run result code (`0x0` on success). */
+  lastResult?: string;
 }
 
 export interface WinSystemContext {
@@ -53,6 +61,8 @@ export interface WinSystemContext {
   readonly currentUser: string;
   isServiceRunning(name: string): boolean;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
+  /** Current simulated wall-clock instant (drives `schtasks` scheduling). */
+  now(): Date;
 }
 
 // ─── systeminfo ──────────────────────────────────────────────────────
@@ -227,7 +237,8 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   }
   const action = args[0]?.toLowerCase();
   const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
-  const tn = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();
+  const flagVal = (name: string) => { const i = flagIdx(name); return i >= 0 ? args[i + 1] : undefined; };
+  const tn = flagVal('/tn');
 
   if (action === '/query') {
     const filtered = tn
@@ -239,13 +250,22 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
       '======================================== ====================== ===============',
     ];
     for (const t of filtered) {
-      lines.push(`${t.taskName.padEnd(40)} N/A                    ${t.state}`);
+      const next = t.runAt ? fmtSchtasksDate(t.runAt) : 'N/A';
+      lines.push(`${t.taskName.padEnd(40)} ${next.padEnd(22)} ${t.state}`);
     }
     return lines.join('\n');
   }
   if (action === '/create') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
-    ctx.scheduledTasks.set(tn.toLowerCase(), { taskName: tn, taskPath: '\\', state: 'Ready' });
+    const sc = flagVal('/sc')?.toUpperCase();
+    const st = flagVal('/st');
+    const task: WinScheduledTask = {
+      taskName: tn, taskPath: '\\', state: 'Ready', command: flagVal('/tr'),
+    };
+    // Only one-time tasks (`/SC ONCE`, or a bare `/ST` with no schedule) are
+    // armed to fire; recurring schedules are stored but not yet driven.
+    if (st && (!sc || sc === 'ONCE')) task.runAt = parseSchtasksTime(st, ctx.now());
+    ctx.scheduledTasks.set(tn.toLowerCase(), task);
     return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
   }
   if (action === '/delete') {
@@ -255,10 +275,58 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
       ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
       : `ERROR: The system cannot find the file specified.`;
   }
-  if (action === '/run' || action === '/end' || action === '/change') {
+  if (action === '/run') {
+    if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+    const task = ctx.scheduledTasks.get(tn.toLowerCase());
+    if (!task) return 'ERROR: The system cannot find the file specified.';
+    fireScheduledTask(task, ctx.processManager, ctx.now());
+    return `SUCCESS: Attempted to run the scheduled task "${tn}".`;
+  }
+  if (action === '/end' || action === '/change') {
     return 'SUCCESS: The scheduled task was created/modified successfully.';
   }
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
+}
+
+/**
+ * Run a scheduled task's program now: spawn its image (so `tasklist` and
+ * `Get-Process` see it), record the run, and disarm a one-time trigger.
+ * Shared by `schtasks /run` and the Task Scheduler's clock-driven firing.
+ */
+export function fireScheduledTask(
+  task: WinScheduledTask,
+  pm: WinSystemProcessManager,
+  now: Date,
+): void {
+  task.lastRunTime = now;
+  task.lastResult = '0x0';
+  task.state = 'Ready';
+  task.runAt = undefined;
+  if (!task.command) return;
+  const target = task.command.replace(/^["']|["']$/g, '');
+  const leaf = target.split(/[\\/]/).pop() ?? target;
+  const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+  const parent = pm.getAllProcesses().find(p => p.name.toLowerCase() === 'svchost.exe');
+  pm.spawnProcess(imageName, parent?.pid ?? 1, 'NT AUTHORITY\\SYSTEM', {
+    session: 'Services', sessionId: 0,
+  });
+}
+
+/** Parse a `schtasks /ST` time-of-day (`HH:MM[:SS]`) into the next instant
+ *  at or after `base`. Rolls to the following day when already past. */
+function parseSchtasksTime(st: string, base: Date): Date {
+  const m = st.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return new Date(base);
+  const d = new Date(base);
+  d.setHours(Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0, 0);
+  if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** Format an instant the way `schtasks /query` shows the Next Run Time. */
+function fmtSchtasksDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 // ─── nbtstat / wmic ──────────────────────────────────────────────────
