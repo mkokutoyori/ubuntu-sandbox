@@ -76,10 +76,16 @@ export class UtlFileEngine implements UtlFileApi {
     } else if (m === 'A') {
       // Append seeds the buffer with the existing content (empty if absent).
       file.buffer = this.fs.read(path) ?? '';
-      this.flush(file);
+      // A directory the server (oracle OS user) cannot write to fails at
+      // open, exactly as real UTL_FILE — the host write is DAC-checked.
+      if (!this.flush(file)) {
+        throw new OracleError(29283, 'invalid file operation: insufficient privileges to open file for writing');
+      }
     } else {
       // Write truncates immediately, so an FOPEN('W') alone yields an empty file.
-      this.flush(file);
+      if (!this.flush(file)) {
+        throw new OracleError(29283, 'invalid file operation: insufficient privileges to open file for writing');
+      }
     }
 
     const handle = this.nextHandle++;
@@ -108,26 +114,27 @@ export class UtlFileEngine implements UtlFileApi {
   put(handle: number, text: string): void {
     const f = this.requireWritable(handle);
     f.buffer += text ?? '';
-    this.flush(f);
+    if (!this.flush(f)) throw new OracleError(29285, 'file write error');
   }
 
   newLine(handle: number, count: number): void {
     const f = this.requireWritable(handle);
     f.buffer += '\n'.repeat(Math.max(1, count || 1));
-    this.flush(f);
+    if (!this.flush(f)) throw new OracleError(29285, 'file write error');
   }
 
   fflush(handle: number): void {
     const f = this.requireOpen(handle);
-    if (f.mode !== 'R') this.flush(f);
+    if (f.mode !== 'R' && !this.flush(f)) throw new OracleError(29285, 'file write error');
   }
 
   fclose(handle: number): void {
     const f = this.handles.get(handle);
     if (!f || !f.open) throw new OracleError(29282, 'invalid file handle');
-    if (f.mode !== 'R') this.flush(f);
+    const failed = f.mode !== 'R' && !this.flush(f);
     f.open = false;
     this.handles.delete(handle);
+    if (failed) throw new OracleError(29285, 'file write error');
   }
 
   fcloseAll(): void {
@@ -167,10 +174,11 @@ export class UtlFileEngine implements UtlFileApi {
 
   // ── Helpers ─────────────────────────────────────────────────────────
 
-  private flush(f: OpenFile): void {
-    // Best-effort: an engine-only setup with no device VFS keeps the
-    // buffer in memory but cannot materialise it on disk.
-    this.fs.write(f.path, f.buffer);
+  private flush(f: OpenFile): boolean {
+    // Returns the host write verdict so callers can surface a DAC denial
+    // (oracle OS user cannot write the directory/file) as ORA-292xx, the
+    // way real UTL_FILE does — rather than silently dropping the data.
+    return this.fs.write(f.path, f.buffer);
   }
 
   private resolvePath(dir: string, filename: string): string {

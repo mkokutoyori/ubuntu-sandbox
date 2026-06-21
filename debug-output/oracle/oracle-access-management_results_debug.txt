@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-access-management
-Generated: 2026-06-13T18:43:58.997Z
+Generated: 2026-06-21T01:28:57.788Z
 Topology:  LinuxServer ora-access (10.0.0.10) — Oracle ORCL OPEN
 Total commands: 481
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Sat Jun 13 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Sun Jun 21 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -80,7 +80,7 @@ SQL [7/481]> SELECT * FROM dba_users WHERE username = 'SYS';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN               LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ------------------------ ------
-  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-13T18:43:58.996Z      0
+  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-21T01:28:57.786Z      0
   
   1 row selected.
 
@@ -88,7 +88,7 @@ SQL [8/481]> SELECT * FROM dba_users WHERE username = 'SYSTEM';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ---------- ------
-  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
+  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
   
   1 row selected.
 
@@ -96,7 +96,7 @@ SQL [9/481]> SELECT * FROM dba_users WHERE username = 'HR';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ---------- ------
-  HR             3 OPEN                                 USERS              TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
+  HR             3 OPEN                                 USERS              TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                0
   
   1 row selected.
 
@@ -104,12 +104,12 @@ SQL [10/481]> SELECT * FROM all_users ORDER BY created;
   
   USERNAME  USER_ID CREATED                  COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD EXTERNAL_NAME
   --------- ------- ------------------------ ------ ----------------- --------- ----------------- -------- --------- -------------
-  SYS             0 2026-06-13T18:43:58.322Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
-  SYSTEM          1 2026-06-13T18:43:58.322Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
-  DBSNMP          2 2026-06-13T18:43:58.322Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
-  HR              3 2026-06-13T18:43:58.322Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
-  SCOTT           4 2026-06-13T18:43:58.322Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
-  FCUBSLIVE       5 2026-06-13T18:43:58.322Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
+  SYS             0 2026-06-21T01:28:57.070Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
+  SYSTEM          1 2026-06-21T01:28:57.070Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
+  DBSNMP          2 2026-06-21T01:28:57.070Z NO     Y                 NO        USING_NLS_COMP    NO       NO                     
+  HR              3 2026-06-21T01:28:57.070Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
+  SCOTT           4 2026-06-21T01:28:57.070Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
+  FCUBSLIVE       5 2026-06-21T01:28:57.070Z NO     N                 NO        USING_NLS_COMP    NO       NO                     
   
   6 rows selected.
 
@@ -863,13 +863,14 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   OPS_USER            HR    ADD_EMPLOYEE                   DEBUG     
   OPS_USER            HR    EMPLOYEES                      ALTER     
   OPS_USER            HR    EMPLOYEES                      INDEX     
+  SELECT_CATALOG_ROLE SYS   ALL_DIRECTORIES                SELECT    
   SELECT_CATALOG_ROLE SYS   ALL_ERRORS                     SELECT    
   SELECT_CATALOG_ROLE SYS   ALL_TAB_PRIVS_MADE             SELECT    
   SELECT_CATALOG_ROLE SYS   ALL_TAB_PRIVS_RECD             SELECT    
-  SELECT_CATALOG_ROLE SYS   ALL_USERS                      SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   ALL_USERS                      SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_2PC_NEIGHBORS              SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_2PC_PENDING                SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_ADDM_FINDINGS              SELECT    
@@ -883,10 +884,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_EXISTS               SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_MGMT_CONFIG_PARAMS   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_MGMT_LAST_ARCH_TS    SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_AUDIT_OBJECT               SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_AUDIT_OBJECT               SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_POLICIES             SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_SESSION              SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_AUDIT_STATEMENT            SELECT    
@@ -900,10 +901,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_CONSTRAINTS                SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_CONS_COLUMNS               SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_CONTEXT                    SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_DATA_FILES                 SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_DATA_FILES                 SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_DB_LINKS                   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_DDL_LOCKS                  SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_DDL_LOG                    SELECT    
@@ -917,10 +918,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_DV_ROLE                    SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_DV_RULE                    SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_DV_RULE_SET                SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_DV_RULE_SET_RULE           SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_DV_RULE_SET_RULE           SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_EDITIONS                   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_ENCRYPTED_COLUMNS          SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_ERRORS                     SELECT    
@@ -934,10 +935,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_FLASHBACK_ARCHIVE_TS       SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_FREE_SPACE                 SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_FREE_SPACE_COALESCED       SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_GG_EXTRACT                 SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_GG_EXTRACT                 SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_GG_REPLICAT                SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_HIST_ACTIVE_SESS_HISTORY   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_HIST_BASELINE              SELECT    
@@ -951,10 +952,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_HOST_ACES                  SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_INDEXES                    SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_IND_COLUMNS                SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_IND_PARTITIONS             SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_IND_PARTITIONS             SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_IND_STATISTICS             SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_IND_SUBPARTITIONS          SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_JOBS                       SELECT    
@@ -968,10 +969,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_MVIEWS                     SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_MVIEW_KEYS                 SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_MVIEW_LOGS                 SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_MVIEW_REFRESH_TIMES        SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_MVIEW_REFRESH_TIMES        SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_NETWORK_ACLS               SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_NETWORK_ACL_PRIVILEGES     SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_OBJECTS                    SELECT    
@@ -985,10 +986,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_PART_TABLES                SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_PDBS                       SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_POLICIES                   SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_POLICY_CONTEXTS            SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_POLICY_CONTEXTS            SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_POLICY_GROUPS              SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_PRIV_AUDIT_OPTS            SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_PRIV_CAPTURES              SELECT    
@@ -1002,10 +1003,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_ROLES                      SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_ROLE_PRIVS                 SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_ROLLBACK_SEGS              SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_RSRC_CONSUMER_GROUPS       SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_RSRC_CONSUMER_GROUPS       SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_RSRC_GROUP_MAPPINGS        SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_RSRC_MAPPINGS              SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_RSRC_PLANS                 SELECT    
@@ -1019,10 +1020,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_JOBS             SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_JOB_CLASSES      SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_JOB_LOG          SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_JOB_RUN_DETAILS  SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_JOB_RUN_DETAILS  SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_PROGRAMS         SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_SCHEDULES        SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SCHEDULER_WINDOWS          SELECT    
@@ -1036,10 +1037,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_SOURCE                     SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_STMT_AUDIT_OPTS            SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SUBPART_KEY_COLUMNS        SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_SYNONYMS                   SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_SYNONYMS                   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_SYS_PRIVS                  SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TABLES                     SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TABLESPACES                SELECT    
@@ -1053,10 +1054,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_TAB_STATISTICS             SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TAB_SUBPARTITIONS          SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TEMP_FILES                 SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_TRIGGERS                   SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_TRIGGERS                   SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TSDP_POLICY                SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TSDP_POLICY_FEATURE        SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_TS_QUOTAS                  SELECT    
@@ -1070,10 +1071,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   DBA_USED_SYSPRIVS              SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_USERS                      SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_USERS_WITH_DEFPWD          SELECT    
-  SELECT_CATALOG_ROLE SYS   DBA_VIEWS                      SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   DBA_VIEWS                      SELECT    
   SELECT_CATALOG_ROLE SYS   DBA_WAITERS                    SELECT    
   SELECT_CATALOG_ROLE SYS   SYS.AUD$                       SELECT    
   SELECT_CATALOG_ROLE SYS   SYS.COL$                       SELECT    
@@ -1087,10 +1088,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   USER_TAB_PRIVS_MADE            SELECT    
   SELECT_CATALOG_ROLE SYS   USER_TAB_PRIVS_RECD            SELECT    
   SELECT_CATALOG_ROLE SYS   V$ACTIVE_INSTANCES             SELECT    
-  SELECT_CATALOG_ROLE SYS   V$ACTIVE_SERVICES              SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$ACTIVE_SERVICES              SELECT    
   SELECT_CATALOG_ROLE SYS   V$ACTIVE_SESSION_HISTORY       SELECT    
   SELECT_CATALOG_ROLE SYS   V$ARCHIVED_LOG                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$ARCHIVE_DEST                 SELECT    
@@ -1104,10 +1105,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$ASM_DISKGROUP                SELECT    
   SELECT_CATALOG_ROLE SYS   V$ASM_DISK_IOSTAT              SELECT    
   SELECT_CATALOG_ROLE SYS   V$ASM_FILE                     SELECT    
-  SELECT_CATALOG_ROLE SYS   V$ASM_TEMPLATE                 SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$ASM_TEMPLATE                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$BACKUP                       SELECT    
   SELECT_CATALOG_ROLE SYS   V$BACKUP_ARCHIVELOG_DETAILS    SELECT    
   SELECT_CATALOG_ROLE SYS   V$BACKUP_CORRUPTION            SELECT    
@@ -1121,10 +1122,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$BUFFER_POOL                  SELECT    
   SELECT_CATALOG_ROLE SYS   V$BUFFER_POOL_STATISTICS       SELECT    
   SELECT_CATALOG_ROLE SYS   V$CACHE_STATS                  SELECT    
-  SELECT_CATALOG_ROLE SYS   V$CIRCUIT                      SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$CIRCUIT                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$CLUSTER_INSTANCE             SELECT    
   SELECT_CATALOG_ROLE SYS   V$CONTAINERS                   SELECT    
   SELECT_CATALOG_ROLE SYS   V$CONTROLFILE                  SELECT    
@@ -1138,10 +1139,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$DATAFILE_HEADER              SELECT    
   SELECT_CATALOG_ROLE SYS   V$DATAGUARD_CONFIG             SELECT    
   SELECT_CATALOG_ROLE SYS   V$DATAGUARD_STATS              SELECT    
-  SELECT_CATALOG_ROLE SYS   V$DATAGUARD_STATUS             SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$DATAGUARD_STATUS             SELECT    
   SELECT_CATALOG_ROLE SYS   V$DBLINK                       SELECT    
   SELECT_CATALOG_ROLE SYS   V$DB_CACHE_ADVICE              SELECT    
   SELECT_CATALOG_ROLE SYS   V$DB_OBJECT_CACHE              SELECT    
@@ -1155,10 +1156,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$ENCRYPTED_TABLESPACES        SELECT    
   SELECT_CATALOG_ROLE SYS   V$ENCRYPTION_KEYS              SELECT    
   SELECT_CATALOG_ROLE SYS   V$ENCRYPTION_WALLET            SELECT    
-  SELECT_CATALOG_ROLE SYS   V$ENQUEUE_LOCK                 SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$ENQUEUE_LOCK                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$ENQUEUE_STAT                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$ENQUEUE_STATISTICS           SELECT    
   SELECT_CATALOG_ROLE SYS   V$EVENTMETRIC                  SELECT    
@@ -1172,10 +1173,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$FIXED_VIEW_DEFINITION        SELECT    
   SELECT_CATALOG_ROLE SYS   V$FLASHBACK_DATABASE_LOG       SELECT    
   SELECT_CATALOG_ROLE SYS   V$FLASHBACK_DATABASE_LOGFILE   SELECT    
-  SELECT_CATALOG_ROLE SYS   V$FLASHBACK_DATABASE_STAT      SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$FLASHBACK_DATABASE_STAT      SELECT    
   SELECT_CATALOG_ROLE SYS   V$FLASHBACK_TXN_GRAPH          SELECT    
   SELECT_CATALOG_ROLE SYS   V$FLASHBACK_TXN_MODS           SELECT    
   SELECT_CATALOG_ROLE SYS   V$FLASH_RECOVERY_AREA_USAGE    SELECT    
@@ -1189,10 +1190,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$IOSTAT_CONSUMER_GROUP        SELECT    
   SELECT_CATALOG_ROLE SYS   V$IOSTAT_FILE                  SELECT    
   SELECT_CATALOG_ROLE SYS   V$IOSTAT_FUNCTION              SELECT    
-  SELECT_CATALOG_ROLE SYS   V$IOSTAT_NETWORK               SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$IOSTAT_NETWORK               SELECT    
   SELECT_CATALOG_ROLE SYS   V$JAVA_POOL_ADVICE             SELECT    
   SELECT_CATALOG_ROLE SYS   V$LATCH                        SELECT    
   SELECT_CATALOG_ROLE SYS   V$LATCHHOLDER                  SELECT    
@@ -1206,10 +1207,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$LISTENER_NETWORK             SELECT    
   SELECT_CATALOG_ROLE SYS   V$LOCK                         SELECT    
   SELECT_CATALOG_ROLE SYS   V$LOCKED_OBJECT                SELECT    
-  SELECT_CATALOG_ROLE SYS   V$LOG                          SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$LOG                          SELECT    
   SELECT_CATALOG_ROLE SYS   V$LOGFILE                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$LOGMNR_CONTENTS              SELECT    
   SELECT_CATALOG_ROLE SYS   V$LOGMNR_DICTIONARY            SELECT    
@@ -1223,10 +1224,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$MYSTAT                       SELECT    
   SELECT_CATALOG_ROLE SYS   V$NLS_PARAMETERS               SELECT    
   SELECT_CATALOG_ROLE SYS   V$NLS_VALID_VALUES             SELECT    
-  SELECT_CATALOG_ROLE SYS   V$NODES                        SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$NODES                        SELECT    
   SELECT_CATALOG_ROLE SYS   V$NONLOGGED_BLOCK              SELECT    
   SELECT_CATALOG_ROLE SYS   V$OBJECT_USAGE                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$OBSOLETE_PARAMETER           SELECT    
@@ -1240,10 +1241,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$PQ_SESSTAT                   SELECT    
   SELECT_CATALOG_ROLE SYS   V$PQ_SLAVE                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$PQ_SYSSTAT                   SELECT    
-  SELECT_CATALOG_ROLE SYS   V$PQ_TQSTAT                    SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$PQ_TQSTAT                    SELECT    
   SELECT_CATALOG_ROLE SYS   V$PROCESS                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$PROCESS_MEMORY               SELECT    
   SELECT_CATALOG_ROLE SYS   V$PROCESS_MEMORY_DETAIL        SELECT    
@@ -1257,10 +1258,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$RECOVERY_FILE_DEST           SELECT    
   SELECT_CATALOG_ROLE SYS   V$RECOVERY_FILE_STATUS         SELECT    
   SELECT_CATALOG_ROLE SYS   V$RECOVERY_LOG                 SELECT    
-  SELECT_CATALOG_ROLE SYS   V$RECOVERY_PROGRESS            SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$RECOVERY_PROGRESS            SELECT    
   SELECT_CATALOG_ROLE SYS   V$RECOVERY_STATUS              SELECT    
   SELECT_CATALOG_ROLE SYS   V$RECOVER_FILE                 SELECT    
   SELECT_CATALOG_ROLE SYS   V$RESOURCE_LIMIT               SELECT    
@@ -1274,10 +1275,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$ROLLSTAT                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$ROWCACHE                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$ROWCACHE_SUBORDINATE         SELECT    
-  SELECT_CATALOG_ROLE SYS   V$RSRC_CONSUMER_GROUP          SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$RSRC_CONSUMER_GROUP          SELECT    
   SELECT_CATALOG_ROLE SYS   V$RSRC_CONSUMER_GROUP_CPU_MTH  SELECT    
   SELECT_CATALOG_ROLE SYS   V$RSRC_PLAN                    SELECT    
   SELECT_CATALOG_ROLE SYS   V$RSRC_SESSION_INFO            SELECT    
@@ -1291,10 +1292,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$SESSION_CONTEXT              SELECT    
   SELECT_CATALOG_ROLE SYS   V$SESSION_CURSOR_CACHE         SELECT    
   SELECT_CATALOG_ROLE SYS   V$SESSION_EVENT                SELECT    
-  SELECT_CATALOG_ROLE SYS   V$SESSION_FIX_CONTROL          SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$SESSION_FIX_CONTROL          SELECT    
   SELECT_CATALOG_ROLE SYS   V$SESSION_LONGOPS              SELECT    
   SELECT_CATALOG_ROLE SYS   V$SESSION_METRIC               SELECT    
   SELECT_CATALOG_ROLE SYS   V$SESSION_METRIC_HISTORY       SELECT    
@@ -1308,10 +1309,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$SGA                          SELECT    
   SELECT_CATALOG_ROLE SYS   V$SGAINFO                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$SGASTAT                      SELECT    
-  SELECT_CATALOG_ROLE SYS   V$SGA_CURRENT_RESIZE_OPS       SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$SGA_CURRENT_RESIZE_OPS       SELECT    
   SELECT_CATALOG_ROLE SYS   V$SGA_DYNAMIC_COMPONENTS       SELECT    
   SELECT_CATALOG_ROLE SYS   V$SGA_DYNAMIC_FREE_MEMORY      SELECT    
   SELECT_CATALOG_ROLE SYS   V$SGA_RESIZE_OPS               SELECT    
@@ -1325,10 +1326,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$SQL                          SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQLAREA                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQLFN_ARG_METADATA           SELECT    
-  SELECT_CATALOG_ROLE SYS   V$SQLFN_METADATA               SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$SQLFN_METADATA               SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQLSTATS                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQL_BIND_CAPTURE             SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQL_CURSOR                   SELECT    
@@ -1342,10 +1343,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$SQL_TEXT                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQL_TEXT_WITH_NEWLINES       SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQL_WORKAREA                 SELECT    
-  SELECT_CATALOG_ROLE SYS   V$SQL_WORKAREA_ACTIVE          SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$SQL_WORKAREA_ACTIVE          SELECT    
   SELECT_CATALOG_ROLE SYS   V$SQL_WORKAREA_HISTOGRAM       SELECT    
   SELECT_CATALOG_ROLE SYS   V$STANDBY_LOG                  SELECT    
   SELECT_CATALOG_ROLE SYS   V$STATNAME                     SELECT    
@@ -1359,10 +1360,10 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$SYSTEM_METRIC_HISTORY        SELECT    
   SELECT_CATALOG_ROLE SYS   V$SYSTEM_PARAMETER             SELECT    
   SELECT_CATALOG_ROLE SYS   V$SYSTEM_PARAMETER2            SELECT    
-  SELECT_CATALOG_ROLE SYS   V$SYSTEM_WAIT_CLASS            SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$SYSTEM_WAIT_CLASS            SELECT    
   SELECT_CATALOG_ROLE SYS   V$TABLESPACE                   SELECT    
   SELECT_CATALOG_ROLE SYS   V$TABLESPACE_THREAD            SELECT    
   SELECT_CATALOG_ROLE SYS   V$TEMPFILE                     SELECT    
@@ -1376,22 +1377,22 @@ SQL [94/481]> SELECT grantee, owner, table_name, privilege FROM all_tab_privs OR
   SELECT_CATALOG_ROLE SYS   V$TIMEZONE_NAMES               SELECT    
   SELECT_CATALOG_ROLE SYS   V$TRANSACTION                  SELECT    
   SELECT_CATALOG_ROLE SYS   V$TRANSACTION_ENQUEUE          SELECT    
-  SELECT_CATALOG_ROLE SYS   V$UNDOSTAT                     SELECT    
   
   GRANTEE             OWNER TABLE_NAME                     PRIVILEGE 
   ------------------- ----- ------------------------------ ----------
+  SELECT_CATALOG_ROLE SYS   V$UNDOSTAT                     SELECT    
   SELECT_CATALOG_ROLE SYS   V$VERSION                      SELECT    
   SELECT_CATALOG_ROLE SYS   V$WAITCLASSMETRIC              SELECT    
   SELECT_CATALOG_ROLE SYS   V$WAITCLASSMETRIC_HISTORY      SELECT    
   SELECT_CATALOG_ROLE SYS   V$WAIT_CHAINS                  SELECT    
   
-  438 rows selected.
+  439 rows selected.
 
 SQL [95/481]> SELECT COUNT(*) FROM dba_tab_privs;
   
   COUNT(...)
   ----------
-         438
+         439
   
   1 row selected.
 
@@ -2104,13 +2105,13 @@ SQL [191/481]> SELECT * FROM dba_audit_session ORDER BY timestamp DESC FETCH FIR
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME              RETURNCODE
   ----------- -------- ------------ -------- ------------------------ ----------- --------- ------------------------ ----------
-  root        SYS      linux-server pts/0    2026-06-13T18:43:58.996Z LOGON               8                                   0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.992Z LOGOFF              7 2026-06-13T18:43:58.992Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.930Z LOGON               7 2026-06-13T18:43:58.992Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.929Z LOGOFF              6 2026-06-13T18:43:58.929Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.926Z LOGON               6 2026-06-13T18:43:58.929Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.925Z LOGOFF              5 2026-06-13T18:43:58.925Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.889Z LOGON               5 2026-06-13T18:43:58.925Z          0
+  root        SYS      linux-server pts/0    2026-06-21T01:28:57.786Z LOGON               8                                   0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.780Z LOGOFF              7 2026-06-21T01:28:57.780Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.723Z LOGON               7 2026-06-21T01:28:57.780Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.723Z LOGOFF              6 2026-06-21T01:28:57.723Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.719Z LOGON               6 2026-06-21T01:28:57.723Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.718Z LOGOFF              5 2026-06-21T01:28:57.718Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.673Z LOGON               5 2026-06-21T01:28:57.718Z          0
   
   7 rows selected.
 
@@ -2118,7 +2119,7 @@ SQL [192/481]> SELECT * FROM dba_audit_object WHERE owner = 'HR' AND obj_name = 
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME  OBJ_NAME  OWNER SESSIONID RETURNCODE SQL_TEXT                                                                        
   ----------- -------- --------- -------- ------------------------ ------------ --------- ----- --------- ---------- --------------------------------------------------------------------------------
-  oracle      SYS      localhost pts/0    2026-06-13T18:43:58.902Z CREATE TABLE EMPLOYEES HR            5          0 CREATE TABLE HR.EMPLOYEES (
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:57.684Z CREATE TABLE EMPLOYEES HR            5          0 CREATE TABLE HR.EMPLOYEES (
          EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
          FIR
                                                                                                                      ST_NAME VARCHAR2(20),
@@ -2136,17 +2137,17 @@ SQL [192/481]> SELECT * FROM dba_audit_object WHERE owner = 'HR' AND obj_name = 
          DEPARTMENT_ID NUMBER(
                                                                                                                      4)
        )                                                                       
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.790Z GRANT        EMPLOYEES HR            8          0 GRANT SELECT ON hr.employees TO alice                                           
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.790Z GRANT        EMPLOYEES HR            8          0 GRANT INSERT ON hr.employees TO bob                                             
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.791Z GRANT        EMPLOYEES HR            8          0 GRANT UPDATE ON hr.employees TO bob                                             
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.791Z GRANT        EMPLOYEES HR            8          0 GRANT DELETE ON hr.employees TO bob                                             
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.791Z GRANT        EMPLOYEES HR            8          0 GRANT REFERENCES ON hr.employees TO carol                                       
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.791Z GRANT        EMPLOYEES HR            8          0 GRANT SELECT (employee_id, first_name) ON hr.employees TO dave                  
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.792Z GRANT        EMPLOYEES HR            8          0 GRANT UPDATE (salary) ON hr.employees TO eve                                    
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.792Z GRANT        EMPLOYEES HR            8          0 GRANT ALTER ON hr.employees TO ops_user                                         
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.793Z GRANT        EMPLOYEES HR            8          0 GRANT INDEX ON hr.employees TO ops_user                                         
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.999Z REVOKE       EMPLOYEES HR            8          0 REVOKE SELECT ON hr.employees FROM alice                                        
-  oracle      SYS      localhost pts/0    2026-06-13T18:44:00.999Z REVOKE       EMPLOYEES HR            8          0 REVOKE UPDATE (salary) ON hr.employees FROM eve                                 
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.615Z GRANT        EMPLOYEES HR            8          0 GRANT SELECT ON hr.employees TO alice                                           
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.616Z GRANT        EMPLOYEES HR            8          0 GRANT INSERT ON hr.employees TO bob                                             
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.616Z GRANT        EMPLOYEES HR            8          0 GRANT UPDATE ON hr.employees TO bob                                             
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.616Z GRANT        EMPLOYEES HR            8          0 GRANT DELETE ON hr.employees TO bob                                             
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.616Z GRANT        EMPLOYEES HR            8          0 GRANT REFERENCES ON hr.employees TO carol                                       
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.617Z GRANT        EMPLOYEES HR            8          0 GRANT SELECT (employee_id, first_name) ON hr.employees TO dave                  
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.617Z GRANT        EMPLOYEES HR            8          0 GRANT UPDATE (salary) ON hr.employees TO eve                                    
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.618Z GRANT        EMPLOYEES HR            8          0 GRANT ALTER ON hr.employees TO ops_user                                         
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.619Z GRANT        EMPLOYEES HR            8          0 GRANT INDEX ON hr.employees TO ops_user                                         
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.845Z REVOKE       EMPLOYEES HR            8          0 REVOKE SELECT ON hr.employees FROM alice                                        
+  oracle      SYS      localhost pts/0    2026-06-21T01:28:59.845Z REVOKE       EMPLOYEES HR            8          0 REVOKE UPDATE (salary) ON hr.employees FROM eve                                 
   
   12 rows selected.
 
@@ -2231,218 +2232,218 @@ SQL [205/481]> SELECT * FROM unified_audit_trail ORDER BY event_timestamp DESC F
   
   EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
   ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.002Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER bob QUOTA 500M ON users                                               SYS           BOB         ALTER USER                                    160
-  2026-06-13T18:44:01.002Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER carol QUOTA UNLIMITED ON users                                        SYS           CAROL       ALTER USER                                    161
-  2026-06-13T18:44:01.002Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER dave QUOTA 0 ON users                                                 SYS           DAVE        ALTER USER                                    162
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                640
+  2026-06-21T01:28:59.849Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER carol QUOTA UNLIMITED ON users                                        SYS           CAROL       ALTER USER                                    161
+  2026-06-21T01:28:59.849Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER dave QUOTA 0 ON users                                                 SYS           DAVE        ALTER USER                                    162
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                650
                                                                                                                       base.                                                                                                                                                       
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      641
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      651
                                                                                                                       mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          642
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          652
                                                                                                                       E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             643
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             653
                                                                                                                       ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               644
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               654
                                                                                                                       must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                645
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                655
                                                                                                                       atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      646
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      656
                                                                                                                        combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          647
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          657
                                                                                                                       ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             648
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             658
                                                                                                                       E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               649
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               659
                                                                                                                       on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                650
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                660
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      661
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  
+  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
+  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          662
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             663
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               664
+                                                                                                                      must not also perform application DML.                                                                                                                      
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                665
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      666
+                                                                                                                       combined with security policy administration.                                                                                                              
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          667
+                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             668
+                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.849Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               669
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.848Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER alice QUOTA 100M ON users                                             SYS           ALICE       ALTER USER                                    159
+  2026-06-21T01:28:59.848Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER bob QUOTA 500M ON users                                               SYS           BOB         ALTER USER                                    160
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               624
+                                                                                                                      must not also perform application DML.                                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                625
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      626
+                                                                                                                       combined with security policy administration.                                                                                                              
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          627
+                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
+  
+  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
+  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             628
+                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               629
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                630
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      631
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          632
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             633
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               634
+                                                                                                                      must not also perform application DML.                                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                635
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      636
+                                                                                                                       combined with security policy administration.                                                                                                              
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          637
+                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             638
+                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               639
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                640
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      641
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  
+  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
+  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          642
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             643
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               644
+                                                                                                                      must not also perform application DML.                                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                645
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      646
+                                                                                                                       combined with security policy administration.                                                                                                              
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          647
+                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             648
+                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.848Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               649
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.847Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE EXECUTE ANY PROCEDURE FROM bob                                            SYS                       REVOKE                                        157
+  2026-06-21T01:28:59.847Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE UNLIMITED TABLESPACE FROM app_user                                        SYS                       REVOKE                                        158
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                610
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      611
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          612
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             613
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  
+  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
+  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               614
+                                                                                                                      must not also perform application DML.                                                                                                                      
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                615
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      616
+                                                                                                                       combined with security policy administration.                                                                                                              
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          617
+                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             618
+                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               619
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                620
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      621
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          622
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.847Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             623
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  2026-06-21T01:28:59.846Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE app_role FROM bob                                                         SYS                       REVOKE                                        154
+  2026-06-21T01:28:59.846Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE admin_role FROM ops_user                                                  SYS                       REVOKE                                        155
+  2026-06-21T01:28:59.846Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE developer_role FROM carol                                                 SYS                       REVOKE                                        156
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                576
                                                                                                                       base.                                                                                                                                                       
   
   EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
   ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      651
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      577
                                                                                                                       mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          652
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          578
                                                                                                                       E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             653
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             579
                                                                                                                       ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               654
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               580
                                                                                                                       must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                655
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                581
                                                                                                                       atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      656
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      582
                                                                                                                        combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          657
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          583
                                                                                                                       ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             658
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             584
                                                                                                                       E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               659
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               585
                                                                                                                       on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                660
-                                                                                                                      base.                                                                                                                                                       
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      661
-                                                                                                                      mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          662
-                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             663
-                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               664
-                                                                                                                      must not also perform application DML.                                                                                                                      
-  
-  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
-  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                665
-                                                                                                                      atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      666
-                                                                                                                       combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          667
-                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             668
-                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.002Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               669
-                                                                                                                      on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.001Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE EXECUTE ANY PROCEDURE FROM bob                                            SYS                       REVOKE                                        157
-  2026-06-13T18:44:01.001Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE UNLIMITED TABLESPACE FROM app_user                                        SYS                       REVOKE                                        158
-  2026-06-13T18:44:01.001Z Standard              8 SYS        localhost pts/0    oracle  ALTER USER                 0 ALTER USER alice QUOTA 100M ON users                                             SYS           ALICE       ALTER USER                                    159
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                610
-                                                                                                                      base.                                                                                                                                                       
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      611
-                                                                                                                      mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          612
-                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             613
-                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               614
-                                                                                                                      must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                615
-                                                                                                                      atabase.                                                                                                                                                    
-  
-  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
-  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      616
-                                                                                                                       combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          617
-                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             618
-                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               619
-                                                                                                                      on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                620
-                                                                                                                      base.                                                                                                                                                       
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      621
-                                                                                                                      mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          622
-                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             623
-                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               624
-                                                                                                                      must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                625
-                                                                                                                      atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      626
-                                                                                                                       combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          627
-                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             628
-                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               629
-                                                                                                                      on must not also perform application DML.                                                                                                                   
-  
-  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
-  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                630
-                                                                                                                      base.                                                                                                                                                       
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      631
-                                                                                                                      mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          632
-                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             633
-                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               634
-                                                                                                                      must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                635
-                                                                                                                      atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      636
-                                                                                                                       combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          637
-                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             638
-                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.001Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               639
-                                                                                                                      on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.000Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE app_role FROM bob                                                         SYS                       REVOKE                                        154
-  2026-06-13T18:44:01.000Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE admin_role FROM ops_user                                                  SYS                       REVOKE                                        155
-  2026-06-13T18:44:01.000Z Standard              8 SYS        localhost pts/0    oracle  REVOKE                     0 REVOKE developer_role FROM carol                                                 SYS                       REVOKE                                        156
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds CREATE USER + AUDIT SYSTEM — User-management privileges must not                            DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      570
+  2026-06-21T01:28:59.846Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds CREATE USER + AUDIT SYSTEM — User-management privileges must not                            DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      586
                                                                                                                       be combined with security policy administration.                                                                                                            
-  
-  EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
-  ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY                           DV_RULE_SET    SOD_DATA_EXFILTRATION          571
+  2026-06-21T01:28:59.846Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY                           DV_RULE_SET    SOD_DATA_EXFILTRATION          587
                                                                                                                        TABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVIL                           DV_RULE_SET    SOD_GRANT_MONOPOLY             572
+  2026-06-21T01:28:59.846Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVIL                           DV_RULE_SET    SOD_GRANT_MONOPOLY             588
                                                                                                                       EGE with GRANT ANY ROLE lets a user escalate themselves.                                                                                                    
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds SYSBACKUP + DROP ANY TABLE — The backup operator must not be allo                           DV_RULE_SET    SOD_BACKUP_VS_DROP             573
-                                                                                                                      wed to drop the data they back up.                                                                                                                          
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configura                           DV_RULE_SET    SOD_DML_VS_AUDIT               574
+  2026-06-21T01:28:59.846Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configura                           DV_RULE_SET    SOD_DML_VS_AUDIT               589
                                                                                                                       tion must not also perform application DML.                                                                                                                 
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                575
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                590
                                                                                                                       base.                                                                                                                                                       
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      576
-                                                                                                                      mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          577
-                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             578
-                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               579
-                                                                                                                      must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                580
-                                                                                                                      atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      581
-                                                                                                                       combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          582
-                                                                                                                      ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             583
-                                                                                                                      E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               584
-                                                                                                                      on must not also perform application DML.                                                                                                                   
   
   EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
   ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds CREATE USER + AUDIT SYSTEM — User-management privileges must not                            DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      585
-                                                                                                                      be combined with security policy administration.                                                                                                            
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY                           DV_RULE_SET    SOD_DATA_EXFILTRATION          586
-                                                                                                                       TABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVIL                           DV_RULE_SET    SOD_GRANT_MONOPOLY             587
-                                                                                                                      EGE with GRANT ANY ROLE lets a user escalate themselves.                                                                                                    
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds SYSBACKUP + DROP ANY TABLE — The backup operator must not be allo                           DV_RULE_SET    SOD_BACKUP_VS_DROP             588
-                                                                                                                      wed to drop the data they back up.                                                                                                                          
-  2026-06-13T18:44:01.000Z DatabaseVault         0 OPS_USER   localhost pts/0    oracle  POLICY VIOLATION       20000 OPS_USER holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configura                           DV_RULE_SET    SOD_DML_VS_AUDIT               589
-                                                                                                                      tion must not also perform application DML.                                                                                                                 
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                590
-                                                                                                                      base.                                                                                                                                                       
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      591
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      591
                                                                                                                       mbined with security policy administration.                                                                                                                 
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          592
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          592
                                                                                                                       E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             593
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             593
                                                                                                                       ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               594
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               594
                                                                                                                       must not also perform application DML.                                                                                                                      
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                595
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                595
                                                                                                                       atabase.                                                                                                                                                    
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      596
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      596
                                                                                                                        combined with security policy administration.                                                                                                              
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          597
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY T                           DV_RULE_SET    SOD_DATA_EXFILTRATION          597
                                                                                                                       ABLE and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                  
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             598
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEG                           DV_RULE_SET    SOD_GRANT_MONOPOLY             598
                                                                                                                       E with GRANT ANY ROLE lets a user escalate themselves.                                                                                                      
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               599
+                                                                                                                      on must not also perform application DML.                                                                                                                   
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                600
+                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be co                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      601
+                                                                                                                      mbined with security policy administration.                                                                                                                 
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds SELECT ANY TABLE + CREATE ANY DIRECTORY — Holding both SELECT ANY TABL                           DV_RULE_SET    SOD_DATA_EXFILTRATION          602
+                                                                                                                      E and CREATE ANY DIRECTORY enables silent exfiltration.                                                                                                     
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds GRANT ANY PRIVILEGE + GRANT ANY ROLE — Combining GRANT ANY PRIVILEGE w                           DV_RULE_SET    SOD_GRANT_MONOPOLY             603
+                                                                                                                      ith GRANT ANY ROLE lets a user escalate themselves.                                                                                                         
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configuration                            DV_RULE_SET    SOD_DML_VS_AUDIT               604
+                                                                                                                      must not also perform application DML.                                                                                                                      
   
   EVENT_TIMESTAMP          AUDIT_TYPE    SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME      RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED     ENTRY_ID
   ------------------------ ------------- --------- ---------- --------- -------- ------- ---------------- ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- ------------------------- --------
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds AUDIT SYSTEM + UPDATE ANY TABLE — A user altering audit configurati                           DV_RULE_SET    SOD_DML_VS_AUDIT               599
-                                                                                                                      on must not also perform application DML.                                                                                                                   
-  2026-06-13T18:44:01.000Z DatabaseVault         0 SYS        localhost pts/0    oracle  POLICY VIOLATION       20000 SYS holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the data                           DV_RULE_SET    SOD_DBA_AUDITOR                600
-                                                                                                                      base.                                                                                                                                                       
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds DBA + AUDIT_ADMIN — A DBA must not also act as the auditor of the d                           DV_RULE_SET    SOD_DBA_AUDITOR                605
+                                                                                                                      atabase.                                                                                                                                                    
+  2026-06-21T01:28:59.846Z DatabaseVault         0 SYSTEM     localhost pts/0    oracle  POLICY VIOLATION       20000 SYSTEM holds CREATE USER + AUDIT SYSTEM — User-management privileges must not be                           DV_RULE_SET    SOD_USER_MGMT_VS_SECURITY      606
+                                                                                                                       combined with security policy administration.                                                                                                              
   
   100 rows selected.
 
@@ -2544,7 +2545,7 @@ SQL [226/481]> SELECT sid, serial#, username, status, program, machine, osuser F
     2       1 SYS      ACTIVE oracle@localhost (SMON) localhost    oracle
     3       1 SYS      ACTIVE oracle@localhost (DBW0) localhost    oracle
     4       1 SYS      ACTIVE oracle@localhost (LGWR) localhost    oracle
-    8   21130 SYS      ACTIVE sqlplus@linux-server    linux-server root  
+    8   19011 SYS      ACTIVE sqlplus@linux-server    linux-server root  
   
   5 rows selected.
 
@@ -2572,7 +2573,7 @@ SQL [229/481]> SELECT sid, serial#, username, status, last_call_et FROM v$sessio
     2       1 SYS      ACTIVE            0
     3       1 SYS      ACTIVE            0
     4       1 SYS      ACTIVE            0
-    8   21130 SYS      ACTIVE            0
+    8   19011 SYS      ACTIVE            0
   
   5 rows selected.
 
@@ -2639,7 +2640,7 @@ SQL [242/481]> SELECT * FROM dba_audit_session WHERE returncode != 0 ORDER BY ti
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- ------------ -------- ------------------------ ----------- --------- ----------- ----------
-  root        ALICE    linux-server pts/0    2026-06-13T18:44:01.030Z LOGON               0                   1017
+  root        ALICE    linux-server pts/0    2026-06-21T01:28:59.880Z LOGON               0                   1017
   
   1 row selected.
 
@@ -2873,7 +2874,7 @@ SQL [291/481]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-                1 ORCL          localhost 19.0.0.0.0 2026-06-13T18:43:58.867Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+                1 ORCL          localhost 19.0.0.0.0 2026-06-21T01:28:57.658Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -2881,7 +2882,7 @@ SQL [292/481]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- ------------------------ ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  3843622854 ORCL 2026-06-13T18:44:01.205Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 13-JUN-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000416            1000001
+  2948953747 ORCL 2026-06-21T01:29:00.079Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 21-JUN-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000416            1000001
   
   1 row selected.
 
@@ -2917,10 +2918,10 @@ SQL [296/481]> SELECT * FROM v$session WHERE rownum < 5;
   
   SADDR            SID SERIAL# AUDSID PADDR            USER# USERNAME COMMAND    OWNERID TADDR LOCKWAIT STATUS SERVER    SCHEMA# SCHEMANAME OSUSER PROCESS MACHINE   PORT TERMINAL PROGRAM                 TYPE       SQL_ADDRESS SQL_HASH_VALUE SQL_ID SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID PREV_SQL_ID MODULE ACTION CLIENT_INFO CLIENT_IDENTIFIER FIXED_TABLE_SEQUENCE ROW_WAIT_OBJ# ROW_WAIT_FILE# ROW_WAIT_BLOCK# ROW_WAIT_ROW# LOGON_TIME               LAST_CALL_ET PDML_ENABLED FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER RESOURCE_CONSUMER_GROUP PDML_STATUS PDDL_STATUS PQ_STATUS EVENT# EVENT      WAIT_CLASS# WAIT_CLASS WAIT_TIME SECONDS_IN_WAIT STATE   BLOCKING_SESSION_STATUS BLOCKING_SESSION SQL_TRACE SERVICE_NAME CON_ID
   ---------------- --- ------- ------ ---------------- ----- -------- ------- ---------- ----- -------- ------ --------- ------- ---------- ------ ------- --------- ---- -------- ----------------------- ---------- ----------- -------------- ------ ---------------- -------------- ----------- ----------- ------ ------ ----------- ----------------- -------------------- ------------- -------------- --------------- ------------- ------------------------ ------------ ------------ ------------- --------------- ----------- ----------------------- ----------- ----------- --------- ------ ---------- ----------- ---------- --------- --------------- ------- ----------------------- ---------------- --------- ------------ ------
-  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-13T18:44:01.206Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-13T18:44:01.206Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-13T18:44:01.206Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-13T18:44:01.206Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-21T01:29:00.080Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-21T01:29:00.080Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-21T01:29:00.080Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-06-21T01:29:00.080Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
   
   4 rows selected.
 
@@ -3079,7 +3080,7 @@ SQL [311/481]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-   3 DEFAULT     16384                0                0              0               4          1790            1790             285
+   3 DEFAULT     16384                0                0              0               4          1791            1791             285
   
   1 row selected.
 
@@ -3180,10 +3181,10 @@ SQL [321/481]> SELECT * FROM v$sql WHERE rownum < 5;
   
   SQL_ID        SQL_TEXT                                                              EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ------------- --------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  1f9j8wva3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (50, 'Shipping', 121, 1500)                  1           29       23           1          0              1 SYS                 2026-06-13T18:43:58
-  1sljouka3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (60, 'IT', 103, 1400)                        1           29       23           1          0              1 SYS                 2026-06-13T18:43:58
-  1w9pks7a3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (70, 'Public Relations', 204, 2400)          1           29       23           1          0              1 SYS                 2026-06-13T18:43:58
-  1wz0pwua3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (80, 'Sales', 145, 2400)                     1           27       22           1          0              1 SYS                 2026-06-13T18:43:58
+  1f9j8wva3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (50, 'Shipping', 121, 1500)                  1           55       44           1          0              1 SYS                 2026-06-21T01:28:57
+  1sljouka3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (60, 'IT', 103, 1400)                        1           28       23           1          0              1 SYS                 2026-06-21T01:28:57
+  1w9pks7a3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (70, 'Public Relations', 204, 2400)          1           28       22           1          0              1 SYS                 2026-06-21T01:28:57
+  1wz0pwua3xqw0 INSERT INTO HR.DEPARTMENTS VALUES (80, 'Sales', 145, 2400)                     1           29       23           1          0              1 SYS                 2026-06-21T01:28:57
   
   4 rows selected.
 
@@ -3191,10 +3192,10 @@ SQL [322/481]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  1f9j8wva3xqw0               0           1          1       1           29       23           1          0              1 SYS                 2026-06-13T18:43:58.912Z
-  1sljouka3xqw0               0           1          1       1           29       23           1          0              1 SYS                 2026-06-13T18:43:58.912Z
-  1w9pks7a3xqw0               0           1          1       1           29       23           1          0              1 SYS                 2026-06-13T18:43:58.912Z
-  1wz0pwua3xqw0               0           1          1       1           27       22           1          0              1 SYS                 2026-06-13T18:43:58.912Z
+  1f9j8wva3xqw0               0           1          1       1           55       44           1          0              1 SYS                 2026-06-21T01:28:57.702Z
+  1sljouka3xqw0               0           1          1       1           28       23           1          0              1 SYS                 2026-06-21T01:28:57.702Z
+  1w9pks7a3xqw0               0           1          1       1           28       22           1          0              1 SYS                 2026-06-21T01:28:57.702Z
+  1wz0pwua3xqw0               0           1          1       1           29       23           1          0              1 SYS                 2026-06-21T01:28:57.702Z
   
   4 rows selected.
 
@@ -3235,10 +3236,10 @@ SQL [326/481]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-06-13T18:43:46.227Z 2026-06-13T18:44:01.227Z         1500 2             2000 CPU Usage Per Sec       41 CentiSeconds Per Second
-  2026-06-13T18:43:46.227Z 2026-06-13T18:44:01.227Z         1500 2             2003 User Calls Per Sec      41 Calls Per Second       
-  2026-06-13T18:43:46.227Z 2026-06-13T18:44:01.227Z         1500 2             2007 Executions Per Sec      41 Executes Per Second    
-  2026-06-13T18:43:46.227Z 2026-06-13T18:44:01.227Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-06-21T01:28:45.101Z 2026-06-21T01:29:00.101Z         1500 2             2000 CPU Usage Per Sec       41 CentiSeconds Per Second
+  2026-06-21T01:28:45.101Z 2026-06-21T01:29:00.101Z         1500 2             2003 User Calls Per Sec      41 Calls Per Second       
+  2026-06-21T01:28:45.101Z 2026-06-21T01:29:00.101Z         1500 2             2007 Executions Per Sec      41 Executes Per Second    
+  2026-06-21T01:28:45.101Z 2026-06-21T01:29:00.101Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -3246,10 +3247,10 @@ SQL [327/481]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-06-13T18:43:01.228Z 2026-06-13T18:44:01.228Z         6000 2             2000 CPU Usage Per Sec       41 CentiSeconds Per Second
-  2026-06-13T18:43:01.228Z 2026-06-13T18:44:01.228Z         6000 2             2003 User Calls Per Sec      41 Calls Per Second       
-  2026-06-13T18:43:01.228Z 2026-06-13T18:44:01.228Z         6000 2             2007 Executions Per Sec      41 Executes Per Second    
-  2026-06-13T18:43:01.228Z 2026-06-13T18:44:01.228Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-06-21T01:28:00.102Z 2026-06-21T01:29:00.102Z         6000 2             2000 CPU Usage Per Sec       41 CentiSeconds Per Second
+  2026-06-21T01:28:00.102Z 2026-06-21T01:29:00.102Z         6000 2             2003 User Calls Per Sec      41 Calls Per Second       
+  2026-06-21T01:28:00.102Z 2026-06-21T01:29:00.102Z         6000 2             2007 Executions Per Sec      41 Executes Per Second    
+  2026-06-21T01:28:00.102Z 2026-06-21T01:29:00.102Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -3347,7 +3348,7 @@ SQL [339/481]> SELECT * FROM v$transaction WHERE rownum < 5;
   
   ADDR           XIDUSN XIDSLOT XIDSQN STATUS START_TIME          USED_UBLK USED_UREC
   -------------- ------ ------- ------ ------ ------------------- --------- ---------
-  0x000000000001      2       0      1 ACTIVE 2026-06-13 18:43:58         0         0
+  0x000000000001      2       0      1 ACTIVE 2026-06-21 01:28:57         0         0
   
   1 row selected.
 
@@ -3366,10 +3367,10 @@ SQL [341/481]> SELECT * FROM v$datafile WHERE rownum < 5;
   
   FILE# NAME                                       TS# TS#_NAME     BYTES BLOCK_SIZE STATUS ENABLED   CREATION_TIME CHECKPOINT_CHANGE# CHECKPOINT_TIME AUTOEXTENSIBLE RECOVER
   ----- ------------------------------------------ --- -------- --------- ---------- ------ --------- ------------- ------------------ --------------- -------------- -------
-      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 13-JUN-26       YES            NO     
-      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 13-JUN-26       YES            NO     
-      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 13-JUN-26       YES            NO     
-      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 13-JUN-26       YES            NO     
+      1 /u01/app/oracle/oradata/ORCL/system01.dbf    0 SYSTEM   838860800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 21-JUN-26       YES            NO     
+      2 /u01/app/oracle/oradata/ORCL/sysaux01.dbf    1 SYSAUX   576716800       8192 ONLINE AVAILABLE 01-JAN-26                1000001 21-JUN-26       YES            NO     
+      3 /u01/app/oracle/oradata/ORCL/undotbs01.dbf   2 UNDOTBS1 209715200       8192 ONLINE AVAILABLE 01-JAN-26                1000001 21-JUN-26       YES            NO     
+      4 /u01/app/oracle/oradata/ORCL/users01.dbf     3 USERS    104857600       8192 ONLINE AVAILABLE 01-JAN-26                1000001 21-JUN-26       YES            NO     
   
   4 rows selected.
 
@@ -3564,10 +3565,10 @@ SQL [366/481]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-06-13T18:43:58.889Z        -1035188951
-           2 SYS$USERS      SYS$USERS      2026-06-13T18:43:58.887Z        -1035188953
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-06-13T18:43:58.887Z        -1035188953
-           4 ORCLPDB1       ORCLPDB1       2026-06-13T18:43:58.887Z        -1035188953
+           1 ORCL           ORCL           2026-06-21T01:28:57.672Z         -406090168
+           2 SYS$USERS      SYS$USERS      2026-06-21T01:28:57.671Z         -406090169
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-06-21T01:28:57.671Z         -406090169
+           4 ORCLPDB1       ORCLPDB1       2026-06-21T01:28:57.671Z         -406090169
   
   4 rows selected.
 
@@ -3575,10 +3576,10 @@ SQL [367/481]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-06-13T18:43:58.889Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-06-13T18:43:58.887Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-06-13T18:43:58.887Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-06-13T18:43:58.887Z
+           1 ORCL           ORCL           ORCL 2026-06-21T01:28:57.672Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-06-21T01:28:57.671Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-06-21T01:28:57.671Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-06-21T01:28:57.671Z
   
   4 rows selected.
 
@@ -3617,7 +3618,7 @@ SQL [371/481]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  102       1915            1915              0           285                  1                        0
+  102       1916            1916              0           285                  1                        0
   
   1 row selected.
 
@@ -3625,10 +3626,10 @@ SQL [372/481]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                 VALUE
   --- ---------- ----------------------- -------
-  102 3649082374 DB time                 2149279
-  102 3712030189 DB CPU                  1719417
-  102 1561673735 background elapsed time  537319
-  102 4157170894 background cpu time      429854
+  102 3649082374 DB time                 2227716
+  102 3712030189 DB CPU                  1782180
+  102 1561673735 background elapsed time  556929
+  102 4157170894 background cpu time      445545
   
   4 rows selected.
 
@@ -3655,10 +3656,10 @@ SQL [376/481]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN               LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ------------------------ ------
-  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-13T18:44:01.032Z      0
-  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  HR             3 OPEN                                 USERS              TEMP                 2026-06-13T18:43:58.322Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-06-21T01:28:59.883Z      0
+  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  HR             3 OPEN                                 USERS              TEMP                 2026-06-21T01:28:57.070Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
   
   4 rows selected.
 
@@ -3721,10 +3722,10 @@ SQL [382/481]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        2026-06-13T18:43:58.866Z 2026-06-13T18:43:58.866Z 2026-06-13:18:43:58 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        2026-06-13T18:43:58.866Z 2026-06-13T18:43:58.866Z 2026-06-13:18:43:58 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        2026-06-13T18:43:58.866Z 2026-06-13T18:43:58.866Z 2026-06-13:18:43:58 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        2026-06-13T18:43:58.866Z 2026-06-13T18:43:58.866Z 2026-06-13:18:43:58 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        2026-06-21T01:28:57.657Z 2026-06-21T01:28:57.657Z 2026-06-21:01:28:57 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        2026-06-21T01:28:57.657Z 2026-06-21T01:28:57.657Z 2026-06-21:01:28:57 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        2026-06-21T01:28:57.657Z 2026-06-21T01:28:57.657Z 2026-06-21:01:28:57 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        2026-06-21T01:28:57.657Z 2026-06-21T01:28:57.657Z 2026-06-21:01:28:57 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -3951,19 +3952,19 @@ SQL [412/481]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-06-13T18:43:58.889Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
-  oracle      SYS      localhost 2026-06-13T18:43:58.897Z CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-06-21T01:28:57.673Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
+  oracle      SYS      localhost 2026-06-21T01:28:57.680Z CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ CREATE TABLE  
                                                                                                                           NAME VARCHAR2(25)
        )                                                                       
-  oracle      SYS      localhost 2026-06-13T18:43:58.899Z CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-06-21T01:28:57.682Z CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR CREATE TABLE  
                                                                                                                           Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                         
-  oracle      SYS      localhost 2026-06-13T18:43:58.900Z CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-06-21T01:28:57.683Z CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR CREATE TABLE  
                                                                                                                           EET_ADDRESS VARCHAR2(40),
@@ -3981,10 +3982,10 @@ SQL [413/481]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME              RETURNCODE
   ----------- -------- ------------ -------- ------------------------ ----------- --------- ------------------------ ----------
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.889Z LOGON               5 2026-06-13T18:43:58.925Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.926Z LOGON               6 2026-06-13T18:43:58.929Z          0
-  oracle      SYS      localhost    pts/0    2026-06-13T18:43:58.930Z LOGON               7 2026-06-13T18:43:58.992Z          0
-  root        SYS      linux-server pts/0    2026-06-13T18:43:58.996Z LOGON               8 2026-06-13T18:44:01.029Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.673Z LOGON               5 2026-06-21T01:28:57.718Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.719Z LOGON               6 2026-06-21T01:28:57.723Z          0
+  oracle      SYS      localhost    pts/0    2026-06-21T01:28:57.723Z LOGON               7 2026-06-21T01:28:57.780Z          0
+  root        SYS      linux-server pts/0    2026-06-21T01:28:57.786Z LOGON               8 2026-06-21T01:28:59.879Z          0
   
   4 rows selected.
 
@@ -3992,19 +3993,19 @@ SQL [414/481]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-06-13T18:43:58.889Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
-  2026-06-13T18:43:58.897Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
+  2026-06-21T01:28:57.673Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
+  2026-06-21T01:28:57.680Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ HR            REGIONS     CREATE TABLE                                2
                                                                                                                NAME VARCHAR2(25)
        )                                                                                                                                
-  2026-06-13T18:43:58.899Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
+  2026-06-21T01:28:57.682Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR HR            COUNTRIES   CREATE TABLE                                3
                                                                                                                Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                  
-  2026-06-13T18:43:58.900Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
+  2026-06-21T01:28:57.683Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR HR            LOCATIONS   CREATE TABLE                                4
                                                                                                                EET_ADDRESS VARCHAR2(40),
@@ -4022,10 +4023,10 @@ SQL [415/481]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID   SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                
   ----------- ----------- -------- ----------- ------------------------ -------------------------------------------------------
-           80 Outstanding CRITICAL Database    2026-06-13T18:44:01.030Z 2026-06-13 18:44:01: Failed logon: user=ALICE ORA-01017
-          123 SOD_BREACH  MEDIUM   Security    2026-06-13T18:44:00.779Z SoD policy SOD_DML_VS_AUDIT breached                   
-          124 SOD_BREACH  CRITICAL Security    2026-06-13T18:44:00.780Z SoD policy SOD_DBA_AUDITOR breached                    
-          125 SOD_BREACH  HIGH     Security    2026-06-13T18:44:00.780Z SoD policy SOD_USER_MGMT_VS_SECURITY breached          
+           80 Outstanding CRITICAL Database    2026-06-21T01:28:59.880Z 2026-06-21 01:28:59: Failed logon: user=ALICE ORA-01017
+          123 SOD_BREACH  HIGH     Security    2026-06-21T01:28:59.605Z SoD policy SOD_USER_MGMT_VS_SECURITY breached          
+          124 SOD_BREACH  CRITICAL Security    2026-06-21T01:28:59.605Z SoD policy SOD_DATA_EXFILTRATION breached              
+          125 SOD_BREACH  CRITICAL Security    2026-06-21T01:28:59.605Z SoD policy SOD_GRANT_MONOPOLY breached                 
   
   4 rows selected.
 
@@ -4033,10 +4034,10 @@ SQL [416/481]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                                          
   ----------- --------- -------- ------------------------ ------------------------ -----------------------------------------------------------------
-            1 Info      NORMAL   2026-06-13T18:43:58.867Z 2026-06-13T18:43:59.867Z 2026-06-13 18:43:58: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   2026-06-13T18:43:58.885Z 2026-06-13T18:43:59.885Z 2026-06-13 18:43:58: Database mounted                            
-            3 Info      NORMAL   2026-06-13T18:43:58.887Z 2026-06-13T18:43:59.887Z 2026-06-13 18:43:58: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   2026-06-13T18:43:58.887Z 2026-06-13T18:43:59.887Z 2026-06-13 18:43:58: Database opened                             
+            1 Info      NORMAL   2026-06-21T01:28:57.658Z 2026-06-21T01:28:58.658Z 2026-06-21 01:28:57: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   2026-06-21T01:28:57.669Z 2026-06-21T01:28:58.669Z 2026-06-21 01:28:57: Database mounted                            
+            3 Info      NORMAL   2026-06-21T01:28:57.670Z 2026-06-21T01:28:58.670Z 2026-06-21 01:28:57: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   2026-06-21T01:28:57.670Z 2026-06-21T01:28:58.670Z 2026-06-21 01:28:57: Database opened                             
   
   4 rows selected.
 
@@ -4066,7 +4067,7 @@ SQL [419/481]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ ----------- ------------- ------
-        1    1               1          1 2026-06-13T17:44:01.275Z 2026-06-13T18:44:01.275Z COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 2026-06-21T00:29:00.155Z 2026-06-21T01:29:00.155Z COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -4074,10 +4075,10 @@ SQL [420/481]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 3843622854               1       0 logons cumulative             3
-        1 3843622854               1       1 logons current                1
-        1 3843622854               1       2 opened cursors cumulative   720
-        1 3843622854               1       3 opened cursors current      596
+        1 2948953747               1       0 logons cumulative             3
+        1 2948953747               1       1 logons current                1
+        1 2948953747               1       2 opened cursors cumulative   720
+        1 2948953747               1       3 opened cursors current      596
   
   4 rows selected.
 
@@ -4085,10 +4086,10 @@ SQL [421/481]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 19crxi3a3xqw0               0                1                696            557                 1                0                    0
-        1 0hijvs3a3xqw0               0                1                131            105                 1                0                    0
-        1 195jghra3xqw0               0                1                 52             42                 1                0                    0
-        1 1l8pyjsa3xqw0               0                1                364            291                 1                0                    0
+        1 19crxi3a3xqw0               0                1                309            247                 1                0                    0
+        1 0hijvs3a3xqw0               0                1                 70             56                 1                0                    0
+        1 195jghra3xqw0               0                1                 29             23                 1                0                    0
+        1 1l8pyjsa3xqw0               0                1                184            147                 1                0                    0
   
   4 rows selected.
 
@@ -4144,7 +4145,7 @@ SQL [429/481]> SELECT count(*) AS views FROM dba_views;
   
   VIEWS
   -----
-    447
+    448
   
   1 row selected.
 
@@ -4475,7 +4476,7 @@ SQL [477/481]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-06-13 18:44:01
+  2026-06-21 01:29:00
   
   1 row selected.
 
@@ -4483,7 +4484,7 @@ SQL [478/481]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-06-13T18:44:01.286Z
+  2026-06-21T01:29:00.169Z
   
   1 row selected.
 

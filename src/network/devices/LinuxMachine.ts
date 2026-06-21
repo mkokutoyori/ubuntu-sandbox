@@ -24,6 +24,7 @@
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, type TracerouteHopResult, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
+import type { PathActor } from './linux/VfsPath';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -1386,6 +1387,69 @@ export abstract class LinuxMachine extends EndHost
   deleteFileFromEditor(path: string): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     return this.executor.vfs.deleteFile(absPath);
+  }
+
+  // ─── Oracle server-side file I/O (OS user `oracle`, host DAC) ─────────
+  //
+  // The Oracle instance reads and writes host files through its server
+  // process, which runs as the `oracle` OS user — UTL_FILE, external
+  // tables, BFILE, Data Pump and CREATE PFILE/SPFILE all go through these
+  // hooks. Unlike the editor pass-throughs above (which run with the
+  // interactive shell's identity and skip permission checks), these honour
+  // host DAC as the `oracle` user, so a file that user cannot access
+  // (e.g. root-owned mode 0600) is denied exactly as on a real server.
+
+  /** PathActor for the provisioned `oracle` OS user (falls back to the
+   *  canonical 54321:54321 identity when the account is not yet created). */
+  private oracleOsActor(): PathActor {
+    const u = this.executor.userMgr.getUser('oracle');
+    const groups = this.executor.userMgr.getUserGroups('oracle');
+    return {
+      uid: u?.uid ?? 54321,
+      gid: u?.gid ?? 54321,
+      gids: groups.map((g) => g.gid),
+      user: 'oracle',
+      groupNames: groups.map((g) => g.name),
+    };
+  }
+
+  /** DAC-checked read as `oracle`; null on absence OR permission denied. */
+  readFileAsOracle(path: string): string | null {
+    const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const p = this.executor.vfs.path(abs, '/', this.oracleOsActor());
+    if (!p.isFile()) return null;
+    // Opening a file needs search (x) on its directory and read (r) on it.
+    if (!p.parent().canExecute() || !p.canRead()) return null;
+    return this.executor.vfs.readFile(abs);
+  }
+
+  /** DAC-checked write as `oracle`; the created file is owned oracle:oinstall. */
+  writeFileAsOracle(path: string, content: string): boolean {
+    const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const a = this.oracleOsActor();
+    const p = this.executor.vfs.path(abs, '/', a);
+    if (p.isFile()) {
+      // Overwriting an existing file needs write on the file itself.
+      if (!p.canWrite()) return false;
+    } else if (p.exists()) {
+      return false; // a directory / special file — not a UTL_FILE target
+    } else {
+      // Creating: need write+search on the containing directory. (vfs.writeFile
+      // does not re-check the parent on create, so enforce it here.)
+      const parent = p.parent();
+      if (!parent.isDirectory() || !parent.canWrite() || !parent.canExecute()) return false;
+    }
+    return this.executor.vfs.writeFile(abs, content, a.uid, a.gid, 0o022);
+  }
+
+  /** DAC-checked unlink as `oracle`; needs write+search on the directory. */
+  removeFileAsOracle(path: string): boolean {
+    const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const p = this.executor.vfs.path(abs, '/', this.oracleOsActor());
+    if (!p.lexists()) return false;
+    const parent = p.parent();
+    if (!parent.canWrite() || !parent.canExecute()) return false;
+    return this.executor.vfs.deleteFile(abs);
   }
 
   /**

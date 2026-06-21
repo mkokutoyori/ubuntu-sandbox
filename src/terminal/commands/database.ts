@@ -48,25 +48,41 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
-    // Device VFS reader for CREATE PFILE/SPFILE FROM … — injected here so
-    // the database layer never imports network/Equipment directly.
+    // Device VFS reader for server-side reads (UTL_FILE, external tables,
+    // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
+    // under host DAC, falling back to the editor path on devices that do
+    // not model the oracle identity. Injected here so the database layer
+    // never imports network/Equipment directly.
     db.instance.setDeviceFileReader((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
-      return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        readFileAsOracle?: (p: string) => string | null;
+        readFileForEditor?: (p: string) => string | null;
+      } | null;
+      if (typeof dev?.readFileAsOracle === 'function') return dev.readFileAsOracle(path) ?? null;
+      return typeof dev?.readFileForEditor === 'function' ? dev.readFileForEditor(path) ?? null : null;
     });
-    // Writer / remover for UTL_FILE: server-side PL/SQL file I/O lands on
-    // the same host VFS the OS shell reads, so a file written by
-    // UTL_FILE.PUT_LINE is immediately visible to `cat` and vice versa.
+    // Writer / remover for UTL_FILE, external tables, BFILE, Data Pump:
+    // server-side file I/O runs as the `oracle` OS user and is subject to
+    // host DAC (`*AsOracle`), so a file written by UTL_FILE.PUT_LINE lands
+    // on the same VFS the OS shell reads — owned oracle:oinstall — and a
+    // read the oracle user is not permitted to perform is denied exactly
+    // as on a real server. Falls back to the editor path on devices that
+    // do not model the oracle OS identity.
     db.instance.setDeviceFileWriter((path, content) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const write = (dev as unknown as { writeFileFromEditor?: (p: string, c: string) => boolean } | null)?.writeFileFromEditor;
-      return typeof write === 'function' ? !!write.call(dev, path, content) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        writeFileAsOracle?: (p: string, c: string) => boolean;
+        writeFileFromEditor?: (p: string, c: string) => boolean;
+      } | null;
+      if (typeof dev?.writeFileAsOracle === 'function') return !!dev.writeFileAsOracle(path, content);
+      return typeof dev?.writeFileFromEditor === 'function' ? !!dev.writeFileFromEditor(path, content) : false;
     });
     db.instance.setDeviceFileRemover((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
-      return typeof rm === 'function' ? !!rm.call(dev, path) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        removeFileAsOracle?: (p: string) => boolean;
+        deleteFileFromEditor?: (p: string) => boolean;
+      } | null;
+      if (typeof dev?.removeFileAsOracle === 'function') return !!dev.removeFileAsOracle(path);
+      return typeof dev?.deleteFileFromEditor === 'function' ? !!dev.deleteFileFromEditor(path) : false;
     });
     db.instance.setOsCommandRunner((cmd) => {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);

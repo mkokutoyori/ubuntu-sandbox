@@ -2268,6 +2268,45 @@ réel rendu dans `DBA_SCHEDULER_JOBS` ; procédure inexistante → run **FAILED*
 existantes (`autorun`, `executable`, `multitenant-dg`) ; `tsc` propre, ESLint propre sur le
 code modifié.
 
+### 2026-06-21 — I/O fichiers serveur Oracle soumis au DAC du host (utilisateur OS `oracle`)
+**Défaillance (cohérence couche filesystem ↔ accès, majeure) :** tout l'I/O fichier
+côté serveur Oracle — `UTL_FILE`, tables externes, `BFILE`, Data Pump, `CREATE PFILE/SPFILE` —
+transitait par les hooks `setDeviceFileReader/Writer/Remover` (`terminal/commands/database.ts`)
+câblés sur le **chemin éditeur** du device (`readFileForEditor`/`writeFileFromEditor`).
+Conséquences, divergentes d'un vrai serveur :
+1. **Lecture sans aucun contrôle de permission** : `readFileForEditor` fait un
+   `vfs.readFile` brut. Oracle pouvait donc lire un fichier `root:root` en `0600` (p.ex.
+   placé dans un DIRECTORY) que l'utilisateur OS `oracle` n'a normalement pas le droit de lire.
+   Le privilège Oracle `READ ON DIRECTORY` était vérifié, mais **jamais** le DAC du host.
+2. **Écriture mal attribuée** : `writeFileFromEditor` écrit avec l'uid du **shell interactif
+   courant** (souvent root), pas celui d'`oracle`. Un fichier produit par `UTL_FILE.PUT_LINE`
+   apparaissait donc `root:root` au lieu d'`oracle:oinstall`, et une écriture dans un
+   répertoire interdit à `oracle` **réussissait** quand même.
+**Correction (réutilisation de l'infra DAC existante, pas de réimplémentation) :**
+- `LinuxMachine` expose trois capacités serveur — `readFileAsOracle`, `writeFileAsOracle`,
+  `removeFileAsOracle` — qui résolvent l'identité de l'utilisateur OS `oracle` (uid/gid/groupes
+  via le `LinuxUserManager`, repli 54321:54321) et appliquent le DAC du host via le modèle
+  d'acteur `VfsPath`/`PathActor` **déjà en place** (mêmes `checkAccess`/ACL POSIX que le shell) :
+  lecture = search(x) sur le répertoire + read(r) sur le fichier ; écriture = write sur un
+  fichier existant ou write+search sur le répertoire parent à la création ; unlink = write+search
+  sur le répertoire. Le fichier créé est possédé `oracle:oinstall`.
+- `terminal/commands/database.ts` recâble les trois hooks Oracle sur ces capacités `*AsOracle`
+  (repli sur le chemin éditeur pour les devices qui ne modélisent pas l'identité oracle). Le
+  probe d'existence (`setHostFileProbe`) reste sur le chemin brut — l'existence d'un fichier
+  ne dépend pas de la permission de lecture.
+- `UtlFileEngine` : `flush` renvoie désormais le verdict d'écriture du host ; `FOPEN('W'/'A')`
+  refusé → `ORA-29283`, `PUT/PUT_LINE/NEW_LINE/FFLUSH/FCLOSE` en échec d'écriture → `ORA-29285`.
+  Le refus DAC, rendu possible par le point ci-dessus, est ainsi **observable** comme sur un
+  vrai serveur, au lieu d'être silencieusement avalé.
+**Validation :** nouvelle suite `oracle-server-file-dac.test.ts` pilotant un vrai `LinuxServer`
+(VFS + DAC de bout en bout, pas le stand-in Map) : (1) un fichier écrit par `UTL_FILE` est
+possédé par `oracle` et lisible par `cat` ; (2) Oracle lit un fichier world-readable mais se
+voit refuser un `root:root 0600` (`ORA-29283`, pas de fuite) ; (3) une écriture `UTL_FILE` dans
+`/root` (0700) échoue (`ORA-29285`, fichier non créé). Non-régression : `unit/database/` complet
+(130 fichiers, 3044 tests verts) — dont `oracle-utl-file`, `-privileges`, `external-table`,
+`bfile`, `datapump-directory` — + `debug/oracle/` (14 suites) ; `tsc` propre, ESLint propre sur
+le code ajouté (les 2 `no-this-alias` de `LinuxMachine.ts` préexistent, hors périmètre).
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
