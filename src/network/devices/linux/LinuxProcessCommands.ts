@@ -86,7 +86,11 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );
-  lines.push('%Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st');
+  const busyPct = Math.min(100, running * 100);
+  const us = (busyPct * 0.6).toFixed(1);
+  const sy = (busyPct * 0.4).toFixed(1);
+  const id = (100 - busyPct).toFixed(1);
+  lines.push(`%Cpu(s):  ${us} us,  ${sy} sy,  0.0 ni,${id.padStart(5)} id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st`);
   lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
   lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
   lines.push('');

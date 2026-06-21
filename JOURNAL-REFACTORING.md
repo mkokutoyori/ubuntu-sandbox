@@ -1078,3 +1078,25 @@ total inchangé à 1567, aucune erreur ajoutée.
 `src/powershell/providers/WindowsPSProviders.ts`,
 `src/powershell/providers/NullProviders.ts`,
 `src/powershell/cmdlets/core/MiscCmdlets.ts`.
+
+---
+
+## 2026-06-20 (suite) — Chasse aux stubs restants : `wait` mort + `top %Cpu(s)` factice
+
+**Constat.** Deux stubs traînaient encore dans le domaine process/jobs :
+- `cmdWait` (JobCommands) : ancien no-op de `wait`, devenu **code mort** depuis
+  le `handleWait` réel (aucun appelant).
+- La ligne `%Cpu(s)` de `top` était **codée en dur** (`1.2 us … 98.2 id`),
+  indépendante de l'état réel de la machine.
+
+**Correctifs.** Suppression du `cmdWait` mort. La ligne `%Cpu(s)` est désormais
+dérivée du nombre de processus runnable : machine au repos → `0.0 us / 0.0 sy /
+100.0 id` au lieu de la constante factice.
+
+**Résultat.** `linux-cpu-accounting` passe à 5 tests (ajout : `%Cpu(s)` au repos
+montre `100.0 id`, plus `98.2 id`). Non-régression cpu/top/jobs/ps : 55 verts.
+
+**Fichiers touchés :**
+`src/network/devices/linux/jobs/JobCommands.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/__tests__/unit/network-v2/linux-cpu-accounting.test.ts`.

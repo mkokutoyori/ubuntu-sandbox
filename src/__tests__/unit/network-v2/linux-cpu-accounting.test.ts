@@ -24,6 +24,13 @@ describe('honest CPU accounting', () => {
     expect(header).toMatch(/load average: 0\.00, 0\.00, 0\.00/);
   });
 
+  it('top %Cpu(s) summary reflects an idle box, not a hardcoded busy line', () => {
+    const e = new LinuxCommandExecutor(true);
+    const cpuLine = e.execute('top').split('\n').find((l) => l.startsWith('%Cpu'));
+    expect(cpuLine).toMatch(/100\.0 id/);
+    expect(cpuLine).not.toContain('98.2 id');
+  });
+
   it('a long sleeping background job accrues no CPU as the clock advances', () => {
     const e = new LinuxCommandExecutor(true);
     e.execute('sleep 100 &');
