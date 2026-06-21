@@ -2230,6 +2230,44 @@ l'ACTION). Non-régression : `unit/database/` complet (126 fichiers, 3022 tests
 verts) + `network-v2/logging-enhancements` (12) ; `tsc` propre, ESLint propre sur le
 code modifié (warning `no-this-alias` `LinuxMachine.ts:1059` préexistant).
 
+### 2026-06-21 — DBMS_SCHEDULER : jobs STORED_PROCEDURE réellement invoqués + statut FAILED fidèle
+**Défaillance (fonctionnalité cassée + écart Oracle réel) :** trois défauts liés dans la
+couche scheduler.
+1. `DbmsScheduler.CreateJob` castait `job_type` en littéral `as 'PLSQL_BLOCK'`
+   (`packages/DbmsScheduler.ts:19`) — un mensonge de type qui faisait croire que tout job
+   était de type PLSQL_BLOCK, alors que la valeur runtime réelle (`STORED_PROCEDURE`,
+   `EXECUTABLE`) était bien conservée. Smell masquant le défaut nº2.
+2. `SchedulerManager.runJob` routait **tous** les jobs non-EXECUTABLE par
+   `executeSql(job_action)` verbatim. Un job `STORED_PROCEDURE` ne porte qu'un **nom de
+   procédure nu** dans `job_action` (les arguments passent par `SET_JOB_ARGUMENT_VALUE`) —
+   Oracle l'invoque comme un appel. Passer ce nom nu à `executeSql` n'est pas du SQL valide,
+   donc **tout job STORED_PROCEDURE échouait** (alors que la même procédure marche en `EXEC`).
+   De plus le job s'exécutait dans le schéma `SYS` (via `connectAsSysdba`) au lieu du schéma
+   de son **propriétaire**, donc un nom non-qualifié ne se résolvait pas chez le bon owner.
+3. `runJob` ne marquait `FAILED` que sur exception **levée**. Or les erreurs PL/SQL/SQL
+   remontent dans `result.message` (`ORA-`/`PLS-`), pas comme exceptions (cf. itération 2 :
+   un bloc imparsable renvoie `ORA-06550`). Un job dont l'action levait une erreur était donc
+   rapporté `SUCCEEDED` à tort dans `DBA_SCHEDULER_JOB_RUN_DETAILS`.
+**Correction (enhancement de l'existant, pas de duplication) :**
+- `packages/DbmsScheduler.ts` : `coerceJobType()` valide la valeur contre l'union
+  `JobType` réelle (`PLSQL_BLOCK`/`STORED_PROCEDURE`/`EXECUTABLE`), défaut PLSQL_BLOCK — fin
+  du cast trompeur, `job_type` correct dans `DBA_SCHEDULER_JOBS`.
+- `scheduler/SchedulerManager.runJob` : la branche non-EXECUTABLE retarge le contexte
+  d'exécution (`currentUser`/`currentSchema`) vers le **propriétaire** du job (fidèle : le
+  slave tourne dans le schéma de l'owner avec ses privilèges, la connexion interne restant
+  SYSDBA), et un job `STORED_PROCEDURE` est enveloppé en `BEGIN <action>; END;` — réutilisant
+  la chaîne `routePlsql → executeProcedureCall` déjà en place (résolution de noms, droits
+  EXECUTE, definer rights) plutôt que de dupliquer le dispatch.
+- Détection d'échec : après `executeSql`, `runJob` scanne `result.message` pour un code
+  `ORA-`/`PLS-` et bascule le run en `FAILED` avec le bon `ERROR#`. Cohérent avec la façon
+  dont le moteur PL/SQL surface ses erreurs.
+**Validation :** nouvelle suite `oracle-scheduler-stored-procedure.test.ts` (3 tests : un job
+STORED_PROCEDURE invoque la procédure et **persiste** son INSERT + run SUCCEEDED ; `JOB_TYPE`
+réel rendu dans `DBA_SCHEDULER_JOBS` ; procédure inexistante → run **FAILED**). Non-régression :
+`unit/database/` complet (129 fichiers, 3041 tests verts), dont les suites scheduler
+existantes (`autorun`, `executable`, `multitenant-dg`) ; `tsc` propre, ESLint propre sur le
+code modifié.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
