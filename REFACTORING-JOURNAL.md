@@ -2232,3 +2232,47 @@ rapport ; seul un canevas vide ferait échouer franchement le banc.
 
 - `npx playwright test secure-smb-architecture.spec.ts` : **13 tests verts**,
   rapport écrit (`blockers=0 major=3 minor=1`). `eslint` propre.
+
+## Entrée n°41 — 2026-06-21 — E2E : remise au vert de toute la suite Playwright (73/73)
+
+### Constat
+
+`npx playwright test` (suite complète) : **4 échecs / 73**, tous dans des specs
+**préexistants** (pas dans le banc SMB n°40). Diagnostic au cas par cas — les
+tests unitaires correspondants passant tous (210 verts), le cœur était sain ;
+les échecs venaient d'un **décalage tests/produit**.
+
+1. **3× `user-creation.spec.ts` (`adduser bob`).** Un LinuxPC neuf contient déjà
+   `bob` : `LinuxCommandExecutor` pré-provisionne un casting `alice/bob/carl/
+   dave` (ajouté le 13/06, **postérieur** à ces tests du 22/05) pour les suites
+   SSH cross-équipement. `sudo adduser bob` répondait donc « The user `bob'
+   already exists ». Ce seed est **porteur** (des dizaines de tests SSH
+   unitaires font `ssh alice@… / bob@…`) : on ne peut pas le retirer sans gros
+   refactor. Les tests entraient juste en collision de nom.
+2. **1× `ssh.spec.ts` (« Permission denied » not duplicated).** Le simulateur
+   reproduit désormais le flux **OpenSSH réaliste** sur 3 essais : 2×
+   « Permission denied, please try again. » + 1× « Permission denied
+   (password). ». L'ancien test attendait `toHaveCount(1)` (message unique).
+   C'est le simulateur qui s'est **rapproché du réel**, pas une régression.
+
+### Correctif (tests alignés sur le comportement réel)
+
+- `user-creation.spec.ts` : `bob → frank`, `dave → grace` (noms hors casting
+  seedé) pour que `adduser` teste une **vraie création** fraîche. Le test
+  « ajout à un groupe » dépendait en fait du seed (`useradd dave` échouait
+  silencieusement en non-root, mais `dave` existait déjà) : réécrit pour être
+  autonome — création d'un groupe `developers` puis ajout de l'utilisateur
+  existant `alice`, avec gestion d'un éventuel re-prompt sudo.
+- `ssh.spec.ts` : assertion mise à jour sur le flux réaliste — exactement
+  2× « please try again » + 1× « Permission denied (password). » (l'intention
+  « non dupliqué » est préservée : chaque essai produit un message, pas deux).
+
+### Fichiers
+
+`e2e/user-creation.spec.ts`, `e2e/ssh.spec.ts`.
+
+### Validation
+
+- `npx playwright test` (suite e2e complète) : **73/73 verts**.
+- Aucune modification de code produit ; tests unitaires `adduser`/`sudo`/`ssh`
+  inchangés et verts (210).
