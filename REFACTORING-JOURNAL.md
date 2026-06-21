@@ -2161,3 +2161,74 @@ réécriture risquée du store + des shells.
   (`cisco-aaa-acl`, `switch-svi`, `cross-equipment-ssh-suite`,
   `huawei-aaa-mgmt`) : **vertes**. `other-commands` : 15 échecs résiduels
   pré-existants inchangés, aucune régression.
+
+## Entrée n°40 — 2026-06-21 — E2E : audit UI d'une architecture PME sécurisée (Playwright)
+
+### Objectif
+
+Banc de diagnostic e2e mono-fichier (`e2e/secure-smb-architecture.spec.ts`)
+qui **construit puis attaque** une petite architecture d'entreprise durcie
+*via la vraie UI* et **fait remonter tout ce qui cloche** côté interface et
+simulation. La valeur n'est pas « prouver que ça marche » mais produire un
+**rapport de défauts** (`test-results/smb-defect-report.{json,md}`) classé par
+sévérité (`blocker`/`major`/`minor`).
+
+### Topologie (PME « Acme »)
+
+VLAN10 users `10.10.10.0/24` (LinuxPC + WindowsPC → switch Cisco) — routeur
+Cisco R-EDGE — liaison WAN `/30` — routeur Huawei R-CORE — switch Huawei —
+VLAN20 serveurs `10.20.20.0/24` (LinuxServer + WindowsServer). Durcissement :
+SSH-only sur les VTY, AAA/utilisateur local, `enable secret`,
+`service password-encryption`, ACL inter-VLAN, port-security d'accès, routes
+statiques cross-vendor.
+
+### Couverture des sondes
+
+Palette (8 classes d'équipement + badges « Limited »), drag-and-drop HTML5
+(régression 1er drop), construction/câblage, **indexation des ports** des
+switchs, acceptation CLI bi-vendeur, connectivité **L2 réelle à travers le
+câble**, routage **L3 inter-VLAN cross-vendor**, présence effective du
+durcissement dans la conf, refus de telnet après durcissement, cycle de vie
+du terminal + équipement éteint, câblage par l'UI (bouton Connect +
+popover d'interface), panneau de logs réseau, parité du shell Windows.
+
+### Défauts remontés (39 checks OK, 0 blocker, 3 major, 1 minor)
+
+1. **[major] vendeur — ports Huawei 0-indexés.** Le premier port du switch
+   Huawei est `GigabitEthernet0/0/0` au lieu de `…0/0/1` (VRP numérote à
+   partir de 1). Même classe de bug que celui corrigé côté Cisco.
+2. **[major] vendeur — conséquence CLI.** `interface GigabitEthernet0/0/24`
+   est rejeté (« Wrong parameter found at '^' ») alors qu'un 24ᵉ port existe :
+   le nom CLI et le port physique sont décalés d'un cran.
+3. **[major] sécurité — telnet non bloqué après durcissement.** Après
+   `transport input ssh` sur les VTY, un `telnet` depuis le PC vers le routeur
+   **se connecte quand même** (« Connected to 10.10.10.1 ») : la restriction de
+   transport entrant n'est pas appliquée.
+4. **[minor] UI — terminal d'un équipement éteint.** Le terminal ne s'ouvre pas
+   sur un équipement hors tension (pas d'accès lecture-seule / indication
+   OFFLINE attendue).
+
+Bons points confirmés : connectivité L2 cross-OS réelle à travers les câbles,
+routage L3 inter-VLAN cross-vendor bout-en-bout, ACL/secret/SSH présents dans
+la conf, panneau de logs alimenté par le trafic réel, drag-and-drop au 1er
+essai, câblage par l'UI.
+
+### Qualité du banc
+
+Deux faux positifs initiaux (causés par l'ordre de mes propres sondes) ont été
+éliminés : une sonde éteignait `WindowsPC` sans le rallumer (→ `ipconfig`
+« powered off ») — désormais un équipement **jetable** est utilisé puis
+supprimé ; le sélecteur du panneau de logs était erroné — recâblé sur
+`button[title="Logs"]` + `[data-testid="logs-row"]`. Sondes en mode
+enregistrement (non bloquantes) : la suite reste verte tout en produisant le
+rapport ; seul un canevas vide ferait échouer franchement le banc.
+
+### Fichiers
+
+`e2e/secure-smb-architecture.spec.ts` (neuf). Rapport généré sous
+`test-results/` (ignoré par git).
+
+### Validation
+
+- `npx playwright test secure-smb-architecture.spec.ts` : **13 tests verts**,
+  rapport écrit (`blockers=0 major=3 minor=1`). `eslint` propre.
