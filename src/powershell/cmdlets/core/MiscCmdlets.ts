@@ -345,8 +345,6 @@ export class InvokeCommandCmdlet implements ICmdlet {
 
 // ─── Start-Job / Receive-Job / Wait-Job ───────────────────────────────────
 
-let _jobCounter = 0;
-
 function jobInfoToPS(info: { id: number; name: string; state: string; hasMoreData: boolean; output: unknown[] }): Record<string, PSValue> {
   return {
     Id: info.id, Name: info.name, State: info.state,
@@ -370,18 +368,10 @@ export class StartJobCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
     const block = (ctx.named['scriptblock'] ?? ctx.positional[0]) as PSValue;
     const name = (ctx.named['name'] as string | undefined) || undefined;
-    const jobs = ctx.providers.jobs;
-    if (!jobs) {
-      const output = block ? ctx.invokeBlock(block as never, null) : null;
-      const id = ++_jobCounter;
-      return {
-        Id: id, Name: name ?? `Job${id}`, State: 'Completed',
-        Output: output === null ? [] : Array.isArray(output) ? output : [output],
-        HasMoreData: true,
-      } as Record<string, PSValue>;
-    }
     jobs.beginRecording();
     const output = block ? ctx.invokeBlock(block as never, null) : null;
     const durationMs = jobs.endRecording();
@@ -414,13 +404,7 @@ export class ReceiveJobCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
-    if (!jobs) {
-      const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-      if (!job) return null;
-      const out = job['Output'] as PSValue[];
-      if (!out || out.length === 0) return null;
-      return out.length === 1 ? out[0] : out;
-    }
+    if (!jobs) return null;
     const key = jobKey(ctx);
     if (key == null) return null;
     const out = jobs.receiveJob(key) as PSValue[];
@@ -435,15 +419,17 @@ export class WaitJobCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
-    if (!jobs) {
-      const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-      if (job) (job as Record<string, PSValue>)['State'] = 'Completed';
-      return job;
-    }
+    if (!jobs) return null;
     const key = jobKey(ctx);
     if (key == null) return null;
     const info = jobs.waitJob(key);
-    return info ? jobInfoToPS(info) : null;
+    if (!info) return null;
+    const arg = ctx.named['job'] ?? ctx.positional[0];
+    if (arg != null && typeof arg === 'object') {
+      (arg as Record<string, PSValue>)['State'] = info.state;
+      (arg as Record<string, PSValue>)['HasMoreData'] = info.hasMoreData;
+    }
+    return jobInfoToPS(info);
   }
 }
 

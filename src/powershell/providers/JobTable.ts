@@ -1,4 +1,4 @@
-export interface WindowsJob {
+export interface Job {
   id: number;
   name: string;
   output: unknown[];
@@ -7,8 +7,8 @@ export interface WindowsJob {
   completesAt: number;
 }
 
-export class WindowsJobTable {
-  private readonly jobs = new Map<number, WindowsJob>();
+export class JobTable {
+  private readonly jobs = new Map<number, Job>();
   private nextId = 1;
   private recording = false;
   private recordedMs = 0;
@@ -29,9 +29,9 @@ export class WindowsJobTable {
     return total;
   }
 
-  add(name: string | undefined, output: unknown[], durationMs: number, now: number): WindowsJob {
+  add(name: string | undefined, output: unknown[], durationMs: number, now: number): Job {
     const id = this.nextId++;
-    const job: WindowsJob = {
+    const job: Job = {
       id,
       name: name && name.length > 0 ? name : `Job${id}`,
       output,
@@ -43,15 +43,15 @@ export class WindowsJobTable {
     return job;
   }
 
-  list(): WindowsJob[] {
+  list(): Job[] {
     return [...this.jobs.values()].sort((a, b) => a.id - b.id);
   }
 
-  get(id: number): WindowsJob | undefined {
+  get(id: number): Job | undefined {
     return this.jobs.get(id);
   }
 
-  getByName(name: string): WindowsJob | undefined {
+  getByName(name: string): Job | undefined {
     const lc = name.toLowerCase();
     return this.list().find((j) => j.name.toLowerCase() === lc);
   }

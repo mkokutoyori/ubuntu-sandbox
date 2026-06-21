@@ -1043,3 +1043,38 @@ d'exposer ce que `ps`/`top` lisent. Non-régression process/jobs : 108 verts.
 **Fichiers touchés :**
 `src/network/devices/linux/LinuxProcessManager.ts`,
 `src/__tests__/unit/network-v2/linux-process-model-unification.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Suppression du stub de jobs PowerShell : un vrai provider partout
+
+**Constat.** Les cmdlets `Start-Job`/`Receive-Job`/`Wait-Job` gardaient une
+branche de **repli stub** (faux job `Completed` immédiat) quand aucun provider
+`jobs` n'était présent (interpréteur nu / `NULL_PROVIDERS`). Plus de stub voulu.
+
+**Solution.** Le provider de jobs devient un vrai composant réutilisable,
+piloté par une horloge :
+- `JobTable` (déplacée hors de la couche réseau, vers `powershell/providers/`)
+  et `JobProvider` (générique, sur une `JobClock`).
+- Côté Windows : `JobProvider` adossé à l'horloge du device
+  (`simulatedNow`/`advanceTime`).
+- `NULL_PROVIDERS` (mode langage pur) : `JobProvider` avec une horloge interne
+  — donc un **vrai** provider, plus jamais `null`.
+
+**Cmdlets sans stub.** Les branches de faux comportement sont supprimées ;
+`Start-Job`/`Get-Job`/`Receive-Job`/`Wait-Job` passent toujours par le provider
+réel. `Wait-Job` met à jour l'objet job du caller (sémantique d'objet « live »
+de PowerShell) à partir de l'état réel du provider — ce n'est pas un faux.
+
+**Résultat.** `windows-ps-jobs` (4) et les tests de jobs de l'interpréteur nu
+(`ps-interpreter`) passent via le même provider réel. Suite PowerShell complète :
+1893 verts (seul échec restant : `cmd-ps-coherence` netsh pré-existant). `tsc` :
+total inchangé à 1567, aucune erreur ajoutée.
+
+**Fichiers touchés :**
+`src/powershell/providers/JobTable.ts` (nouveau, remplace
+`network/devices/windows/WindowsJobTable.ts` supprimé),
+`src/powershell/providers/JobProvider.ts` (nouveau),
+`src/powershell/providers/WindowsPSProviders.ts`,
+`src/powershell/providers/NullProviders.ts`,
+`src/powershell/cmdlets/core/MiscCmdlets.ts`.
