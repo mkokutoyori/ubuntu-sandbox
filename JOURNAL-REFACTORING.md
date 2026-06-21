@@ -1013,3 +1013,33 @@ verts.
 `src/network/devices/linux/LinuxCommandExecutor.ts`,
 `src/network/devices/linux/LinuxProcessCommands.ts`,
 `src/__tests__/unit/network-v2/linux-cpu-accounting.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Étape 3/3 : `ProcessInfo` Linux dérivé du modèle riche `OSProcess` (dedup)
+
+**Constat.** L'interface `ProcessInfo` (vue étroite du `LinuxProcessManager`)
+re-déclarait à la main une vingtaine de champs que la classe riche `OSProcess`
+possède déjà — duplication source de dérive. Les processus Linux sont pourtant
+déjà des `OSProcess` (`LinuxProcess extends OSProcess`).
+
+**Unification.** `ProcessInfo` devient un type **dérivé** d'`OSProcess` :
+`Pick<OSProcess, …champs requis>` + `Partial<Pick<OSProcess, …champs
+optionnels>>` + `{ state: ProcessState }` (l'état reste le sous-ensemble
+narrow du manager). Plus aucune liste de champs dupliquée : une seule source de
+vérité, impossible de diverger.
+
+**Vérification.** `tsc` (le projet n'est pas typé-strict ; build esbuild) :
+le total d'erreurs passe de 1568 à 1567 — **aucune erreur ajoutée**, une
+supprimée (le conflit `snapshot` de `LinuxProcess` disparaît). Les littéraux
+`ProcessInfo` existants (p. ex. `transientPsProcess`) compilent toujours
+(champs optionnels préservés).
+
+**Résultat.** Nouveau test `linux-process-model-unification` (2) : les
+processus sont des instances `OSProcess` exposant les champs riches (`euid`,
+`rlimits`, `numThreads`, `openFiles`), et la vue `ProcessInfo` continue
+d'exposer ce que `ps`/`top` lisent. Non-régression process/jobs : 108 verts.
+
+**Fichiers touchés :**
+`src/network/devices/linux/LinuxProcessManager.ts`,
+`src/__tests__/unit/network-v2/linux-process-model-unification.test.ts` (nouveau).

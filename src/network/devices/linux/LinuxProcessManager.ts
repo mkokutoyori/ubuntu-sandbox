@@ -17,6 +17,7 @@
 
 import type { IEventBus } from '@/events/EventBus';
 import type { LinuxProcessServiceDomainEvent } from './events';
+import type { OSProcess } from '../os/OSProcess';
 import { LinuxProcess } from './process/LinuxProcess';
 
 /** Linux process states as reported by ps. */
@@ -60,45 +61,18 @@ export const SIGNAL_NUMBERS: Record<Signal, number> = {
 };
 
 /** Snapshot of a single process in the simulated table. */
-export interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  pgid: number;
-  sid: number;
-  uid: number;
-  gid: number;
-  user: string;
-  /** Full command line as it would appear in /proc/<pid>/cmdline. */
-  command: string;
-  /** Short command name (basename of argv[0]), as in /proc/<pid>/comm. */
-  comm: string;
-  args: string[];
-  state: ProcessState;
-  startTime: Date;
-  /** CPU time consumed in milliseconds. */
-  cpuTime: number;
-  /** Virtual memory size in KB. */
-  vsize: number;
-  /** Resident set size in KB. */
-  rss: number;
-  tty: string;
-  nice: number;
-  priority: number;
-  cwd: string;
-  exe: string;
-  /** Service unit that owns this process, if any. */
-  serviceName?: string;
-  /** Scheduling policy (chrt). Defaults to SCHED_OTHER. */
-  schedPolicy?: string;
-  /** Real-time scheduling priority (chrt). 0 for SCHED_OTHER. */
-  rtPriority?: number;
-  /** I/O scheduling class (ionice). Defaults to best-effort. */
-  ioClass?: string;
-  /** I/O scheduling class data 0..7 (ionice). */
-  ioClassData?: number;
-  /** CPU affinity mask as a list of CPU indices (taskset). */
-  cpuAffinity?: number[];
-}
+type ProcessInfoRequired =
+  | 'pid' | 'ppid' | 'pgid' | 'sid' | 'uid' | 'gid' | 'user'
+  | 'command' | 'comm' | 'args' | 'startTime' | 'cpuTime'
+  | 'vsize' | 'rss' | 'tty' | 'nice' | 'priority' | 'cwd' | 'exe';
+
+type ProcessInfoOptional =
+  | 'serviceName' | 'schedPolicy' | 'rtPriority' | 'ioClass' | 'ioClassData' | 'cpuAffinity';
+
+export type ProcessInfo =
+  & Pick<OSProcess, ProcessInfoRequired>
+  & Partial<Pick<OSProcess, ProcessInfoOptional>>
+  & { state: ProcessState };
 
 /** Options for spawning a new process. */
 export interface SpawnOptions {
