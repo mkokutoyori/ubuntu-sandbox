@@ -2107,3 +2107,57 @@ périmés vers les recherches par chemin câble.
   ISL n°163), aucune régression introduite.
 - Suites Cisco/switch (`cisco-switch-reference-scenarios`, `switch-svi`,
   `command-trie-hygiene`, `cisco-aaa-acl`, `cisco-huawei-aaa-security`) : vertes.
+
+## Entrée n°39 — 2026-06-21 — VTY : consolidation des deux classes `VtyLineConfig`
+
+### Constat (dette signalée n°37)
+
+Deux classes `VtyLineConfig` modélisaient **le même concept** (un bloc
+`line vty` / `user-interface vty`) :
+
+- **`router/vty/VtyLineConfig`** — le modèle **vivant** : câblé dans
+  `VtyLineConfigStore`, `Router`, `Switch` et les shells ; **bi-vendeur**
+  (`renderCisco()` *et* `renderHuawei()`) ; porte le verdict
+  `requiresPasswordButUnset()` ; philosophie « `null` = non positionné » (le
+  `show running-config` n'émet que les directives réellement modifiées).
+- **`router/aaa/VtyLineConfig`** — un modèle **orphelin** : riche (≈33 champs,
+  value-object `VtyLineRange`, API fluide `withX()`, `forRange()`,
+  `toRunningConfig()`) mais **Cisco-only**, branché sur **aucun** équipement, et
+  exercé uniquement par le bloc `§M` d'un test. Deux philosophies de défauts
+  incompatibles (défauts concrets vs `null`).
+
+### Décision
+
+Le modèle **vivant** est l'unique survivant : il est bi-vendeur (essentiel pour
+ce simulateur Cisco + Huawei), déjà câblé dans toute la pile, et porte la
+logique de verdict. Migrer vers l'orphelin aurait régressé Huawei et imposé une
+réécriture risquée du store + des shells.
+
+### Correction (consolidation, additive puis suppression)
+
+- **Absorption de la meilleure idée de l'orphelin** : le value-object
+  **`VtyLineRange`** (membership / overlap / size / equals, validation
+  `last < first`) est intégré au modèle canonique `router/vty`, avec un getter
+  `range` calculé et une fabrique `VtyLineConfig.forRange(range, init?)`.
+  `first`/`last` restent inchangés → store, shells, `Router`, `Switch`
+  intacts.
+- **Suppression du doublon** `router/aaa/VtyLineConfig.ts` (orphelin).
+- **Test `§M` re-pointé** sur le modèle survivant : il couvre désormais l'API
+  réelle qui *expédie* (defaults `null`, immutabilité de `withFields`, rendu
+  IOS **et** VRP, verdict `requiresPasswordButUnset`, value-object
+  `VtyLineRange`) — fin du test d'un orphelin, vraie couverture du code livré.
+
+### Fichiers
+
+`src/network/devices/router/vty/VtyLineConfig.ts` (enrichi),
+`src/network/devices/router/aaa/VtyLineConfig.ts` (**supprimé**),
+`src/__tests__/unit/network-v2/cisco-huawei-aaa-security.test.ts` (re-pointé).
+
+### Validation
+
+- `tsc --noEmit` : **0 erreur**. Aucune référence résiduelle à
+  `aaa/VtyLineConfig`.
+- `cisco-huawei-aaa-security` : **72 verts**. Suites VTY-dépendantes
+  (`cisco-aaa-acl`, `switch-svi`, `cross-equipment-ssh-suite`,
+  `huawei-aaa-mgmt`) : **vertes**. `other-commands` : 15 échecs résiduels
+  pré-existants inchangés, aucune régression.

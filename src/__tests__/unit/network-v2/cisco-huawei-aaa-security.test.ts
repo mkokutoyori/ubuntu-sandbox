@@ -11,7 +11,7 @@ import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOs
 import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
 import { LoginBlocker } from '@/network/devices/router/aaa/LoginBlocker';
 import { SshSessionRegistry } from '@/network/devices/router/aaa/SshSessionRegistry';
-import { VtyLineConfig, VtyLineRange } from '@/network/devices/router/aaa/VtyLineConfig';
+import { VtyLineConfig, VtyLineRange } from '@/network/devices/router/vty/VtyLineConfig';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -584,72 +584,88 @@ describe('§L — Router wires SshSessionRegistry into show users / display user
 });
 
 describe('§M — VtyLineConfig domain model carries every line directive', () => {
-  test('defaults are sane for a fresh vty range', () => {
+  test('a fresh vty range leaves every directive unset (null = inherit default)', () => {
     const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4));
     expect(cfg.range.first).toBe(0);
     expect(cfg.range.last).toBe(4);
-    expect(cfg.transportInput).toEqual(['ssh']);
-    expect(cfg.transportOutput).toEqual(['ssh']);
-    expect(cfg.loginMode).toBe('none');
-    expect(cfg.execTimeoutMinutes).toBe(10);
-    expect(cfg.execTimeoutSeconds).toBe(0);
-    expect(cfg.sessionTimeoutMinutes).toBe(0);
-    expect(cfg.privilegeLevel).toBe(1);
-    expect(cfg.history).toBe(20);
-    expect(cfg.terminalLength).toBe(24);
-    expect(cfg.terminalWidth).toBe(80);
+    expect(cfg.first).toBe(0);
+    expect(cfg.last).toBe(4);
+    // Unset directives render nothing in show running-config — only the
+    // bare `line vty 0 4` header is emitted until an operator changes a field.
+    expect(cfg.login).toBeNull();
+    expect(cfg.linePassword).toBeNull();
+    expect(cfg.transportInput).toBeNull();
+    expect(cfg.execTimeoutMinutes).toBeNull();
+    expect(cfg.privilege).toBeNull();
     expect(cfg.accessClassIn).toBeNull();
-    expect(cfg.accessClassOut).toBeNull();
-    expect(cfg.password).toBeNull();
-    expect(cfg.autocommand).toBeNull();
-    expect(cfg.motdBannerEnabled).toBe(true);
-    expect(cfg.escapeChar).toBe(30);
-    expect(cfg.location).toBeNull();
+    expect(cfg.renderCisco()).toEqual(['line vty 0 4']);
   });
 
-  test('mutators return new instances with patched fields', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withTransportInput(['ssh'])
-      .withLoginMode('local')
-      .withExecTimeout(5, 30)
-      .withAccessClass('in', 20)
-      .withPrivilege(15)
-      .withAutocommand('show ip interface brief')
-      .withLocation('rack-12-row-A');
-    expect(cfg.loginMode).toBe('local');
+  test('withFields returns a new immutable instance with patched fields', () => {
+    const base = VtyLineConfig.forRange(new VtyLineRange(0, 4));
+    const cfg = base.withFields({
+      login: 'local',
+      execTimeoutMinutes: 5,
+      execTimeoutSeconds: 30,
+      accessClassIn: '20',
+      privilege: 15,
+      transportInput: 'ssh',
+    });
+    expect(cfg).not.toBe(base);
+    expect(base.login).toBeNull();           // original untouched
+    expect(cfg.login).toBe('local');
     expect(cfg.execTimeoutMinutes).toBe(5);
     expect(cfg.execTimeoutSeconds).toBe(30);
-    expect(cfg.accessClassIn).toBe(20);
-    expect(cfg.privilegeLevel).toBe(15);
-    expect(cfg.autocommand).toBe('show ip interface brief');
-    expect(cfg.location).toBe('rack-12-row-A');
+    expect(cfg.accessClassIn).toBe('20');
+    expect(cfg.privilege).toBe(15);
+    expect(Object.isFrozen(cfg)).toBe(true);
   });
 
-  test('toRunningConfig emits IOS-style line block', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withLoginMode('local')
-      .withTransportInput(['ssh'])
-      .withExecTimeout(5, 0);
-    const text = cfg.toRunningConfig();
+  test('renderCisco emits an IOS-style line block', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({
+      login: 'local',
+      transportInput: 'ssh',
+      execTimeoutMinutes: 5,
+      execTimeoutSeconds: 0,
+    });
+    const text = cfg.renderCisco().join('\n');
     expect(text).toContain('line vty 0 4');
     expect(text).toContain(' login local');
     expect(text).toContain(' transport input ssh');
     expect(text).toContain(' exec-timeout 5 0');
   });
 
-  test('VtyLineRange equality and merging', () => {
+  test('renderHuawei emits a VRP user-interface block', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({
+      authenticationMode: 'aaa',
+      idleTimeoutMinutes: 5,
+      transportInput: 'ssh',
+    });
+    const text = cfg.renderHuawei().join('\n');
+    expect(text).toContain('user-interface vty 0 4');
+    expect(text).toContain(' authentication-mode aaa');
+    expect(text).toContain(' protocol inbound ssh');
+  });
+
+  test('requiresPasswordButUnset drives the incoming-VTY verdict', () => {
+    const noPw = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({ login: 'password' });
+    expect(noPw.requiresPasswordButUnset()).toBe(true);
+    const withPw = noPw.withFields({ linePassword: 'cisco' });
+    expect(withPw.requiresPasswordButUnset()).toBe(false);
+    const localAuth = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({ login: 'local' });
+    expect(localAuth.requiresPasswordButUnset()).toBe(false);
+  });
+
+  test('VtyLineRange value object: equality, membership and size', () => {
     const a = new VtyLineRange(0, 4);
     const b = new VtyLineRange(0, 4);
     expect(a.equals(b)).toBe(true);
     expect(a.contains(2)).toBe(true);
+    expect(a.contains(7)).toBe(false);
     expect(a.size()).toBe(5);
-  });
-
-  test('transport input none disables every protocol', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withTransportInput([]);
-    expect(cfg.transportInput).toEqual([]);
-    expect(cfg.toRunningConfig()).toContain(' transport input none');
+    expect(a.overlaps(new VtyLineRange(4, 8))).toBe(true);
+    expect(a.overlaps(new VtyLineRange(5, 15))).toBe(false);
+    expect(() => new VtyLineRange(5, 1)).toThrow();
   });
 });
 

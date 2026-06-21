@@ -16,6 +16,23 @@
 export type VtyLoginMode = 'none' | 'local' | 'aaa' | 'password';
 export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
 
+/**
+ * VtyLineRange — value object for the `<first> <last>` line span of a
+ * `line vty` / `user-interface vty` block. Encapsulates the range
+ * arithmetic (membership, overlap, size) that shells and the store would
+ * otherwise reimplement ad hoc.
+ */
+export class VtyLineRange {
+  constructor(public readonly first: number, public readonly last: number) {
+    if (last < first) throw new Error(`Invalid vty range: ${first} ${last}`);
+  }
+  equals(other: VtyLineRange): boolean { return this.first === other.first && this.last === other.last; }
+  contains(idx: number): boolean { return idx >= this.first && idx <= this.last; }
+  size(): number { return this.last - this.first + 1; }
+  overlaps(other: VtyLineRange): boolean { return !(this.last < other.first || other.last < this.first); }
+  toString(): string { return `${this.first} ${this.last}`; }
+}
+
 export interface VtyLineConfigInit {
   readonly first: number;
   readonly last: number;
@@ -75,6 +92,16 @@ export class VtyLineConfig {
     this.screenLengthLines  = init.screenLengthLines ?? null;
     this.historyCommandSize = init.historyCommandSize ?? null;
     Object.freeze(this);
+  }
+
+  /** Convenience factory from a {@link VtyLineRange} value object. */
+  static forRange(range: VtyLineRange, init: Omit<VtyLineConfigInit, 'first' | 'last'> = {}): VtyLineConfig {
+    return new VtyLineConfig({ ...init, first: range.first, last: range.last });
+  }
+
+  /** The line span as a value object (membership / overlap / size helpers). */
+  get range(): VtyLineRange {
+    return new VtyLineRange(this.first, this.last);
   }
 
   withFields(patch: Partial<VtyLineConfigInit>): VtyLineConfig {
