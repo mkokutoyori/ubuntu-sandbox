@@ -42,7 +42,7 @@ import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
   ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
-  InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
+  InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
@@ -193,6 +193,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ImportModuleCmdlet());
   registry.register(new InvokeCommandCmdlet());
   registry.register(new StartJobCmdlet());
+  registry.register(new GetJobCmdlet());
   registry.register(new ReceiveJobCmdlet());
   registry.register(new WaitJobCmdlet());
   registry.register(new SetLocationCmdlet());

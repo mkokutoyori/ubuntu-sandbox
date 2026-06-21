@@ -24,10 +24,11 @@ type FwRow = {
   action: string; direction: string; protocol: string;
   localPort: string; remotePort: string; description: string;
 };
+import { WindowsJobTable } from '@/network/devices/windows/WindowsJobTable';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
-  INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
+  INetworkProvider, IProcessProvider, IJobProvider, JobInfo, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
@@ -271,6 +272,63 @@ function toProcessInfo(p: import('@/network/devices/windows/WindowsProcessManage
     sessionId: p.sessionId,
     critical: p.critical,
   };
+}
+
+// ── Job adapter (PowerShell background jobs over the simulated clock) ───────
+
+class WindowsJobAdapter implements IJobProvider {
+  private readonly table = new WindowsJobTable();
+
+  constructor(private readonly pc: WindowsPC) {}
+
+  private now(): number {
+    return (this.pc as unknown as { simulatedNow: () => number }).simulatedNow();
+  }
+
+  private toInfo(job: import('@/network/devices/windows/WindowsJobTable').WindowsJob): JobInfo {
+    const completed = this.now() >= job.completesAt;
+    return {
+      id: job.id,
+      name: job.name,
+      state: completed ? 'Completed' : 'Running',
+      hasMoreData: completed,
+      output: job.output,
+    };
+  }
+
+  private resolve(idOrName: string | number) {
+    if (typeof idOrName === 'number') return this.table.get(idOrName);
+    const asNum = Number(idOrName);
+    return Number.isFinite(asNum) && String(asNum) === String(idOrName).trim()
+      ? this.table.get(asNum)
+      : this.table.getByName(idOrName);
+  }
+
+  beginRecording(): void { this.table.beginRecording(); }
+  recordSleep(ms: number): void { this.table.recordSleep(ms); }
+  endRecording(): number { return this.table.endRecording(); }
+
+  startJob(name: string | undefined, output: unknown[], durationMs: number): JobInfo {
+    return this.toInfo(this.table.add(name, output, durationMs, this.now()));
+  }
+  listJobs(): JobInfo[] {
+    return this.table.list().map((j) => this.toInfo(j));
+  }
+  getJob(idOrName: string | number): JobInfo | null {
+    const job = this.resolve(idOrName);
+    return job ? this.toInfo(job) : null;
+  }
+  receiveJob(idOrName: string | number): unknown[] {
+    const job = this.resolve(idOrName);
+    return job ? job.output : [];
+  }
+  waitJob(idOrName: string | number): JobInfo | null {
+    const job = this.resolve(idOrName);
+    if (!job) return null;
+    const delta = job.completesAt - this.now();
+    if (delta > 0) (this.pc as unknown as { advanceTime: (ms: number) => void }).advanceTime(delta);
+    return this.toInfo(job);
+  }
 }
 
 // ── User / group adapter ───────────────────────────────────────────────────
@@ -1024,6 +1082,7 @@ export function createWindowsPSProviders(
     filesystem:     new WindowsFileSystemAdapter(pc),
     services:       new WindowsServiceAdapter(pc),
     processes:      new WindowsProcessAdapter(pc),
+    jobs:           new WindowsJobAdapter(pc),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg),
     eventLog:       new WindowsEventLogAdapter(log),

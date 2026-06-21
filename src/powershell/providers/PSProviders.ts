@@ -196,6 +196,26 @@ export interface IProcessProvider {
   startProcess?(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null;
 }
 
+export interface JobInfo {
+  id: number;
+  name: string;
+  state: string;
+  hasMoreData: boolean;
+  output: unknown[];
+}
+
+export interface IJobProvider {
+  beginRecording(): void;
+  recordSleep(ms: number): void;
+  endRecording(): number;
+  startJob(name: string | undefined, output: unknown[], durationMs: number): JobInfo;
+  listJobs(): JobInfo[];
+  getJob(idOrName: string | number): JobInfo | null;
+  receiveJob(idOrName: string | number): unknown[];
+  waitJob(idOrName: string | number): JobInfo | null;
+}
+
+
 export interface INetworkProvider {
   getHostname(): string;
   getAdapters(): NetworkAdapterInfo[];
@@ -350,6 +370,7 @@ export interface PSProviders {
   readonly services:       IServiceProvider        | null;
   readonly network:        INetworkProvider        | null;
   readonly processes:      IProcessProvider        | null;
+  readonly jobs:           IJobProvider            | null;
   readonly users:          IUserProvider           | null;
   readonly eventLog:       IEventLogProvider       | null;
   readonly vpn:            IVpnProvider            | null;

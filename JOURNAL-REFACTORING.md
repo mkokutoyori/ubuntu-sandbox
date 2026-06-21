@@ -933,3 +933,47 @@ Non-régression Windows/PowerShell : 31 + 541 verts.
 `src/network/devices/windows/WinSystemCommands.ts`,
 `src/network/devices/WindowsPC.ts`,
 `src/__tests__/unit/network-v2/windows-scheduled-tasks.test.ts`.
+
+---
+
+## 2026-06-20 (suite) — Étape 1/3 : jobs PowerShell réels (`Start-Job`) sur l'horloge simulée (TDD)
+
+**Constat.** `Start-Job`/`Receive-Job`/`Wait-Job` étaient des stubs renvoyant
+immédiatement `State: 'Completed'` — aucune notion d'arrière-plan ni de durée.
+
+**Méthode TDD.** Tests d'abord (rouge confirmé), puis implémentation. Aucun
+commentaire ajouté dans le code.
+
+**Nouveau provider `jobs`.** Ajout d'`IJobProvider` au sac `PSProviders`
+(implémenté par `WindowsJobAdapter`, adossé à une `WindowsJobTable` et à
+l'horloge du `WindowsPC` via `simulatedNow()`/`advanceTime()`). Quand aucun
+provider n'est présent (interpréteur nu, `NULL_PROVIDERS`), les cmdlets
+retombent **exactement** sur l'ancien comportement stub — aucune régression des
+suites existantes.
+
+**Durée déduite sans parser d'AST.** Au lieu d'analyser le bloc, `Start-Job`
+active un mode « enregistrement » sur le provider, invoque le bloc (effet
+immédiat, sortie capturée comme côté Linux), et `Start-Sleep` accumule sa durée
+via `recordSleep` **uniquement** pendant cet enregistrement (en avant-plan,
+`Start-Sleep` reste un no-op). Le job reste `Running` jusqu'à ce que l'horloge
+atteigne `completesAt`.
+
+**Cmdlets.** `Get-Job` ajouté ; `Receive-Job`/`Wait-Job` résolvent par `-Id`,
+`-Name` ou objet job. `Wait-Job` avance l'horloge jusqu'à la complétion (comme
+`wait` côté Linux). État calculé en direct depuis l'horloge.
+
+**Résultat.** Nouveau test `windows-ps-jobs` (4) : un job avec `Start-Sleep`
+reste `Running` puis passe `Completed` quand l'horloge le dépasse, `Receive-Job`
+rend la sortie, `Wait-Job` avance l'horloge, un job sans sleep complète
+aussitôt. Non-régression PowerShell : 1889 verts (seul échec restant : le test
+`cmd-ps-coherence` netsh pré-existant).
+
+**Fichiers touchés :**
+`src/network/devices/windows/WindowsJobTable.ts` (nouveau),
+`src/powershell/providers/PSProviders.ts`,
+`src/powershell/providers/NullProviders.ts`,
+`src/powershell/providers/WindowsPSProviders.ts`,
+`src/powershell/cmdlets/core/MiscCmdlets.ts`,
+`src/powershell/cmdlets/core/DateTimeCmdlets.ts`,
+`src/powershell/cmdlets/core/index.ts`,
+`src/__tests__/unit/network-v2/windows-ps-jobs.test.ts` (nouveau).

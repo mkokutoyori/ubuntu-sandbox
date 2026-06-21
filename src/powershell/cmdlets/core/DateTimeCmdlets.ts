@@ -153,5 +153,13 @@ export function makeTimeSpan(ms: number): Record<string, PSValue> {
 export class StartSleepCmdlet implements ICmdlet {
   readonly name = 'start-sleep';
   readonly aliases = ['sleep'] as const;
-  execute(_ctx: CmdletContext): PSValue { return null; }
+  execute(ctx: CmdletContext): PSValue {
+    const seconds = ctx.named['seconds'] ?? ctx.positional[0];
+    const millis = ctx.named['milliseconds'];
+    let ms = 0;
+    if (millis != null) ms += Number(millis);
+    if (seconds != null) ms += Number(seconds) * 1000;
+    if (ms > 0) ctx.providers.jobs?.recordSleep(ms);
+    return null;
+  }
 }

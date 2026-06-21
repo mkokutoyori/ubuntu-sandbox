@@ -16,6 +16,7 @@ export const NULL_PROVIDERS: PSProviders = {
   services:       null,
   network:        null,
   processes:      null,
+  jobs:           null,
   users:          null,
   eventLog:       null,
   vpn:            null,

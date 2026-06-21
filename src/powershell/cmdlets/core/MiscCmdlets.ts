@@ -347,19 +347,64 @@ export class InvokeCommandCmdlet implements ICmdlet {
 
 let _jobCounter = 0;
 
+function jobInfoToPS(info: { id: number; name: string; state: string; hasMoreData: boolean; output: unknown[] }): Record<string, PSValue> {
+  return {
+    Id: info.id, Name: info.name, State: info.state,
+    HasMoreData: info.hasMoreData, Output: info.output as PSValue[],
+  };
+}
+
+function jobKey(ctx: CmdletContext): string | number | null {
+  const id = ctx.named['id'];
+  if (id != null) return Number(id);
+  const arg = ctx.named['job'] ?? ctx.named['name'] ?? ctx.positional[0];
+  if (arg != null && typeof arg === 'object') {
+    const oid = (arg as Record<string, PSValue>)['Id'];
+    if (oid != null) return Number(oid);
+  }
+  return (arg as string | number | null) ?? null;
+}
+
 export class StartJobCmdlet implements ICmdlet {
   readonly name = 'start-job';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const block = (ctx.named['scriptblock'] ?? ctx.positional[0]) as PSValue;
+    const name = (ctx.named['name'] as string | undefined) || undefined;
+    const jobs = ctx.providers.jobs;
+    if (!jobs) {
+      const output = block ? ctx.invokeBlock(block as never, null) : null;
+      const id = ++_jobCounter;
+      return {
+        Id: id, Name: name ?? `Job${id}`, State: 'Completed',
+        Output: output === null ? [] : Array.isArray(output) ? output : [output],
+        HasMoreData: true,
+      } as Record<string, PSValue>;
+    }
+    jobs.beginRecording();
     const output = block ? ctx.invokeBlock(block as never, null) : null;
-    const id = ++_jobCounter;
-    return {
-      Id: id, Name: `Job${id}`, State: 'Completed',
-      Output: output === null ? [] : Array.isArray(output) ? output : [output],
-      HasMoreData: true,
-    } as Record<string, PSValue>;
+    const durationMs = jobs.endRecording();
+    const arr = output == null ? [] : Array.isArray(output) ? output.filter(x => x != null) : [output];
+    return jobInfoToPS(jobs.startJob(name, arr, durationMs));
+  }
+}
+
+export class GetJobCmdlet implements ICmdlet {
+  readonly name = 'get-job';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
+    const id = ctx.named['id'];
+    const name = ctx.named['name'];
+    if (id != null || name != null) {
+      const info = jobs.getJob(id != null ? Number(id) : String(name));
+      return info ? jobInfoToPS(info) : null;
+    }
+    for (const info of jobs.listJobs()) ctx.emit(jobInfoToPS(info));
+    return null;
   }
 }
 
@@ -368,10 +413,18 @@ export class ReceiveJobCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-    if (!job) return null;
-    const out = job['Output'] as PSValue[];
-    if (!out || out.length === 0) return null;
+    const jobs = ctx.providers.jobs;
+    if (!jobs) {
+      const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
+      if (!job) return null;
+      const out = job['Output'] as PSValue[];
+      if (!out || out.length === 0) return null;
+      return out.length === 1 ? out[0] : out;
+    }
+    const key = jobKey(ctx);
+    if (key == null) return null;
+    const out = jobs.receiveJob(key) as PSValue[];
+    if (out.length === 0) return null;
     return out.length === 1 ? out[0] : out;
   }
 }
@@ -381,9 +434,16 @@ export class WaitJobCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-    if (job) (job as Record<string, PSValue>)['State'] = 'Completed';
-    return job;
+    const jobs = ctx.providers.jobs;
+    if (!jobs) {
+      const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
+      if (job) (job as Record<string, PSValue>)['State'] = 'Completed';
+      return job;
+    }
+    const key = jobKey(ctx);
+    if (key == null) return null;
+    const info = jobs.waitJob(key);
+    return info ? jobInfoToPS(info) : null;
   }
 }
 
