@@ -36,6 +36,27 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
   const anyCable = startPorts.some(p => p.getCable() !== null);
   if (!anyCable) return true;
 
+  return findReachableHost(srcIp, dstIp) !== null;
+}
+
+/**
+ * BFS the physical topology from any port owning `srcIp` and return the
+ * powered-on, link-up Equipment that actually owns `dstIp` (on a physical
+ * port or a line-up management SVI). Unlike `findHostByAddress`, this honours
+ * the cable plant, so when several devices in the static registry share an IP
+ * (e.g. test fixtures), it returns the one truly reachable over the wire.
+ * Returns null when no cabled path terminates at `dstIp`.
+ */
+export function findReachableHost(srcIp: string, dstIp: string): Equipment | null {
+  const registry = EquipmentRegistry.getInstance();
+  const startPorts: Port[] = [];
+  for (const dev of registry.getAll()) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
+
   const visited = new Set<string>();
   const queue: Port[] = [...startPorts];
   while (queue.length > 0) {
@@ -51,12 +72,22 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
     const peerDev = registry.getById(peerPort.getEquipmentId());
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
     const peerIp = peerPort.getIPAddress();
-    if (peerIp && peerIp.toString() === dstIp) return true;
+    if (peerIp && peerIp.toString() === dstIp) return peerDev;
+    // A switch management SVI carries its IP on no physical port. When the
+    // destination is such an address, a reachable+up SVI on the peer device
+    // terminates the path exactly like a physical NIC would.
+    const sviPeer = peerDev as unknown as {
+      getSvis?: () => Array<{ ip?: { toString(): string } }>;
+      isSviLineUp?: (svi: unknown) => boolean;
+    };
+    for (const svi of sviPeer.getSvis?.() ?? []) {
+      if (svi.ip && svi.ip.toString() === dstIp && sviPeer.isSviLineUp?.(svi)) return peerDev;
+    }
     for (const sibling of peerDev.getPorts()) {
       if (sibling !== peerPort) queue.push(sibling);
     }
   }
-  return false;
+  return null;
 }
 
 export interface RemoteHost {
@@ -105,6 +136,22 @@ export function findHostByAddress(
             off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
             continue;
           }
+          return { device: dev, ip: target, resolvedFrom: target };
+        }
+      }
+      // Switch management SVIs (`interface Vlan N`) carry IPs that live on no
+      // physical port — resolve them too.
+      const sviHost = dev as unknown as {
+        getSvis?: () => Array<{ ip?: { toString(): string }; vlan: number }>;
+        isSviLineUp?: (svi: unknown) => boolean;
+      };
+      for (const svi of sviHost.getSvis?.() ?? []) {
+        if (!svi.ip || svi.ip.toString() !== target) continue;
+        if (!dev.getIsPoweredOn()) {
+          off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+        } else if (!sviHost.isSviLineUp?.(svi)) {
+          off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
+        } else {
           return { device: dev, ip: target, resolvedFrom: target };
         }
       }

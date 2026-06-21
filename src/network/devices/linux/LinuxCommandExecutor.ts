@@ -64,7 +64,7 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSy
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
-import { findHostByAddress } from './network/HostLookup';
+import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -904,6 +904,46 @@ export class LinuxCommandExecutor {
    * same format as a known_hosts line. Used to seed known_hosts non-
    * interactively.
    */
+  /**
+   * `telnet host [port]` — open a Telnet (TCP/23) session to a remote device.
+   * Resolution and reachability reuse the shared topology helpers; a network
+   * device's incoming-VTY auth verdict decides whether the session is accepted
+   * (a line that mandates a password but has none set is refused, matching
+   * IOS "Password required, but none set").
+   */
+  private runTelnetClient(args: string[]): { output: string; exitCode: number } {
+    const positional = args.filter(a => !a.startsWith('-'));
+    const host = positional[0];
+    if (!host) return { output: 'usage: telnet host-name [port]', exitCode: 1 };
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp || sourceIp === '127.0.0.1') {
+      return { output: `telnet: connect to address ${host}: Network is unreachable`, exitCode: 1 };
+    }
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    if (!found) {
+      return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
+    }
+    // Resolve the device that actually owns the address over the cable plant.
+    // The static registry can hold several fixtures sharing an IP; only the
+    // cable-reachable one answers, and its VTY config governs the verdict.
+    const reachable = findReachableHost(sourceIp, found.ip);
+    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip))) {
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
+    }
+
+    const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
+    const dev = (reachable ?? found.device) as unknown as {
+      _getVtyLineConfig?: () => { incomingVerdict: () => { accept: boolean; reason: string } };
+    };
+    const verdict = dev._getVtyLineConfig?.().incomingVerdict();
+    if (verdict && !verdict.accept) {
+      return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+    }
+    return { output: `${header}\n`, exitCode: 0 };
+  }
+
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
     const host = args.find(a => !a.startsWith('-'));
     if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
@@ -3130,6 +3170,8 @@ export class LinuxCommandExecutor {
         }
         return { output: result.output, exitCode: result.exitCode };
       }
+      case 'telnet':
+        return this.runTelnetClient(args);
       case 'tcpdump':
         return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':

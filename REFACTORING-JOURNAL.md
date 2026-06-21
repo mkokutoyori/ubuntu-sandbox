@@ -2036,3 +2036,74 @@ pas de mot de passe ») n'était pas représentable.
 Avec ce socle en place, le **verdict de connexion entrante** (`findHostByAddress`
 conscient des SVI + client telnet LinuxPC + appel à `requiresPasswordButUnset`)
 débloque les tests 81 (avertissement `login`) et 98 (rejet télnet entrant).
+
+## Entrée n°38 — 2026-06-21 — VTY : verdict de connexion entrante télnet (chemin câble + SVI)
+
+### Constat
+
+Le socle n°37 modélisait l'état (`login`/`password`, `requiresPasswordButUnset`)
+mais **rien ne consommait ce verdict** : un télnet entrant sur un switch était
+toujours accepté. Trois manques bloquaient les tests 81 et 98 :
+
+1. **`telnet` côté LinuxPC inexistant.** Aucun client télnet ; impossible de
+   solliciter le plan de gestion d'un équipement réseau depuis un hôte.
+2. **Résolution d'adresse aveugle aux SVI.** `findHostByAddress` ne regardait
+   que les IP des ports physiques ; l'IP de management d'un SVI (`interface
+   Vlan N`), qui ne vit sur aucun port physique, n'était jamais résolue.
+3. **Joignabilité aveugle aux SVI.** `isPathReachable` (BFS sur le plan de
+   câblage) ne comparait l'IP cible qu'aux ports physiques des voisins → l'IP
+   de SVI au bout du câble n'était jamais atteinte → « No route to host ».
+
+De plus, `login` (mode mot de passe) sans mot de passe configuré n'émettait
+**aucun avertissement** côté CLI (test 81), contrairement à IOS.
+
+### Correction (structurelle)
+
+- **Client télnet** (`LinuxCommandExecutor.runTelnetClient`) : résout la cible,
+  vérifie la joignabilité, puis interroge le **verdict de ligne VTY** de
+  l'équipement distant (`_getVtyLineConfig().incomingVerdict()`). Une ligne
+  exigeant un mot de passe non posé renvoie « Password required, but none set »
+  et ferme la session, exactement comme IOS.
+- **Résolution + joignabilité conscientes des SVI** (`HostLookup`) :
+  `findHostByAddress` parcourt les SVI (`getSvis()` + `isSviLineUp()`) ;
+  nouvelle fonction exportée **`findReachableHost(src, dst)`** qui fait le BFS
+  sur les câbles et **retourne l'équipement réellement joignable** possédant
+  l'IP (port physique *ou* SVI en service). `isPathReachable` se réduit à
+  `findReachableHost(...) !== null`.
+- **Désambiguïsation par le câble.** Le registre statique partage des IP de
+  fixtures entre tests ; le verdict est désormais évalué sur l'équipement
+  *physiquement joignable* (`findReachableHost`), pas sur le premier homonyme
+  du registre.
+- **Verdict d'entrée** (`VtyLineConfigStore.incomingVerdict()`) : balaye les
+  lignes et refuse si l'une exige un mot de passe non posé.
+- **Avertissement `login`** (handler config-line partagé) : `login` en mode
+  mot de passe sans secret renvoie `% Login disabled on line vty F L, until
+  'password' is set` (test 81).
+- **IOS : commandes globales depuis un sous-mode.** `executeOnTrie` réessaie
+  les verbes de navigation majeurs (`interface`/`line`/`router`/`vlan`) contre
+  le trie de config global lorsqu'un sous-mode (`config-if`, …) ne les reconnaît
+  pas — fidèle à IOS qui quitte implicitement le sous-mode. C'est ce qui permet
+  `line vty 0 4` juste après `interface Vlan1` (test 98).
+
+### Hygiène de test
+
+`other-commands.test.ts` : ajout de `EquipmentRegistry.resetInstance()` au
+`beforeEach` (motif déjà standard dans le corpus) — les fixtures réutilisent
+`10.0.0.1`/`10.0.0.100`, le registre statique faisait fuiter des équipements
+périmés vers les recherches par chemin câble.
+
+### Fichiers
+
+`src/network/devices/linux/network/HostLookup.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/router/vty/VtyLineConfigStore.ts`,
+`src/network/devices/shells/CiscoShellBase.ts`,
+`src/__tests__/unit/network-v2/other-commands.test.ts`.
+
+### Validation
+
+- Tests 81 et 98 : **verts**. Suite `other-commands` : 15 échecs résiduels
+  **pré-existants** (clusters `undebug`/`sntp`/`mac address-table`/autocomplete/
+  ISL n°163), aucune régression introduite.
+- Suites Cisco/switch (`cisco-switch-reference-scenarios`, `switch-svi`,
+  `command-trie-hygiene`, `cisco-aaa-acl`, `cisco-huawei-aaa-security`) : vertes.

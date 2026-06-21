@@ -36,6 +36,20 @@ export class VtyLineConfigStore {
     this.byKey.clear();
   }
 
+  /**
+   * Verdict for an incoming VTY session (telnet/SSH). Rejected when a
+   * configured line mandates a line password (`login`) that has not been set —
+   * IOS then answers "Password required, but none set" and closes the session.
+   */
+  incomingVerdict(): { accept: boolean; reason: string } {
+    for (const line of this.byKey.values()) {
+      if (line.requiresPasswordButUnset()) {
+        return { accept: false, reason: 'Password required, but none set' };
+      }
+    }
+    return { accept: true, reason: '' };
+  }
+
   /** Used by show-config renderers: returns the lines for every block in order. */
   renderAllCisco(): string[] {
     const out: string[] = [];

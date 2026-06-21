@@ -18,6 +18,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── Topologies ──────────────────────────────────────────────────────
 
@@ -49,6 +50,10 @@ describe('Cisco L2 Switch Command Suite', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
+    // Fresh topology registry per test — fixtures across tests reuse the same
+    // management IPs (10.0.0.1/10.0.0.100), and the static registry would
+    // otherwise let cable-path lookups resolve a stale device.
+    EquipmentRegistry.resetInstance();
   });
 
   // ─── Block 1: Mode Transitions (Tests 1-15) ─────────────────────

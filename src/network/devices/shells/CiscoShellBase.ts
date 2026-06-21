@@ -438,6 +438,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Trie Matching ──────────────────────────────────────────────
 
+  /**
+   * Major mode-entering verbs that real IOS accepts from *any* config
+   * sub-mode: typing `line vty 0 4` while in `config-if` implicitly leaves
+   * the interface sub-mode and enters line configuration. Used as a
+   * fallback when the active sub-mode trie does not recognise the command.
+   */
+  private static readonly GLOBAL_NAV_HEADS = ['interface', 'line', 'router', 'vlan'];
+
+  /**
+   * Reproduce IOS's "global commands work from a sub-config mode" behaviour:
+   * when a sub-config mode (config-if, config-line, config-vlan, …) cannot
+   * resolve a command but it is a global navigation verb, dispatch it
+   * against the global config trie — whose action switches `this.mode`.
+   * Returns null when no fallback applies.
+   */
+  protected tryGlobalConfigNavigation(cmdPart: string): string | null {
+    if (!this.isConfigMode() || this.mode === 'config') return null;
+    const head = cmdPart.trim().split(/\s+/)[0]?.toLowerCase();
+    if (!head) return null;
+    if (!CiscoShellBase.GLOBAL_NAV_HEADS.some(k => k.startsWith(head))) return null;
+    const result = this.configTrie.match(cmdPart);
+    if (result.status === 'ok' && result.node?.action) {
+      return result.node.action(result.args, cmdPart);
+    }
+    return null;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
@@ -449,10 +476,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
       case 'incomplete':
         return result.error || CISCO_ERRORS.INCOMPLETE;
-      case 'invalid':
-        return result.error || CISCO_ERRORS.INVALID_INPUT;
-      default:
-        return CISCO_ERRORS.UNRECOGNIZED(cmdPart);
+      case 'invalid': {
+        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        return nav !== null ? nav : (result.error || CISCO_ERRORS.INVALID_INPUT);
+      }
+      default: {
+        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        return nav !== null ? nav : CISCO_ERRORS.UNRECOGNIZED(cmdPart);
+      }
     }
   }
 
@@ -1746,7 +1777,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         const range = this.selectedVtyRange;
         if (!range) return '';
         if (kw === 'password' && !args[0]) return '% Incomplete command.';
-        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+        const dev = this.d() as unknown as {
+          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
+        };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
           // bare `login` → authenticate with the line password; `login local`
@@ -1791,7 +1824,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           else if (sub === 'login') update.login = 'none';
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
-        dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        // Bare `login` with no line password configured is inert on real IOS —
+        // the line refuses incoming sessions until a password is set. Echo the
+        // warning so operators (and the simulated incoming-VTY verdict) agree.
+        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
+          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
+        }
         return '';
       });
     }
