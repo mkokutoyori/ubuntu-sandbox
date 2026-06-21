@@ -12,6 +12,18 @@ import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServ
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs } from './ps/PsCommand';
 import { memPercent, kbToMiB } from './system/ProcFormat';
+
+function topCpuTime(ms: number): string {
+  const min = Math.floor(ms / 60_000);
+  const sec = Math.floor((ms % 60_000) / 1000);
+  const cs = Math.floor((ms % 1000) / 10);
+  return `${min}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+function loadAverage(running: number): string {
+  const v = running.toFixed(2);
+  return `${v}, ${v}, ${v}`;
+}
 import { LinuxService } from './service/LinuxService';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
@@ -69,7 +81,8 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const upClause = upDays > 0
     ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
     : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
-  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: 0.08, 0.03, 0.01`);
+  const runnable = procs.filter(p => p.state === 'R' || p.state === 'D').length;
+  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${loadAverage(runnable)}`);
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );
@@ -80,7 +93,7 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   lines.push('    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND');
 
   for (const p of procs) {
-    const cpu = '0.0';
+    const pcpu = upSec > 0 ? ((p.cpuTime / 1000) / upSec) * 100 : 0;
     const mem = memPercent(p.rss);
     lines.push(
       [
@@ -92,9 +105,9 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
         `${kbToMiB(p.rss)}M`.padStart(6),
         '4M'.padStart(6),
         p.state,
-        cpu.padStart(5),
+        pcpu.toFixed(1).padStart(5),
         mem.padStart(5),
-        '0:00.10'.padStart(9),
+        topCpuTime(p.cpuTime).padStart(9),
         p.comm,
       ].join(' '),
     );

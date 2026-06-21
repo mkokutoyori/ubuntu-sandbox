@@ -977,3 +977,39 @@ aussitôt. Non-régression PowerShell : 1889 verts (seul échec restant : le tes
 `src/powershell/cmdlets/core/DateTimeCmdlets.ts`,
 `src/powershell/cmdlets/core/index.ts`,
 `src/__tests__/unit/network-v2/windows-ps-jobs.test.ts` (nouveau).
+
+---
+
+## 2026-06-20 (suite) — Étape 2/3 : comptabilité CPU honnête + `top` réaliste (TDD)
+
+**Constat.** `top` affichait des valeurs **codées en dur** : colonne `TIME+`
+fixée à `0:00.10`, `%CPU` à `0.0`, load average `0.08, 0.03, 0.01`. De plus la
+complétion d'un job d'arrière-plan **fabriquait** `cpuTime = durée` — un `sleep`
+qui dort ne consomme pourtant aucun CPU.
+
+**Méthode TDD.** Tests d'abord (rouge confirmé), puis implémentation. Aucun
+commentaire ajouté dans le code.
+
+**Accrual réel.** `LinuxProcessManager.accrueCpu(deltaMs)` n'incrémente le
+`cpuTime` que des processus réellement **on-CPU** (état `R`) ; les dormeurs
+(`S`/`D`) n'accumulent rien. `advanceTime` appelle `accrueCpu(ms)` à chaque
+avance d'horloge. La complétion d'un job ne fabrique plus de CPU : elle lit le
+`cpuTime` réellement accumulé par le processus (≈ 0 pour un `sleep`) et ne
+renseigne que le temps mural.
+
+**`top` honnête.** Colonne `TIME+` dérivée du vrai `cpuTime`
+(`m:ss.cc`), `%CPU` calculé à partir de `cpuTime/uptime`, load average dérivé
+du nombre de processus runnable (`R`+`D`) — donc `0.00, 0.00, 0.00` sur une
+machine au repos, au lieu de la constante factice.
+
+**Résultat.** Nouveau test `linux-cpu-accounting` (4) : un processus `R`
+accumule du CPU sur l'horloge, un dormeur non ; `top` n'émet plus `0:00.10` ;
+le load average reflète le runnable count ; un `sleep` long n'accumule aucun
+CPU pendant que l'horloge avance. Non-régression process/jobs/top : 91 + 116
+verts.
+
+**Fichiers touchés :**
+`src/network/devices/linux/LinuxProcessManager.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/__tests__/unit/network-v2/linux-cpu-accounting.test.ts` (nouveau).

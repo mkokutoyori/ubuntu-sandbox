@@ -248,6 +248,13 @@ export class LinuxProcessManager {
     return true;
   }
 
+  accrueCpu(deltaMs: number): void {
+    if (deltaMs <= 0) return;
+    for (const p of this.processes.values()) {
+      if (p.state === 'R') p.cpuTime += deltaMs;
+    }
+  }
+
   /**
    * Change a process's nice value (and derived priority), publishing a
    * priority-changed event. Backs `renice` and `nice`.

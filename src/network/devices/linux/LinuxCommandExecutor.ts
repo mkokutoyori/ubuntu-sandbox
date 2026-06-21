@@ -1301,6 +1301,7 @@ export class LinuxCommandExecutor {
   advanceTime(ms: number): void {
     const before = this.clock.now();
     this.clock.advance(ms);
+    this.processMgr.accrueCpu(ms);
     this.reapDueBackgroundJobs();
     this.fireDueAtJobs();
     this.tickCron(before);
@@ -1361,14 +1362,11 @@ export class LinuxCommandExecutor {
   }
 
   private completeBackgroundJob(job: import('./jobs/LinuxJob').LinuxJob): void {
-    job.cpuTimeMs = job.durationMs ?? 0;
-    job.wallTimeMs = job.durationMs ?? 0;
-    job.complete({ exitCode: job.exitCode ?? 0 });
     const proc = this.processMgr.get(job.pid);
-    if (proc) {
-      proc.cpuTime = job.cpuTimeMs;
-      this.processMgr.setState(job.pid, 'Z');
-    }
+    job.wallTimeMs = job.durationMs ?? 0;
+    job.cpuTimeMs = proc?.cpuTime ?? 0;
+    job.complete({ exitCode: job.exitCode ?? 0 });
+    if (proc) this.processMgr.setState(job.pid, 'Z');
   }
 
   private drainFinishedJobNotices(): string[] {
