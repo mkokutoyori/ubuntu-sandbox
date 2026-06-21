@@ -2973,8 +2973,7 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'MODIFY_COLUMN') {
         const col = action.column;
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
         if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
         // Update data type (a typeless MODIFY — `(col NOT NULL)` — leaves it).
@@ -3006,8 +3005,7 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {
         // Validate that the column exists, then record TDE metadata.
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const col = meta.columns.find(c => c.name === action.columnName.toUpperCase());
         if (!col) throw new OracleError(904, `"${action.columnName.toUpperCase()}": invalid identifier`);
         (this.catalog as OracleCatalog).setColumnEncryption(
@@ -3021,8 +3019,7 @@ export class OracleExecutor extends BaseExecutor {
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
       } else if (action.action === 'RENAME_COLUMN') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const oldUpper = action.oldName.toUpperCase();
         const newUpper = action.newName.toUpperCase();
         const target = meta.columns.find(c => c.name === oldUpper);
@@ -3040,31 +3037,27 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       } else if (action.action === 'RENAME_TABLE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const newUpper = action.newName.toUpperCase();
         if (this.storage.getTableMeta(schema, newUpper)) {
           throw new OracleError(955, 'name is already used by an existing object');
         }
         meta.name = newUpper;
       } else if (action.action === 'MOVE_TABLESPACE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const target = action.tablespace.toUpperCase();
         if (target && !(this.storage as OracleStorage).tablespaceExists(target)) {
           throw new OracleError(959, `tablespace '${target}' does not exist`);
         }
         if (target) meta.tablespace = target;
       } else if (action.action === 'MOVE_COMPRESS') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (meta) {
-          const level = action.compressionLevel?.trim().toUpperCase();
-          // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
-          const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
-          meta.compression = off
-            ? { enabled: false }
-            : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
-        }
+        const meta = this.requireTableMeta(schema, tableName);
+        const level = action.compressionLevel?.trim().toUpperCase();
+        // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
+        const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
+        meta.compression = off
+          ? { enabled: false }
+          : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.

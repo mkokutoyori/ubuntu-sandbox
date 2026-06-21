@@ -2307,6 +2307,24 @@ voit refuser un `root:root 0600` (`ORA-29283`, pas de fuite) ; (3) une écriture
 `bfile`, `datapump-directory` — + `debug/oracle/` (14 suites) ; `tsc` propre, ESLint propre sur
 le code ajouté (les 2 `no-this-alias` de `LinuxMachine.ts` préexistent, hors périmètre).
 
+### 2026-06-21 — Déduplication de la résolution de table dans ALTER TABLE (+ ORA-942 sur MOVE COMPRESS)
+**Défaillance (duplication + incohérence mineure) :** `OracleExecutor.executeAlterTable`
+ré-inlinait cinq fois le couple `storage.getTableMeta(...)` + `if (!meta) throw ORA-942`
+(branches MODIFY_COLUMN, ENCRYPT_COLUMN, RENAME_COLUMN, RENAME_TABLE, MOVE_TABLESPACE) alors
+que le helper privé `requireTableMeta(schema, table)` — déjà utilisé par TRUNCATE et la branche
+ADD_COLUMN du même switch — fait exactement cela. Une correction de fidélité sur le message/code
+d'erreur ORA-942 aurait dû être répétée six fois. Par ailleurs, la branche `MOVE_COMPRESS`
+résolvait la table avec un `if (meta) { … }` **sans else** : un `ALTER TABLE … MOVE COMPRESS`
+sur une table inexistante était un **no-op silencieux** au lieu de lever `ORA-00942`, à rebours
+de toutes les autres branches.
+**Correction (source unique, pas de réécriture) :** les cinq inlines deviennent
+`const meta = this.requireTableMeta(schema, tableName);` ; `MOVE_COMPRESS` adopte le même helper
+et applique la compression sans garde conditionnelle. Comportement inchangé sur le chemin nominal
+(la table est déjà garantie existante par le `tableExists` en tête de méthode), code aligné et
+ORA-942 désormais uniforme sur toutes les branches. ~10 lignes dupliquées retirées.
+**Validation :** `unit/database/` complet (130 fichiers, 3044 tests verts), dont les suites
+ALTER/MODIFY/TDE/tablespace ; `tsc` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).
