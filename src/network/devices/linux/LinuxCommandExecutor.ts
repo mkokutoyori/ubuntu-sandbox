@@ -3286,6 +3286,16 @@ export class LinuxCommandExecutor {
     return follow ? follow.attach(sink) : null;
   }
 
+  tryStartJournalctlFollow(
+    commandLine: string,
+  ): import('./LinuxLogManager').JournalFollowHandle | null {
+    const trimmed = commandLine.trim();
+    if (!/^journalctl\b/.test(trimmed)) return null;
+    const tokens = simpleTokenize(trimmed);
+    if (tokens.length === 0 || tokens[0] !== 'journalctl') return null;
+    return this.logMgr.tryStartJournalctlFollow(tokens.slice(1));
+  }
+
   /** Build the shell-state view consumed by which / type / command. */
   private shellIntrospection(): ShellIntrospection {
     const pathDirs = (this.env.get('PATH') ?? '').split(':').filter(Boolean);

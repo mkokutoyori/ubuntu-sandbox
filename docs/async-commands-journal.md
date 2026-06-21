@@ -227,8 +227,52 @@ Constats :
   → lignes live `OSPF: snd/rcv packet ...`. ✅
 - Indicateur background présent, prompt libre, isolation par `deviceId`.
 
+### PC Linux — `journalctl -f` / `journalctl --follow`
+
+Catégorie « abonnement aux événements », côté hôte Linux. Même socle que `tail
+-f` (job foreground streaming) : prompt verrouillé, flux ligne par ligne, arrêt
+propre par Ctrl+C, isolation par session.
+
+- **Anti-duplication** : le projet gérait déjà un `journalctl` complet
+  (`LinuxLogManager.executeJournalctl` : parse `-n/-r/-q/-b/-o/-u/-p/_PID=/
+  --output-fields=`, filtrage, formats `short`/`short-iso`/`json`/`cat`/
+  `verbose`, en-tête `-- Logs begin at … --`). Réutilisé intégralement :
+  - le parseur d'options est extrait en `parseJournalctlOptions` et partagé
+    entre le dump snapshot (`executeJournalctl`) et le suivi (`-f`) — zéro
+    logique d'arguments dupliquée. Le dump reste à comportement identique
+    (`linux-journal` / `journalization-and-audit` verts).
+  - le prédicat de filtrage par entrée est extrait en `matchesEntry` et partagé
+    entre `filterEntries` (snapshot) et le fan-out live.
+  - le formatage des lignes reste la fonction existante `formatEntry`.
+- **Modèle** : `LinuxLogManager` devient émetteur. `addEntry` (point d'entrée
+  unique de tout nouvel enregistrement journald — `logger`, `logAt`, projections
+  de services) notifie désormais les abonnés actifs. `tryStartJournalctlFollow`
+  retourne un descripteur `JournalFollowHandle` (`header`, `initial` = les 10
+  dernières lignes filtrées ou `-n N`, `subscribe`). Les options terminantes
+  (`--version`, `--disk-usage`, `--list-boots`, `--rotate`, `--flush`,
+  `--vacuum-*`) et un journald arrêté ne suivent pas (retour `null` → dump).
+- **Controller** : `LinuxCommandExecutor.tryStartJournalctlFollow` (même schéma
+  que `startTailFollow`, via `simpleTokenize`), exposé par session avec
+  `LinuxMachine.startJournalctlFollowInSession` (même `sessionSwap.withinSync`
+  que `startTailFollowInSession` — l'abonnement vit sur le `LinuxLogManager`
+  du device, indépendant des swaps d'exécuteur). `LinuxTerminalSession.
+  tryStartJournalctlStream` intercepte `journalctl … -f` (hors version/usage),
+  démarre un job foreground streaming : en-tête, tail initial, puis chaque
+  nouvelle entrée au fil de l'eau ; Ctrl+C désabonne et libère le prompt.
+
+Critères couverts : streaming temps réel ligne par ligne, prompt bloqué
+(commande de monitoring), arrêt propre via Ctrl+C avec désabonnement effectif,
+isolation des sessions (un follower par job), filtres réels (`-u` matché sur
+unit/tag, `-p`, `_PID=`), impact sur l'état interne réel (les lignes viennent
+des vraies entrées journald du device).
+
+Validation : `linux-journalctl-follow-ui.test.ts` — 4/4 verts (header + stream
+live d'une entrée `logger`, Ctrl+C qui détache l'abonnement, filtre `-u` qui
+isole l'unité, `journalctl` sans `-f` inchangé). Régressions journal / syslog /
+tail / ping : 143/143 verts.
+
 ## Suite
 
-- Event Subscription : Firewall, Linux (`journalctl -f` / conntrack).
+- Event Subscription : Firewall, Linux (conntrack `conntrack -E`).
 - Real-Time Monitoring : Router (ping étendu / traceroute live).
 - Background Commands : `show processes` / `ps`-style listing des jobs.

@@ -746,6 +746,33 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartJournalctlStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const shell = this.shell;
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        const handle = dev.startJournalctlFollowInSession(commandLine, shell);
+        if (!handle) return false;
+        if (handle.header) ctx.sink.line(handle.header);
+        for (const line of handle.initial) ctx.sink.line(line);
+        unsubscribe = handle.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; });
+        return true;
+      },
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        ctx.onCancel(() => resolve());
+      }),
+    });
+    return job !== null;
+  }
+
   private tryStartPingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -857,6 +884,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
+    if (this.tryStartJournalctlStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 

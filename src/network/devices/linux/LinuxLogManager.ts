@@ -83,8 +83,36 @@ function fmtHumanDate(d: Date): string {
   return `${day} ${mon} ${dd} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
 }
 
+export interface JournalFollowHandle {
+  header: string | null;
+  initial: string[];
+  subscribe(onLine: (line: string) => void): () => void;
+}
+
+interface JournalFollower {
+  match: (e: JournalEntry) => boolean;
+  format: (e: JournalEntry) => string;
+  onLine: (line: string) => void;
+}
+
+interface ParsedJournalctlOptions {
+  follow: boolean;
+  lines: number;
+  reverse: boolean;
+  quiet: boolean;
+  outputFormat: string;
+  unitFilter: string;
+  priorityFilter: number;
+  pidFilter: number;
+  outputFields: string[];
+  invalidPriority?: string;
+}
+
+const JOURNALCTL_OUTPUT_FORMATS = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
+
 export class LinuxLogManager {
   private journal: JournalEntry[] = [];
+  private followers: JournalFollower[] = [];
   private dmesgBuffer: DmesgEntry[] = [];
   private bootTime: Date;
   private bootId: string;
@@ -283,72 +311,17 @@ export class LinuxLogManager {
 
     if (!this.journaldActive) return 'No journal files were found.';
 
-    let n = -1;
-    let reverse = false;
-    let quiet = false;
-    let outputFormat = 'short';
-    let unitFilter = '';
-    let priorityFilter = -1;
-    let pidFilter = -1;
-    let outputFields: string[] = [];
-
-    let i = 0;
-    while (i < args.length) {
-      switch (args[i]) {
-        case '-n':
-        case '--lines':
-          n = parseInt(args[++i]) || 0;
-          i++; break;
-        case '-r':
-        case '--reverse':
-          reverse = true; i++; break;
-        case '-q':
-        case '--quiet':
-          quiet = true; i++; break;
-        case '-b':
-        case '--boot':
-          i++; break;  // always current boot in simulator
-        case '--no-pager':
-          i++; break;  // no-op
-        case '-o':
-        case '--output':
-          outputFormat = args[++i] || 'short';
-          i++; break;
-        case '-u':
-        case '--unit': {
-          unitFilter = args[++i] || '';
-          i++; break;
-        }
-        case '-p':
-        case '--priority': {
-          const pval = args[++i] || '';
-          const pnum = this.resolvePriority(pval);
-          if (pnum === -1) return `Invalid priority: ${pval}`;
-          priorityFilter = pnum;
-          i++; break;
-        }
-        default: {
-          // Check for _PID=N
-          if (args[i].startsWith('_PID=')) {
-            pidFilter = parseInt(args[i].slice(5));
-          }
-          // Check for --output-fields=
-          if (args[i].startsWith('--output-fields=')) {
-            outputFields = args[i].slice(16).split(',');
-          }
-          i++; break;
-        }
-      }
-    }
+    const opts = this.parseJournalctlOptions(args);
+    if (opts.invalidPriority !== undefined) return `Invalid priority: ${opts.invalidPriority}`;
 
     // Validate output format
-    const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
-    if (!validFormats.includes(outputFormat)) {
-      return `Invalid output format: ${outputFormat}`;
+    if (!JOURNALCTL_OUTPUT_FORMATS.includes(opts.outputFormat)) {
+      return `Invalid output format: ${opts.outputFormat}`;
     }
+    const { lines: n, reverse, quiet, outputFormat, outputFields } = opts;
 
     // Filter entries
-    let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
+    let entries = this.filterEntries(opts.unitFilter, opts.priorityFilter, opts.pidFilter);
 
     // Hide entries with timestamps in the future. The boot-time canned
     // messages (kernel + systemd + sshd "Server listening on …") are
@@ -386,6 +359,123 @@ export class LinuxLogManager {
     }
 
     return lines.join('\n');
+  }
+
+  private parseJournalctlOptions(args: string[]): ParsedJournalctlOptions {
+    let follow = false;
+    let lines = -1;
+    let reverse = false;
+    let quiet = false;
+    let outputFormat = 'short';
+    let unitFilter = '';
+    let priorityFilter = -1;
+    let pidFilter = -1;
+    let outputFields: string[] = [];
+    let invalidPriority: string | undefined;
+
+    let i = 0;
+    while (i < args.length) {
+      switch (args[i]) {
+        case '-f':
+        case '--follow':
+          follow = true; i++; break;
+        case '-n':
+        case '--lines':
+          lines = parseInt(args[++i]) || 0;
+          i++; break;
+        case '-r':
+        case '--reverse':
+          reverse = true; i++; break;
+        case '-q':
+        case '--quiet':
+          quiet = true; i++; break;
+        case '-b':
+        case '--boot':
+          i++; break;
+        case '--no-pager':
+          i++; break;
+        case '-o':
+        case '--output':
+          outputFormat = args[++i] || 'short';
+          i++; break;
+        case '-u':
+        case '--unit':
+          unitFilter = args[++i] || '';
+          i++; break;
+        case '-p':
+        case '--priority': {
+          const pval = args[++i] || '';
+          const pnum = this.resolvePriority(pval);
+          if (pnum === -1) { invalidPriority = pval; i++; break; }
+          priorityFilter = pnum;
+          i++; break;
+        }
+        default: {
+          if (args[i].startsWith('_PID=')) {
+            pidFilter = parseInt(args[i].slice(5));
+          }
+          if (args[i].startsWith('--output-fields=')) {
+            outputFields = args[i].slice(16).split(',');
+          }
+          i++; break;
+        }
+      }
+    }
+
+    return {
+      follow, lines, reverse, quiet, outputFormat,
+      unitFilter, priorityFilter, pidFilter, outputFields, invalidPriority,
+    };
+  }
+
+  tryStartJournalctlFollow(args: string[]): JournalFollowHandle | null {
+    for (const arg of args) {
+      if (arg === '--version' || arg === '--disk-usage' || arg === '--list-boots'
+        || arg === '--rotate' || arg === '--flush'
+        || arg.startsWith('--vacuum-time') || arg.startsWith('--vacuum-size')) {
+        return null;
+      }
+    }
+    if (!this.journaldActive) return null;
+
+    const opts = this.parseJournalctlOptions(args);
+    if (!opts.follow) return null;
+    if (opts.invalidPriority !== undefined) return null;
+    if (!JOURNALCTL_OUTPUT_FORMATS.includes(opts.outputFormat)) return null;
+
+    const match = (e: JournalEntry): boolean =>
+      this.matchesEntry(e, opts.unitFilter, opts.priorityFilter, opts.pidFilter);
+    const format = (e: JournalEntry): string =>
+      this.formatEntry(e, opts.outputFormat, opts.outputFields);
+
+    const nowMs = Date.now();
+    const tailCount = opts.lines >= 0 ? opts.lines : 10;
+    const initial = this.journal
+      .filter((e) => match(e) && e.timestamp.getTime() <= nowMs)
+      .slice(-tailCount)
+      .map(format);
+
+    let header: string | null = null;
+    if (!opts.quiet && (opts.outputFormat === 'short' || opts.outputFormat === 'short-iso')) {
+      const first = this.journal[0];
+      const last = this.journal[this.journal.length - 1];
+      if (first && last) {
+        header = `-- Logs begin at ${fmtHumanDate(first.timestamp)}, end at ${fmtHumanDate(last.timestamp)}. --`;
+      }
+    }
+
+    return {
+      header,
+      initial,
+      subscribe: (onLine: (line: string) => void): (() => void) => {
+        const follower: JournalFollower = { match, format, onLine };
+        this.followers.push(follower);
+        return () => {
+          const idx = this.followers.indexOf(follower);
+          if (idx >= 0) this.followers.splice(idx, 1);
+        };
+      },
+    };
   }
 
   // ── dmesg command ──────────────────────────────────────────────
@@ -473,6 +563,10 @@ export class LinuxLogManager {
     // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
 
+    for (const follower of this.followers) {
+      if (follower.match(entry)) follower.onLine(follower.format(entry));
+    }
+
     // The on-disk /var/log/* files are written by rsyslog: when that daemon
     // is stopped they freeze, but `journalctl` keeps working.
     if (!this.syslogDaemonActive) return;
@@ -517,29 +611,17 @@ export class LinuxLogManager {
     }
   }
 
+  private matchesEntry(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
+    if (unit && !((e.unit && e.unit.includes(unit)) || (e.tag && e.tag.includes(unit)))) {
+      return false;
+    }
+    if (priority >= 0 && e.priority > priority) return false;
+    if (pid >= 0 && e.pid !== pid) return false;
+    return true;
+  }
+
   private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {
-    let entries = [...this.journal];
-
-    if (unit) {
-      entries = entries.filter(e => {
-        // Match unit name against tag or unit field
-        if (e.unit && e.unit.includes(unit)) return true;
-        if (e.tag && e.tag.includes(unit)) return true;
-        // Match "systemd" unit to entries with tag "systemd" or unit containing "systemd"
-        return false;
-      });
-    }
-
-    if (priority >= 0) {
-      // Show entries at this priority or more severe (lower number)
-      entries = entries.filter(e => e.priority <= priority);
-    }
-
-    if (pid >= 0) {
-      entries = entries.filter(e => e.pid === pid);
-    }
-
-    return entries;
+    return this.journal.filter((e) => this.matchesEntry(e, unit, priority, pid));
   }
 
   private formatEntry(entry: JournalEntry, format: string, outputFields: string[]): string {

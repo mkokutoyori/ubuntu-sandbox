@@ -1616,6 +1616,19 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
+  startJournalctlFollowInSession(
+    commandLine: string,
+    session: LinuxShellSession,
+  ): import('./linux/LinuxLogManager').JournalFollowHandle | null {
+    if (!this.isPoweredOn) return null;
+    if (session.disposed) return null;
+    return this.sessionSwap.withinSync(
+      session,
+      () => this.executor.tryStartJournalctlFollow(commandLine),
+      { capture: false },
+    );
+  }
+
   async pingStreamInSession(
     targetStr: string,
     opts: {
