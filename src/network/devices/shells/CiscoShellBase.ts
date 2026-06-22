@@ -119,6 +119,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.logging.attachToBus(bus, deviceId);
   }
 
+  getLoggingConfig(): LoggingConfig {
+    return this.logging;
+  }
+
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
 
@@ -800,11 +804,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       }
       if (rest.length === 0) { this.terminalHistorySize = 20; return ''; }
-      return '';
-    }
-    if (head === 'monitor') {
-      // `terminal monitor` — redirect logging to this vty. Acknowledged
-      // silently; the simulator does not gate logs by line.
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;

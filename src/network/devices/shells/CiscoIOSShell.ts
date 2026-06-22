@@ -373,6 +373,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedIKEv2Profile: this.selectedIKEv2Profile,
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
+      terminalMonitor: this.terminalMonitor,
       privilegeLevel: this.mode === 'user' ? 1 : 15,
       historySize: 10,
       cmdHistory: this.cmdHistory,
@@ -403,6 +404,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.selectedIKEv2Profile = s.selectedIKEv2Profile;
     this.terminalLength = s.terminalLength;
     this.terminalWidth = s.terminalWidth;
+    this.terminalMonitor = s.terminalMonitor;
     this.cmdHistory = s.cmdHistory;
   }
 

@@ -19,6 +19,12 @@ function normSeverity(tok: string): Severity | null {
   return Number.isNaN(n) || n < 0 || n > 7 ? null : SEVERITIES[n];
 }
 
+export type SyslogLineListener = (line: string) => void;
+
+export interface LoggingMonitorSource {
+  subscribeMonitor(listener: SyslogLineListener): () => void;
+}
+
 export class LoggingConfig {
   enabled = true;                       // `logging on` (IOS default on)
   buffered = false;
@@ -38,6 +44,8 @@ export class LoggingConfig {
   private nextSeq = 0;
   private attachedBus: import('@/events/EventBus').IEventBus | null = null;
   private attachedDeviceId: string | null = null;
+  private busUnsub: (() => void) | null = null;
+  private readonly monitorListeners = new Set<SyslogLineListener>();
   private readonly SEVERITY_ORDER: Record<Severity, number> = {
     emergencies: 0, alerts: 1, critical: 2, errors: 3,
     warnings: 4, notifications: 5, informational: 6, debugging: 7,
@@ -50,11 +58,32 @@ export class LoggingConfig {
     return event.slice(0, colon).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
   }
 
+  private formatEntry(severity: Severity, tag: string, text: string, ts: number): string {
+    const sevNum = this.SEVERITY_ORDER[severity];
+    const prefix = this.timestamps
+      ? `${new Date(ts).toISOString().slice(5, 19).replace('T', ' ')}: `
+      : '';
+    return `${prefix}%${tag.toUpperCase()}-${sevNum}-${severity.toUpperCase()}: ${text}`;
+  }
+
+  subscribeMonitor(listener: SyslogLineListener): () => void {
+    this.monitorListeners.add(listener);
+    return () => { this.monitorListeners.delete(listener); };
+  }
+
+  private fanMonitor(line: string): void {
+    for (const listener of this.monitorListeners) listener(line);
+  }
+
   /** Append a log message into the buffered/console projection. */
   append(severity: Severity, tag: string, text: string): void {
     if (!this.enabled) return;
+    const ts = Date.now();
+    if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
+      this.fanMonitor(this.formatEntry(severity, tag, text, ts));
+    }
     if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
-    this.messages.push({ ts: Date.now(), severity, tag, text });
+    this.messages.push({ ts, severity, tag, text });
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
@@ -64,13 +93,17 @@ export class LoggingConfig {
         payload: {
           deviceId: this.attachedDeviceId,
           severity, severityNum: this.SEVERITY_ORDER[severity],
-          tag, message: text, ts: Date.now(),
+          tag, message: text, ts,
         },
       });
     }
   }
 
   attachToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): () => void {
+    if (this.attachedBus === bus && this.attachedDeviceId === deviceId && this.busUnsub) {
+      return this.busUnsub;
+    }
+    if (this.busUnsub) { this.busUnsub(); this.busUnsub = null; }
     const isOurs = (e: { deviceId?: string }) => e.deviceId === deviceId;
     this.buffered = true;
     this.attachedBus = bus;
@@ -675,7 +708,13 @@ export class LoggingConfig {
     unsubs.push(bus.subscribe('log', logHandler));
     const defaultBus = getDefaultEventBus();
     if (defaultBus !== bus) unsubs.push(defaultBus.subscribe('log', logHandler));
-    return () => { for (const u of unsubs) u(); };
+    this.busUnsub = () => {
+      for (const u of unsubs) u();
+      this.attachedBus = null;
+      this.attachedDeviceId = null;
+      this.busUnsub = null;
+    };
+    return this.busUnsub;
   }
 
   /** Apply `logging …` (negate=false) or `no logging …` (negate=true). */
@@ -771,11 +810,7 @@ export class LoggingConfig {
       lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
       lines.push('');
       for (const m of this.messages) {
-        const sevNum = this.SEVERITY_ORDER[m.severity];
-        const prefix = this.timestamps
-          ? `${new Date(m.ts).toISOString().slice(5, 19).replace('T', ' ')}: `
-          : '';
-        lines.push(`${prefix}%${m.tag.toUpperCase()}-${sevNum}-${m.severity.toUpperCase()}: ${m.text}`);
+        lines.push(this.formatEntry(m.severity, m.tag, m.text, m.ts));
       }
     }
     return lines.join('\n');

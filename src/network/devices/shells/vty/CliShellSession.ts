@@ -57,6 +57,8 @@ export interface VtySnapshot {
   terminalLength: number;
   /** `terminal width N` — character width hint (default 80). */
   terminalWidth: number;
+  /** `terminal monitor` — stream this line's syslog output to the terminal. */
+  terminalMonitor: boolean;
   /** Privilege level 0–15. 15 = enable. 1 = user. */
   privilegeLevel: number;
   /** `terminal history size N` — bounded ring length. */
@@ -121,6 +123,7 @@ export class CliShellSession {
       selectedIKEv2Profile: null,
       terminalLength: init.initialLength ?? 24,
       terminalWidth: 80,
+      terminalMonitor: false,
       privilegeLevel: 1,
       historySize: 10,
       cmdHistory: [],

@@ -20,4 +20,6 @@ export interface IRouterShell {
   tabComplete(input: string): string | null;
   /** Attach the shell's logging config to a bus for event-driven syslog buffering. */
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
+  /** The shell's logging config — source of the `terminal monitor` syslog stream. */
+  getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
 }

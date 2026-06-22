@@ -2158,6 +2158,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this._debugService;
   }
 
+  getLoggingConfig(): import('./inspection/config/LoggingConfig').LoggingConfig | null {
+    const cfg = this.shell.getLoggingConfig?.();
+    if (!cfg) return null;
+    this.shell.attachLoggingToBus?.(this.getBus(), this.id);
+    return cfg;
+  }
+
   private _nhrpService: NhrpService | null = null;
   private _dmvpnService: DmvpnService | null = null;
 

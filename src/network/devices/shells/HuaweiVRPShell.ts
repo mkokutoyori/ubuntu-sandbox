@@ -341,6 +341,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       selectedIKEv2Profile: null,
       terminalLength: this.screenLength,
       terminalWidth: this.screenWidth,
+      terminalMonitor: false,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
       historySize: this.historyMax,
       cmdHistory: [...this.cmdHistory],

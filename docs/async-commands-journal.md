@@ -454,6 +454,58 @@ tests `route` 527/527, ARP/host 34/34. Aucune nouvelle erreur de type ni de lint
 (le seul échec `network-v2`, `other-commands.test.ts` #163, est pré-existant et
 sans rapport). 
 
+## Event Subscription — Router (Cisco IOS) : `terminal monitor`
+
+Commande d'abonnement aux événements de journalisation (syslog) du device,
+branchée sur le socle, en réutilisant l'infrastructure de logging existante
+plutôt qu'une mécanique parallèle. Avant : `terminal monitor` posait un flag
+mort (`terminalMonitor`) jamais câblé — accepté silencieusement, sans effet.
+
+- **Comportement réel (IOS)** : par défaut une ligne vty (telnet/SSH) ne reçoit
+  pas la sortie syslog/debug ; `terminal monitor` l'abonne au flux de logs du
+  device, `terminal no monitor` la désabonne. Réglage **par ligne**, pas global.
+- **Modèle** (`LoggingConfig`, source unique des logs IOS, déjà projetée par
+  `show logging`) : ajout d'un flux d'abonnement monitor. `append` (point
+  d'émission unique alimenté par tous les vrais évènements bus — OSPF, link,
+  interface, AAA, STP, NAT, crypto, …) diffuse désormais chaque entrée aux
+  abonnés monitor, **filtrée par `monitorSeverity`** (le `logging monitor
+  <level>` IOS). Extraction d'un formateur pur `formatEntry` réutilisé par le
+  flux monitor **et** par le buffer de `show logging` (zéro duplication de
+  rendu : `%TAG-SEV-MNEMONIC`). `attachToBus` rendu **idempotent** (garde
+  bus+device) pour l'attache paresseuse.
+- **Bug latent corrigé (même classe que le bug debug #3)** : `LoggingConfig`
+  n'était attaché au bus que via `setEventBus`, jamais appelé par le store dans
+  l'app réelle (`busOverride` reste nul, les agents publient sur
+  `getDefaultEventBus()`). Nouveau `Router.getLoggingConfig()` attache
+  paresseusement la config sur `this.getBus()` (exactement comme
+  `getDebugService()`), donc le flux monitor capte les vrais évènements en
+  conditions réelles, pas seulement dans les tests qui câblent le bus à la main.
+- **Per-vty** : `terminalMonitor` ajouté à `VtySnapshot` + snapshot/apply
+  (Cisco IOS et Huawei) ; il rotère désormais par ligne via le swap-and-restore
+  de `executeCommandInVty` (corrige aussi un trou d'isolation : le flag vivait
+  sur le shell partagé). Suppression du bloc `terminal monitor` dupliqué mort
+  dans `handleTerminalCommand`.
+- **Controller** (`CiscoTerminalSession`) : `afterCommandExecuted` factorisé en
+  `reconcileDebugSubscription` + `reconcileTerminalMonitor`. Dès que la ligne a
+  `terminalMonitor` armé, un job `mode: background`, `kind: subscription`
+  (`command: 'terminal monitor'`, `label: 'syslog monitor'`) s'abonne à
+  `subscribeMonitor` et déverse chaque ligne dans le terminal (prompt libre,
+  non bloquant, intercalé sans casser la saisie). `terminal no monitor` annule
+  le job ; la fermeture de session l'annule via `cancelAll`. L'indicateur
+  background UI le signale automatiquement (même socle que debug).
+
+Critères couverts : abonnement temps réel ligne par ligne, prompt non bloqué
+(arrière-plan), arrêt propre via `no monitor` / fermeture de session, isolation
+des sessions (chaque vty a son propre flag et son propre abonnement), impact réel
+sur l'état (lignes issues des vrais évènements du device), gating de privilège
+par sévérité (`logging monitor`), commande exec IOS.
+
+Validation : `cisco-terminal-monitor.test.ts` — 6/6 (stream `%OSPF-5` live +
+job background + flag per-vty ; prompt libre ; session non monitorée muette ;
+`no monitor` coupe ; isolation deux sessions ; filtrage par `monitorSeverity`).
+Régressions : `cisco-debug-subscription`, `cisco-switch-debug-subscription`,
+`cli-terminal-length`, `logging-enhancements` — verts.
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
