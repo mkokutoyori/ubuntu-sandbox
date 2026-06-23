@@ -3286,6 +3286,13 @@ export class LinuxCommandExecutor {
     return follow ? follow.attach(sink) : null;
   }
 
+  startJournalFollow(
+    args: string[],
+    sink: import('./LinuxLogManager').JournalFollowSink,
+  ): import('./LinuxLogManager').JournalFollowHandle | null {
+    return this.logMgr.startFollow(args, sink);
+  }
+
   /** Build the shell-state view consumed by which / type / command. */
   private shellIntrospection(): ShellIntrospection {
     const pathDirs = (this.env.get('PATH') ?? '').split(':').filter(Boolean);

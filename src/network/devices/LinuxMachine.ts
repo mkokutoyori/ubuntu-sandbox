@@ -1616,6 +1616,20 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
+  startJournalFollowInSession(
+    args: string[],
+    session: LinuxShellSession,
+    sink: import('./linux/LinuxLogManager').JournalFollowSink,
+  ): import('./linux/LinuxLogManager').JournalFollowHandle | null {
+    if (!this.isPoweredOn) return null;
+    if (session.disposed) return null;
+    return this.sessionSwap.withinSync(
+      session,
+      () => this.executor.startJournalFollow(args, sink),
+      { capture: false },
+    );
+  }
+
   async pingStreamInSession(
     targetStr: string,
     opts: {

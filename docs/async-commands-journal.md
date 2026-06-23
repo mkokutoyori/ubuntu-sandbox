@@ -227,8 +227,54 @@ Constats :
   → lignes live `OSPF: snd/rcv packet ...`. ✅
 - Indicateur background présent, prompt libre, isolation par `deviceId`.
 
+## Real-Time Monitoring — PC Linux / Firewall : `journalctl -f`
+
+Suivi live du journal systemd, même socle (`tail -f` comme patron direct), pour
+PC Linux et firewall (stubbé en LinuxPC).
+
+- **Modèle** (`LinuxLogManager`) : `addEntry` notifie désormais un registre
+  d'abonnés (`followers`) à chaque écriture tant que journald est actif —
+  indépendamment de l'état de `rsyslog`, exactement comme le vrai journald qui
+  continue d'enregistrer même quand `rsyslog` est arrêté. Le parsing d'options
+  `journalctl` est factorisé (`parseJournalctlOptions`) et partagé entre le
+  `journalctl` bloc historique et le suivi ; le prédicat de filtrage est extrait
+  en `entryMatches` (réutilisé par `filterEntries` et par chaque abonné). Aucun
+  changement de comportement du `journalctl` bloc.
+- `startFollow(args, sink)` émet d'abord la queue (10 dernières entrées par
+  défaut, `-n N` respecté, timestamps futurs masqués comme le bloc) puis
+  s'abonne et déverse au fil de l'eau les nouvelles entrées correspondant au
+  filtre (`-u`, `-p`, `_PID=`, format `-o`). Renvoie `null` (→ repli sur le
+  chemin bloc) si journald est arrêté ou le format/priorité est invalide.
+- **Controller** : `LinuxCommandExecutor.startJournalFollow` →
+  `LinuxMachine.startJournalFollowInSession` (même schéma `withinSync` que
+  `startTailFollowInSession`) → `LinuxTerminalSession.tryStartJournalctlFollow`
+  intercepte `journalctl … -f/--follow` (hors pipes/redirections) et démarre un
+  job foreground streaming : queue, lignes progressives, prompt bloqué, Ctrl+C →
+  `^C` + désabonnement propre.
+
+Critères couverts : streaming temps réel ligne par ligne, prompt verrouillé
+(monitoring bloquant), interruption Ctrl+C propre, isolation des sessions
+(chaque terminal a son propre abonné sur le `LinuxLogManager` partagé), impact
+sur l'état interne réel (les lignes proviennent des vraies entrées du journal,
+émises par `logger`, les daemons, la projection des unités systemd, etc.).
+
+Validation : `journalctl-follow-ui.test.ts` — 5/5 (queue + stream live, Ctrl+C
+silencieux, filtre `-u`, compteur `notify`, repli bloc non-streamé).
+Régressions : `linux-journal`, `tail-follow-ui`, `journalization-and-audit`,
+`linux-ping-stream-ui` — 103/103 verts. `tsc --noEmit` propre.
+
+## Note de branche
+
+L'itération a été menée sur la branche de session assignée
+`claude/blissful-faraday-t8bqw3` (qui contient déjà tout l'historique `mandeng`
+mergé via #315/#316), et non en push direct sur `mandeng` : `mandeng` est la
+branche d'intégration partagée alimentée par PR depuis des branches de feature.
+Cette contribution suit donc le même flux (feature branch → PR), à valider/merger
+par revue plutôt que poussée directement sur la branche partagée.
+
 ## Suite
 
-- Event Subscription : Firewall, Linux (`journalctl -f` / conntrack).
+- Event Subscription : Firewall (`conntrack -E` / suivi de sessions), Linux
+  (`ip monitor`, conntrack).
 - Real-Time Monitoring : Router (ping étendu / traceroute live).
 - Background Commands : `show processes` / `ps`-style listing des jobs.

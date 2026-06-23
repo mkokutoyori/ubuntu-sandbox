@@ -746,6 +746,36 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartJournalctlFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'journalctl') return false;
+    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const shell = this.shell;
+    let handle: import('@/network/devices/linux/LinuxLogManager').JournalFollowHandle | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        handle = dev.startJournalFollowInSession(toks.slice(1), shell, {
+          line: (text) => ctx.sink.line(text),
+        });
+        if (!handle) return false;
+        ctx.onCancel(() => handle?.cancel());
+        return true;
+      },
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        ctx.onCancel(() => resolve());
+      }),
+    });
+    return job !== null;
+  }
+
   private tryStartPingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -857,6 +887,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
+    if (this.tryStartJournalctlFollow(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
