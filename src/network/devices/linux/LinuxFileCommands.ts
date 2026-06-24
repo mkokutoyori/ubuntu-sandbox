@@ -38,6 +38,7 @@ export interface ShellContext {
   umask: number;
   uid: number;
   gid: number;
+  color?: boolean;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
@@ -59,11 +60,7 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   let dirOnly = false;
   let classify = false;   // -F: append indicator (/ @ * |)
   let onePerLine = false;  // -1: force single column
-  // GNU `ls` defaults to `--color=auto` only when stdout is a TTY. The
-  // simulator captures output for tests and dumps where stdout is not a
-  // TTY, so we default to plain text and only colorize on explicit
-  // `--color=always`. `--color=never` is also honored.
-  let useColor = false;
+  let useColor = ctx.color === true;
   const paths: string[] = [];
 
   for (const arg of args) {
@@ -85,7 +82,7 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
     } else if (arg.startsWith('--')) {
       if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
       else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
-      // --color=auto: keep default (off) — no TTY in capture mode.
+      else if (arg === '--color=auto') useColor = ctx.color === true;
     } else {
       paths.push(arg);
     }

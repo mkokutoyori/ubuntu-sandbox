@@ -1710,7 +1710,14 @@ export abstract class LinuxMachine extends EndHost
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      return this.sessionSwap.within(session, () => this.executeCommand(command));
+      return this.sessionSwap.within(session, async () => {
+        this.executor.displayColor = true;
+        try {
+          return await this.executeCommand(command);
+        } finally {
+          this.executor.displayColor = false;
+        }
+      });
     });
   }
 

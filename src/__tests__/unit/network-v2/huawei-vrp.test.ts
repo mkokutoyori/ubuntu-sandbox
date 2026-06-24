@@ -258,7 +258,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
       await r.executeCommand('return');
 
       const output = await r.executeCommand('display ip interface brief');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('192.168.1.1');
     });
   });
@@ -853,7 +853,7 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
       const output = await r.executeCommand('dis ip int b');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('10.0.0.1');
     });
 

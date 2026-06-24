@@ -1564,8 +1564,11 @@ export class LinuxCommandExecutor {
       umask: this.umask,
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
+      color: this.displayColor,
     };
   }
+
+  displayColor = false;
 
   /**
    * Execute a command string through the bash interpreter.
