@@ -116,6 +116,14 @@ export class OracleExecutor extends BaseExecutor {
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
+  /** True while the current transaction was opened `SET TRANSACTION READ ONLY`;
+   *  any DML then raises ORA-01456. Reset when the transaction ends. */
+  private readOnlyTransaction = false;
+  /** Session constraint-check timing, set by SET CONSTRAINTS … {DEFERRED|IMMEDIATE}.
+   *  DEFAULT honours each constraint's INITIALLY DEFERRED/IMMEDIATE. */
+  private constraintMode: 'DEFAULT' | 'IMMEDIATE' | 'DEFERRED' = 'DEFAULT';
+  /** Saved READ ONLY flags while autonomous scopes are active (nesting). */
+  private autonomousReadOnlyStack: boolean[] = [];
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
   private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
@@ -587,9 +595,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
       case 'SetTransactionStatement':
-        // The simulator does not differentiate transaction isolation
-        // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
-        return emptyResult('Transaction set.');
+        return this.executeSetTransaction(statement);
+      case 'SetConstraintsStatement':
+        return this.executeSetConstraints(statement);
       case 'StartupStatement': return this.instanceAdmin.executeStartup(statement);
       case 'ShutdownStatement': return this.instanceAdmin.executeShutdown(statement);
       case 'AlterSystemStatement': return this.instanceAdmin.executeAlterSystem(statement);
@@ -723,6 +731,90 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Commit complete.');
   }
 
+  /**
+   * SET TRANSACTION READ ONLY | READ WRITE | ISOLATION LEVEL …
+   *
+   * Must be the first statement of its transaction — otherwise ORA-01453.
+   * READ ONLY opens a read-only transaction in which DML is rejected with
+   * ORA-01456 until it ends (COMMIT/ROLLBACK).
+   */
+  private executeSetTransaction(
+    stmt: import('../engine/parser/ASTNode').SetTransactionStatement,
+  ): ResultSet {
+    if (this.txn.isActive) {
+      throw new OracleError(1453, 'SET TRANSACTION must be first statement of transaction');
+    }
+    if (stmt.readOnly === true) {
+      this.readOnlyTransaction = true;
+      // Establish the (read-only) transaction so it owns a consistent point
+      // and a second SET TRANSACTION is correctly rejected.
+      this.txn.begin();
+    } else {
+      this.readOnlyTransaction = false;
+    }
+    return emptyResult('Transaction set.');
+  }
+
+  /** Guard the write-path DML executors against a READ ONLY transaction. */
+  private requireWritableTransaction(): void {
+    if (this.readOnlyTransaction) {
+      throw new OracleError(1456, 'may not perform insert/delete/update operation inside a READ ONLY transaction');
+    }
+  }
+
+  /**
+   * Enter an autonomous-transaction scope (PRAGMA AUTONOMOUS_TRANSACTION):
+   * suspend the caller's transaction and read-only/constraint state so the
+   * unit runs — and commits — independently.
+   */
+  beginAutonomousScope(): void {
+    this.autonomousReadOnlyStack.push(this.readOnlyTransaction);
+    this.readOnlyTransaction = false;
+    this.txn.enterAutonomous();
+  }
+
+  /** Leave the autonomous scope, restoring the caller's transaction state. */
+  endAutonomousScope(): void {
+    this.txn.exitAutonomous();
+    this.readOnlyTransaction = this.autonomousReadOnlyStack.pop() ?? false;
+  }
+
+  /** Whether a constraint's integrity check is currently deferred to COMMIT. */
+  private isConstraintDeferred(c: import('../engine/storage/BaseStorage').ConstraintMeta): boolean {
+    if (!c.deferrable) return false;
+    if (this.constraintMode === 'IMMEDIATE') return false;
+    if (this.constraintMode === 'DEFERRED') return true;
+    return c.initiallyDeferred === true;
+  }
+
+  /** Reusable predicate passed to the ConstraintValidator on the DML write path. */
+  private readonly deferredConstraintPredicate = (
+    c: import('../engine/storage/BaseStorage').ConstraintMeta,
+  ): boolean => this.isConstraintDeferred(c);
+
+  /**
+   * SET CONSTRAINTS {ALL | name…} {DEFERRED | IMMEDIATE}. Switching to
+   * IMMEDIATE validates the now-immediate deferrable constraints at once;
+   * a violation raises ORA-02291 and the switch does not take effect.
+   */
+  private executeSetConstraints(
+    stmt: import('../engine/parser/ASTNode').SetConstraintsStatement,
+  ): ResultSet {
+    if (stmt.mode === 'IMMEDIATE') {
+      const violated = this.constraints.findDeferredForeignKeyViolation(
+        this.context.currentSchema,
+        c => (stmt.all || (c.name && stmt.names?.includes(c.name))) === true,
+      );
+      if (violated) {
+        throw new OracleError(2291, `integrity constraint (${violated}) violated - parent key not found`);
+      }
+      this.constraintMode = 'IMMEDIATE';
+    } else {
+      this.constraintMode = 'DEFERRED';
+    }
+    return emptyResult('Constraint set.');
+  }
+
   private executeRemoteDml(
     stmt: import('../engine/parser/ASTNode').InsertStatement
       | import('../engine/parser/ASTNode').UpdateStatement
@@ -758,7 +850,21 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private commitActiveTransaction(): void {
+    // Deferred constraints are verified at COMMIT. A surviving violation rolls
+    // the whole transaction back (ORA-02091) and reports the cause (ORA-02291).
+    const violated = this.constraints.findDeferredForeignKeyViolation(
+      this.context.currentSchema, c => c.deferrable === true);
+    if (violated) {
+      this.flashbackCaptured.clear();
+      this.readOnlyTransaction = false;
+      this.constraintMode = 'DEFAULT';
+      this.txn.rollback();
+      throw new OracleError(2091,
+        `transaction rolled back\nORA-02291: integrity constraint (${violated}) violated - parent key not found`);
+    }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('COMMIT');
     this.txn.commit();
     for (const mv of this.catalog.getMaterializedViews()) {
@@ -774,6 +880,8 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Rollback complete.');
     }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
@@ -2130,6 +2238,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── MERGE ──────────────────────────────────────────────────────────
 
   private executeMerge(stmt: MergeStatement): ResultSet {
+    this.requireWritableTransaction();
     const targetSchema = this.resolveSchema(stmt.target.schema);
     const targetName = stmt.target.name.toUpperCase();
 
@@ -2341,6 +2450,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2352,7 +2462,7 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
         insertedCount++;
@@ -2383,7 +2493,7 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Columns the SELECT did not supply fall back to their DEFAULT.
         this.applyColumnDefaults(tableMeta, row, provided);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.storage.insertRow(schema, tableName, row);
         insertedCount++;
@@ -2444,6 +2554,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2468,7 +2579,7 @@ export class OracleExecutor extends BaseExecutor {
         // Pass the pre-update row so uniqueness checks can exclude it
         // from the existing-row set (otherwise an UPDATE that leaves
         // the PK column unchanged would self-conflict).
-        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
@@ -2480,6 +2591,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── DELETE ────────────────────────────────────────────────────────
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2800,7 +2912,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (cc.constraintType === 'UNIQUE') {
           constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
         } else if (cc.constraintType === 'REFERENCES') {
-          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete, deferrable: cc.deferrable, initiallyDeferred: cc.initiallyDeferred });
         }
       }
     }
@@ -2816,6 +2928,8 @@ export class OracleExecutor extends BaseExecutor {
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
         checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
+        deferrable: tc.deferrable,
+        initiallyDeferred: tc.initiallyDeferred,
       });
     }
 

@@ -12,7 +12,7 @@
  * of every INSERT/UPDATE.
  */
 
-import type { BaseStorage, StorageRow, TableMeta, ColumnMeta } from '../../engine/storage/BaseStorage';
+import type { BaseStorage, StorageRow, TableMeta, ColumnMeta, ConstraintMeta } from '../../engine/storage/BaseStorage';
 import type { Expression, SelectStatement } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
 import { OracleLexer } from '../OracleLexer';
@@ -66,6 +66,8 @@ export class ConstraintValidator {
     tableMeta: TableMeta,
     row: StorageRow,
     excludeRow?: StorageRow,
+    /** When supplied, FK constraints it selects are checked at COMMIT, not now. */
+    isDeferred?: (c: ConstraintMeta) => boolean,
   ): void {
     for (const constraint of tableMeta.constraints) {
       if (constraint.type === 'NOT_NULL' || constraint.type === 'PRIMARY_KEY') {
@@ -90,24 +92,12 @@ export class ConstraintValidator {
           }
         }
       }
-      // FOREIGN KEY: check parent key exists
+      // FOREIGN KEY: check parent key exists — unless this constraint is
+      // currently deferred, in which case it is verified at COMMIT instead.
       if (constraint.type === 'FOREIGN_KEY' && constraint.refTable && constraint.refColumns) {
-        const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
-        const fkValues = colIndexes.map(i => row[i]);
-        // Skip if any FK column is NULL (NULL FK is allowed)
-        if (fkValues.some(v => v === null)) continue;
-        const refSchema = schema; // FK references are within the same schema by default
-        const refTable = constraint.refTable;
-        if (this.storage.tableExists(refSchema, refTable)) {
-          const refMeta = this.storage.getTableMeta(refSchema, refTable)!;
-          const refColIndexes = constraint.refColumns.map(cn => refMeta.columns.findIndex(c => c.name === cn));
-          const parentRows = this.storage.findRowsByKey(refSchema, refTable, refColIndexes, fkValues)
-            ?? this.storage.getRows(refSchema, refTable);
-          const found = parentRows.some(pRow =>
-            refColIndexes.every((ri, i) => ri >= 0 && compareValues(pRow[ri], fkValues[i]) === 0));
-          if (!found) {
-            throw new OracleError(2291, `integrity constraint (${constraint.name}) violated - parent key not found`);
-          }
+        if (isDeferred?.(constraint)) continue;
+        if (!this.isForeignKeySatisfied(schema, tableMeta, constraint, row)) {
+          throw new OracleError(2291, `integrity constraint (${constraint.name}) violated - parent key not found`);
         }
       }
       // CHECK constraint — parsed once per expression, evaluated per row.
@@ -125,6 +115,51 @@ export class ConstraintValidator {
         }
       }
     }
+  }
+
+  /**
+   * True when a row's FOREIGN KEY value has a matching parent (or is exempt:
+   * NULL FK, or the parent table is absent). Shared by immediate validation
+   * and the deferred-at-COMMIT scan.
+   */
+  private isForeignKeySatisfied(
+    schema: string, tableMeta: TableMeta, constraint: ConstraintMeta, row: StorageRow,
+  ): boolean {
+    if (!constraint.refTable || !constraint.refColumns) return true;
+    const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
+    const fkValues = colIndexes.map(i => row[i]);
+    if (fkValues.some(v => v === null)) return true; // NULL FK is allowed
+    const refSchema = schema; // FK references are within the same schema by default
+    const refTable = constraint.refTable;
+    if (!this.storage.tableExists(refSchema, refTable)) return true;
+    const refMeta = this.storage.getTableMeta(refSchema, refTable)!;
+    const refColIndexes = constraint.refColumns.map(cn => refMeta.columns.findIndex(c => c.name === cn));
+    const parentRows = this.storage.findRowsByKey(refSchema, refTable, refColIndexes, fkValues)
+      ?? this.storage.getRows(refSchema, refTable);
+    return parentRows.some(pRow =>
+      refColIndexes.every((ri, i) => ri >= 0 && compareValues(pRow[ri], fkValues[i]) === 0));
+  }
+
+  /**
+   * Scan every table in `schema` for rows violating a deferrable FOREIGN KEY
+   * constraint selected by `select`. Returns the first violating constraint
+   * name, or null when all are satisfied — used to enforce deferred
+   * constraints at COMMIT (ORA-02291) or on SET CONSTRAINTS … IMMEDIATE.
+   */
+  findDeferredForeignKeyViolation(
+    schema: string, select: (c: ConstraintMeta) => boolean,
+  ): string | null {
+    for (const tableName of this.storage.getTableNames(schema)) {
+      const meta = this.storage.getTableMeta(schema, tableName);
+      if (!meta) continue;
+      for (const constraint of meta.constraints) {
+        if (constraint.type !== 'FOREIGN_KEY' || !select(constraint)) continue;
+        for (const row of this.storage.getRows(schema, tableName)) {
+          if (!this.isForeignKeySatisfied(schema, meta, constraint, row)) return constraint.name;
+        }
+      }
+    }
+    return null;
   }
 
   /** Validate data type constraints (VARCHAR2 length, NUMBER precision/scale). */

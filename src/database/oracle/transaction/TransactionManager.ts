@@ -34,6 +34,18 @@ interface TransactionSnapshot {
   tables: Map<string, Map<string, StorageRow[]>>;
 }
 
+/** Shallow row-set comparison (cell-by-cell) used to detect autonomous writes. */
+function rowsEqual(a: StorageRow[], b: StorageRow[] | undefined): boolean {
+  if (!b) return a.length === 0;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ra = a[i], rb = b[i];
+    if (ra.length !== rb.length) return false;
+    for (let j = 0; j < ra.length; j++) if (ra[j] !== rb[j]) return false;
+  }
+  return true;
+}
+
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
 export interface TransactionObserver {
   onBegin(txId: number): void;
@@ -119,6 +131,74 @@ export class TransactionManager {
     const key = name.toUpperCase();
     this.savepoints.delete(key);
     this.savepoints.set(key, this.captureSnapshot());
+  }
+
+  // ── Autonomous transactions ──────────────────────────────────────
+  //
+  // PRAGMA AUTONOMOUS_TRANSACTION suspends the caller's transaction, runs the
+  // unit in a fresh one, then resumes the caller. The autonomous unit's
+  // committed changes must survive a later rollback of the parent, so on exit
+  // we re-baseline the parent's undo snapshots for every table the autonomous
+  // unit changed (between enter and exit).
+
+  private autonomousStack: {
+    snapshot: TransactionSnapshot | null;
+    savepoints: Map<string, TransactionSnapshot>;
+    active: boolean;
+    txId: number;
+    startedAt: number;
+    /** Storage state captured at enter — the autonomous diff baseline. */
+    entry: TransactionSnapshot;
+  }[] = [];
+
+  /** Suspend the current transaction and start a fresh, empty one. */
+  enterAutonomous(): void {
+    this.autonomousStack.push({
+      snapshot: this.snapshot,
+      savepoints: this.savepoints,
+      active: this.active,
+      txId: this.txId,
+      startedAt: this.startedAt,
+      entry: this.captureSnapshot(),
+    });
+    this.snapshot = null;
+    this.savepoints = new Map();
+    this.active = false;
+  }
+
+  /** Restore the suspended caller transaction, preserving autonomous commits. */
+  exitAutonomous(): void {
+    const saved = this.autonomousStack.pop();
+    if (!saved) return;
+    // Any work the autonomous unit left uncommitted is discarded.
+    if (this.active) this.rollback();
+    // Re-baseline the caller's undo snapshots so a later parent ROLLBACK does
+    // not undo what the autonomous unit committed.
+    if (saved.snapshot) this.rebaseSnapshot(saved.snapshot, saved.entry);
+    for (const sp of saved.savepoints.values()) this.rebaseSnapshot(sp, saved.entry);
+    this.snapshot = saved.snapshot;
+    this.savepoints = saved.savepoints;
+    this.active = saved.active;
+    this.txId = saved.txId;
+    this.startedAt = saved.startedAt;
+  }
+
+  /**
+   * For every table whose current rows differ from `entry`, replace its
+   * baseline in `target` with the current rows — so restoring `target` keeps
+   * those (autonomously-committed) changes.
+   */
+  private rebaseSnapshot(target: TransactionSnapshot, entry: TransactionSnapshot): void {
+    for (const schema of this.storage.getSchemas()) {
+      for (const tableName of this.storage.getTableNames(schema)) {
+        const current = this.storage.getRows(schema, tableName);
+        const before = entry.tables.get(schema)?.get(tableName);
+        if (rowsEqual(current, before)) continue;
+        let tableMap = target.tables.get(schema);
+        if (!tableMap) { tableMap = new Map(); target.tables.set(schema, tableMap); }
+        tableMap.set(tableName, current.map(r => [...r]));
+      }
+    }
   }
 
   /** Deep-copy current row state of all tables for undo. */

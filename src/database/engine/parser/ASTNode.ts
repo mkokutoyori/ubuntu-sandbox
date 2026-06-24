@@ -248,6 +248,8 @@ export interface ColumnConstraint extends ASTNode {
   onDelete?: 'CASCADE' | 'SET_NULL';
   enable?: boolean;
   deferrable?: boolean;
+  /** INITIALLY DEFERRED (true) vs INITIALLY IMMEDIATE (false). */
+  initiallyDeferred?: boolean;
 }
 
 export interface TableConstraint extends ASTNode {
@@ -259,6 +261,9 @@ export interface TableConstraint extends ASTNode {
   refTable?: string;
   refColumns?: string[];
   onDelete?: 'CASCADE' | 'SET_NULL';
+  deferrable?: boolean;
+  /** INITIALLY DEFERRED (true) vs INITIALLY IMMEDIATE (false). */
+  initiallyDeferred?: boolean;
 }
 
 // ── Column Definition ───────────────────────────────────────────────
@@ -609,6 +614,15 @@ export interface SetTransactionStatement extends ASTNode {
   type: 'SetTransactionStatement';
   isolationLevel?: 'READ_COMMITTED' | 'SERIALIZABLE';
   readOnly?: boolean;
+}
+
+export interface SetConstraintsStatement extends ASTNode {
+  type: 'SetConstraintsStatement';
+  /** SET CONSTRAINTS ALL … */
+  all: boolean;
+  /** Named constraints (when not ALL). */
+  names?: string[];
+  mode: 'DEFERRED' | 'IMMEDIATE';
 }
 
 // ── Oracle Instance Commands ────────────────────────────────────────
@@ -1151,7 +1165,7 @@ export type Statement =
   | CreateUserStatement | AlterUserStatement | DropUserStatement
   | CreateRoleStatement | DropRoleStatement
   // Transaction
-  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
+  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement | SetConstraintsStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement

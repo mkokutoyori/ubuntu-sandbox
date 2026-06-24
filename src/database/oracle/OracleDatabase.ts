@@ -1019,6 +1019,8 @@ export class OracleDatabase implements SqlCommandHost {
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
       utlFile: this.makeAuthorizingUtlFile(executor),
+      beginAutonomousScope: () => executor.beginAutonomousScope(),
+      endAutonomousScope: () => executor.endAutonomousScope(),
     };
     return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
   }

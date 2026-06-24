@@ -54,6 +54,14 @@ export class PlsqlInterpreter {
   private execBlock(block: Block, parent: Scope): void {
     const scope = parent.child();
     for (const d of block.declarations) this.declare(d, scope);
+    // A block declaring PRAGMA AUTONOMOUS_TRANSACTION runs in its own
+    // transaction, suspended from the caller's, so its COMMIT is independent
+    // and survives a later rollback of the parent. This covers both stored
+    // units (whose pragma sits in the unit's declare section) and the
+    // wrapper block EXEC inlines a stored call into.
+    const autonomous = block.declarations.some(
+      d => d.kind === 'pragma' && d.name.toUpperCase() === 'AUTONOMOUS_TRANSACTION');
+    if (autonomous) this.host.beginAutonomousScope?.();
     try {
       this.execStmts(block.body, scope);
     } catch (e) {
@@ -71,6 +79,8 @@ export class PlsqlInterpreter {
         this.sqlcode = prevCode;
         this.sqlerrm = prevErr;
       }
+    } finally {
+      if (autonomous) this.host.endAutonomousScope?.();
     }
   }
 
