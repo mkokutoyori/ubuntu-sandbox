@@ -715,7 +715,7 @@ export abstract class EndHost extends Equipment {
   setDefaultGateway(gw: IPAddress): void {
     this.defaultGateway = gw;
 
-    // Remove old default route and add new one
+    const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
 
     // Find the interface the gateway is reachable through
@@ -739,11 +739,31 @@ export abstract class EndHost extends Equipment {
     });
 
     Logger.info(this.id, 'host:gateway', `${this.name}: default gateway set to ${gw}`);
+
+    const unchanged = previousDefault !== undefined
+      && previousDefault.nextHop?.equals(gw) === true
+      && previousDefault.iface === gwIface;
+    if (unchanged) return;
+    if (previousDefault) {
+      this.emitRouteRemoved({
+        destination: '0.0.0.0', mask: '0.0.0.0', iface: previousDefault.iface,
+      });
+    }
+    this.emitRouteAdded({
+      destination: '0.0.0.0', mask: '0.0.0.0',
+      gateway: gw.toString(), iface: gwIface, metric: 0, type: 'default',
+    });
   }
 
   clearDefaultGateway(): void {
     this.defaultGateway = null;
+    const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+    if (previousDefault) {
+      this.emitRouteRemoved({
+        destination: '0.0.0.0', mask: '0.0.0.0', iface: previousDefault.iface,
+      });
+    }
   }
 
   // ─── DHCP Client API ──────────────────────────────────────────

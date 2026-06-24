@@ -3,6 +3,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { IPAddress } from '@/network/core/types';
 
 function key(k: string, opts: { ctrlKey?: boolean } = {}): KeyEvent {
   return { key: k, ctrlKey: opts.ctrlKey ?? false, altKey: false, metaKey: false, shiftKey: false };
@@ -53,6 +54,40 @@ describe('Linux ip monitor — netlink event subscription on the async pipeline'
     await pc.executeCommand('ip route add 10.6.0.0/24 via 10.7.7.1');
     await tick();
     expect(texts(session).filter((t) => t.startsWith('[ROUTE]')).length).toBe(before);
+  });
+
+  it('reports the default route being added and deleted', async () => {
+    await pc.executeCommand('ip addr add 10.7.7.7/24 dev eth0');
+
+    session.setInput('ip monitor route');
+    session.handleKey(key('Enter'));
+    await tick();
+    expect(session.hasForegroundAsyncJob).toBe(true);
+
+    await pc.executeCommand('ip route add default via 10.7.7.1');
+    await waitFor(session, (l) => l.some((t) => t.startsWith('default')));
+    expect(texts(session).some((t) => t === 'default via 10.7.7.1 dev eth0')).toBe(true);
+
+    await pc.executeCommand('ip route del default');
+    await waitFor(session, (l) => l.some((t) => t.startsWith('Deleted default')));
+    expect(texts(session).some((t) => t === 'Deleted default dev eth0')).toBe(true);
+
+    session.handleKey(key('c', { ctrlKey: true }));
+    await tick();
+    expect(session.hasForegroundAsyncJob).toBe(false);
+  });
+
+  it('does not re-announce an unchanged default gateway', async () => {
+    await pc.executeCommand('ip addr add 10.8.8.8/24 dev eth0');
+    await pc.executeCommand('ip route add default via 10.8.8.1');
+
+    session.setInput('ip monitor route');
+    session.handleKey(key('Enter'));
+    await tick();
+
+    pc.setDefaultGateway(new IPAddress('10.8.8.1'));
+    await tick();
+    expect(texts(session).some((t) => t.startsWith('default'))).toBe(false);
   });
 
   it('a single object filter is unlabelled and only reports that object', async () => {

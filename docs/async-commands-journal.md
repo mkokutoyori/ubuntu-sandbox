@@ -506,8 +506,34 @@ job background + flag per-vty ; prompt libre ; session non monitorée muette ;
 Régressions : `cisco-debug-subscription`, `cisco-switch-debug-subscription`,
 `cli-terminal-length`, `logging-enhancements` — verts.
 
+## Event Subscription — PC Linux : `ip monitor route` couvre la route par défaut
+
+Complément à `ip monitor` : la route par défaut était le seul changement de
+table de routage muet (`setDefaultGateway` / `clearDefaultGateway` mutaient la
+table sans publier d'évènement, contrairement à `addStaticRoute` /
+`addDeviceRoute` / `removeRoute` déjà câblés). `ip monitor route` ratait donc
+l'ajout/suppression de la default — alors que c'est le changement de routage le
+plus fréquent (DHCP, `ip route add default`, `route add default gw`).
+
+- **Modèle** (`EndHost`) : `setDefaultGateway` capture l'ancienne default avant
+  de la remplacer, puis émet `host.routing.route-removed` (ancienne) +
+  `host.routing.route-added` (nouvelle, `type: 'default'`, destination
+  `0.0.0.0/0`) via les helpers `emitRouteRemoved` / `emitRouteAdded` existants.
+  `clearDefaultGateway` émet `host.routing.route-removed`. Aucune mécanique
+  parallèle : réutilise les mêmes points d'émission que les routes statiques.
+- **Idempotence** : `setDefaultGateway` est appelé à chaque renouvellement de
+  bail DHCP avec la même passerelle ; un garde (même next-hop + même interface)
+  supprime la double émission removed/added quand rien ne change — pas de churn
+  netlink fantôme dans `ip monitor`.
+- **Présentation** : aucune ligne nouvelle — `formatIpMonitorRoute` rend déjà
+  `cidr === 0` → `default via <gw> dev <iface>` / `Deleted default dev <iface>`.
+
+Validation : `linux-ip-monitor-stream-ui.test.ts` — 5/5 (2 nouveaux : default
+ajoutée puis supprimée streamée live ; passerelle inchangée non ré-annoncée).
+Régressions : `routing-table`, `hosts`, `linux-gateway-forwarding` (56),
+DHCP (`dhcp_complete`, `dhcp_fixes`, `dhcp-resolv-conf`, 63) verts. Aucune
+nouvelle erreur de lint (les 3 `any` d'`EndHost` sont pré-existants).
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
-- Câbler l'émission `host.routing.route-*` sur la route par défaut
-  (`setDefaultGateway`) pour que `ip monitor route` couvre aussi la default.
