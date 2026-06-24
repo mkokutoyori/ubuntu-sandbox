@@ -1,14 +1,3 @@
-/**
- * Oracle savepoint lifecycle edge cases — E2E (Playwright).
- *
- * Savepoints are scoped to the current transaction: COMMIT, a full ROLLBACK,
- * and the implicit COMMIT triggered by DDL all erase every savepoint, so a
- * later ROLLBACK TO that name must raise ORA-01086. Savepoint names are
- * case-insensitive identifiers.
- *
- * Real-Oracle assertions; simulator divergences surface as failures.
- */
-
 import { test, expect } from '@playwright/test';
 import { setupSqlplus, sql } from './helpers/oracleTerminal';
 
@@ -25,7 +14,6 @@ test.describe('Oracle savepoint lifecycle', () => {
     expect(await sql(page, 'SAVEPOINT sp;')).toContain('Savepoint created.');
     expect(await sql(page, 'COMMIT;')).toContain('Commit complete.');
 
-    // The savepoint died with the transaction.
     expect(await sql(page, 'ROLLBACK TO SAVEPOINT sp;')).toContain('ORA-01086');
   });
 
@@ -40,7 +28,7 @@ test.describe('Oracle savepoint lifecycle', () => {
   test('the implicit COMMIT from a DDL statement erases savepoints (ORA-01086 afterwards)', async ({ page }) => {
     await sql(page, 'INSERT INTO t VALUES (3);');
     await sql(page, 'SAVEPOINT sp;');
-    // DDL auto-commits, ending the transaction and its savepoints.
+
     expect(await sql(page, 'CREATE TABLE other (x NUMBER);')).toContain('Table created.');
 
     expect(await sql(page, 'ROLLBACK TO SAVEPOINT sp;')).toContain('ORA-01086');
@@ -51,7 +39,6 @@ test.describe('Oracle savepoint lifecycle', () => {
     expect(await sql(page, 'SAVEPOINT MySave;')).toContain('Savepoint created.');
     await sql(page, 'INSERT INTO t VALUES (5);');
 
-    // Rolling back to the same name in a different case must work (no ORA-01086).
     const rolled = await sql(page, 'ROLLBACK TO SAVEPOINT mYsAvE;');
     expect(rolled).toContain('Rollback complete.');
     expect(rolled).not.toContain('ORA-01086');
