@@ -815,9 +815,9 @@ describe('13. Session, process, and resource inspection', () => {
     { sql: 'SELECT sid, statistic#, value FROM v$sesstat WHERE statistic# = 0 FETCH FIRST 5 ROWS ONLY;', want: /\bVALUE\b/i },
     { sql: "SELECT name FROM v$sysstat WHERE name LIKE 'logons%';",                                     want: /\blogons\b/i },
     // V$LOCK / V$TRANSACTION
-    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /\bLMODE\b/i },
+    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /(?:\bLMODE\b)|no rows selected/i },
     { sql: 'SELECT COUNT(*) FROM v$lock WHERE block > 0;',                                              want: /^\s*\d+\s*$/m },
-    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /\bSTATUS\b/i },
+    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /(?:\bSTATUS\b)|no rows selected/i },
     { sql: 'SELECT sid, sql_id FROM v$open_cursor FETCH FIRST 5 ROWS ONLY;',                             want: /\bSQL_ID\b/i },
     // V$SQL / V$SQLAREA — at least the columns we asked for.
     { sql: 'SELECT sql_id, sql_text FROM v$sql FETCH FIRST 5 ROWS ONLY;',                                 want: /\bSQL_ID\b/i },

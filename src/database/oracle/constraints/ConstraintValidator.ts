@@ -66,7 +66,6 @@ export class ConstraintValidator {
     tableMeta: TableMeta,
     row: StorageRow,
     excludeRow?: StorageRow,
-    /** When supplied, FK constraints it selects are checked at COMMIT, not now. */
     isDeferred?: (c: ConstraintMeta) => boolean,
   ): void {
     for (const constraint of tableMeta.constraints) {
@@ -92,8 +91,6 @@ export class ConstraintValidator {
           }
         }
       }
-      // FOREIGN KEY: check parent key exists — unless this constraint is
-      // currently deferred, in which case it is verified at COMMIT instead.
       if (constraint.type === 'FOREIGN_KEY' && constraint.refTable && constraint.refColumns) {
         if (isDeferred?.(constraint)) continue;
         if (!this.isForeignKeySatisfied(schema, tableMeta, constraint, row)) {
@@ -117,11 +114,6 @@ export class ConstraintValidator {
     }
   }
 
-  /**
-   * True when a row's FOREIGN KEY value has a matching parent (or is exempt:
-   * NULL FK, or the parent table is absent). Shared by immediate validation
-   * and the deferred-at-COMMIT scan.
-   */
   private isForeignKeySatisfied(
     schema: string, tableMeta: TableMeta, constraint: ConstraintMeta, row: StorageRow,
   ): boolean {
@@ -140,12 +132,6 @@ export class ConstraintValidator {
       refColIndexes.every((ri, i) => ri >= 0 && compareValues(pRow[ri], fkValues[i]) === 0));
   }
 
-  /**
-   * Scan every table in `schema` for rows violating a deferrable FOREIGN KEY
-   * constraint selected by `select`. Returns the first violating constraint
-   * name, or null when all are satisfied — used to enforce deferred
-   * constraints at COMMIT (ORA-02291) or on SET CONSTRAINTS … IMMEDIATE.
-   */
   findDeferredForeignKeyViolation(
     schema: string, select: (c: ConstraintMeta) => boolean,
   ): string | null {

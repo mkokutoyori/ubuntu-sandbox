@@ -36,9 +36,7 @@ export interface ConstraintMeta {
   refColumns?: string[];
   checkExpression?: string;
   onDelete?: 'CASCADE' | 'SET_NULL';
-  /** Constraint may be deferred to COMMIT (DEFERRABLE). */
   deferrable?: boolean;
-  /** Default check timing for a DEFERRABLE constraint (INITIALLY DEFERRED). */
   initiallyDeferred?: boolean;
 }
 

@@ -193,12 +193,6 @@ export interface PlsqlHost {
   callBuiltin(name: string, rawArgsText: string, evaluatedArgs: PlsqlValue[]): boolean;
   /** Server-side file I/O backing the UTL_FILE package, when available. */
   utlFile?: UtlFileApi;
-  /**
-   * Enter/leave an autonomous-transaction scope (PRAGMA
-   * AUTONOMOUS_TRANSACTION): the calling transaction is suspended for the
-   * duration so the unit's COMMIT/ROLLBACK is independent, and its committed
-   * work survives a later rollback of the parent.
-   */
   beginAutonomousScope?(): void;
   endAutonomousScope?(): void;
 }

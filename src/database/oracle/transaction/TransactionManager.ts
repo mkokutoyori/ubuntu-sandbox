@@ -18,6 +18,7 @@
 
 import type { StorageRow } from '../../engine/storage/BaseStorage';
 import { OracleError } from '../../engine/types/DatabaseError';
+import type { TransactionCoordinator, CommittedImageProvider } from './TransactionCoordinator';
 
 /** The slice of the storage layer needed to capture/restore row snapshots. */
 export interface SnapshotableStorage {
@@ -34,7 +35,6 @@ interface TransactionSnapshot {
   tables: Map<string, Map<string, StorageRow[]>>;
 }
 
-/** Shallow row-set comparison (cell-by-cell) used to detect autonomous writes. */
 function rowsEqual(a: StorageRow[], b: StorageRow[] | undefined): boolean {
   if (!b) return a.length === 0;
   if (a.length !== b.length) return false;
@@ -53,7 +53,7 @@ export interface TransactionObserver {
   onRollback(txId: number): void;
 }
 
-export class TransactionManager {
+export class TransactionManager implements CommittedImageProvider {
   private snapshot: TransactionSnapshot | null = null;
   private savepoints: Map<string, TransactionSnapshot> = new Map();
   private active = false;
@@ -65,12 +65,23 @@ export class TransactionManager {
   constructor(
     private readonly storage: SnapshotableStorage,
     private readonly observer: TransactionObserver,
+    private readonly coordinator?: TransactionCoordinator,
   ) {}
 
   get isActive(): boolean { return this.active; }
 
   /** Valid while `isActive`; keeps the last id afterwards (matches event payloads). */
   get activeTxId(): number { return this.txId; }
+
+  committedImage(schema: string, tableName: string): StorageRow[] | null {
+    if (!this.active || !this.snapshot) return null;
+    const rows = this.snapshot.tables.get(schema)?.get(tableName);
+    return rows ? rows.map(r => [...r]) : null;
+  }
+
+  visibleRows(schema: string, tableName: string): StorageRow[] | null {
+    return this.coordinator?.committedImageFor(this, schema, tableName) ?? null;
+  }
 
   /** Begin an implicit transaction on first DML; no-op when already active. */
   begin(): void {
@@ -79,6 +90,7 @@ export class TransactionManager {
     this.active = true;
     this.txId = ++this.txIdCounter;
     this.startedAt = performance.now();
+    this.coordinator?.registerWriter(this);
     this.observer.onBegin(this.txId);
   }
 
@@ -89,6 +101,7 @@ export class TransactionManager {
     this.snapshot = null;
     this.savepoints.clear();
     this.active = false;
+    this.coordinator?.unregisterWriter(this);
     if (wasActive) this.observer.onCommit(this.txId, performance.now() - startedAt);
     return wasActive;
   }
@@ -100,6 +113,7 @@ export class TransactionManager {
     this.snapshot = null;
     this.savepoints.clear();
     this.active = false;
+    this.coordinator?.unregisterWriter(this);
     if (wasActive) this.observer.onRollback(this.txId);
     return wasActive;
   }
@@ -133,25 +147,15 @@ export class TransactionManager {
     this.savepoints.set(key, this.captureSnapshot());
   }
 
-  // ── Autonomous transactions ──────────────────────────────────────
-  //
-  // PRAGMA AUTONOMOUS_TRANSACTION suspends the caller's transaction, runs the
-  // unit in a fresh one, then resumes the caller. The autonomous unit's
-  // committed changes must survive a later rollback of the parent, so on exit
-  // we re-baseline the parent's undo snapshots for every table the autonomous
-  // unit changed (between enter and exit).
-
   private autonomousStack: {
     snapshot: TransactionSnapshot | null;
     savepoints: Map<string, TransactionSnapshot>;
     active: boolean;
     txId: number;
     startedAt: number;
-    /** Storage state captured at enter — the autonomous diff baseline. */
     entry: TransactionSnapshot;
   }[] = [];
 
-  /** Suspend the current transaction and start a fresh, empty one. */
   enterAutonomous(): void {
     this.autonomousStack.push({
       snapshot: this.snapshot,
@@ -166,14 +170,10 @@ export class TransactionManager {
     this.active = false;
   }
 
-  /** Restore the suspended caller transaction, preserving autonomous commits. */
   exitAutonomous(): void {
     const saved = this.autonomousStack.pop();
     if (!saved) return;
-    // Any work the autonomous unit left uncommitted is discarded.
     if (this.active) this.rollback();
-    // Re-baseline the caller's undo snapshots so a later parent ROLLBACK does
-    // not undo what the autonomous unit committed.
     if (saved.snapshot) this.rebaseSnapshot(saved.snapshot, saved.entry);
     for (const sp of saved.savepoints.values()) this.rebaseSnapshot(sp, saved.entry);
     this.snapshot = saved.snapshot;
@@ -181,13 +181,9 @@ export class TransactionManager {
     this.active = saved.active;
     this.txId = saved.txId;
     this.startedAt = saved.startedAt;
+    if (this.active) this.coordinator?.registerWriter(this);
   }
 
-  /**
-   * For every table whose current rows differ from `entry`, replace its
-   * baseline in `target` with the current rows — so restoring `target` keeps
-   * those (autonomously-committed) changes.
-   */
   private rebaseSnapshot(target: TransactionSnapshot, entry: TransactionSnapshot): void {
     for (const schema of this.storage.getSchemas()) {
       for (const tableName of this.storage.getTableNames(schema)) {

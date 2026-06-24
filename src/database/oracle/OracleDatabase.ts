@@ -90,6 +90,7 @@ export interface ConnectionInfo {
   authMethod?: string;
   /** OS identity captured at logon, replayed in the LOGOFF trace. */
   osCtx?: OsSecurityContext;
+  executor?: OracleExecutor;
 }
 
 /** Stored PL/SQL unit (procedure, function, or package) */
@@ -491,6 +492,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -619,6 +621,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -674,6 +677,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -683,6 +687,7 @@ export class OracleDatabase implements SqlCommandHost {
   disconnect(sid: number): void {
     const conn = this.connections.get(sid);
     if (conn) {
+      conn.executor?.commitOnLogoff();
       this.catalog.recordLogoff(conn.username, sid);
       const role = conn.role ?? 'NORMAL';
       this.instance.logAlertEvent(

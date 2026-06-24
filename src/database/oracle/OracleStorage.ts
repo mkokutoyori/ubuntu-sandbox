@@ -8,6 +8,7 @@ import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/
 import type { IndexValueSemantics } from '../engine/storage/RowIndexCache';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
 import { ORACLE_CONFIG } from './OracleConfig';
+import { TransactionCoordinator } from './transaction/TransactionCoordinator';
 import { parseSize } from './views/_fileSize';
 import { implicitToDate } from './functions/valueUtils';
 
@@ -71,11 +72,16 @@ export function normaliseTablespace(
 
 export class OracleStorage extends BaseStorage {
   private tablespaces: Map<string, TablespaceMeta> = new Map();
+  private readonly txnCoordinator = new TransactionCoordinator();
 
   constructor() {
     super();
     this.initDefaultTablespaces();
     this.initDual();
+  }
+
+  getTransactionCoordinator(): TransactionCoordinator {
+    return this.txnCoordinator;
   }
 
   private initDefaultTablespaces(): void {

@@ -116,13 +116,8 @@ export class OracleExecutor extends BaseExecutor {
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
-  /** True while the current transaction was opened `SET TRANSACTION READ ONLY`;
-   *  any DML then raises ORA-01456. Reset when the transaction ends. */
   private readOnlyTransaction = false;
-  /** Session constraint-check timing, set by SET CONSTRAINTS … {DEFERRED|IMMEDIATE}.
-   *  DEFAULT honours each constraint's INITIALLY DEFERRED/IMMEDIATE. */
   private constraintMode: 'DEFAULT' | 'IMMEDIATE' | 'DEFERRED' = 'DEFAULT';
-  /** Saved READ ONLY flags while autonomous scopes are active (nesting). */
   private autonomousReadOnlyStack: boolean[] = [];
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
@@ -155,7 +150,7 @@ export class OracleExecutor extends BaseExecutor {
         this.emitTxnCommitted(txId, durationMs);
       },
       onRollback: txId => this.emitTxnRolledBack(txId),
-    });
+    }, storage.getTransactionCoordinator());
     this.userAdmin = new UserAdminExecutor({
       storage, catalog, instance, context,
       privileges: this.privileges,
@@ -731,13 +726,6 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Commit complete.');
   }
 
-  /**
-   * SET TRANSACTION READ ONLY | READ WRITE | ISOLATION LEVEL …
-   *
-   * Must be the first statement of its transaction — otherwise ORA-01453.
-   * READ ONLY opens a read-only transaction in which DML is rejected with
-   * ORA-01456 until it ends (COMMIT/ROLLBACK).
-   */
   private executeSetTransaction(
     stmt: import('../engine/parser/ASTNode').SetTransactionStatement,
   ): ResultSet {
@@ -746,8 +734,6 @@ export class OracleExecutor extends BaseExecutor {
     }
     if (stmt.readOnly === true) {
       this.readOnlyTransaction = true;
-      // Establish the (read-only) transaction so it owns a consistent point
-      // and a second SET TRANSACTION is correctly rejected.
       this.txn.begin();
     } else {
       this.readOnlyTransaction = false;
@@ -755,31 +741,32 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Transaction set.');
   }
 
-  /** Guard the write-path DML executors against a READ ONLY transaction. */
   private requireWritableTransaction(): void {
     if (this.readOnlyTransaction) {
       throw new OracleError(1456, 'may not perform insert/delete/update operation inside a READ ONLY transaction');
     }
   }
 
-  /**
-   * Enter an autonomous-transaction scope (PRAGMA AUTONOMOUS_TRANSACTION):
-   * suspend the caller's transaction and read-only/constraint state so the
-   * unit runs — and commits — independently.
-   */
   beginAutonomousScope(): void {
     this.autonomousReadOnlyStack.push(this.readOnlyTransaction);
     this.readOnlyTransaction = false;
     this.txn.enterAutonomous();
   }
 
-  /** Leave the autonomous scope, restoring the caller's transaction state. */
   endAutonomousScope(): void {
     this.txn.exitAutonomous();
     this.readOnlyTransaction = this.autonomousReadOnlyStack.pop() ?? false;
   }
 
-  /** Whether a constraint's integrity check is currently deferred to COMMIT. */
+  commitOnLogoff(): void {
+    if (!this.txn.isActive) return;
+    try {
+      this.commitActiveTransaction();
+    } catch {
+      this.txn.rollback();
+    }
+  }
+
   private isConstraintDeferred(c: import('../engine/storage/BaseStorage').ConstraintMeta): boolean {
     if (!c.deferrable) return false;
     if (this.constraintMode === 'IMMEDIATE') return false;
@@ -787,16 +774,10 @@ export class OracleExecutor extends BaseExecutor {
     return c.initiallyDeferred === true;
   }
 
-  /** Reusable predicate passed to the ConstraintValidator on the DML write path. */
   private readonly deferredConstraintPredicate = (
     c: import('../engine/storage/BaseStorage').ConstraintMeta,
   ): boolean => this.isConstraintDeferred(c);
 
-  /**
-   * SET CONSTRAINTS {ALL | name…} {DEFERRED | IMMEDIATE}. Switching to
-   * IMMEDIATE validates the now-immediate deferrable constraints at once;
-   * a violation raises ORA-02291 and the switch does not take effect.
-   */
   private executeSetConstraints(
     stmt: import('../engine/parser/ASTNode').SetConstraintsStatement,
   ): ResultSet {
@@ -850,8 +831,6 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private commitActiveTransaction(): void {
-    // Deferred constraints are verified at COMMIT. A surviving violation rolls
-    // the whole transaction back (ORA-02091) and reports the cause (ORA-02291).
     const violated = this.constraints.findDeferredForeignKeyViolation(
       this.context.currentSchema, c => c.deferrable === true);
     if (violated) {
@@ -1470,7 +1449,7 @@ export class OracleExecutor extends BaseExecutor {
     const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
-    let storageRows = this.storage.getRows(schema, tableName);
+    let storageRows = this.txn.visibleRows(schema, tableName) ?? this.storage.getRows(schema, tableName);
     if (ref.asOf) {
       storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
     }

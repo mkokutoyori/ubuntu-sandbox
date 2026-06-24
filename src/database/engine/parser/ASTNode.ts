@@ -248,7 +248,6 @@ export interface ColumnConstraint extends ASTNode {
   onDelete?: 'CASCADE' | 'SET_NULL';
   enable?: boolean;
   deferrable?: boolean;
-  /** INITIALLY DEFERRED (true) vs INITIALLY IMMEDIATE (false). */
   initiallyDeferred?: boolean;
 }
 
@@ -262,7 +261,6 @@ export interface TableConstraint extends ASTNode {
   refColumns?: string[];
   onDelete?: 'CASCADE' | 'SET_NULL';
   deferrable?: boolean;
-  /** INITIALLY DEFERRED (true) vs INITIALLY IMMEDIATE (false). */
   initiallyDeferred?: boolean;
 }
 
@@ -618,9 +616,7 @@ export interface SetTransactionStatement extends ASTNode {
 
 export interface SetConstraintsStatement extends ASTNode {
   type: 'SetConstraintsStatement';
-  /** SET CONSTRAINTS ALL … */
   all: boolean;
-  /** Named constraints (when not ALL). */
   names?: string[];
   mode: 'DEFERRED' | 'IMMEDIATE';
 }

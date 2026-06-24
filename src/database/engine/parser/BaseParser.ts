@@ -844,12 +844,6 @@ export abstract class BaseParser {
     throw this.error('Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)');
   }
 
-  /**
-   * Parse a trailing constraint state clause:
-   *   [[NOT] DEFERRABLE] [INITIALLY {DEFERRED | IMMEDIATE}]
-   * Consumes nothing when none of the keywords are present (so callers can
-   * apply it unconditionally at the tail of any constraint).
-   */
   protected parseDeferrableClause(): { deferrable?: boolean; initiallyDeferred?: boolean } {
     let deferrable: boolean | undefined;
     let initiallyDeferred: boolean | undefined;
@@ -868,7 +862,6 @@ export abstract class BaseParser {
     return { deferrable, initiallyDeferred };
   }
 
-  /** Merge a trailing deferrable clause into a freshly-built constraint node. */
   protected applyDeferrable<T extends { deferrable?: boolean; initiallyDeferred?: boolean }>(c: T): T {
     const d = this.parseDeferrableClause();
     if (d.deferrable !== undefined) c.deferrable = d.deferrable;
@@ -1583,8 +1576,6 @@ export abstract class BaseParser {
     // SET ROLE r [, r2…] | SET ROLE NONE | SET ROLE ALL [EXCEPT …]
     // SET CONSTRAINT[S] {ALL | name [,…]} {DEFERRED | IMMEDIATE}
     if (this.matchKeyword('TRANSACTION')) {
-      // Capture the access mode / isolation level so the executor can enforce
-      // READ ONLY (ORA-01456) and the "first statement" rule (ORA-01453).
       let readOnly: boolean | undefined;
       let isolationLevel: 'READ_COMMITTED' | 'SERIALIZABLE' | undefined;
       if (this.matchKeyword('READ')) {
@@ -1595,12 +1586,10 @@ export abstract class BaseParser {
         if (this.matchKeyword('SERIALIZABLE')) isolationLevel = 'SERIALIZABLE';
         else { this.matchKeyword('READ'); this.matchKeyword('COMMITTED'); isolationLevel = 'READ_COMMITTED'; }
       }
-      // NAME 'x' / USE ROLLBACK SEGMENT … — accepted, no effect.
       this.consumeRestOfStatement();
       return { type: 'SetTransactionStatement', position: pos, readOnly, isolationLevel };
     }
     if (this.matchKeyword('CONSTRAINTS') || this.matchKeyword('CONSTRAINT')) {
-      // SET CONSTRAINTS {ALL | name [,…]} {DEFERRED | IMMEDIATE}
       let all = false;
       const names: string[] = [];
       if (this.matchKeyword('ALL')) {
@@ -1615,7 +1604,6 @@ export abstract class BaseParser {
       return { type: 'SetConstraintsStatement', position: pos, all, names: all ? undefined : names, mode };
     }
     if (this.matchKeyword('ROLE')) {
-      // SET ROLE — accepted; role state is not tracked here.
       this.consumeRestOfStatement();
       return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
     }

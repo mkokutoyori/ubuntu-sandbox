@@ -75,6 +75,7 @@ describe('staleness and DBMS_MVIEW.REFRESH', () => {
   it('REFRESH re-executes the defining query and restores FRESH', () => {
     run('CREATE MATERIALIZED VIEW hr.r_mv AS SELECT COUNT(*) AS n FROM hr.emp;');
     run("INSERT INTO hr.emp VALUES (4, 'IT', 3000);");
+    run('COMMIT;');
 
     const out = run("EXEC DBMS_MVIEW.REFRESH('HR.R_MV')");
     expect(out).toMatch(/PL\/SQL procedure successfully completed/);
