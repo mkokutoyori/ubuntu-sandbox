@@ -92,7 +92,7 @@ import { DynamicUserTable } from './nss/DynamicUserTable';
 import { SystemdNssSource } from './nss/SystemdNssSource';
 import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
 import { runGetent } from './nss/GetentCommand';
-import type { NssHostEntry } from './nss/types';
+import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 
 /** Commands that commonly read from stdin when piped. */
@@ -873,6 +873,11 @@ export class LinuxCommandExecutor {
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
+  private resolveServiceName(port: number, proto: string): string | null {
+    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyport?.(port, proto));
+    return r.status === 'SUCCESS' && r.entry ? r.entry.name : null;
+  }
+
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
@@ -3073,8 +3078,8 @@ export class LinuxCommandExecutor {
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
+      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       // @deprecated — The following stubs (ping, traceroute, nslookup, dig,

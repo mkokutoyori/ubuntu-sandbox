@@ -6,9 +6,39 @@
  */
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
-import type { SocketTable, SocketEntry } from '../../core/SocketTable';
+import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
 import { broadcastAddress } from '../../core/ip';
+
+export type ServiceResolver = (port: number, proto: string) => string | null;
+
+const SS_TCP_STATE: Record<SocketState, string> = {
+  LISTEN: 'LISTEN', ESTABLISHED: 'ESTAB', SYN_SENT: 'SYN-SENT', SYN_RECEIVED: 'SYN-RECV',
+  FIN_WAIT_1: 'FIN-WAIT-1', FIN_WAIT_2: 'FIN-WAIT-2', CLOSE_WAIT: 'CLOSE-WAIT',
+  CLOSING: 'CLOSING', LAST_ACK: 'LAST-ACK', TIME_WAIT: 'TIME-WAIT', CLOSED: 'UNCONN',
+};
+
+function ssStateLabel(sock: SocketEntry): string {
+  if (sock.protocol === 'udp') return sock.state === 'ESTABLISHED' ? 'ESTAB' : 'UNCONN';
+  return SS_TCP_STATE[sock.state] ?? sock.state;
+}
+
+function socketVisible(state: SocketState, wantAll: boolean, wantListening: boolean): boolean {
+  if (wantListening) return state === 'LISTEN';
+  if (wantAll) return true;
+  return state !== 'LISTEN';
+}
+
+function formatEndpoint(
+  addr: string, port: number, proto: string,
+  numeric: boolean, resolveService?: ServiceResolver,
+): string {
+  if (!numeric && resolveService && port > 0) {
+    const name = resolveService(port, proto);
+    if (name) return `${addr}:${name}`;
+  }
+  return `${addr}:${port}`;
+}
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -110,6 +140,7 @@ export function cmdNetstat(
   ctx: IpNetworkContext | null,
   isServer: boolean,
   socketTable?: SocketTable | null,
+  resolveService?: ServiceResolver,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -178,9 +209,17 @@ export function cmdNetstat(
   const showAll = !wantTcp && !wantUdp;
 
   const showProcesses = hasFlag('p');
+  const numeric = hasFlag('n');
+  const wantAll = hasFlag('a') || args.includes('--all');
+  const wantListening = hasFlag('l') || args.includes('--listening');
 
+  const banner = wantListening
+    ? 'Active Internet connections (only servers)'
+    : wantAll
+      ? 'Active Internet connections (servers and established)'
+      : 'Active Internet connections (w/o servers)';
   const lines = [
-    'Active Internet connections (only servers)',
+    banner,
     'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name',
   ];
 
@@ -190,9 +229,12 @@ export function cmdNetstat(
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
+      if (!socketVisible(sock.state, wantAll, wantListening)) continue;
 
-      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
-      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
+      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
+      const remoteAddr = sock.state === 'LISTEN'
+        ? '0.0.0.0:*'
+        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
       const stateCol   = isTcp ? sock.state : '';
       const pidCol     = showProcesses && sock.pid ? `${sock.pid}/${sock.processName}` : '';
 
@@ -276,7 +318,10 @@ function formatNetstatLine(
 
 // ─── ss ─────────────────────────────────────────────────────────────
 
-export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTable | null): string {
+export function cmdSs(
+  args: string[], isServer: boolean,
+  socketTable?: SocketTable | null, resolveService?: ServiceResolver,
+): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
     args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
@@ -292,6 +337,8 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   const wantUdp       = hasFlag('u') || args.includes('--udp');
   const showProcesses = hasFlag('p') || args.includes('--processes');
   const summary       = args.includes('-s') || args.includes('--summary');
+  const numeric       = hasFlag('n') || args.includes('--numeric');
+  const wantAll       = hasFlag('a') || args.includes('--all');
   const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
@@ -343,13 +390,17 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
-      if (wantListening && sock.state !== 'LISTEN') continue;
-      if ((stateFilter === 'established' || stateFilter === 'connected')
-          && sock.state !== 'ESTABLISHED') continue;
+      if (stateFilter === 'established' || stateFilter === 'connected') {
+        if (sock.state !== 'ESTABLISHED') continue;
+      } else if (!socketVisible(sock.state, wantAll, wantListening)) {
+        continue;
+      }
 
-      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
-      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
-      const stateCol   = sock.state;
+      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
+      const remoteAddr = sock.state === 'LISTEN'
+        ? '0.0.0.0:*'
+        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
+      const stateCol   = ssStateLabel(sock);
       const procCol    = showProcesses && sock.pid
         ? ` users:(("${sock.processName}",pid=${sock.pid},fd=3))`
         : '';
