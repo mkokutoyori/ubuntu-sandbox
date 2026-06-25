@@ -25,6 +25,7 @@
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, type TracerouteHopResult, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
+import type { NssHostEntry } from './linux/nss/types';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -1065,39 +1066,18 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
 
-  /**
-   * NSS-style resolution: literal IP → /etc/hosts → DNS via /etc/resolv.conf.
-   * The DNS step sends a real UDP/53 query through the simulated network,
-   * so unreachable servers time out instead of magically answering.
-   */
   private async resolveHostnameOverWire(name: string): Promise<IPAddress | null> {
-    // 1. Already a valid IPv4 address → pass through
-    try { return new IPAddress(name); } catch { /* not an IP */ }
+    try { return new IPAddress(name); } catch { void 0; }
 
-    // 2. /etc/hosts lookup (IPv4 only — the netkernel speaks IPv4).
-    const hostsContent = this.executor.readFile('/etc/hosts');
-    if (hostsContent) {
-      const ip = HostsFile.parse(hostsContent).resolve(name, 4);
-      if (ip) {
-        try { return new IPAddress(ip); } catch { /* malformed entry */ }
+    const r = this.executor.nss.lookup<NssHostEntry[]>(
+      'hosts', s => s.gethostbyname?.(name, 2),
+    );
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) {
+        if (h.addressFamily !== 2) continue;
+        try { return new IPAddress(h.address); } catch { void 0; }
       }
     }
-
-    // 3. DNS fallback via /etc/resolv.conf (read at query time, so edits
-    //    to the file are honoured immediately, like glibc's resolver).
-    const resolvConf = this.executor.readFile('/etc/resolv.conf');
-    const match = resolvConf?.match(/nameserver\s+(\S+)/);
-    if (match) {
-      let server: IPAddress | null = null;
-      try { server = new IPAddress(match[1]); } catch { /* malformed nameserver */ }
-      if (server) {
-        const response = await this.queryDnsServer(server, name, 'A');
-        if (response && response.rcode === 'NOERROR' && response.answers.length > 0) {
-          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
-        }
-      }
-    }
-
     return null;
   }
 
