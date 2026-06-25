@@ -65,6 +65,7 @@ export interface SshClientOpts {
   };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
   sourceHome?: string;
+  resolveName?: (name: string) => string | null;
   /**
    * Shell environment of the `ssh` invocation (exported variables plus
    * `VAR=val` prefix assignments). Drives SendEnv/AcceptEnv forwarding.
@@ -558,7 +559,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     }
   }
   const stillLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const lookupHost = stillLoopback ? opts.sourceIp : host;
+  let lookupHost = stillLoopback ? opts.sourceIp : host;
+  if (!stillLoopback && opts.resolveName && !IPAddress.isValid(host)) {
+    const resolved = opts.resolveName(host);
+    if (resolved) lookupHost = resolved;
+  }
   const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
     // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
@@ -566,9 +571,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // look like IPs but have out-of-range octets ("10.0.0.999") are
     // treated as hostnames by the resolver, so they keep the original
     // name-resolution error.
-    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-    const isValidIPv4 = m !== null
-      && m.slice(1).every(o => Number(o) >= 0 && Number(o) <= 255);
+    const isValidIPv4 = IPAddress.isValid(lookupHost);
     return {
       output: isValidIPv4
         ? `ssh: connect to host ${host} port ${port}: No route to host\n`

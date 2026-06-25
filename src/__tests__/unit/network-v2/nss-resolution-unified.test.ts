@@ -69,4 +69,30 @@ describe('Unified NSS name resolution (R1)', () => {
     const p = await pc1.executeCommand('ping -c 1 -W 1 pc2');
     expect(p).toMatch(/Name or service not known/);
   });
+
+  it('ssh resolves names through NSS and agrees with getent on /etc/hosts', async () => {
+    pc1.executor.userMgr.currentUid = 0;
+    pc1.executor.userMgr.currentUser = 'root';
+    await pc1.executeCommand('echo "10.0.0.200 wonder" >> /etc/hosts');
+
+    const g = await pc1.executeCommand('getent hosts wonder');
+    expect(g).toMatch(/10\.0\.0\.200/);
+
+    const s = await pc1.executeCommand('ssh wonder');
+    expect(s).toMatch(/No route to host/);
+    expect(s).not.toMatch(/Could not resolve hostname/);
+  });
+
+  it('ssh still resolves a topology host through NSS (no regression)', async () => {
+    const s = await pc1.executeCommand('ssh pc2');
+    expect(s).not.toMatch(/Could not resolve hostname/);
+  });
+
+  it('ssh tells a valid unowned IP (No route) apart from an invalid one (cannot resolve)', async () => {
+    const noRoute = await pc1.executeCommand('ssh 10.0.0.250');
+    expect(noRoute).toMatch(/No route to host/);
+
+    const badIp = await pc1.executeCommand('ssh 10.0.0.999');
+    expect(badIp).toMatch(/Could not resolve hostname/);
+  });
 });

@@ -90,6 +90,8 @@ import { FilesNssSource } from './nss/FilesNssSource';
 import { DnsNssSource } from './nss/DnsNssSource';
 import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
 import { runGetent } from './nss/GetentCommand';
+import type { NssHostEntry } from './nss/types';
+import { IPAddress } from '../../core/types';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -892,6 +894,14 @@ export class LinuxCommandExecutor {
           this.vfs.writeFile(p, c, uid, gid, umask),
         resolveInode: (p: string) => this.vfs.resolveInode(p),
         mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
+      },
+      resolveName: (name: string): string | null => {
+        if (IPAddress.isValid(name)) return null;
+        const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+        if (r.status === 'SUCCESS' && r.entry) {
+          for (const h of r.entry) if (h.addressFamily === 2) return h.address;
+        }
+        return null;
       },
     };
   }
