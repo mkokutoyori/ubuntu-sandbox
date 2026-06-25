@@ -93,6 +93,13 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
 }
 
+async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
+  t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  if (t.foreground.currentInputMode.type === 'password') {
+    t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
+  }
+}
+
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
   if (t.currentInputMode.type === 'password') {
@@ -117,7 +124,7 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'cat /etc/passwd | head -n 5');
     expectAnyLine(t, /^root:/);
-    await typeSub(t, 'sudo tail -n 5 /var/log/auth.log');
+    await sudoSub(t, 'sudo tail -n 5 /var/log/auth.log', 'alice');
     expectAnyLine(t, /sshd/);
     await typeSub(t, 'systemctl is-active ssh');
     expectAnyLine(t, /^active$/);
@@ -148,9 +155,9 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo useradd -m zoe');
-    await typeSub(t, 'sudo gpasswd -a zoe sudo');
-    await typeSub(t, 'sudo passwd zoe');
+    await sudoSub(t, 'sudo useradd -m zoe', 'alice');
+    await sudoSub(t, 'sudo gpasswd -a zoe sudo', 'alice');
+    await sudoSub(t, 'sudo passwd zoe', 'alice');
     await typeSub(t, 'echo "zoepw\\nzoepw" | sudo passwd --stdin zoe 2>/dev/null || true');
     await typeSub(t, 'getent passwd zoe');
     expectAnyLine(t, /^zoe:/);
@@ -268,7 +275,7 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     await typeSub(t, 'SELECT instance_name FROM v$instance;');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
-    await typeSub(t, 'sudo cat /var/log/auth.log');
+    await sudoSub(t, 'sudo cat /var/log/auth.log', 'alice');
     expectAnyLine(t, /Accepted password for alice/);
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);

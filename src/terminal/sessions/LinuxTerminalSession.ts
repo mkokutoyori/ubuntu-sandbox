@@ -25,6 +25,7 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -329,6 +330,34 @@ export class LinuxTerminalSession extends TerminalSession {
 
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? this.currentUser;
+  }
+
+  protected override applyRemoteEnv(env: Record<string, string>): void {
+    const shellEnv = (this.shell as unknown as { env?: { set(k: string, v: string): void } } | null)?.env;
+    if (!shellEnv) return;
+    for (const [k, v] of Object.entries(env)) shellEnv.set(k, v);
+  }
+
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) {
+      this.currentUser = user;
+      this.currentPath = `/home/${user}`;
+      return;
+    }
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user });
+    this.currentUser = user;
+    this.currentPath = this.shell.cwd;
+    if (this.rootBash) {
+      this.rootBash.deactivate();
+      this.rootBash.dispose();
+      this.rootBash = null;
+    }
+  }
+
   /**
    * Route every command through the per-terminal shell session so that
    * cwd / env / su stack mutations stay local to this terminal. Falls back
@@ -354,6 +383,7 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
@@ -465,6 +495,7 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -504,6 +535,8 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -589,6 +622,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
     if (this.inputMode.type === 'editor') return false;
+
+    if (e.key === 'd' && e.ctrlKey && this.input === '') {
+      if (this.endRemoteSession()) return true;
+      if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
+      this._onRequestClose?.();
+      return true;
+    }
 
     return super.handleKey(e);
   }
@@ -1056,6 +1096,7 @@ export class LinuxTerminalSession extends TerminalSession {
         this.popRemoteDevice();
         return;
       }
+      if (this.endRemoteSession()) return;
       // Signal close — the view/manager will handle it
       this._onRequestClose?.();
       return;
@@ -1959,7 +2000,7 @@ export class LinuxTerminalSession extends TerminalSession {
           });
           const decision = sshHost.evaluate(request);
           if (decision.outcome !== 'accepted') {
-            this.addLine(`${user}@${host}: Permission denied (password).`, 'error');
+            this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
             return;
           }
           ctx.metadata.set('xvendor_push', JSON.stringify({ host, user }));

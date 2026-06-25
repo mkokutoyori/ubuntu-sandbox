@@ -54,7 +54,10 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.notify();
   }
 
-  getPrompt(): string { return this.prompt; }
+  getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
+    return this.prompt;
+  }
 
   protected abstract getDefaultPrompt(): string;
 
@@ -73,6 +76,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Input mode ─────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.isFlowActive) {
       return this.inputMode; // set by advanceFlow()
     }

@@ -56,6 +56,13 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
 }
 
+async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
+  t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  if (t.foreground.currentInputMode.type === 'password') {
+    t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
+  }
+}
+
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
   if (t.currentInputMode.type === 'password') {
@@ -88,9 +95,9 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new LinuxTerminalSession('t', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxB/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
     await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
-    expect(t.getPrompt()).toMatch(/bob@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/bob@linuxSrv/);
   });
 
   test('§A02 — Linux→Linux→Linux double hop unwinds one frame at a time', async () => {
@@ -100,9 +107,9 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
     await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
     await typeRoot(t, 'exit');
-    expect(t.getPrompt()).toMatch(/alice@linuxB/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
     await typeRoot(t, 'exit');
-    expect(t.getPrompt()).toMatch(/@linuxA/);
+    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
   });
 
   test('§A03 — Multi-hop auth.log shows both transit logins', async () => {
@@ -173,7 +180,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo useradd -m zoe');
+    await sudoSub(t, 'sudo useradd -m zoe', 'alice');
     expect(linuxSrv.userExists('zoe')).toBe(true);
   });
 
@@ -182,7 +189,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo groupadd devs');
+    await sudoSub(t, 'sudo groupadd devs', 'alice');
     const out = await linuxSrv.executeCommand('getent group devs');
     expect(out).toMatch(/^devs:/);
   });
@@ -232,7 +239,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo iptables -L');
+    await sudoSub(t, 'sudo iptables -L', 'alice');
     expectAnyLine(t, /Chain INPUT|Chain FORWARD|Chain OUTPUT/);
   });
 
@@ -241,8 +248,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo iptables -A INPUT -p tcp --dport 8080 -j DROP');
-    await typeSub(t, 'sudo iptables -L INPUT -n');
+    await sudoSub(t, 'sudo iptables -A INPUT -p tcp --dport 8080 -j DROP', 'alice');
+    await sudoSub(t, 'sudo iptables -L INPUT -n', 'alice');
     expectAnyLine(t, /DROP\s+tcp.*dpt:8080/);
   });
 
@@ -251,8 +258,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo ufw enable');
-    await typeSub(t, 'sudo ufw status');
+    await sudoSub(t, 'sudo ufw enable', 'alice');
+    await sudoSub(t, 'sudo ufw status', 'alice');
     expectAnyLine(t, /Status:\s+active/);
   });
 
@@ -263,7 +270,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     await typeSub(t, 'logger -t test "ssh-debug-marker"');
-    await typeSub(t, 'sudo tail -n 5 /var/log/syslog');
+    await sudoSub(t, 'sudo tail -n 5 /var/log/syslog', 'alice');
     expectAnyLine(t, /ssh-debug-marker/);
   });
 
@@ -374,7 +381,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await typeRoot(t1, 'powershell');
     await typeSub(t1, 'cd D:\\');
     await typeRoot(t2, 'powershell');
-    expect(t1.getPrompt()).not.toBe(t2.getPrompt());
+    expect(t1.foreground.getPrompt()).not.toBe(t2.foreground.getPrompt());
   });
 
   test('§A30 — Windows→Linux: open then re-open SSH session keeps fresh history', async () => {
@@ -407,7 +414,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   // ─── Configuration reload semantics ────────────────────────────────
@@ -428,7 +435,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh root@10.0.0.3', 'admin');
-    expect(t.getPrompt()).toMatch(/root@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/root@linuxSrv/);
   });
 
   test('§A35 — Windows→Linux: AllowUsers list narrows access', async () => {
@@ -438,7 +445,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   // ─── Filesystem coherence across SSH ───────────────────────────────
@@ -500,7 +507,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/^alice@linuxSrv:/);
+    expect(t.foreground.getPrompt()).toMatch(/^alice@linuxSrv:/);
   });
 
   test('§A42 — Windows→Linux: prompt suffix is "$ " for non-root', async () => {
@@ -508,7 +515,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/\$\s*$/);
+    expect(t.foreground.getPrompt()).toMatch(/\$\s*$/);
   });
 
   test('§A43 — Windows→Linux as root (PermitRootLogin yes): prompt suffix is "#"', async () => {
@@ -518,7 +525,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh root@10.0.0.3', 'admin');
-    expect(t.getPrompt()).toMatch(/#\s*$/);
+    expect(t.foreground.getPrompt()).toMatch(/#\s*$/);
   });
 
   // ─── Tail / cat / view operations ──────────────────────────────────
@@ -549,7 +556,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await typeSub(t, 'exit');
     await winSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
     await typeSub(t, 'exit');
-    expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(t.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   test('§A47 — Three sequential logins, last user wins', async () => {
@@ -560,7 +567,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
       await winSshLogin(t, `ssh ${u}@10.0.0.3`, u);
       await typeSub(t, 'exit');
     }
-    expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(t.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   // ─── Cross-vendor PowerShell ───────────────────────────────────────

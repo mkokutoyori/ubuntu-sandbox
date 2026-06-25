@@ -14,13 +14,9 @@
  *   manager.closeTerminal(sessionId);
  */
 
-import { Equipment, isFullyImplemented } from '@/network';
-import type { ICLIDevice } from '@/network';
+import { Equipment } from '@/network';
 import { TerminalSession } from './TerminalSession';
-import { LinuxTerminalSession } from './LinuxTerminalSession';
-import { CiscoTerminalSession } from './CiscoTerminalSession';
-import { HuaweiTerminalSession } from './HuaweiTerminalSession';
-import { WindowsTerminalSession } from './WindowsTerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
 
 let nextSessionId = 1;
@@ -157,32 +153,11 @@ export class TerminalManager {
   openTerminal(device: Equipment): string | null {
     if (!device.getIsPoweredOn()) return null;
 
-    const osType = device.getOSType();
-    const deviceType = device.getDeviceType();
     const deviceId = device.getId();
 
     const sessionId = `session-${nextSessionId++}`;
-    let session: TerminalSession;
-
-    switch (osType) {
-      case 'linux':
-        session = new LinuxTerminalSession(sessionId, device);
-        break;
-      case 'cisco-ios':
-        session = new CiscoTerminalSession(sessionId, device as ICLIDevice);
-        break;
-      case 'huawei-vrp':
-        session = new HuaweiTerminalSession(sessionId, device as ICLIDevice);
-        break;
-      case 'windows':
-        session = new WindowsTerminalSession(sessionId, device);
-        break;
-      default:
-        if (!isFullyImplemented(deviceType)) return null;
-        // Fallback to linux for fully-implemented but unknown OS types
-        session = new LinuxTerminalSession(sessionId, device);
-        break;
-    }
+    const session = createSessionForDevice(device, sessionId);
+    if (!session) return null;
 
     this.sessions.set(sessionId, session);
     const deviceSessions = this.deviceSessions.get(deviceId) || [];

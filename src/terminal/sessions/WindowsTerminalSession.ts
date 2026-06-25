@@ -18,6 +18,7 @@ import {
   withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
@@ -163,6 +164,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) {
       return this.activeSubShell.getPrompt();
     }
@@ -183,6 +185,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -216,6 +219,8 @@ export class WindowsTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -798,13 +803,28 @@ export class WindowsTerminalSession extends TerminalSession {
     }
     this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
+    if (pending.device.getOSType() === 'linux') {
+      const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
+        const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, pending.user, pending.host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+          SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
+        });
+        this.pendingSshPush = null;
+        this.sshPasswordAttempts = 0;
+        this.inputMode = { type: 'normal' };
+        this.notify();
+        return;
+      }
+    }
+
     installDefaultShells();
     const primaryKind = this.pickPrimaryShellKind(pending.device);
     let activeShell: ISubShell;
     if (ShellFactory.has(primaryKind)) {
-      // Compute the OpenSSH env strings so a remote `echo $SSH_CONNECTION`
-      // returns "<client_ip> <client_port> <server_ip> <server_port>"
-      // just like a real ssh login.
       const clientIp = this.firstLocalIp() ?? '0.0.0.0';
       const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
       const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
@@ -818,8 +838,6 @@ export class WindowsTerminalSession extends TerminalSession {
       });
       activeShell = new ShellSubShellAdapter(xshell);
     } else {
-      // Vendor without a new-layer Shell yet — fall back to the legacy
-      // RemoteDeviceSubShell with the vendor prompt strategy.
       const strategy = this.pickRemoteStrategy(pending.device);
       activeShell = new RemoteDeviceSubShell(
         pending.device, pending.user, pending.host, strategy,

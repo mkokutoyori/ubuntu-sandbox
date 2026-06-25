@@ -328,9 +328,40 @@ export abstract class TerminalSession {
 
   protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
 
+  private _remoteLabel: string | null = null;
+
+  get isRemoteChild(): boolean { return this._parent !== null; }
+
+  protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
+
+  protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
+
+  adoptRemoteChild(
+    child: TerminalSession,
+    user: string,
+    hostLabel: string,
+    env?: Record<string, string>,
+  ): void {
+    child.prepareAsRemoteUser(user);
+    if (env) child.applyRemoteEnv(env);
+    child._remoteLabel = hostLabel;
+    child.attachAsChildOf(this);
+  }
+
+  endRemoteSession(): boolean {
+    if (this._parent === null) return false;
+    const label = this._remoteLabel ?? 'remote';
+    this.addLine('logout');
+    this.addLine(`Connection to ${label} closed.`);
+    this.detachFromHost();
+    this.dispose();
+    return true;
+  }
+
   // ── Public API ──────────────────────────────────────────────────
 
   setInput(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInput(value); return; }
     this.input = sanitiseInput(value);
     this.notify();
   }
@@ -340,14 +371,20 @@ export abstract class TerminalSession {
   /** Current effective input mode. Override in subclasses for flow-aware modes. */
   get currentInputMode(): InputMode { return this.inputMode; }
 
-  getPasswordBuf(): string { return this._passwordBuf; }
+  getPasswordBuf(): string {
+    return this._children.length > 0 ? this.foreground.getPasswordBuf() : this._passwordBuf;
+  }
   setPasswordBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setPasswordBuf(value); return; }
     this._passwordBuf = value;
     this.notify();
   }
 
-  getInputBuf(): string { return this._inputBuf; }
+  getInputBuf(): string {
+    return this._children.length > 0 ? this.foreground.getInputBuf() : this._inputBuf;
+  }
   setInputBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInputBuf(value); return; }
     this._inputBuf = value;
     this.notify();
   }
@@ -905,6 +942,10 @@ export abstract class TerminalSession {
     }
   }
 
+  protected getFlowUser(): string {
+    return this.device.getCurrentUser?.() ?? 'user';
+  }
+
   // ── Interactive flow engine (shared by Linux + CLI sessions) ─────
 
   /**
@@ -932,7 +973,7 @@ export abstract class TerminalSession {
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
-      currentUser: this.device.getCurrentUser?.() ?? 'user',
+      currentUser: this.getFlowUser(),
       currentUid: this.device.getCurrentUid?.() ?? 0,
       metadata: new Map<string, unknown>([
         ['original_command', command],

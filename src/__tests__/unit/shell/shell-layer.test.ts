@@ -308,11 +308,12 @@ describe('§D — Reported bugs that the new shell layer fixes', () => {
     const term = new WindowsTerminalSession('t5', lan.winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    // The active sub-shell now exposes getCompletions; the helper
-    // returns the device's completion candidates (non-empty for a
-    // partial command typed against the remote bash).
-    const sub = (term as unknown as { activeSubShell: { getCompletions?: (s: string) => string[] } }).activeSubShell;
-    expect(typeof sub?.getCompletions).toBe('function');
+    // Completion runs against the remote's own session: a partial command
+    // typed at the foreground completes using the remote device.
+    term.setInput('ech');
+    term.handleKey(key('Tab'));
+    await flush();
+    expect(term.foreground.input).toMatch(/^echo/);
   });
 });
 

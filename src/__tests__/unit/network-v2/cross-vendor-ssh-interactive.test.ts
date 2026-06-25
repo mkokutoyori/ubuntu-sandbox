@@ -174,12 +174,9 @@ async function flush(times = 8): Promise<void> {
 
 /** Type a line at the active prompt and press Enter. */
 async function type(session: TerminalSession, line: string): Promise<void> {
-  // Active sub-shell drives input through `_inputBuf` (setInputBuf);
-  // the root cmd / bash prompt uses `input` (setInput).
-  // We set both so the call works in either mode — the unused buffer
-  // is cleared on the next Enter anyway.
-  session.setInput(line);
-  session.setInputBuf(line);
+  const fg = session.foreground;
+  fg.setInput(line);
+  fg.setInputBuf(line);
   session.handleKey(key('Enter'));
   await flush();
 }
@@ -253,7 +250,7 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
   test('ssh user@linuxA: terminal lands in the remote prompt after password', async () => {
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     // After the push, the prompt belongs to the Linux remote — not C:\
-    expect(term.getPrompt()).toMatch(/user@linuxA:~\$/);
+    expect(term.foreground.getPrompt()).toMatch(/user@linuxA:~\$/);
     // Banner + remote shell visible; no "Connection to … closed" yet.
     expectExcludes(term, /Connection to 10\.0\.0\.1 closed/);
   });
@@ -279,9 +276,9 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
 
   test('exit in the remote shell pops back to cmd.exe with the closing line', async () => {
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    expect(term.getPrompt()).toMatch(/user@linuxA/);
+    expect(term.foreground.getPrompt()).toMatch(/user@linuxA/);
     await type(term, 'exit');
-    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
     expectContains(term, /Connection to 10\.0\.0\.1 closed/);
   });
 
@@ -419,7 +416,7 @@ describe('§5 — User identity travels through the SSH push', () => {
     const term = row.build();
     await term.init();
     await sshLogin(term, row.cmd, row.pw);
-    expect(term.getPrompt()).toMatch(row.promptRe);
+    expect(term.foreground.getPrompt()).toMatch(row.promptRe);
   });
 });
 
