@@ -45,7 +45,6 @@ import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
-import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
 import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
@@ -281,8 +280,6 @@ export class LinuxCommandExecutor {
   readonly captureLog = new PacketCaptureLog();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
   private sessionTable: SshSessionTable | null = null;
-  /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
-  private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
   private servicePortProjection: ServicePortProjection | null = null;
   /** Records port bind / release activity into the system log, reactively. */
@@ -1185,11 +1182,10 @@ export class LinuxCommandExecutor {
     // SSH port-forwards bind their listeners on the very same table, so
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
     this.forwarding = new SshForwardingTable(table);
-    // Now that the socket table exists, keep the port subsystem coherent on
-    // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
-    // files that always reflect the live table.
+    // Now that the socket table exists, expose /proc/net/{tcp,udp} as
+    // generated files that always reflect the live table. `/etc/services`
+    // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.seedServicesFile(this.ianaServices);
     portsFs.registerProcNet(table);
   }
 

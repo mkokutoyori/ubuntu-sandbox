@@ -148,6 +148,24 @@ export class NameServiceSwitch {
     return { status: 'NOTFOUND' };
   }
 
+  lookupVia<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssResult<T> | undefined,
+  ): NssResult<T> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL' };
+    return invoke(src) ?? { status: 'UNAVAIL' };
+  }
+
+  enumerateVia<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+  ): NssEnumResult<T> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL', entries: [] };
+    return invoke(src) ?? { status: 'UNAVAIL', entries: [] };
+  }
+
   /**
    * Run an enumeration against every source. Concatenates results in
    * declaration order. SUCCESS once at least one source returned

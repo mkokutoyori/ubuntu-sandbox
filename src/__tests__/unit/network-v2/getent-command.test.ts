@@ -360,6 +360,126 @@ describe('getent initgroups', () => {
   });
 });
 
+describe('getent -s service selection', () => {
+  let bus: EventBus;
+  let pc: LinuxPC;
+
+  beforeEach(() => {
+    EquipmentRegistry.resetInstance();
+    bus = new EventBus();
+    __setDefaultEventBus(bus);
+    EquipmentRegistry.getInstance().setEventBus(bus);
+    pc = new LinuxPC('pc1');
+    pc.setEventBus(bus);
+    pc.powerOn();
+  });
+
+  it('-s files consults only the files source', async () => {
+    const r = await getent(pc, '-s files hosts localhost');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/127\.0\.0\.1.*localhost/);
+  });
+
+  it('-s dns consults only dns — /etc/hosts entries are skipped', async () => {
+    const r = await getent(pc, '-s dns hosts localhost');
+    expect(r.exitCode).toBe(2);
+    expect(r.output).toBe('');
+  });
+
+  it('-s db:service overrides only the named database (hosts:dns)', async () => {
+    const r = await getent(pc, '-s hosts:dns hosts localhost');
+    expect(r.exitCode).toBe(2);
+  });
+
+  it('-s db:service leaves other databases on their default chain', async () => {
+    const r = await getent(pc, '-s hosts:dns passwd root');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/^root:x:0:0:/);
+  });
+
+  it('--service=dns is parsed like -s dns', async () => {
+    const r = await getent(pc, '--service=dns hosts localhost');
+    expect(r.exitCode).toBe(2);
+  });
+});
+
+describe('getent ahosts', () => {
+  let bus: EventBus;
+  let pc: LinuxPC;
+
+  beforeEach(() => {
+    EquipmentRegistry.resetInstance();
+    bus = new EventBus();
+    __setDefaultEventBus(bus);
+    EquipmentRegistry.getInstance().setEventBus(bus);
+    pc = new LinuxPC('pc1');
+    pc.setEventBus(bus);
+    pc.powerOn();
+  });
+
+  it('lookup uses the glibc "%-15s %-6s %s" layout', async () => {
+    const r = await getent(pc, 'ahosts localhost');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/^127\.0\.0\.1 {7}STREAM localhost$/m);
+    expect(r.output).toMatch(/^127\.0\.0\.1 {7}DGRAM$/m);
+    expect(r.output).toMatch(/^127\.0\.0\.1 {7}RAW$/m);
+  });
+
+  it('with no key, enumerates /etc/hosts (v4 + v6)', async () => {
+    const r = await getent(pc, 'ahosts');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/^127\.0\.0\.1 {7}STREAM localhost$/m);
+    expect(r.output).toContain('::1');
+  });
+
+  it('ahostsv4 enumerates only IPv4 records', async () => {
+    const r = await getent(pc, 'ahostsv4');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toContain('127.0.0.1');
+    expect(r.output).not.toContain('::1');
+  });
+
+  it('ahostsv6 enumerates only IPv6 records', async () => {
+    const r = await getent(pc, 'ahostsv6');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toContain('::1');
+    expect(r.output).not.toMatch(/^127\.0\.0\.1/m);
+  });
+});
+
+describe('getent column layout (glibc widths)', () => {
+  let bus: EventBus;
+  let pc: LinuxPC;
+
+  beforeEach(() => {
+    EquipmentRegistry.resetInstance();
+    bus = new EventBus();
+    __setDefaultEventBus(bus);
+    EquipmentRegistry.getInstance().setEventBus(bus);
+    pc = new LinuxPC('pc1');
+    pc.setEventBus(bus);
+    pc.powerOn();
+  });
+
+  it('services name column is %-21s with single-space aliases', async () => {
+    const r = await getent(pc, 'services http');
+    const line = r.output.split('\n').find(l => l.startsWith('http'))!;
+    expect(line).toMatch(/^.{22}80\/tcp www$/);
+  });
+
+  it('protocols name column is %-21s', async () => {
+    const r = await getent(pc, 'protocols tcp');
+    const line = r.output.split('\n').find(l => l.startsWith('tcp'))!;
+    expect(line).toMatch(/^.{22}6 TCP$/);
+  });
+
+  it('rpc name column is %-15s with single-space aliases', async () => {
+    const r = await getent(pc, 'rpc portmapper');
+    const line = r.output.split('\n').find(l => l.startsWith('portmapper'))!;
+    expect(line).toMatch(/^.{16}100000 portmap sunrpc rpcbind$/);
+  });
+});
+
 describe('getent unknown database', () => {
   let bus: EventBus;
   let pc: LinuxPC;
@@ -374,9 +494,9 @@ describe('getent unknown database', () => {
     pc.powerOn();
   });
 
-  it('returns exit 2 with a "Unknown database" message', async () => {
+  it('returns exit 1 with a "Unknown database" message (glibc: database unknown → 1)', async () => {
     const r = await getent(pc, 'totallyfake');
-    expect(r.exitCode).toBe(2);
+    expect(r.exitCode).toBe(1);
     expect(r.output).toMatch(/Unknown database/i);
   });
 });
