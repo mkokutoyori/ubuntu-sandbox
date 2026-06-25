@@ -259,6 +259,7 @@ export abstract class TerminalSession {
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
 
   listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
+    if (this._children.length > 0) return this.foreground.listAttachedStreams();
     return this.inputHostImpl.listStreams();
   }
 
