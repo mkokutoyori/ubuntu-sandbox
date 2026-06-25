@@ -878,6 +878,11 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.name : null;
   }
 
+  private resolveServicePort(name: string): number | null {
+    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyname?.(name));
+    return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
+  }
+
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
@@ -3079,7 +3084,7 @@ export class LinuxCommandExecutor {
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
       case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
+      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (n) => this.resolveServicePort(n)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       // @deprecated — The following stubs (ping, traceroute, nslookup, dig,

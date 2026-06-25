@@ -40,6 +40,53 @@ function formatEndpoint(
   return `${addr}:${port}`;
 }
 
+export type PortResolver = (name: string) => number | null;
+
+type PortCompare = (a: number, b: number) => boolean;
+const SS_FILTER_OPS: Record<string, PortCompare> = {
+  '=': (a, b) => a === b, '==': (a, b) => a === b, eq: (a, b) => a === b,
+  '!=': (a, b) => a !== b, ne: (a, b) => a !== b,
+  '>': (a, b) => a > b, gt: (a, b) => a > b,
+  '<': (a, b) => a < b, lt: (a, b) => a < b,
+  '>=': (a, b) => a >= b, ge: (a, b) => a >= b,
+  '<=': (a, b) => a <= b, le: (a, b) => a <= b,
+};
+
+interface PortPredicate { side: 'sport' | 'dport'; cmp: PortCompare; port: number; }
+
+function parsePortValue(token: string, resolvePort?: PortResolver): number | null {
+  let v = token.startsWith(':') ? token.slice(1) : token;
+  if (v.includes(':')) v = v.slice(v.lastIndexOf(':') + 1);
+  if (v === '' || v === '*') return null;
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  return resolvePort?.(v) ?? null;
+}
+
+function parsePortFilters(args: string[], resolvePort?: PortResolver): PortPredicate[] {
+  const out: PortPredicate[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const side = args[i];
+    if (side !== 'sport' && side !== 'dport') continue;
+    let op = '=';
+    let valueToken = args[i + 1];
+    if (valueToken && SS_FILTER_OPS[valueToken]) { op = valueToken; valueToken = args[i + 2]; i += 2; }
+    else { i += 1; }
+    if (!valueToken) continue;
+    const port = parsePortValue(valueToken, resolvePort);
+    if (port === null) continue;
+    out.push({ side, cmp: SS_FILTER_OPS[op], port });
+  }
+  return out;
+}
+
+function matchesPortFilters(sock: SocketEntry, filters: PortPredicate[]): boolean {
+  for (const f of filters) {
+    const p = f.side === 'sport' ? sock.localPort : sock.remotePort;
+    if (!f.cmp(p, f.port)) return false;
+  }
+  return true;
+}
+
 // ─── ifconfig ───────────────────────────────────────────────────────
 
 const IFF_UP = 0x1;
@@ -321,6 +368,7 @@ function formatNetstatLine(
 export function cmdSs(
   args: string[], isServer: boolean,
   socketTable?: SocketTable | null, resolveService?: ServiceResolver,
+  resolvePort?: PortResolver,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -384,6 +432,8 @@ export function cmdSs(
   const lines: string[] = [];
   lines.push('State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process');
 
+  const portFilters = parsePortFilters(args, resolvePort);
+
   if (socketTable) {
     for (const sock of socketTable.getAll()) {
       const isTcp = sock.protocol === 'tcp';
@@ -395,6 +445,7 @@ export function cmdSs(
       } else if (!socketVisible(sock.state, wantAll, wantListening)) {
         continue;
       }
+      if (!matchesPortFilters(sock, portFilters)) continue;
 
       const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
       const remoteAddr = sock.state === 'LISTEN'

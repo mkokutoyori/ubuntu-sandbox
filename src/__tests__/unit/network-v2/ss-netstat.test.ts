@@ -61,6 +61,41 @@ describe('ss — service names, states, filtering', () => {
   });
 });
 
+const servicePorts: Record<string, number> = { ssh: 22, http: 80, domain: 53 };
+const resolveServicePort = (name: string): number | null => servicePorts[name] ?? null;
+
+describe('ss — sport/dport filters', () => {
+  it('sport = :22 keeps only source port 22', () => {
+    const out = cmdSs(['-tan', 'sport', '=', ':22'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/0\.0\.0\.0:22\b/);
+    expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+
+  it('dport = :80 keeps only peer port 80', () => {
+    const out = cmdSs(['-tan', 'dport', '=', ':80'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/10\.0\.0\.2:80\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+
+  it('sport != :22 excludes source port 22', () => {
+    const out = cmdSs(['-tan', 'sport', '!=', ':22'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+    expect(out).toMatch(/:54321\b/);
+  });
+
+  it('sport gt :1024 keeps high source ports', () => {
+    const out = cmdSs(['-tan', 'sport', 'gt', ':1024'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/:54321\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+
+  it('resolves a service name in the filter (sport = :ssh)', () => {
+    const out = cmdSs(['-tan', 'sport', '=', ':ssh'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/0\.0\.0\.0:22\b/);
+    expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+});
+
 describe('netstat — service names, filtering, header', () => {
   it('resolves the port to a service name without -n', () => {
     const out = cmdNetstat(['-lt'], null, false, fixture(), resolveService);
@@ -113,5 +148,16 @@ describe('ss/netstat — end-to-end through the real NSS /etc/services', () => {
   it('ss -lt resolves :22 to ssh via /etc/services', async () => {
     const out = await pc.executeCommand('ss -lt');
     expect(out).toMatch(/:ssh\b/);
+  });
+
+  it('ss -tln sport = :22 filters to the sshd listener', async () => {
+    const out = await pc.executeCommand('ss -tln sport = :22');
+    expect(out).toMatch(/:22\b/);
+  });
+
+  it('ss -tln sport = :443 matches nothing', async () => {
+    const out = await pc.executeCommand('ss -tln sport = :443');
+    expect(out).not.toMatch(/:443\b/);
+    expect(out).not.toMatch(/:22\b/);
   });
 });
