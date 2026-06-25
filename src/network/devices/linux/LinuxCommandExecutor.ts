@@ -88,6 +88,8 @@ import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
 import { FilesNssSource } from './nss/FilesNssSource';
 import { DnsNssSource } from './nss/DnsNssSource';
+import { DynamicUserTable } from './nss/DynamicUserTable';
+import { SystemdNssSource } from './nss/SystemdNssSource';
 import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
 import { runGetent } from './nss/GetentCommand';
 import type { NssHostEntry } from './nss/types';
@@ -254,6 +256,8 @@ export class LinuxCommandExecutor {
   private readonly filesNss: FilesNssSource;
   /** Shared `dns` source — the owning machine injects its wire resolver. */
   readonly dnsNss = new DnsNssSource();
+  readonly dynamicUsers = new DynamicUserTable();
+  readonly systemdNss = new SystemdNssSource(this.dynamicUsers);
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -374,7 +378,7 @@ export class LinuxCommandExecutor {
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
-    this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
+    this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
@@ -400,8 +404,9 @@ export class LinuxCommandExecutor {
     this.nss = new NameServiceSwitch(
       this.vfs,
       new Map([
-        ['files', this.filesNss],
-        ['dns',   this.dnsNss],
+        ['files',   this.filesNss],
+        ['dns',     this.dnsNss],
+        ['systemd', this.systemdNss],
       ]),
     );
     this.nss.seedConfigIfMissing();
@@ -670,8 +675,9 @@ export class LinuxCommandExecutor {
     (this as { nss: NameServiceSwitch }).nss = new NameServiceSwitch(
       this.vfs,
       new Map([
-        ['files', this.filesNss],
-        ['dns',   this.dnsNss],
+        ['files',   this.filesNss],
+        ['dns',     this.dnsNss],
+        ['systemd', this.systemdNss],
       ]),
       bus,
       deviceId,

@@ -16,6 +16,7 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
+import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
 /** systemd-equivalent activation state for a unit. */
@@ -45,6 +46,7 @@ export interface ServiceUnit {
   execReload?: string;
   user: string;
   group: string;
+  dynamicUser?: boolean;
   wantedBy: string[];
   after: string[];
   requires: string[];
@@ -350,6 +352,7 @@ export class LinuxServiceManager {
     private readonly vfs: VirtualFileSystem,
     private readonly processMgr: LinuxProcessManager,
     private readonly opts: ServiceManagerOptions,
+    private readonly dynamicUsers?: DynamicUserTable,
   ) {
     this.bootstrapDefaultUnits();
     this.daemonReload();
@@ -626,8 +629,9 @@ export class LinuxServiceManager {
         execStart: parsed.execStart ?? '/bin/true',
         execStop: parsed.execStop,
         execReload: parsed.execReload,
-        user: parsed.user ?? 'root',
-        group: parsed.group ?? 'root',
+        user: parsed.user ?? (parsed.dynamicUser ? name : 'root'),
+        group: parsed.group ?? (parsed.dynamicUser ? name : 'root'),
+        dynamicUser: parsed.dynamicUser ?? false,
         wantedBy: parsed.wantedBy ?? [],
         after: parsed.after ?? [],
         requires: parsed.requires ?? [],
@@ -720,8 +724,13 @@ export class LinuxServiceManager {
     const prev = u.state;
     u.state = 'activating';
     const userEntry = u.user || 'root';
-    const uid = userEntry === 'root' ? 0 : 1;
-    const gid = userEntry === 'root' ? 0 : 1;
+    let uid = userEntry === 'root' ? 0 : 1;
+    let gid = userEntry === 'root' ? 0 : 1;
+    if (u.dynamicUser && this.dynamicUsers) {
+      const allocated = this.dynamicUsers.allocate(userEntry);
+      uid = allocated.uid;
+      gid = allocated.gid;
+    }
     // The process the unit leaves behind: the daemon it forks when the
     // listener spec declares one (lsnrctl start → tnslsnr), else ExecStart.
     const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
@@ -749,6 +758,9 @@ export class LinuxServiceManager {
     if (u.mainPid !== undefined) {
       this.processMgr.kill(u.mainPid, 'SIGTERM');
       u.mainPid = undefined;
+    }
+    if (u.dynamicUser && this.dynamicUsers) {
+      this.dynamicUsers.release(u.user || u.name);
     }
     u.activeSince = undefined;
     u.state = 'inactive';
@@ -844,6 +856,7 @@ interface ParsedUnit {
   execReload?: string;
   user?: string;
   group?: string;
+  dynamicUser?: boolean;
   wantedBy?: string[];
   after?: string[];
   requires?: string[];
@@ -877,6 +890,7 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'ExecReload') out.execReload = val;
       else if (key === 'User') out.user = val;
       else if (key === 'Group') out.group = val;
+      else if (key === 'DynamicUser') out.dynamicUser = /^(yes|true|1|on)$/i.test(val);
       else if (key === 'Restart') out.restart = val as RestartPolicy;
     } else if (section === 'Install') {
       if (key === 'WantedBy') out.wantedBy = val.split(/\s+/);

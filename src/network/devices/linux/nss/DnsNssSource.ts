@@ -14,9 +14,8 @@
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { DnsWireResponse } from '../../../dns/DnsWire';
 import type { INssSource } from './INssSource';
+import { nssNotFound as NOTFOUND } from './nssResult';
 import type { NssEnumResult, NssHostEntry, NssResult } from './types';
-
-const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
 
 export interface DnsWireStubResolver {
   /** Usable `nameserver` entries from /etc/resolv.conf (loopback stubs excluded). */

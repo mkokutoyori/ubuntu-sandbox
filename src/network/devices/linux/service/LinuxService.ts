@@ -27,6 +27,7 @@ export class LinuxService extends OSService implements ServiceUnit {
   declare state: ServiceState;
   declare enabled: EnabledState;
   declare restart: RestartPolicy;
+  dynamicUser: boolean;
 
   constructor(init: ServiceUnit) {
     super({
@@ -49,6 +50,7 @@ export class LinuxService extends OSService implements ServiceUnit {
     });
     if (init.mainPid !== undefined) this.mainPid = init.mainPid;
     if (init.activeSince !== undefined) this.activeSince = init.activeSince;
+    this.dynamicUser = init.dynamicUser ?? false;
   }
 
   /** Linux supervisor only resurrects these three restart policies. */
