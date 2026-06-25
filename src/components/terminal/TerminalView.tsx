@@ -20,7 +20,7 @@ import { VimEditor } from '@/components/editors/VimEditor';
 import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/terminal/sessions/TerminalSession';
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
+import { parseAnsiToSegments, stripAnsi } from '@/terminal/core/OutputFormatter';
 
 // ─── Hook: subscribe to a session's state changes ─────────────────
 
@@ -556,11 +556,6 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
 
 /** Render a single output line — exported for unit tests. */
 export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
-  // Echo line: the prompt is stored separately in `promptText` so it
-  // can be styled (and so test introspection on `text` sees only the
-  // typed command). Linux-style prompts decompose into user@host : path
-  // promptChar — preserve the colored rendering the legacy regex
-  // detector applied to whole-line scrollback strings.
   if (line.promptText !== undefined) {
     const linuxPromptMatch = sessionType === 'linux'
       ? line.promptText.match(/^(\S+)@(\S+):(.+?)([$#])\s*$/)
@@ -605,26 +600,23 @@ export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; se
     );
   }
 
-  // Linux: ANSI color support
   if (sessionType === 'linux') {
     return <LinuxLineRenderer line={line} theme={theme} />;
   }
 
-  // Cisco/Huawei
   if (sessionType === 'cisco' || sessionType === 'huawei') {
     let color = theme.textColor;
     if (line.type === 'error') color = theme.errorColor;
     else if (line.type === 'boot') color = theme.bootColor || theme.textColor;
     else if (line.type === 'more') color = theme.pagerColor || '#facc15';
-    return <pre className="whitespace-pre-wrap leading-5" style={{ color, margin: 0, fontFamily: 'inherit' }}>{line.text}</pre>;
+    return <pre className="whitespace-pre-wrap leading-5" style={{ color, margin: 0, fontFamily: 'inherit' }}>{stripAnsi(line.text)}</pre>;
   }
 
-  // Windows
   let color = theme.textColor;
   if (line.type === 'error') color = theme.errorColor;
   else if (line.type === 'warning') color = theme.warningColor || '#cca700';
   else if (line.type === 'ps-header') color = '#eeedf0';
-  return <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit', lineHeight: '1.25', color }}>{line.text}</pre>;
+  return <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit', lineHeight: '1.25', color }}>{stripAnsi(line.text)}</pre>;
 });
 LineRenderer.displayName = 'LineRenderer';
 

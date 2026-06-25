@@ -78,6 +78,11 @@ export function parseAnsiToSegments(text: string): TextSegment[] {
   return segments.length > 0 ? segments : [{ text: '' }];
 }
 
+export function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+}
+
 function buildSegment(text: string, fg?: string, bg?: string, bold?: boolean): TextSegment {
   const style: TextStyle = {};
   if (fg) style.color = fg;
