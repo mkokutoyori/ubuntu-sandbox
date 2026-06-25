@@ -10,6 +10,7 @@ function fixture(): SocketTable {
   t.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
   t.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolve');
   t.connect('tcp', '10.0.0.1', 54321, '10.0.0.2', 80, 1200, 'curl');
+  t.bind('tcp', '::1', 631, 700, 'cupsd');
   return t;
 }
 
@@ -93,6 +94,57 @@ describe('ss — sport/dport filters', () => {
     const out = cmdSs(['-tan', 'sport', '=', ':ssh'], false, fixture(), resolveService, resolveServicePort);
     expect(out).toMatch(/0\.0\.0\.0:22\b/);
     expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+});
+
+describe('ss — src/dst and address-family filters', () => {
+  it('dst ADDR keeps only sockets to that peer', () => {
+    const out = cmdSs(['-tan', 'dst', '10.0.0.2'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/10\.0\.0\.2:80\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+
+  it('src ADDR keeps only sockets bound to that address', () => {
+    const out = cmdSs(['-tan', 'src', '0.0.0.0'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/0\.0\.0\.0:22\b/);
+    expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+
+  it('dst ADDR:PORT matches address and port together', () => {
+    const out = cmdSs(['-tan', 'dst', '10.0.0.2:80'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/10\.0\.0\.2:80\b/);
+  });
+
+  it('dst ADDR:PORT with the wrong port matches nothing', () => {
+    const out = cmdSs(['-tan', 'dst', '10.0.0.2:99'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+
+  it('-4 shows only IPv4 sockets', () => {
+    const out = cmdSs(['-ltan', '-4'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/0\.0\.0\.0:22\b/);
+    expect(out).not.toMatch(/631/);
+  });
+
+  it('-6 shows only IPv6 sockets, bracketed', () => {
+    const out = cmdSs(['-ltan', '-6'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/\[::1\]:631\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+});
+
+describe('netstat — address family', () => {
+  it('-6 marks rows tcp6 and excludes IPv4', () => {
+    const out = cmdNetstat(['-ltan', '-6'], null, false, fixture(), resolveService);
+    expect(out).toMatch(/^tcp6/m);
+    expect(out).toMatch(/631/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22/);
+  });
+
+  it('-4 excludes IPv6 rows', () => {
+    const out = cmdNetstat(['-ltan', '-4'], null, false, fixture(), resolveService);
+    expect(out).toMatch(/0\.0\.0\.0:22/);
+    expect(out).not.toMatch(/^tcp6/m);
   });
 });
 

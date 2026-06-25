@@ -31,13 +31,14 @@ function socketVisible(state: SocketState, wantAll: boolean, wantListening: bool
 
 function formatEndpoint(
   addr: string, port: number, proto: string,
-  numeric: boolean, resolveService?: ServiceResolver,
+  numeric: boolean, resolveService?: ServiceResolver, bracketV6 = false,
 ): string {
+  const host = bracketV6 && addr.includes(':') ? `[${addr}]` : addr;
   if (!numeric && resolveService && port > 0) {
     const name = resolveService(port, proto);
-    if (name) return `${addr}:${name}`;
+    if (name) return `${host}:${name}`;
   }
-  return `${addr}:${port}`;
+  return `${host}:${port}`;
 }
 
 export type PortResolver = (name: string) => number | null;
@@ -85,6 +86,46 @@ function matchesPortFilters(sock: SocketEntry, filters: PortPredicate[]): boolea
     if (!f.cmp(p, f.port)) return false;
   }
   return true;
+}
+
+interface AddrPredicate { side: 'src' | 'dst'; addr: string | null; port: number | null; }
+
+function parseAddrSpec(token: string, resolvePort?: PortResolver): { addr: string | null; port: number | null } {
+  let m = /^\[(.+)\]:(.+)$/.exec(token);
+  if (m) return { addr: m[1], port: parsePortValue(m[2], resolvePort) };
+  if (token.startsWith(':')) return { addr: null, port: parsePortValue(token, resolvePort) };
+  m = /^(\d{1,3}(?:\.\d{1,3}){3}):(.+)$/.exec(token);
+  if (m) return { addr: m[1], port: parsePortValue(m[2], resolvePort) };
+  return { addr: token === '*' ? null : token, port: null };
+}
+
+function parseAddrFilters(args: string[], resolvePort?: PortResolver): AddrPredicate[] {
+  const out: AddrPredicate[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const side = args[i];
+    if (side !== 'src' && side !== 'dst') continue;
+    let valueToken = args[i + 1];
+    if (valueToken === '=' || (valueToken && SS_FILTER_OPS[valueToken])) { valueToken = args[i + 2]; i += 2; }
+    else { i += 1; }
+    if (!valueToken) continue;
+    out.push({ side, ...parseAddrSpec(valueToken, resolvePort) });
+  }
+  return out;
+}
+
+function matchesAddrFilters(sock: SocketEntry, filters: AddrPredicate[]): boolean {
+  for (const f of filters) {
+    const addr = f.side === 'src' ? sock.localAddress : sock.remoteAddress;
+    const port = f.side === 'src' ? sock.localPort : sock.remotePort;
+    if (f.addr !== null && addr !== f.addr) return false;
+    if (f.port !== null && port !== f.port) return false;
+  }
+  return true;
+}
+
+function familyVisible(addr: string, want4: boolean, want6: boolean): boolean {
+  if (want4 === want6) return true;
+  return addr.includes(':') ? want6 : want4;
 }
 
 // ─── ifconfig ───────────────────────────────────────────────────────
@@ -259,6 +300,8 @@ export function cmdNetstat(
   const numeric = hasFlag('n');
   const wantAll = hasFlag('a') || args.includes('--all');
   const wantListening = hasFlag('l') || args.includes('--listening');
+  const want4 = hasFlag('4') || args.includes('--ipv4');
+  const want6 = hasFlag('6') || args.includes('--ipv6');
 
   const banner = wantListening
     ? 'Active Internet connections (only servers)'
@@ -276,16 +319,18 @@ export function cmdNetstat(
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
+      if (!familyVisible(sock.localAddress, want4, want6)) continue;
       if (!socketVisible(sock.state, wantAll, wantListening)) continue;
 
+      const v6 = sock.localAddress.includes(':');
       const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
       const remoteAddr = sock.state === 'LISTEN'
-        ? '0.0.0.0:*'
+        ? (v6 ? ':::*' : '0.0.0.0:*')
         : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
       const stateCol   = isTcp ? sock.state : '';
       const pidCol     = showProcesses && sock.pid ? `${sock.pid}/${sock.processName}` : '';
 
-      lines.push(formatNetstatLine(sock.protocol, localAddr, remoteAddr, stateCol, pidCol));
+      lines.push(formatNetstatLine(`${sock.protocol}${v6 ? '6' : ''}`, localAddr, remoteAddr, stateCol, pidCol));
     }
   } else {
     // Fallback when no socket table is wired (e.g. in test environments that
@@ -387,6 +432,8 @@ export function cmdSs(
   const summary       = args.includes('-s') || args.includes('--summary');
   const numeric       = hasFlag('n') || args.includes('--numeric');
   const wantAll       = hasFlag('a') || args.includes('--all');
+  const want4         = hasFlag('4') || args.includes('--ipv4');
+  const want6         = hasFlag('6') || args.includes('--ipv6');
   const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
@@ -433,6 +480,7 @@ export function cmdSs(
   lines.push('State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process');
 
   const portFilters = parsePortFilters(args, resolvePort);
+  const addrFilters = parseAddrFilters(args, resolvePort);
 
   if (socketTable) {
     for (const sock of socketTable.getAll()) {
@@ -440,17 +488,20 @@ export function cmdSs(
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
+      if (!familyVisible(sock.localAddress, want4, want6)) continue;
       if (stateFilter === 'established' || stateFilter === 'connected') {
         if (sock.state !== 'ESTABLISHED') continue;
       } else if (!socketVisible(sock.state, wantAll, wantListening)) {
         continue;
       }
       if (!matchesPortFilters(sock, portFilters)) continue;
+      if (!matchesAddrFilters(sock, addrFilters)) continue;
 
-      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
+      const v6 = sock.localAddress.includes(':');
+      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService, true);
       const remoteAddr = sock.state === 'LISTEN'
-        ? '0.0.0.0:*'
-        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
+        ? (v6 ? '[::]:*' : '0.0.0.0:*')
+        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService, true);
       const stateCol   = ssStateLabel(sock);
       const procCol    = showProcesses && sock.pid
         ? ` users:(("${sock.processName}",pid=${sock.pid},fd=3))`
