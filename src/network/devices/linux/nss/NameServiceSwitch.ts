@@ -42,6 +42,13 @@ import type {
  */
 export type CacheInvalidationListener = (database: string) => void;
 
+function mergeEntries<T>(a: T, b: T): T {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return [...a, ...b] as unknown as T;
+  }
+  return a;
+}
+
 export class NameServiceSwitch {
   /** Cache-invalidation listeners (downstream caches subscribe). */
   private readonly invalidationListeners = new Set<CacheInvalidationListener>();
@@ -105,44 +112,31 @@ export class NameServiceSwitch {
   ): NssResult<T> {
     const config = this.parsedConfig();
     const specs = sourcesFor(config, database);
-    /**
-     * Track the strongest negative answer we have observed. NOTFOUND
-     * from a *registered* source beats UNAVAIL from a missing one
-     * (glibc semantics: getent returns exit 2 "Key not found" as long
-     * as at least one source said NOTFOUND, even if the next source
-     * is unavailable).
-     */
     let sawNotFound = false;
     let sawUnavail = false;
+    let merged: T | undefined;
 
     for (const spec of specs) {
       const src = this.sources.get(spec.name);
-      if (!src) {
-        sawUnavail = true;
-        const action = effectiveAction(spec, 'UNAVAIL');
-        if (action === 'return') return { status: 'UNAVAIL' };
-        continue;
-      }
-
-      const r = invoke(src);
-      if (!r) {
-        sawUnavail = true;
-        const action = effectiveAction(spec, 'UNAVAIL');
-        if (action === 'return') return { status: 'UNAVAIL' };
-        continue;
-      }
+      const r: NssResult<T> = src ? (invoke(src) ?? { status: 'UNAVAIL' }) : { status: 'UNAVAIL' };
 
       if (r.status === 'NOTFOUND') sawNotFound = true;
       if (r.status === 'UNAVAIL')  sawUnavail = true;
 
       const action = effectiveAction(spec, r.status);
-      if (r.status === 'SUCCESS' && action === 'return') return r;
-      if (action === 'return') return r;
-      // 'continue' / 'merge' → try next source. (We treat 'merge' as
-      // continue for single-key lookups — it only meaningfully differs
-      // for enumeration of hosts; see enumerate() below.)
+
+      if (r.status === 'SUCCESS' && r.entry !== undefined) {
+        merged = merged === undefined ? r.entry : mergeEntries(merged, r.entry);
+        if (action !== 'merge') return { status: 'SUCCESS', entry: merged };
+        continue;
+      }
+
+      if (action === 'return') {
+        return merged === undefined ? r : { status: 'SUCCESS', entry: merged };
+      }
     }
 
+    if (merged !== undefined) return { status: 'SUCCESS', entry: merged };
     if (sawNotFound) return { status: 'NOTFOUND' };
     if (sawUnavail)  return { status: 'UNAVAIL' };
     return { status: 'NOTFOUND' };
