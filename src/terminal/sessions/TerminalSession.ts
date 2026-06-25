@@ -229,6 +229,11 @@ export abstract class TerminalSession {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
+  // ── Nested-session (SSH transparent transport) ──
+  private _outputHost: TerminalSession | null = null;
+  private _parent: TerminalSession | null = null;
+  private _children: TerminalSession[] = [];
+
   constructor(id: string, device: Equipment) {
     this.id = id;
     this.device = device;
@@ -288,9 +293,40 @@ export abstract class TerminalSession {
 
   /** Bump version and notify all subscribers. */
   protected notify(): void {
+    if (this._outputHost) { this._outputHost.notify(); return; }
     this._version++;
     for (const l of this._listeners) l();
   }
+
+  // ── Nested-session API (SSH = transparent transport) ─────────────
+
+  attachAsChildOf(parent: TerminalSession): void {
+    this._parent = parent;
+    this._outputHost = parent._outputHost ?? parent;
+    parent._children.push(this);
+    this._outputHost.notify();
+  }
+
+  detachFromHost(): void {
+    const parent = this._parent;
+    if (!parent) return;
+    const idx = parent._children.indexOf(this);
+    if (idx >= 0) parent._children.splice(idx, 1);
+    const root = this._outputHost;
+    this._parent = null;
+    this._outputHost = null;
+    root?.notify();
+  }
+
+  get foreground(): TerminalSession {
+    let s: TerminalSession = this;
+    while (s._children.length > 0) s = s._children[s._children.length - 1];
+    return s;
+  }
+
+  get hasActiveChild(): boolean { return this._children.length > 0; }
+
+  protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
 
   // ── Public API ──────────────────────────────────────────────────
 
@@ -316,14 +352,26 @@ export abstract class TerminalSession {
     this.notify();
   }
 
-  addLine(text: string, type: string = 'normal'): void {
-    this.lines.push({ id: nextLineId(), text, type });
-    this.enforceScrollbackLimit();
-    // Record output events (skip prompts — those are recorded as 'input')
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+  private pushLine(line: OutputLine, record: RecordedEventType | null, silent = false): void {
+    const host = this._outputHost;
+    if (host) {
+      if (line.segments && host.getSessionType() !== this.getSessionType()) {
+        line = { id: line.id, text: line.text, type: line.type, promptText: line.promptText };
+      }
+      host.pushLine(line, record, silent);
+      return;
     }
-    this.notify();
+    this.lines.push(line);
+    this.enforceScrollbackLimit();
+    if (record) this.recordEvent(record, line.text);
+    if (!silent) this.notify();
+  }
+
+  addLine(text: string, type: string = 'normal'): void {
+    this.pushLine(
+      { id: nextLineId(), text, type },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   /**
@@ -335,11 +383,7 @@ export abstract class TerminalSession {
    * for the transcript.
    */
   addEchoLine(promptText: string, command: string, type: string = 'prompt'): void {
-    this.lines.push({ id: nextLineId(), text: command, type, promptText });
-    this.enforceScrollbackLimit();
-    // Echo lines represent USER input; record as such (not as output).
-    this.recordEvent('input', command);
-    this.notify();
+    this.pushLine({ id: nextLineId(), text: command, type, promptText }, 'input');
   }
 
   /**
@@ -350,28 +394,24 @@ export abstract class TerminalSession {
    */
   addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
     const text = segments.map((s) => s.text).join('');
-    this.lines.push({ id: nextLineId(), text, type, segments });
-    this.enforceScrollbackLimit();
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
-    }
-    this.notify();
+    this.pushLine(
+      { id: nextLineId(), text, type, segments },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   addLines(texts: string[], type: string = 'normal'): void {
+    const record = type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null;
     for (const text of texts) {
-      this.lines.push({ id: nextLineId(), text, type });
-      if (type !== 'prompt') {
-        this.recordEvent(type === 'error' ? 'error' : 'output', text);
-      }
+      this.pushLine({ id: nextLineId(), text, type }, record, true);
     }
-    this.enforceScrollbackLimit();
-    this.notify();
+    this.outputRoot.notify();
   }
 
   clear(): void {
-    this.lines = [];
-    this.notify();
+    const root = this.outputRoot;
+    root.lines = [];
+    root.notify();
   }
 
   dispose(): void {
