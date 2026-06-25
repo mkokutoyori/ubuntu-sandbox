@@ -120,6 +120,23 @@ describe('ss — src/dst and address-family filters', () => {
     expect(out).not.toMatch(/10\.0\.0\.2/);
   });
 
+  it('dst CIDR matches any peer inside the subnet', () => {
+    const out = cmdSs(['-tan', 'dst', '10.0.0.0/24'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/10\.0\.0\.2:80\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+
+  it('dst CIDR excludes peers outside the subnet', () => {
+    const out = cmdSs(['-tan', 'dst', '192.168.0.0/16'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).not.toMatch(/10\.0\.0\.2/);
+  });
+
+  it('src CIDR matches the bound-address subnet', () => {
+    const out = cmdSs(['-tan', 'src', '10.0.0.0/24'], false, fixture(), resolveService, resolveServicePort);
+    expect(out).toMatch(/10\.0\.0\.1:54321\b/);
+    expect(out).not.toMatch(/0\.0\.0\.0:22\b/);
+  });
+
   it('-4 shows only IPv4 sockets', () => {
     const out = cmdSs(['-ltan', '-4'], false, fixture(), resolveService, resolveServicePort);
     expect(out).toMatch(/0\.0\.0\.0:22\b/);

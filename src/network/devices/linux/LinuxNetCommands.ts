@@ -8,7 +8,7 @@
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
-import { broadcastAddress } from '../../core/ip';
+import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
 
 export type ServiceResolver = (port: number, proto: string) => string | null;
 
@@ -88,9 +88,20 @@ function matchesPortFilters(sock: SocketEntry, filters: PortPredicate[]): boolea
   return true;
 }
 
-interface AddrPredicate { side: 'src' | 'dst'; addr: string | null; port: number | null; }
+interface CidrRange { network: number; mask: number }
+interface AddrSpec { addr: string | null; port: number | null; cidr?: CidrRange }
+interface AddrPredicate extends AddrSpec { side: 'src' | 'dst' }
 
-function parseAddrSpec(token: string, resolvePort?: PortResolver): { addr: string | null; port: number | null } {
+function parseAddrSpec(token: string, resolvePort?: PortResolver): AddrSpec {
+  const slash = token.indexOf('/');
+  if (slash !== -1) {
+    const net = tryIpToUint32(token.slice(0, slash));
+    const prefix = parseInt(token.slice(slash + 1), 10);
+    if (net !== null && Number.isFinite(prefix) && prefix >= 0 && prefix <= 32) {
+      const mask = prefixLengthToMaskUint32(prefix);
+      return { addr: null, port: null, cidr: { network: net & mask, mask } };
+    }
+  }
   let m = /^\[(.+)\]:(.+)$/.exec(token);
   if (m) return { addr: m[1], port: parsePortValue(m[2], resolvePort) };
   if (token.startsWith(':')) return { addr: null, port: parsePortValue(token, resolvePort) };
@@ -117,7 +128,12 @@ function matchesAddrFilters(sock: SocketEntry, filters: AddrPredicate[]): boolea
   for (const f of filters) {
     const addr = f.side === 'src' ? sock.localAddress : sock.remoteAddress;
     const port = f.side === 'src' ? sock.localPort : sock.remotePort;
-    if (f.addr !== null && addr !== f.addr) return false;
+    if (f.cidr) {
+      const a = tryIpToUint32(addr);
+      if (a === null || (a & f.cidr.mask) >>> 0 !== (f.cidr.network >>> 0)) return false;
+    } else if (f.addr !== null && addr !== f.addr) {
+      return false;
+    }
     if (f.port !== null && port !== f.port) return false;
   }
   return true;
