@@ -24,6 +24,7 @@ import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import {
@@ -469,7 +470,7 @@ export class WindowsTerminalSession extends TerminalSession {
     try {
       const result = await this.executeOnDevice(trimmed);
       if (result !== undefined && result !== null && result !== '') {
-        this.addMultiLine(result);
+        this.emitWindowsOutput(result);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
@@ -939,8 +940,8 @@ export class WindowsTerminalSession extends TerminalSession {
     if (result.clearScreen) { this.lines = []; this.bannerCleared = true; }
     if (result.styledOutput && result.styledOutput.length > 0) {
       for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
-    } else {
-      for (const line of result.output) this.addLine(line);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
     }
     if (result.exit) { this.exitSubShell(); return; }
     if (result.childShell) { this.pushChildShell(result.childShell); return; }
@@ -1025,8 +1026,8 @@ export class WindowsTerminalSession extends TerminalSession {
           for (const styled of result.styledOutput) {
             this.addStyledLine(styled.segments, styled.lineType);
           }
-        } else {
-          for (const outputLine of result.output) this.addLine(outputLine);
+        } else if (result.output.length > 0) {
+          this.emitWindowsOutput(result.output.join('\n'));
         }
 
         if (result.exit) {
@@ -1222,11 +1223,18 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Helpers ─────────────────────────────────────────────────────
 
-  private addMultiLine(text: string, type: string = 'normal'): void {
-    const lines = text.split('\n');
-    for (const line of lines) {
-      this.lines.push({ id: nextLineId(), text: line, type });
-    }
+  private isLocalWinShellOutput(): boolean {
+    const sub = this.activeSubShell;
+    if (!sub) return true;
+    return sub instanceof ShellSubShellAdapter
+      && (sub.inner.kind === 'powershell' || sub.inner.kind === 'cmd');
+  }
+
+  private emitWindowsOutput(text: string): void {
+    const rows = this.isLocalWinShellOutput()
+      ? classifyWindowsLines(text)
+      : text.split('\n').map(t => ({ text: t, type: 'output' as const }));
+    for (const r of rows) this.lines.push({ id: nextLineId(), text: r.text, type: r.type });
     this.notify();
   }
 }

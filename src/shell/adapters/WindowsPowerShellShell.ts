@@ -16,6 +16,8 @@
 
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
+import type { RichOutputLine, LineType } from '@/terminal/core/types';
+import { styleWindowsOutput } from '@/terminal/core/windowsOutputStyle';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -148,6 +150,14 @@ export class WindowsPowerShellShell extends AbstractShell {
       exit: r.exit,
       clearScreen: r.clearScreen,
     };
+  }
+
+  protected override synthesizeStyledOutput(
+    output: readonly string[],
+    lineType: LineType = 'output',
+  ): RichOutputLine[] {
+    if (lineType !== 'output') return super.synthesizeStyledOutput(output, lineType);
+    return styleWindowsOutput(output);
   }
 
   override getCompletions(line: string): readonly string[] {

@@ -41,7 +41,7 @@ describe('bash read via the unified input broker', () => {
     await wait(() => session.lines.some(l => l.text === 'answer=yes'));
   });
 
-  it('read -s -p prompts in password mode and echoes asterisks', async () => {
+  it('read -s -p prompts in password mode and hides the typed secret', async () => {
     const { session } = makeSession();
     session.setInput(`read -s -p "Pwd: " pw`);
     session.handleKey(key('Enter'));
@@ -49,7 +49,8 @@ describe('bash read via the unified input broker', () => {
     session.setPasswordBuf('s3cret');
     session.handleKey(key('Enter'));
     await wait(() => session.currentInputMode.type === 'normal');
-    expect(session.lines.some(l => l.text === '******')).toBe(true);
+    expect(session.lines.some(l => l.text.includes('*'))).toBe(false);
+    expect(session.lines.some(l => l.text.includes('s3cret'))).toBe(false);
     session.setInput(`echo "len=${'$'}{#pw}"`);
     session.handleKey(key('Enter'));
     await wait(() => session.lines.some(l => l.text === 'len=6'));

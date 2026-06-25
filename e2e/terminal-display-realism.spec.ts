@@ -84,4 +84,36 @@ test.describe('Terminal display realism — colours', () => {
     const color = await spanColor(page, 'zzsshdir');
     expect(color).toMatch(/rgb\((52, 101, 164|114, 159, 207)\)/);
   });
+
+  test('Windows: PowerShell renders an unknown-cmdlet error in red', async ({ page }) => {
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCommand(page, 'powershell');
+    await page.waitForTimeout(500);
+    await typeCommand(page, 'Get-ZzzNoSuchCmdlet');
+    await page.waitForTimeout(700);
+    const color = await spanColor(page, 'is not recognized');
+    expect(color).toMatch(/rgb\(241, 76, 76\)/);
+  });
+
+  test('Windows: PowerShell renders Write-Warning output in yellow', async ({ page }) => {
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCommand(page, 'powershell');
+    await page.waitForTimeout(500);
+    await typeCommand(page, 'Write-Warning zztestwarn');
+    await page.waitForTimeout(700);
+    const color = await spanColor(page, 'WARNING: zztestwarn');
+    expect(color).toMatch(/rgb\(204, 167, 0\)/);
+  });
+
+  test('Windows: cmd output stays uncoloured (no false PowerShell styling)', async ({ page }) => {
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCommand(page, 'echo zzplaintext');
+    await page.waitForTimeout(500);
+    const color = await spanColor(page, 'zzplaintext');
+    expect(color).not.toMatch(/rgb\(241, 76, 76\)/);
+    expect(color).not.toMatch(/rgb\(204, 167, 0\)/);
+  });
 });
