@@ -105,8 +105,11 @@ const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQU
 
 // ─── Manager ─────────────────────────────────────────────────────────
 
+export type IptablesServiceResolver = (port: number, proto: string) => string | null;
+
 export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
+  private resolveService: IptablesServiceResolver | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
   // Rate limiting state for limit match extension: key = "srcIP:ruleKey" → timestamps
   private rateLimitHits: Map<string, number[]> = new Map();
@@ -115,8 +118,9 @@ export class LinuxIptablesManager {
   private conntrack: Map<string, number> = new Map();
   private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
 
-  constructor(vfs?: VirtualFileSystem) {
+  constructor(vfs?: VirtualFileSystem, resolveService?: IptablesServiceResolver) {
     if (vfs) this.vfs = vfs;
+    if (resolveService) this.resolveService = resolveService;
     this.initializeTables();
   }
 
@@ -638,7 +642,7 @@ export class LinuxIptablesManager {
       const opt = '--  ';
       const src = this.fmtAddr(r.source, r.negSource, numeric);
       const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
-      const extra = this.fmtRuleExtras(r);
+      const extra = this.fmtRuleExtras(r, numeric);
 
       if (verbose) {
         const pkts = String(r.pkts).padStart(5);
@@ -659,15 +663,59 @@ export class LinuxIptablesManager {
     return `${n}${addr}`;
   }
 
-  private fmtRuleExtras(r: IptablesRule): string {
+  private fmtRuleExtras(r: IptablesRule, numeric: boolean): string {
     const parts: string[] = [];
-    if (r.dport) parts.push(`${r.protocol} dpt:${r.dport}`);
-    if (r.sport) parts.push(`${r.protocol} spt:${r.sport}`);
+    if (r.dport) parts.push(`${r.protocol} ${r.dport.includes(':') ? 'dpts' : 'dpt'}:${this.portLabel(r.dport, r.protocol, numeric)}`);
+    if (r.sport) parts.push(`${r.protocol} ${r.sport.includes(':') ? 'spts' : 'spt'}:${this.portLabel(r.sport, r.protocol, numeric)}`);
     for (const m of r.matches) {
-      for (const [opt, val] of m.options) parts.push(`${opt.replace('--', '')}:${val}`);
+      const s = this.fmtMatch(m);
+      if (s) parts.push(s);
     }
-    for (const [opt, val] of Object.entries(r.targetOptions)) parts.push(`${opt.replace('--', '')} ${val}`);
+    const t = this.fmtTargetExtras(r.targetOptions);
+    if (t) parts.push(t);
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
+  }
+
+  private portLabel(spec: string, proto: string, numeric: boolean): string {
+    if (numeric || !this.resolveService || !/^\d+$/.test(spec)) return spec;
+    return this.resolveService(parseInt(spec, 10), proto || 'tcp') ?? spec;
+  }
+
+  private fmtMatch(m: MatchExtension): string {
+    const o = m.options;
+    switch (m.module) {
+      case 'tcp': case 'udp': case 'icmp': return '';
+      case 'state':     return o.get('--state') ? `state ${o.get('--state')}` : '';
+      case 'conntrack': return o.get('--ctstate') ? `ctstate ${o.get('--ctstate')}` : '';
+      case 'multiport':
+        if (o.get('--dports')) return `multiport dports ${o.get('--dports')}`;
+        if (o.get('--sports')) return `multiport sports ${o.get('--sports')}`;
+        if (o.get('--ports'))  return `multiport ports ${o.get('--ports')}`;
+        return 'multiport';
+      case 'comment':   return `/* ${o.get('--comment') ?? ''} */`;
+      case 'limit':     return `limit: avg ${o.get('--limit') ?? ''} burst ${o.get('--limit-burst') ?? '5'}`;
+      case 'mac':       return o.get('--mac-source') ? `MAC ${o.get('--mac-source')}` : '';
+      default: {
+        const parts: string[] = [];
+        for (const [k, v] of o) parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, ''));
+        return parts.join(' ');
+      }
+    }
+  }
+
+  private fmtTargetExtras(opts: TargetOptions): string {
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(opts)) {
+      switch (k) {
+        case '--to-destination': case '--to-source': parts.push(`to:${v}`); break;
+        case '--to-ports':       parts.push(`redir ports ${v}`); break;
+        case '--reject-with':    parts.push(`reject-with ${v}`); break;
+        case '--log-prefix':     parts.push(`LOG flags 0 level 4 prefix "${v}"`); break;
+        case '--log-level':      break;
+        default:                 parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')); break;
+      }
+    }
+    return parts.join(' ');
   }
 
   private countRefs(name: string, table: IptablesTable): number {

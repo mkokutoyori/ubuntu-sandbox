@@ -1203,3 +1203,57 @@ describe('iptables', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// IPTABLES -L output fidelity (service names, match/target rendering)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('iptables -L output fidelity', () => {
+  let server: LinuxServer;
+  beforeEach(() => { server = new LinuxServer('linux-server', 'SRV1'); });
+
+  it('resolves a single dport to its service name without -n', async () => {
+    await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT');
+    expect(out).toMatch(/tcp dpt:ssh\b/);
+  });
+
+  it('keeps a numeric dport with -n', async () => {
+    await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT -n');
+    expect(out).toMatch(/tcp dpt:22\b/);
+    expect(out).not.toMatch(/dpt:ssh/);
+  });
+
+  it('uses dpts: for a port range', async () => {
+    await server.executeCommand('iptables -A INPUT -p tcp --dport 6000:6007 -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT -n');
+    expect(out).toMatch(/tcp dpts:6000:6007/);
+  });
+
+  it('renders a state match the iptables way (no colon)', async () => {
+    await server.executeCommand('iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT -n');
+    expect(out).toMatch(/state ESTABLISHED,RELATED/);
+    expect(out).not.toMatch(/state:/);
+  });
+
+  it('renders a comment as a C-style block', async () => {
+    await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -m comment --comment "Allow SSH" -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT -n');
+    expect(out).toMatch(/\/\* Allow SSH \*\//);
+  });
+
+  it('renders multiport dports', async () => {
+    await server.executeCommand('iptables -A INPUT -p tcp -m multiport --dports 22,80,443 -j ACCEPT');
+    const out = await server.executeCommand('iptables -L INPUT -n');
+    expect(out).toMatch(/multiport dports 22,80,443/);
+  });
+
+  it('renders a DNAT target as to:addr:port', async () => {
+    await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.5:8080');
+    const out = await server.executeCommand('iptables -t nat -L PREROUTING -n');
+    expect(out).toMatch(/to:10\.0\.0\.5:8080/);
+    expect(out).not.toMatch(/to-destination/);
+  });
+});

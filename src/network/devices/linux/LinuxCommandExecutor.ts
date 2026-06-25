@@ -372,7 +372,7 @@ export class LinuxCommandExecutor {
     // so the filesystem view stays coherent with the in-memory registry.
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
-    this.iptables = new LinuxIptablesManager(this.vfs);
+    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.auditLog = new LinuxAuditLog(this.vfs);
