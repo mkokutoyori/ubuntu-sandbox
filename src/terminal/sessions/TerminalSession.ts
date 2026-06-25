@@ -200,7 +200,12 @@ export abstract class TerminalSession {
   lines: OutputLine[] = [];
   history: string[] = [];
   historyIndex: number = -1;
-  input: string = '';
+  private _input: string = '';
+  get input(): string { return this._children.length > 0 ? this.foreground.input : this._input; }
+  set input(v: string) {
+    if (this._children.length > 0) { this.foreground.input = v; return; }
+    this._input = v;
+  }
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
 
