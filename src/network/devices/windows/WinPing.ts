@@ -74,8 +74,9 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
   return { count, size, ttl, targetStr, continuous };
 }
 
-export function formatWinPingHeader(targetIP: IPAddress, size: number): string {
-  return `\nPinging ${targetIP} with ${size} bytes of data:`;
+export function formatWinPingHeader(targetIP: IPAddress, size: number, hostname?: string): string {
+  const dest = hostname ? `${hostname} [${targetIP}]` : `${targetIP}`;
+  return `\nPinging ${dest} with ${size} bytes of data:`;
 }
 
 export function formatWinPingReplyLine(r: PingResult, size: number): string {
@@ -136,11 +137,12 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   }
 
   const results = await ctx.executePingSequence(targetIP, count, 2000, ttl);
-  return formatPingOutput(targetIP, count, size, results);
+  const hostname = targetStr !== targetIP.toString() ? targetStr : undefined;
+  return formatPingOutput(targetIP, count, size, results, hostname);
 }
 
-function formatPingOutput(targetIP: IPAddress, count: number, size: number, results: PingResult[]): string {
-  const lines: string[] = [formatWinPingHeader(targetIP, size)];
+function formatPingOutput(targetIP: IPAddress, count: number, size: number, results: PingResult[], hostname?: string): string {
+  const lines: string[] = [formatWinPingHeader(targetIP, size, hostname)];
   if (results.length === 0) {
     for (let i = 0; i < count; i++) lines.push('PING: transmit failed. General failure.');
   } else {

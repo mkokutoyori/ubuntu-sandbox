@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, type TracerouteHopResult, getNUDState } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
@@ -1889,50 +1889,8 @@ export abstract class LinuxMachine extends EndHost
     return () => { for (const unsub of subs) unsub(); };
   }
 
-  async pingStreamInSession(
-    targetStr: string,
-    opts: {
-      count: number;
-      timeoutMs?: number;
-      ttl?: number;
-      intervalMs?: number;
-      onResolved?: (ip: IPAddress, hostname?: string) => void;
-      onResult: (result: PingResult) => void;
-      shouldStop: () => boolean;
-      sleep: (ms: number) => Promise<void>;
-    },
-  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
-    const ip = await this.resolveHostnameOverWire(targetStr);
-    if (!ip) return { resolved: false, reason: 'name' };
-    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
-    const outcome = await this.executePingStream(ip, opts);
-    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
-  }
-
-  async tracerouteStreamInSession(
-    targetStr: string,
-    opts: {
-      maxHops?: number;
-      probesPerHop?: number;
-      firstTtl?: number;
-      timeoutMs?: number;
-      onResolved?: (ip: IPAddress, hostname?: string) => void;
-      onHop: (hop: TracerouteHopResult) => void;
-      shouldStop: () => boolean;
-    },
-  ): Promise<{ resolved: boolean }> {
-    const ip = await this.resolveHostnameOverWire(targetStr);
-    if (!ip) return { resolved: false };
-    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
-    await this.executeTraceroute(
-      ip,
-      opts.maxHops,
-      opts.timeoutMs ?? 2000,
-      opts.probesPerHop,
-      opts.firstTtl,
-      { onHop: opts.onHop, shouldStop: opts.shouldStop },
-    );
-    return { resolved: true };
+  protected async resolveHostForCommand(targetStr: string): Promise<IPAddress | null> {
+    return this.resolveHostnameOverWire(targetStr);
   }
 
   /** Tab completion against a specific shell session's cwd/env. */

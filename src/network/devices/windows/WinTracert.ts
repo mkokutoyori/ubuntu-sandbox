@@ -8,7 +8,8 @@
  *   tracert /?                      — usage help
  */
 
-import type { WinCommandContext, TracerouteHop } from './WinCommandExecutor';
+import type { WinCommandContext } from './WinCommandExecutor';
+import { IPAddress } from '../../core/types';
 
 const TRACERT_HELP = `
 Usage: tracert [-d] [-h maximum_hops] [-j host-list] [-w timeout]
@@ -23,6 +24,49 @@ Options:
     -S srcaddr         Source address to use (IPv6-only).
     -4                 Force using IPv4.
     -6                 Force using IPv6.`.trim();
+
+interface TracertHopView {
+  hop: number;
+  ip?: string;
+  rttMs?: number;
+  timeout: boolean;
+  unreachable?: boolean;
+  probes?: Array<{ responded: boolean; rttMs?: number }>;
+}
+
+export function formatWinTracertHeader(target: IPAddress, maxHops: number, hostname?: string): string[] {
+  const dest = hostname ? `${hostname} [${target}]` : `${target}`;
+  return ['', `Tracing route to ${dest} over a maximum of ${maxHops} hops:`, ''];
+}
+
+export function formatWinTracertHop(hop: TracertHopView): string {
+  const num = String(hop.hop).padStart(2);
+  const slot = '*'.padStart(5).padEnd(8);
+
+  if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
+    return `  ${num}     *        *        *     Request timed out.`;
+  }
+
+  let line: string;
+  if (hop.probes && hop.probes.length > 0) {
+    const cols: string[] = [];
+    for (const probe of hop.probes) {
+      if (!probe.responded) cols.push(slot);
+      else {
+        const ms = Math.round(probe.rttMs ?? 0);
+        cols.push((ms < 1 ? '<1 ms' : `${ms} ms`).padEnd(8));
+      }
+    }
+    while (cols.length < 3) cols.push(slot);
+    line = `  ${num}    ${cols.join(' ')} ${hop.ip}`;
+  } else {
+    const ms = Math.round(hop.rttMs ?? 0);
+    const msStr = (ms < 1 ? '<1 ms' : `${ms} ms`).padEnd(8);
+    line = `  ${num}    ${msStr} ${msStr} ${msStr} ${hop.ip}`;
+  }
+  if (hop.unreachable) line += '\n        Destination net unreachable.';
+  return line;
+}
 
 export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promise<string> {
   if (args.length === 0 || args.includes('/?') || args.includes('/help')) {
@@ -47,46 +91,13 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   }
 
   const hops = await ctx.executeTraceroute(targetIP, maxHops);
-
   if (hops.length === 0) {
     return `Unable to resolve target system name ${targetStr}.`;
   }
 
-  const lines = [
-    '',
-    `Tracing route to ${targetIP} over a maximum of ${maxHops} hops:`,
-    '',
-  ];
-
-  for (const hop of hops) {
-    if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
-      lines.push(`  ${String(hop.hop).padStart(2)}     *        *        *     Request timed out.`);
-      continue;
-    }
-
-    if (hop.probes && hop.probes.length > 0) {
-      const cols: string[] = [];
-      for (const probe of hop.probes) {
-        if (!probe.responded) {
-          cols.push('*'.padStart(5).padEnd(8));
-        } else {
-          const ms = Math.round(probe.rttMs ?? 0);
-          const msStr = ms < 1 ? '<1 ms' : `${ms} ms`;
-          cols.push(msStr.padEnd(8));
-        }
-      }
-      while (cols.length < 3) cols.push('*'.padStart(5).padEnd(8));
-      lines.push(`  ${String(hop.hop).padStart(2)}    ${cols.join(' ')} ${hop.ip}`);
-    } else {
-      const ms = Math.round(hop.rttMs!);
-      const msStr = ms < 1 ? '<1 ms' : `${ms} ms`;
-      lines.push(`  ${String(hop.hop).padStart(2)}    ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${msStr.padEnd(8)} ${hop.ip}`);
-    }
-    if (hop.unreachable) {
-      lines.push('        Destination net unreachable.');
-    }
-  }
-
+  const hostname = targetStr !== targetIP.toString() ? targetStr : undefined;
+  const lines = [...formatWinTracertHeader(targetIP, maxHops, hostname)];
+  for (const hop of hops) lines.push(formatWinTracertHop(hop));
   lines.push('');
   lines.push('Trace complete.');
   return lines.join('\n');

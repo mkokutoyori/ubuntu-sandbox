@@ -269,6 +269,7 @@ export abstract class EndHost extends Equipment {
 
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
+  protected abstract resolveHostForCommand(targetStr: string): Promise<IPAddress | null>;
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
@@ -2111,6 +2112,48 @@ export abstract class EndHost extends Equipment {
       }
     }
     return results;
+  }
+
+  async pingStreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      ttl?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHostForCommand(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    const outcome = await this.executePingStream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
+  async tracerouteStreamInSession(
+    targetStr: string,
+    opts: {
+      maxHops?: number;
+      probesPerHop?: number;
+      firstTtl?: number;
+      timeoutMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onHop: (hop: TracerouteHopResult) => void;
+      shouldStop: () => boolean;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const ip = await this.resolveHostForCommand(targetStr);
+    if (!ip) return { resolved: false };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    await this.executeTraceroute(
+      ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
+      { onHop: opts.onHop, shouldStop: opts.shouldStop },
+    );
+    return { resolved: true };
   }
 
   protected async executePingStream(
