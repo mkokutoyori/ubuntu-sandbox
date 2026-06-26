@@ -537,7 +537,6 @@ export class LinuxLogManager {
     listener: (line: string) => void;
   }>();
 
-  /** Subscribe to live kernel ring buffer lines (dmesg -w). Returns an unsubscribe. */
   followDmesg(
     opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
     listener: (line: string) => void,

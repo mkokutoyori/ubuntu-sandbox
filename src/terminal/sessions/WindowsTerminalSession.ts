@@ -434,6 +434,25 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartWinNetstatStream(commandLine: string): boolean {
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'netstat') return false;
+    const last = toks[toks.length - 1];
+    if (toks.length < 2 || !/^[1-9]\d*$/.test(last)) return false;
+    const intervalMs = parseInt(last, 10) * 1000;
+    const rendered = ['netstat', ...toks.slice(1, -1)].join(' ');
+    const shell = this.shell;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs,
+      frame: () => dev.executeCommandInSession(rendered, shell),
+    });
+  }
+
   protected onEnter(): void {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
@@ -488,6 +507,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (this.tryStartWinPingStream(trimmed)) return;
     if (this.tryStartWinTracertStream(trimmed)) return;
+    if (this.tryStartWinNetstatStream(trimmed)) return;
 
     // SSH client info / unsupported forms — handled by the shared
     // launcher first so the OpenSSH usage / version line is uniform

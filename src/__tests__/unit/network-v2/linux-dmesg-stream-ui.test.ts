@@ -15,7 +15,6 @@ async function waitFor(s: LinuxTerminalSession, pred: (l: string[]) => boolean, 
 }
 
 function emitKernel(pc: LinuxPC, message: string, priority = 4): void {
-  // logKernel writes into the kernel ring buffer and fans out to dmesg followers.
   const mgr = (pc as unknown as { executor: { logMgr: {
     logKernel: (tag: string, message: string) => void;
     addEntry?: (opts: Record<string, unknown>) => void;
@@ -84,9 +83,7 @@ describe('Linux dmesg -w — live kernel ring buffer follow on the async pipelin
     await tick();
     expect(session.hasForegroundAsyncJob).toBe(true);
 
-    // warning (priority 4): must not appear.
     emitKernel(pc, 'probeDmesgWarnLine', 4);
-    // err (priority 3): must appear.
     emitKernel(pc, 'probeDmesgErrLine', 3);
 
     await waitFor(session, (l) => l.some((t) => t.includes('probeDmesgErrLine')));

@@ -27,7 +27,7 @@
 import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
-import type { AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
+import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -270,6 +270,49 @@ export abstract class TerminalSession {
 
   startAsyncCommand(spec: AsyncJobSpec): AsyncJobHandle | null {
     return this.asyncRuntime.start(spec);
+  }
+
+  protected startScrollingMonitor(opts: {
+    commandLine: string;
+    intervalMs: number;
+    frame: () => Promise<string> | string;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: opts.commandLine,
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const frame = await opts.frame();
+          for (const line of frame.split('\n')) ctx.sink.line(line);
+          await ctx.delay(opts.intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  protected startFollowStream(opts: {
+    commandLine: string;
+    kind?: 'streaming' | 'subscription';
+    prepare?: (ctx: AsyncJobContext) => boolean | string;
+    subscribe: (lineSink: (line: string) => void) => () => void;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: opts.kind ?? 'streaming',
+      command: opts.commandLine,
+      prepare: opts.prepare,
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = opts.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
+    });
+    return job !== null;
   }
 
   listAsyncJobs(): AsyncJobHandle[] {

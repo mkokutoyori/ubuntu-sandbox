@@ -991,24 +991,16 @@ export class LinuxTerminalSession extends TerminalSession {
     if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
     const initialCommand = ['journalctl', ...initialArgs].join(' ');
 
-    let unsubscribe: (() => void) | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
+    return this.startFollowStream({
+      commandLine,
       prepare: (ctx) => {
         const initial = dev.runCommandFrameInSession(initialCommand, shell);
         if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
         for (const line of initial.split('\n')) ctx.sink.line(line);
         return true;
       },
-      run: (ctx) => new Promise<void>((resolve) => {
-        if (ctx.cancelled()) { resolve(); return; }
-        unsubscribe = dev.followJournal({ unit }, (line) => ctx.sink.line(line));
-        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
-      }),
+      subscribe: (sink) => dev.followJournal({ unit }, sink),
     });
-    return job !== null;
   }
 
   private tryStartIpMonitor(commandLine: string): boolean {
@@ -1025,20 +1017,14 @@ export class LinuxTerminalSession extends TerminalSession {
     const spec = parseIpMonitorSpec(toks.slice(i + 1));
     if ('error' in spec) { this.addLine(spec.error); return true; }
 
-    let unsubscribe: (() => void) | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
+    return this.startFollowStream({
+      commandLine,
       kind: 'subscription',
-      command: commandLine,
-      run: (ctx) => new Promise<void>((resolve) => {
-        if (ctx.cancelled()) { resolve(); return; }
-        unsubscribe = dev.monitorNetlink({ objects: spec.objects, labelled: spec.labelled }, (block) => {
-          for (const line of block.split('\n')) ctx.sink.line(line);
-        });
-        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
-      }),
+      subscribe: (sink) => dev.monitorNetlink(
+        { objects: spec.objects, labelled: spec.labelled },
+        (block) => { for (const line of block.split('\n')) sink(line); },
+      ),
     });
-    return job !== null;
   }
 
   private tryStartDmesgFollow(commandLine: string): boolean {
@@ -1068,11 +1054,8 @@ export class LinuxTerminalSession extends TerminalSession {
     const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
     const initialCommand = ['dmesg', ...initialArgs].join(' ');
 
-    let unsubscribe: (() => void) | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
+    return this.startFollowStream({
+      commandLine,
       prepare: (ctx) => {
         const initial = dev.runCommandFrameInSession(initialCommand, shell);
         if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
@@ -1082,17 +1065,11 @@ export class LinuxTerminalSession extends TerminalSession {
         if (initial) for (const line of initial.split('\n')) ctx.sink.line(line);
         return true;
       },
-      run: (ctx) => new Promise<void>((resolve) => {
-        if (ctx.cancelled()) { resolve(); return; }
-        unsubscribe = dev.followDmesg({ raw, humanTime, levelFilter }, (line) => ctx.sink.line(line));
-        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
-      }),
+      subscribe: (sink) => dev.followDmesg({ raw, humanTime, levelFilter }, sink),
     });
-    return job !== null;
   }
 
   private tryStartNetstatStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
     if (/[|<>&]/.test(commandLine)) return false;
@@ -1103,20 +1080,11 @@ export class LinuxTerminalSession extends TerminalSession {
     ) || toks.includes('--continuous');
     if (!continuous) return false;
     const shell = this.shell;
-
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      run: async (ctx) => {
-        while (!ctx.cancelled()) {
-          const frame = dev.runCommandFrameInSession(commandLine, shell);
-          for (const line of frame.split('\n')) ctx.sink.line(line);
-          await ctx.delay(1000);
-        }
-      },
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: 1000,
+      frame: () => dev.runCommandFrameInSession(commandLine, shell),
     });
-    return job !== null;
   }
 
   private async tryInteractiveRead(line: string): Promise<boolean> {
