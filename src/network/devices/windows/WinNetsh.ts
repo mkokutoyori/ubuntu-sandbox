@@ -418,15 +418,14 @@ function handleNetshInterfaceSet(ctx: WinCommandContext, args: string[]): string
     return 'Ok.';
   }
 
-  // Try admin=enable/disable: everything before "admin=" is the interface name
-  const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|disable)$/i);
+  const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|enabled|disable|disabled)$/i);
 
   if (!match) {
     return 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
   }
 
   const ifName = match[1].replace(/^["']|["']$/g, '').trim();
-  const enable = match[2].toLowerCase() === 'enable';
+  const enable = match[2].toLowerCase().startsWith('enable');
 
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);

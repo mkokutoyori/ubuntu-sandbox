@@ -1,25 +1,13 @@
-/**
- * `ping` / `ping6` — ICMP(v6) echo request to a destination.
- *
- * Drives the real `EndHost` ICMP path through `ctx.net.pingSequence`
- * (IPv4) or `ctx.net.ping6Sequence` (IPv6). Supports all standard
- * iputils ping flags including flood mode, pattern fill, MTU discovery,
- * broadcast, interface binding, and quiet mode.
- */
-
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { PingResult } from '../../EndHost';
-
-// ─── Constants ────────────────────────────────────────────────────────────
 
 const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';
 const DEFAULT_SIZE = 56;
 const DEFAULT_COUNT = 4;
 const DEFAULT_TIMEOUT_MS = 2000;
 const DEFAULT_INTERVAL_MS = 1000;
-const FLOOD_INTERVAL_MS = 10;
 const MIN_UNPRIVILEGED_INTERVAL_MS = 200;
 const DEFAULT_MTU = 1500;
 const ICMP_HEADER_SIZE = 8;
@@ -50,8 +38,6 @@ Options:
   -6               Use IPv6 only.
 `.trim();
 
-// ─── Argument parsing ─────────────────────────────────────────────────────
-
 export interface ParsedPingArgs {
   count: number;
   ttl?: number;
@@ -71,7 +57,6 @@ export interface ParsedPingArgs {
   flood: boolean;
   showVersion: boolean;
   showHelp: boolean;
-  /** Parsed record of error, if argument validation fails. */
   parseError?: string;
   extraTargets: string[];
 }
@@ -91,7 +76,6 @@ function isValidIPv4(addr: string): boolean {
 
 function isBroadcastAddress(ip: string): boolean {
   if (ip === '255.255.255.255') return true;
-  // Only x.x.x.255 — never x.x.x.0 (that's a network address, distinct from broadcast)
   return /\.255$/.test(ip);
 }
 
@@ -186,7 +170,6 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
 
     if (a === '-I') {
       if (!next) { result.parseError = 'ping: option requires an argument -- I\n' + PING_USAGE; return result; }
-      // Detect quote mismatch: starts with quote but doesn't end with one
       if ((next.startsWith('"') && !next.endsWith('"')) ||
           (next.startsWith("'") && !next.endsWith("'"))) {
         result.parseError = `ping: invalid syntax — unclosed quote in interface name '${next}'`; return result;
@@ -213,13 +196,10 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
       result.mtuDisc = next as 'do' | 'want' | 'dont'; i++; continue;
     }
 
-    // Compact flag forms like -m10 are not implemented; skip unknown flags
     if (a.startsWith('-')) {
-      // Accept (silently ignore) unknown flags to handle -L and other legacy opts
       continue;
     }
 
-    // Positional argument — destination
     if (result.targetStr === '') {
       result.targetStr = a;
     } else {
@@ -229,8 +209,6 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
 
   return result;
 }
-
-// ─── Output formatters ────────────────────────────────────────────────────
 
 function formatPingHeader(target: string, size: number, hostname?: string): string {
   const totalSize = size + IP_HEADER_SIZE + ICMP_HEADER_SIZE;
@@ -281,14 +259,10 @@ function formatStats(targetStr: string, count: number, results: PingResult[]): s
     const mdev = Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length).toFixed(3);
     lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
   } else if (lossPercent === 100) {
-    // Surface the destination as unreachable when no replies were received,
-    // mirroring what an ICMP host-unreachable error looks like.
     lines.push(`ping: destination host unreachable`);
   }
   return lines;
 }
-
-// ─── Main runner ──────────────────────────────────────────────────────────
 
 async function runPing(
   ctx: LinuxCommandContext,
@@ -301,34 +275,27 @@ async function runPing(
   if (parsed.showHelp) return PING_USAGE;
   if (parsed.parseError) return parsed.parseError;
 
-  // Validate: multiple targets
   if (parsed.extraTargets.length > 0) {
     return `ping: invalid argument: '${parsed.extraTargets[0]}'`;
   }
 
-  // Resolve quotes around target
   const rawTarget = parsed.targetStr.replace(/^['"]|['"]$/g, '').trim();
-  // Empty quoted target (`ping ""`) — invalid argument
   if (parsed.targetStr !== '' && rawTarget === '') {
     return `ping: invalid argument: empty hostname`;
   }
   if (!rawTarget) return `Usage: ping [-c count] [-t ttl] [-s size] <destination>\n\n${PING_USAGE}`;
 
-  // Validate target IP format if it looks like an IP
   if (/^\d+\.\d+\.\d+\.\d+$/.test(rawTarget) && !isValidIPv4(rawTarget)) {
     return `ping: invalid address: ${rawTarget}`;
   }
 
   const isRoot = ctx.executor.userMgr.currentUid === 0;
 
-  // Conflict: -f (flood) combined with -c (count) is rejected — iputils
-  // semantics: flood produces its own count display, mixing is invalid.
   const sawC = args.indexOf('-c') !== -1;
   if (parsed.flood && sawC) {
     return 'ping: invalid argument: -f and -c are mutually exclusive';
   }
 
-  // Privilege checks
   if (parsed.flood && !isRoot) {
     return 'ping: -f flood: Permission denied (privileged operation, must run as root)';
   }
@@ -336,7 +303,6 @@ async function runPing(
     return `ping: -i ${(parsed.intervalMs / 1000).toFixed(1)}: Permission denied (privileged operation, interval < 200ms requires root)`;
   }
 
-  // Interface existence check
   if (parsed.iface) {
     const ports = ctx.net.getPorts();
     if (!ports.has(parsed.iface)) {
@@ -344,32 +310,24 @@ async function runPing(
     }
   }
 
-  // If no physical interface is admin-up, ping fails outright (no transmit
-  // path) — matches what real Linux does on a hostless machine.
   {
-    let anyAdminUp = false;
-    for (const [name, port] of ctx.net.getPorts()) {
-      if (name === 'lo' || name === 'loopback') continue;
-      if (port.getIsUp()) { anyAdminUp = true; break; }
-    }
-    if (!anyAdminUp) {
+    const ports = ctx.net.getPorts();
+    const primary = ports.get('eth0');
+    if (primary && !primary.getIsUp()) {
       return `ping: connect: Network is unreachable`;
     }
   }
 
-  // MTU path discovery
   const dfSet = parsed.mtuDisc === 'do' || parsed.mtuDisc === 'want';
   const totalPktSize = parsed.size + IP_HEADER_SIZE + ICMP_HEADER_SIZE;
 
   if (dfSet) {
-    // Determine the effective path MTU by checking the outgoing interface
     let pathMtu = DEFAULT_MTU;
     const ports = ctx.net.getPorts();
     if (parsed.iface && ports.has(parsed.iface)) {
       const p = ports.get(parsed.iface)!;
       pathMtu = p.getMTU();
     } else if (ports.size > 0) {
-      // Use the first non-loopback interface MTU
       for (const [name, p] of ports) {
         if (name !== 'lo') { pathMtu = p.getMTU(); break; }
       }
@@ -379,7 +337,6 @@ async function runPing(
     }
   }
 
-  // Handle IPv6
   if (parsed.v6 || rawTarget.includes(':')) {
     let targetIP6: IPv6Address;
     try {
@@ -391,7 +348,6 @@ async function runPing(
     return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size);
   }
 
-  // Resolve hostname (localhost shortcut)
   let targetIP = await ctx.net.resolveHostname(rawTarget);
   if (!targetIP && rawTarget.toLowerCase() === 'localhost') {
     try { targetIP = new IPAddress('127.0.0.1'); } catch { /* ignore */ }
@@ -400,23 +356,16 @@ async function runPing(
     return `${cmdName}: unknown host ${rawTarget} (failed to resolve)`;
   }
 
-  // Broadcast guard
   const targetStr = targetIP.toString();
   if (isBroadcastAddress(targetStr) && !parsed.broadcast) {
     return `WARNING: pinging broadcast address ${targetStr}\n` +
            `Do you want to ping broadcast? Then -b. If not, check your command.`;
   }
 
-  // MTU check against ACTUAL path (incl. custom MTU on router interfaces)
-  // We try to find the path MTU by checking the first hop's next interface.
-  // The EndHost handles ICMP Fragmentation Needed responses from routers,
-  // so a large packet with DF=1 will get an error back from the router.
-  // We simulate this by limiting based on interface MTU here.
   if (dfSet && totalPktSize > DEFAULT_MTU) {
     return `ping: local error: Message too long, mtu=${DEFAULT_MTU}`;
   }
 
-  // Run ping sequence
   const isHostname = rawTarget !== targetStr;
   const results = await ctx.net.pingSequence(
     targetIP,
@@ -438,7 +387,6 @@ function formatPingOutput(
   const { size, quiet, timestamp, pattern } = opts;
   const lines: string[] = [formatPingHeader(targetStr, size, hostname)];
 
-  // Pattern display
   if (pattern) {
     lines.push(`PATTERN: 0x${pattern}`);
   }
@@ -455,8 +403,6 @@ function formatPingOutput(
   lines.push(...formatStats(targetStr, count, results));
   return lines.join('\n');
 }
-
-// ─── Command descriptors ──────────────────────────────────────────────────
 
 const PING_FLAGS_LIST = [
   '-c', '-s', '-t', '-W', '-i', '-I', '-p', '-q', '-v', '-n',

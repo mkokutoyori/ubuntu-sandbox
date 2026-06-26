@@ -911,9 +911,6 @@ export abstract class LinuxMachine extends EndHost
       return outputs.join('\n');
     }
 
-    // Compound commands chained with logical operators `&&` / `||`.
-    // The bash interpreter cannot dispatch network commands; we therefore
-    // split here so each segment can take the network-aware fast path.
     const logical = LinuxMachine.splitLogical(trimmed);
     if (logical.length > 1) {
       const outputs: string[] = [];
@@ -956,11 +953,6 @@ export abstract class LinuxMachine extends EndHost
    * inside single or double quotes so that `sh -c "a; b | c"` is treated
    * as one command rather than being torn apart by the shell router.
    */
-  /**
-   * Split a command line on top-level `&&` / `||` operators. Returns an
-   * array of `{ cmd, op }` segments; the first segment has op="first".
-   * Quoted regions and `|` (pipe) are not treated as separators.
-   */
   private static splitLogical(input: string): Array<{ cmd: string; op: 'first' | '&&' | '||' }> {
     const segments: Array<{ cmd: string; op: 'first' | '&&' | '||' }> = [];
     let buf = '';
@@ -988,11 +980,6 @@ export abstract class LinuxMachine extends EndHost
     return segments;
   }
 
-  /**
-   * Heuristic: did the previous command's output indicate failure?
-   * Used to evaluate `&&` / `||` short-circuiting when we can't get
-   * a real exit code from the network dispatcher.
-   */
   private isFailureOutput(output: string, cmd: string): boolean {
     if (!output) return false;
     const head = cmd.split(/\s+/)[0];

@@ -1,17 +1,3 @@
-/**
- * Windows TRACERT command — trace route to destination.
- *
- * Supports the full Windows tracert flag set:
- *   -d              Do not resolve addresses to hostnames
- *   -h max_hops     Maximum number of hops (1-255)
- *   -j host-list    Loose source route along host-list (IPv4)
- *   -w timeout      Wait timeout in milliseconds for each reply
- *   -R              Trace round-trip path (IPv6)
- *   -S srcaddr      Source address to use
- *   -4 / -6         Force IPv4 / IPv6
- *   /?              Usage help
- */
-
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
 
@@ -82,7 +68,6 @@ export function parseWinTracertArgs(args: string[]): ParsedWinTracert {
     extraTargets: [],
   };
 
-  // Support glued forms like -h10 -w1000
   const expanded: string[] = [];
   for (const a of args) {
     const m = a.match(/^(-[hwj])(.+)$/);
@@ -150,10 +135,8 @@ export function parseWinTracertArgs(args: string[]): ParsedWinTracert {
       result.srcAddr = cleaned; i++; continue;
     }
 
-    // Unknown switch — ignore silently
     if (a.startsWith('-') || a.startsWith('/')) continue;
 
-    // Positional argument — destination
     const cleaned = unquote(a);
     if (!cleaned) continue;
     if (result.targetStr === '') {
@@ -200,7 +183,6 @@ export function formatWinTracertHop(hop: TracertHopView): string {
   return line;
 }
 
-/** Numeric-only output: contains no letters at all. */
 function formatNumericHopLine(hop: TracertHopView): string {
   const num = String(hop.hop).padStart(2);
   if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
@@ -233,13 +215,10 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
 
   if (!parsed.targetStr) return TRACERT_HELP;
 
-  // Validate IP literal if it looks like one
   if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
     return `Unable to resolve target system name ${parsed.targetStr}. Invalid address.`;
   }
 
-  // Reject hostnames whose DNS labels exceed 63 chars (RFC 1035) or whose
-  // total length exceeds 253 — these can never be resolved.
   if (parsed.targetStr.length > 253 ||
       parsed.targetStr.split('.').some(lbl => lbl.length > 63)) {
     return `Unable to resolve target system name ${parsed.targetStr}. Failed to resolve.`;
@@ -250,7 +229,6 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
     return `Unable to resolve target system name ${parsed.targetStr}.`;
   }
 
-  // Cap timeoutMs to 200ms for responsive tests when probes time out across many hops
   const probeTimeoutMs = Math.min(parsed.timeoutMs, 200);
   const targetStr = targetIP.toString();
   const isLoopback = targetStr === '127.0.0.1' || targetStr.startsWith('127.') || targetStr === '::1';
@@ -261,9 +239,6 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
     if (isLoopback) {
       hops.push({ hop: 1, ip: targetStr, rttMs: 0, timeout: false, probes: [{ responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }] });
     } else {
-      // No route or no probes returned — render synthetic hops so callers
-      // get the markers they grep for. First hop tries the default gateway,
-      // the rest are timeouts.
       const gw = ctx.defaultGateway;
       if (gw) {
         hops.push({ hop: 1, ip: gw, rttMs: 1, timeout: false, probes: [{ responded: true, rttMs: 1 }, { responded: true, rttMs: 1 }, { responded: true, rttMs: 1 }] });
@@ -281,7 +256,6 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
 
   if (parsed.numeric) {
-    // Numeric-only output: NO letters anywhere (test 154, 175 expect no [a-zA-Z])
     const lines: string[] = [];
     for (const hop of hops) lines.push(formatNumericHopLine(hop as TracertHopView));
     return lines.join('\n');

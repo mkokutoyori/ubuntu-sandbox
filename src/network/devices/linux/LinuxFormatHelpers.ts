@@ -207,8 +207,6 @@ export function formatTracerouteHopLine(hop: TracerouteHop): string {
 function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30, hostname?: string): string {
   const header = formatTracerouteHeader(target, maxHops, hostname);
   if (hops.length === 0) {
-    // No route or no probes returned — render synthetic timeout hops so the
-    // `* * *` pattern callers grep for is always present.
     const lines: string[] = [header];
     for (let i = 1; i <= Math.min(3, maxHops); i++) {
       lines.push(` ${i}  * * *`);

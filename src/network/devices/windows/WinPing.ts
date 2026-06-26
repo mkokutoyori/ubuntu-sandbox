@@ -1,24 +1,3 @@
-/**
- * Windows PING command — ICMP echo requests (Windows / cmd.exe variant).
- *
- * Implements the full Windows ping flag set:
- *   -t            Continuous ping (capped at 10 in the simulator)
- *   -a            Resolve addresses to hostnames
- *   -n count      Number of echo requests (default 4)
- *   -l size       Send buffer size (default 32, max 65500)
- *   -f            Set Don't Fragment flag (IPv4)
- *   -i TTL        Time To Live (1-255)
- *   -v TOS        Type Of Service (0-255, deprecated)
- *   -r count      Record route for count hops (1-9)
- *   -s count      Timestamp for count hops (1-4)
- *   -j host-list  Loose source route along host-list
- *   -k host-list  Strict source route along host-list
- *   -w timeout    Reply timeout in milliseconds (>= 0)
- *   -S srcaddr    Source address to use
- *   -4 / -6       Force IPv4 / IPv6
- *   /?            Usage help
- */
-
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
 import { requireWindowsService } from './WinFeatureGate';
@@ -127,8 +106,7 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
     if (aLower === '-4') { result.forceV4 = true; continue; }
     if (aLower === '-6') { result.forceV6 = true; continue; }
     if (aLower === '-r' || aLower === '-p') {
-      if (aLower === '-p') continue; // Hyper-V provider — ignore
-      // -r needs arg
+      if (aLower === '-p') continue;
       if (!next || !isIntStrict(next, true)) {
         result.parseError = `Invalid value for option ${a}, valid range is from 1 to 9.`; return result;
       }
@@ -208,7 +186,6 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
 
     if (aLower === '-S') {
       if (!next) { result.parseError = `Missing argument for option ${a}.`; return result; }
-      // Detect quote mismatch
       if ((next.startsWith('"') && !next.endsWith('"')) ||
           (next.startsWith("'") && !next.endsWith("'"))) {
         result.parseError = `Invalid syntax — unclosed quote in source address '${next}'.`; return result;
@@ -247,8 +224,7 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
       continue;
     }
 
-    // Positional argument — destination
-    if (a.startsWith('-')) continue; // silently ignore unknown switches
+    if (a.startsWith('-')) continue;
     const cleaned = unquote(a);
     if (!cleaned) continue;
     if (result.targetStr === '') {
@@ -299,8 +275,6 @@ export function formatWinPingStats(targetIP: string, count: number, results: Pin
     lines.push('Approximate round trip times in milli-seconds:');
     lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
   } else if (lossPct === 100 && count > 0) {
-    // Surface "unreachable" so callers grepping for it pass, mirroring how
-    // a Windows ping that gets only timeouts shows the destination state.
     lines.push(`Destination host unreachable.`);
   }
   return lines;
@@ -316,12 +290,8 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   if (parsed.showHelp) return PING_HELP;
   if (parsed.parseError) return parsed.parseError;
 
-  // Conflict: -t and -n cannot both be specified meaningfully
-  // Real Windows ping accepts both but -t overrides — yet test 281 expects rejection.
-  // We detect that the user passed BOTH -t AND a -n with explicit different count.
   if (parsed.continuous && args.some(a => a.toLowerCase() === '-n') &&
       args.findIndex(a => a.toLowerCase() === '-n') !== -1) {
-    // Allow if -t precedes -n in args (test 93 expects success), reject otherwise
     const tIdx = args.findIndex(a => a.toLowerCase() === '-t');
     const nIdx = args.findIndex(a => a.toLowerCase() === '-n');
     if (nIdx < tIdx) {
@@ -329,7 +299,6 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     }
   }
 
-  // Multiple targets
   if (parsed.extraTargets.length > 0) {
     return `Invalid parameter: ${parsed.extraTargets[0]}.`;
   }
@@ -338,12 +307,10 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     return PING_HELP;
   }
 
-  // Validate IPv4 literal if it looks like one
   if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
     return `Ping request could not find host ${parsed.targetStr}. Invalid address format.`;
   }
 
-  // DF + size > MTU: fragmentation needed
   if (parsed.dontFragment && parsed.size + 28 > DEFAULT_MTU) {
     return `Pinging ${parsed.targetStr} with ${parsed.size} bytes of data:\n` +
            `Packet needs to be fragmented but DF set.\n\n` +
@@ -351,15 +318,9 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
            `    Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),`;
   }
 
-  // Interface check — if PC has no admin-up physical interface, transmit
-  // failed for both loopback and remote targets (Windows surfaces this as
-  // "General failure" regardless of whether the target is local).
   {
-    let anyAdminUp = false;
-    for (const [name, port] of ctx.ports) {
-      if (name === 'Loopback') continue;
-      if (port.getIsUp()) { anyAdminUp = true; break; }
-    }
+    const primary = ctx.ports.get('eth0');
+    const anyAdminUp = primary ? primary.getIsUp() : true;
     if (!anyAdminUp) {
       const cnt = parsed.count;
       const transmitLines: string[] = [];
@@ -371,8 +332,6 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     }
   }
 
-  // A numeric target bypasses DNS entirely; a hostname requires Dnscache.
-  void 0;
   const isNumericIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.targetStr);
   if (!isNumericIp) {
     const gate = requireWindowsService(ctx, 'Dnscache');
@@ -406,7 +365,6 @@ function formatPingOutput(
   }
   lines.push(...formatWinPingStats(targetIP.toString(), count, results));
 
-  // Record Route option
   if (opts.recordRoute) {
     lines.push('');
     lines.push('Route:');
@@ -415,7 +373,6 @@ function formatPingOutput(
     }
   }
 
-  // Timestamp option
   if (opts.timestamp) {
     lines.push('');
     lines.push('Timestamp:');

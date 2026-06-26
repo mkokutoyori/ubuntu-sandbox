@@ -1,25 +1,3 @@
-/**
- * `traceroute` — record the path packets take to a destination.
- *
- * Implements the iputils/glibc traceroute flag set:
- *   -m maxhops      maximum TTL (default 30, 1-255)
- *   -q nqueries     probes per hop (default 3, > 0)
- *   -f first_ttl    starting TTL (default 1, must be <= maxhops)
- *   -w waittime     reply wait in seconds (default 5, > 0)
- *   -n              numeric output (no DNS, no banner text)
- *   -I              ICMP ECHO probes
- *   -U              UDP datagrams
- *   -T              TCP SYN probes
- *   -p port         destination port (1-65535)
- *   -i iface        bind to interface
- *   -g gateway      loose source-routing gateway
- *   -r              bypass routing tables (deprecated)
- *   -4 / -6         force IPv4 / IPv6
- *   -V / --version  version banner
- *   --help          usage banner
- *   <dest> [size]   destination + optional packet size (1-65535)
- */
-
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -106,7 +84,6 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
     extraTargets: [],
   };
 
-  // Support glued short flags like `-m10` and `-q2`
   const expanded: string[] = [];
   for (const a of args) {
     const m = a.match(/^(-[mqfwpi])(.+)$/);
@@ -209,19 +186,16 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
       continue;
     }
 
-    // After target is set, a negative number means invalid packet size
     if (a.startsWith('-') && /^-\d+$/.test(a) && result.targetStr !== '') {
       result.parseError = `traceroute: invalid packet length: ${a}`; return result;
     }
-    if (a.startsWith('-')) continue; // ignore unknown flags silently
+    if (a.startsWith('-')) continue;
 
-    // Positional argument: destination, then optional packet size
     const cleaned = unquote(a);
     if (!cleaned) continue;
     if (result.targetStr === '') {
       result.targetStr = cleaned;
     } else if (isInteger(cleaned, true)) {
-      // packet size
       const v = parseInt(cleaned, 10);
       if (v < 0) {
         result.parseError = `traceroute: invalid packet length: ${cleaned}`; return result;
@@ -235,7 +209,6 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
     }
   }
 
-  // Cross-check: firstTtl must be <= maxHops
   if (result.firstTtl > result.maxHops) {
     result.parseError = `traceroute: invalid value: first hop (-f ${result.firstTtl}) exceeds max hops (-m ${result.maxHops})`;
   }
@@ -243,10 +216,8 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
   return result;
 }
 
-// ─── Output formatters ────────────────────────────────────────────────────
 
 function formatNumericHopLine(hop: TracerouteHop): string {
-  // No letters, no "ms" — pure numeric output
   const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
   if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
     return ` ${hop.hop}  * * *`;
@@ -312,43 +283,34 @@ export const tracerouteCommand: LinuxCommand = {
 
     if (!parsed.targetStr) return TRACEROUTE_USAGE;
 
-    // Validate IPv4 literal if it looks like one
     if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
       return `traceroute: invalid address: ${parsed.targetStr}`;
     }
 
-    // Interface check
     if (parsed.iface) {
       const ports = ctx.net.getPorts();
       if (!ports.has(parsed.iface)) {
-        return `traceroute: cannot find device "${parsed.iface}"`;
+        return `traceroute: invalid interface "${parsed.iface}" — device not found`;
       }
     }
 
-    // IPv6 path
     if (parsed.forceV6 || parsed.targetStr.includes(':')) {
       return `traceroute to ${parsed.targetStr} (${parsed.targetStr}), ${parsed.maxHops} hops max, ${parsed.packetSize} byte packets`;
     }
 
     let targetIP = await ctx.net.resolveHostname(parsed.targetStr);
     if (!targetIP && parsed.targetStr.toLowerCase() === 'localhost') {
-      try { targetIP = new IPAddress('127.0.0.1'); } catch { /* ignore */ }
+      try { targetIP = new IPAddress('127.0.0.1'); } catch { }
     }
     if (!targetIP) {
       return `traceroute: unknown host ${parsed.targetStr} (failed to resolve)`;
     }
 
     const isHostname = parsed.targetStr !== targetIP.toString();
-    // Cap per-probe timeout AND maxHops to keep simulator runs bounded. The
-    // simulator can't fragment beyond the modeled hops, so 30×3×wait would
-    // freeze the test runner when intermediate routers don't reply.
     const probeTimeoutMs = Math.min(parsed.waitMs, 100);
     const effectiveMaxHops = Math.min(parsed.maxHops, 8);
     let hops = await ctx.net.traceroute(targetIP, effectiveMaxHops, Math.min(parsed.probesPerHop, 3), parsed.firstTtl, probeTimeoutMs);
 
-    // No hops produced — synthesize them so callers can grep for the
-    // expected IP / `* * *` markers even when the deeper multi-hop
-    // forwarding isn't modeled end-to-end.
     if (hops.length === 0) {
       const targetIpStr = targetIP.toString();
       const isLoopback = targetIpStr === '127.0.0.1' || targetIpStr.startsWith('127.') || targetIpStr === '::1';
@@ -385,7 +347,6 @@ export const tracerouteCommand: LinuxCommand = {
 
     const standardOut = ctx.fmt.formatTracerouteOutput(targetIP, hops, parsed.maxHops, isHostname ? parsed.targetStr : undefined);
 
-    // If a custom packet size was specified, swap "60 byte packets" → "${size} bytes packets"
     if (parsed.packetSize !== 60) {
       return standardOut.replace(/60 byte packets/, `${parsed.packetSize} bytes packets`);
     }
