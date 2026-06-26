@@ -2135,7 +2135,15 @@ export abstract class EndHost extends Equipment {
   }
 
   getEgressIPFor(targetIP: IPAddress): IPAddress | null {
-    return this.resolveRoute(targetIP)?.port.getIPAddress() ?? null;
+    return this.getEgressFor(targetIP)?.sourceIp ?? null;
+  }
+
+  getEgressFor(targetIP: IPAddress): { sourceIp: IPAddress; interfaceName: string; nextHopIP: IPAddress } | null {
+    const route = this.resolveRoute(targetIP);
+    if (!route) return null;
+    const sourceIp = route.port.getIPAddress();
+    if (!sourceIp) return null;
+    return { sourceIp, interfaceName: route.port.getName(), nextHopIP: route.nextHopIP };
   }
 
   async tracerouteStreamInSession(
