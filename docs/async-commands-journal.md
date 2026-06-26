@@ -534,6 +534,39 @@ Régressions : `routing-table`, `hosts`, `linux-gateway-forwarding` (56),
 DHCP (`dhcp_complete`, `dhcp_fixes`, `dhcp-resolv-conf`, 63) verts. Aucune
 nouvelle erreur de lint (les 3 `any` d'`EndHost` sont pré-existants).
 
+## Real-Time Monitoring — PC Linux : `netstat -c`
+
+- **Constat** : `netstat` rendait un bloc unique et rendait la main, même avec
+  `-c`/`--continuous` — le flag `c` était silencieusement avalé par `cmdNetstat`
+  (aucune branche `hasFlag('c')`). Or `netstat -c` (net-tools) réimprime la
+  table sélectionnée toutes les secondes en continu, jusqu'à Ctrl+C.
+- **Anti-duplication** : aucune nouvelle logique de rendu. Le controller
+  réutilise intégralement le renderer netstat existant
+  (`runCommandFrameInSession`, qui rejoue la ligne de commande via
+  `executor.executeInSession` dans le contexte cwd/env de la session). `-c`
+  reste ignoré par `cmdNetstat`, donc chaque frame est la sortie netstat
+  normale (`-t`/`-u`/`-l`/`-a`/`-n`/`-p` honorés comme en bloc).
+- **Controller** : `LinuxTerminalSession.tryStartNetstatStream` intercepte
+  `netstat` avec `-c` (court combiné, ex. `-tc`) ou `--continuous` (hors
+  pipes/redirections), démarre un job `mode: foreground`, `kind: streaming` :
+  réimpression du bloc complet (bannière + en-tête + lignes) toutes les secondes
+  en mode défilement (append, pas de repaint en place — fidèle à net-tools qui
+  ne nettoie pas l'écran), prompt verrouillé, Ctrl+C → `^C` et libération. Le
+  `netstat` sans `-c` retombe sur le one-shot existant.
+
+Critères couverts : affichage progressif (table réémise au fil de l'eau, pas un
+dump unique), prompt bloquant (foreground) avec interruption Ctrl+C propre,
+isolation des sessions (chaque terminal a son propre runtime/job), données
+reflétant l'état interne réel (socket table du device via le renderer existant).
+
+Validation : `linux-netstat-stream-ui.test.ts` — 3/3 (réimpression récurrente de
+l'en-tête + prompt verrouillé + arrêt Ctrl+C ; `netstat -t` sans `-c` reste
+one-shot ; isolation de deux sessions concurrentes). Régressions : `ss-netstat`,
+streaming UI (`watch`, `top`/`journalctl`, `tcpdump`, `ping`, `ip monitor`,
+`traceroute`, `tail`) — 55/55 verts. Typecheck `tsc --noEmit` : 0 erreur.
+
 ## Suite
 
 - `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
+- Windows : `netstat` continu (paramètre d'intervalle, ex. `netstat -n 1`),
+  `pathping`, `Test-NetConnection` (PowerShell).
