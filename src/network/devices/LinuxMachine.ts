@@ -42,6 +42,12 @@ import {
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
+import {
+  sampleCpuRows as samplePidstatCpu,
+  sampleMemoryRows as samplePidstatMemory,
+  pidstatBanner,
+  type PidstatArgs,
+} from './linux/system/Pidstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
@@ -1904,6 +1910,20 @@ export abstract class LinuxMachine extends EndHost
     const now = new Date();
     const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
+  }
+
+  pidstatBannerLine(): string {
+    const now = new Date();
+    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
+  }
+
+  samplePidstatCpu(args: PidstatArgs) {
+    return samplePidstatCpu(args, this.executor.processMgr, this.getHardware().cpu);
+  }
+
+  samplePidstatMemory(args: PidstatArgs) {
+    return samplePidstatMemory(args, this.executor.processMgr, this.getHardware().memory);
   }
 
   followDmesg(

@@ -42,6 +42,7 @@ import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
+import { cmdPidstat } from './system/Pidstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
@@ -132,7 +133,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
-  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'df', 'du', 'mount', 'umount', 'findmnt',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
@@ -3080,6 +3081,13 @@ export class LinuxCommandExecutor {
       case 'mpstat': return cmdMpstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
+        kernel: this.identity.kernel,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      });
+      case 'pidstat': return cmdPidstat(args, {
+        pm: this.processMgr,
+        cpu: this.hardware.cpu,
+        memory: this.hardware.memory,
         kernel: this.identity.kernel,
         hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       });
