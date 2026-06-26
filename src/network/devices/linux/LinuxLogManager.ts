@@ -514,18 +514,55 @@ export class LinuxLogManager {
       entries = entries.filter(e => levelNums.includes(e.level));
     }
 
-    const lines = entries.map(e => {
-      if (raw) return e.message;
-      if (humanTime) {
-        const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
-        return `[${fmtHumanDate(ts)}] ${e.message}`;
-      }
-      return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
-    });
+    const lines = entries.map(e => this.formatDmesgEntry(e, { raw, humanTime }));
 
     if (clearBuf) this.dmesgBuffer = [];
 
     return lines.join('\n');
+  }
+
+  private formatDmesgEntry(e: DmesgEntry, opts: { raw: boolean; humanTime: boolean }): string {
+    if (opts.raw) return e.message;
+    if (opts.humanTime) {
+      const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
+      return `[${fmtHumanDate(ts)}] ${e.message}`;
+    }
+    return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
+  }
+
+  private readonly dmesgFollowSubs = new Set<{
+    raw: boolean;
+    humanTime: boolean;
+    levels: number[] | null;
+    listener: (line: string) => void;
+  }>();
+
+  /** Subscribe to live kernel ring buffer lines (dmesg -w). Returns an unsubscribe. */
+  followDmesg(
+    opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
+    listener: (line: string) => void,
+  ): () => void {
+    const filter = opts.levelFilter && opts.levelFilter.length > 0
+      ? opts.levelFilter
+          .map((l) => PRIORITY_NAMES[l])
+          .filter((n): n is number => typeof n === 'number')
+      : null;
+    const sub = {
+      raw: !!opts.raw,
+      humanTime: !!opts.humanTime,
+      levels: filter && filter.length > 0 ? filter : null,
+      listener,
+    };
+    this.dmesgFollowSubs.add(sub);
+    return () => { this.dmesgFollowSubs.delete(sub); };
+  }
+
+  private emitToDmesgFollowers(entry: DmesgEntry): void {
+    if (this.dmesgFollowSubs.size === 0) return;
+    for (const sub of this.dmesgFollowSubs) {
+      if (sub.levels && !sub.levels.includes(entry.level)) continue;
+      sub.listener(this.formatDmesgEntry(entry, { raw: sub.raw, humanTime: sub.humanTime }));
+    }
   }
 
   // ── Internal methods ───────────────────────────────────────────
@@ -550,11 +587,13 @@ export class LinuxLogManager {
     this.journal.push(entry);
     // Kernel-facility messages also land in the kernel ring buffer (dmesg).
     if (opts.facility === FACILITY_NAMES.kern) {
-      this.dmesgBuffer.push({
+      const dEntry: DmesgEntry = {
         offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
         level: opts.priority,
         message: opts.message,
-      });
+      };
+      this.dmesgBuffer.push(dEntry);
+      this.emitToDmesgFollowers(dEntry);
     }
     this.emitToFollowers(entry);
 

@@ -1041,6 +1041,56 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartDmesgFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'dmesg') return false;
+    if (!toks.includes('-w') && !toks.includes('--follow')) return false;
+    const shell = this.shell;
+
+    let raw = false;
+    let humanTime = false;
+    let levelFilter: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if (a === '-T' || a === '--ctime' || a === '-H' || a === '--human') humanTime = true;
+      else if (a === '-r' || a === '--raw') raw = true;
+      else if (a === '-l' || a === '--level') {
+        levelFilter = (toks[++i] || '').split(',').map((l) => l.trim()).filter(Boolean);
+      } else if (a.startsWith('--level=')) {
+        levelFilter = a.slice(8).split(',').map((l) => l.trim()).filter(Boolean);
+      }
+    }
+
+    const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
+    const initialCommand = ['dmesg', ...initialArgs].join(' ');
+
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
+          ctx.sink.line(initial);
+          return false;
+        }
+        if (initial) for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = dev.followDmesg({ raw, humanTime, levelFilter }, (line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
+    });
+    return job !== null;
+  }
+
   private tryStartNetstatStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -1142,6 +1192,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
+    if (this.tryStartDmesgFollow(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
