@@ -41,6 +41,7 @@ import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
 import { cmdVmstat } from './system/Vmstat';
+import { cmdMpstat } from './system/Mpstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
@@ -131,7 +132,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
-  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'df', 'du', 'mount', 'umount', 'findmnt',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
@@ -3076,6 +3077,12 @@ export class LinuxCommandExecutor {
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
+      case 'mpstat': return cmdMpstat(args, {
+        pm: this.processMgr,
+        cpu: this.hardware.cpu,
+        kernel: this.identity.kernel,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      });
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);

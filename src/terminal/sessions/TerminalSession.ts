@@ -276,17 +276,25 @@ export abstract class TerminalSession {
     commandLine: string;
     intervalMs: number;
     frame: () => Promise<string> | string;
-    header?: () => Promise<string> | string;
+    header?: () => string;
+    trailer?: () => string;
     maxFrames?: number;
   }): boolean {
     if (this.hasForegroundAsyncJob) return false;
+    let trailerEmitted = false;
+    const emitTrailer = (ctx: AsyncJobContext) => {
+      if (trailerEmitted || !opts.trailer) return;
+      trailerEmitted = true;
+      const t = opts.trailer();
+      if (t) for (const line of t.split('\n')) ctx.sink.line(line);
+    };
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: opts.commandLine,
       run: async (ctx) => {
         if (opts.header) {
-          const h = await opts.header();
+          const h = opts.header();
           if (h) for (const line of h.split('\n')) ctx.sink.line(line);
         }
         let emitted = 0;
@@ -297,7 +305,9 @@ export abstract class TerminalSession {
           if (opts.maxFrames !== undefined && emitted >= opts.maxFrames) break;
           await ctx.delay(opts.intervalMs);
         }
+        emitTrailer(ctx);
       },
+      onInterrupt: opts.trailer ? (ctx) => emitTrailer(ctx) : undefined,
     });
     return job !== null;
   }

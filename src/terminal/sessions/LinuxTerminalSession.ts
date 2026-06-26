@@ -15,6 +15,13 @@ import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Tracer
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
 import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
+import {
+  parseMpstatArgs,
+  mpstatColumnHeader,
+  formatMpstatRow,
+  formatMpstatAverageRow,
+  MpstatAccumulator,
+} from '@/network/devices/linux/system/Mpstat';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
@@ -1106,6 +1113,35 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
+  private tryStartMpstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mpstat') return false;
+    const parsed = parseMpstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    const accumulator = new MpstatAccumulator();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(new Date())}`,
+      frame: () => {
+        const rows = dev.sampleMpstatSnapshot(parsed);
+        accumulator.add(rows);
+        const now = new Date();
+        return rows.map((r) => formatMpstatRow(now, r)).join('\n');
+      },
+      trailer: () => {
+        if (accumulator.sampleCount() === 0) return '';
+        const lines = ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))];
+        return lines.join('\n');
+      },
+    });
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1182,6 +1218,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartDmesgFollow(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartVmstatStream(trimmed)) return;
+    if (this.tryStartMpstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;

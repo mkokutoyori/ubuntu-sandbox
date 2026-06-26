@@ -41,6 +41,7 @@ import {
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
+import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
@@ -1893,6 +1894,16 @@ export abstract class LinuxMachine extends EndHost
 
   sampleVmstatSnapshot() {
     return sampleVmstat(this.executor.processMgr, this.getHardware().memory);
+  }
+
+  sampleMpstatSnapshot(args: MpstatArgs) {
+    return sampleMpstat(args, this.executor.processMgr, this.getHardware().cpu);
+  }
+
+  mpstatBannerLine(): string {
+    const now = new Date();
+    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   followDmesg(
