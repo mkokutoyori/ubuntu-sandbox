@@ -565,8 +565,145 @@ one-shot ; isolation de deux sessions concurrentes). Régressions : `ss-netstat`
 streaming UI (`watch`, `top`/`journalctl`, `tcpdump`, `ping`, `ip monitor`,
 `traceroute`, `tail`) — 55/55 verts. Typecheck `tsc --noEmit` : 0 erreur.
 
+## Real-Time Monitoring — PC Linux : `dmesg -w`
+
+- **Constat** : `dmesg` rendait un dump unique du ring buffer ; le flag `-w`/
+  `--follow` était silencieusement avalé par `executeDmesg`. Or `dmesg -w`
+  (util-linux 2.37) imprime le buffer existant puis reste attaché au flux noyau
+  jusqu'à Ctrl+C.
+- **Modèle** : extraction d'un `formatDmesgEntry(entry, opts)` privé partagé
+  entre le dump bloc et le flux suiveur (zéro duplication de rendu — `-r` raw,
+  `-T` humanTime, `-l` level filter honorés à l'identique). Nouveau `Set` de
+  souscripteurs `dmesgFollowSubs` dans `LinuxLogManager` ; `addEntry` fan-out
+  à chaque message kern poussé dans le ring buffer (point d'émission unique
+  déjà existant). API publique `followDmesg(opts, listener)` symétrique de
+  `followJournal`.
+- **Controller** : `LinuxTerminalSession.tryStartDmesgFollow` détecte
+  `dmesg -w`/`--follow` (hors pipes/redirections), foreground streaming job.
+  `prepare` imprime d'abord la queue via `runCommandFrameInSession(dmesg <args
+  sans -w>)` puis souscrit. Erreur de niveau invalide (`dmesg -w -l bogus`) →
+  message d'erreur + prompt libéré (pas de verrouillage sur entrée mal formée).
+
+Validation : `linux-dmesg-stream-ui.test.ts` — 5/5 (dump initial + entrée live +
+Ctrl+C ; fallback one-shot ; filtre `--level=err` (warning droppé, err passé) ;
+level inconnu n'engage pas le job ; isolation deux sessions). Régressions :
+streaming UI (`netstat`, `top`/`journalctl`, `journal`, `logging`) 282/282.
+
+## Helpers de session — `startScrollingMonitor` et `startFollowStream`
+
+Avant de pouvoir documenter proprement les commandes Windows et Linux
+suivantes, factorisation transverse pour ne pas dupliquer la boucle de
+streaming à chaque nouvelle commande :
+
+- **`TerminalSession.startScrollingMonitor({ commandLine, intervalMs,
+  frame })`** — boucle `while (!ctx.cancelled()) { sink(frame()); delay() }`
+  partagée. Consommée par Linux `netstat -c` (`runCommandFrameInSession`) et
+  Windows `netstat <interval>` (`executeCommandInSession`) — un seul squelette
+  vendor-agnostique.
+- **`TerminalSession.startFollowStream({ commandLine, prepare, subscribe })`** —
+  pattern « historique + souscription » partagé. Consommé par `journalctl -f`,
+  `dmesg -w`, `ip monitor` — la mécanique `let unsubscribe; onCancel; resolve`
+  vit en un seul endroit.
+
+Les call sites des trois follow handlers et des deux scrolling handlers
+collapsent de ~12 lignes chacun à ~5. Aucune nouvelle mécanique async.
+
+## Real-Time Monitoring — Windows : `netstat <interval>`
+
+- **Constat** : Windows `netstat -an 5` réimprime la table toutes les 5
+  secondes ; la grammaire « entier positif final = intervalle en secondes » est
+  spécifique à la version Windows de netstat. Notre handler ignorait l'entier.
+- **Controller** : `WindowsTerminalSession.tryStartWinNetstatStream` détecte un
+  entier positif final hors flag, strip-le pour reconstruire la commande sans
+  l'intervalle, route via `startScrollingMonitor` qui réémet la table tous les
+  N secondes via `executeCommandInSession`. Réutilise intégralement le renderer
+  one-shot existant (`cmdNetstat`) — zéro nouvelle logique de format.
+
+Validation : `windows-netstat-stream-ui.test.ts` — 4/4 (réimpression + Ctrl+C ;
+fallback one-shot sans intervalle ; forme bare `netstat 1` ; isolation deux
+sessions). Régressions : streaming UI 41/41 sur 12 fichiers (Linux + Windows).
+
+## Real-Time Monitoring — Windows : `pathping`
+
+- **Constat** : `pathping` n'était pas implémenté ; la commande sortait
+  silencieusement. Real Windows pathping fait deux phases : discovery
+  (traceroute simplifié, 1 probe par hop), puis statistics (N pings vers
+  chaque hop, agrégation lost/sent + RTT moyen + perte par lien).
+- **Modèle** : nouveau module `WinPathping.ts` — `parseWinPathpingArgs` (-h
+  max-hops, -q queries, -p period, -w timeout, -n no-resolve, mapping
+  -CommonTCPPort), formatters purs `formatPathpingHeader / DiscoveryHop /
+  Computing / TableHeader / Table / Trailer / DurationSeconds`. Aucune logique
+  réseau dans le format.
+- **Controller** : `WindowsTerminalSession.tryStartWinPathpingStream` foreground
+  streaming. Phase discovery : `tracerouteStreamInSession` (probesPerHop=1) →
+  émet la liste des hops au fil de la résolution. Phase statistics : pour
+  chaque hop, `pingStreamInSession` avec `count=queriesPerHop`, agrège
+  lost/sent et RTT moyen ; loss de lien = différence de loss cumulative
+  entre hops. Source row (hop 0) via nouveau `EndHost.getEgressIPFor()` ; le
+  helper `getEgressFor()` ajouté ensuite retourne `{sourceIp, interfaceName,
+  nextHopIP}` partagé.
+
+Validation : `windows-pathping-stream-ui.test.ts` — 10/10 (UI bout en bout +
+parser/formatters purs). Aucune mécanique ICMP / résolveur nouvelle.
+
+## Real-Time Monitoring — PowerShell : `Test-NetConnection` réel dans le runtime
+
+Itération avec un objectif explicite : remplacer le stub du cmdlet, **sans**
+choisir la voie de la facilité (interception au prompt qui ne couvre pas les
+scripts ; ou async-cascade dans tout `PSRuntime`).
+
+- **Constat** : `TestNetConnectionCmdlet.execute` retournait des champs
+  hardcodés (PingSucceeded toujours True, SourceAddress = gateway,
+  TcpTestSucceeded = !!port, RemoteAddress = la chaîne brute du user). Le
+  fallback `PowerShellExecutor.handleTestNetConnection` avait son propre stub
+  avec un set de ports listening codé en dur `{80, 135, 443, 445, 5985,
+  49152}`. Et une interception parallèle dans `WindowsTerminalSession` (mode
+  PS) faisait du vrai ping/TCP mais seulement quand l'utilisateur tapait au
+  prompt — `$r = Test-NetConnection ...`, `if ((Test-NetConnection ...).
+  PingSucceeded)` et toute utilisation dans un script restaient au stub.
+- **Primitives sync sur EndHost** : `sendPingProbeSync(target)` — souscrit
+  sync à `host.icmp.echo-reply/echo-failed`, ARP sync via le bus (`publish`
+  est *synchrone* — handlers fire inline, dispatch en ordre de souscription
+  cf. `EventBus.ts`), transmet l'ICMP echo, observe la réponse dans le même
+  tick JS. `tcpProbeSync(target, port)` — drive `tcpv2.connect` ; le SYN/
+  SYN-ACK/ACK passe par le bus sync donc `socket.state === 'established'`
+  est vrai à la sortie de `connect()`.
+- **Provider** : trois nouvelles méthodes sur `INetworkProvider` —
+  `testPingProbe`, `testTcpProbe`, `egressInfoFor`. Implémentées dans
+  `WindowsNetworkAdapter` via `resolveHostnameSync` (literal IP / hosts file /
+  localhost / hostname) + les deux probes. Le stub `testConnection()` du
+  provider devient une simple façade qui appelle `testPingProbe?.success`.
+- **Cmdlet** : `TestNetConnectionCmdlet` réécrit. Mapping `-CommonTCPPort`
+  HTTP/SMB/RDP/WINRM, `-InformationLevel` Quiet/Detailed. Retourne un
+  PSObject **plat** (tous scalaires) pour que `formatDefault` rende en
+  Format-List comme le vrai Test-NetConnection. Le fallback
+  `PowerShellExecutor.handleTestNetConnection` utilise les mêmes primitives,
+  donc cmdlet et fallback sont cohérents (plus de divergence).
+- **Suppression de l'interception** : `WindowsTerminalSession.
+  tryStartWinTestNetConnection` et le module `WinTestNetConnection.ts`
+  supprimés — c'était la voie facile. Le vrai cmdlet remplace tout.
+- **Choix d'architecture documenté** : sync probe vs async cascade. Le
+  runtime PS est ~3000 lignes synchrones, ~120 méthodes, ~500 call sites
+  internes. Convertir en async pour un seul cmdlet aurait gutté la
+  surface de test PowerShell. La propriété rare du simulateur — topologie
+  visible inline + EventBus synchrone — rend la voie sync **fidèle** : on
+  exchange les *mêmes paquets* via le *même bus* qu'un appel async ferait.
+  La fidélité vient des paquets réels, pas du `await`.
+
+Validation : `windows-test-netconnection-stream-ui.test.ts` — 7/7 (reachable
+host avec vraies adresses source/interface ; unreachable ; -Port closed ;
+Quiet ; Detailed avec NameResolutionResults + NetRouteNextHop ; usage
+script `$r.PingSucceeded` ; chaîne `(...).TcpTestSucceeded`). Régressions :
+streaming UI + PS network 67/67 sur 10 fichiers, y compris les anciens
+tests `phase3-final-batches-migrated` et `ps-network-command` qui
+exerçaient déjà l'ancien stub via `ps.execute` directement.
+
 ## Suite
 
-- `mail`/`mailx` pour lire `/var/mail/<user>` (le `cat` marche déjà).
-- Windows : `netstat` continu (paramètre d'intervalle, ex. `netstat -n 1`),
-  `pathping`, `Test-NetConnection` (PowerShell).
+- Linux : `vmstat <interval>` / `iostat <interval>` / `mpstat <interval>`
+  (sysstat) — moniteurs périodiques de métriques système, candidats directs
+  pour `startScrollingMonitor`.
+- Cisco / Huawei : `monitor session` (SPAN) — capture live de trames sur un
+  port miroir, similaire à `tcpdump` côté hôte.
+- Huawei : `terminal debugging` (analog de Cisco `terminal monitor` +
+  `debug ip`), si les sources d'évènements bus existent côté `HuaweiRouter`.
