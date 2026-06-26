@@ -2134,6 +2134,10 @@ export abstract class EndHost extends Equipment {
     return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
   }
 
+  getEgressIPFor(targetIP: IPAddress): IPAddress | null {
+    return this.resolveRoute(targetIP)?.port.getIPAddress() ?? null;
+  }
+
   async tracerouteStreamInSession(
     targetStr: string,
     opts: {

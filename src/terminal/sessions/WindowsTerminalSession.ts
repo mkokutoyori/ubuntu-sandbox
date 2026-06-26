@@ -22,7 +22,19 @@ import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
-import type { PingResult } from '@/network/devices/EndHost';
+import {
+  parseWinPathpingArgs,
+  formatPathpingHeader,
+  formatPathpingDiscoveryHop,
+  formatPathpingComputing,
+  formatPathpingTableHeader,
+  formatPathpingTable,
+  formatPathpingTrailer,
+  pathpingDurationSeconds,
+  type PathpingStatsRow,
+} from '@/network/devices/windows/WinPathping';
+import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
+import type { IPAddress } from '@/network/core/types';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -453,6 +465,113 @@ export class WindowsTerminalSession extends TerminalSession {
     });
   }
 
+  private tryStartWinPathpingStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'pathping') return false;
+    const parsed = parseWinPathpingArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const discovered: TracerouteHopResult[] = [];
+        let resolvedTarget: IPAddress | null = null;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          timeoutMs: parsed.timeoutMs,
+          onResolved: (ip, hostname) => {
+            resolvedTarget = ip;
+            for (const line of formatPathpingHeader(ip, parsed.maxHops, hostname)) ctx.sink.line(line);
+          },
+          onHop: (hop) => { discovered.push(hop); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved || !resolvedTarget) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const sourceIp = dev.getEgressIPFor(resolvedTarget)?.toString();
+        const hopRows: PathpingStatsRow[] = [{
+          hop: 0,
+          ip: sourceIp ?? '0.0.0.0',
+          hostname: parsed.noResolve ? undefined : dev.getHostname(),
+          rttMs: undefined,
+          sourceLost: 0,
+          sourceSent: 0,
+          nodeLost: 0,
+          linkLost: 0,
+        }];
+        let hopNum = 0;
+        for (const hop of discovered) {
+          hopNum++;
+          if (!hop.ip) continue;
+          ctx.sink.line(formatPathpingDiscoveryHop(hopNum, hop.ip));
+          hopRows.push({
+            hop: hopNum,
+            ip: hop.ip,
+            hostname: undefined,
+            rttMs: undefined,
+            sourceLost: 0,
+            sourceSent: 0,
+            nodeLost: 0,
+            linkLost: 0,
+          });
+        }
+        if (hopRows.length <= 1) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const durationSec = pathpingDurationSeconds(parsed, hopRows.length - 1);
+        for (const line of formatPathpingComputing(durationSec)) ctx.sink.line(line);
+
+        for (let i = 1; i < hopRows.length; i++) {
+          if (ctx.cancelled()) return;
+          const row = hopRows[i];
+          const rtts: number[] = [];
+          const results: PingResult[] = [];
+          await dev.pingStreamInSession(row.ip, {
+            count: parsed.queriesPerHop,
+            timeoutMs: parsed.timeoutMs,
+            intervalMs: parsed.periodMs,
+            onResult: (r) => { results.push(r); if (r.success) rtts.push(r.rttMs); },
+            shouldStop: () => ctx.cancelled(),
+            sleep: (ms) => ctx.delay(ms),
+          });
+          row.sourceSent = results.length;
+          row.sourceLost = results.filter((r) => !r.success).length;
+          if (rtts.length > 0) row.rttMs = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+        }
+        if (ctx.cancelled()) return;
+
+        for (let i = 1; i < hopRows.length; i++) {
+          const prev = hopRows[i - 1];
+          const cur = hopRows[i];
+          const prevLossRate = prev.sourceSent > 0 ? prev.sourceLost / prev.sourceSent : 0;
+          const curLossRate = cur.sourceSent > 0 ? cur.sourceLost / cur.sourceSent : 0;
+          cur.linkLost = Math.round(Math.max(0, curLossRate - prevLossRate) * cur.sourceSent);
+        }
+
+        ctx.sink.line('');
+        for (const line of formatPathpingTableHeader()) ctx.sink.line(line);
+        for (const line of formatPathpingTable(hopRows, parsed.queriesPerHop)) ctx.sink.line(line);
+        ctx.sink.line('');
+        ctx.sink.line(formatPathpingTrailer());
+      },
+    });
+    return job !== null;
+  }
+
   protected onEnter(): void {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
@@ -508,6 +627,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinPingStream(trimmed)) return;
     if (this.tryStartWinTracertStream(trimmed)) return;
     if (this.tryStartWinNetstatStream(trimmed)) return;
+    if (this.tryStartWinPathpingStream(trimmed)) return;
 
     // SSH client info / unsupported forms — handled by the shared
     // launcher first so the OpenSSH usage / version line is uniform
