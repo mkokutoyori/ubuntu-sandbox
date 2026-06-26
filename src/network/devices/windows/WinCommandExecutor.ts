@@ -93,7 +93,7 @@ export interface WinCommandContext {
 
   // Network operations
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number): Promise<PingResult[]>;
-  executeTraceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
+  executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 
   // TCP/IP stack reset
   resetStack(): void;

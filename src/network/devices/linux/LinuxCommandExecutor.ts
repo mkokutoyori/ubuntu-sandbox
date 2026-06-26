@@ -3096,6 +3096,19 @@ export class LinuxCommandExecutor {
       case 'ping': {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
+        // Privilege checks even in the bash-fallback stub so `su user -c "ping -f"`
+        // surfaces the expected "permission denied" error.
+        const isRoot = this.userMgr.currentUid === 0;
+        if (args.includes('-f') && !isRoot) {
+          return { output: 'ping: -f: Permission denied (must run as root, privileged operation)', exitCode: 2 };
+        }
+        const iIdx = args.indexOf('-i');
+        if (iIdx !== -1 && args[iIdx + 1]) {
+          const interval = parseFloat(args[iIdx + 1]);
+          if (!isNaN(interval) && interval < 0.2 && !isRoot) {
+            return { output: `ping: -i ${interval}: Permission denied (interval < 200ms requires privileged user)`, exitCode: 2 };
+          }
+        }
         for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
           this.publishSyscall(sc);
         }
@@ -3917,7 +3930,8 @@ export class LinuxCommandExecutor {
     // A non-root caller must authenticate as the target account. The password
     // arrives on stdin (e.g. `echo pw | su user`); without a valid one su
     // fails and auditd records the PAM authentication failure. Root su's free.
-    if (this.userMgr.currentUid !== 0) {
+    // Switching to one's own current account is permitted without a password.
+    if (this.userMgr.currentUid !== 0 && this.userMgr.currentUser !== user.username) {
       const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
       if (!this.userMgr.checkPassword(user.username, supplied)) {
         this.publishFsAccess(resolveExePath('su'), 'x', 'execve');

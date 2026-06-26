@@ -65,8 +65,10 @@ export abstract class Equipment {
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
-    this.name = name;
-    this.hostname = name;
+    // Defensive: tests sometimes pass a number as the name positional arg;
+    // coerce to string so all downstream `.toLowerCase()` / String ops work.
+    this.name = typeof name === 'string' ? name : String(name);
+    this.hostname = this.name;
     this.x = x;
     this.y = y;
     EquipmentRegistry.getInstance().register(this);

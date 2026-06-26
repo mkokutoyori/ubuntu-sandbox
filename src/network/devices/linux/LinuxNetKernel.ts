@@ -95,7 +95,7 @@ export interface LinuxNetKernel {
     timeoutMs?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;

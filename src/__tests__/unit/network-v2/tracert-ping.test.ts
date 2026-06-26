@@ -1,14 +1,3 @@
-Voici un fichier de tests unitaires d'envergure industrielle rédigé en
-TypeScript avec Vitest, contenant exactement 300 scénarios de tests unitaires
-pour les commandes ping et traceroute (et son équivalent Windows tracert).
-
-Cette suite est conçue pour s'exécuter au sein d'une topologie WAN réaliste
-comprenant des PC (Linux et Windows), des commutateurs et routeurs Cisco, ainsi
-que des équipements Huawei. Elle valide la configuration des paquets ICMP, les
-limites de sauts (TTL), la fragmentation (Don't Fragment), les diagnostics de
-pannes (Timeout, Unreachable), les restrictions de sécurité (mode flood), et la
-précision du traçage de route à travers les sauts de passerelles.
-
 /**
  * WAN-level Ping, Traceroute, and Tracert Comprehensive Test Suite.
  * 
@@ -75,10 +64,13 @@ async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
   await topo.r1.executeCommand('interface GigabitEthernet0/0');
   await topo.r1.executeCommand('ip address 10.0.1.1 255.255.255.0');
   await topo.r1.executeCommand('no shutdown');
+  await topo.r1.executeCommand('exit');
   await topo.r1.executeCommand('interface GigabitEthernet0/1');
   await topo.r1.executeCommand('ip address 10.0.12.1 255.255.255.0');
   await topo.r1.executeCommand('no shutdown');
+  await topo.r1.executeCommand('exit');
   await topo.r1.executeCommand('ip route 10.0.2.0 255.255.255.0 10.0.12.2');
+  await topo.r1.executeCommand('ip route 10.0.23.0 255.255.255.0 10.0.12.2');
   await topo.r1.executeCommand('end');
 
   // R2 (Cisco/Huawei L3 equivalent)
@@ -87,9 +79,11 @@ async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
   await topo.r2.executeCommand('interface GigabitEthernet0/1');
   await topo.r2.executeCommand('ip address 10.0.12.2 255.255.255.0');
   await topo.r2.executeCommand('no shutdown');
+  await topo.r2.executeCommand('exit');
   await topo.r2.executeCommand('interface GigabitEthernet0/0');
   await topo.r2.executeCommand('ip address 10.0.23.2 255.255.255.0');
   await topo.r2.executeCommand('no shutdown');
+  await topo.r2.executeCommand('exit');
   await topo.r2.executeCommand('ip route 10.0.1.0 255.255.255.0 10.0.12.1');
   await topo.r2.executeCommand('ip route 10.0.2.0 255.255.255.0 10.0.23.3');
   await topo.r2.executeCommand('end');
@@ -100,13 +94,17 @@ async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
   await topo.hw_sw1.executeCommand('interface GigabitEthernet0/0/1');
   await topo.hw_sw1.executeCommand('port link-type access');
   await topo.hw_sw1.executeCommand('port default vlan 10');
+  await topo.hw_sw1.executeCommand('quit');
   await topo.hw_sw1.executeCommand('interface GigabitEthernet0/0/2');
   await topo.hw_sw1.executeCommand('port link-type access');
   await topo.hw_sw1.executeCommand('port default vlan 20');
+  await topo.hw_sw1.executeCommand('quit');
   await topo.hw_sw1.executeCommand('interface Vlanif10');
   await topo.hw_sw1.executeCommand('ip address 10.0.23.3 255.255.255.0');
+  await topo.hw_sw1.executeCommand('quit');
   await topo.hw_sw1.executeCommand('interface Vlanif20');
   await topo.hw_sw1.executeCommand('ip address 10.0.2.1 255.255.255.0');
+  await topo.hw_sw1.executeCommand('quit');
   await topo.hw_sw1.executeCommand('ip route-static 10.0.1.0 255.255.255.0 10.0.23.2');
   await topo.hw_sw1.executeCommand('quit');
 

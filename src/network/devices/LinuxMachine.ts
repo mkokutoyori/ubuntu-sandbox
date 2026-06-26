@@ -911,6 +911,27 @@ export abstract class LinuxMachine extends EndHost
       return outputs.join('\n');
     }
 
+    // Compound commands chained with logical operators `&&` / `||`.
+    // The bash interpreter cannot dispatch network commands; we therefore
+    // split here so each segment can take the network-aware fast path.
+    const logical = LinuxMachine.splitLogical(trimmed);
+    if (logical.length > 1) {
+      const outputs: string[] = [];
+      let lastOk = true;
+      for (const seg of logical) {
+        const shouldRun = seg.op === 'first' ||
+          (seg.op === '&&' && lastOk) ||
+          (seg.op === '||' && !lastOk);
+        if (!shouldRun) continue;
+        const cmdStr = seg.cmd.trim();
+        if (!cmdStr) continue;
+        const out = await this.executeCommand(cmdStr);
+        if (out) outputs.push(out);
+        lastOk = !this.isFailureOutput(out, cmdStr);
+      }
+      return outputs.join('\n');
+    }
+
     // Piped command: route the head through the network dispatcher,
     // then apply the remaining text filters through the bash interpreter.
     // Only a top-level `|` (outside quotes) counts as a pipe.
@@ -935,6 +956,58 @@ export abstract class LinuxMachine extends EndHost
    * inside single or double quotes so that `sh -c "a; b | c"` is treated
    * as one command rather than being torn apart by the shell router.
    */
+  /**
+   * Split a command line on top-level `&&` / `||` operators. Returns an
+   * array of `{ cmd, op }` segments; the first segment has op="first".
+   * Quoted regions and `|` (pipe) are not treated as separators.
+   */
+  private static splitLogical(input: string): Array<{ cmd: string; op: 'first' | '&&' | '||' }> {
+    const segments: Array<{ cmd: string; op: 'first' | '&&' | '||' }> = [];
+    let buf = '';
+    let quote: '"' | "'" | null = null;
+    let currentOp: 'first' | '&&' | '||' = 'first';
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+        buf += ch;
+        continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+      if (ch === '&' && input[i + 1] === '&') {
+        segments.push({ cmd: buf, op: currentOp });
+        currentOp = '&&'; buf = ''; i++; continue;
+      }
+      if (ch === '|' && input[i + 1] === '|') {
+        segments.push({ cmd: buf, op: currentOp });
+        currentOp = '||'; buf = ''; i++; continue;
+      }
+      buf += ch;
+    }
+    segments.push({ cmd: buf, op: currentOp });
+    return segments;
+  }
+
+  /**
+   * Heuristic: did the previous command's output indicate failure?
+   * Used to evaluate `&&` / `||` short-circuiting when we can't get
+   * a real exit code from the network dispatcher.
+   */
+  private isFailureOutput(output: string, cmd: string): boolean {
+    if (!output) return false;
+    const head = cmd.split(/\s+/)[0];
+    if (head === 'ping' || head === 'ping6') {
+      if (/100% packet loss/.test(output)) return true;
+      if (/Name or service not known|unknown host|Permission denied|invalid argument/i.test(output)) return true;
+      return false;
+    }
+    if (head === 'traceroute') {
+      if (/unknown host|invalid argument|Permission denied/i.test(output)) return true;
+      return false;
+    }
+    return false;
+  }
+
   private static splitTopLevel(input: string, sep: ';' | '|'): string[] {
     const parts: string[] = [];
     let buf = '';
@@ -1160,8 +1233,8 @@ export abstract class LinuxMachine extends EndHost
       ): Promise<PingResult[]> {
         return self.executePing6Sequence(target, count, timeoutMs);
       },
-      async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]> {
-        const hops = await self.executeTraceroute(target, maxHops, 2000, probesPerHop, firstTtl);
+      async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]> {
+        const hops = await self.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
       getDhcpClient(): DHCPClient {

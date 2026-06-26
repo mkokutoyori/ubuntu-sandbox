@@ -641,7 +641,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       try { return new IPAddress(ip); } catch { /* malformed entry */ }
     }
     const lower = name.toLowerCase();
-    if (lower === 'localhost' || lower === this.hostname.toLowerCase()) {
+    const ownHostname = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
+    if (lower === 'localhost' || (ownHostname && lower === ownHostname)) {
       return new IPAddress('127.0.0.1');
     }
     return null;
@@ -664,7 +665,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
 
     // 3. The machine's own name always resolves to loopback.
-    if (name.toLowerCase() === this.hostname.toLowerCase()) {
+    const ownHostname = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
+    if (ownHostname && name.toLowerCase() === ownHostname) {
       return new IPAddress('127.0.0.1');
     }
 
@@ -1151,8 +1153,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
         this.executePingSequence(target, count, timeout, ttl),
-      executeTraceroute: (target: IPAddress, maxHops?: number) =>
-        this.executeTraceroute(target, maxHops) as Promise<TracerouteHop[]>,
+      executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
+        this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 
       resetStack: () => {
         for (const [name, port] of this.ports) {
@@ -1472,8 +1474,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // answered locally, ahead of any DNS query — same order as the
     // resolveHostname() resolver.
     if (host && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      const ownHostName = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
       const hostsIp = this.readHostsFile().resolve(host, 4)
-        ?? (host.toLowerCase() === this.hostname.toLowerCase() ? '127.0.0.1' : null);
+        ?? (ownHostName && host.toLowerCase() === ownHostName ? '127.0.0.1' : null);
       if (hostsIp) {
         return 'Server:  UnKnown\nAddress:  127.0.0.1\n\n' +
                `Name:    ${host}\nAddress:  ${hostsIp}`;

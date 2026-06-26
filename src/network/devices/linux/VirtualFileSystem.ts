@@ -141,7 +141,7 @@ export class VirtualFileSystem {
       '\n' +
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0o644, 0, 0);
+      0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',

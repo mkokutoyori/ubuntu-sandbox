@@ -125,8 +125,9 @@ export class DnsNssSource implements INssSource {
 
     for (const dev of EquipmentRegistry.getInstance().getAll()) {
       if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.()?.toLowerCase();
-      if (!hostname) continue;
+      const rawHostname = dev.getHostname?.();
+      if (typeof rawHostname !== 'string' || !rawHostname) continue;
+      const hostname = rawHostname.toLowerCase();
       if (hostname !== needle && hostname !== short) continue;
 
       for (const port of dev.getPorts()) {
@@ -151,8 +152,9 @@ export class DnsNssSource implements INssSource {
   private legacyScanByAddr(addr: string): NssResult<NssHostEntry> {
     for (const dev of EquipmentRegistry.getInstance().getAll()) {
       if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.();
-      if (!hostname) continue;
+      const rawHostname = dev.getHostname?.();
+      if (typeof rawHostname !== 'string' || !rawHostname) continue;
+      const hostname = rawHostname;
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (!ip) continue;
