@@ -40,6 +40,7 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { sampleVmstat } from './linux/system/Vmstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
@@ -1888,6 +1889,10 @@ export abstract class LinuxMachine extends EndHost
 
   followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
     return this.executor.logMgr.followJournal(opts, listener);
+  }
+
+  sampleVmstatSnapshot() {
+    return sampleVmstat(this.executor.processMgr, this.getHardware().memory);
   }
 
   followDmesg(

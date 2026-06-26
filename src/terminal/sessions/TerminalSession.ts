@@ -276,6 +276,8 @@ export abstract class TerminalSession {
     commandLine: string;
     intervalMs: number;
     frame: () => Promise<string> | string;
+    header?: () => Promise<string> | string;
+    maxFrames?: number;
   }): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const job = this.startAsyncCommand({
@@ -283,9 +285,16 @@ export abstract class TerminalSession {
       kind: 'streaming',
       command: opts.commandLine,
       run: async (ctx) => {
-        while (!ctx.cancelled()) {
+        if (opts.header) {
+          const h = await opts.header();
+          if (h) for (const line of h.split('\n')) ctx.sink.line(line);
+        }
+        let emitted = 0;
+        while (!ctx.cancelled() && (opts.maxFrames === undefined || emitted < opts.maxFrames)) {
           const frame = await opts.frame();
           for (const line of frame.split('\n')) ctx.sink.line(line);
+          emitted++;
+          if (opts.maxFrames !== undefined && emitted >= opts.maxFrames) break;
           await ctx.delay(opts.intervalMs);
         }
       },

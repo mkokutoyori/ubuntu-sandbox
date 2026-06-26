@@ -14,6 +14,7 @@ import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
+import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
@@ -1087,6 +1088,24 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
+  private tryStartVmstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'vmstat') return false;
+    const parsed = parseVmstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => vmstatHeader(parsed),
+      frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
+    });
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1162,6 +1181,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartDmesgFollow(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
+    if (this.tryStartVmstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
