@@ -386,11 +386,15 @@ export class RestartNetAdapterCmdlet implements ICmdlet {
   }
 }
 
-// ── Test-NetConnection (TCP-port-aware sibling of Test-Connection) ────────
+const COMMON_TCP_PORTS: Record<string, number> = {
+  http: 80, smb: 445, rdp: 3389, winrm: 5985, winrmhttp: 5985, winrmhttps: 5986,
+};
 
 export class TestNetConnectionCmdlet implements ICmdlet {
   readonly name = 'test-netconnection';
+  readonly displayName = 'Test-NetConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -398,20 +402,54 @@ export class TestNetConnectionCmdlet implements ICmdlet {
       ctx.named['computername'] ?? ctx.named['targetname'] ?? ctx.positional[0] ?? '',
     );
     if (!target) { ctx.emitError('Test-NetConnection requires -ComputerName'); return null; }
-    const port = ctx.named['port']
-      ? Number(ctx.named['port'])
-      : (ctx.named['commontcpport'] ? psValueToString(ctx.named['commontcpport']) : null);
-    const reachable = net.testConnection(target);
-    return {
+
+    let port: number | undefined;
+    if (ctx.named['port'] !== undefined) {
+      const n = Number(psValueToString(ctx.named['port']));
+      if (Number.isFinite(n) && n > 0) port = n;
+    } else if (ctx.named['commontcpport'] !== undefined) {
+      const name = psValueToString(ctx.named['commontcpport']).toLowerCase();
+      if (COMMON_TCP_PORTS[name] !== undefined) port = COMMON_TCP_PORTS[name];
+    }
+
+    const level = psValueToString(ctx.named['informationlevel'] ?? 'standard').toLowerCase();
+    const detailed = level === 'detailed';
+    const quiet = level === 'quiet';
+
+    const probe = net.testPingProbe?.(target) ?? null;
+    const remoteAddress = probe?.resolvedIp ?? target;
+    const pingSucceeded = probe?.success ?? false;
+    const rttMs = probe?.success ? Math.round(probe.rttMs) : 0;
+
+    const tcpTested = port !== undefined;
+    const tcpSucceeded = tcpTested && pingSucceeded
+      ? (net.testTcpProbe?.(target, port!) ?? false)
+      : false;
+
+    const egress = probe ? (net.egressInfoFor?.(target) ?? null) : null;
+    const sourceAddress = egress?.sourceIp ?? '0.0.0.0';
+    const interfaceAlias = egress?.interfaceAlias ?? 'Ethernet';
+    const nextHop = egress?.nextHop ?? '0.0.0.0';
+
+    if (quiet) return tcpTested ? tcpSucceeded : pingSucceeded;
+
+    const result: Record<string, PSValue> = {
       ComputerName:        target,
-      RemoteAddress:       target,
-      RemotePort:          port ?? 0,
-      InterfaceAlias:      'eth0',
-      SourceAddress:       net.getDefaultGateway() ?? '0.0.0.0',
-      PingSucceeded:       reachable,
-      PingReplyDetails:    { RoundtripTime: reachable ? 1 : 0 },
-      TcpTestSucceeded:    !!port && reachable,
-    } as Record<string, PSValue>;
+      RemoteAddress:       remoteAddress,
+      InterfaceAlias:      interfaceAlias,
+      SourceAddress:       sourceAddress,
+      PingSucceeded:       pingSucceeded,
+      PingReplyDetails:    rttMs,
+    };
+    if (tcpTested) {
+      result.RemotePort = port!;
+      result.TcpTestSucceeded = tcpSucceeded;
+    }
+    if (detailed) {
+      result.NameResolutionResults = probe ? [remoteAddress] : [];
+      result.NetRouteNextHop = nextHop;
+    }
+    return result;
   }
 }
 

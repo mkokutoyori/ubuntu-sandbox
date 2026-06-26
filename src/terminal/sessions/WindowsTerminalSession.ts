@@ -33,11 +33,6 @@ import {
   pathpingDurationSeconds,
   type PathpingStatsRow,
 } from '@/network/devices/windows/WinPathping';
-import {
-  parseWinTestNetConnectionArgs,
-  formatWinTestNetConnection,
-  type TestNetConnectionResult,
-} from '@/network/devices/windows/WinTestNetConnection';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import type { IPAddress } from '@/network/core/types';
 import type { AsyncJobContext } from '@/terminal/async';
@@ -572,76 +567,6 @@ export class WindowsTerminalSession extends TerminalSession {
         for (const line of formatPathpingTable(hopRows, parsed.queriesPerHop)) ctx.sink.line(line);
         ctx.sink.line('');
         ctx.sink.line(formatPathpingTrailer());
-      },
-    });
-    return job !== null;
-  }
-
-  private tryStartWinTestNetConnection(line: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    if (this.shellMode !== 'powershell') return false;
-    const dev = this.device;
-    if (!(dev instanceof WindowsPC)) return false;
-    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
-    const toks = line.trim().split(/\s+/);
-    if (toks.length === 0 || toks[0].toLowerCase() !== 'test-netconnection') return false;
-    const parsed = parseWinTestNetConnectionArgs(toks.slice(1));
-    if (!parsed) return false;
-
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: line,
-      run: async (ctx) => {
-        let resolvedIp: IPAddress | null = null;
-        let rttMs = 0;
-        let pingSucceeded = false;
-        await dev.pingStreamInSession(parsed.target, {
-          count: 1,
-          timeoutMs: 3000,
-          intervalMs: 0,
-          onResolved: (ip) => { resolvedIp = ip; },
-          onResult: (r: PingResult) => {
-            if (r.success) { pingSucceeded = true; rttMs = r.rttMs; }
-          },
-          shouldStop: () => ctx.cancelled(),
-          sleep: (ms) => ctx.delay(ms),
-        });
-        if (ctx.cancelled()) return;
-
-        const remoteAddress = resolvedIp ? resolvedIp.toString() : parsed.target;
-        const egress = resolvedIp ? dev.getEgressFor(resolvedIp) : null;
-        const egressIp = egress?.sourceIp.toString() ?? '0.0.0.0';
-        const egressPort = egress?.interfaceName ?? 'Ethernet0';
-        const nextHop = egress?.nextHopIP.toString() ?? '0.0.0.0';
-
-        let tcpTested = false;
-        let tcpSucceeded = false;
-        if (parsed.port !== undefined && pingSucceeded) {
-          tcpTested = true;
-          const sock = await dev.tcpConnect(remoteAddress, parsed.port);
-          tcpSucceeded = sock !== null;
-          sock?.close();
-        } else if (parsed.port !== undefined) {
-          tcpTested = true;
-          tcpSucceeded = false;
-        }
-
-        const result: TestNetConnectionResult = {
-          computerName: parsed.target,
-          remoteAddress,
-          remotePort: parsed.port,
-          nameResolved: resolvedIp !== null,
-          interfaceAlias: egressPort,
-          sourceAddress: egressIp,
-          netRouteNextHop: nextHop,
-          pingSucceeded,
-          pingRttMs: rttMs,
-          tcpTested,
-          tcpSucceeded,
-          level: parsed.level,
-        };
-        for (const out of formatWinTestNetConnection(result)) ctx.sink.line(out);
       },
     });
     return job !== null;
@@ -1293,8 +1218,6 @@ export class WindowsTerminalSession extends TerminalSession {
       if (line.trim()) {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
-
-      if (this.tryStartWinTestNetConnection(line)) return true;
 
       const maybePromise = this.activeSubShell.processLine(line);
 

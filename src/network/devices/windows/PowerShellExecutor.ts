@@ -5010,31 +5010,30 @@ export class PowerShellExecutor {
     return '';
   }
 
-  // ─── Test-NetConnection ────────────────────────────────────────────
-
   private handleTestNetConnection(args: string[]): string {
     const params = this.parsePSArgs(args);
     const target = (params.get('computername') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
     const port = params.has('port') ? parseInt(params.get('port')!, 10) : undefined;
+    if (!target) return 'Test-NetConnection requires -ComputerName';
 
-    const isLocal = target === 'localhost' || target === '127.0.0.1' || !target;
+    const resolved = this.device.resolveHostnameSync(target);
+    const remoteAddress = resolved?.toString() ?? target;
+    const ping = resolved ? this.device.sendPingProbeSync(resolved) : { success: false, rttMs: 0, ttl: 0 };
+    const egress = resolved ? this.device.getEgressFor(resolved) : null;
 
-    // Check if port is in the set of listening ports
-    const listeningPorts = new Set([80, 135, 443, 445, 5985, 49152]);
     let tcpSucceeded = false;
-    if (port !== undefined) {
-      tcpSucceeded = isLocal && listeningPorts.has(port);
+    if (port !== undefined && resolved && ping.success) {
+      tcpSucceeded = this.device.tcpProbeSync(resolved, port);
     }
 
-    const destIp = isLocal ? '127.0.0.1' : '192.168.1.1';
     return [
-      `\nComputerName           : ${target || 'localhost'}`,
-      `RemoteAddress          : ${destIp}`,
+      `\nComputerName           : ${target}`,
+      `RemoteAddress          : ${remoteAddress}`,
       port !== undefined ? `RemotePort             : ${port}` : '',
-      `InterfaceAlias         : Ethernet`,
-      `SourceAddress          : 127.0.0.1`,
-      `PingSucceeded          : True`,
-      `PingReplyDetails (RTT) : 0 ms`,
+      `InterfaceAlias         : ${egress?.interfaceName ?? 'Ethernet'}`,
+      `SourceAddress          : ${egress?.sourceIp.toString() ?? '0.0.0.0'}`,
+      `PingSucceeded          : ${ping.success ? 'True' : 'False'}`,
+      `PingReplyDetails (RTT) : ${Math.round(ping.success ? ping.rttMs : 0)} ms`,
       port !== undefined ? `TcpTestSucceeded       : ${tcpSucceeded ? 'True' : 'False'}` : '',
     ].filter(l => l !== '').join('\n');
   }

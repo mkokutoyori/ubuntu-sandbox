@@ -2146,6 +2146,90 @@ export abstract class EndHost extends Equipment {
     return { sourceIp, interfaceName: route.port.getName(), nextHopIP: route.nextHopIP };
   }
 
+  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number } {
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+      return { success: true, rttMs: 0.02, ttl: this.defaultTTL };
+    }
+    const route = this.resolveRoute(targetIP);
+    if (!route) return { success: false, rttMs: 0, ttl: 0 };
+    const port = route.port;
+    const portName = port.getName();
+    const myIP = port.getIPAddress();
+    if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
+
+    const nextHopIpStr = route.nextHopIP.toString();
+    let arpEntry = this.arpTable.get(nextHopIpStr);
+    if (!arpEntry) {
+      const arpReq: ARPPacket = {
+        type: 'arp', operation: 'request',
+        senderMAC: port.getMAC(), senderIP: myIP,
+        targetMAC: MACAddress.broadcast(), targetIP: route.nextHopIP,
+      };
+      this.emitArpRequestSent(portName, nextHopIpStr);
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP, payload: arpReq,
+      });
+      arpEntry = this.arpTable.get(nextHopIpStr);
+      if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
+    }
+
+    this.pingIdCounter++;
+    const id = this.pingIdCounter;
+    const targetIpStr = targetIP.toString();
+    const seq = 1;
+    const useTtl = opts?.ttl ?? this.defaultTTL;
+
+    let reply: { rttMs: number; ttl: number } | null = null;
+    let failed = false;
+    const unsubReply = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+      const p = e.payload;
+      if (p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq) {
+        reply = { rttMs: performance.now() - sentAt, ttl: p.ttl };
+      }
+    });
+    const unsubFailed = this.getBus().subscribe('host.icmp.echo-failed', (e) => {
+      const p = e.payload;
+      if (p.deviceId === this.id && (p.id === -1 || (p.id === id && p.seq === seq))
+          && (p.toIp === targetIpStr || p.toIp === '')) {
+        failed = true;
+      }
+    });
+
+    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize: 56 };
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, 64);
+    const sentAt = performance.now();
+
+    this.emitIcmpEchoSent({
+      fromIp: myIP.toString(), toIp: targetIpStr,
+      id, seq, ttl: useTtl, size: 64,
+    });
+
+    const verdict = this.firewallFilter(portName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') {
+      unsubReply(); unsubFailed();
+      return { success: false, rttMs: 0, ttl: 0 };
+    }
+
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: arpEntry.mac,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+
+    unsubReply(); unsubFailed();
+    if (reply) return { success: true, rttMs: (reply as { rttMs: number }).rttMs, ttl: (reply as { ttl: number }).ttl };
+    if (failed) return { success: false, rttMs: 0, ttl: 0 };
+    return { success: false, rttMs: 0, ttl: 0 };
+  }
+
+  tcpProbeSync(targetIP: IPAddress, port: number): boolean {
+    const socket = this.tcpv2.connect(targetIP.toString(), port);
+    if (!socket) return false;
+    const established = socket.state === 'established';
+    socket.close();
+    return established;
+  }
+
   async tracerouteStreamInSession(
     targetStr: string,
     opts: {

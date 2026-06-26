@@ -634,6 +634,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.resolveHostname(targetStr);
   }
 
+  resolveHostnameSync(name: string): IPAddress | null {
+    try { return new IPAddress(name); } catch { /* not an IP */ }
+    const ip = this.readHostsFile().resolve(name, 4);
+    if (ip) {
+      try { return new IPAddress(ip); } catch { /* malformed entry */ }
+    }
+    const lower = name.toLowerCase();
+    if (lower === 'localhost' || lower === this.hostname.toLowerCase()) {
+      return new IPAddress('127.0.0.1');
+    }
+    return null;
+  }
+
   /**
    * Resolve a name to an IPv4 address, mirroring the Windows resolver
    * order: literal IP → hosts file → the machine's own name → DNS.

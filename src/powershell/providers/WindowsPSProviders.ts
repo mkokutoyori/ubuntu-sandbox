@@ -658,8 +658,36 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return m.getDefaultGateway ? m.getDefaultGateway() : null;
   }
   isDHCPConfigured(): boolean { return false; }
-  testConnection(): boolean   { return true; }
+  testConnection(target: string): boolean {
+    const probe = this.testPingProbe(target);
+    return probe?.success ?? false;
+  }
   resolveDns(): string[]      { return []; }
+  testPingProbe(target: string) {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return null;
+    const r = this.pc.sendPingProbeSync(ip);
+    return { success: r.success, rttMs: r.rttMs, resolvedIp: ip.toString() };
+  }
+  testTcpProbe(target: string, port: number): boolean {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return false;
+    return this.pc.tcpProbeSync(ip, port);
+  }
+  egressInfoFor(target: string) {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return null;
+    const eg = this.pc.getEgressFor(ip);
+    if (!eg) return null;
+    return {
+      sourceIp: eg.sourceIp.toString(),
+      interfaceAlias: eg.interfaceName,
+      nextHop: eg.nextHopIP.toString(),
+    };
+  }
+  private resolveTargetSync(target: string): IPAddress | null {
+    return this.pc.resolveHostnameSync(target);
+  }
   getTcpConnections() {
     const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }> } }).getSocketTable?.();
     if (!table) return [];

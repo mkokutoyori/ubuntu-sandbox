@@ -236,6 +236,20 @@ export interface INetworkProvider {
   isDHCPConfigured(ifAlias: string): boolean;
   /** Test-Connection (ping) */
   testConnection(target: string): boolean;
+  /**
+   * Synchronous reachability probe: send a real ICMP echo, capture the
+   * reply via the bus's synchronous publish, return the outcome. Returns
+   * null only when the target cannot be resolved to an IP.
+   */
+  testPingProbe(target: string): { success: boolean; rttMs: number; resolvedIp: string } | null;
+  /**
+   * Synchronous TCP probe: open the socket, observe whether the handshake
+   * settles to established inline. The simulator's bus is synchronous so
+   * the SYN/SYN-ACK/ACK exchange completes within the connect() call.
+   */
+  testTcpProbe(target: string, port: number): boolean;
+  /** Egress {sourceIp, interfaceAlias, nextHop} for a target IP, or null. */
+  egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
   /** Get-NetTCPConnection */
