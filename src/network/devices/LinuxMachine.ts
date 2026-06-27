@@ -42,6 +42,7 @@ import {
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
+import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
 import {
   sampleCpuRows as samplePidstatCpu,
   sampleMemoryRows as samplePidstatMemory,
@@ -1924,6 +1925,20 @@ export abstract class LinuxMachine extends EndHost
 
   samplePidstatMemory(args: PidstatArgs) {
     return samplePidstatMemory(args, this.executor.processMgr, this.getHardware().memory);
+  }
+
+  iostatBannerLine(): string {
+    const now = new Date();
+    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
+  }
+
+  sampleIostatCpuSnapshot() {
+    return sampleIostatCpu(this.executor.processMgr, this.getHardware().cpu);
+  }
+
+  sampleIostatDevicesSnapshot(args: IostatArgs) {
+    return sampleIostatDevices(args, this.getHardware().storage);
   }
 
   followDmesg(

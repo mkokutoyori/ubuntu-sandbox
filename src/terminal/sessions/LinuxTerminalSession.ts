@@ -33,6 +33,7 @@ import {
   type PidstatCpuRow,
   type PidstatMemRow,
 } from '@/network/devices/linux/system/Pidstat';
+import { parseIostatArgs, renderIostatReport } from '@/network/devices/linux/system/Iostat';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
@@ -1196,6 +1197,29 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
+  private tryStartIostatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'iostat') return false;
+    const parsed = parseIostatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => dev.iostatBannerLine(),
+      frame: () => `\n${renderIostatReport(
+        parsed,
+        dev.sampleIostatCpuSnapshot(),
+        dev.sampleIostatDevicesSnapshot(parsed),
+        new Date(),
+      )}`,
+    });
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1274,6 +1298,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartVmstatStream(trimmed)) return;
     if (this.tryStartMpstatStream(trimmed)) return;
     if (this.tryStartPidstatStream(trimmed)) return;
+    if (this.tryStartIostatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;

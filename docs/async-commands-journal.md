@@ -698,12 +698,59 @@ streaming UI + PS network 67/67 sur 10 fichiers, y compris les anciens
 tests `phase3-final-batches-migrated` et `ps-network-command` qui
 exerçaient déjà l'ancien stub via `ps.execute` directement.
 
+## Real-Time Monitoring — PC Linux : `iostat <interval>`
+
+Dernier moniteur sysstat manquant après `vmstat`/`mpstat`/`pidstat` : `iostat`
+n'existait pas du tout (seules les vues Oracle référençaient le mot). Branché
+sur le socle exactement comme ses pairs, sans mécanique parallèle.
+
+- **Anti-duplication** : la bannière sysstat (`Linux <release> (<host>)  date
+  _arch_  (N CPU)`) réutilise `mpstatBanner` — même convention que
+  `pidstatBanner` qui y délègue déjà. Le bloc `avg-cpu` réutilise `sampleMpstat`
+  (la dérivation de charge CPU pilotée par la run-queue réelle des process), dont
+  la ligne agrégée `all` est mappée vers les six colonnes iostat
+  (`%user/%nice/%system/%iowait/%steal/%idle`). Zéro nouvelle dérivation de
+  charge.
+- **Modèle réel, pas cosmétique** : le bloc `Device` énumère les vrais disques
+  du modèle matériel (`HardwareProfile.storage` → `StorageDevice[]`, ex. `sda`,
+  et ses partitions sous `-p`). Les compteurs d'I/O sont à zéro — fidèlement,
+  car le simulateur ne modélise pas de sous-système bloc (même choix assumé que
+  `vmstat` qui met ses champs `bi/bo/si/so` à 0). La fidélité vient des **noms
+  de périphériques réels** et du **bloc CPU réel**, pas de chiffres fabriqués.
+- **Présentation** (fonctions pures, `system/Iostat.ts`) : `iostatCpuHeader` /
+  `formatIostatCpuRow`, `iostatDeviceHeader` / `formatIostatDeviceRow`
+  (format par défaut `tps kB_read/s …` et format étendu `-x` `r/s rkB/s …
+  %util`, bascule kB↔MB sous `-m`), `iostatTimestamp` (`-t`),
+  `renderIostatReport` (compose timestamp + avg-cpu + device selon `-c`/`-d`).
+- **One-shot** : `cmdIostat` (executor `case 'iostat'`) rend bannière + rapport,
+  comme `cmdVmstat`/`cmdMpstat`. Flags : `-c`/`-d`/`-x`/`-k`/`-m`/`-t`/`-p`/`-z`/
+  `-V`, intervalle/compte positionnels ; option inconnue → erreur réaliste.
+- **Controller** : `LinuxTerminalSession.tryStartIostatStream` intercepte
+  `iostat <interval> [count]` (hors pipes/redirections), démarre un job
+  `mode: foreground`, `kind: streaming` via `startScrollingMonitor` : bannière
+  une seule fois (header), puis un rapport par intervalle séparé par une ligne
+  vide (fidèle à iostat), prompt verrouillé, `count` borne le nombre de
+  rapports, Ctrl+C → `^C` et libération. `LinuxMachine.iostatBannerLine` /
+  `sampleIostatCpuSnapshot` / `sampleIostatDevicesSnapshot` exposent le modèle.
+
+Critères couverts : affichage progressif (un rapport par tick, pas un dump
+unique), prompt bloquant (foreground) avec interruption Ctrl+C propre, isolation
+des sessions (runtime/job par terminal), données reflétant l'état interne réel
+(charge CPU des process + disques du modèle matériel).
+
+Validation : `linux-iostat-stream-ui.test.ts` — 12/12 (one-shot bannière +
+avg-cpu + device sda ; `-c` CPU seul ; `-d` device seul ; `-x` colonnes
+étendues + `%util` ; `-p` partitions ; streaming `1 2` borné par count ; prompt
+verrouillé + Ctrl+C ; bannière unique sur N rapports ; parseur/formatters purs).
+Régressions : streaming UI (`vmstat`, `mpstat`, `pidstat`, `netstat`, `tcpdump`,
+`watch`) 39/39. `tsc --noEmit` : 0 erreur. Lint : 0 nouvelle erreur. Build prod
+OK.
+
 ## Suite
 
-- Linux : `vmstat <interval>` / `iostat <interval>` / `mpstat <interval>`
-  (sysstat) — moniteurs périodiques de métriques système, candidats directs
-  pour `startScrollingMonitor`.
 - Cisco / Huawei : `monitor session` (SPAN) — capture live de trames sur un
   port miroir, similaire à `tcpdump` côté hôte.
+- Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
+  est un jour modélisé (les compteurs d'I/O deviendraient non nuls).
 - Huawei : `terminal debugging` (analog de Cisco `terminal monitor` +
   `debug ip`), si les sources d'évènements bus existent côté `HuaweiRouter`.
