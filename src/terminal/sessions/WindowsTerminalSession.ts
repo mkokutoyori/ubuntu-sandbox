@@ -213,6 +213,10 @@ export class WindowsTerminalSession extends TerminalSession {
         : { type: 'interactive-text', promptText: p.promptText };
     }
     if (this.activeSubShell) {
+      // A foreground async stream owns the tty — hide the sub-shell prompt
+      // input so the host renders the opacity-0 capture input instead and
+      // Ctrl+C reaches the runtime's interrupt path.
+      if (this.hasForegroundAsyncJob) return { type: 'normal' };
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
     return this.inputMode;
