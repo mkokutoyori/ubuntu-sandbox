@@ -1691,8 +1691,8 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** Called by the view when editor saves a file. */
-  editorSave(content: string, filePath: string): void {
+  override editorSave(content: string, filePath: string): void {
+    if (this.hasActiveChild) { super.editorSave(content, filePath); return; }
     const dev = this.device;
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
@@ -1709,7 +1709,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * making the editor "succeed" for chain semantics; `saved=false`
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
-  editorExit(saved: boolean = true): void {
+  override editorExit(saved: boolean = true): void {
+    if (this.hasActiveChild) { super.editorExit(saved); return; }
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;

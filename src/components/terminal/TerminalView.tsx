@@ -160,10 +160,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     return () => el.removeEventListener('keydown', handler);
   }, [session]);
 
-  // ── Editor overlay (Linux only) ─────────────────────────────────
-  if (session.inputMode.type === 'editor') {
-    const editorMode = session.inputMode;
-    const linuxSession = session as LinuxTerminalSession;
+  if (session.currentInputMode.type === 'editor') {
+    const editorMode = session.currentInputMode;
     if (editorMode.editorType === 'nano') {
       return (
         <div className="h-full w-full flex flex-col">
@@ -171,8 +169,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             filePath={editorMode.absolutePath}
             initialContent={editorMode.content}
             isNewFile={editorMode.isNewFile}
-            onSave={(content: string, path: string) => linuxSession.editorSave(content, path)}
-            onExit={() => linuxSession.editorExit()}
+            onSave={(content: string, path: string) => session.editorSave(content, path)}
+            onExit={() => session.editorExit()}
           />
         </div>
       );
@@ -184,8 +182,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           initialContent={editorMode.content}
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
-          onSave={(content: string, path: string) => linuxSession.editorSave(content, path)}
-          onExit={() => linuxSession.editorExit()}
+          onSave={(content: string, path: string) => session.editorSave(content, path)}
+          onExit={() => session.editorExit()}
         />
       </div>
     );

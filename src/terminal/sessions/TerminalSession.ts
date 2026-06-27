@@ -406,6 +406,14 @@ export abstract class TerminalSession {
 
   get hasActiveChild(): boolean { return this._children.length > 0; }
 
+  editorSave(content: string, filePath: string): void {
+    if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }
+  }
+
+  editorExit(saved: boolean = true): void {
+    if (this._children.length > 0) { this.foreground.editorExit(saved); return; }
+  }
+
   protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
 
   protected firstLocalIp(): string | null {
