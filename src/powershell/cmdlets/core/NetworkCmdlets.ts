@@ -92,7 +92,9 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
 
 export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
+  readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -104,18 +106,23 @@ export class TestConnectionCmdlet implements ICmdlet {
       ctx.emitError('Test-Connection requires -ComputerName or a positional target');
       return null;
     }
-    const reachable = net.testConnection(target);
+
+    const probe = net.testPingProbe?.(target) ?? null;
+    const reachable = probe?.success ?? false;
+    const rttMs = probe?.success ? Math.max(1, Math.round(probe.rttMs)) : 0;
+    const resolvedIp = probe?.resolvedIp ?? (target.includes(':') ? '' : target);
+    const sourceIp = probe ? (net.egressInfoFor?.(target)?.sourceIp ?? 'localhost') : 'localhost';
+
     if (ctx.named['quiet'] === true) return reachable;
-    // Mimic the column layout of real Test-Connection (subset). Status
-    // is the last column so a trailing-`Success` regex picks up each row.
+
     const out: PSValue[] = [];
     for (let i = 1; i <= count; i++) {
       out.push({
-        Source: 'localhost',
+        Source: sourceIp,
         Destination: target,
-        IPV4Address: target.includes(':') ? '' : (target === 'localhost' ? '127.0.0.1' : target),
+        IPV4Address: resolvedIp,
         Bytes: 32,
-        'Time(ms)': reachable ? 1 : 0,
+        'Time(ms)': rttMs,
         Status: reachable ? 'Success' : 'Failure',
       } as Record<string, PSValue>);
     }

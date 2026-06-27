@@ -572,6 +572,66 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartTestConnectionContinuous(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'test-connection') return false;
+
+    let target = '';
+    let continuous = false;
+    let delaySec = 1;
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-continuous') continuous = true;
+      else if (al === '-count' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (v === 0) continuous = true;
+      } else if (al === '-delay' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v > 0) delaySec = v;
+      } else if ((al === '-computername' || al === '-targetname') && toks[i + 1]) {
+        target = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !target) {
+        target = stripQuotes(a);
+      }
+    }
+    if (!continuous || !target) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        ctx.sink.line('');
+        ctx.sink.line('Source        Destination     IPV4Address      Bytes    Time(ms)');
+        ctx.sink.line('------        -----------     -----------      -----    --------');
+        while (!ctx.cancelled()) {
+          const ip = dev.resolveHostnameSync(target);
+          if (!ip) {
+            ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ''.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+          } else {
+            const ipStr = ip.toString();
+            const ping = dev.sendPingProbeSync(ip);
+            if (ping.success) {
+              const egress = dev.getEgressFor(ip);
+              const src = egress?.sourceIp.toString() ?? 'localhost';
+              ctx.sink.line(src.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + String(Math.max(1, Math.round(ping.rttMs))).padStart(8));
+            } else {
+              ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+            }
+          }
+          await ctx.delay(Math.max(100, delaySec * 1000));
+        }
+      },
+    });
+    return job !== null;
+  }
+
   private tryStartGetContentWait(line: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     if (this.shellMode !== 'powershell') return false;
@@ -1235,6 +1295,10 @@ export class WindowsTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
+      if (this.tryStartTestConnectionContinuous(line)) {
+        this.notify();
+        return true;
+      }
       if (this.tryStartGetContentWait(line)) {
         this.notify();
         return true;
