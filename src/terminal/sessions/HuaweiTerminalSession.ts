@@ -13,6 +13,8 @@ import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import type { AsyncJobHandle } from '@/terminal/async';
+import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -133,5 +135,42 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     }
 
     return null;
+  }
+
+  private debugJob: AsyncJobHandle | null = null;
+  private debugUnsubscribe: (() => void) | null = null;
+
+  protected override afterCommandExecuted(_command: string): void {
+    this.reconcileDebugSubscription();
+  }
+
+  private reconcileDebugSubscription(): void {
+    const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
+    if (!svc) return;
+    const wantSubscription = svc.hasAnyFlag() && (this.vty?.state.terminalDebugging ?? false);
+    if (wantSubscription && !this.debugJob) {
+      this.startDebugSubscription(svc);
+    } else if (!wantSubscription && this.debugJob) {
+      this.debugJob.cancel();
+      this.debugJob = null;
+    }
+  }
+
+  private startDebugSubscription(svc: TerminalDebugSource): void {
+    this.debugJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal debugging',
+      label: 'VRP debug output',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.debugUnsubscribe?.();
+          this.debugUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 }

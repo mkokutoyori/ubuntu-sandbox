@@ -202,6 +202,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
    */
   private screenLength: number = 24;
   private screenWidth: number = 80;
+  protected terminalDebugging: boolean = false;
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -342,6 +343,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       terminalLength: this.screenLength,
       terminalWidth: this.screenWidth,
       terminalMonitor: false,
+      terminalDebugging: this.terminalDebugging,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
       historySize: this.historyMax,
       cmdHistory: [...this.cmdHistory],
@@ -360,6 +362,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.selectedIPSecPolicySeq = s.selectedCryptoMapSeq;
     this.screenLength = s.terminalLength;
     this.screenWidth = s.terminalWidth;
+    this.terminalDebugging = s.terminalDebugging;
   }
 
   setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
@@ -1220,12 +1223,40 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('reset rip', 'Reset RIP counters/process', (_args) => '');
     t.registerGreedy('reset isis', 'Reset IS-IS data', (_args) => '');
     t.registerGreedy('reset bgp', 'Reset BGP data', (_args) => '');
-    t.registerGreedy('debugging rip', 'Enable RIP debugging', (_args) => '');
+
+    const svc = (): import('../router/diag/HuaweiDebugService').HuaweiDebugService | null => {
+      return (getRouter() as unknown as { getDebugService?: () => import('../router/diag/HuaweiDebugService').HuaweiDebugService }).getDebugService?.() ?? null;
+    };
+
+    t.register('debugging ospf spf', 'Enable OSPF SPF debugging', () => svc()?.enable('ospf-spf') ?? '');
+    t.register('debugging ospf hello', 'Enable OSPF Hello debugging', () => svc()?.enable('ospf-hello') ?? '');
+    t.register('undo debugging ospf spf', 'Disable OSPF SPF debugging', () => svc()?.disable('ospf-spf') ?? '');
+    t.register('undo debugging ospf hello', 'Disable OSPF Hello debugging', () => svc()?.disable('ospf-hello') ?? '');
+    t.register('debugging icmp', 'Enable ICMP debugging', () => svc()?.enable('ip-icmp') ?? '');
+    t.register('undo debugging icmp', 'Disable ICMP debugging', () => svc()?.disable('ip-icmp') ?? '');
+    t.register('debugging ip packet', 'Enable IP packet debugging', () => svc()?.enable('ip-packet') ?? '');
+    t.register('undo debugging ip packet', 'Disable IP packet debugging', () => svc()?.disable('ip-packet') ?? '');
+    t.register('undo debugging all', 'Disable all debugging', () => svc()?.disableAll() ?? '');
+    t.register('display debugging', 'Display enabled debug flags', () => svc()?.format() ?? 'No debugging is on');
+    t.register('display debug', 'Display enabled debug flags', () => svc()?.format() ?? 'No debugging is on');
+
+    t.register('terminal debugging', 'Send debug output to this terminal', () => {
+      this.terminalDebugging = true;
+      return 'Info: Current terminal debugging is on.';
+    });
+    t.register('undo terminal debugging', 'Stop sending debug output to this terminal', () => {
+      this.terminalDebugging = false;
+      return 'Info: Current terminal debugging is off.';
+    });
+
+    t.registerGreedy('debugging rip', 'Enable RIP debugging', () => svc()?.enable('rip') ?? '');
+    t.registerGreedy('debugging bgp', 'Enable BGP debugging', () => svc()?.enable('bgp') ?? '');
+    t.registerGreedy('debugging vrrp', 'Enable VRRP debugging', () => svc()?.enable('vrrp') ?? '');
+    t.registerGreedy('undo debugging rip', 'Disable RIP debugging', () => svc()?.disable('rip') ?? '');
+    t.registerGreedy('undo debugging bgp', 'Disable BGP debugging', () => svc()?.disable('bgp') ?? '');
+    t.registerGreedy('undo debugging vrrp', 'Disable VRRP debugging', () => svc()?.disable('vrrp') ?? '');
     t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
-    t.registerGreedy('debugging bgp', 'Enable BGP debugging', (_args) => '');
-    t.registerGreedy('undo debugging rip', 'Disable RIP debugging', (_args) => '');
     t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
-    t.registerGreedy('undo debugging bgp', 'Disable BGP debugging', (_args) => '');
 
     // save — persist configuration (Huawei equivalent of write memory)
     t.register('save', 'Save current configuration', () => {

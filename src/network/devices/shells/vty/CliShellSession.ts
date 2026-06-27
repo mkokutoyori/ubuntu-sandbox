@@ -59,6 +59,8 @@ export interface VtySnapshot {
   terminalWidth: number;
   /** `terminal monitor` — stream this line's syslog output to the terminal. */
   terminalMonitor: boolean;
+  /** Huawei VRP `terminal debugging` — route debug output to this vty. */
+  terminalDebugging: boolean;
   /** Privilege level 0–15. 15 = enable. 1 = user. */
   privilegeLevel: number;
   /** `terminal history size N` — bounded ring length. */
@@ -124,6 +126,7 @@ export class CliShellSession {
       terminalLength: init.initialLength ?? 24,
       terminalWidth: 80,
       terminalMonitor: false,
+      terminalDebugging: false,
       privilegeLevel: 1,
       historySize: 10,
       cmdHistory: [],

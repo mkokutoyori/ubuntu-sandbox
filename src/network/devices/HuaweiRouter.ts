@@ -49,6 +49,7 @@ import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 
 export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
@@ -111,6 +112,15 @@ export class HuaweiRouter extends Router {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+  }
+
+  private _huaweiDebugService: HuaweiDebugService | null = null;
+
+  override getDebugService(): HuaweiDebugService {
+    if (!this._huaweiDebugService) this._huaweiDebugService = new HuaweiDebugService();
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    return this._huaweiDebugService;
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
