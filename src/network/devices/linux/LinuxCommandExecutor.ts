@@ -84,6 +84,8 @@ import { SshForwardingTable } from './network/SshForwardingTable';
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
+import { renderW } from './network/wFormatter';
+import { renderLast } from './network/lastFormatter';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -2701,16 +2703,26 @@ export class LinuxCommandExecutor {
       case 'w': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          return { output: this.sessionTable.renderW(), exitCode: 0 };
+          const out = renderW({
+            table: this.sessionTable,
+            uptimeSeconds: this.lifecycle.uptimeSeconds(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('w: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
       }
       case 'last': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          const nIdx = args.findIndex(a => a === '-n' || a === '--limit');
-          const limit = nIdx >= 0 ? Number.parseInt(args[nIdx + 1] ?? '10', 10) : 10;
-          return { output: this.sessionTable.renderLast(limit), exitCode: 0 };
+          const out = renderLast({
+            table: this.sessionTable,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('last: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdLast(c, args), exitCode: 0 };
       }

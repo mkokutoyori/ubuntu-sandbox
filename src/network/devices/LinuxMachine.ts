@@ -104,6 +104,8 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
+import { renderW } from './linux/network/wFormatter';
+import { renderLast } from './linux/network/lastFormatter';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
@@ -666,7 +668,13 @@ export abstract class LinuxMachine extends EndHost
     if (cmd === 'w' || cmd === 'who' || cmd === 'last') {
       this.ensureLocalConsoleSession();
     }
-    if (cmd === 'w' && argv.length === 1) return this.sessionTable.renderW();
+    if (cmd === 'w') {
+      return renderW({
+        table: this.sessionTable,
+        uptimeSeconds: this.executor.lifecycle.uptimeSeconds(),
+        now: new Date(),
+      }, argv.slice(1));
+    }
     if (cmd === 'who') {
       return renderWho({
         table: this.sessionTable,
@@ -677,9 +685,11 @@ export abstract class LinuxMachine extends EndHost
       }, argv.slice(1));
     }
     if (cmd === 'last') {
-      const nIdx = argv.findIndex(a => a === '-n' || a === '--limit');
-      const limit = nIdx >= 0 ? Number.parseInt(argv[nIdx + 1] ?? '10', 10) : 10;
-      return this.sessionTable.renderLast(limit);
+      return renderLast({
+        table: this.sessionTable,
+        bootDate: this.executor.lifecycle.bootedAt(),
+        now: new Date(),
+      }, argv.slice(1));
     }
     return null;
   }
