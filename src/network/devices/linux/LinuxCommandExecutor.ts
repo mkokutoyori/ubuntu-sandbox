@@ -45,6 +45,7 @@ import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseMtrArgs, MTR_USAGE, MTR_VERSION } from './Mtr';
+import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
@@ -138,7 +139,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
-  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'df', 'du', 'mount', 'umount', 'findmnt',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
@@ -3172,6 +3173,16 @@ export class LinuxCommandExecutor {
         if (!parsed.target) return { output: 'mtr: no host specified', exitCode: 1 };
         // Real probing happens in the terminal session's tryStartMtr hook;
         // bare executeCommand callers see an empty result, same as traceroute.
+        return { output: '', exitCode: 0 };
+      }
+      case 'dstat': {
+        const parsed = parseDstatArgs(args);
+        if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };
+        if (parsed.showVersion) return { output: DSTAT_VERSION, exitCode: 0 };
+        if (parsed.listStats) return { output: DSTAT_LISTING, exitCode: 0 };
+        if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
+        // Streaming runs in the terminal session; bare executeCommand callers
+        // see an empty result, same as vmstat / mpstat.
         return { output: '', exitCode: 0 };
       }
       case 'nslookup':

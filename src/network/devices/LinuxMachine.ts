@@ -43,6 +43,7 @@ import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
+import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
 import {
   sampleCpuRows as samplePidstatCpu,
   sampleMemoryRows as samplePidstatMemory,
@@ -1920,6 +1921,19 @@ export abstract class LinuxMachine extends EndHost
 
   sampleVmstatSnapshot() {
     return sampleVmstat(this.executor.processMgr, this.getHardware().memory);
+  }
+
+  sampleDstatSnapshot(rate: DstatRateState) {
+    const ports: PortByteSnapshot[] = [];
+    for (const p of this.getPorts()) {
+      const c = p.getCounters();
+      ports.push({ bytesIn: c.bytesIn, bytesOut: c.bytesOut });
+    }
+    return sampleDstat({
+      pm: this.executor.processMgr,
+      memory: this.getHardware().memory,
+      ports,
+    }, rate);
   }
 
   sampleMpstatSnapshot(args: MpstatArgs) {

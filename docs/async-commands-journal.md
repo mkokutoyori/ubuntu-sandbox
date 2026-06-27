@@ -998,7 +998,72 @@ Playwright e2e (`e2e/windows-get-counter.spec.ts`, 4/4) : one-shot,
 déverrouillé), `-Continuous` (prompt verrouillé → Ctrl+C → `^C` → prompt
 déverrouillé).
 
+## Real-Time Monitoring — PC Linux : `dstat`
+
+Pendant des `vmstat`/`mpstat`/`iostat` côté Linux : `dstat` rassemble en une
+seule table CPU, disque, mémoire, réseau, paging et système, rafraîchis à
+chaque intervalle. Réutilise intégralement le sampler vmstat (heuristique
+CPU = `procsR × 100`, plafonné), le `MemoryProfile`, et les compteurs
+cumulatifs des ports (delta par seconde).
+
+Module pur `src/network/devices/linux/system/Dstat.ts` :
+
+- `parseDstatArgs` couvre `-c/--cpu`, `-d/--disk`, `-m/--mem`, `-n/--net`,
+  `-s/--swap`, `-t/--time`, `-y/--sys`, `-a`, `-N <iface>`, `-D <disk>`,
+  delay + count positionnels, `-v/--version`, `-h/--help`, `--list`,
+  erreur explicite sur `--bogus` / `-N` sans valeur / positionnel
+  non-numérique. **Distinction casse short flag**: `-n` = groupe net,
+  `-N` = filtre interface — comme le vrai dstat. Les long flags
+  (`--cpu`, etc.) restent insensibles à la casse implicitement (matchs
+  littéraux). Activer une option de groupe bascule en mode « only
+  these » (`-c -m` ⇒ uniquement CPU + mémoire).
+- `sampleDstat({pm, memory, ports}, rate)` produit un `DstatSample` :
+  - `cpu.user/system/idle` ← heuristique vmstat (procsR × 60% / 40%).
+  - `memory.used = total − free − buffers − cache`.
+  - `net.recv/sendBytesPerSec` ← delta cumulatif `bytesIn`/`bytesOut`
+    agrégé sur tous les ports / delta-temps. Premier échantillon = 0
+    (faute de référence), puis vraies valeurs.
+  - `disk.read/write`, `paging.in/out`, `system.int/csw` ← 0 (pas de
+    sous-système bloc / interrupt simulé), conforme à la « Suite »
+    de ce journal — la formatter les rend quand même comme `   0B`.
+- `formatDstatHeader(groups)` rend la double ligne titres style dstat :
+  `----total-cpu-usage----` etc. au-dessus de `usr sys idl wai stl`.
+- `formatDstatRow(sample, groups)` rend la rangée avec timestamps
+  `DD-MM HH:MM:SS`, pourcentages CPU larges 3, débits compactés
+  `1024B` / `10k` / `2M` / `5G`.
+
+`LinuxMachine.sampleDstatSnapshot(rate)` : façade qui assemble
+`processMgr`, `hardware.memory` et le snapshot des compteurs ports
+courant. Le `DstatRateState` est conservé par le hook session
+(state entre samples = différence des cumuls).
+
+`LinuxCommandExecutor.dispatch('dstat', args)` : reconnaît `--help`,
+`--version`, `--list`, `parseError` — réponses synchrones. Cas
+streaming → output vide (la session terminal prend le relais).
+`'dstat'` ajouté à la liste des commandes reconnues.
+
+`LinuxTerminalSession.tryStartDstatStream(commandLine)` réutilise le
+helper `startScrollingMonitor` (déjà câblé pour `vmstat`, `mpstat`,
+`pidstat`, `free -s` …) : header émis une fois, `frame()` rappelé à
+chaque tick avec le sample courant, `maxFrames` bornant pour `dstat 1
+N`, déverrouillage automatique sur Ctrl+C via le runtime async.
+
+Tests Vitest (`linux-dstat.test.ts`, 17/17) : parseur (défaut, group
+flags court/long, positionnel delay/count, rejets, version/help/list,
+distinction `-n` ≠ `-N`), formatter (header + row + timestamp + groupes
+sélectionnés), sampler (premier sample net=0, deuxième = vraie delta),
+et 7 scénarios UI bout-en-bout (`--version`, `--help`, `--list`, `1 2`
+borné qui unlock, `-c -m` exclut net/paging/system, live + Ctrl+C,
+option inconnue).
+
+Playwright e2e (`e2e/linux-dstat.spec.ts`, 4/4) : version, `1 2` borné
++ ≥2 rows + unlock, `-c -m` cache les autres groupes, live (prompt
+verrouillé pendant le job → ≥2 rows observées → Ctrl+C → `^C` → prompt
+déverrouillé).
+
 ## Suite
 
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
-  est un jour modélisé (les compteurs d'I/O deviendraient non nuls).
+  est un jour modélisé (les compteurs d'I/O deviendraient non nuls). Avec
+  un tel sous-système, `dstat` pourrait aussi remplir ses colonnes `read`
+  / `writ` / `paging`.
