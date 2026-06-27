@@ -38,3 +38,4 @@ export {
   useOracleStats,
 } from './useOracle';
 export { useMacTable, type MacTableRow } from './useMacTable';
+export { useConnectionPerf, type ConnectionPerf } from './useConnectionPerf';
