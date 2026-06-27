@@ -83,6 +83,7 @@ import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
+import { renderWho } from './network/whoFormatter';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -2685,7 +2686,15 @@ export class LinuxCommandExecutor {
       case 'who': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          return { output: this.sessionTable.renderWho(), exitCode: 0 };
+          const out = renderWho({
+            table: this.sessionTable,
+            currentUser: this.userMgr.currentUser,
+            currentTty: 'tty1',
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('who: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdWho(c), exitCode: 0 };
       }
