@@ -51,6 +51,7 @@ import {
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
+import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
@@ -158,6 +159,12 @@ export abstract class Switch extends Equipment {
 
   // ─── Port VLAN State (active/suspended) ────────────────────────
   protected portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
+
+  // ─── SPAN / port-mirroring ─────────────────────────────────────
+  private readonly portMirror = new PortMirror();
+  private mirrorReentrant = false;
+
+  getPortMirror(): PortMirror { return this.portMirror; }
 
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
@@ -975,6 +982,11 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
+    // SPAN: copy the frame to every rx destination as seen on the wire,
+    // before any pipeline drop (DAI, STP, VLAN filter) — real Cisco SPAN
+    // captures everything ingressed, regardless of forwarding outcome.
+    this.mirrorIngress(portName, frame);
+
     const taggedFrame = frame as TaggedEthernetFrame;
 
     // ─── Step 1: Determine ingress VLAN ─────────────────────────
@@ -1196,6 +1208,68 @@ export abstract class Switch extends Equipment {
       }
     }
   }
+
+  // ─── SPAN / port-mirroring egress ────────────────────────────────
+
+  /**
+   * Every frame leaving the switch passes through here. We intercept
+   * just before the actual Port.sendFrame to copy onto SPAN destinations
+   * registered against `portName` in tx direction.
+   *
+   * `mirrorReentrant` guards against recursion: the mirror emit itself
+   * goes through sendFrame, but must not trigger another mirror pass.
+   */
+  protected override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (!this.mirrorReentrant) this.mirrorEgress(portName, frame);
+    return super.sendFrame(portName, frame);
+  }
+
+  private mirrorIngress(srcPort: string, frame: EthernetFrame): void {
+    if (!this.portMirror.hasAny()) return;
+    this.emitMirror(this.portMirror.destinationsFor(srcPort, 'rx'), frame);
+  }
+
+  private mirrorEgress(srcPort: string, frame: EthernetFrame): void {
+    if (!this.portMirror.hasAny()) return;
+    this.emitMirror(this.portMirror.destinationsFor(srcPort, 'tx'), frame);
+  }
+
+  private emitMirror(dests: readonly string[], frame: EthernetFrame): void {
+    if (dests.length === 0) return;
+    this.mirrorReentrant = true;
+    try {
+      for (const dest of dests) {
+        const p = this.getPort(dest);
+        if (!p || !p.getIsUp() || !p.isConnected()) continue;
+        super.sendFrame(dest, frame);
+      }
+    } finally {
+      this.mirrorReentrant = false;
+    }
+  }
+
+  /** SPAN config façade for the vendor shells. */
+  configureMirrorSource(id: number, portName: string, dir: MirrorDirection): boolean {
+    if (!this.getPort(portName)) return false;
+    this.portMirror.addSource(id, portName, dir);
+    return true;
+  }
+  configureMirrorDestination(id: number, portName: string): boolean {
+    if (!this.getPort(portName)) return false;
+    this.portMirror.setDestination(id, portName);
+    return true;
+  }
+  removeMirrorSource(id: number, portName: string): boolean {
+    return this.portMirror.removeSource(id, portName);
+  }
+  removeMirrorDestination(id: number): boolean {
+    return this.portMirror.clearDestination(id);
+  }
+  removeMirrorSession(id: number): boolean {
+    return this.portMirror.removeSession(id);
+  }
+  listMirrorSessions(): MirrorSession[] { return this.portMirror.list(); }
+  getMirrorSession(id: number): MirrorSession | undefined { return this.portMirror.get(id); }
 
   // ─── L3 Management Plane (SVI) plumbing ───────────────────────────
 

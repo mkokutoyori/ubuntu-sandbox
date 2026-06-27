@@ -173,6 +173,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.registerVtpCommands();
     this.registerUdldCommands();
     this.registerIgmpSnoopingCommands();
+    this.registerMonitorSessionCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -1641,6 +1642,80 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
 
+  }
+
+  // ─── SPAN (monitor session) ──────────────────────────────────────
+
+  private registerMonitorSessionCommands(): void {
+    this.configTrie.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
+      this.handleMonitorSession(args, false));
+    this.configTrie.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
+      this.handleMonitorSession(args, true));
+
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show monitor', 'Display SPAN sessions', () => this.showMonitor(null));
+      t.registerGreedy('show monitor session', 'Display SPAN session(s)', (args) => {
+        if (args.length === 0 || args[0].toLowerCase() === 'all') return this.showMonitor(null);
+        const id = parseInt(args[0], 10);
+        if (Number.isNaN(id)) return '% Invalid session id.';
+        return this.showMonitor(id);
+      });
+    }
+  }
+
+  private handleMonitorSession(args: string[], negate: boolean): string {
+    if (args.length < 1) return '% Incomplete command.';
+    const id = parseInt(args[0], 10);
+    if (Number.isNaN(id) || id < 1 || id > 66) return '% Invalid session id.';
+    const dev = this.d();
+
+    if (negate && args.length === 1) {
+      return dev.removeMirrorSession(id) ? '' : `% Session ${id} does not exist.`;
+    }
+
+    const verb = (args[1] ?? '').toLowerCase();
+    if (verb === 'source') {
+      const ifaceArg = args[2] === 'interface' ? args[3] : null;
+      if (!ifaceArg) return '% Incomplete command.';
+      const portName = this.resolveInterfaceName(ifaceArg);
+      if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
+      if (dev.getPortMirror().isDestination(portName)) {
+        return `% Cannot add source — ${portName} is already a SPAN destination.`;
+      }
+      const dirTok = (args[4] ?? 'both').toLowerCase();
+      if (dirTok !== 'rx' && dirTok !== 'tx' && dirTok !== 'both') {
+        return '% Invalid direction (rx | tx | both).';
+      }
+      if (negate) return dev.removeMirrorSource(id, portName) ? '' : `% Source ${portName} not configured.`;
+      dev.configureMirrorSource(id, portName, dirTok);
+      return '';
+    }
+
+    if (verb === 'destination') {
+      const ifaceArg = args[2] === 'interface' ? args[3] : null;
+      if (!ifaceArg) return '% Incomplete command.';
+      const portName = this.resolveInterfaceName(ifaceArg);
+      if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
+      const session = dev.getMirrorSession(id);
+      if (session && [...session.sources.keys()].includes(portName)) {
+        return `% Cannot set destination — ${portName} is already a source for session ${id}.`;
+      }
+      if (negate) return dev.removeMirrorDestination(id) ? '' : `% Destination not configured.`;
+      dev.configureMirrorDestination(id, portName);
+      return '';
+    }
+
+    return "% Invalid input detected at '^' marker.";
+  }
+
+  private showMonitor(only: number | null): string {
+    const sessions = this.d().listMirrorSessions();
+    if (sessions.length === 0) return '';
+    if (only === null) {
+      return sessions.map((s) => this.d().getPortMirror().formatOne(s.id)).join('\n\n');
+    }
+    if (!sessions.find((s) => s.id === only)) return `% Session ${only} does not exist.`;
+    return this.d().getPortMirror().formatOne(only);
   }
 
   // ─── Config-if Commands ───────────────────────────────────────────

@@ -130,6 +130,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildUserInterfaceCommands();
     this.buildAclCommands();
     this.wireHuaweiNAT();
+    this.buildPortMirroringCommands();
   }
 
   private natContext(): HuaweiShellContext {
@@ -2073,5 +2074,111 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     return null;
+  }
+
+  // ─── Port-mirroring (observe-port + mirror to observe-port) ──────
+
+  private buildPortMirroringCommands(): void {
+    // observe-port [interface-index] N interface X — declare destination
+    this.systemTrie.registerGreedy('observe-port', 'Configure SPAN observe-port', (args) =>
+      this.handleObservePort(args, false));
+    this.systemTrie.registerGreedy('undo observe-port', 'Remove SPAN observe-port', (args) =>
+      this.handleObservePort(args, true));
+
+    // port-mirroring to observe-port N {inbound|outbound|both} — source side
+    this.interfaceTrie.registerGreedy('port-mirroring to observe-port', 'Add interface as SPAN source', (args) =>
+      this.handlePortMirroring(args, false));
+    this.interfaceTrie.registerGreedy('undo port-mirroring to observe-port', 'Remove interface SPAN source', (args) =>
+      this.handlePortMirroring(args, true));
+    this.interfaceTrie.register('undo port-mirroring', 'Remove all SPAN sources on this interface', () => {
+      if (!this.swRef || !this.selectedInterface) return 'Error: Incomplete command.';
+      for (const s of this.swRef.listMirrorSessions()) this.swRef.removeMirrorSource(s.id, this.selectedInterface);
+      return '';
+    });
+
+    for (const trie of [this.userTrie, this.systemTrie]) {
+      trie.registerGreedy('display observe-port', 'Display SPAN observe-ports', (args) =>
+        this.displayObservePort(args));
+      trie.register('display port-mirroring', 'Display SPAN port-mirroring sources', () =>
+        this.displayPortMirroring());
+    }
+  }
+
+  private handleObservePort(args: string[], negate: boolean): string {
+    if (!this.swRef) return 'Error: Operation not supported.';
+    let i = 0;
+    if ((args[i] ?? '').toLowerCase() === 'interface-index') i++;
+    const id = parseInt(args[i] ?? '', 10);
+    if (Number.isNaN(id) || id < 1) return 'Error: Wrong parameter found.';
+    i++;
+    if (negate && i >= args.length) {
+      return this.swRef.removeMirrorSession(id) ? '' : `Error: Observe-port ${id} does not exist.`;
+    }
+    if ((args[i] ?? '').toLowerCase() !== 'interface') return 'Error: Incomplete command.';
+    i++;
+    const ifaceArg = args.slice(i).join(' ');
+    if (!ifaceArg) return 'Error: Incomplete command.';
+    const portName = this.resolveInterfaceName(ifaceArg);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
+    if (negate) return this.swRef.removeMirrorDestination(id) ? '' : `Error: Observe-port ${id} destination not configured.`;
+    const session = this.swRef.getMirrorSession(id);
+    if (session && session.sources.has(portName)) {
+      return `Error: ${portName} is already a mirroring source for observe-port ${id}.`;
+    }
+    this.swRef.configureMirrorDestination(id, portName);
+    return '';
+  }
+
+  private handlePortMirroring(args: string[], negate: boolean): string {
+    if (!this.swRef || !this.selectedInterface) return 'Error: Incomplete command.';
+    const id = parseInt(args[0] ?? '', 10);
+    if (Number.isNaN(id) || id < 1) return 'Error: Wrong parameter found.';
+    const session = this.swRef.getMirrorSession(id);
+    if (!session || !session.destination) {
+      return `Error: Observe-port ${id} is not configured.`;
+    }
+    if (session.destination === this.selectedInterface) {
+      return `Error: ${this.selectedInterface} is the observe-port destination.`;
+    }
+    if (negate) {
+      return this.swRef.removeMirrorSource(id, this.selectedInterface)
+        ? ''
+        : `Error: ${this.selectedInterface} is not a source for observe-port ${id}.`;
+    }
+    const dirTok = (args[1] ?? 'both').toLowerCase();
+    const dir =
+      dirTok === 'inbound' ? 'rx' :
+      dirTok === 'outbound' ? 'tx' :
+      dirTok === 'both' ? 'both' : null;
+    if (!dir) return 'Error: Wrong direction (inbound | outbound | both).';
+    this.swRef.configureMirrorSource(id, this.selectedInterface, dir);
+    return '';
+  }
+
+  private displayObservePort(args: string[]): string {
+    if (!this.swRef) return '';
+    const sessions = this.swRef.listMirrorSessions();
+    if (sessions.length === 0) return 'Info: There is no observe-port configured.';
+    const filter = args.length > 0 ? parseInt(args[0], 10) : null;
+    const rows = sessions.filter((s) => (filter === null ? true : s.id === filter));
+    if (rows.length === 0) return `Error: Observe-port ${filter} does not exist.`;
+    const lines = [' Index    : Interface'];
+    for (const s of rows) lines.push(` ${String(s.id).padEnd(8)} : ${s.destination ?? '-'}`);
+    return lines.join('\n');
+  }
+
+  private displayPortMirroring(): string {
+    if (!this.swRef) return '';
+    const sessions = this.swRef.listMirrorSessions().filter((s) => s.sources.size > 0);
+    if (sessions.length === 0) return 'Info: There is no mirroring source configured.';
+    const lines: string[] = [];
+    for (const s of sessions) {
+      lines.push(`Observe-port ${s.id} : ${s.destination ?? '-'}`);
+      for (const [port, dir] of s.sources) {
+        const tok = dir.rx && dir.tx ? 'both' : dir.rx ? 'inbound' : 'outbound';
+        lines.push(`  ${port} ${tok}`);
+      }
+    }
+    return lines.join('\n');
   }
 }

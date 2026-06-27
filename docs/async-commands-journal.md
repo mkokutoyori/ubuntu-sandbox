@@ -791,9 +791,97 @@ souscription `DebugBroadcast`/`LoggingConfig` fan-out vers la vty. Aucune
 nouvelle API de test n'a été ajoutée : on reste sur la surface publique du
 device.
 
+## SPAN / Port-mirroring — Cisco `monitor session` + Huawei `observe-port`
+
+Bien que `monitor session` (Cisco) et `observe-port` / `port-mirroring` (Huawei)
+ne soient pas eux-mêmes des commandes streaming, ils alimentent un `tcpdump`
+posé sur le port destination — ce qui réutilise l'ensemble du pipeline async
+déjà en place côté Linux (capture log, async tcpdump). On modélise donc la
+duplication de trames côté plan de forwarding du switch, et on couvre la
+chaîne complète (config CLI → mirror → tcpdump live) bout-en-bout.
+
+Socle commun (`src/network/devices/switch/PortMirror.ts`) :
+
+- `PortMirror.sessions: Map<id, { sources: Map<port, {rx, tx}>, destination }>`.
+- API : `addSource(id, port, dir)`, `setDestination(id, port)`, `removeSource`,
+  `clearDestination`, `removeSession`, `destinationsFor(srcPort, dir)`,
+  `isDestination(port)`, `list()`, `format()`, `formatOne(id)`,
+  `asRunningConfigLines()`.
+- Direction interne : `'rx' | 'tx' | 'both'` (Cisco), mappée depuis
+  `'inbound' | 'outbound' | 'both'` côté Huawei.
+
+Hook côté `Switch.ts` :
+
+- `mirrorIngress(srcPort, frame)` appelé tout en haut de `handleFrame` —
+  avant DAI/STP/VLAN/MAC — pour répliquer la sémantique réelle de Cisco SPAN
+  qui voit *toutes* les trames ingressed, qu'elles soient filtrées plus tard
+  ou pas.
+- Override `sendFrame(port, frame)` : appelle `mirrorEgress` avant de
+  déléguer à `Equipment.sendFrame`. Garde de récursion `mirrorReentrant`
+  pour éviter qu'un mirror tx ne mirror son propre miroir.
+- Émission via `super.sendFrame(dest, frame)` directement — pas de filtrage
+  VLAN/STP : un port destination SPAN reçoit la trame telle quelle (les
+  vrais switches Cisco font pareil ; le destination port n'est plus un
+  port L2 normal, seulement un drain de capture).
+
+Façade exposée aux shells : `configureMirrorSource(id, port, dir)`,
+`configureMirrorDestination(id, port)`, `removeMirrorSource(id, port)`,
+`removeMirrorDestination(id)`, `removeMirrorSession(id)`,
+`listMirrorSessions()`, `getMirrorSession(id)`, `getPortMirror()`.
+
+### Cisco IOS — `monitor session <id> source|destination interface X [rx|tx|both]`
+
+- `CiscoSwitchShell.registerMonitorSessionCommands()` enregistre :
+  - `monitor session N source interface X [rx|tx|both]` (config view)
+  - `monitor session N destination interface X` (config view)
+  - `no monitor session N` (config view) — supprime la session entière
+  - `show monitor` et `show monitor session N` (user + privileged) — rendu
+    style Catalyst (Session N / Type Local / Source Ports RX Only TX Only
+    Both / Destination Ports / Ingress Disabled).
+- Garde-fou : un port déjà source ne peut pas devenir destination de la
+  même session, et vice versa ; messages d'erreur explicites.
+- Tests Vitest (`cisco-span.test.ts`, 9/9) couvrent rx-only, tx-only, both,
+  flux ARP+ICMP correctement répliqués, isolation par VLAN du destination
+  (vlan 99 ≠ vlan 1 source, le mirror traverse le filtre VLAN par design),
+  `no monitor session N`, validations source/dest, `show monitor` / `show
+  monitor session N`, et garde anti-récursion.
+- Playwright e2e (`e2e/cisco-span.spec.ts`, 3/3) :
+  - rx mirror : 2 PCs sur vlan 1 + un PCM sur vlan 99 ; switch SPAN rx
+    sur F0/1 → dest F0/8 ; ouverture du terminal modal de PCM, `tcpdump
+    -c 1 icmp`, injection `ping -c 1` depuis PCA, attente de la ligne
+    `ICMP` puis `1 packet captured`. Le filtre `icmp` est essentiel : les
+    BPDU STP atteignent naturellement F0/8 (port d'accès vlan 99) et
+    rempliraient un compteur non filtré.
+  - `show monitor session N` via le terminal du switch — Session N + Both
+    : F0/1 + Destination Ports : F0/8.
+  - `no monitor session N` : tcpdump filtré ICMP sur PCM reste muet
+    après injection de `ping` depuis PCA — la suppression coupe bien le
+    fan-out.
+
+### Huawei VRP — `observe-port` + `port-mirroring to observe-port`
+
+- `HuaweiSwitchShell.buildPortMirroringCommands()` enregistre :
+  - `observe-port [interface-index] N interface X` (system-view) — déclare
+    la destination de la session N.
+  - `undo observe-port N` (system-view) — supprime la session.
+  - `port-mirroring to observe-port N {inbound|outbound|both}` (interface
+    view) — ajoute l'interface courante comme source.
+  - `undo port-mirroring to observe-port N` (interface view) — retire la
+    source courante de la session N.
+  - `undo port-mirroring` (interface view) — retire la source courante
+    de toutes les sessions.
+  - `display observe-port [N]` + `display port-mirroring` (user + system).
+- Mappings de direction : `inbound→rx`, `outbound→tx`, `both→both`.
+- Mêmes garde-fous : impossible de désigner comme destination un port déjà
+  source de la même session, et inversement.
+- Tests Vitest (`huawei-port-mirroring.test.ts`, 9/9) miroir des cas Cisco
+  + spécificités Huawei (groupes observe-port, `display`,
+  rejet quand le groupe n'existe pas).
+- Playwright e2e (`e2e/huawei-port-mirroring.spec.ts`, 3/3) : inbound
+  mirror + tcpdump sur observe-port ; `display observe-port` /
+  `display port-mirroring` ; `undo port-mirroring` coupe le stream.
+
 ## Suite
 
-- Cisco / Huawei : `monitor session` (SPAN) — capture live de trames sur un
-  port miroir, similaire à `tcpdump` côté hôte.
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
   est un jour modélisé (les compteurs d'I/O deviendraient non nuls).
