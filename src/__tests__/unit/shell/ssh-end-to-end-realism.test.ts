@@ -1047,7 +1047,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expectAnyLine(t, /(?:GE|GigabitEthernet)0\/0\/0/);
   });
 
-  test('§93 — Linux→Cisco IOS: shows the IOS prompt via CrossVendorRemoteShell', async () => {
+  test('§93 — Linux→Cisco IOS: shows the IOS prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p93', lan.linuxA);
     await t.init();
@@ -1055,7 +1055,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expect(t.getPrompt()).toMatch(/cisco/);
   });
 
-  test('§94 — Linux→Huawei VRP: shows the VRP prompt via CrossVendorRemoteShell', async () => {
+  test('§94 — Linux→Huawei VRP: shows the VRP prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p94', lan.linuxA);
     await t.init();

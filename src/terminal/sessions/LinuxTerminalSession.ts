@@ -64,21 +64,8 @@ import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import {
-  LinuxPromptStrategy as LinuxStrategyRef,
-  CiscoPromptStrategy as CiscoStrategyRef,
-  HuaweiPromptStrategy as HuaweiStrategyRef,
-  WindowsPromptStrategy as WindowsStrategyRef,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
-import {
-  RemoteDeviceSubShell,
-  CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
-  strategyForShellKind,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
@@ -2156,9 +2143,6 @@ export class LinuxTerminalSession extends TerminalSession {
       | undefined;
     if (!sshHost) return false;
 
-    const strategy = pickVendorPromptStrategy(target);
-    if (!strategy) return false;
-
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2189,12 +2173,12 @@ export class LinuxTerminalSession extends TerminalSession {
       },
     ];
 
-    this.crossVendorPushTarget = { device: target, strategy };
+    this.crossVendorPushTarget = { device: target };
     this.startFlowFromSteps(steps, `ssh ${user}@${host}`);
     return true;
   }
 
-  private crossVendorPushTarget: { device: Equipment; strategy: RemotePromptStrategy } | null = null;
+  private crossVendorPushTarget: { device: Equipment } | null = null;
 
   private lookupSourceIp(): string {
     const portsObj = (this.device as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
@@ -3119,44 +3103,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  pushRemoteDeviceWithStrategy(
-    remote: Equipment,
-    user: string,
-    label: string,
-    strategy: RemotePromptStrategy,
-    onPop: () => void = () => undefined,
-  ): void {
-    const pausedShell = this.shell;
-    this.sshStack.push({
-      device: this.device,
-      user: this.currentUser,
-      path: this.currentPath,
-      pausedShell,
-      onPop: () => { try { onPop(); } catch { /* swallow */ } },
-      label,
-    });
-    this.device = remote;
-    this.shell = null;
-    this.currentUser = user;
-    this.currentPath = `~`;
-
-    installDefaultShells();
-    const primaryKind = pickPrimaryKindFromStrategy(strategy);
-    if (primaryKind && ShellFactory.has(primaryKind)) {
-      const xshell = new CrossVendorRemoteShell({
-        device: remote, user, remoteHost: label, primaryKind,
-      });
-      this.activeSubShell = new ShellSubShellAdapter(xshell);
-    } else {
-      this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
-    }
-    this.notify();
-  }
-
-  /**
-   * Restore the previous device. Prints "logout / Connection to <host>
-   * closed." and runs the saved `onPop` (e.g. SshSession.disconnect).
-   */
   popRemoteDevice(): void {
     const frame = this.sshStack.pop();
     if (!frame) return;
@@ -3370,19 +3316,6 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
-function pickPrimaryKindFromStrategy(s: RemotePromptStrategy): string | null {
-  if (s === CiscoStrategyRef) return 'cisco-ios';
-  if (s === HuaweiStrategyRef) return 'huawei-vrp';
-  if (s === WindowsStrategyRef) return 'cmd';
-  if (s === LinuxStrategyRef) return 'bash';
-  return null;
-}
-
-function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
-  const kind = primaryShellKindFor(eq);
-  return kind === 'bash' ? null : strategyForShellKind(kind);
-}
-
 function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
     .getAllEquipment();

@@ -41,19 +41,10 @@ import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/Out
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
-import {
-  RemoteDeviceSubShell,
-  LinuxPromptStrategy,
-  CiscoPromptStrategy, strategyForShellKind,
-  HuaweiPromptStrategy,
-  WindowsPromptStrategy,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
@@ -959,40 +950,7 @@ export class WindowsTerminalSession extends TerminalSession {
         SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
         SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
       });
-      this.pendingSshPush = null;
-      this.sshPasswordAttempts = 0;
-      this.inputMode = { type: 'normal' };
-      this.notify();
-      return;
     }
-
-    installDefaultShells();
-    const primaryKind = this.pickPrimaryShellKind(pending.device);
-    let activeShell: ISubShell;
-    if (ShellFactory.has(primaryKind)) {
-      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
-      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
-      const xshell = new CrossVendorRemoteShell({
-        device: pending.device,
-        user: pending.user,
-        remoteHost: pending.host,
-        primaryKind,
-        sshConnection: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
-        sshClient: `${clientIp} ${clientPort} ${pending.port}`,
-      });
-      activeShell = new ShellSubShellAdapter(xshell);
-    } else {
-      const strategy = this.pickRemoteStrategy(pending.device);
-      activeShell = new RemoteDeviceSubShell(
-        pending.device, pending.user, pending.host, strategy,
-      );
-    }
-
-    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
-    this.activeSubShell = activeShell;
-    this.subShellHistory = [];
-    this.subShellHistoryIndex = -1;
     this.pendingSshPush = null;
     this.sshPasswordAttempts = 0;
     this.inputMode = { type: 'normal' };
