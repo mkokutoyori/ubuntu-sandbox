@@ -1103,6 +1103,40 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
+  private tryStartFreeStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'free') return false;
+    let intervalSeconds: number | null = null;
+    let count: number | null = null;
+    const rest: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if ((a === '-s' || a === '--seconds') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        intervalSeconds = v;
+      } else if ((a === '-c' || a === '--count') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        count = v;
+      } else {
+        rest.push(a);
+      }
+    }
+    if (intervalSeconds === null) return false;
+    const shell = this.shell;
+    const rendered = ['free', ...rest].join(' ').trim();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, intervalSeconds * 1000),
+      maxFrames: count ?? undefined,
+      frame: () => dev.runCommandFrameInSession(rendered, shell),
+    });
+  }
+
   private tryStartVmstatStream(commandLine: string): boolean {
     const dev = this.device;
     if (!(dev instanceof LinuxMachine)) return false;
@@ -1296,6 +1330,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartDmesgFollow(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartVmstatStream(trimmed)) return;
+    if (this.tryStartFreeStream(trimmed)) return;
     if (this.tryStartMpstatStream(trimmed)) return;
     if (this.tryStartPidstatStream(trimmed)) return;
     if (this.tryStartIostatStream(trimmed)) return;
