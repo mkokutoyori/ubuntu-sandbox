@@ -23,6 +23,10 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
 import {
+  parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
+  newRateState, GET_COUNTER_HELP,
+} from '@/network/devices/windows/GetCounter';
+import {
   parseWinPathpingArgs,
   formatPathpingHeader,
   formatPathpingDiscoveryHop,
@@ -703,6 +707,56 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartGetCounter(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'get-counter') return false;
+
+    const parsed = parseGetCounterArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(GET_COUNTER_HELP); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+
+    if (parsed.listSet) {
+      this.addLine(formatCounterSet(parsed.listSet));
+      this.notify();
+      return true;
+    }
+
+    const totalSamples = parsed.continuous ? -1 : Math.max(1, parsed.maxSamples);
+    const intervalMs = Math.max(100, parsed.sampleInterval * 1000);
+
+    // One-shot (default) — synchronous, no async runtime needed.
+    if (totalSamples === 1) {
+      const snap = sampleCounterSet(parsed.counters, dev, newRateState());
+      for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) this.addLine(l);
+      this.notify();
+      return true;
+    }
+
+    const rate = newRateState();
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        let count = 0;
+        while (!ctx.cancelled() && (totalSamples < 0 || count < totalSamples)) {
+          const snap = sampleCounterSet(parsed.counters, dev, rate);
+          for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) ctx.sink.line(l);
+          ctx.sink.line('');
+          count++;
+          if (totalSamples >= 0 && count >= totalSamples) break;
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
   protected onEnter(): void {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
@@ -1304,6 +1358,10 @@ export class WindowsTerminalSession extends TerminalSession {
         return true;
       }
       if (this.tryStartGetContentWait(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartGetCounter(line)) {
         this.notify();
         return true;
       }

@@ -936,6 +936,68 @@ de lancer mtr ; même chose côté Playwright via `injectFromHost`. C'est
 fidèle au comportement réel : un mtr lancé à froid sur un host inconnu
 voit du loss pendant les premiers cycles le temps que les ARP convergent.
 
+## Real-Time Monitoring — Windows : `Get-Counter -Continuous`
+
+Pendant Windows du couple Linux `vmstat`/`mpstat`/`pidstat` : le cmdlet PS
+`Get-Counter` échantillonne des compteurs de performances Windows et les
+diffuse en continu vers le terminal. Réutilise intégralement le runtime
+async déjà en place (interception en amont du PSRuntime, qui reste
+synchrone et ne saurait gérer un job `-Continuous`).
+
+Module pur `src/network/devices/windows/GetCounter.ts` :
+
+- `parseGetCounterArgs(args)` couvre `-Counter` (nommé, positionnel,
+  liste séparée par virgules, guillemets), `-SampleInterval`,
+  `-MaxSamples`, `-Continuous`, `-ListSet`, `-?` / `--help`. Validations
+  explicites (entier positif sur `-SampleInterval`/`-MaxSamples`, message
+  d'erreur clair sur `--bogus`).
+- Set par défaut quand `-Counter` est absent :
+  `\Processor(_Total)\% Processor Time` + `\Memory\Available MBytes`.
+- `CounterSetName` catalog (`-ListSet`) pour `processor`, `memory`,
+  `system`, `network interface`.
+- Sampler par chemin :
+  - `\Processor(_Total)\% Processor Time` → `procs.length * 1.2` borné
+    à 100 (même heuristique que vmstat côté Linux).
+  - `\Memory\Available MBytes` → `hardware.memory.freeKib / 1024`.
+  - `\Memory\% Committed Bytes In Use` → `(total − free) / total × 100`.
+  - `\System\Processes` / `\Threads` → comptage processus.
+  - `\Network Interface(<port>)\Bytes Total/sec` → delta cumulatif
+    `bytesIn + bytesOut` divisé par delta-temps, avec état `CounterRateState`
+    par port (valeur 0 à la première observation, faute de référence). Le
+    wildcard `(*)` expand sur tous les ports du device.
+- `formatCounterSnapshot(hostname, snap)` reproduit la sortie native PS :
+  `Timestamp                 CounterSamples` + en-tête `--------- /
+  --------------`, puis blocs `\\<host>\<path> :` / `      <value>` avec
+  timestamp aligné sur 26 colonnes (visible sur la première ligne, espaces
+  sur les suivantes).
+
+`WindowsTerminalSession.tryStartGetCounter(line)` :
+
+- Mode sub-shell PowerShell requis, garde contre les pipes/redirections/
+  affectations (idem `Test-Connection -Continuous`).
+- `--help` / `-?` / `parseError` → ligne synchrone immédiate.
+- `-ListSet <nom>` → bloc catalog synchrone.
+- One-shot (`-MaxSamples 1`, default) → un seul `sampleCounterSet` rendu
+  inline sans passer par le runtime async (économie de cycle).
+- `-MaxSamples N` ou `-Continuous` → job foreground qui boucle, accumule
+  les `CounterRateState` entre samples (pour les compteurs delta), et
+  s'interrompt après `N` snapshots ou sur Ctrl+C.
+
+Tests Vitest (`windows-get-counter.test.ts`, 17/17) :
+- Parser : défaut, `-Counter` nommé + positionnel + liste, `-SampleInterval`,
+  `-MaxSamples`, `-Continuous`, `-ListSet`, rejets, `-?`/`--help`.
+- `formatCounterSet` : set connu, set inconnu.
+- Sampler : default set, chemin inconnu (`unknown: true, value: 0`),
+  expansion wildcard interface.
+- `formatCounterSnapshot` : `\\pc1\…` lowercased + `.toFixed(2)`.
+- 5 scénarios UI bout-en-bout : one-shot, `-ListSet`, `-MaxSamples 2`
+  sans blocage final, `-Continuous` + Ctrl+C, erreur paramètre.
+
+Playwright e2e (`e2e/windows-get-counter.spec.ts`, 4/4) : one-shot,
+`-ListSet memory`, `-MaxSamples 2` (≥2 blocs `Timestamp …` puis prompt
+déverrouillé), `-Continuous` (prompt verrouillé → Ctrl+C → `^C` → prompt
+déverrouillé).
+
 ## Suite
 
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
