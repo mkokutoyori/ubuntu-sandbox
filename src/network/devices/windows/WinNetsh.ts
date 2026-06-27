@@ -182,7 +182,10 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     return NETSH_USAGE;
   }
 
-  // netsh show ...
+  if (args[0].toLowerCase() === 'routing') {
+    return 'The following helper is not installed: routing. Invalid context. Routing And Remote Access service is required.';
+  }
+
   if (args[0].toLowerCase() === 'show') {
     return handleNetshShow(args.slice(1));
   }

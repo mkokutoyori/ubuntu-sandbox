@@ -32,6 +32,15 @@ export interface NatStaticEntry {
   protocol?: 'tcp' | 'udp';
   localPort?: number;
   globalPort?: number;
+  vrf?: string;
+  isNetwork?: boolean;
+  prefixLen?: number;
+  rawConfig?: string;
+}
+
+export interface NatOutsideStatic {
+  outsideGlobal: string;
+  outsideLocal: string;
 }
 
 export interface NatPool {
@@ -198,14 +207,20 @@ export class NATEngine {
   isInsideInterface(iface: string): boolean  { return this.insideIfaces.has(iface); }
   isOutsideInterface(iface: string): boolean { return this.outsideIfaces.has(iface); }
 
-  addStaticEntry(entry: NatStaticEntry): void {
-    // Prevent duplicates
-    const key = `${entry.localIP}:${entry.localPort}:${entry.globalIP}:${entry.globalPort}`;
+  addStaticEntry(entry: NatStaticEntry): { ok: true } | { ok: false; reason: string } {
     const exists = this.staticEntries.some(e =>
       e.localIP === entry.localIP && e.globalIP === entry.globalIP &&
       e.localPort === entry.localPort && e.globalPort === entry.globalPort
     );
-    if (!exists) this.staticEntries.push(entry);
+    if (exists) return { ok: false, reason: 'duplicate' };
+    if (!entry.protocol) {
+      const localClash = this.staticEntries.some(e => !e.protocol && e.localIP === entry.localIP && e.globalIP !== entry.globalIP);
+      if (localClash) return { ok: false, reason: 'local-already-mapped' };
+      const globalClash = this.staticEntries.some(e => !e.protocol && e.globalIP === entry.globalIP && e.localIP !== entry.localIP);
+      if (globalClash) return { ok: false, reason: 'global-already-mapped' };
+    }
+    this.staticEntries.push(entry);
+    return { ok: true };
   }
 
   removeStaticEntry(localIP: string, globalIP: string): void {
@@ -213,6 +228,21 @@ export class NATEngine {
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
   }
+
+  removeAllStaticEntries(): void { this.staticEntries = []; }
+
+  private outsideStaticEntries: NatOutsideStatic[] = [];
+  addOutsideStatic(o: NatOutsideStatic): void {
+    if (!this.outsideStaticEntries.some(e => e.outsideGlobal === o.outsideGlobal && e.outsideLocal === o.outsideLocal)) {
+      this.outsideStaticEntries.push(o);
+    }
+  }
+  removeOutsideStatic(outsideGlobal: string, outsideLocal: string): void {
+    this.outsideStaticEntries = this.outsideStaticEntries.filter(
+      e => !(e.outsideGlobal === outsideGlobal && e.outsideLocal === outsideLocal)
+    );
+  }
+  getOutsideStaticEntries(): readonly NatOutsideStatic[] { return this.outsideStaticEntries; }
 
   addPool(pool: NatPool): void { this.pools.set(pool.name, pool); }
   removePool(name: string): void { this.pools.delete(name); }
@@ -359,9 +389,15 @@ export class NATEngine {
       }
     }
 
-    // 1. Static NAT: inside local → inside global (IP only)
     for (const entry of this.staticEntries) {
-      if (entry.localIP === srcIP && !entry.protocol) {
+      if (entry.protocol) continue;
+      if (entry.isNetwork) {
+        const translated = translateNetworkOffset(srcIP, entry);
+        if (translated) {
+          this.hitCount++;
+          return rewriteSrcIP(pkt, translated);
+        }
+      } else if (entry.localIP === srcIP) {
         this.hitCount++;
         return rewriteSrcIP(pkt, entry.globalIP);
       }
@@ -652,6 +688,29 @@ export class NATEngine {
 }
 
 // ─── Packet Rewrite Helpers ──────────────────────────────────────────────────
+
+function translateNetworkOffset(srcIP: string, entry: NatStaticEntry): string | null {
+  const prefix = entry.prefixLen ?? 24;
+  if (prefix > 32 || prefix < 0) return null;
+  const srcNum = ipToNum(srcIP);
+  const localNum = ipToNum(entry.localIP);
+  const globalNum = ipToNum(entry.globalIP);
+  if (srcNum === null || localNum === null || globalNum === null) return null;
+  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  if ((srcNum & mask) !== (localNum & mask)) return null;
+  const offset = srcNum - (localNum & mask);
+  return numToIp(((globalNum & mask) + offset) >>> 0);
+}
+
+function ipToNum(ip: string): number | null {
+  const parts = ip.split('.').map(p => parseInt(p, 10));
+  if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) return null;
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function numToIp(n: number): string {
+  return `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
+}
 
 function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv4Packet {
   const result: IPv4Packet = { ...pkt, sourceIP: new IPAddress(newSrc), headerChecksum: 0 };

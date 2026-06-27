@@ -21,6 +21,7 @@ import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
+import { Equipment } from '@/network/equipment/Equipment';
 
 // ─── NAT Topology Helper ────────────────────────────────────────────
 
@@ -65,10 +66,12 @@ async function configureBasicNATRouting(topo: ReturnType<typeof setupNATTopology
   await topo.r1.executeCommand('ip address 192.168.1.1 255.255.255.0');
   await topo.r1.executeCommand('ip nat inside');
   await topo.r1.executeCommand('no shutdown');
+  await topo.r1.executeCommand('exit');
   await topo.r1.executeCommand('interface GigabitEthernet0/1');
   await topo.r1.executeCommand('ip address 203.0.113.1 255.255.255.252');
   await topo.r1.executeCommand('ip nat outside');
   await topo.r1.executeCommand('no shutdown');
+  await topo.r1.executeCommand('exit');
   await topo.r1.executeCommand('ip route 0.0.0.0 0.0.0.0 203.0.113.2');
   await topo.r1.executeCommand('end');
 
@@ -78,9 +81,11 @@ async function configureBasicNATRouting(topo: ReturnType<typeof setupNATTopology
   await topo.r2.executeCommand('interface GigabitEthernet0/1');
   await topo.r2.executeCommand('ip address 203.0.113.2 255.255.255.252');
   await topo.r2.executeCommand('no shutdown');
+  await topo.r2.executeCommand('exit');
   await topo.r2.executeCommand('interface GigabitEthernet0/0');
   await topo.r2.executeCommand('ip address 198.51.100.1 255.255.255.0');
   await topo.r2.executeCommand('no shutdown');
+  await topo.r2.executeCommand('exit');
   await topo.r2.executeCommand('ip route 203.0.113.0 255.255.255.0 203.0.113.1');
   await topo.r2.executeCommand('end');
 
@@ -95,6 +100,7 @@ async function configureBasicNATRouting(topo: ReturnType<typeof setupNATTopology
 
 describe('Cisco and Huawei NAT/PAT Command System', () => {
   beforeEach(() => {
+    Equipment.clearRegistry();
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
@@ -508,10 +514,12 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('39. should prevent duplicate key creation inside static IP ruleset', async () => {
-      const pc = setupWANTopology().pc1;
-      await pc.executeCommand('auditctl -w /etc/passwd -p wa -k passwd_trace');
-      const output = await pc.executeCommand('auditctl -w /etc/passwd -p wa -k passwd_trace');
-      expect(output.toLowerCase()).toContain('exists');
+      const topo = setupNATTopology();
+      await topo.r1.executeCommand('enable');
+      await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip nat inside source static 192.168.1.10 203.0.113.10');
+      const output = await topo.r1.executeCommand('ip nat inside source static 192.168.1.10 203.0.113.10');
+      expect(output.toLowerCase()).toContain('duplicate');
     });
 
     it('40. should support static NAT maps configurations on Cisco switches supporting L3 SVIs', async () => {
@@ -4254,4 +4262,5 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       const output = await topo.r1.executeCommand('show ip nat translations && echo "NAT_PAT_COMPLETE"');
       expect(output).toContain('NAT_PAT_COMPLETE');
     });
+  });
 });
