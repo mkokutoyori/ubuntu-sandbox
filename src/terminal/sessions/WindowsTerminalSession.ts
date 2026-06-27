@@ -572,6 +572,73 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartGetContentWait(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0) return false;
+    const head = toks[0].toLowerCase();
+    if (head !== 'get-content' && head !== 'gc' && head !== 'cat' && head !== 'type') return false;
+
+    let wait = false;
+    let tail: number | null = null;
+    let rawPath = '';
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-wait') wait = true;
+      else if (al === '-tail' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v >= 0) tail = v;
+      } else if ((al === '-path' || al === '-literalpath') && toks[i + 1]) {
+        rawPath = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !rawPath) {
+        rawPath = stripQuotes(a);
+      }
+    }
+    if (!wait || !rawPath) return false;
+
+    const fs = dev.getFileSystem();
+    const shell = this.shell;
+    const absPath = fs.normalizePath(rawPath, shell.cwd);
+    let lastLength = 0;
+    let primed = false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const r = fs.readFile(absPath);
+          if (r.ok && typeof r.content === 'string') {
+            const full = r.content;
+            if (!primed) {
+              primed = true;
+              const initial = tail !== null && tail >= 0
+                ? sliceTail(full, tail)
+                : full;
+              for (const ln of splitLines(initial)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length > lastLength) {
+              const fresh = full.slice(lastLength);
+              for (const ln of splitLines(fresh)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length < lastLength) {
+              lastLength = 0;
+              primed = false;
+            }
+          }
+          await ctx.delay(1000);
+        }
+      },
+    });
+    return job !== null;
+  }
+
   protected onEnter(): void {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
@@ -1168,6 +1235,11 @@ export class WindowsTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
+      if (this.tryStartGetContentWait(line)) {
+        this.notify();
+        return true;
+      }
+
       const maybePromise = this.activeSubShell.processLine(line);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
@@ -1272,8 +1344,10 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+C → cancel current input
+    // Ctrl+C → interrupt a running foreground async job first; otherwise
+    // cancel the current input buffer (PowerShell prompt semantics).
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.asyncRuntime.interruptForeground()) return true;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
@@ -1391,4 +1465,24 @@ export class WindowsTerminalSession extends TerminalSession {
       : text.split('\n').map(t => ({ text: t, type: 'output' as const }));
     for (const r of rows) this.addLine(r.text, r.type);
   }
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function splitLines(content: string): string[] {
+  if (content.length === 0) return [];
+  const out = content.split(/\r?\n/);
+  if (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out;
+}
+
+function sliceTail(content: string, tail: number): string {
+  const lines = splitLines(content);
+  if (lines.length <= tail) return content;
+  return lines.slice(lines.length - tail).join('\n') + (content.endsWith('\n') ? '\n' : '');
 }
