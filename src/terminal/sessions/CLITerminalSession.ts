@@ -238,10 +238,12 @@ export abstract class CLITerminalSession extends TerminalSession {
       return;
     }
 
+    const exitBeforeExec = this.isRemoteChild && this.isTopLevelExit(trimmed);
+
     try {
       const result = await this.executeOnDevice(trimmed);
 
-      if (result === CONNECTION_CLOSED || (this.isRemoteChild && this.isTopLevelExit(trimmed))) {
+      if (result === CONNECTION_CLOSED || exitBeforeExec) {
         if (this.endRemoteSession()) return;
         this._onRequestClose?.();
         return;

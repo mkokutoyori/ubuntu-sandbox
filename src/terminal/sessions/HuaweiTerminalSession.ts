@@ -98,7 +98,10 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();
-    return w === 'quit' || w === 'logout';
+    if (w === 'logout') return true;
+    if (w !== 'quit') return false;
+    const mode = this.vty?.state.mode;
+    return mode === 'user' || mode === 'user-view';
   }
 
   getInfoBarContent() {

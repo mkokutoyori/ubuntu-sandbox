@@ -116,7 +116,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();
-    return w === 'logout' || w === 'exit' || w === 'quit';
+    if (w === 'logout') return true;
+    if (w !== 'exit' && w !== 'quit') return false;
+    const mode = this.vty?.state.mode;
+    return mode === 'user' || mode === 'privileged';
   }
 
   getInfoBarContent() {

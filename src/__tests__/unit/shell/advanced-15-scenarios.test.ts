@@ -410,9 +410,9 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
  * which shell is active without coupling to any concrete impl.
  */
 function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string | undefined {
+  if (t.foreground !== t && t.foreground.isRemoteChild) return 'ssh-remote';
   const a = (t as unknown as { activeSubShell?: { kind?: string; inner?: { kind?: string } } }).activeSubShell;
-  if (!a) return undefined;
-  return a.inner?.kind ?? a.kind;
+  return a?.inner?.kind ?? a?.kind;
 }
 
 describe('Deep shell nesting — 4 to 5 levels', () => {
@@ -473,7 +473,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
   });
 
   // ── #D3 — 5-level cross-vendor: Win cmd → SSH Linux → SSH Win → PS → SSH Linux ──
-  test.skip('§D3 — Win→SSH→Linux→SSH→Win→PS→SSH→Linux: alternating-vendor 5-frame stack', async () => {
+  test('§D3 — Win→SSH→Linux→SSH→Win→PS→SSH→Linux: alternating-vendor 5-frame stack', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
@@ -542,7 +542,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
   });
 
   // ── #D5 — 5-level chain with Huawei at the leaf ────────────────
-  test.skip('§D5 — Win→SSH Linux→SSH Win→SSH Huawei→system-view: 4 frames + VRP mode change', async () => {
+  test('§D5 — Win→SSH Linux→SSH Win→SSH Huawei→system-view: 4 frames + VRP mode change', async () => {
     const { winA, huawei } = await buildLan();
     huawei.setHostname('HW');
     const t = new WindowsTerminalSession('t', winA);
@@ -672,7 +672,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expectAnyLine(t, /Warning: Permanently added '10\.0\.0\.1'.*to the list of known hosts/);
   });
 
-  test.skip('§F2 — successful nested ssh prints "Last login:" the way OpenSSH does', async () => {
+  test('§F2 — successful nested ssh prints "Last login:" the way OpenSSH does', async () => {
     const { winA, linuxA } = await buildLan();
     // Pre-seed a prior login for alice on linuxA so the OpenSSH banner
     // has something to point at. Mirrors the real /var/log/lastlog state
@@ -1221,7 +1221,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\carl>/);
   });
 
-  test.skip('§F6 — three bad passwords give the canonical OpenSSH lockout message', async () => {
+  test('§F6 — three bad passwords give the canonical OpenSSH lockout message', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
@@ -1544,7 +1544,7 @@ describe('Root-cause shell/session integrity', () => {
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
-  test.skip('§RC2 — Linux→Huawei→Linux→SQLPlus→Win→PS : shell ownership never leaks', async () => {
+  test('§RC2 — Linux→Huawei→Linux→SQLPlus→Win→PS : shell ownership never leaks', async () => {
     const { linuxA, huawei } = await buildLan();
 
     huawei.setHostname('HW');

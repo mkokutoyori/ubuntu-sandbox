@@ -925,20 +925,6 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    remote.recordSshLogin?.(
-      pending.user, pending.sourceIp, pending.sourceHostname, true,
-    );
-    if (!pending.quiet) {
-      const banner = remote.sshBanner?.() ?? '';
-      for (const line of banner.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-      const remoteMotd = (pending.device as unknown as { getSshMotd?: () => string });
-      const motd = remoteMotd.getSshMotd?.() ?? '';
-      for (const line of motd.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-    }
     this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
     const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
@@ -949,7 +935,7 @@ export class WindowsTerminalSession extends TerminalSession {
       this.adoptRemoteChild(child, pending.user, pending.host, {
         SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
         SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
-      });
+      }, { quiet: pending.quiet });
     }
     this.pendingSshPush = null;
     this.sshPasswordAttempts = 0;

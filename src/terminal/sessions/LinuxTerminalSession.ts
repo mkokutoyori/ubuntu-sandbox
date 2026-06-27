@@ -2402,16 +2402,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     //
-    // Banner composition: prefer the in-process LinuxMachine path because
-    // it gives us the canonical OpenSSH ordering (Welcome → motd → blank
-    // → Last login). Falls back to the exec-channel reads when the remote
-    // is a synthetic handler that doesn't materialise a LinuxMachine.
-    const remoteForBanner = findLinuxMachineByIp(host);
-    const bannerLines = remoteForBanner
-      ? composeLoginBanner(remoteForBanner, user)
-      : await this.composeLoginBannerViaExec(session, user);
-    for (const line of bannerLines) this.addLine(line);
-
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
     const forwarders = this.installLocalForwards(session, host, meta);

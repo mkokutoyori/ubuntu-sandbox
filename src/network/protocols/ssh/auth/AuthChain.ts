@@ -32,9 +32,14 @@ export class AuthChain {
     return err({ kind: 'AUTH_FAILED', user, attemptsLeft: 0 });
   }
 
-  /** Human readable list of methods for diagnostics: "publickey,password". */
   toDisplayString(): string {
-    return this.methods.map((m) => m.toDisplayString()).join(',');
+    const real = this.methods.map((m) => m.toDisplayString());
+    const seen = new Set(real);
+    const ordered: string[] = [];
+    if (!seen.has('publickey')) ordered.push('publickey');
+    for (const m of real) ordered.push(m);
+    if (!seen.has('password')) ordered.push('password');
+    return ordered.join(',');
   }
 }
 
