@@ -1640,7 +1640,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('end');
 
       const output = await topo.pc1.executeCommand('ping -c 1 -M want -s 1300 10.0.2.10');
-      expect(output).toContain('64 bytes');
+      expect(output).toContain('1308 bytes from 10.0.2.10');
     });
 
     it('217. should trigger fragmentation warning if size is 1450 and MTU is 1400 with DF set', async () => {
