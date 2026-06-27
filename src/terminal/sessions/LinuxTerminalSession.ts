@@ -426,6 +426,15 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string; hostname: string; path: string; promptChar: string;
     foreign?: boolean;
   } {
+    if (this.hasActiveChild && this.foreground.getSessionType() !== 'linux') {
+      return {
+        user: this.currentUser,
+        hostname: this.device.getHostname() || 'localhost',
+        path: this.currentPath,
+        promptChar: '$',
+        foreign: true,
+      };
+    }
     if (this.activeSubShell) {
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
         ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
@@ -1793,7 +1802,15 @@ export class LinuxTerminalSession extends TerminalSession {
       const { host, user } = JSON.parse(xvendor) as { host: string; user: string };
       const target = this.crossVendorPushTarget;
       this.crossVendorPushTarget = null;
-      this.pushRemoteDeviceWithStrategy(target.device, user, host, target.strategy);
+      const child = createSessionForDevice(target.device, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const clientPort = 50_000 + (user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, user, host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${host} 22`,
+          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
+        });
+      }
       return;
     }
     this.crossVendorPushTarget = null;
@@ -2377,22 +2394,18 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
-      // Non-Linux peers (Windows / Cisco / Huawei) need their vendor
-      // shell on the stack — otherwise the terminal renders the bash
-      // prompt for a Windows cwd and routes commands to the bare
-      // device.executeCommand, so `powershell` / mode-switches never
-      // engage. Linux peers keep the generic push (no foreign shell).
-      const vendorStrategy = anyRemoteDevice instanceof LinuxMachine
-        ? null
-        : pickVendorPromptStrategy(anyRemoteDevice);
-      if (vendorStrategy) {
-        this.pushRemoteDeviceWithStrategy(
-          anyRemoteDevice, user, host, vendorStrategy, onSessionEnd,
-        );
-      } else {
-        this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const serverIp = host;
+        const clientPort = 50_000 + (user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, user, host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} 22`,
+          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
+        });
+        child.registerTearDown(onSessionEnd);
+        return;
       }
-      return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
@@ -3161,9 +3174,8 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** True while the terminal is operating on a remote device. */
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0;
+    return this.sshStack.length > 0 || this.hasActiveChild;
   }
 
   /**

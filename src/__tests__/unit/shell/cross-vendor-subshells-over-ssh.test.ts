@@ -166,7 +166,7 @@ describe('Sub-shells launched OVER SSH land in the right primary', () => {
       const t = new WindowsTerminalSession(`tt-${host}`, lan.winA);
       await t.init();
       await sshLogin(t, cmd, pw);
-      const exitWord = host === '10.0.0.6' ? 'quit' : 'exit';
+      const exitWord = (host === '10.0.0.5' || host === '10.0.0.6') ? 'logout' : 'exit';
       await typeSub(t, exitWord);
       const lines = t.lines.map(l => l.text);
       const found = lines.some(line => new RegExp(`Connection to ${host.replace(/\./g, '\\.')} closed`).test(line));

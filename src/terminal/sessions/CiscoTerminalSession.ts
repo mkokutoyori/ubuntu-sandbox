@@ -56,6 +56,15 @@ export class CiscoTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'cisco'; }
   getTheme(): TerminalTheme { return CISCO_THEME; }
 
+  protected override prepareAsRemoteUser(_user: string): void {
+    if (this.vty) {
+      this.vty.state.mode = 'privileged';
+      this.vty.state.privilegeLevel = 15;
+    }
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   /**
    * Run commands through the per-vty queue so the shared shell is swapped
    * into this session's state for the duration of the call. Concurrent
@@ -104,6 +113,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'end'; }
   protected getPagerIndicator(): string { return ' --More-- '; }
+
+  protected isTopLevelExit(line: string): boolean {
+    const w = line.trim().toLowerCase();
+    return w === 'logout' || w === 'exit' || w === 'quit';
+  }
 
   getInfoBarContent() {
     const deviceType = this.device.getType();

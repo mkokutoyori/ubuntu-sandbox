@@ -396,6 +396,16 @@ export abstract class TerminalSession {
 
   protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
 
+  protected firstLocalIp(): string | null {
+    const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
+    if (!ports) return null;
+    for (const port of ports) {
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp()) return ip.toString();
+    }
+    return null;
+  }
+
   private _remoteLabel: string | null = null;
 
   get isRemoteChild(): boolean { return this._parent !== null; }

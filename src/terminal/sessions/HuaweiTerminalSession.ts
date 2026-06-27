@@ -49,6 +49,14 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
 
+  protected override prepareAsRemoteUser(_user: string): void {
+    if (this.vty) {
+      this.vty.state.privilegeLevel = 15;
+    }
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   protected override async executeOnDevice(
     command: string,
     timeoutMs?: number,
@@ -86,6 +94,11 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'return'; }
   protected getPagerIndicator(): string { return '  ---- More ----'; }
+
+  protected isTopLevelExit(line: string): boolean {
+    const w = line.trim().toLowerCase();
+    return w === 'quit' || w === 'logout';
+  }
 
   getInfoBarContent() {
     const deviceType = this.device.getType();

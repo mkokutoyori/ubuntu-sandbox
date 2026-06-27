@@ -155,6 +155,17 @@ export class WindowsTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return;
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
+  }
+
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? super.getFlowUser();
+  }
+
   /**
    * Current shell mode — derived from the active sub-shell type.
    * Used by UI components (TerminalModal, TerminalView) for display.
@@ -338,11 +349,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -601,8 +610,8 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (!trimmed) return;
 
-    // Handle exit at root level → close terminal
     if (trimmed.toLowerCase() === 'exit') {
+      if (this.endRemoteSession()) return;
       this._onRequestClose?.();
       return;
     }
@@ -616,11 +625,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // cls
     if (lower === 'cls') {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return;
     }
 
@@ -943,22 +950,20 @@ export class WindowsTerminalSession extends TerminalSession {
     }
     this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
-    if (pending.device.getOSType() === 'linux') {
-      const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
-      if (child) {
-        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-        const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
-        const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
-        this.adoptRemoteChild(child, pending.user, pending.host, {
-          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
-          SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
-        });
-        this.pendingSshPush = null;
-        this.sshPasswordAttempts = 0;
-        this.inputMode = { type: 'normal' };
-        this.notify();
-        return;
-      }
+    const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
+    if (child) {
+      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
+      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
+      this.adoptRemoteChild(child, pending.user, pending.host, {
+        SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+        SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
+      });
+      this.pendingSshPush = null;
+      this.sshPasswordAttempts = 0;
+      this.inputMode = { type: 'normal' };
+      this.notify();
+      return;
     }
 
     installDefaultShells();
@@ -1102,7 +1107,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
 
     for (const line of shell.getActivationBanner()) {
-      this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
+      this.addLine(line, 'ps-header');
     }
     shell.activate();
     this._onShellModeChange?.('powershell');
@@ -1145,7 +1150,7 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
     const result = await this.activeSubShell.handleInput(value);
-    if (result.clearScreen) { this.lines = []; this.bannerCleared = true; }
+    if (result.clearScreen) { this.clear(); this.bannerCleared = true; }
     if (result.styledOutput && result.styledOutput.length > 0) {
       for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
     } else if (result.output.length > 0) {
@@ -1223,7 +1228,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {
-          this.lines = [];
+          this.clear();
           this.bannerCleared = true;
         }
 
@@ -1332,11 +1337,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L → clear screen
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -1442,7 +1445,6 @@ export class WindowsTerminalSession extends TerminalSession {
     const rows = this.isLocalWinShellOutput()
       ? classifyWindowsLines(text)
       : text.split('\n').map(t => ({ text: t, type: 'output' as const }));
-    for (const r of rows) this.lines.push({ id: nextLineId(), text: r.text, type: r.type });
-    this.notify();
+    for (const r of rows) this.addLine(r.text, r.type);
   }
 }

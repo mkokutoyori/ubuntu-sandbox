@@ -61,6 +61,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   protected abstract getDefaultPrompt(): string;
 
+  protected abstract isTopLevelExit(line: string): boolean;
+
   /** The vendor-specific "go to top-level" command (Cisco: 'end', Huawei: 'return') */
   protected abstract getCtrlZCommand(): string;
 
@@ -214,8 +216,9 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Command execution ───────────────────────────────────────────
 
   protected onEnter(): void {
-    const cmd = this.input;
+    const cmd = this.input || this._inputBuf;
     this.input = '';
+    this._inputBuf = '';
     this.recordEvent('input', cmd);
     this.executeCommand(cmd);
     this.notify();
@@ -229,7 +232,6 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
-    // Check if this command needs an interactive flow before executing
     const steps = this.buildInteractiveFlow(trimmed);
     if (steps) {
       this.startFlowFromSteps(steps, trimmed);
@@ -239,7 +241,8 @@ export abstract class CLITerminalSession extends TerminalSession {
     try {
       const result = await this.executeOnDevice(trimmed);
 
-      if (result === CONNECTION_CLOSED) {
+      if (result === CONNECTION_CLOSED || (this.isRemoteChild && this.isTopLevelExit(trimmed))) {
+        if (this.endRemoteSession()) return;
         this._onRequestClose?.();
         return;
       }

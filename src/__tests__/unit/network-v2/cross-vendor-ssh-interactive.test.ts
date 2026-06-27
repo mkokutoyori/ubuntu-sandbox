@@ -320,9 +320,9 @@ describe('§2 — Windows → Cisco IOS interactive SSH', () => {
     expectContains(term, /IOS|Cisco/i);
   });
 
-  test('exit pops back to cmd.exe', async () => {
+  test('logout pops back to cmd.exe', async () => {
     await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
-    await type(term, 'exit');
+    await type(term, 'logout');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 });
