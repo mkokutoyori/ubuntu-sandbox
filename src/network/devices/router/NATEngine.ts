@@ -14,6 +14,7 @@
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
+import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   NATSignalStore,
@@ -143,6 +144,9 @@ export class NATEngine {
   private hitCount = 0;
   private missCount = 0;
   private expiredCount = 0;
+  private maxEntries: number | null = null;
+  setMaxEntries(n: number | null): void { this.maxEntries = n; }
+  getMaxEntries(): number | null { return this.maxEntries; }
   // Direction counters (Phase 4b2-NAT)
   private inboundTranslations = 0;
   private outboundTranslations = 0;
@@ -416,6 +420,7 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
+          if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) continue;
           const globalPort = this.allocatePort(proto, globalIP);
           if (globalPort === null) continue; // ephemeral range exhausted
           session = {
@@ -692,24 +697,14 @@ export class NATEngine {
 function translateNetworkOffset(srcIP: string, entry: NatStaticEntry): string | null {
   const prefix = entry.prefixLen ?? 24;
   if (prefix > 32 || prefix < 0) return null;
-  const srcNum = ipToNum(srcIP);
-  const localNum = ipToNum(entry.localIP);
-  const globalNum = ipToNum(entry.globalIP);
+  const srcNum = tryIpToUint32(srcIP);
+  const localNum = tryIpToUint32(entry.localIP);
+  const globalNum = tryIpToUint32(entry.globalIP);
   if (srcNum === null || localNum === null || globalNum === null) return null;
-  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  const mask = prefixLengthToMaskUint32(prefix);
   if ((srcNum & mask) !== (localNum & mask)) return null;
   const offset = srcNum - (localNum & mask);
-  return numToIp(((globalNum & mask) + offset) >>> 0);
-}
-
-function ipToNum(ip: string): number | null {
-  const parts = ip.split('.').map(p => parseInt(p, 10));
-  if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) return null;
-  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
-}
-
-function numToIp(n: number): string {
-  return `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
+  return uint32ToIp(((globalNum & mask) + offset) >>> 0);
 }
 
 function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv4Packet {

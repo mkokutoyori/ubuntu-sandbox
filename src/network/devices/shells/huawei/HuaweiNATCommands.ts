@@ -17,6 +17,10 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
+import { isValidIPv4, tryIpToUint32 } from '../../../core/ip';
+
+const stripQ = (s: string) => s?.replace(/^["']|["']$/g, '') ?? '';
+const validPort = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
 
 // ─── Interface View: nat static ──────────────────────────────────────────────
 
@@ -45,18 +49,25 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     return '';
   });
 
-  // nat outbound <acl-number>  — PAT using outside interface IP
   trie.registerGreedy('nat outbound', 'Configure dynamic NAT/PAT outbound rule', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const aclId = args[0];
+    const aclN = parseInt(aclId, 10);
+    if (isNaN(aclN) || (aclN < 2000 || aclN > 3999)) return 'Error: ACL number must be a numbered ACL in range 2000-3999.';
+    const engine = ctx.r()._getNATEngine();
+    const router = ctx.r() as any;
+    const aclEngine = router._getACLEngine?.() ?? router._acl;
+    if (aclEngine?.hasAcl && !aclEngine.hasAcl(aclId)) return `Error: ACL ${aclId} does not exist.`;
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
-    ctx.r()._getNATEngine().setOutsideInterface(ifName);
-    // Check if a pool is specified: nat outbound <acl> address-group <pool>
+    engine.setOutsideInterface(ifName);
+    const noPat = args.includes('no-pat');
     if (args[1]?.toLowerCase() === 'address-group' && args[2]) {
-      ctx.r()._getNATEngine().addDynamicRule({ aclId, type: 'pool', poolName: args[2] });
+      const poolName = stripQ(args[2]);
+      if (!engine.getPool(poolName)) return `Error: address-group ${poolName} does not exist.`;
+      engine.addDynamicRule({ aclId, type: 'pool', poolName, interfaceName: ifName, ...(noPat ? { noPat: true } : {}) } as any);
     } else {
-      ctx.r()._getNATEngine().addDynamicRule({ aclId, type: 'overload' });
+      engine.addDynamicRule({ aclId, type: 'overload', interfaceName: ifName });
     }
     return '';
   });
@@ -68,23 +79,32 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     return '';
   });
 
-  // nat server protocol tcp|udp global <globalIP> <globalPort> inside <localIP> <localPort>
-  trie.registerGreedy('nat server protocol', 'Configure NAT server (port forwarding)', (args) => {
-    // args: [tcp|udp, global, globalIP, globalPort, inside, localIP, localPort]
+  trie.registerGreedy('nat server protocol', 'Configure NAT server (port forwarding)', (rawArgs) => {
+    const args = rawArgs.map(stripQ);
     if (args.length < 7) return 'Error: Incomplete command.';
     const proto = args[0].toLowerCase();
-    if (proto !== 'tcp' && proto !== 'udp') return 'Error: Protocol must be tcp or udp.';
+    if (proto !== 'tcp' && proto !== 'udp') return `Error: Unknown protocol "${args[0]}".`;
     if (args[1]?.toLowerCase() !== 'global') return 'Error: Expected "global" keyword.';
     const globalIP = args[2];
+    if (!isValidIPv4(globalIP)) return `Error: Invalid IP address ${globalIP}.`;
     const globalPort = parseInt(args[3], 10);
+    if (args[3]?.toLowerCase() === 'any') return 'Error: Wildcard global port not supported by nat server.';
+    if (!validPort(globalPort)) return 'Error: Global port out of range.';
     if (args[4]?.toLowerCase() !== 'inside') return 'Error: Expected "inside" keyword.';
     const localIP = args[5];
+    if (!isValidIPv4(localIP)) return `Error: Invalid local IP address ${localIP}.`;
     const localPort = parseInt(args[6], 10);
-    if (isNaN(globalPort) || isNaN(localPort)) return 'Error: Invalid port number.';
+    if (!validPort(localPort)) return 'Error: Inside port out of range.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
     ctx.r()._getNATEngine().setOutsideInterface(ifName);
     ctx.r()._getNATEngine().addStaticEntry({ localIP, globalIP, protocol: proto as 'tcp' | 'udp', localPort, globalPort });
+    return '';
+  });
+
+  trie.registerGreedy('nat alg', 'Configure NAT ALG', (args) => {
+    const router = ctx.r() as any;
+    (router._huaweiNatAlg ??= new Set<string>()).add(`${stripQ(args[0])}:${stripQ(args[1] ?? 'enable')}`);
     return '';
   });
 
@@ -151,9 +171,16 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
 }
 
 export function registerHuaweiNATSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
-  trie.registerGreedy('nat address-group', 'Configure NAT address pool', (args) => {
+  trie.registerGreedy('nat address-group', 'Configure NAT address pool', (rawArgs) => {
+    const args = rawArgs.map(stripQ);
     if (args.length < 3) return 'Error: Incomplete command.';
+    const idN = parseInt(args[0], 10);
+    if (isNaN(idN) || idN < 0 || idN > 255) return 'Error: address-group ID out of range (0-255).';
     const name = args[0]; const start = args[1]; const end = args[2];
+    if (!isValidIPv4(start)) return `Error: Invalid IP address ${start}.`;
+    if (!isValidIPv4(end)) return `Error: Invalid IP address ${end}.`;
+    const sN = tryIpToUint32(start)!, eN = tryIpToUint32(end)!;
+    if (sN > eN) return 'Error: Start IP greater than end IP.';
     ctx.r()._getNATEngine().addPool({ name, startIP: start, endIP: end });
     return '';
   });
@@ -187,9 +214,12 @@ export function registerHuaweiNATSystemCommands(trie: CommandTrie, ctx: HuaweiSh
 
 export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('display nat static', 'Display static NAT translations', () => displayNATStatic(getRouter()));
-  trie.register('display nat outbound', 'Display NAT outbound rules', () => displayNATOutbound(getRouter()));
-  trie.register('display nat session', 'Display active NAT sessions', () => displayNATSession(getRouter()));
-  trie.register('display nat statistics', 'Display NAT statistics', () => displayNATStatistics(getRouter()));
+  trie.register('display nat outbound', 'Display NAT outbound rules', () => 'NAT Outbound Information:\n' + displayNATOutbound(getRouter()));
+  trie.register('display nat session', 'Display active NAT sessions', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
+  trie.register('display nat session all', 'Display all NAT sessions', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
+  trie.registerGreedy('display nat session source', 'Display NAT sessions by source IP', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
+  trie.registerGreedy('display nat session destination', 'Display NAT sessions by destination IP', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
+  trie.register('display nat statistics', 'Display NAT statistics', () => 'NAT Statistics Information:\n' + displayNATStatistics(getRouter()));
   trie.register('display nat all', 'Display all NAT information', () => [
     displayNATStatic(getRouter()),
     '',
@@ -207,14 +237,20 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
-  trie.register('display nat server', 'Display NAT server entries', () => displayNATStatic(getRouter()));
+  trie.registerGreedy('reset nat session inside', 'Clear NAT sessions matching inside IP', (args) => {
+    if (!args[0] || !isValidIPv4(stripQ(args[0]))) return 'Error: Invalid inside IP address.';
+    getRouter()._getNATEngine().clearTranslations();
+    return '';
+  });
+  trie.register('display nat server', 'Display NAT server entries', () => 'NAT Server Information:\n' + displayNATServer(getRouter()));
   trie.registerGreedy('display nat session protocol', 'Display NAT sessions filtered by protocol', (_args) => {
     return displayNATSession(getRouter());
   });
   trie.register('display nat address-group', 'Display NAT address pools', () => {
     const pools = getRouter()._getNATEngine().getPools();
-    if (pools.size === 0) return 'No NAT address pools configured.';
-    const lines = [' Index  Pool Name   Start IP         End IP'];
+    const lines = ['NAT Address Group Information:'];
+    if (pools.size === 0) { lines.push(' (no address groups configured)'); return lines.join('\n'); }
+    lines.push(' Index  Pool Name   Start IP         End IP');
     let i = 0;
     for (const [, p] of pools) {
       lines.push(` ${String(i++).padEnd(7)}${p.name.padEnd(12)}${p.startIP.padEnd(17)}${p.endIP}`);
@@ -251,17 +287,28 @@ function displayNATStatic(router: Router): string {
 function displayNATOutbound(router: Router): string {
   const engine = router._getNATEngine();
   const rules = engine.getDynamicRules();
-  if (rules.length === 0) return 'No NAT outbound rules configured.';
+  if (rules.length === 0) return ' (no outbound rules configured)';
 
   const lines = [
-    ' NAT Outbound:',
-    ' ACL       Type      Pool',
-    ' ' + '-'.repeat(40),
+    ' ACL       Type      Pool                Flags',
+    ' ' + '-'.repeat(55),
   ];
   for (const r of rules) {
-    const type = r.type === 'overload' ? 'overload' : 'pool';
+    const type = r.type === 'overload' ? 'easy-ip' : 'pool';
     const pool = r.poolName ?? '---';
-    lines.push(` ${String(r.aclId).padEnd(10)}${type.padEnd(10)}${pool}`);
+    const noPat = (r as any).noPat ? 'no-pat' : '';
+    lines.push(` ${String(r.aclId).padEnd(10)}${type.padEnd(10)}${pool.padEnd(20)}${noPat}`);
+  }
+  return lines.join('\n');
+}
+
+function displayNATServer(router: Router): string {
+  const engine = router._getNATEngine();
+  const entries = engine.getStaticEntries().filter(e => e.protocol);
+  if (entries.length === 0) return ' (no NAT server entries configured)';
+  const lines = [' Proto  Global IP:Port              Inside IP:Port'];
+  for (const e of entries) {
+    lines.push(` ${(e.protocol ?? '---').padEnd(6)} ${e.globalIP}:${e.globalPort ?? 0}              ${e.localIP}:${e.localPort ?? 0}`);
   }
   return lines.join('\n');
 }
@@ -269,17 +316,14 @@ function displayNATOutbound(router: Router): string {
 function displayNATSession(router: Router): string {
   const entries = router._getNATEngine().getTranslations();
   const sessions = entries.filter(e => e.proto !== '---');
-  if (sessions.length === 0) return 'No active NAT sessions.';
-
-  const lines = [
-    ' NAT Session Table Information:',
-    ` Total sessions: ${sessions.length}`,
-    '',
-    ' Proto  Inside Local           Inside Global          Outside Global',
-    ' ' + '-'.repeat(75),
-  ];
-  for (const s of sessions) {
-    lines.push(` ${s.proto.padEnd(7)}${s.insideLocal.padEnd(23)}${s.insideGlobal.padEnd(23)}${s.outsideGlobal}`);
+  const lines: string[] = [` Total sessions: ${sessions.length}`];
+  if (sessions.length > 0) {
+    lines.push('');
+    lines.push(' Proto  Inside Local           Inside Global          Outside Global');
+    lines.push(' ' + '-'.repeat(75));
+    for (const s of sessions) {
+      lines.push(` ${s.proto.padEnd(7)}${s.insideLocal.padEnd(23)}${s.insideGlobal.padEnd(23)}${s.outsideGlobal}`);
+    }
   }
   return lines.join('\n');
 }
