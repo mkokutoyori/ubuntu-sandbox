@@ -118,6 +118,11 @@ export class Environment {
 
   // ─── trap handlers ────────────────────────────────────────────
 
+  /** Parent scope, or null at the root. Used by the interpreter's trap
+   *  inheritance walk (ERR / DEBUG / RETURN installed at script scope
+   *  must still fire from inside functions). */
+  getParent(): Environment | null { return this.parent; }
+
   /** Install (or replace) the handler for `signal`. */
   setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
   /** Drop the handler for `signal`. */
