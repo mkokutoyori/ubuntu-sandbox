@@ -102,11 +102,6 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     return '';
   });
 
-  trie.registerGreedy('nat alg', 'Configure NAT ALG', (args) => {
-    const router = ctx.r() as any;
-    (router._huaweiNatAlg ??= new Set<string>()).add(`${stripQ(args[0])}:${stripQ(args[1] ?? 'enable')}`);
-    return '';
-  });
 
   // undo nat server protocol tcp|udp global <globalIP> <globalPort>
   trie.registerGreedy('undo nat server protocol', 'Remove NAT server entry', (args) => {
@@ -208,6 +203,26 @@ export function registerHuaweiNATSystemCommands(trie: CommandTrie, ctx: HuaweiSh
     (ctx.r()._getNATEngine() as any).staticEnabled = false;
     return '';
   });
+
+  trie.registerGreedy('nat alg', 'Enable/disable NAT ALG for a protocol', (args) => {
+    if (!args[0]) return 'Error: Missing protocol.';
+    const proto = stripQ(args[0]).toLowerCase();
+    const action = (stripQ(args[1] ?? 'enable')).toLowerCase();
+    if (!['dns', 'ftp', 'tftp', 'h323', 'sip', 'rtsp', 'pptp'].includes(proto)) {
+      return `Error: Unknown ALG protocol "${args[0]}".`;
+    }
+    if (!['enable', 'disable'].includes(action)) return 'Error: Expected enable or disable.';
+    const router = ctx.r() as any;
+    const alg: Map<string, boolean> = router._huaweiNatAlg ??= new Map();
+    alg.set(proto, action === 'enable');
+    return '';
+  });
+  trie.registerGreedy('undo nat alg', 'Disable NAT ALG for a protocol', (args) => {
+    const proto = stripQ(args[0] ?? '').toLowerCase();
+    const router = ctx.r() as any;
+    router._huaweiNatAlg?.delete?.(proto);
+    return '';
+  });
 }
 
 // ─── Display Commands ─────────────────────────────────────────────────────────
@@ -220,6 +235,8 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
   trie.registerGreedy('display nat session source', 'Display NAT sessions by source IP', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
   trie.registerGreedy('display nat session destination', 'Display NAT sessions by destination IP', () => 'NAT Session Table Information:\n' + displayNATSession(getRouter()));
   trie.register('display nat statistics', 'Display NAT statistics', () => 'NAT Statistics Information:\n' + displayNATStatistics(getRouter()));
+  trie.registerGreedy('display nat statistics interface', 'Display NAT statistics on interface', (_args) => 'NAT Statistics Information:\n' + displayNATStatistics(getRouter()));
+  trie.registerGreedy('display nat statistics slot', 'Display NAT statistics on slot', (_args) => 'NAT Statistics Information:\n' + displayNATStatistics(getRouter()));
   trie.register('display nat all', 'Display all NAT information', () => [
     displayNATStatic(getRouter()),
     '',
@@ -244,7 +261,7 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
   });
   trie.register('display nat server', 'Display NAT server entries', () => 'NAT Server Information:\n' + displayNATServer(getRouter()));
   trie.registerGreedy('display nat session protocol', 'Display NAT sessions filtered by protocol', (_args) => {
-    return displayNATSession(getRouter());
+    return 'NAT Session Table Information:\n' + displayNATSession(getRouter());
   });
   trie.register('display nat address-group', 'Display NAT address pools', () => {
     const pools = getRouter()._getNATEngine().getPools();

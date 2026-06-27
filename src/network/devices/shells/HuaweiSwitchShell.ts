@@ -26,6 +26,14 @@ import {
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import {
+  registerHuaweiNATInterfaceCommands,
+  registerHuaweiNATSystemCommands,
+  registerHuaweiNATDisplayCommands,
+  runningConfigNATHuawei,
+} from './huawei/HuaweiNATCommands';
+import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
+import type { Router } from '../Router';
+import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 
@@ -121,6 +129,28 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildAaaCommands();
     this.buildUserInterfaceCommands();
     this.buildAclCommands();
+    this.wireHuaweiNAT();
+  }
+
+  private natContext(): HuaweiShellContext {
+    return {
+      r: () => this.swRef as unknown as Router,
+      setMode: () => { /* switch NAT does not enter dedicated submodes */ },
+      getSelectedInterface: () => this.selectedInterface,
+      setSelectedInterface: (i) => { this.selectedInterface = i; },
+      getSelectedPool: () => null,
+      setSelectedPool: () => { /* unused on switch */ },
+      getDhcpSelectGlobal: () => new Set<string>(),
+    };
+  }
+
+  private wireHuaweiNAT(): void {
+    const ctx = this.natContext();
+    const getRouter = () => this.swRef as unknown as Router;
+    registerHuaweiNATSystemCommands(this.systemTrie, ctx);
+    registerHuaweiNATInterfaceCommands(this.interfaceTrie, ctx);
+    registerHuaweiNATDisplayCommands(this.userTrie, getRouter);
+    registerHuaweiNATDisplayCommands(this.systemTrie, getRouter);
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -1946,7 +1976,36 @@ export class HuaweiSwitchShell implements ISwitchShell {
         }
       }
       if (!port.getIsUp()) lines.push(` shutdown`);
+      for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
       lines.push('#');
+    }
+
+    // Vlanif L3 interfaces
+    const sviIPs = (sw as unknown as { _getSviIps?: () => Map<string, { ip: string; mask: string }> })._getSviIps?.();
+    if (sviIPs) {
+      for (const [name, info] of sviIPs) {
+        lines.push(`interface ${name}`);
+        lines.push(` ip address ${info.ip} ${info.mask}`);
+        for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
+        lines.push('#');
+      }
+    }
+
+    // Global NAT block — any NAT entries not bound to a per-interface section above.
+    const router = sw as unknown as Router;
+    if ((router as any)._getNATEngine) {
+      const engine = router._getNATEngine();
+      for (const e of engine.getStaticEntries()) {
+        if (e.protocol) {
+          lines.push(`nat server protocol ${e.protocol} global ${e.globalIP} ${e.globalPort} inside ${e.localIP} ${e.localPort}`);
+        } else {
+          lines.push(`nat static global ${e.globalIP} inside ${e.localIP}`);
+        }
+      }
+      for (const [, p] of engine.getPools()) {
+        lines.push(`nat address-group ${p.name} ${p.startIP} ${p.endIP}`);
+      }
+      if (engine.getStaticEntries().length || engine.getPools().size) lines.push('#');
     }
 
     lines.push('return');
