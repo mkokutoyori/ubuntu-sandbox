@@ -881,6 +881,61 @@ Façade exposée aux shells : `configureMirrorSource(id, port, dir)`,
   mirror + tcpdump sur observe-port ; `display observe-port` /
   `display port-mirroring` ; `undo port-mirroring` coupe le stream.
 
+## Real-Time Monitoring — PC Linux : `mtr` (live traceroute + ping)
+
+`mtr` combine traceroute (découverte des hops) et ping (RTT par hop, répété
+en boucle). Sur notre socle async, l'implémentation tient en :
+
+- Module pur `src/network/devices/linux/Mtr.ts` :
+  - `parseMtrArgs(args)` couvre `-r/--report`, `-c/--report-cycles`, `-i/
+    --interval`, `-m/--max-ttl`, `-n/--no-dns`, `-V/--version`, `--help`,
+    plus erreur explicite sur valeurs absurdes (`-c x`, `-i -1`, `-m 0`,
+    `--bogus`).
+  - `MtrHopStats` accumule par hop `sent`, `received`, `last`, `best`,
+    `worst`, somme et somme des carrés des RTT (pour stddev *populationelle*).
+    `lossPct = (1 − received/sent) × 100`, `avg` et `stDev` projetés à la
+    demande (0 quand `received < 2`).
+  - `formatMtrFrame({hostname, target, startedAt, hops}, 'live'|'report')`
+    rend la table mtr classique (`Loss%  Snt  Last  Avg  Best  Wrst StDev`)
+    avec en-tête `mtr 0.95 …` en live et `Start: <ISO>` en report, et la
+    bannière `Keys: …` uniquement en live.
+
+- `LinuxCommandExecutor.dispatch('mtr', args)` : reconnaît `--help`,
+  `--version`, parse-error, target manquant — réponses synchrones. Cas
+  streaming → output vide (la session terminal prend le relais), même
+  convention que `traceroute`/`ping`.
+
+- `LinuxTerminalSession.tryStartMtrStream(commandLine)` exécute un job
+  foreground unique :
+  1. Découverte initiale via `tracerouteStreamInSession(target,
+     { probesPerHop: 1 })` — récupère la liste ordonnée des IP de hop.
+  2. Repaint d'un frame initial (juste les en-têtes).
+  3. Boucle : pour chaque cycle, probe synchrone `sendPingProbeSync(ip)`
+     sur chaque hop, accumulation dans `MtrHopStats`, puis repaint de la
+     table sous une base de ligne préservée (`baseLen = this.lines.length`
+     verrouillé via `prepare()`).
+  4. Sort proprement après `cycles` itérations en mode `-r`, ou sur
+     Ctrl+C en mode live. `^C` réutilise le hook standard du runtime
+     async (déjà câblé par `TerminalSession`).
+
+- Tests Vitest (`linux-mtr.test.ts`, 16/16) : parseur exhaustif,
+  comptabilité stats (loss, last/best/worst/avg/stddev avec et sans
+  pertes, stddev=0 quand < 2 RTT), formatter live + report + cas
+  `???` quand aucun probe ne répond, et 4 scénarios UI bout-en-bout
+  (`--version`, `--help`, erreur sans target, `-r -c 1` qui unlock le
+  prompt, live qui repeint et déverrouille après Ctrl+C).
+- Playwright e2e (`e2e/linux-mtr.spec.ts`, 3/3) : version, report
+  one-shot, live mode (prompt verrouillé pendant le job → `Snt ≥ 2`
+  observé → Ctrl+C → `^C` → prompt déverrouillé).
+
+Subtilité résolue : `sendPingProbeSync` est *vraiment* synchrone et
+n'attend pas le passage par la file d'attente `fwdQueueAndResolve` (qui
+sérialise les replies sur ARP manquant). Conséquence : la suite de tests
+chauffe les caches ARP des deux côtés avec un `ping -c 1` initial avant
+de lancer mtr ; même chose côté Playwright via `injectFromHost`. C'est
+fidèle au comportement réel : un mtr lancé à froid sur un host inconnu
+voit du loss pendant les premiers cycles le temps que les ARP convergent.
+
 ## Suite
 
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc

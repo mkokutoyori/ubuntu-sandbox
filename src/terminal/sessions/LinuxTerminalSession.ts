@@ -12,6 +12,7 @@
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
+import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
 import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
@@ -885,6 +886,96 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartMtrStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mtr') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+
+    const parsed = parseMtrArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(MTR_USAGE); this.notify(); return true; }
+    if (parsed.showVersion) { this.addLine(MTR_VERSION); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+    if (!parsed.target) { this.addLine('mtr: no host specified'); this.notify(); return true; }
+
+    const intervalMs = Math.max(100, parsed.intervalSec * 1000);
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        // Step 1 — discover the hop path once via traceroute (probesPerHop=1
+        // is enough; we accumulate stats later through repeated probes).
+        const hopIps: (string | null)[] = [];
+        let resolved = false;
+        const discovery = await dev.tracerouteStreamInSession(parsed.target, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          onResolved: () => { resolved = true; },
+          onHop: (hop) => { hopIps.push(hop.ip ?? null); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!discovery.resolved) {
+          ctx.sink.error(`mtr: Failed to resolve host: ${parsed.target}`);
+          return;
+        }
+        if (!resolved || hopIps.length === 0) {
+          ctx.sink.error('mtr: no hops discovered');
+          return;
+        }
+
+        const stats = hopIps.map(() => new MtrHopStats());
+        const startedAt = new Date();
+        const hostname = dev.getHostname();
+        const targetIpStr = hopIps[hopIps.length - 1] ?? parsed.target;
+
+        const paint = () => {
+          this.lines = this.lines.slice(0, baseLen);
+          const frame = formatMtrFrame({ hostname, target: targetIpStr, startedAt, hops: stats },
+            parsed.reportMode ? 'report' : 'live');
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+        };
+        paint();
+
+        // Step 2 — N cycles (report) or until cancelled (live). Each cycle
+        // sends one ping probe per known hop; the response IP overrides any
+        // earlier discovery value so route changes get reflected.
+        for (let cycle = 0; ; cycle++) {
+          if (ctx.cancelled()) return;
+          if (parsed.reportMode && cycle >= parsed.cycles) break;
+          for (let i = 0; i < hopIps.length; i++) {
+            const ip = hopIps[i];
+            let probe: MtrHopProbe;
+            if (!ip) {
+              probe = { lost: true };
+            } else {
+              try {
+                const result = dev.sendPingProbeSync(new IPAddress(ip));
+                probe = result.success
+                  ? { ip, rttMs: result.rttMs, lost: false }
+                  : { ip, lost: true };
+              } catch {
+                probe = { ip, lost: true };
+              }
+            }
+            stats[i].record(probe);
+          }
+          paint();
+          if (parsed.reportMode && cycle + 1 >= parsed.cycles) break;
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
   private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -1323,6 +1414,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
     if (this.tryStartTracerouteStream(trimmed)) return;
+    if (this.tryStartMtrStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartJournalFollow(trimmed)) return;

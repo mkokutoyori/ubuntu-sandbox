@@ -44,6 +44,7 @@ import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
+import { parseMtrArgs, MTR_USAGE, MTR_VERSION } from './Mtr';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
@@ -142,7 +143,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   // Networking
-  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
   'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
@@ -3162,6 +3163,16 @@ export class LinuxCommandExecutor {
         const host = args.filter(a => !a.startsWith('-'))[0];
         if (!host) return { output: 'Usage: traceroute host', exitCode: 1 };
         return { output: `traceroute to ${host}, 30 hops max, 60 byte packets\n 1  gateway (10.0.0.1)  0.5 ms  0.4 ms  0.3 ms\n 2  ${host}  1.2 ms  1.1 ms  1.0 ms`, exitCode: 0 };
+      }
+      case 'mtr': {
+        const parsed = parseMtrArgs(args);
+        if (parsed.showHelp) return { output: MTR_USAGE, exitCode: 0 };
+        if (parsed.showVersion) return { output: MTR_VERSION, exitCode: 0 };
+        if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
+        if (!parsed.target) return { output: 'mtr: no host specified', exitCode: 1 };
+        // Real probing happens in the terminal session's tryStartMtr hook;
+        // bare executeCommand callers see an empty result, same as traceroute.
+        return { output: '', exitCode: 0 };
       }
       case 'nslookup':
       case 'dig':
