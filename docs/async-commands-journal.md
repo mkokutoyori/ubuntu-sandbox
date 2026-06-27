@@ -746,11 +746,54 @@ Régressions : streaming UI (`vmstat`, `mpstat`, `pidstat`, `netstat`, `tcpdump`
 `watch`) 39/39. `tsc --noEmit` : 0 erreur. Lint : 0 nouvelle erreur. Build prod
 OK.
 
+## Couverture e2e Playwright (UI réelle)
+
+L'émulation async passe par trois sessions (Linux, Windows, Huawei). Pour
+chaque famille, une suite Playwright pilote l'UI réelle (canvas → terminal
+modal) et vérifie le flux à travers le bus, le runtime async, la session, le
+formateur et le DOM.
+
+- `e2e/linux-async-streaming.spec.ts` (13/13) — `vmstat` / `mpstat` /
+  `pidstat` (one-shot, streaming `N`, fin auto `N C`), `free -s N` /
+  `free -s 1 -c 2`, `dmesg -w` avec injection d'évènement noyau live ; sur
+  chaque streaming : prompt verrouillé pendant le job, déverrouillage après
+  Ctrl+C, ré-affichage du capture-input, bannière unique.
+- `e2e/windows-async-streaming.spec.ts` (7/7) — `Get-Content -Wait` (contenu
+  initial + bytes appendés en vol), `Test-Connection -Continuous` + `-Count 0`
+  (TimedOut sur hôte injoignable), `netstat -an <interval>` (en-tête répété,
+  Ctrl+C), `Test-NetConnection` (ping réel + TCP réel via probes synchrones,
+  source/interface réelles), `pathping` (discovery → statistics → trailer).
+  Pendant l'exécution de chaque commande foreground sous PS, le prompt
+  utilisateur est masqué : seul l'input opacity-0 reste pour capter Ctrl+C.
+- `e2e/huawei-async-streaming.spec.ts` (8/8) — `terminal debugging` +
+  `debugging ospf event` streament une ligne VRP `OSPF: Neighbor (…) state
+  change: Init -> 2WAY …` quand on injecte `ospf.neighbor.state-changed` sur
+  le bus du device ; sans `terminal debugging`, ou sans flag de debug, rien
+  ne stream ; `undo terminal debugging` et `undo debugging all` annulent
+  immédiatement le job ; `display debugging` reporte les flags ; `terminal
+  monitor` stream la ligne syslog `%OSPF-5-NOTIFICATIONS: Process 1, Nbr …
+  from Loading to Full, LoadingDone` ; `undo terminal monitor` coupe le
+  monitor sans toucher au debug, démontrant l'indépendance des deux jobs
+  background sur la même vty.
+
+Méthode commune (DRY) : helpers `waitForStore`, `addDevice`, `openTerminal`,
+`typeCmd`, `modalText`, `waitForText`, `ctrlC`, `promptInputVisible`. La
+visibilité prompt est mesurée via `boundingBox()` sur tous les
+`input[type=text]` du modal — seul le capture-input opacity-0 a une bbox
+nulle, ce qui distingue prompt actif vs prompt masqué pendant un foreground
+async.
+
+Injection d'évènements bus depuis Playwright (Huawei) : le test récupère le
+device via `__networkStore.getState().deviceInstances.get(id)`, casse l'accès
+protégé à `getBus()` (pas de visibilité TS au runtime JS) et publie un
+`DomainEvent` typé exactement comme le ferait l'engine OSPF — la même
+souscription `DebugBroadcast`/`LoggingConfig` fan-out vers la vty. Aucune
+nouvelle API de test n'a été ajoutée : on reste sur la surface publique du
+device.
+
 ## Suite
 
 - Cisco / Huawei : `monitor session` (SPAN) — capture live de trames sur un
   port miroir, similaire à `tcpdump` côté hôte.
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
   est un jour modélisé (les compteurs d'I/O deviendraient non nuls).
-- Huawei : `terminal debugging` (analog de Cisco `terminal monitor` +
-  `debug ip`), si les sources d'évènements bus existent côté `HuaweiRouter`.
