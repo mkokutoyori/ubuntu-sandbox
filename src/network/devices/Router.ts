@@ -1426,24 +1426,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     };
     fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
 
-    // Phase E.1: MTU check
-    if (fwdPkt.totalLength > this.interfaceMTU) {
-      // Check Don't Fragment flag (bit 1 of flags field, 0b010 = DF set)
-      const dfSet = (fwdPkt.flags & 0b010) !== 0;
-      if (dfSet) {
-        // ICMP Type 3, Code 4: Fragmentation Needed and DF Set
-        Logger.info(this.id, 'router:mtu-exceeded',
-          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${this.interfaceMTU}, DF=1`);
-        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 4);
-        return;
-      }
-      // If DF=0, we would fragment — not implemented in this simulator
-    }
-
-    // Phase E.2: Determine next-hop IP
-    const nextHopIP = route.nextHop || ipPkt.destinationIP;
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
+    const effectiveMtu = outPort.getMTU();
+
+    if (fwdPkt.totalLength > effectiveMtu) {
+      const dfSet = (fwdPkt.flags & 0b010) !== 0;
+      if (dfSet) {
+        Logger.info(this.id, 'router:mtu-exceeded',
+          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 4, effectiveMtu);
+        return;
+      }
+    }
+
+    const nextHopIP = route.nextHop || ipPkt.destinationIP;
 
     // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
     // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
@@ -1558,6 +1555,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * use the routing table to find the egress interface and next-hop,
    * rather than blindly sending on the ingress port.
    */
+  private icmpTypeSuppressedByLocalAcl(icmpType: ICMPErrorType): boolean {
+    for (const acl of this.aclEngine.getAccessLists()) {
+      for (const entry of acl.entries) {
+        if (entry.action === 'deny' && entry.protocol === 'icmp' && entry.icmpType === icmpType) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private sendICMPError(
     inPort: string,
     offendingPkt: IPv4Packet,
@@ -1574,22 +1582,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
+    if (this.icmpTypeSuppressedByLocalAcl(icmpType)) return;
+
     const errorIP = buildICMPError(
       myIP, offendingPkt, icmpType, code, this.defaultTTL,
       { nextHopMTU: nextHopMTU ?? this.interfaceMTU },
     );
 
-    // Update counters
     this.counters.icmpOutMsgs++;
     if (icmpType === 'time-exceeded') this.counters.icmpOutTimeExcds++;
     if (icmpType === 'destination-unreachable') this.counters.icmpOutDestUnreachs++;
 
-    // Route the ICMP error through the routing table (RFC 1812 §4.3.2.7)
     const route = this.lookupRoute(offendingPkt.sourceIP);
-    if (!route) {
-      // No route back to source — silently drop
-      return;
-    }
+    if (!route) return;
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;

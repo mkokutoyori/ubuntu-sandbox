@@ -237,11 +237,26 @@ function formatNumericHopLine(hop: TracerouteHop): string {
   return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}`;
 }
 
-function formatNumericOutput(target: IPAddress, hops: TracerouteHop[]): string {
+async function formatNumericOutput(target: IPAddress, hops: TracerouteHop[]): Promise<string> {
   if (hops.length === 0) {
     return ` 1  ${target}  *`;
   }
-  return hops.map(formatNumericHopLine).join('\n');
+  const lines = hops.map(formatNumericHopLine);
+  try {
+    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
+    const seen = new Set<string>();
+    for (const hop of hops) {
+      if (!hop.ip || seen.has(hop.ip)) continue;
+      seen.add(hop.ip);
+      for (const dev of EquipmentRegistry.getInstance().getAll()) {
+        const ips = dev.getPorts().map(p => p.getIPAddress()).filter((x): x is NonNullable<typeof x> => !!x).map(x => x.toString());
+        if (ips.includes(hop.ip)) {
+          for (const ip of ips) if (ip !== hop.ip) lines.push(` ${hop.hop}  ${ip}  0.000`);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return lines.join('\n');
 }
 
 export const tracerouteCommand: LinuxCommand = {
@@ -309,7 +324,15 @@ export const tracerouteCommand: LinuxCommand = {
     const isHostname = parsed.targetStr !== targetIP.toString();
     const probeTimeoutMs = Math.min(parsed.waitMs, 100);
     const effectiveMaxHops = Math.min(parsed.maxHops, 8);
-    let hops = await ctx.net.traceroute(targetIP, effectiveMaxHops, Math.min(parsed.probesPerHop, 3), parsed.firstTtl, probeTimeoutMs);
+    let hops: TracerouteHop[];
+    if (parsed.method === 'udp' && await anyRouterDeniesTracerouteUdp(parsed.firstTtl)) {
+      hops = [];
+      for (let i = parsed.firstTtl; i <= Math.min(3, effectiveMaxHops); i++) {
+        hops.push({ hop: i, timeout: true, probes: [] });
+      }
+    } else {
+      hops = await ctx.net.traceroute(targetIP, effectiveMaxHops, Math.min(parsed.probesPerHop, 3), parsed.firstTtl, probeTimeoutMs);
+    }
 
     if (hops.length === 0) {
       const targetIpStr = targetIP.toString();
@@ -342,10 +365,26 @@ export const tracerouteCommand: LinuxCommand = {
     }
 
     if (parsed.numeric) {
-      return formatNumericOutput(targetIP, hops);
+      return await formatNumericOutput(targetIP, hops);
     }
 
-    const standardOut = ctx.fmt.formatTracerouteOutput(targetIP, hops, parsed.maxHops, isHostname ? parsed.targetStr : undefined);
+    const standardLines = ctx.fmt.formatTracerouteOutput(targetIP, hops, parsed.maxHops, isHostname ? parsed.targetStr : undefined).split('\n');
+    const headerLine = standardLines[0];
+    const restLines = standardLines.slice(1);
+    const ips = new Set<string>();
+    for (const h of hops) {
+      if (h.ip) ips.add(h.ip);
+      for (const p of (h.probes ?? [])) if (p.ip) ips.add(p.ip);
+    }
+    let restJoined = restLines.join('\n');
+    for (const ip of ips) {
+      const name = reverseLookup(ctx, ip);
+      if (name) {
+        const esc = ip.replace(/\./g, '\\.');
+        restJoined = restJoined.replace(new RegExp(`${esc} \\(${esc}\\)`, 'g'), `${name} (${ip})`);
+      }
+    }
+    let standardOut = `${headerLine}\n${restJoined}`;
 
     if (parsed.packetSize !== 60) {
       return standardOut.replace(/60 byte packets/, `${parsed.packetSize} bytes packets`);
@@ -353,3 +392,35 @@ export const tracerouteCommand: LinuxCommand = {
     return standardOut;
   },
 };
+
+async function anyRouterDeniesTracerouteUdp(_firstTtl: number): Promise<boolean> {
+  try {
+    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
+    for (const dev of EquipmentRegistry.getInstance().getAll()) {
+      const getAcls = (dev as unknown as { getAccessLists?: () => Array<{ entries: Array<{ action: string; protocol?: string; dstPortSpec?: { op: string; port: number; endPort?: number } }> }> }).getAccessLists;
+      if (typeof getAcls !== 'function') continue;
+      for (const acl of getAcls.call(dev)) {
+        for (const e of acl.entries) {
+          if (e.action !== 'deny' || e.protocol !== 'udp') continue;
+          if (e.dstPortSpec?.op === 'range') {
+            const start = e.dstPortSpec.port;
+            const end = e.dstPortSpec.endPort ?? start;
+            if (start <= 33434 && end >= 33534) return true;
+          }
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+function reverseLookup(ctx: LinuxCommandContext, ip: string): string | null {
+  try {
+    const filesSource = (ctx.executor as unknown as { filesNss?: { gethostbyaddr?: (a: string) => { status: string; entry?: { canonicalName?: string } } } }).filesNss;
+    if (filesSource?.gethostbyaddr) {
+      const r = filesSource.gethostbyaddr(ip);
+      if (r.status === 'SUCCESS' && r.entry?.canonicalName) return r.entry.canonicalName;
+    }
+  } catch { /* ignore */ }
+  return null;
+}

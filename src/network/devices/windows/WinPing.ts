@@ -173,7 +173,7 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
       result.timeoutMs = v; i++; continue;
     }
 
-    if (aLower === '-s') {
+    if (a === '-s') {
       if (!next || !isIntStrict(next, true)) {
         result.parseError = `Invalid value for option ${a}, valid range is from 1 to 4.`; return result;
       }
@@ -184,7 +184,7 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
       result.timestamp = v; i++; continue;
     }
 
-    if (aLower === '-S') {
+    if (a === '-S') {
       if (!next) { result.parseError = `Missing argument for option ${a}.`; return result; }
       if ((next.startsWith('"') && !next.endsWith('"')) ||
           (next.startsWith("'") && !next.endsWith("'"))) {
@@ -275,7 +275,7 @@ export function formatWinPingStats(targetIP: string, count: number, results: Pin
     lines.push('Approximate round trip times in milli-seconds:');
     lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
   } else if (lossPct === 100 && count > 0) {
-    lines.push(`Destination host unreachable.`);
+    lines.push(`Request timed out. Destination host unreachable.`);
   }
   return lines;
 }

@@ -16,7 +16,7 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
-import { MACAddress, type PortViolationMode } from '../../core/types';
+import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -468,6 +468,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'port-group';
         return '';
       }
+      const vlanIfMatch = args.join(' ').match(/^vlanif\s*(\d+)$/i);
+      if (vlanIfMatch) {
+        const vlan = parseInt(vlanIfMatch[1], 10);
+        if (vlan < 1 || vlan > 4094) return `Error: Wrong parameter found at '^' position.`;
+        this.swRef.ensureSvi(vlan);
+        this.swRef.setSviAdminUp(vlan, true);
+        this.selectedInterface = `Vlanif${vlan}`;
+        this.mode = 'interface';
+        return '';
+      }
+
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -485,6 +496,31 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
       return 'Error: Incomplete command.';
+    });
+
+    this.systemTrie.registerGreedy('ip route-static', 'Add a static route', (args) => {
+      if (!this.swRef || args.length < 3) return 'Error: Incomplete command.';
+      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+      try { net = new IPAddress(args[0]); } catch { return `Error: Invalid network ${args[0]}.`; }
+      try {
+        if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
+        else mask = new SubnetMask(args[1]);
+      } catch { return `Error: Invalid mask ${args[1]}.`; }
+      try { gw = new IPAddress(args[2]); } catch { return `Error: Invalid gateway ${args[2]}.`; }
+      this.swRef.addStaticRoute(net, mask, gw);
+      return '';
+    });
+
+    this.systemTrie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
+      if (!this.swRef || args.length < 2) return 'Error: Incomplete command.';
+      let net: IPAddress, mask: SubnetMask;
+      try { net = new IPAddress(args[0]); } catch { return `Error: Invalid network ${args[0]}.`; }
+      try {
+        if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
+        else mask = new SubnetMask(args[1]);
+      } catch { return `Error: Invalid mask ${args[1]}.`; }
+      this.swRef.removeStaticRoute(net, mask);
+      return '';
     });
   }
 
@@ -524,6 +560,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // shutdown
     this.interfaceTrie.register('shutdown', 'Shut down interface', () => {
       if (!this.swRef || !this.selectedInterface) return '';
+      const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
+      if (vlanIfMatch) { this.swRef.setSviAdminUp(parseInt(vlanIfMatch[1], 10), false); return ''; }
       const port = this.swRef.getPort(this.selectedInterface);
       if (port) port.setUp(false);
       return '';
@@ -538,15 +576,42 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {
       if (!this.swRef || !this.selectedInterface) return '';
+      const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
+      if (vlanIfMatch) { this.swRef.setSviAdminUp(parseInt(vlanIfMatch[1], 10), true); return ''; }
       const port = this.swRef.getPort(this.selectedInterface);
       if (port) port.setUp(true);
       return '';
     });
 
-    // description <text>
     this.interfaceTrie.registerGreedy('description', 'Set interface description', (args) => {
       if (!this.swRef || !this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
       this.swRef.setInterfaceDescription(this.selectedInterface, args.join(' '));
+      return '';
+    });
+
+    this.interfaceTrie.registerGreedy('ip address', 'Configure IP address on SVI', (args) => {
+      if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
+      if (!vlanIfMatch) return `Error: 'ip address' is only valid on Vlanif interfaces.`;
+      if (args.length < 2) return 'Error: Incomplete command.';
+      let ip: IPAddress, mask: SubnetMask;
+      try { ip = new IPAddress(args[0]); } catch { return `Error: Invalid IP address ${args[0]}.`; }
+      try {
+        if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
+        else mask = new SubnetMask(args[1]);
+      } catch { return `Error: Invalid mask ${args[1]}.`; }
+      const vlan = parseInt(vlanIfMatch[1], 10);
+      this.swRef.ensureSvi(vlan);
+      this.swRef.configureSviIp(vlan, ip, mask);
+      this.swRef.setSviAdminUp(vlan, true);
+      return '';
+    });
+
+    this.interfaceTrie.register('undo ip address', 'Remove IP from SVI', () => {
+      if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      const vlanIfMatch = this.selectedInterface.match(/^Vlanif(\d+)$/);
+      if (!vlanIfMatch) return '';
+      this.swRef.clearSviIp(parseInt(vlanIfMatch[1], 10));
       return '';
     });
 
@@ -1027,6 +1092,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       if (args.length === 0) return this.displayInterfaceBrief(this.swRef);
       return this.displayInterface(this.swRef, args.join(' '));
+    });
+
+    trie.register('display ip routing-table', 'Display IP routing table', () => {
+      if (!this.swRef) return '';
+      const rows = this.swRef.getL3RoutingTable();
+      const header = 'Route Flags: R - relay, D - download to fib\n' +
+        '------------------------------------------------------------------------------\n' +
+        'Routing Tables: Public\n' +
+        `         Destinations : ${rows.length}       Routes : ${rows.length}\n\n` +
+        'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface\n';
+      const lines = rows.map(r => {
+        const dest = `${r.network}/${r.mask.toCIDR()}`.padEnd(20);
+        const proto = (r.proto === 'connected' ? 'Direct' : 'Static').padEnd(8);
+        const pre = (r.proto === 'connected' ? '0' : '60').padEnd(5);
+        const nh = (r.nextHop ? r.nextHop.toString() : r.network.toString()).padEnd(16);
+        return `${dest}${proto}${pre}0         D     ${nh}${r.iface}`;
+      });
+      return header + lines.join('\n');
     });
 
     trie.register('display mac-address aging-time', 'Display MAC aging time', () => {

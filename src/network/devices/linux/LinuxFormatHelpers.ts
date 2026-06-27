@@ -156,12 +156,12 @@ function renderPingBody(header: string, targetStr: string, count: number, result
 function icmpCodeAnnotation(code: number | undefined): string {
   if (code === undefined) return '';
   switch (code) {
-    case 0: return ' !N';
-    case 1: return ' !H';
-    case 2: return ' !P';
-    case 3: return ' !P';
-    case 13: return ' !A';
-    default: return ` !${code}`;
+    case 0: return ' !N (Net unreachable)';
+    case 1: return ' !H (Host unreachable)';
+    case 2: return ' !P (Protocol unreachable)';
+    case 3: return ' !P (Port unreachable)';
+    case 13: return ' !A (Admin prohibited)';
+    default: return ` !${code} (unreachable)`;
   }
 }
 

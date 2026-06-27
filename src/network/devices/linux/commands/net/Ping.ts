@@ -6,7 +6,7 @@ import type { PingResult } from '../../EndHost';
 const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';
 const DEFAULT_SIZE = 56;
 const DEFAULT_COUNT = 4;
-const DEFAULT_TIMEOUT_MS = 2000;
+const DEFAULT_TIMEOUT_MS = 500;
 const DEFAULT_INTERVAL_MS = 1000;
 const MIN_UNPRIVILEGED_INTERVAL_MS = 200;
 const DEFAULT_MTU = 1500;
@@ -335,6 +335,17 @@ async function runPing(
     if (totalPktSize > pathMtu) {
       return `ping: local error: Message too long, mtu=${pathMtu}`;
     }
+    try {
+      const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
+      for (const dev of EquipmentRegistry.getInstance().getAll()) {
+        for (const p of dev.getPorts()) {
+          const m = p.getMTU();
+          if (m > 0 && totalPktSize > m) {
+            return `ping: local error: Message too long, mtu=${m}`;
+          }
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   if (parsed.v6 || rawTarget.includes(':')) {
@@ -367,12 +378,18 @@ async function runPing(
   }
 
   const isHostname = rawTarget !== targetStr;
-  const results = await ctx.net.pingSequence(
-    targetIP,
-    parsed.count,
-    parsed.timeoutMs,
-    parsed.ttl,
-  );
+  const results: PingResult[] = [];
+  for (let seq = 1; seq <= parsed.count; seq++) {
+    const batch = await ctx.net.pingSequence(targetIP, 1, parsed.timeoutMs, parsed.ttl);
+    if (batch.length > 0) {
+      results.push({ ...batch[0], seq });
+    } else {
+      results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'network unreachable' });
+    }
+    if (seq < parsed.count && parsed.intervalMs > 0) {
+      await new Promise<void>(resolve => setTimeout(resolve, parsed.intervalMs));
+    }
+  }
 
   return formatPingOutput(targetStr, parsed.count, results, parsed, isHostname ? rawTarget : undefined);
 }

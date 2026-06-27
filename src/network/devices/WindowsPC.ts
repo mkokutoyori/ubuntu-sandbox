@@ -1156,6 +1156,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 
+      reverseLookup: (ip: string): string | null => {
+        const entry = this.readHostsFile().reverse(ip);
+        return entry ? entry.canonicalName : null;
+      },
+
       resetStack: () => {
         for (const [name, port] of this.ports) {
           port.clearIP();

@@ -203,6 +203,10 @@ export abstract class Switch extends Equipment {
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
     lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
+    forgetArp: (ip: string) => {
+      const existing = this.arpTable.get(ip);
+      if (existing && existing.type !== 'static') this.arpTable.delete(ip);
+    },
     learnArp: (ip, mac, iface) => {
       const existing = this.arpTable.get(ip);
       if (existing && existing.type === 'static') return;
@@ -1244,11 +1248,20 @@ export abstract class Switch extends Equipment {
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
   isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }
 
-  /** Drive ICMP echoes from the management SVI (mirrors Router API). */
   executePingSequence(
     target: IPAddress, count = 5, timeoutMs = 2000, sourceIPStr?: string,
   ): Promise<CiscoPingRow[]> {
     return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
+  }
+
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
+    this.svi.addStaticRoute(network, mask, nextHop);
+  }
+  removeStaticRoute(network: IPAddress, mask: SubnetMask): boolean {
+    return this.svi.removeStaticRoute(network, mask);
+  }
+  getL3RoutingTable() {
+    return this.svi.getRoutingTable();
   }
 
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────

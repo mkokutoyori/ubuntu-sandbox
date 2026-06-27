@@ -230,10 +230,11 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   }
 
   const probeTimeoutMs = Math.min(parsed.timeoutMs, 200);
+  const effectiveMaxHops = Math.min(parsed.maxHops, 8);
   const targetStr = targetIP.toString();
   const isLoopback = targetStr === '127.0.0.1' || targetStr.startsWith('127.') || targetStr === '::1';
 
-  let hops = await ctx.executeTraceroute(targetIP, parsed.maxHops, probeTimeoutMs);
+  let hops = await ctx.executeTraceroute(targetIP, effectiveMaxHops, probeTimeoutMs);
   if (hops.length === 0) {
     hops = [];
     if (isLoopback) {
@@ -262,7 +263,18 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   }
 
   const lines = [...formatWinTracertHeader(targetIP, parsed.maxHops, hostname)];
-  for (const hop of hops) lines.push(formatWinTracertHop(hop as TracertHopView));
+  for (const hop of hops) {
+    const view = hop as TracertHopView;
+    let line = formatWinTracertHop(view);
+    if (view.ip && ctx.reverseLookup) {
+      const name = ctx.reverseLookup(view.ip);
+      if (name) {
+        const esc = view.ip.replace(/\./g, '\\.');
+        line = line.replace(new RegExp(`${esc}$`), `${name} [${view.ip}]`);
+      }
+    }
+    lines.push(line);
+  }
   lines.push('');
   lines.push('Trace complete.');
   return lines.join('\n');

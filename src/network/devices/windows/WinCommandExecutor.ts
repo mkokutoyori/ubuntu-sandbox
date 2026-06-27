@@ -129,6 +129,8 @@ export interface WinCommandContext {
   // UDP/53 through the simulated network — hence asynchronous.
   resolveHostname(name: string): Promise<IPAddress | null>;
 
+  reverseLookup?(ip: string): string | null;
+
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;
 

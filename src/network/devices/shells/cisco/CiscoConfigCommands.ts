@@ -476,7 +476,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as unknown as { ipMtu?: number }).ipMtu = n;
+    if (port && !isNaN(n)) {
+      (port as unknown as { ipMtu?: number }).ipMtu = n;
+      try { port.setMTU(n); } catch { /* ignore */ }
+    }
     return '';
   });
   trie.registerGreedy('ipv6 mtu', 'Set IPv6 MTU', (args) => {
