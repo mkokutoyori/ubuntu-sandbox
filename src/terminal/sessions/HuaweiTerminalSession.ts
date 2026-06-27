@@ -15,6 +15,7 @@ import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -152,9 +153,42 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   private debugJob: AsyncJobHandle | null = null;
   private debugUnsubscribe: (() => void) | null = null;
+  private monitorJob: AsyncJobHandle | null = null;
+  private monitorUnsubscribe: (() => void) | null = null;
 
   protected override afterCommandExecuted(_command: string): void {
     this.reconcileDebugSubscription();
+    this.reconcileTerminalMonitor();
+  }
+
+  private reconcileTerminalMonitor(): void {
+    const on = this.vty?.state.terminalMonitor ?? false;
+    if (!on && !this.monitorJob) return;
+    const src = (this.device as unknown as { getLoggingConfig?: () => LoggingMonitorSource | null }).getLoggingConfig?.();
+    if (on && src && !this.monitorJob) {
+      this.startMonitorSubscription(src);
+    } else if ((!on || !src) && this.monitorJob) {
+      this.monitorJob.cancel();
+      this.monitorJob = null;
+    }
+  }
+
+  private startMonitorSubscription(src: LoggingMonitorSource): void {
+    this.monitorJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal monitor',
+      label: 'syslog monitor',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.monitorUnsubscribe = src.subscribeMonitor((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.monitorUnsubscribe?.();
+          this.monitorUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 
   private reconcileDebugSubscription(): void {

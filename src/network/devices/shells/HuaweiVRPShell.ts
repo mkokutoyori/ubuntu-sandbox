@@ -114,6 +114,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
   }
+  getLoggingConfig(): LoggingConfig { return this.logging; }
   private mode: HuaweiShellMode | string = 'user';
   private bgpAsn: number | null = null;
   private isisProcessId: number | null = null;
@@ -203,6 +204,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private screenLength: number = 24;
   private screenWidth: number = 80;
   protected terminalDebugging: boolean = false;
+  protected terminalMonitor: boolean = false;
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -342,7 +344,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       selectedIKEv2Profile: null,
       terminalLength: this.screenLength,
       terminalWidth: this.screenWidth,
-      terminalMonitor: false,
+      terminalMonitor: this.terminalMonitor,
       terminalDebugging: this.terminalDebugging,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
       historySize: this.historyMax,
@@ -363,6 +365,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.screenLength = s.terminalLength;
     this.screenWidth = s.terminalWidth;
     this.terminalDebugging = s.terminalDebugging;
+    this.terminalMonitor = s.terminalMonitor;
   }
 
   setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
@@ -1247,6 +1250,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('undo terminal debugging', 'Stop sending debug output to this terminal', () => {
       this.terminalDebugging = false;
       return 'Info: Current terminal debugging is off.';
+    });
+    t.register('terminal monitor', 'Send log output to this terminal', () => {
+      this.terminalMonitor = true;
+      return 'Info: Current terminal monitor is on.';
+    });
+    t.register('undo terminal monitor', 'Stop sending log output to this terminal', () => {
+      this.terminalMonitor = false;
+      this.terminalDebugging = false;
+      return 'Info: Current terminal monitor is off.';
     });
 
     t.registerGreedy('debugging rip', 'Enable RIP debugging', () => svc()?.enable('rip') ?? '');
