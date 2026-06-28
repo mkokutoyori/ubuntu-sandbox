@@ -45,7 +45,9 @@ export class ScpSession {
 
     const transferOpts: ScpTransferOptions = {
       recursive: parsed.recursive,
-      preserve: this.opts.args.includes('-p'),
+      preserve: parsed.preserve,
+      quiet: parsed.quiet,
+      verbose: parsed.verbose,
       localCwd:  source.endpoint.remote ? dest.cwd   : source.cwd,
       remoteCwd: source.endpoint.remote ? source.cwd : dest.cwd,
     };
@@ -56,6 +58,7 @@ export class ScpSession {
     );
     const result = transfer.run();
     if (!result.ok) return { output: `scp: ${result.error ?? 'transfer failed'}`, exitCode: 1 };
+    if (parsed.quiet) return { output: '', exitCode: 0 };
     return { output: result.summary, exitCode: 0 };
   }
 

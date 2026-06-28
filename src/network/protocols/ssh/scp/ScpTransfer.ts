@@ -19,6 +19,8 @@ export interface ScpTransferOptions {
   readonly preserve: boolean;
   readonly localCwd: string;
   readonly remoteCwd: string;
+  readonly quiet?: boolean;
+  readonly verbose?: boolean;
 }
 
 export interface ScpTransferResult {
@@ -156,11 +158,22 @@ export class ScpTransfer {
   }
 
   private summary(files: number, bytes: number, src: string): ScpTransferResult {
-    const summary = `${src.split('/').pop() ?? src}                                     100% ${bytes}     ${bytes}B/s   00:00`;
+    if (this.opts.quiet) {
+      return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary: '' };
+    }
+    const name = (src.split('/').pop() ?? src).padEnd(40);
+    const rate = scaleRate(bytes);
+    const summary = `${name}100% ${String(bytes).padStart(5)}     ${rate}   00:00`;
     return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary };
   }
 
   private fail(error: string): ScpTransferResult {
     return { ok: false, filesTransferred: 0, bytesTransferred: 0, summary: '', error };
   }
+}
+
+function scaleRate(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB/s`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB/s`;
+  return `${bytes}B/s`;
 }
