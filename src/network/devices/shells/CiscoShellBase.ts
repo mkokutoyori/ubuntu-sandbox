@@ -268,6 +268,63 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const h of desiredHosts) agent.addTrapHost(h.host, h.community, h.udpPort);
   }
 
+  syncNetflowAgent(): void {
+    const dev = this.d() as unknown as {
+      getNetflowService?: () => import('../router/netflow/NetflowService').NetflowService;
+      getNetFlowAgent?: () => import('@/network/netflow/NetFlowAgent').NetFlowAgent | null;
+    };
+    const svc = dev.getNetflowService?.();
+    const agent = dev.getNetFlowAgent?.();
+    if (!svc || !agent) return;
+
+    const exporters = new Map<string, import('../router/netflow/NetflowService').FlowExporter>();
+    for (const e of svc.getExporters()) exporters.set(e.name, e);
+
+    const attachedMonitors = new Set<string>();
+    for (const a of svc.getInterfaceAttachments()) attachedMonitors.add(a.monitorName);
+
+    const desiredCollectors = new Map<string, number>();
+    for (const m of svc.getMonitors()) {
+      if (!attachedMonitors.has(m.name)) continue;
+      for (const en of m.exporterNames) {
+        const e = exporters.get(en);
+        if (!e?.destination) continue;
+        const port = e.transportPort ?? 2055;
+        desiredCollectors.set(e.destination, port);
+      }
+    }
+    const legacy = svc.getLegacy();
+    const hasLegacyIface = [...legacy.ifaceModes.values()].some((m) => m.ingress || m.egress);
+    if (hasLegacyIface || legacy.destinations.length > 0) {
+      for (const d of legacy.destinations) desiredCollectors.set(d.ip, d.port);
+    }
+
+    let activeSec: number | undefined;
+    let inactiveSec: number | undefined;
+    for (const m of svc.getMonitors()) {
+      if (!attachedMonitors.has(m.name)) continue;
+      if (activeSec === undefined && m.cacheTimeoutActiveSec !== undefined) activeSec = m.cacheTimeoutActiveSec;
+      if (inactiveSec === undefined && m.cacheTimeoutInactiveSec !== undefined) inactiveSec = m.cacheTimeoutInactiveSec;
+    }
+    if (activeSec === undefined && legacy.cacheTimeoutActiveMin !== undefined) activeSec = legacy.cacheTimeoutActiveMin * 60;
+    if (inactiveSec === undefined && legacy.cacheTimeoutInactiveSec !== undefined) inactiveSec = legacy.cacheTimeoutInactiveSec;
+    if (activeSec !== undefined) agent.setActiveTimeoutSec(activeSec);
+    if (inactiveSec !== undefined) agent.setInactiveTimeoutSec(inactiveSec);
+
+    if (legacy.source) agent.setSourceInterface(legacy.source);
+
+    const existing = new Set(agent.listCollectors().map((c) => c.ip));
+    for (const ip of existing) {
+      if (!desiredCollectors.has(ip)) agent.removeCollector(ip);
+    }
+    for (const [ip, port] of desiredCollectors) agent.addCollector(ip, port);
+
+    const shouldRun = desiredCollectors.size > 0;
+    agent.setEnabled(shouldRun);
+    if (shouldRun) agent.start();
+    else agent.stop();
+  }
+
   protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
     const agent = (this.d() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
     if (agent) fn(agent);
