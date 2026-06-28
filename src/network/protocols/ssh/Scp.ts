@@ -21,6 +21,9 @@ export interface ScpEndpoint {
  * marks a remote endpoint.
  */
 export function parseScpEndpoint(arg: string): ScpEndpoint {
+  if (/^[A-Za-z]:[\\/]/.test(arg) || /^[A-Za-z]:$/.test(arg)) {
+    return { remote: false, path: arg };
+  }
   const colon = arg.indexOf(':');
   const slash = arg.indexOf('/');
   if (colon === -1 || (slash !== -1 && slash < colon)) {
