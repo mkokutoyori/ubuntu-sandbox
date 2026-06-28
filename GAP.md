@@ -128,10 +128,9 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 - **Sévérité** : Majeure
 - **Recommandation** : Soit documenter clairement que seul 802.1D classique est simulé et retirer/désactiver les commandes `mst`, soit étendre `StpAgent`/`types.ts` avec un véritable sous-moteur MSTP (régions, MSTI, CIST) suivant le pattern `<Protocol>Engine` + `actors/`.
 
-- **Constat** : Le bridge ID annoncé dans `show spanning-tree` ajoute artificiellement `+1` à la priorité racine (`rootPrio = root.priority + 1`), ce qui ne correspond à aucune sémantique IEEE/Cisco connue et produira un nombre de priorité erroné à l'écran (p.ex. 32769 au lieu de 32768).
-- **Preuve** : `src/network/devices/shells/CiscoSwitchShell.ts:1740` (`const rootPrio = root ? root.priority + 1 : 32769;`).
+- **Constat (origine)** : Le bridge ID annoncé dans `show spanning-tree` semblait ajouter `+1` à la priorité racine (lecture initiale de `rootPrio = root.priority + 1`).
 - **Sévérité** : Mineure
-- **Recommandation** : Supprimer le `+1` et afficher `root.priority` tel quel (le system-id-extension Cisco est encodé séparément, pas additionné à la priorité affichée).
+- **✅ CORRIGÉ (re-qualification + pin coverage)** (2026-06-28) : la lecture initiale était erronée — le code écrit en réalité `+ vlanId` (`CiscoSwitchShell.ts:2329`, `:2400`, `:2417`), qui est **exactement la sémantique PVST+ Cisco** (« system-id-extension » : les 12 bits bas de la priorité encodent la VLAN ID). Pour VLAN 1, `4096 + 1 = 4097` n'est donc pas un bug d'unité mais le format réglementaire ; `show spanning-tree bridge` rend même la décomposition explicite (`4097 (4096, 1)`). Pin de couverture ajouté à `stp-show-live.test.ts` (VLAN 1 priorité 4096 → 4097 ; VLAN 100 priorité 4096 → 4196 décomposé `(4096, 100)`).
 
 - **Constat** : coût de port affiché **codé en dur à `19`** ; de plus le moteur calculait un coût faux (bug d'unité kbps/Mbps : `defaultPathCost(getSpeed())` recevait des Mbps → Gigabit valait 200, pas 4). Rôle **Backup** (802.1D-2004 §17.7) et type de lien **P2p/Shr** également absents/décoratifs.
 - **Sévérité** : Mineure (cost) / Majeure (backup, link type).

@@ -66,6 +66,22 @@ describe('show spanning-tree summary — live agent projection', () => {
     const out = await sw.executeCommand('show spanning-tree summary');
     expect(out).toMatch(/Configured Pathcost method used is long/);
   });
+
+  it('encodes the VLAN id into displayed Bridge / Root priority (PVST+ system-id-extension)', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 4, 0, 0);
+    await run(sw, ['enable', 'configure terminal', 'spanning-tree vlan 1 priority 4096', 'end']);
+    const t1 = await sw.executeCommand('show spanning-tree');
+    expect(t1).toMatch(/Priority\s+4097\b/);
+
+    await run(sw, [
+      'enable', 'configure terminal',
+      'vlan 100', 'exit',
+      'spanning-tree vlan 100 priority 4096',
+      'end',
+    ]);
+    const bridge = await sw.executeCommand('show spanning-tree vlan 100 bridge');
+    expect(bridge).toMatch(/VLAN0100\s+4196 \(4096, 100\)/);
+  });
 });
 
 describe('display stp — live agent projection (Huawei)', () => {
