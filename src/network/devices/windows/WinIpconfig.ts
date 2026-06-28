@@ -14,6 +14,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
+import { renderDisplayDns } from './WinDnsCache';
 
 const IPCONFIG_HELP = `
 USAGE:
@@ -83,10 +84,11 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
     return gate.ok ? ipconfigRenew(ctx, args) : gate.error;
   }
   if (lower.includes('/flushdns')) {
+    ctx.dnsCache.flush();
     return 'Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache.';
   }
   if (lower.includes('/displaydns')) {
-    return 'Windows IP Configuration\n\n  Record Name . . . . . : (no entries)';
+    return renderDisplayDns(ctx.dnsCache);
   }
   if (lower.includes('/registerdns')) {
     return 'Windows IP Configuration\n\nRegistration of the DNS resource records for all adapters of this computer\nhas been initiated. Any errors will be reported in the Event Viewer in 15 minutes.';

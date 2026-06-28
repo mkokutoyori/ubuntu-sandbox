@@ -15,6 +15,7 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import { WindowsDnsCache } from './windows/WinDnsCache';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
@@ -137,6 +138,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
+  /** Resolver cache for ipconfig /displaydns + /flushdns. Populated by
+   *  resolveHostname() on every successful DNS response. */
+  readonly dnsCache = new WindowsDnsCache();
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
@@ -677,6 +681,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         try { serverIP = new IPAddress(server); } catch { continue; }
         const response = await this.queryDnsServer(serverIP, name, 'A');
         if (response && response.answers.length > 0) {
+          this.dnsCache.store(name, response.answers);
           try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
         }
       }
@@ -1257,6 +1262,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       portProxy: this.portProxyTable,
       // Event log provider — wevtutil queries against Security/System.
       eventLog: this.eventLog,
+      // DNS resolver cache — ipconfig /displaydns + /flushdns.
+      dnsCache: this.dnsCache,
     };
   }
 
