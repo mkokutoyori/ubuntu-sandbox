@@ -943,6 +943,79 @@ export class LinuxCommandExecutor {
    * (a line that mandates a password but has none set is refused, matching
    * IOS "Password required, but none set").
    */
+  private runNetcatClient(args: string[]): { output: string; exitCode: number } {
+    const positional: string[] = [];
+    let zero = false;
+    let verbose = false;
+    let listen = false;
+    let udp = false;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-z') zero = true;
+      else if (a === '-v') verbose = true;
+      else if (a === '-vv') { verbose = true; }
+      else if (a === '-l') listen = true;
+      else if (a === '-u') udp = true;
+      else if (a === '-w' && i + 1 < args.length) { i++; }
+      else if (a === '-p' && i + 1 < args.length) { i++; }
+      else if (!a.startsWith('-')) positional.push(a);
+      else if (/^-[a-zA-Z]+$/.test(a)) {
+        for (const ch of a.slice(1)) {
+          if (ch === 'z') zero = true;
+          else if (ch === 'v') verbose = true;
+          else if (ch === 'l') listen = true;
+          else if (ch === 'u') udp = true;
+        }
+      }
+    }
+
+    if (listen) {
+      return { output: `nc: listen mode is not supported in this simulator`, exitCode: 1 };
+    }
+    if (udp) {
+      return { output: `nc: UDP mode (-u) is not supported in this simulator`, exitCode: 1 };
+    }
+    if (positional.length < 2) {
+      return { output: 'usage: nc [-z] [-v] [-w secs] host port', exitCode: 1 };
+    }
+    const host = positional[0];
+    const port = parseInt(positional[1], 10);
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      return { output: `nc: port number invalid: ${positional[1]}`, exitCode: 1 };
+    }
+
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp || sourceIp === '127.0.0.1') {
+      return { output: `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`, exitCode: 1 };
+    }
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    if (!found) {
+      return { output: `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`, exitCode: 1 };
+    }
+    if (found.poweredOff || found.interfaceDown) {
+      return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`, exitCode: 1 };
+    }
+
+    const ok = this.tcpProbe ? this.tcpProbe(found.ip, port) : true;
+    if (!ok) {
+      if (verbose) {
+        return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
+      }
+      return { output: '', exitCode: 1 };
+    }
+
+    if (zero && verbose) {
+      return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
+    }
+    if (zero) {
+      return { output: '', exitCode: 0 };
+    }
+    if (verbose) {
+      return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
+    }
+    return { output: '', exitCode: 0 };
+  }
+
   private runTelnetClient(args: string[]): { output: string; exitCode: number } {
     const positional = args.filter(a => !a.startsWith('-'));
     const host = positional[0];
@@ -3281,6 +3354,9 @@ export class LinuxCommandExecutor {
       }
       case 'telnet':
         return this.runTelnetClient(args);
+      case 'nc':
+      case 'ncat':
+        return this.runNetcatClient(args);
       case 'tcpdump':
         return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':
