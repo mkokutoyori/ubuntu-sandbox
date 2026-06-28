@@ -129,7 +129,25 @@ export class RouterDebugService implements TerminalDebugSource {
         icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
       };
     };
-    const onFrame = (frame: unknown, dir: 'rcvd' | 'sent') => {
+    const decodeArp = (frame: unknown): { op: 'request' | 'reply'; senderIp: string; senderMac: string; targetIp: string; targetMac: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; operation?: 'request' | 'reply'; senderIP?: { toString(): string }; senderMAC?: { toString(): string }; targetIP?: { toString(): string }; targetMAC?: { toString(): string } } };
+      if (f?.etherType !== 0x0806 || f.payload?.type !== 'arp') return null;
+      const a = f.payload;
+      return {
+        op: a.operation === 'reply' ? 'reply' : 'request',
+        senderIp: a.senderIP?.toString?.() ?? '?',
+        senderMac: a.senderMAC?.toString?.() ?? '?',
+        targetIp: a.targetIP?.toString?.() ?? '?',
+        targetMac: a.targetMAC?.toString?.() ?? '?',
+      };
+    };
+    const onFrame = (frame: unknown, dir: 'rcvd' | 'sent', iface: string) => {
+      const arp = decodeArp(frame);
+      if (arp) {
+        const op = arp.op === 'reply' ? 'rep' : 'req';
+        this.emit('ip.arp', `IP ARP: ${dir} ${op} src ${arp.senderIp} ${arp.senderMac}, dst ${arp.targetIp} ${arp.targetMac} ${iface}`);
+        return;
+      }
       const ip = decodeIp(frame);
       if (!ip) return;
       this.emit('ip.packet', `IP: s=${ip.src}, d=${ip.dst}, len, ${dir} (proto ${ip.proto})`);
@@ -140,11 +158,13 @@ export class RouterDebugService implements TerminalDebugSource {
     };
     this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
       if (!mine(e.payload)) return;
-      onFrame((e.payload as { frame: unknown }).frame, 'rcvd');
+      const p = e.payload as { frame: unknown; portName?: string };
+      onFrame(p.frame, 'rcvd', p.portName ?? '?');
     }));
     this.broadcast.track(bus.subscribe('port.frame.tx-requested', (e) => {
       if (!mine(e.payload)) return;
-      onFrame((e.payload as { frame: unknown }).frame, 'sent');
+      const p = e.payload as { frame: unknown; portName?: string };
+      onFrame(p.frame, 'sent', p.portName ?? '?');
     }));
   }
 

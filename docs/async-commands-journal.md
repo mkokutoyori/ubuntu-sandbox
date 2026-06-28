@@ -1061,6 +1061,44 @@ Playwright e2e (`e2e/linux-dstat.spec.ts`, 4/4) : version, `1 2` borné
 verrouillé pendant le job → ≥2 rows observées → Ctrl+C → `^C` → prompt
 déverrouillé).
 
+## Event Subscription — Router (Cisco IOS) : `debug arp` / `debug ip arp`
+
+Troisième source d'abonnement câblée sur `RouterDebugService` (après
+`debug ip ospf` et `debug spanning-tree` côté switch). Le flag `ip.arp`
+existait déjà (CLI `debug arp` / `debug ip arp` → `svc.enable('ip.arp')`
+dans `CiscoShellBase`) mais `attachToBus` n'émettait jamais aucune ligne :
+activer le debug ne produisait rien. Comblé — émulation réelle, pas
+cosmétique.
+
+`RouterDebugService.attachToBus` réutilise les abonnements déjà en place
+`port.frame.received` / `port.frame.tx-requested` (mêmes que `ip.packet` /
+`ip.icmp`) et les enrichit :
+
+- `decodeArp(frame)` reconnaît les trames ARP (`etherType 0x0806`,
+  `payload.type === 'arp'`) et en extrait `operation`, `senderIP/MAC`,
+  `targetIP/MAC` via les vrais objets `IPAddress` / `MACAddress` du frame.
+- `onFrame(frame, dir, iface)` reçoit désormais le `portName` du payload
+  comme interface ; pour une trame ARP il émet une ligne IOS réaliste sur
+  le flag `ip.arp` :
+  `IP ARP: rcvd req src <ip> <mac>, dst <ip> <mac> <interface>`
+  (`req`/`rep` selon l'opération, `rcvd`/`sent` selon le sens). Les trames
+  non-ARP retombent sur le décodage IP existant (aucune régression).
+- MAC affichée via `mac.toString()` (format `aa:bb:cc:…`), cohérent avec
+  l'affichage `show ip arp` existant (`CiscoArpCommands`) — pas de nouveau
+  formateur introduit.
+
+Tout le reste passe par le socle inchangé : `afterCommandExecuted` →
+`reconcileDebugSubscription` démarre un job `mode: background`,
+`kind: subscription` dès que le flag est armé, le coupe sur `no debug arp`
+/ `undebug all`. Prompt libre (non bloquant), isolation par session,
+indicateur background UI déjà câblé.
+
+Validation : `cisco-debug-arp-subscription.test.ts` — 5/5 verts (rcvd req
+live avec src/dst/MAC/iface, sent rep, prompt libre, arrêt sur
+`no debug arp`, isolation inter-sessions). Régressions vertes :
+`cisco-debug-subscription` (OSPF) et `cisco-switch-debug-subscription`
+(STP) — 6/6.
+
 ## Suite
 
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
