@@ -1908,6 +1908,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private relayDhcpToHelpers(inPort: string, pkt: DHCPPacket, helpers: string[]): void {
     const inIp = this.ports.get(inPort)?.getIPAddress();
     if (!inIp) return;
+    if (pkt.hops >= 16) {
+      this.getBus().publish({
+        topic: 'dhcp.relay.dropped',
+        payload: {
+          deviceId: this.id, hostname: this.getHostname(),
+          iface: inPort, reason: 'hops-exceeded', hops: pkt.hops,
+          clientMac: pkt.chaddr,
+        },
+      });
+      return;
+    }
+    pkt.hops++;
     if (pkt.giaddr === '0.0.0.0') pkt.giaddr = inIp.toString();
     let option82: { circuitId: string; remoteId: string } | null = null;
     if (this.dhcpServer.isRelayInformationOptionEnabled()) {
@@ -1936,7 +1948,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       payload: {
         deviceId: this.id, hostname: this.getHostname(),
         iface: inPort, giaddr: pkt.giaddr, helpers: [...helpers],
-        clientMac: pkt.chaddr,
+        clientMac: pkt.chaddr, hops: pkt.hops,
         circuitId: option82?.circuitId ?? null,
         remoteId: option82?.remoteId ?? null,
       },
