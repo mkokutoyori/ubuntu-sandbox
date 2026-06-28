@@ -36,6 +36,7 @@ export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void 
     const a = agent(ctx.r());
     if (!a) return '';
     const v = parseInt(args[0], 10);
+    if (v === 3) return '% IGMPv3 is not supported in this simulator (RFC 3376 INCLUDE/EXCLUDE source filtering — out of scope, v1/v2 only)';
     if (v !== 1 && v !== 2) return '% Invalid IGMP version';
     for (const port of ctx.selectedPorts()) a.enableInterface(port, v);
     return '';
@@ -139,6 +140,10 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
       lines.push('');
     }
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length > 0) {
+      lines.push('');
+      lines.push('Note: IGMPv3 (RFC 3376 source filtering) is not supported in this simulator.');
+    }
     return lines.join('\n');
   });
 }
