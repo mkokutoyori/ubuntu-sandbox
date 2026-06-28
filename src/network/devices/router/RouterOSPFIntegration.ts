@@ -678,6 +678,11 @@ export class RouterOSPFIntegration {
           const remoteRid = peer2.ospfv3Engine.getRouterId();
           peer1.v3FormAdjacency(peer1.ospfv3Engine, localIface, remoteRid, rPort);
           peer2.v3FormAdjacency(peer2.ospfv3Engine, remoteIface, localRid, port);
+
+          const localLink = peer1.ospfv3Engine.getLinkLSA(portName);
+          const remoteLink = peer2.ospfv3Engine.getLinkLSA(rPort.getName());
+          if (localLink) peer2.ospfv3Engine.installRemoteLinkLSA(rPort.getName(), localLink);
+          if (remoteLink) peer1.ospfv3Engine.installRemoteLinkLSA(portName, remoteLink);
         }
       }
     }

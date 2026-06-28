@@ -245,10 +245,17 @@ L'OSPF (v2) est de loin le sous-système le plus mature de cette famille — FSM
 - **Correction appliquée** : Ajout de `setRoutes(routes: OSPFRouteEntry[]): void` dans `src/network/ospf/OSPFv3Engine.ts:831-833`. À la fin de `v3ComputeRoutes()` (`src/network/devices/router/RouterOSPFIntegration.ts:1179-1198`), après que toutes les entrées OSPF sont installées dans l'engine IPv6, les routes de type `'ospf'` sont lues en retour depuis `ipv6Engine.getRoutingTableInternal()`, converties en `OSPFRouteEntry[]` (avec mapping `routeType` et `areaId` déduit de la première aire configurée) et injectées dans l'engine via `this.ospfv3Engine.setRoutes(engineRoutes)`. Ainsi `getRoutes()` renvoie désormais les vraies routes apprises — non plus un tableau vide permanent. Validé par les suites OSPF (40/40, 100/100 tests OSPFv2/Huawei-ipsec) — 0 régression.
 
 ### 3.4 OSPFv3 — flooding des Link-LSA explicitement repoussé à « une future itération »
-- **Constat** : `originateLinkLSA()` construit la LSA et la stocke localement, mais le commentaire indique explicitement que la diffusion (flooding) sur le lien vers `AllSPFRouters` n'est pas implémentée.
-- **Preuve** : `src/network/ospf/OSPFv3Engine.ts:775-776` (« Flooding Link-LSAs on the link is left to a future iteration (production would send via the interface to AllSPFRouters). »).
-- **Sévérité** : Majeure.
-- **Recommandation** : implémenter la diffusion réelle des Link-LSA (RFC 5340 §4.4.1), faute de quoi les voisins OSPFv3 ne peuvent jamais apprendre les adresses link-local et les préfixes annoncés via ce type de LSA.
+- **Constat (origine)** : `originateLinkLSA()` construisait la LSA et la stockait localement, sans diffusion sur le lien — les voisins ne pouvaient jamais apprendre les adresses link-local ni les préfixes annoncés par les autres routeurs.
+- **Sévérité** : Majeure
+- **✅ CORRIGÉ** (2026-06-28) : flooding implémenté au niveau simulation (cohérent avec l'architecture v3 existante qui contourne déjà l'I/O paquet — cf. §3.6). Ajouts `OSPFv3Engine` :
+  - `remoteLinkLSAs: Map<ifaceName, Map<advertisingRouter, OSPFv3LinkLSA>>` (stockage des LSA reçues par interface).
+  - `installRemoteLinkLSA(ifaceName, lsa)` (RFC 5340 §4.6 freshness — refuse une `lsSequenceNumber` ≤ existante, publie `ospf.lsa.installed`).
+  - `getRemoteLinkLSAs(ifaceName): OSPFv3LinkLSA[]` (accesseur pour les consommateurs et tests).
+  - `originateLinkLSA` publie désormais `ospf.lsa.installed` (auparavant silencieux).
+  - Cleanup dans `reset()`.
+  - `RouterOSPFIntegration.v3AutoConverge` (après formation d'adjacence sur chaque lien) copie chaque `getLinkLSA(portName)` vers `installRemoteLinkLSA(rPort.getName(), …)` du pair, dans les deux sens — équivalent simulationnel du flood RFC 5340 §4.4.1 vers `AllSPFRouters` (FF02::5).
+  - Pin tests (`src/__tests__/unit/network-v2/ospfv3-link-lsa-flooding.test.ts`) : (a) deux routeurs adjacents trouvent réciproquement la Link-LSA de l'autre dans leurs `getRemoteLinkLSAs` après convergence ; (b) `installRemoteLinkLSA` refuse une LSA avec séquence ≤ existante (`false`) et accepte une séquence supérieure (`true`).
+  - Régression `ospf-full.test.ts` + `ospfv3-checksum.test.ts` + `ospf-lsa-advanced.test.ts` + `ospf.test.ts` = 132/132 verts.
 
 ### 3.5 OSPFv3 — checksums LSA toujours à zéro, module `checksum.ts` non réutilisé
 - **Constat** : les Link-LSA et Intra-Area-Prefix-LSA construites par `OSPFv3Engine` portent systématiquement `checksum: 0` ; le module `ospf/checksum.ts` (Fletcher checksum RFC 2328 Annexe C) n'est ni importé ni étendu pour le format OSPFv3.
