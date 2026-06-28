@@ -71,10 +71,18 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     expect(out).toMatch(/^usage: scp/);
   });
 
-  it('returns "no route to host" when the remote IP is unknown', async () => {
+  it('returns "Connection refused" when the remote IP has no route (TCP gate)', async () => {
     const { win } = await buildLab();
     win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
     const out = await win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
-    expect(out).toMatch(/scp:/);
+    expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: Connection refused/);
+  });
+
+  it('fails over a downed link (TCP probe cannot complete the handshake)', async () => {
+    const { win, srv } = await buildLab();
+    srv.getPorts()[0].setUp(false);
+    win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
+    const out = await win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.0.0.20:/tmp/x.txt');
+    expect(out).toMatch(/Connection refused|No route to host/);
   });
 });

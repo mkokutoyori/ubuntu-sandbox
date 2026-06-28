@@ -9,6 +9,9 @@ import type { ISftpFileSystem } from '@/network/protocols/ssh/sftp/ISftpFileSyst
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 
+export type WindowsScpTcpConnector = (host: string, port: number) =>
+  Promise<{ close(): void } | null>;
+
 export interface WindowsScpClientOpts {
   readonly args: string[];
   readonly sourceHostname: string;
@@ -16,6 +19,7 @@ export interface WindowsScpClientOpts {
   readonly sourceUser: string;
   readonly sourceHome: string;
   readonly localFs: WindowsFileSystem;
+  readonly tcpConnector: WindowsScpTcpConnector;
 }
 
 export interface WindowsScpClientResult {
@@ -47,6 +51,15 @@ export async function runWindowsScpClient(opts: WindowsScpClientOpts): Promise<W
   const probeArgs = parsed.port !== 22
     ? ['-p', String(parsed.port), `${remoteUser}@${remoteHost}`, 'hostname']
     : [`${remoteUser}@${remoteHost}`, 'hostname'];
+  const tcpSocket = await opts.tcpConnector(remoteHost, parsed.port);
+  if (!tcpSocket) {
+    return {
+      output: `ssh: connect to host ${remoteHost} port ${parsed.port}: Connection refused`,
+      exitCode: 255,
+    };
+  }
+  tcpSocket.close();
+
   const probe = await runWindowsSshClient({
     args: probeArgs,
     sourceHostname: opts.sourceHostname,
