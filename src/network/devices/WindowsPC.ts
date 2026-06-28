@@ -577,6 +577,28 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }).then(r => r.output);
   }
 
+  private async cmdTelnet(args: string[]): Promise<string> {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    const host = positional[0];
+    if (!host) {
+      return `Microsoft Telnet> ?\nCommands may be abbreviated. Supported commands are:\n\nc\t- close\t\tclose current connection\nd\t- display\t\tdisplay operating parameters\no\t- open hostname [port]\tconnect to hostname (default port 23).\nq\t- quit\t\t\texit telnet`;
+    }
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      return `Invalid command: ${positional[1]}`;
+    }
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp) {
+      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`;
+    }
+    const sock = await this.tcpConnect(host, port);
+    if (!sock) {
+      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`;
+    }
+    sock.close();
+    return `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
+  }
+
   private createPorts(): void {
     for (let i = 0; i < 4; i++) {
       this.addPort(new Port(`eth${i}`, 'ethernet'));
@@ -898,6 +920,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'ssh':      return this.cmdSsh(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
+      case 'telnet':   return this.cmdTelnet(args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
