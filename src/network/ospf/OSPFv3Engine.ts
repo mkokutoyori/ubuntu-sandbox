@@ -32,6 +32,7 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { computeOSPFv3LSAChecksum } from './checksum';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
@@ -769,6 +770,7 @@ export class OSPFv3Engine implements IProtocolEngine {
       linkLocalAddress,
       prefixes,
     };
+    lsa.checksum = computeOSPFv3LSAChecksum(lsa);
 
     this.linkLSAs.set(ifaceName, lsa);
 
@@ -810,6 +812,7 @@ export class OSPFv3Engine implements IProtocolEngine {
       referencedAdvRouter: this.config.routerId,
       prefixes,
     };
+    lsa.checksum = computeOSPFv3LSAChecksum(lsa);
 
     this.intraPrefixLSAs.set(areaId, lsa);
     return lsa;
