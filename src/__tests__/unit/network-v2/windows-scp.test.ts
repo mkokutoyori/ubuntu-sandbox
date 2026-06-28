@@ -6,6 +6,24 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { runWindowsScpClient } from '@/network/devices/windows/network/WindowsScpClient';
+import type { TcpConnector } from '@/network/core/TcpConnection';
+
+function scpWithPassword(win: WindowsPC, args: string, password: string) {
+  const tcpConnector: TcpConnector = (h, p) =>
+    (win as unknown as { tcpConnect(h: string, p: number): Promise<unknown> })
+      .tcpConnect(h, p) as ReturnType<TcpConnector>;
+  return runWindowsScpClient({
+    args: args.split(' '),
+    sourceHostname: 'WIN1',
+    sourceIp: '10.0.0.10',
+    sourceUser: 'User',
+    sourceHome: 'C:\\Users\\User',
+    localFs: win.fs,
+    tcpConnector,
+    password,
+  });
+}
 
 beforeEach(() => {
   resetCounters();
@@ -32,22 +50,23 @@ async function buildLab() {
 }
 
 describe('Windows scp.exe — OpenSSH for Windows', () => {
-  it('uploads a local Windows file to a remote Linux server', async () => {
+  it('uploads a local Windows file to a remote Linux server (real TCP SFTP)', async () => {
     const { win, srv } = await buildLab();
     win.fs.createFile('C:\\Users\\User\\notes.txt', 'hello-from-windows');
-    const out = await win.executeCommand('scp C:\\Users\\User\\notes.txt alice@10.0.0.20:/tmp/notes.txt');
-    expect(out).toMatch(/notes\.txt/);
-    expect(out).toMatch(/100%/);
+    const r = await scpWithPassword(win, 'C:\\Users\\User\\notes.txt alice@10.0.0.20:/tmp/notes.txt', 'admin');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/100%/);
     const vfs = (srv as unknown as { executor: { vfs: { readFile(p: string): string | null } } }).executor.vfs;
     expect(vfs.readFile('/tmp/notes.txt')).toBe('hello-from-windows');
   });
 
-  it('downloads a remote Linux file to the Windows filesystem', async () => {
+  it('downloads a remote Linux file to the Windows filesystem (real TCP SFTP)', async () => {
     const { win, srv } = await buildLab();
     const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
     vfs.writeFile('/tmp/remote.txt', 'pulled-from-linux', 0, 0, 0o022);
-    const out = await win.executeCommand('scp alice@10.0.0.20:/tmp/remote.txt C:\\Users\\User\\fetched.txt');
-    expect(out).toMatch(/100%/);
+    const r = await scpWithPassword(win, 'alice@10.0.0.20:/tmp/remote.txt C:\\Users\\User\\fetched.txt', 'admin');
+    expect(r.exitCode).toBe(0);
+    expect(r.output).toMatch(/100%/);
     const got = win.fs.readFile('C:\\Users\\User\\fetched.txt');
     expect(got.ok).toBe(true);
     expect(got.content).toBe('pulled-from-linux');
@@ -71,11 +90,11 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     expect(out).toMatch(/^usage: scp/);
   });
 
-  it('returns "Connection refused" when the remote IP has no route (TCP gate)', async () => {
+  it('fails with a real TCP error when the remote IP has no route', async () => {
     const { win } = await buildLab();
     win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
     const out = await win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
-    expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: Connection refused/);
+    expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: (Connection refused|No route to host)/);
   });
 
   it('fails over a downed link (TCP probe cannot complete the handshake)', async () => {

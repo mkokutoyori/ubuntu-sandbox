@@ -1,16 +1,9 @@
-import { runWindowsSshClient } from './WindowsSshClient';
-import { findHostByAddress } from '../../linux/network/HostLookup';
-import { ScpSession } from '@/network/protocols/ssh/scp/ScpSession';
+import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
-import { VfsSftpFileSystem } from '@/network/protocols/ssh/sftp/VfsSftpFileSystem';
-import { WindowsSftpFileSystem } from '@/network/protocols/ssh/sftp/WindowsSftpFileSystem';
-import { RouterSftpFileSystem } from '@/network/protocols/ssh/sftp/RouterSftpFileSystem';
-import type { ISftpFileSystem } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { TcpConnector } from '@/network/core/TcpConnection';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
-
-export type WindowsScpTcpConnector = (host: string, port: number) =>
-  Promise<{ close(): void } | null>;
+import { WindowsLocalFs } from './WindowsLocalFs';
 
 export interface WindowsScpClientOpts {
   readonly args: string[];
@@ -19,7 +12,8 @@ export interface WindowsScpClientOpts {
   readonly sourceUser: string;
   readonly sourceHome: string;
   readonly localFs: WindowsFileSystem;
-  readonly tcpConnector: WindowsScpTcpConnector;
+  readonly tcpConnector: TcpConnector;
+  readonly password?: string;
 }
 
 export interface WindowsScpClientResult {
@@ -46,67 +40,49 @@ export async function runWindowsScpClient(opts: WindowsScpClientOpts): Promise<W
   }
 
   const remoteEp = parsed.source.remote ? parsed.source : parsed.destination;
+  const localEp = parsed.source.remote ? parsed.destination : parsed.source;
   const remoteUser = remoteEp.user ?? opts.sourceUser;
   const remoteHost = remoteEp.host ?? '';
-  const probeArgs = parsed.port !== 22
-    ? ['-p', String(parsed.port), `${remoteUser}@${remoteHost}`, 'hostname']
-    : [`${remoteUser}@${remoteHost}`, 'hostname'];
-  const tcpSocket = await opts.tcpConnector(remoteHost, parsed.port);
-  if (!tcpSocket) {
+  const direction: 'upload' | 'download' = parsed.source.remote ? 'download' : 'upload';
+
+  const localFs = new WindowsLocalFs(opts.localFs);
+  const sftp = new SftpSession({
+    tcpConnector: opts.tcpConnector,
+    localVfs: localFs,
+    localUser: opts.sourceUser,
+    localUid: 1000,
+    localGid: 1000,
+    localCwd: opts.sourceHome,
+    knownHostsPath: `${opts.sourceHome}\\.ssh\\known_hosts`,
+    interactionHandler: new SilentSshInteractionHandler(opts.password ?? ''),
+    homeDirectory: opts.sourceHome,
+  });
+
+  const banner = await sftp.connect(`${remoteUser}@${remoteHost}`, {
+    port: parsed.port,
+    password: opts.password,
+  });
+  if (!sftp.isConnected()) {
+    sftp.disconnect();
     return {
-      output: `ssh: connect to host ${remoteHost} port ${parsed.port}: Connection refused`,
+      output: banner.startsWith('ssh:') ? banner : `ssh: connect to host ${remoteHost} port ${parsed.port}: Connection refused`,
       exitCode: 255,
     };
   }
-  tcpSocket.close();
 
-  const probe = await runWindowsSshClient({
-    args: probeArgs,
-    sourceHostname: opts.sourceHostname,
-    sourceIp: opts.sourceIp,
-    sourceUser: opts.sourceUser,
-    sourceHome: opts.sourceHome,
-    localFs: {
-      readFile: (p) => opts.localFs.readFile(p),
-      createFile: (p, c) => {
-        const dir = p.substring(0, p.lastIndexOf('\\'));
-        if (dir && !opts.localFs.exists(dir)) opts.localFs.mkdirp(dir);
-        return opts.localFs.createFile(p, c);
-      },
-    },
-  });
-  if (probe.exitCode !== 0) {
-    return { output: `scp: ${probe.output.replace(/^ssh:\s*/, '')}`, exitCode: probe.exitCode };
-  }
+  const transferOutput = direction === 'upload'
+    ? (parsed.recursive
+        ? sftp.putRecursive(localEp.path, remoteEp.path)
+        : sftp.put(localEp.path, remoteEp.path))
+    : (parsed.recursive
+        ? sftp.getRecursive(remoteEp.path, localEp.path)
+        : sftp.get(remoteEp.path, localEp.path));
 
-  const found = findHostByAddress(remoteHost, { readFile: () => null });
-  const remoteFs = resolveRemoteSftpFs(found?.device);
-  if (!remoteFs) {
-    return { output: `scp: ${remoteHost}: no route to host`, exitCode: 1 };
-  }
+  sftp.disconnect();
 
-  const localFs = new WindowsSftpFileSystem(opts.localFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
-  const session = new ScpSession({
-    args: opts.args,
-    resolveRemote: (h) => (h === remoteHost ? remoteFs : null),
-    local: { fs: localFs, cwd: opts.sourceHome },
-  });
-  return session.run();
-}
-
-function resolveRemoteSftpFs(device: unknown): ISftpFileSystem | null {
-  if (!device) return null;
-  const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
-  if (linuxVfs) {
-    return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
-  }
-  const windowsFs = (device as { fs?: unknown }).fs;
-  if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
-    return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
-  }
-  const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
-  if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
-    return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
-  }
-  return null;
+  const lines = transferOutput.split('\n').filter((l) => l.length > 0);
+  const errLine = lines.find((l) => l.startsWith('remote open(') || l.includes(': No such file or directory') || l.includes('not a regular file'));
+  if (errLine) return { output: `scp: ${errLine}`, exitCode: 1 };
+  const progress = lines.find((l) => /100%/.test(l)) ?? lines[lines.length - 1] ?? '';
+  return { output: progress, exitCode: 0 };
 }

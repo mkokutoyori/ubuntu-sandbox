@@ -8,7 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   TcpStream as TcpConnection,
   TcpConnector,
@@ -44,7 +44,7 @@ import {
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
-  readonly vfs: VirtualFileSystem;
+  readonly vfs: ISshLocalFs;
   readonly localUser: string;
   readonly localUid: number;
   readonly localGid: number;

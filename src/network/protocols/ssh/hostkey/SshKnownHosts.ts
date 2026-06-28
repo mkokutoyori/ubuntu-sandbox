@@ -4,7 +4,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 5.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type { SshHostKey } from '../SshHostKey';
 import { KnownHostsStore } from './KnownHostsStore';
 
@@ -12,7 +12,7 @@ const DEFAULT_MODE = 0o644;
 
 export class SshKnownHosts {
   constructor(
-    private readonly vfs: VirtualFileSystem,
+    private readonly vfs: ISshLocalFs,
     private readonly path: string,
     private readonly uid: number,
     private readonly gid: number,

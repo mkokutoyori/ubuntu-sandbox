@@ -9,7 +9,7 @@
  */
 
 import type { TcpConnector } from '@/network/core/TcpConnection';
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   ISshSftpChannel,
   SftpResponse,
@@ -36,7 +36,7 @@ export interface SftpConnectOptions {
 
 export interface SftpSessionDeps {
   readonly tcpConnector: TcpConnector;
-  readonly localVfs: VirtualFileSystem;
+  readonly localVfs: ISshLocalFs;
   readonly localUser: string;
   readonly localUid: number;
   readonly localGid: number;

@@ -6,7 +6,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 4.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import { type Result, err } from '../Result';
 import type { SshConnectOptions } from '../SshConnectOptions';
 import { SshKeyPair } from '../SshKeyPair';
@@ -49,7 +49,7 @@ export class AuthChain {
  * brute-forced.
  */
 export function createAuthMethods(
-  vfs: VirtualFileSystem,
+  vfs: ISshLocalFs,
   opts: SshConnectOptions,
   passwordProvider: PasswordProvider,
 ): ISshAuthMethod[] {

@@ -573,7 +573,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localFs: this.fs,
-      tcpConnector: (h, p) => this.tcpConnect(h, p),
+      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../core/TcpConnection').TcpConnector>,
     }).then(r => r.output);
   }
 
