@@ -558,6 +558,7 @@ export function showNATStatistics(router: Router): string {
       `Pools:`,
       ...[...engine.getPools().values()].map(p => ` ${p.name}: ${p.startIP} - ${p.endIP}${(p as any).prefixLen != null ? ` /${(p as any).prefixLen}` : ''}`),
     ] : []),
+    `Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)`,
   ].join('\n');
 }
 
