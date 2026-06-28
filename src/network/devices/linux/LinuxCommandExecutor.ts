@@ -965,6 +965,10 @@ export class LinuxCommandExecutor {
       return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
     }
 
+    if (this.tcpProbe && !this.tcpProbe(found.ip, port)) {
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+    }
+
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
     const dev = (reachable ?? found.device) as unknown as {
       _getVtyLineConfig?: () => { incomingVerdict: () => { accept: boolean; reason: string } };
@@ -1236,6 +1240,11 @@ export class LinuxCommandExecutor {
    */
   setSessionTable(table: SshSessionTable): void {
     this.sessionTable = table;
+  }
+
+  private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
+  setTcpProbe(probe: (ip: string, port: number) => boolean): void {
+    this.tcpProbe = probe;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */

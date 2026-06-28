@@ -180,6 +180,7 @@ export abstract class LinuxMachine extends EndHost
     // Share the SSH session table so `who`/`w`/`last` render from one
     // source of truth — including via compound commands and ssh exec.
     this.executor.setSessionTable(this.sessionTable);
+    this.executor.setTcpProbe((ip, port) => this.tcpProbeSync(new IPAddress(ip), port));
     this.executor.attachEventBus(this.getBus(), this.id);
     this.syncHostnameFiles(profile.hostname);
 
