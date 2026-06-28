@@ -209,36 +209,21 @@ export class BashInterpreter {
     this.env.lastExitCode = savedExit;
   }
 
-  /**
-   * Re-entry guard for ERR / DEBUG / RETURN traps.
-   *
-   * When the handler body itself runs commands, those would otherwise
-   * re-trigger their own trap dispatch — endless recursion. While the
-   * counter is positive every trap dispatcher returns immediately.
-   */
+  // Re-entry guard so a trap handler cannot recursively re-fire its own signal.
   private inTrap = 0;
 
-  /**
-   * Run an ERR / DEBUG / RETURN handler. Preserves `$?` so the script's
-   * observable exit code is unchanged. Body parse errors swallow rather
-   * than escalate — a broken trap must not crash the parent script.
-   *
-   * Traps installed at the script (root) scope must still fire from
-   * inside function scopes — bash with `set -E -T` would do this
-   * uniformly, and for a teaching simulator the always-inherit semantic
-   * is the least surprising. A nested `trap` in a function still wins
-   * because the walk takes the deepest match first.
-   */
   private fireSignalTrap(signal: 'ERR' | 'DEBUG' | 'RETURN'): void {
     if (this.inTrap > 0) return;
     const handler = this.lookupTrapInherited(signal);
     if (!handler) return;
     const savedExit = this.env.lastExitCode;
     this.inTrap++;
-    try { this.executeEval(handler); } catch { /* swallow — see fireExitTrap */ }
+    try { this.executeEval(handler); } catch { /* a broken trap must not crash the script */ }
     finally { this.inTrap--; this.env.lastExitCode = savedExit; }
   }
 
+  // Traps set at script scope must fire from inside functions too
+  // (equivalent of bash `set -E -T`).
   private lookupTrapInherited(signal: string): string | undefined {
     let cursor: Environment | null = this.env;
     while (cursor) {
@@ -365,9 +350,6 @@ export class BashInterpreter {
   }
 
   private visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): void {
-    // DEBUG fires before every simple command, regardless of the
-    // command's outcome (real bash semantics). The re-entry guard in
-    // fireSignalTrap stops the handler from triggering itself.
     this.fireSignalTrap('DEBUG');
     const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
 
@@ -506,11 +488,7 @@ export class BashInterpreter {
       );
     }
 
-    // ERR trap fires after a simple command exits non-zero, but only
-    // outside guarded contexts (`if`/`while` heads, non-last && /
-    // pipeline stages, …) — exactly the same gate that errexit honours.
-    // Tracking errexitSuppress already captures that gate accurately,
-    // so we piggy-back on it here rather than reproducing the logic.
+    // ERR honours the same guarded-context gate as `set -e`.
     if (this.errexitSuppress === 0 && this.env.lastExitCode !== 0) {
       this.fireSignalTrap('ERR');
     }
@@ -948,10 +926,6 @@ export class BashInterpreter {
         throw e;
       }
     } finally {
-      // RETURN fires when a shell function returns (including via the
-      // `return` builtin and via falling off the end of the body). The
-      // handler runs in the function's environment so it can still see
-      // local variables and positional args.
       this.fireSignalTrap('RETURN');
       savedEnv.lastExitCode = this.env.lastExitCode;
       this.env = savedEnv;

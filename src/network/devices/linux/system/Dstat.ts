@@ -86,7 +86,7 @@ export function parseDstatArgs(args: string[]): DstatArgs {
     if (a === '-s' || a === '--swap') { explicit.paging = true; continue; }
     if (a === '-t' || a === '--time') { explicit.time = true; continue; }
     if (a === '-y' || a === '--sys') { explicit.system = true; continue; }
-    if (a === '-a') { /* -a = -cdngy default; alias of default */ continue; }
+    if (a === '-a') { continue; }
     if (a === '-N') {
       const v = stack.shift();
       if (!v) { out.parseError = 'dstat: -N requires an interface'; return out; }
@@ -187,7 +187,6 @@ export function sampleDstat(ctx: DstatSampleContext, rate: DstatRateState): Dsta
   };
 }
 
-/** Render bytes/sec compactly à la dstat: 1024 → "1024B", 1500 → "1500B", 10240 → " 10k", … */
 function compact(n: number): string {
   if (n < 1000) return `${Math.round(n)}B`.padStart(4);
   if (n < 1_000_000) return `${(n / 1000).toFixed(0)}k`.padStart(4);

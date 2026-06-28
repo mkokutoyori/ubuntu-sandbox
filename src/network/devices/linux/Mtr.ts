@@ -79,11 +79,6 @@ export function parseMtrArgs(args: string[]): MtrParsedArgs {
 
 export interface MtrHopProbe { ip?: string; rttMs?: number; lost: boolean }
 
-/**
- * Per-hop statistics accumulator. Tracks loss%, send count, last RTT,
- * average, best, worst and population standard deviation across every
- * probe registered through `record`.
- */
 export class MtrHopStats {
   ip: string | null = null;
   sent = 0;
@@ -115,7 +110,6 @@ export class MtrHopStats {
     return this.received === 0 ? null : this.sumRtt / this.received;
   }
 
-  /** Sample standard deviation; 0 when fewer than 2 RTTs are available. */
   stDev(): number {
     if (this.received < 2) return 0;
     const mean = this.sumRtt / this.received;
@@ -144,10 +138,6 @@ function fmtPct(value: number): string {
   return `${value.toFixed(1).padStart(5)}%`;
 }
 
-/**
- * Render an mtr table snapshot. Same layout for live (curses) and `-r`
- * (report) modes — only the header line differs.
- */
 export function formatMtrFrame(input: MtrFrameInput, mode: 'live' | 'report' = 'live'): string {
   const { hostname, target, startedAt, hops } = input;
   const header = mode === 'report'

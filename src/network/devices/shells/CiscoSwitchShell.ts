@@ -1644,8 +1644,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   }
 
-  // ─── SPAN (monitor session) ──────────────────────────────────────
-
   private registerMonitorSessionCommands(): void {
     this.configTrie.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
       this.handleMonitorSession(args, false));

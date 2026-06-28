@@ -1,10 +1,3 @@
-/**
- * bash trap ERR / DEBUG / RETURN — invocation sites in BashInterpreter.
- *
- * Companion to `bash-third-pass.test.ts §S` which covers EXIT only.
- * Backs the GAP §8.2 follow-up: the handlers were stored but never fired.
- */
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 

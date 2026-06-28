@@ -83,10 +83,6 @@ export class PortMirror {
 
   removeAll(): void { this.sessions.clear(); }
 
-  /**
-   * All destination ports that should receive a copy of a frame seen on
-   * `srcPort` in direction `dir`. Empty when no session matches.
-   */
   destinationsFor(srcPort: string, dir: 'rx' | 'tx'): string[] {
     const out: string[] = [];
     for (const session of this.sessions.values()) {
@@ -98,7 +94,6 @@ export class PortMirror {
     return out;
   }
 
-  /** True if `portName` is the destination of any session. */
   isDestination(portName: string): boolean {
     for (const session of this.sessions.values()) {
       if (session.destination === portName) return true;

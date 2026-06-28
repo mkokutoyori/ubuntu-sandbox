@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';

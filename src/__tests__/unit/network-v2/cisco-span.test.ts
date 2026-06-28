@@ -15,9 +15,7 @@ async function buildLab() {
   new Cable('cab-a').connect(pcA.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   new Cable('cab-b').connect(pcB.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   new Cable('cab-m').connect(pcMirror.getPort('eth0')!, sw.getPort('FastEthernet0/8')!);
-  // Isolate the SPAN destination on its own VLAN so normal flooding
-  // can never reach it — only the mirror egress (which bypasses VLAN
-  // filtering, as real Cisco SPAN does) can put a frame on F0/8.
+  // Isolate the SPAN dest on its own VLAN so only the mirror can reach it.
   await sw.executeCommand('enable');
   await sw.executeCommand('configure terminal');
   await sw.executeCommand('vlan 99');
@@ -175,8 +173,7 @@ describe('Cisco SPAN — port mirror config + forwarding', () => {
 
     const mirrored = captureFramesOn(pcMirror);
     await pcA.executeCommand('ping -c 1 10.0.0.2');
-    // A single ICMP round-trip generates a bounded number of frames;
-    // a recursion bug would explode this number.
+    // Recursion bug would explode this number.
     expect(mirrored.length).toBeLessThan(20);
     expect(mirrored.length).toBeGreaterThan(0);
   });

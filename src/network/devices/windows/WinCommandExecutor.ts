@@ -137,6 +137,5 @@ export interface WinCommandContext {
   // Port-proxy rules (netsh interface portproxy)
   portProxy: import('./PortProxyTable').PortProxyTable;
 
-  // DNS resolver cache — backs ipconfig /displaydns + /flushdns.
   dnsCache: import('./WinDnsCache').WindowsDnsCache;
 }

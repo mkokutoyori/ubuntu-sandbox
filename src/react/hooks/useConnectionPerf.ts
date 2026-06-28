@@ -5,24 +5,16 @@ import type { Port } from '@/network/hardware/Port';
 import type { Connection } from '@/store/networkStore';
 
 export interface ConnectionPerf {
-  /** Effective link bandwidth in kbps (min of both sides). 0 when either
-   *  endpoint is missing or down. */
   bandwidthKbps: number;
-  /** End-to-end one-way delay in microseconds (max of both sides). */
   delayUs: number;
-  /** True when both endpoint Ports resolved cleanly. */
   resolved: boolean;
-  /** Human label "1 Gbps", "100 Mbps", "1.544 Mbps", "N/A" (console). */
   bandwidthLabel: string;
-  /** Human label "0.1 ms", "5.0 ms", "< 0.1 ms", "N/A" (console). */
   latencyLabel: string;
 }
 
 function fmtBandwidth(kbps: number): string {
   if (kbps <= 0) return 'N/A';
   if (kbps >= 1_000_000) return `${(kbps / 1_000_000).toFixed(0)} Gbps`;
-  // 10+ Mbps → integer, 1.0-9.9 Mbps → one decimal (so the classic
-  // T1 1544 kbps renders as 1.5 Mbps), <1 Mbps → integer kbps.
   if (kbps >= 10_000) return `${Math.round(kbps / 1_000)} Mbps`;
   if (kbps >= 1_000) return `${(kbps / 1_000).toFixed(1)} Mbps`;
   return `${Math.round(kbps)} Kbps`;
@@ -64,11 +56,8 @@ function computePerf(
       bandwidthLabel: 'N/A', latencyLabel: 'N/A',
     };
   }
-  // Use the user-configured speed (not the auto-negotiated one): when an
-  // operator changes a port's speed in the CLI, the panel should reflect
-  // that intent immediately, even if the simulator's negotiation cache
-  // still holds the old value. The link is constrained to the slower
-  // side, matching real Ethernet behaviour.
+  // Read configured speed (not the negotiated cache) so a CLI `speed N`
+  // is reflected immediately.
   const bw = Math.min(source.getSpeed(), target.getSpeed()) * 1000;
   const delay = Math.max(source.getDelayUs(), target.getDelayUs());
   return {
@@ -80,11 +69,6 @@ function computePerf(
   };
 }
 
-/**
- * Reactive bandwidth + latency for a Connection, sourced from the live
- * Port objects rather than canned defaults per cable type. Re-renders
- * when speed or duplex change on either endpoint.
- */
 export function useConnectionPerf(
   connection: Connection | null,
   resolveDevice: (id: string) => Equipment | undefined,

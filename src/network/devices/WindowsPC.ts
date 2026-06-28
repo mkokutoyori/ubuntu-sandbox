@@ -138,8 +138,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
-  /** Resolver cache for ipconfig /displaydns + /flushdns. Populated by
-   *  resolveHostname() on every successful DNS response. */
   readonly dnsCache = new WindowsDnsCache();
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
@@ -1258,11 +1256,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return svc ? svc.state === 'Running' : false;
       },
 
-      // Port-proxy rules (netsh interface portproxy)
       portProxy: this.portProxyTable,
-      // Event log provider — wevtutil queries against Security/System.
       eventLog: this.eventLog,
-      // DNS resolver cache — ipconfig /displaydns + /flushdns.
       dnsCache: this.dnsCache,
     };
   }

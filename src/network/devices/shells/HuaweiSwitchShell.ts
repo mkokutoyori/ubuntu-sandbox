@@ -2076,16 +2076,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return null;
   }
 
-  // ─── Port-mirroring (observe-port + mirror to observe-port) ──────
-
   private buildPortMirroringCommands(): void {
-    // observe-port [interface-index] N interface X — declare destination
     this.systemTrie.registerGreedy('observe-port', 'Configure SPAN observe-port', (args) =>
       this.handleObservePort(args, false));
     this.systemTrie.registerGreedy('undo observe-port', 'Remove SPAN observe-port', (args) =>
       this.handleObservePort(args, true));
 
-    // port-mirroring to observe-port N {inbound|outbound|both} — source side
     this.interfaceTrie.registerGreedy('port-mirroring to observe-port', 'Add interface as SPAN source', (args) =>
       this.handlePortMirroring(args, false));
     this.interfaceTrie.registerGreedy('undo port-mirroring to observe-port', 'Remove interface SPAN source', (args) =>

@@ -3171,8 +3171,6 @@ export class LinuxCommandExecutor {
         if (parsed.showVersion) return { output: MTR_VERSION, exitCode: 0 };
         if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
         if (!parsed.target) return { output: 'mtr: no host specified', exitCode: 1 };
-        // Real probing happens in the terminal session's tryStartMtr hook;
-        // bare executeCommand callers see an empty result, same as traceroute.
         return { output: '', exitCode: 0 };
       }
       case 'dstat': {
@@ -3181,8 +3179,6 @@ export class LinuxCommandExecutor {
         if (parsed.showVersion) return { output: DSTAT_VERSION, exitCode: 0 };
         if (parsed.listStats) return { output: DSTAT_LISTING, exitCode: 0 };
         if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
-        // Streaming runs in the terminal session; bare executeCommand callers
-        // see an empty result, same as vmstat / mpstat.
         return { output: '', exitCode: 0 };
       }
       case 'nslookup':

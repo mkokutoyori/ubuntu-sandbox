@@ -729,7 +729,6 @@ export class WindowsTerminalSession extends TerminalSession {
     const totalSamples = parsed.continuous ? -1 : Math.max(1, parsed.maxSamples);
     const intervalMs = Math.max(100, parsed.sampleInterval * 1000);
 
-    // One-shot (default) — synchronous, no async runtime needed.
     if (totalSamples === 1) {
       const snap = sampleCounterSet(parsed.counters, dev, newRateState());
       for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) this.addLine(l);

@@ -913,8 +913,6 @@ export class LinuxTerminalSession extends TerminalSession {
       command: commandLine,
       prepare: () => { baseLen = this.lines.length; return true; },
       run: async (ctx) => {
-        // Step 1 — discover the hop path once via traceroute (probesPerHop=1
-        // is enough; we accumulate stats later through repeated probes).
         const hopIps: (string | null)[] = [];
         let resolved = false;
         const discovery = await dev.tracerouteStreamInSession(parsed.target, {
@@ -948,9 +946,6 @@ export class LinuxTerminalSession extends TerminalSession {
         };
         paint();
 
-        // Step 2 — N cycles (report) or until cancelled (live). Each cycle
-        // sends one ping probe per known hop; the response IP overrides any
-        // earlier discovery value so route changes get reflected.
         for (let cycle = 0; ; cycle++) {
           if (ctx.cancelled()) return;
           if (parsed.reportMode && cycle >= parsed.cycles) break;

@@ -1,20 +1,3 @@
-/**
- * Oracle CREATE [OR REPLACE] PACKAGE [BODY] — coverage check.
- *
- * GAP §10.6 originally framed "user PL/SQL packages non implémentés".
- * That description is stale: the *legacy* `OracleDatabase.executeSql`
- * regex path catches `^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b`
- * and `…PACKAGE\b` before the AST executor sees them, compiles the
- * source via `compilePackageSection`, stores the result in
- * `userPackages`, and emits `DBA_OBJECTS` rows. So end-to-end the
- * feature does work — what's missing is an AST executor case
- * (architectural duplication, not a missing feature).
- *
- * These tests pin that behavior down so future refactors that finally
- * migrate the legacy path to the AST executor don't silently regress
- * it.
- */
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { resetCounters } from '@/network/core/types';

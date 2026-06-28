@@ -1,12 +1,3 @@
-/**
- * OSPFv3 LSA Fletcher checksum — GAP §3.5 follow-up.
- *
- * Verifies that Link-LSA (0x0008) and Intra-Area-Prefix-LSA (0x2009)
- * carry deterministic non-zero Fletcher-16 checksums (RFC 5340 §A.4.5,
- * same algorithm as RFC 2328 Annex C) instead of the prior hardcoded
- * `checksum: 0`.
- */
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';

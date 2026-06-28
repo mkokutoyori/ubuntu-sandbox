@@ -19,13 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
   console: 'Console'
 };
 
-/**
- * Extracts the static, instance-independent display details for a
- * Connection. Bandwidth / latency are intentionally NOT here — they
- * come from the live Ports via `useConnectionPerf` (which subscribes
- * to `port.config.speed-changed` etc.) so the panel reflects the
- * actual link rather than canned per-type constants.
- */
+// Bandwidth / latency live in useConnectionPerf (subscribed to port.config events).
 export function getConnectionDetails(connection: Connection): ConnectionDetails {
   return {
     type: connection.type,

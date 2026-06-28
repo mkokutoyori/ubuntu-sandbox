@@ -1,12 +1,3 @@
-/**
- * Tests for PropertiesPanel connection details logic.
- *
- * `bandwidth` / `latency` left this module in GAP §11.3 follow-up: those
- * values now come from the live Port via `useConnectionPerf` (covered by
- * `src/__tests__/unit/gui/use-connection-perf.test.ts`). This file only
- * covers the static type / interface / isActive pure projection.
- */
-
 import { describe, it, expect } from 'vitest';
 import { getConnectionDetails } from '@/components/network/properties-panel-logic';
 import { Cable, Port } from '@/network';

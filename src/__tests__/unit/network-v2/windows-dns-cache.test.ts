@@ -1,11 +1,3 @@
-/**
- * Windows DNS resolver cache — GAP §9.3 follow-up.
- *
- * Replaces the prior hardcoded `ipconfig /displaydns "(no entries)"`
- * stub and `ipconfig /flushdns` no-op with a real cache fed by
- * `WindowsPC.resolveHostname`.
- */
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';

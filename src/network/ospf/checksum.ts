@@ -105,19 +105,10 @@ export function verifyOSPFLSAChecksum(lsa: LSA): boolean {
   return lsa.checksum === computeOSPFLSAChecksum(lsa);
 }
 
-// ─── OSPFv3 LSA checksums (RFC 5340 §A.4.5) ──────────────────────────────
-//
-// OSPFv3 keeps the same Fletcher-16 algorithm as v2 (RFC 5340 §A.4.5
-// explicitly references RFC 2328 Annex C), but the header layout and
-// LSA bodies are different. The lsAge field is still excluded; the
-// checksum field is treated as zero during computation.
+// OSPFv3 reuses Fletcher-16 (RFC 5340 §A.4.5 references RFC 2328 Annex C),
+// but with v3-specific LSA headers/bodies. Wire format isn't packed by the
+// simulator — strings are hashed for byte stability, not for on-wire interop.
 
-/** UTF-8 / ASCII bytes of a string — used as a deterministic placeholder
- *  for IPv6 addresses and prefix strings, since the simulator's wire
- *  format keeps these as strings rather than packed octets. The exact
- *  bytes do not need to match a real OSPFv3 capture, only to vary with
- *  the content (the goal is meaningful integrity coverage, not on-wire
- *  interop). */
 function strBytes(s: string): number[] {
   const out: number[] = [];
   for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xFF);
@@ -145,15 +136,11 @@ type OSPFv3LSAUnion = OSPFv3LinkLSA | OSPFv3IntraAreaPrefixLSA;
 
 function serializeOSPFv3LSAForChecksum(lsa: OSPFv3LSAUnion): number[] {
   const bytes: number[] = [];
-  // Common header (skipping lsAge, checksum zeroed) — RFC 5340 §A.4.2.
   bytes.push(...u16(lsa.lsType & 0xFFFF));
-  // linkStateId/advertisingRouter are 4-byte fields; we hash the string
-  // to a 32-bit integer so a same-string yields the same bytes and a
-  // different string almost certainly differs.
   bytes.push(...u32(fnv32(lsa.linkStateId)));
   bytes.push(...u32(fnv32(lsa.advertisingRouter)));
   bytes.push(...u32(lsa.lsSequenceNumber >>> 0));
-  bytes.push(0, 0); // checksum (zeroed)
+  bytes.push(0, 0);
   bytes.push(...u16(lsa.length & 0xFFFF));
 
   if (lsa.lsType === 0x0008) {
@@ -182,12 +169,6 @@ function fnv32(s: string): number {
   return h >>> 0;
 }
 
-/**
- * Fletcher-16 over the OSPFv3 LSA, excluding lsAge and treating the
- * checksum field as zero. Same algorithm as OSPFv2 (RFC 5340 §A.4.5).
- * Returns 0xFFFF instead of 0x0000 so the value never collides with the
- * "unset" sentinel used by `verifyOSPFv3LSAChecksum`.
- */
 export function computeOSPFv3LSAChecksum(lsa: OSPFv3LSAUnion): number {
   const bytes = serializeOSPFv3LSAForChecksum(lsa);
   let c0 = 0, c1 = 0;
@@ -199,9 +180,6 @@ export function computeOSPFv3LSAChecksum(lsa: OSPFv3LSAUnion): number {
   return result !== 0 ? result : 0xFFFF;
 }
 
-/** True when the LSA carries a non-zero checksum that matches the
- *  recomputed value. Like the v2 helper, 0 is treated as "not yet
- *  computed" rather than a valid value. */
 export function verifyOSPFv3LSAChecksum(lsa: OSPFv3LSAUnion): boolean {
   if (lsa.checksum === 0) return false;
   return lsa.checksum === computeOSPFv3LSAChecksum(lsa);

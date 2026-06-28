@@ -89,10 +89,8 @@ export function parseGetCounterArgs(args: string[]): GetCounterParsedArgs {
 }
 
 export interface CounterSample {
-  /** Canonical lower-case path like the real Get-Counter renders. */
   path: string;
   value: number;
-  /** True when the path was not recognised — value will be 0. */
   unknown: boolean;
 }
 
@@ -101,7 +99,6 @@ export interface CounterSnapshot {
   samples: CounterSample[];
 }
 
-/** Per-port {framesIn,bytesIn,…} cumulative snapshot for delta computations. */
 export interface PortCountersSnapshot {
   framesIn: number;
   framesOut: number;
@@ -110,9 +107,7 @@ export interface PortCountersSnapshot {
 }
 
 export interface CounterRateState {
-  /** ts (ms) of the previous sample by port name */
   lastTsMs: Map<string, number>;
-  /** previous cumulative counters by port name */
   prev: Map<string, PortCountersSnapshot>;
 }
 
@@ -130,10 +125,6 @@ const COUNTER_SET_REGISTRY: Record<string, string[]> = {
   'network interface': ['\\Network Interface(*)\\Bytes Total/sec'],
 };
 
-/**
- * Render a counter set listing — what `Get-Counter -ListSet <name>` returns.
- * Unknown sets produce a PS-style error line.
- */
 export function formatCounterSet(name: string): string {
   const lower = name.toLowerCase();
   const paths = COUNTER_SET_REGISTRY[lower];
@@ -157,13 +148,6 @@ function fmtTs(d: Date): string {
     (d.getHours() < 12 ? 'AM' : 'PM');
 }
 
-/**
- * Format a CounterSnapshot exactly like PowerShell's
- *   Timestamp                 CounterSamples
- *   ---------                 --------------
- *   <ts>                      \\host\path :
- *                                   <value>
- */
 export function formatCounterSnapshot(hostname: string, snap: CounterSnapshot): string {
   const lines: string[] = [];
   lines.push('Timestamp                 CounterSamples');
@@ -189,10 +173,6 @@ function expandWildcardCounters(path: string, dev: WindowsPC): string[] {
   return [path];
 }
 
-/**
- * Sample one counter path against the device's live state.
- * Unknown paths produce { unknown:true, value:0 }.
- */
 export function sampleCounter(
   path: string,
   dev: WindowsPC,
@@ -203,7 +183,6 @@ export function sampleCounter(
 
   if (lower === '\\processor(_total)\\% processor time') {
     const procs = dev.getProcessManager().getAllProcesses();
-    // Same heuristic as Linux vmstat: each runnable process pushes ~10%.
     const load = Math.min(100, procs.length * 1.2);
     return { path, value: load, unknown: false };
   }

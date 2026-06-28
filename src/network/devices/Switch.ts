@@ -160,7 +160,6 @@ export abstract class Switch extends Equipment {
   // ─── Port VLAN State (active/suspended) ────────────────────────
   protected portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
 
-  // ─── SPAN / port-mirroring ─────────────────────────────────────
   private readonly portMirror = new PortMirror();
   private mirrorReentrant = false;
 
@@ -982,9 +981,7 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
-    // SPAN: copy the frame to every rx destination as seen on the wire,
-    // before any pipeline drop (DAI, STP, VLAN filter) — real Cisco SPAN
-    // captures everything ingressed, regardless of forwarding outcome.
+    // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
 
     const taggedFrame = frame as TaggedEthernetFrame;
@@ -1209,16 +1206,6 @@ export abstract class Switch extends Equipment {
     }
   }
 
-  // ─── SPAN / port-mirroring egress ────────────────────────────────
-
-  /**
-   * Every frame leaving the switch passes through here. We intercept
-   * just before the actual Port.sendFrame to copy onto SPAN destinations
-   * registered against `portName` in tx direction.
-   *
-   * `mirrorReentrant` guards against recursion: the mirror emit itself
-   * goes through sendFrame, but must not trigger another mirror pass.
-   */
   protected override sendFrame(portName: string, frame: EthernetFrame): boolean {
     if (!this.mirrorReentrant) this.mirrorEgress(portName, frame);
     return super.sendFrame(portName, frame);
@@ -1248,7 +1235,6 @@ export abstract class Switch extends Equipment {
     }
   }
 
-  /** SPAN config façade for the vendor shells. */
   configureMirrorSource(id: number, portName: string, dir: MirrorDirection): boolean {
     if (!this.getPort(portName)) return false;
     this.portMirror.addSource(id, portName, dir);
