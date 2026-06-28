@@ -1,18 +1,16 @@
 /**
  * AbstractRoutingProtocolEngine — Template Method base for BGP/EIGRP.
  *
- * Owns the cross-cutting concerns once (lifecycle, enable/disable,
- * peer-locator seam, neighbour table, reactive projection + optional
- * event bus). Subclasses implement ONLY the protocol-specific bits via
- * three small hooks — keeping concrete engines lightweight and
- * Single-Responsibility:
- *
+ * Hooks subclasses implement:
  *   defaultConfig()              → the protocol's real default config
  *   computeNeighbors(peers)      → adjacency decision (config-driven)
  *   computeRoutes(peers)         → RIB contribution from real config
  *
- * Reactive: every converge() re-projects the Signal store and (if a
- * bus is wired) publishes a lifecycle event. No polling anywhere.
+ * Convergence model: pull, not push. converge() is invoked synchronously
+ * on demand by callers (Router.lookupRoute on every routed packet, and
+ * each show command before rendering). No timer or topology-change
+ * subscription drives it on its own — re-projection of the Signal store
+ * and bus event happen as a side-effect of each pull.
  */
 import type { IEventBus } from '@/events/EventBus';
 import type { IRoutingProtocolEngine } from './IRoutingProtocolEngine';
