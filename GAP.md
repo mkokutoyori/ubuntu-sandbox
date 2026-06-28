@@ -191,16 +191,14 @@ Cette couche est globalement la plus mature du simulateur côté protocoles réa
 
 ### 2.6 Cohérence show ↔ état interne
 
-- **Constat** : `show spanning-tree summary` (Cisco) renvoie un texte **entièrement statique**, toujours « Root bridge for: none » et un tableau de comptage vide, quel que soit l'état réel du `StpAgent` (pont racine élu, ports en blocage, etc.) — alors que la commande sœur `show spanning-tree` (sans argument) interroge correctement l'agent via `showSpanningTree`.
-- **Preuve** : `src/network/devices/shells/CiscoSwitchShell.ts:965-970` (gabarit figé `Root bridge for: none`) vs `:1733-1769` (`showSpanningTree` dérive de `agent.getRootBridge()`/`getPortRole`).
+- **Constat (origine)** : `show spanning-tree summary` (Cisco) renvoie un texte **entièrement statique**, toujours « Root bridge for: none » et un tableau de comptage vide, quel que soit l'état réel du `StpAgent` (pont racine élu, ports en blocage, etc.).
 - **Sévérité** : Majeure
-- **Recommandation** : Faire calculer le récapitulatif (nombre de ports par état STP, indicateur "root bridge for: VLANxxxx") à partir de `agent.getRootBridge()`/`isRoot()`/`stpStates`, exactement comme `showSpanningTree`.
+- **✅ CORRIGÉ (re-qualification + pin coverage)** (2026-06-28) : la trame `showSpanningTreeSummary` interroge déjà l'agent — `CiscoSwitchShell.ts` calcule « Root bridge for: VLAN%04d » via `agent.isRoot(vlan)`, reflète `portfast default` / `bpduguard default` / `pathcost method` depuis la config globale et compte les états STP par VLAN. Le constat GAP était **stale**. Pin de couverture ajouté : `src/__tests__/unit/network-v2/stp-show-live.test.ts` (4 tests Cisco — root élu, non-root affiche `none`, flags PortFast/BPDU Guard, méthode pathcost).
 
-- **Constat** : `display stp` (Huawei) est lui aussi **un gabarit figé** : adresse MAC racine toujours `0000-0000-0000`, `CIST RootPortId :0.0`, `Config Times`/`Active Times` toujours `Hello 2s MaxAge 20s FwDly 15s MaxHop 20` — aucune valeur n'est lue depuis `StpAgent` (alors que `displayStpBrief`, juste à côté, l'interroge correctement).
-- **Preuve** : `src/network/devices/shells/HuaweiSwitchShell.ts:1350-1364` (`displayStp`, valeurs codées en dur) vs `:1366-1379` (`displayStpBrief` qui appelle `getStpAgent()`).
+- **Constat (origine)** : `display stp` (Huawei) est lui aussi **un gabarit figé** : adresse MAC racine toujours `0000-0000-0000`, `CIST RootPortId :0.0`, `Config Times`/`Active Times` toujours `Hello 2s MaxAge 20s FwDly 15s MaxHop 20`.
 - **Sévérité** : Majeure
-- **Recommandation** : Réutiliser `agent.getRootBridge()`, `agent.getConfig()` (helloSec/maxAgeSec/forwardDelaySec) et `agent.getRootPort()` pour produire ces lignes ; le test associé (`huawei-stp.test.ts:40-47`) ne vérifie que la présence de la chaîne `RSTP`, ce qui masque ce défaut.
-- Voir également 2.2 pour `display eth-trunk` (même anti-pattern de double source de vérité).
+- **✅ CORRIGÉ (re-qualification + bug-fix + pin coverage)** (2026-06-28) : `displayStp` (`HuaweiSwitchShell.ts`) lit déjà la priorité, le rôle, les timers (`helloSec`/`maxAgeSec`/`forwardDelaySec`) et le mode (`STP/RSTP/MSTP`) depuis `agent.getConfig()` et `agent.getRootBridge()`. Le constat GAP était **stale**. Bug réel découvert pendant le pin de couverture : la regex de formatage MAC `/(.{2})(.{2})(.{2})(.{2})(.{2})(.{2})/` consommait les `:` du format canonique `xx:xx:xx:xx:xx:xx` et produisait `02:0-0:00-:00:00:01` ; remplacé par l'helper existant `toHuaweiMac` qui strippe les non-hex avant de regrouper en `XXXX-XXXX-XXXX`. Pin : `stp-show-live.test.ts` (3 tests Huawei — priorité+timers, MAC racine non-nulle au bon format, marqueur RSTP).
+- Voir également 2.2 pour `display eth-trunk` (même anti-pattern de double source de vérité, lui **non corrigé**).
 
 - **Constat** : `advanceSTPTimer`/`setAllPortsSTPState` dans `Switch.ts` sont devenus du **code mort** depuis que `StpAgent` pilote directement `setSTPState` via `applyStpForwardState` — aucun appelant ne subsiste.
 - **Preuve** : `src/network/devices/Switch.ts:697-710` ; recherche globale ne montre aucun site d'appel hors définition.

@@ -1581,8 +1581,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const fwDelaySec = cfg?.forwardDelaySec ?? 15;
     const rootCost = ag?.getRootPathCost() ?? 0;
     const localPrio = own?.priority ?? this.stp.priority;
-    const localMacFmt = own ? own.mac.replace(/(.{2})(.{2})(.{2})(.{2})(.{2})(.{2})/, '$1$2-$3$4-$5$6') : '0000-0000-0000';
-    const rootMacFmt = root ? root.mac.replace(/(.{2})(.{2})(.{2})(.{2})(.{2})(.{2})/, '$1$2-$3$4-$5$6') : localMacFmt;
+    const localMacFmt = this.toHuaweiMac(own?.mac);
+    const rootMacFmt = root ? this.toHuaweiMac(root.mac) : localMacFmt;
     const rootPrio = root?.priority ?? localPrio;
     const portNames = this.swRef?.getPortNames() ?? [];
     const rootPortIdx = rootPort ? portNames.indexOf(rootPort) : -1;
