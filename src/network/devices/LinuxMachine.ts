@@ -1042,7 +1042,7 @@ export abstract class LinuxMachine extends EndHost
   private containsNetworkCommand(input: string): boolean {
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
-    const words = input.split(/[\s;|&]+/);
+    const words = input.split(/[\s;|&"'`()]+/);
     return words.some(w =>
       w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' || w === 'ps' || w === 'man',
     );
