@@ -1036,11 +1036,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return { output: verboseHeader + forwardingError, exitCode: 0, connection };
   }
 
+  const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
+  const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
   const lines: string[] = [];
   if (issueNet.trim()) lines.push(issueNet.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
-  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
-  if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
+  if (printLastLog) {
+    lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
+  }
+  if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
   return { output: verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
 }
