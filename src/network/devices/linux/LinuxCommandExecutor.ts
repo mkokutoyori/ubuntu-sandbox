@@ -3409,6 +3409,21 @@ export class LinuxCommandExecutor {
       case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (n) => this.resolveServicePort(n)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
+      case 'ping':
+      case 'ping6': {
+        const isRoot = this.userMgr.currentUid === 0;
+        if (args.includes('-f') && !isRoot) {
+          return { output: 'ping: -f flood: Permission denied (privileged operation, must run as root)', exitCode: 2 };
+        }
+        const iIdx = args.indexOf('-i');
+        if (iIdx !== -1 && args[iIdx + 1]) {
+          const interval = parseFloat(args[iIdx + 1]);
+          if (!isNaN(interval) && interval < 0.2 && !isRoot) {
+            return { output: `ping: -i ${interval}: Permission denied (privileged operation, interval < 200ms requires root)`, exitCode: 2 };
+          }
+        }
+        return { output: '', exitCode: 0 };
+      }
       case 'dstat': {
         const parsed = parseDstatArgs(args);
         if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };

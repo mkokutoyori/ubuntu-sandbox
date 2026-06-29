@@ -55,4 +55,10 @@ wait`;
     const arp = await pc.executeCommand('arp -n');
     expect(arp).toMatch(/^192\.168\.1\.2\b/m);
   });
+
+  it('bash -c "<network cmd>" reaches the real machine network stack', async () => {
+    await pc.executeCommand('bash -c "ping -c 1 -W 1 192.168.1.2 >/dev/null"');
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
 });

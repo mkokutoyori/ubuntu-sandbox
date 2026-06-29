@@ -1051,12 +1051,18 @@ export abstract class LinuxMachine extends EndHost
   private async runShellScript(script: string): Promise<string> {
     const collected: string[] = [];
     const skipBuiltins = new Set(['wait', 'jobs', 'bg', 'disown']);
-    this.executor.runScriptWithCollector(script, (argv) => {
+    const collect = (argv: string[]): { output: string; exitCode: number } => {
       if (argv.length === 0) return { output: '', exitCode: 0 };
       if (skipBuiltins.has(argv[0])) return { output: '', exitCode: 0 };
+      const inner = LinuxMachine.extractBashCScript(argv);
+      if (inner !== null) {
+        this.executor.runScriptWithCollector(inner, collect);
+        return { output: '', exitCode: 0 };
+      }
       collected.push(LinuxMachine.quoteArgv(argv));
       return { output: '', exitCode: 0 };
-    });
+    };
+    this.executor.runScriptWithCollector(script, collect);
 
     const outputs: string[] = [];
     for (const line of collected) {
@@ -1064,6 +1070,16 @@ export abstract class LinuxMachine extends EndHost
       if (out) outputs.push(out);
     }
     return outputs.join('\n');
+  }
+
+  private static extractBashCScript(argv: string[]): string | null {
+    if (argv[0] !== 'bash' && argv[0] !== 'sh') return null;
+    for (let i = 1; i < argv.length; i++) {
+      const a = argv[i];
+      if (!a.startsWith('-') || a === '-') break;
+      if (a.includes('c')) return argv[i + 1] ?? null;
+    }
+    return null;
   }
 
   private static quoteArgv(argv: string[]): string {
@@ -1079,6 +1095,7 @@ export abstract class LinuxMachine extends EndHost
     if (/\$\(/.test(input)) return true;
     if (/\n/.test(input.trim())) return true;
     if (/(^|\s)wait(\s|;|$)/.test(input)) return true;
+    if (/(^|\s|;|\||&)(bash|sh)(\s+-[a-zA-Z]*c\b|\s+-[a-zA-Z]*c$)/.test(input)) return true;
     return false;
   }
 
