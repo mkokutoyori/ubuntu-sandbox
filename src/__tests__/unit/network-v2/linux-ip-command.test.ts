@@ -15,6 +15,7 @@ import {
   type IpRouteEntry,
   type IpNeighborEntry,
 } from '@/network/devices/linux/LinuxIpCommand';
+import { IPAddress, MACAddress } from '@/network/core/types';
 
 // ─── Mock IpNetworkContext ──────────────────────────────────────────────
 
@@ -64,12 +65,11 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
   return {
     getInterfaceNames: () => [...interfaces.keys()],
     getInterfaceInfo: (name: string) => interfaces.get(name) || null,
-    configureInterface: (ifName: string, ip: string, cidr: number) => {
+    configureInterface: (ifName: string, ip: IPAddress, cidr: number) => {
       const iface = interfaces.get(ifName);
       if (!iface) return `Cannot find device "${ifName}"`;
-      iface.ip = ip;
+      iface.ip = ip.toString();
       iface.cidr = cidr;
-      // Simple mask computation for /24
       const maskBits = (0xFFFFFFFF << (32 - cidr)) >>> 0;
       iface.mask = [
         (maskBits >>> 24) & 0xFF,
@@ -88,11 +88,11 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
       return '';
     },
     getRoutingTable: () => routes,
-    addDefaultRoute: (gateway: string) => {
+    addDefaultRoute: (gateway: IPAddress) => {
       routes.push({
         network: '0.0.0.0',
         cidr: 0,
-        nextHop: gateway,
+        nextHop: gateway.toString(),
         iface: 'eth0',
         type: 'default',
         metric: 0,
@@ -100,11 +100,11 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
       });
       return '';
     },
-    addStaticRoute: (network: string, cidr: number, gateway: string, metric?: number) => {
+    addStaticRoute: (network: IPAddress, cidr: number, gateway: IPAddress, metric?: number) => {
       routes.push({
-        network,
+        network: network.toString(),
         cidr,
-        nextHop: gateway,
+        nextHop: gateway.toString(),
         iface: 'eth0',
         type: 'static',
         metric: metric ?? 100,
@@ -118,12 +118,15 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
       routes.splice(idx, 1);
       return '';
     },
-    deleteRoute: (network: string, cidr: number) => {
-      const idx = routes.findIndex(r => r.network === network && r.cidr === cidr && r.type === 'static');
+    deleteRoute: (network: IPAddress, cidr: number) => {
+      const idx = routes.findIndex(r => r.network === network.toString() && r.cidr === cidr && r.type === 'static');
       if (idx === -1) return 'RTNETLINK answers: No such process';
       routes.splice(idx, 1);
       return '';
     },
+    addNeighbor: (_ip: IPAddress, _mac: MACAddress, _ifName: string) => '',
+    deleteNeighbor: (_ip: IPAddress, _ifName: string) => '',
+    flushNeighbors: () => '',
     getNeighborTable: () => neighbors,
     setInterfaceUp: (ifName: string) => {
       const iface = interfaces.get(ifName);
@@ -437,13 +440,13 @@ describe('ip command', () => {
     });
 
     it('should show routes with "ip route show"', () => {
-      ctx.addDefaultRoute('192.168.1.1');
+      ctx.addDefaultRoute(new IPAddress('192.168.1.1'));
       const output = executeIpCommand(ctx, ['route', 'show']);
       expect(output).toContain('default via 192.168.1.1');
     });
 
     it('should show routes with "ip r" alias', () => {
-      ctx.addDefaultRoute('192.168.1.1');
+      ctx.addDefaultRoute(new IPAddress('192.168.1.1'));
       const output = executeIpCommand(ctx, ['r']);
       expect(output).toContain('default via 192.168.1.1');
     });
@@ -475,7 +478,7 @@ describe('ip command', () => {
     });
 
     it('should delete default route', () => {
-      ctx.addDefaultRoute('192.168.1.1');
+      ctx.addDefaultRoute(new IPAddress('192.168.1.1'));
       const output = executeIpCommand(ctx, ['route', 'del', 'default']);
       expect(output).toBe('');
       expect(ctx.getRoutingTable().length).toBe(0);
@@ -487,7 +490,7 @@ describe('ip command', () => {
     });
 
     it('should delete static route', () => {
-      ctx.addStaticRoute('10.0.0.0', 8, '192.168.1.1');
+      ctx.addStaticRoute(new IPAddress('10.0.0.0'), 8, new IPAddress('192.168.1.1'));
       const output = executeIpCommand(ctx, ['route', 'del', '10.0.0.0/8']);
       expect(output).toBe('');
       expect(ctx.getRoutingTable().length).toBe(0);
@@ -736,7 +739,7 @@ describe('ip command', () => {
     });
 
     it('should handle "ip route get" with destination', () => {
-      ctx.addDefaultRoute('192.168.1.1');
+      ctx.addDefaultRoute(new IPAddress('192.168.1.1'));
       const output = executeIpCommand(ctx, ['route', 'get', '8.8.8.8']);
       // Should show the route that would be used
       expect(output).toContain('8.8.8.8');

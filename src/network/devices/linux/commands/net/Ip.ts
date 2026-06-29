@@ -63,26 +63,23 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };
     },
-    addInterfaceIP(ifName: string, ip: string, cidr: number): string {
+    addInterfaceIP(ifName: string, ip: IPAddress, cidr: number): string {
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        const addr = new IPAddress(ip);
-        if (!port.getIPAddress()) net.configureInterface(ifName, addr, mask);
-        else port.addSecondaryIP(addr, mask);
+        if (!port.getIPAddress()) net.configureInterface(ifName, ip, mask);
+        else port.addSecondaryIP(ip, mask);
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
-    removeInterfaceAddress(ifName: string, ip: string): string {
+    removeInterfaceAddress(ifName: string, ip: IPAddress): string {
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
-      const addr = IPAddress.tryParse(ip);
-      if (!addr) return 'RTNETLINK answers: Cannot assign requested address';
-      if (port.getIPAddress()?.equals(addr)) { net.clearInterfaceIP(ifName); return ''; }
-      if (port.getSecondaryIPs().some(e => e.ip.equals(addr))) { port.removeSecondaryIP(addr); return ''; }
+      if (port.getIPAddress()?.equals(ip)) { net.clearInterfaceIP(ifName); return ''; }
+      if (port.getSecondaryIPs().some(e => e.ip.equals(ip))) { port.removeSecondaryIP(ip); return ''; }
       return 'RTNETLINK answers: Cannot assign requested address';
     },
     getIPv6RoutingTable() {
@@ -95,12 +92,12 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         metric: r.metric,
       }));
     },
-    configureInterface(ifName: string, ip: string, cidr: number): string {
+    configureInterface(ifName: string, ip: IPAddress, cidr: number): string {
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        net.configureInterface(ifName, new IPAddress(ip), mask);
+        net.configureInterface(ifName, ip, mask);
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -127,25 +124,20 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
           : undefined,
       }));
     },
-    addDefaultRoute(gateway: string): string {
-      try {
-        net.setDefaultGateway(new IPAddress(gateway));
-        return '';
-      } catch (e) {
-        return `Error: ${e instanceof Error ? e.message : String(e)}`;
-      }
+    addDefaultRoute(gateway: IPAddress): string {
+      net.setDefaultGateway(gateway);
+      return '';
     },
-    addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
+    addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        const net4 = new IPAddress(network);
-        if (!net4.networkAddress(mask).equals(net4)) {
-          return `Error: an inet prefix is expected rather than "${network}/${cidr}".`;
+        if (!network.networkAddress(mask).equals(network)) {
+          return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
         const exists = net.getRoutingTable().some(
-          r => r.network.toString() === net4.toString() && r.mask.toCIDR() === cidr);
+          r => r.network.toString() === network.toString() && r.mask.toCIDR() === cidr);
         if (exists) return 'RTNETLINK answers: File exists';
-        if (!net.addStaticRoute(net4, mask, new IPAddress(gateway), metric ?? 100)) {
+        if (!net.addStaticRoute(network, mask, gateway, metric ?? 100)) {
           return 'RTNETLINK answers: Network is unreachable';
         }
         return '';
@@ -153,14 +145,13 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
-    addDeviceRoute(network: string, cidr: number, iface: string): string {
+    addDeviceRoute(network: IPAddress, cidr: number, iface: string): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        const net4 = new IPAddress(network);
-        if (!net4.networkAddress(mask).equals(net4)) {
-          return `Error: an inet prefix is expected rather than "${network}/${cidr}".`;
+        if (!network.networkAddress(mask).equals(network)) {
+          return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
-        if (!net.addDeviceRoute(net4, mask, iface, 0)) {
+        if (!net.addDeviceRoute(network, mask, iface, 0)) {
           return `Cannot find device "${iface}"`;
         }
         return '';
@@ -173,10 +164,10 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       net.clearDefaultGateway();
       return '';
     },
-    deleteRoute(network: string, cidr: number): string {
+    deleteRoute(network: IPAddress, cidr: number): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.removeRoute(new IPAddress(network), mask)) {
+        if (!net.removeRoute(network, mask)) {
           return 'RTNETLINK answers: No such process';
         }
         return '';
@@ -196,23 +187,16 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       }
       return entries;
     },
-    addNeighbor(ip: string, mac: string, ifName: string): string {
+    addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
-      try {
-        net.addStaticARP(new IPAddress(ip), new MACAddress(mac), ifName);
-        return '';
-      } catch {
-        return 'RTNETLINK answers: Invalid argument';
-      }
+      net.addStaticARP(ip, mac, ifName);
+      return '';
     },
-    deleteNeighbor(ip: string, ifName: string): string {
+    deleteNeighbor(ip: IPAddress, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
-      let ipObj: IPAddress;
-      try { ipObj = new IPAddress(ip); }
-      catch { return 'RTNETLINK answers: Invalid argument'; }
-      const removed = net.deleteARP(ipObj);
+      const removed = net.deleteARP(ip);
       if (!removed) return 'RTNETLINK answers: No such file or directory';
       return '';
     },
