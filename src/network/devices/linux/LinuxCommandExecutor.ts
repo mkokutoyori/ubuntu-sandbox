@@ -874,7 +874,7 @@ export class LinuxCommandExecutor {
       const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
       if (cd) return cd;
     }
-    return null;
+    return cfg.chrootDirectory;
   }
 
   private sshHomeDir(): string {
