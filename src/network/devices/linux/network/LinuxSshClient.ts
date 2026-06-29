@@ -29,6 +29,7 @@ import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
+import { parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -206,6 +207,8 @@ interface SshAuthResolution {
   method: 'publickey' | 'password' | null;
   /** Methods the client is willing to attempt — drives the failure message. */
   clientMethods: string[];
+  /** When method='publickey', the authorized_keys entry that matched. */
+  matchedKey?: AuthorizedKey | null;
 }
 
 /** Read a single sshd_config directive's first value (lower-cased). */
@@ -266,16 +269,49 @@ function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | 
 
 /** Whether the remote user's authorized_keys lists the offered identity. */
 function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: string): boolean {
+  return findMatchedAuthorizedKey(exec, remoteUser, identity) !== null;
+}
+
+/**
+ * Match the client's source IP / hostname against an authorized_keys
+ * `from="patternList"` option. Comma-separated; entries prefixed with `!`
+ * are negations; `*` and `?` glob; literal IPs match exactly.
+ */
+function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
+  let allowed = false;
+  for (const raw of pattern.split(',')) {
+    const p = raw.trim();
+    if (!p) continue;
+    const negate = p.startsWith('!');
+    const body = negate ? p.slice(1) : p;
+    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+    if (re.test(sourceIp) || re.test(sourceHost)) {
+      if (negate) return false;
+      allowed = true;
+    }
+  }
+  return allowed;
+}
+
+/**
+ * Return the parsed authorized_keys entry that matches the offered
+ * identity, so callers can apply per-key options (`command="..."`,
+ * `no-pty`, …). Null when no entry matches or strict-modes fails.
+ */
+function findMatchedAuthorizedKey(
+  exec: RemoteExecLike, remoteUser: string, identity: string,
+): import('../../../protocols/ssh/SshPureUtils').AuthorizedKey | null {
   const entry = exec.userMgr.getUser(remoteUser);
-  if (!entry) return false;
+  if (!entry) return null;
   const home = entry.home ?? `/home/${remoteUser}`;
-  if (!passesStrictModes(exec, entry.uid, home)) return false;
+  if (!passesStrictModes(exec, entry.uid, home)) return null;
   const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
-  const id = identity.split(/\s+/);
-  return ak.split('\n').some((line) => {
-    const t = line.trim().split(/\s+/);
-    return t.length >= 2 && t[0] === id[0] && t[1] === id[1];
-  });
+  const [idAlgo, idMaterial] = identity.split(/\s+/);
+  for (const line of ak.split('\n')) {
+    const parsed = parseAuthorizedKeysLine(line);
+    if (parsed && parsed.algorithm === idAlgo && parsed.material === idMaterial) return parsed;
+  }
+  return null;
 }
 
 /**
@@ -320,8 +356,15 @@ function resolveSshAuthMethod(
 
   if (clientPubkey && serverPubkey) {
     const identity = localIdentityPublicKey(opts, flags);
-    if (identity && remoteAcceptsKey(exec, remoteUser, identity)) {
-      return { method: 'publickey', clientMethods };
+    if (identity) {
+      const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity);
+      if (matchedKey) {
+        if (matchedKey.options?.from && !sourceMatchesFromPattern(opts.sourceIp, opts.sourceHostname, matchedKey.options.from)) {
+          // fall through to password
+        } else {
+          return { method: 'publickey', clientMethods, matchedKey };
+        }
+      }
     }
   }
   if (clientPassword && serverPassword) {
@@ -793,7 +836,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const sIdx = flags.indexOf('-s');
   const isSftpSubsystem = sIdx >= 0 && flags[sIdx + 1] === 'sftp';
   if (remoteCmd && !isSftpSubsystem) {
-    const forced = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    const globalForced = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    const keyForced = auth.matchedKey?.options?.command ?? null;
+    const forced = globalForced ?? keyForced;
     if (forced === 'internal-sftp') {
       return {
         output: 'This service allows sftp connections only.\n',
@@ -894,7 +939,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // ForceCommand also overrides the interactive shell: the user lands
   // directly into the forced command instead of getting a login shell.
   if (!remoteCmd) {
-    const forcedInteractive = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    const forcedInteractive =
+      readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname)
+      ?? auth.matchedKey?.options?.command
+      ?? null;
     if (forcedInteractive && forcedInteractive !== 'internal-sftp') {
       const restore = swapRemoteUser(machine, remoteUser);
       const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
