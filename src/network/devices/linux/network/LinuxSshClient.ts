@@ -899,10 +899,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     if (forced) remoteCmd = forced;
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     const keyBansAgent = auth.matchedKey?.options?.noAgentForwarding === true;
+    const serverBansAgent = remoteExec
+      ? readRemoteSshdDirective(remoteExec, 'AllowAgentForwarding') === 'no'
+      : false;
+    const agentForbidden = keyBansAgent || serverBansAgent;
     // `-A` agent forwarding: expose the local agent's identities to the
-    // remote command, restoring the remote agent afterwards. An
-    // authorized_keys `no-agent-forwarding` option vetoes the request.
-    const restoreAgent = flags.includes('-A') && !keyBansAgent
+    // remote command, restoring the remote agent afterwards. The server's
+    // `AllowAgentForwarding no` and any matching authorized_keys
+    // `no-agent-forwarding` option both veto the request.
+    const restoreAgent = flags.includes('-A') && !agentForbidden
       ? forwardSshAgent(opts, machine)
       : null;
     let execOut = '';
@@ -940,8 +945,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // -A: expose the local agent through SSH_AUTH_SOCK on the remote
       // shell so any `ssh` invocation inside the remote command finds
       // the forwarded identities — matches OpenSSH agent forwarding.
-      // Skipped when the authorized_keys entry forbids it.
-      if (flags.includes('-A') && !keyBansAgent) {
+      // Skipped when the server or the authorized_keys entry forbids it.
+      if (flags.includes('-A') && !agentForbidden) {
         forwarded['SSH_AUTH_SOCK'] = `/tmp/ssh-${remoteUser}/agent.${SSH_CLIENT_FORWARD_PID}`;
       }
       // authorized_keys `environment="K=V"` — overlay onto the remote env
