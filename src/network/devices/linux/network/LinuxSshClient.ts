@@ -311,7 +311,8 @@ function findMatchedAuthorizedKey(
   const entry = exec.userMgr.getUser(remoteUser);
   if (!entry) return null;
   const home = entry.home ?? `/home/${remoteUser}`;
-  if (!passesStrictModes(exec, entry.uid, home)) return null;
+  const strictModesOn = readRemoteSshdDirective(exec, 'StrictModes') !== 'no';
+  if (strictModesOn && !passesStrictModes(exec, entry.uid, home)) return null;
   const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
   const [idAlgo, idMaterial] = identity.split(/\s+/);
   for (const line of ak.split('\n')) {
@@ -323,9 +324,9 @@ function findMatchedAuthorizedKey(
 
 /**
  * OpenSSH StrictModes check: ~/.ssh and authorized_keys must be owned by
- * the user (or root) and not be group/world writable. Defaults to enabled
- * (the simulator does not read StrictModes back since OpenSSH ships it
- * as `yes`).
+ * the user (or root) and not be group/world writable. Caller decides
+ * whether to run the check based on the StrictModes directive (default
+ * yes per OpenSSH).
  */
 function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
   if (!exec.vfs.resolveInode) return true;
