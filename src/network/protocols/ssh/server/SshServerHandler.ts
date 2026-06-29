@@ -85,9 +85,24 @@ export class SshServerHandler {
 
     const timers = new TimerSet(() => getDefaultScheduler());
     let keepaliveTimer: symbol | null = null;
+    let graceTimer: symbol | null = null;
     let missedAcks = 0;
     const intervalSec = this.ctx.config.clientAliveInterval ?? 0;
     const maxMissed = this.ctx.config.clientAliveCountMax ?? 0;
+    const graceSec = this.ctx.config.loginGraceTime ?? 0;
+    if (graceSec > 0) {
+      graceTimer = timers.setTimeout(() => {
+        if (userCtx) return;
+        this.eventBus.emit({
+          kind: 'client_disconnected',
+          user: '',
+          ip: clientIp,
+          reason: 'auth_grace_timeout',
+          timestamp: Date.now(),
+        });
+        conn.close();
+      }, graceSec * 1000);
+    }
     if (intervalSec > 0 && maxMissed > 0) {
       keepaliveTimer = timers.setInterval(() => {
         missedAcks += 1;
@@ -169,6 +184,8 @@ export class SshServerHandler {
             if (result.ok) {
               userCtx = result.userCtx;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
+              timers.clear(graceTimer);
+              graceTimer = null;
               return;
             }
             authFailures += 1;

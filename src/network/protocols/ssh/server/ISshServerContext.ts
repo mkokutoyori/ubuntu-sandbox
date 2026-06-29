@@ -23,6 +23,7 @@ export interface SshServerConfig {
   readonly pubkeyAuthentication: boolean;
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
+  readonly loginGraceTime?: number;
 }
 
 export interface ILinuxShell {
