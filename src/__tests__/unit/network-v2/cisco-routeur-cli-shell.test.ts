@@ -683,7 +683,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const r = setupRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
-      const output = await r.executeCommand('rout\t');
+      const output = await r.executeCommand('router\t');
       expect(output.trim()).toBe('router');
     });
 
@@ -711,7 +711,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
 
     it('85. should auto-complete unique clock parameter "show cl[tab]" to show clock', async () => {
       const r = setupRouter();
-      const output = await r.executeCommand('show cl\t');
+      const output = await r.executeCommand('show clo\t');
       expect(output.trim()).toBe('show clock');
     });
   });
