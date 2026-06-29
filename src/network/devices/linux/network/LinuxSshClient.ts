@@ -502,12 +502,17 @@ function setupPortForwards(
     ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding')
     : null;
   const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
+  const permitOpenList = remoteExec ? readPermitOpenList(remoteExec) : ['any'];
   const permits = (f: SshPortForward): boolean => {
     if (keyBansForwarding) return false;
     if (policy === 'no') return false;
     if (policy === 'local') return f.kind !== 'remote';
     if (policy === 'remote') return f.kind === 'remote';
     return true; // null / 'yes' / 'all' / unrecognised → OpenSSH default
+  };
+  const destAllowed = (f: SshPortForward): boolean => {
+    if (f.kind !== 'local' || !f.destHost || f.destPort === null) return true;
+    return matchPermitOpen(permitOpenList, f.destHost, f.destPort);
   };
 
   const remoteForwarding = (machine as unknown as {
@@ -520,7 +525,7 @@ function setupPortForwards(
 
   let diagnostics = '';
   for (const fwd of forwards) {
-    if (!permits(fwd)) {
+    if (!permits(fwd) || !destAllowed(fwd)) {
       diagnostics +=
         'channel 0: open failed: administratively prohibited: open failed\n';
       continue;
@@ -539,6 +544,31 @@ function setupPortForwards(
     }
   }
   return diagnostics;
+}
+
+function readPermitOpenList(exec: RemoteExecLike): string[] {
+  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const out: string[] = [];
+  for (const line of raw.split('\n')) {
+    const m = /^\s*PermitOpen\s+(.+?)\s*$/i.exec(line);
+    if (m) out.push(...m[1].split(/\s+/).filter(Boolean));
+  }
+  return out.length > 0 ? out : ['any'];
+}
+
+function matchPermitOpen(list: readonly string[], destHost: string, destPort: number): boolean {
+  if (list.includes('any')) return true;
+  if (list.includes('none')) return false;
+  for (const entry of list) {
+    const colon = entry.lastIndexOf(':');
+    if (colon < 0) continue;
+    const host = entry.slice(0, colon);
+    const port = entry.slice(colon + 1);
+    const portOk = port === '*' || port === String(destPort);
+    const hostOk = host === '*' || host === destHost;
+    if (portOk && hostOk) return true;
+  }
+  return false;
 }
 
 function rebindToLoopback(fwd: SshPortForward): SshPortForward {

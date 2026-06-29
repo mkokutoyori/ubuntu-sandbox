@@ -123,6 +123,7 @@ export interface SshdServerConfigSnapshot {
   readonly hostKeyAlgorithms: readonly string[];
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
+  readonly permitOpen: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -212,6 +213,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly macs: readonly string[];
   readonly kexAlgorithms: readonly string[];
   readonly hostKeyAlgorithms: readonly string[];
+  readonly permitOpen: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -263,6 +265,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.hostKeyAlgorithms = s.hostKeyAlgorithms;
     this.forceCommand = s.forceCommand;
     this.chrootDirectory = s.chrootDirectory;
+    this.permitOpen = s.permitOpen;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -316,6 +319,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       hostKeyAlgorithms: Object.freeze([...DEFAULT_HOSTKEY_ALGOS]),
       forceCommand: null,
       chrootDirectory: null,
+      permitOpen: Object.freeze(['any']),
       matchBlocks: Object.freeze([]),
     });
   }
@@ -586,6 +590,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
       const [name, ...rest] = value.split(/\s+/);
       return cfg.withSubsystem(name, rest.join(' '));
     }
+    case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     default: return cfg;
   }
 }
