@@ -1419,11 +1419,11 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(output.trim()).toBe('');
     });
 
-    it('121. should reject clear ip nat translation tcp if targeting non-existent mapping', async () => {
+    it('121. should silently succeed on clear ip nat translation tcp when no matching mapping exists (IOS behaviour)', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
       const output = await topo.r1.executeCommand('clear ip nat translation tcp 10.0.0.1 1234 20.0.0.1 80');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
     it('122. should preserve overload config after write memory followed by reload', async () => {
@@ -2343,10 +2343,10 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('210. should reject showing statistics if unprivileged user executes command', async () => {
+    it('210. should allow showing statistics from user EXEC mode (IOS show is available from user EXEC)', async () => {
       const topo = setupNATTopology();
       const output = await topo.r1.executeCommand('show ip nat statistics');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.toLowerCase()).toContain('total');
     });
 
     it('211. should show active pool allocation percentage inside show ip nat statistics', async () => {
@@ -3192,12 +3192,12 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(output.toLowerCase()).toContain('error');
     });
 
-    it('300. should execute successfully and return status 0 on default VRP nat server configuration', async () => {
+    it('300. should execute successfully and return empty output on default VRP nat server configuration', async () => {
       const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
-      const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80 && echo "VRP_OK"');
-      expect(output).toContain('VRP_OK');
+      const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
+      expect(output.trim()).toBe('');
     });
   });
 
@@ -3376,6 +3376,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
     it('315. should reject route mapping inside dynamic pool config if pool subnet overlaps with WAN gateway interface IP', async () => {
       const topo = setupNATTopology();
+      await configureBasicNATRouting(topo);
       await topo.r1.executeCommand('enable');
       await topo.r1.executeCommand('configure terminal');
       // WAN interface has 203.0.113.1, pool cannot overlap this IP as pool target
@@ -3637,6 +3638,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     it('338. should support clearing dynamic translation mappings matching specific inside local IP inside VRF', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
+      await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip vrf RED');
+      await topo.r1.executeCommand('end');
       const output = await topo.r1.executeCommand('clear ip nat translation inside 192.168.1.10 vrf RED');
       expect(output.trim()).toBe('');
     });
@@ -3644,6 +3648,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     it('339. should support clearing dynamic translation mappings matching specific inside global IP inside VRF', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
+      await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip vrf RED');
+      await topo.r1.executeCommand('end');
       const output = await topo.r1.executeCommand('clear ip nat translation inside 203.0.113.10 vrf RED');
       expect(output.trim()).toBe('');
     });
@@ -3651,6 +3658,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     it('340. should support clearing dynamic translation mappings matching specific outside local IP inside VRF', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
+      await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip vrf RED');
+      await topo.r1.executeCommand('end');
       const output = await topo.r1.executeCommand('clear ip nat translation outside 198.51.100.10 vrf RED');
       expect(output.trim()).toBe('');
     });
@@ -3658,6 +3668,9 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     it('341. should support clearing dynamic translation mappings matching specific outside global IP inside VRF', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
+      await topo.r1.executeCommand('configure terminal');
+      await topo.r1.executeCommand('ip vrf RED');
+      await topo.r1.executeCommand('end');
       const output = await topo.r1.executeCommand('clear ip nat translation outside 198.51.100.10 vrf RED');
       expect(output.trim()).toBe('');
     });

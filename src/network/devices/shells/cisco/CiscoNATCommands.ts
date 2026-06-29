@@ -259,6 +259,17 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       const pE = p.endIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
       if (!(endN < pS || startN > pE)) return `% Pool range overlaps existing pool ${p.name}.`;
     }
+    const router = ctx.r();
+    for (const ifName of engine.getOutsideInterfaces()) {
+      const port = router.getPort?.(ifName);
+      const ipRaw = port?.getIPAddress?.();
+      const ip = ipRaw != null ? String(ipRaw) : '';
+      if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) continue;
+      const n = ip.split('.').reduce((a: number, x: string) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+      if (n >= startN && n <= endN) {
+        return `% Pool overlaps WAN gateway ${ifName} (${ip}).`;
+      }
+    }
     engine.addPool({ name, startIP, endIP });
     (engine.getPool(name) as any).prefixLen = effPrefix;
     return '';
@@ -480,7 +491,7 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     if (!name) return '% Missing VRF name.';
     const router = getRouter() as any;
     const vrfs = router._vrfs as Map<string, unknown> | undefined;
-    if (vrfs && vrfs.size > 0 && !vrfs.has(name)) return `% VRF ${name} does not exist.`;
+    if (!vrfs?.has?.(name)) return `% VRF ${name} does not exist.`;
     return null;
   };
   trie.registerGreedy('clear ip nat translation inside', 'Clear inside NAT translation entries', (args) => {
@@ -580,6 +591,7 @@ export function registerNATShowCommands(trie: CommandTrie, getRouter: () => Rout
 
 export function showNATTranslations(router: Router): string {
   const engine = router._getNATEngine();
+  engine.purgeStale();
   const entries = engine.getTranslations();
   const outsideStatic = engine.getOutsideStaticEntries();
   const networkStatic = engine.getStaticEntries().filter(e => e.isNetwork);
@@ -624,10 +636,11 @@ export function showNATTranslationsVerbose(router: Router, filterArgs: string[] 
   }
   let entries = router._getNATEngine().getTranslations();
   if (filterIP) entries = entries.filter(e => e.insideLocal.includes(filterIP!) || e.insideGlobal.includes(filterIP!));
-  if (entries.length === 0) return 'No NAT entries.';
+  const header = `Pro  Inside global          Inside local           Outside local          Outside global`;
+  if (entries.length === 0) return `${header}\nNo NAT entries.`;
 
   const lines: string[] = [];
-  lines.push(`Pro  Inside global          Inside local           Outside local          Outside global`);
+  lines.push(header);
   for (const e of entries) {
     lines.push(`${e.proto.padEnd(4)} ${e.insideGlobal.padEnd(23)}${e.insideLocal.padEnd(23)}${e.outsideLocal.padEnd(23)}${e.outsideGlobal}`);
     lines.push(`    create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --`);

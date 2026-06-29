@@ -408,6 +408,18 @@ export class NATEngine {
         const translated = translateNetworkOffset(srcIP, entry);
         if (translated) {
           this.hitCount++;
+          const key = makeKey(proto, srcIP, srcPort);
+          if (!this.sessions.has(key)) {
+            const session: NatSession = {
+              protocol: proto,
+              localIP: srcIP, localPort: srcPort,
+              globalIP: translated, globalPort: srcPort,
+              outsideIP: dstIP, outsidePort: dstPort,
+              timestamp: Date.now(),
+            };
+            this.sessions.set(key, session);
+            this.reverseSessions.set(makeKey(proto, translated, srcPort), session);
+          }
           return rewriteSrcIP(pkt, translated);
         }
       } else if (entry.localIP === srcIP) {
@@ -483,15 +495,20 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
+          const poolIP = this.allocatePoolAddress(pool, srcIP);
+          if (poolIP === null) {
+            this.missCount++;
+            continue;
+          }
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
-            globalIP: pool.startIP, globalPort: srcPort,
+            globalIP: poolIP, globalPort: srcPort,
             outsideIP: dstIP, outsidePort: dstPort,
             timestamp: Date.now(),
           };
           this.sessions.set(sessionKey, session);
-          const revKey = makeKey(proto, pool.startIP, srcPort);
+          const revKey = makeKey(proto, poolIP, srcPort);
           this.reverseSessions.set(revKey, session);
           this.missCount++;
           this.getBus().publish({
@@ -683,6 +700,34 @@ export class NATEngine {
    * traffic of the older session was then delivered to the newer host.
    * Returns null when the whole ephemeral range is in use.
    */
+  /**
+   * Allocate the next free pool address for an inside source, sticky per
+   * inside IP (RFC 6888 REQ-2 — destination-independent mapping). Returns
+   * null when the pool is exhausted (no more unique addresses available).
+   */
+  private allocatePoolAddress(pool: NatPool, insideIP: string): string | null {
+    for (const s of this.sessions.values()) {
+      if (s.localIP === insideIP) {
+        const sN = tryIpToUint32(s.globalIP);
+        const start = tryIpToUint32(pool.startIP);
+        const end = tryIpToUint32(pool.endIP);
+        if (sN != null && start != null && end != null && sN >= start && sN <= end) {
+          return s.globalIP;
+        }
+      }
+    }
+    const startN = tryIpToUint32(pool.startIP);
+    const endN = tryIpToUint32(pool.endIP);
+    if (startN == null || endN == null) return null;
+    const taken = new Set<string>();
+    for (const s of this.sessions.values()) taken.add(s.globalIP);
+    for (let n = startN; n <= endN; n++) {
+      const ip = uint32ToIp(n);
+      if (!taken.has(ip)) return ip;
+    }
+    return null;
+  }
+
   private allocatePort(proto: number, globalIP: string): number | null {
     const span = this.maxPort - NAT_EPHEMERAL_MIN + 1;
     for (let i = 0; i < span; i++) {

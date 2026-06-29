@@ -511,6 +511,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
+      const loopMatch = args.join(' ').match(/^loopback\s*(\d+)$/i);
+      if (loopMatch) {
+        this.selectedInterface = `LoopBack${loopMatch[1]}`;
+        this.mode = 'interface';
+        return '';
+      }
+
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -1990,10 +1997,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     // Vlanif L3 interfaces (SVIs configured via 'interface Vlanif<N>')
-    const svis = (sw as unknown as { getSvis?: () => Array<{ vlanId: number; ip?: string; mask?: string }> }).getSvis?.();
+    const svis = (sw as unknown as { getSvis?: () => Array<{ vlan: number; ip?: unknown; mask?: unknown }> }).getSvis?.();
     if (svis) {
       for (const svi of svis) {
-        const name = `Vlanif${svi.vlanId}`;
+        const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
         if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
