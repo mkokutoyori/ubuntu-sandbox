@@ -8,6 +8,7 @@ export interface UtmpRecord {
   loginAt: number;
   closedAt?: number | null;
   shellPid?: number;
+  sshdPid?: number;
   uid?: number;
 }
 
@@ -44,6 +45,15 @@ export class UtmpSync {
     const wtmp = this.readWtmp();
     wtmp.push(rec);
     this.writeRaw(WTMP_PATH, wtmp);
+  }
+
+  updateSessionPids(tty: string, shellPid: number, sshdPid?: number): void {
+    const patch = (r: UtmpRecord): UtmpRecord =>
+      (r.tty === tty && !r.closedAt && r.user !== 'reboot')
+        ? { ...r, shellPid, sshdPid: sshdPid ?? r.sshdPid }
+        : r;
+    this.writeRaw(UTMP_PATH, this.readUtmp().map(patch));
+    this.writeRaw(WTMP_PATH, this.readWtmp().map(patch));
   }
 
   closeSession(tty: string, closedAt: Date): void {

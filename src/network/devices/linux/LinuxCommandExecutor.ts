@@ -88,6 +88,7 @@ import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { renderLast, renderLastb } from './network/lastFormatter';
+import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -2831,6 +2832,20 @@ export class LinuxCommandExecutor {
           return { output: out, exitCode: exit };
         }
         return { output: cmdLastb(c, args), exitCode: 0 };
+      }
+      case 'loginctl': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          const out = renderLoginctl({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('Failed to get') || out.startsWith('Unknown command') ? 1 : 0;
+          return { output: out, exitCode: exit };
+        }
+        return { output: 'loginctl: command not found', exitCode: 127 };
       }
       case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
       case 'setfacl': return this.cmdSetfacl(args);

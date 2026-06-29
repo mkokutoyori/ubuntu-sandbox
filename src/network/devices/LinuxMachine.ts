@@ -107,6 +107,7 @@ import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
 import { renderLast } from './linux/network/lastFormatter';
+import { renderLoginctl } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
@@ -471,30 +472,43 @@ export abstract class LinuxMachine extends EndHost
       events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: 'authentication failure' });
       this.sessionTable.recordFailedLogin(user, fromIp);
     }
-    // Track active sessions in the session table for `w`, `who`, `last`.
     if (accepted) {
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
-      // Persist this login as the user's "last login" before we open
-      // the new session — the OpenSSH banner is computed BEFORE this
-      // call by sshLauncher so it sees the previous record, never the
-      // one we're recording right now.
+      const gid = userEntry?.gid ?? uid;
       this.rememberLastSshLogin(user, fromIp);
-      this.sessionTable.open({
-        user, uid, sshdPid: 985 + this.sessionTable.list().length,
+      const session = this.sessionTable.open({
+        user, uid, sshdPid: 0,
         fromIp, fromHost,
       });
-      // The accepted session is a live ESTABLISHED socket on sshd's
-      // listening port — surface it through `ss` / `netstat`, and leave
-      // a packet trace for `tcpdump`, just as the kernel would.
+      const sshdMasterPid = this.executor.processMgr.list({ comm: 'sshd' })
+        .find((p) => p.ppid === 1)?.pid ?? 1;
+      const sshdChild = this.executor.processMgr.spawn({
+        command: `sshd: ${user} [priv]`,
+        comm: 'sshd',
+        user: 'root', uid: 0, gid: 0,
+        ppid: sshdMasterPid,
+        tty: '?',
+      });
+      const shell = this.executor.processMgr.spawn({
+        command: '-bash',
+        comm: '-bash',
+        user, uid, gid,
+        ppid: sshdChild.pid,
+        tty: session.tty,
+        cwd: userEntry?.home ?? `/home/${user}`,
+      });
+      session.sshdPid = sshdChild.pid;
+      session.shellPid = shell.pid;
+      this.utmpSync?.updateSessionPids(session.tty, shell.pid, sshdChild.pid);
       const myIp = this.getPorts()
-        .map(p => p.getIPAddress()?.toString())
+        .map((p) => p.getIPAddress()?.toString())
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
       const peerPort = 49152 + (this.sessionTable.list().length * 7) % 16000;
       try {
         this.socketTable.connect(
           'tcp', myIp, 22, fromIp, peerPort,
-          985 + this.sessionTable.list().length, 'sshd',
+          sshdChild.pid, 'sshd',
         );
       } catch { /* socket accounting is best-effort */ }
       this.executor.captureLog.captureTcpHandshake(
@@ -679,7 +693,7 @@ export abstract class LinuxMachine extends EndHost
   private renderSessionView(command: string): string | null {
     const argv = command.split(/\s+/);
     const cmd = argv[0];
-    if (cmd === 'w' || cmd === 'who' || cmd === 'last') {
+    if (cmd === 'w' || cmd === 'who' || cmd === 'last' || cmd === 'loginctl') {
       this.ensureLocalConsoleSession();
     }
     if (cmd === 'w') {
@@ -702,6 +716,14 @@ export abstract class LinuxMachine extends EndHost
     }
     if (cmd === 'last') {
       return renderLast({
+        table: this.sessionTable,
+        utmp: this.utmpSync,
+        bootDate: this.executor.lifecycle.bootedAt(),
+        now: new Date(),
+      }, argv.slice(1));
+    }
+    if (cmd === 'loginctl') {
+      return renderLoginctl({
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),

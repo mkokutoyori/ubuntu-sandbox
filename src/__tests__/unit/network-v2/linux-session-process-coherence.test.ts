@@ -1,0 +1,76 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+
+describe('Sessions are coherent with the process table and loginctl', () => {
+  let pc: LinuxPC;
+  let srv: LinuxServer;
+
+  beforeEach(async () => {
+    EquipmentRegistry.resetInstance();
+    pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    srv = new LinuxServer('linux-server', 'srv1', 0, 0);
+    const sw = new CiscoSwitch('switch-cisco', 'sw', 8, 0, 0);
+    [pc, srv, sw].forEach((d) => d.powerOn());
+    new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    await pc.executeCommand('ifconfig eth0 10.0.0.1');
+    await srv.executeCommand('ifconfig eth0 10.0.0.2');
+  });
+
+  describe('SSH login spawns a shell process in ps', () => {
+    it('after ssh login, ps -ef shows a bash process owned by the SSH user', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const out = await srv.executeCommand('ps -ef');
+      expect(out).toMatch(/^alice\s+\d+.+(\b-?bash\b)/m);
+    });
+
+    it('the PID who -u reports for the SSH user appears in ps', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const whoOut = await srv.executeCommand('who -u');
+      const aliceLine = whoOut.split('\n').find((l) => /^alice\b/.test(l)) ?? '';
+      const m = aliceLine.match(/(\d+)\s+\(/);
+      expect(m).not.toBeNull();
+      const pid = m![1];
+      const psOut = await srv.executeCommand(`ps -p ${pid}`);
+      expect(psOut).toMatch(new RegExp(`^\\s*${pid}\\b`, 'm'));
+    });
+  });
+
+  describe('loginctl list-sessions is coherent with who', () => {
+    it('shows one row per active session', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const out = await srv.executeCommand('loginctl list-sessions');
+      const lines = out.split('\n').filter(Boolean);
+      expect(lines[0]).toMatch(/^SESSION\s+UID\s+USER\b/);
+      expect(lines.some((l) => /\balice\b/.test(l))).toBe(true);
+    });
+
+    it('the "N sessions listed" footer matches the active count', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const out = await srv.executeCommand('loginctl list-sessions');
+      const m = out.match(/(\d+) sessions? listed\./);
+      expect(m).not.toBeNull();
+      const n = Number.parseInt(m![1], 10);
+      expect(n).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('loginctl show-session reports per-session detail', () => {
+    it('loginctl show-session <id> exposes User= and TTY= matching who', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const listOut = await srv.executeCommand('loginctl list-sessions');
+      const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
+      const sid = sessRow.trim().split(/\s+/)[0];
+      expect(sid).toMatch(/^\d+$/);
+      const detail = await srv.executeCommand(`loginctl show-session ${sid}`);
+      expect(detail).toMatch(/^Name=alice$/m);
+      expect(detail).toMatch(/^TTY=pts\/\d+$/m);
+      expect(detail).toMatch(/^State=active$/m);
+    });
+  });
+});
