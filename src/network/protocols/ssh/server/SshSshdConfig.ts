@@ -43,6 +43,8 @@ export interface SshdConfig extends SshServerConfig {
   readonly clientAliveCountMax: number;
   /** Max simultaneous sessions per network connection. */
   readonly maxSessions: number;
+  /** MaxStartups start:rate:full — pre-auth concurrency cap. */
+  readonly maxStartups: { readonly start: number; readonly rate: number; readonly full: number };
   readonly logLevel: SshLogLevel;
   readonly syslogFacility: string;
   readonly kbdInteractiveAuthentication: boolean;
@@ -124,6 +126,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   clientAliveInterval: 0,
   clientAliveCountMax: 3,
   maxSessions: 10,
+  maxStartups: { start: 10, rate: 30, full: 100 },
   logLevel: 'INFO' as SshLogLevel,
   syslogFacility: 'AUTH',
   kbdInteractiveAuthentication: false,
@@ -159,6 +162,17 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   clientaliveinterval: (v) => ({ clientAliveInterval: parseSeconds(v) }),
   clientalivecountmax: (v) => ({ clientAliveCountMax: Number.parseInt(v, 10) }),
   maxsessions: (v) => ({ maxSessions: Number.parseInt(v, 10) }),
+  maxstartups: (v) => {
+    const parts = v.trim().split(':').map((s) => Number.parseInt(s, 10));
+    const [start, rate, full] = parts;
+    return {
+      maxStartups: {
+        start: Number.isFinite(start) ? start : 10,
+        rate:  Number.isFinite(rate)  ? rate  : 30,
+        full:  Number.isFinite(full)  ? full  : (Number.isFinite(start) ? start : 100),
+      },
+    };
+  },
   loglevel: (v) => {
     const upper = v.trim().toUpperCase();
     if (LOG_LEVELS.includes(upper as SshLogLevel)) {

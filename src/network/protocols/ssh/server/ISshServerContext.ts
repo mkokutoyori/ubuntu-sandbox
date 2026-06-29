@@ -24,6 +24,7 @@ export interface SshServerConfig {
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
   readonly loginGraceTime?: number;
+  readonly maxStartups?: { readonly start: number; readonly rate: number; readonly full: number };
 }
 
 export interface ILinuxShell {

@@ -33,6 +33,14 @@ interface OpenChannelInfo {
   readonly openedAt: number;
 }
 
+const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
+
+function preauthSlot(ctx: object): { value: number } {
+  let s = PREAUTH_COUNT.get(ctx);
+  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(ctx, s); }
+  return s;
+}
+
 export class SshServerHandler {
   private readonly dispatcher = SftpCommandDispatcher.defaults();
 
@@ -53,6 +61,28 @@ export class SshServerHandler {
   }
 
   register(conn: TcpConnection, clientIp: string): void {
+    const ms = this.ctx.config.maxStartups;
+    if (ms && ms.start > 0) {
+      const slot = preauthSlot(this.ctx);
+      const n = slot.value;
+      let refuse = false;
+      if (n >= ms.full) refuse = true;
+      else if (n >= ms.start) {
+        const p = ms.rate / 100;
+        refuse = Math.random() < p;
+      }
+      if (refuse) {
+        conn.write(JSON.stringify({ op: 'disconnect', reason: 'max_startups' }));
+        conn.close();
+        this.eventBus.emit({
+          kind: 'client_disconnected',
+          user: '', ip: clientIp,
+          reason: 'too_many_failures',
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    }
     this.eventBus.emit({
       kind: 'client_connected',
       ip: clientIp,
@@ -82,6 +112,10 @@ export class SshServerHandler {
     const channels = new Map<number, OpenChannelInfo>();
     let userCtx: SshUserContext | null = null;
     let authFailures = 0;
+    const preauth = preauthSlot(this.ctx);
+    preauth.value += 1;
+    let preauthDecremented = false;
+    const decPreauth = () => { if (!preauthDecremented) { preauth.value = Math.max(0, preauth.value - 1); preauthDecremented = true; } };
 
     const timers = new TimerSet(() => getDefaultScheduler());
     let keepaliveTimer: symbol | null = null;
@@ -125,6 +159,7 @@ export class SshServerHandler {
     conn.onClose?.((reason) => {
       timers.clearAll();
       keepaliveTimer = null;
+      decPreauth();
       channels.clear();
       this.eventBus.emit({
         kind: 'client_disconnected',
@@ -186,6 +221,7 @@ export class SshServerHandler {
               this.ctx.recordLogin(result.userCtx.username, clientIp);
               timers.clear(graceTimer);
               graceTimer = null;
+              decPreauth();
               return;
             }
             authFailures += 1;
