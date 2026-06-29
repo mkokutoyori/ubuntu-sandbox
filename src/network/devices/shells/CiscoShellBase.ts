@@ -445,7 +445,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Handles: empty input, pipe filtering, ?, exit/end, do prefix,
    * show shortcut, trie matching, async support, error formatting.
    */
+  private applyLineEditing(input: string): string {
+    let left: string[] = [];
+    let right: string[] = [];
+    for (const ch of input) {
+      if (ch === '\b' || ch === '\x7f') { left.pop(); continue; }
+      if (ch === '\x01') { right = left.concat(right); left = []; continue; }
+      if (ch === '\x05') { left = left.concat(right); right = []; continue; }
+      if (ch === '\x0b') { right = []; continue; }
+      if (ch === '\x17') {
+        while (left.length && left[left.length - 1] === ' ') left.pop();
+        while (left.length && left[left.length - 1] !== ' ') left.pop();
+        continue;
+      }
+      left.push(ch);
+    }
+    return left.concat(right).join('');
+  }
+
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
+    rawInput = this.applyLineEditing(rawInput);
     if (rawInput.endsWith('\t')) {
       const stem = rawInput.replace(/\s+$/, '');
       const completed = this.tabComplete(stem);
@@ -494,7 +513,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return CISCO_ERRORS.INVALID_INPUT;
     }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
-    if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
+    if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
