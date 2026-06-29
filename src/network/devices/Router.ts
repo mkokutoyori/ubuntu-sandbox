@@ -315,8 +315,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getTcpStack: () => this.tcpv2,
     });
     this.shell = this.createShell();
-    this.natEngine.setACLMatchFn((aclId, srcIP) => {
-      const pkt = { type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any;
+    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
+      const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
     });
     this.natEngine.setInterfaceIPFn((iface) => {

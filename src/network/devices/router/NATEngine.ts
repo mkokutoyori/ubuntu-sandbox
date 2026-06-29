@@ -123,7 +123,7 @@ export class NATEngine {
   private reverseSessions = new Map<string, NatSession>();
 
   // Callbacks injected by Router
-  private matchACLFn?: (aclId: string | number, srcIP: string) => boolean;
+  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean;
   private getIfaceIPFn?: (iface: string) => string | null;
   // Lookup callback: given an inside IP, return the outside interface it came from
   private getInsideIfaceForIPFn?: (ip: string) => string | null;
@@ -268,7 +268,7 @@ export class NATEngine {
   }
 
   /** Provide ACL matching function (injected by Router) */
-  setACLMatchFn(fn: (aclId: string | number, srcIP: string) => boolean): void {
+  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean): void {
     this.matchACLFn = fn;
   }
 
@@ -430,7 +430,7 @@ export class NATEngine {
 
     // 2. Dynamic rules
     for (const rule of this.dynamicRules) {
-      if (!this.matchACL(rule.aclId, srcIP)) continue;
+      if (!this.matchACL(rule.aclId, srcIP, pkt)) continue;
 
       if (rule.type === 'overload') {
         const globalIP = this.getIfaceIPFn?.(outIface) ?? null;
@@ -562,15 +562,17 @@ export class NATEngine {
       }
     }
 
-    // Dynamic/PAT sessions
     for (const session of this.sessions.values()) {
       const protoName = protoToName(session.protocol);
+      const outside = session.outsideIP
+        ? `${session.outsideIP}:${session.outsidePort}`
+        : '---';
       entries.push({
         proto: protoName,
         insideLocal:  `${session.localIP}:${session.localPort}`,
         insideGlobal: `${session.globalIP}:${session.globalPort}`,
-        outsideLocal: '---',
-        outsideGlobal: '---',
+        outsideLocal: outside,
+        outsideGlobal: outside,
       });
     }
 
@@ -687,9 +689,8 @@ export class NATEngine {
 
   // ─── Private Helpers ─────────────────────────────────────────────
 
-  private matchACL(aclId: string | number, srcIP: string): boolean {
-    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP);
-    // Fallback: no ACL engine → permit all
+  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet): boolean {
+    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt);
     return true;
   }
 

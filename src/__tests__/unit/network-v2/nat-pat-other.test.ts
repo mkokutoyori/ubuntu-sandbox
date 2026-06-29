@@ -1363,15 +1363,15 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('117. should map translation records using UDP protocol tags inside translations table', async () => {
-      const topo = setupWANTopology();
-      await configureWANIPs(topo);
+      const topo = setupNATTopology();
+      await configureBasicNATRouting(topo);
       await topo.r1.executeCommand('enable');
       await topo.r1.executeCommand('configure terminal');
       await topo.r1.executeCommand('access-list 1 permit 192.168.1.0 0.0.0.255');
       await topo.r1.executeCommand('ip nat inside source list 1 interface GigabitEthernet0/1 overload');
       await topo.r1.executeCommand('end');
 
-      // Trigger UDP session simulation via dns lookup/traceroute
+      // Trigger UDP session simulation via traceroute (uses UDP probes 33434+)
       await topo.inside_pc1.executeCommand('traceroute 198.51.100.10');
       const table = await topo.r1.executeCommand('show ip nat translations');
       expect(table.toLowerCase()).toContain('udp');

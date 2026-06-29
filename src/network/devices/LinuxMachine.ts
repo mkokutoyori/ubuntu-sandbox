@@ -1407,6 +1407,9 @@ export abstract class LinuxMachine extends EndHost
         const hops = await self.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
+      sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean {
+        return self.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
+      },
       getDhcpClient(): DHCPClient {
         return self.dhcpClient;
       },

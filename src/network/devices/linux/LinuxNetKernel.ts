@@ -97,6 +97,9 @@ export interface LinuxNetKernel {
 
   traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 
+  /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
+  sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean;
+
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;

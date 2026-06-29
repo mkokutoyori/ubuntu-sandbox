@@ -334,6 +334,18 @@ export const tracerouteCommand: LinuxCommand = {
       hops = await ctx.net.traceroute(targetIP, effectiveMaxHops, Math.min(parsed.probesPerHop, 3), parsed.firstTtl, probeTimeoutMs);
     }
 
+    // RFC 1393 §3 — UDP-mode traceroute (Linux default) emits one UDP datagram
+    // per probe to ports 33434+seq so transit routers create per-flow state
+    // (e.g. NAT translations) for the probe stream.
+    if (parsed.method === 'udp') {
+      const basePort = parsed.port ?? 33434;
+      const ephemeral = 32768 + Math.floor(Math.random() * 32767);
+      const probesEmitted = Math.min(parsed.probesPerHop, 3) * effectiveMaxHops;
+      for (let i = 0; i < probesEmitted; i++) {
+        ctx.net.sendUdpProbe(targetIP, basePort + i, ephemeral);
+      }
+    }
+
     if (hops.length === 0) {
       const targetIpStr = targetIP.toString();
       const isLoopback = targetIpStr === '127.0.0.1' || targetIpStr.startsWith('127.') || targetIpStr === '::1';
