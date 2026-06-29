@@ -511,12 +511,70 @@ export class LinuxCommandExecutor {
   }
 
   private registerSysfsFiles(): void {
-    const tree = new SysfsTree(() => this.hardware);
+    const tree = new SysfsTree(() => this.hardware, {
+      liveMac: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.mac ?? null,
+    });
     for (const leaf of tree.leaves()) {
       const slash = leaf.path.lastIndexOf('/');
       if (slash > 0) this.vfs.mkdirp(leaf.path.slice(0, slash), 0o755, 0, 0);
       this.vfs.registerGeneratedFile(leaf.path, leaf.read);
     }
+    this.registerArpSysctls();
+    this.registerNetProcFiles();
+  }
+
+  private registerArpSysctls(): void {
+    const dirs = ['/proc/sys/net/ipv4/conf/all', '/proc/sys/net/ipv4/conf/default', '/proc/sys/net/ipv4/neigh/default'];
+    for (const d of dirs) this.vfs.mkdirp(d, 0o755, 0, 0);
+    for (const scope of ['all', 'default']) {
+      const base = `/proc/sys/net/ipv4/conf/${scope}`;
+      this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_accept`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
+    }
+    for (const a of this.hardware.adapters) {
+      const base = `/proc/sys/net/ipv4/conf/${a.name}`;
+      this.vfs.mkdirp(base, 0o755, 0, 0);
+      this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_accept`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
+    }
+    const neigh = '/proc/sys/net/ipv4/neigh/default';
+    this.vfs.registerGeneratedFile(`${neigh}/base_reachable_time_ms`, () => '30000\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh1`, () => '128\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh2`, () => '512\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh3`, () => '1024\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_stale_time`, () => '60\n');
+    this.vfs.registerGeneratedFile(`${neigh}/retrans_time_ms`, () => '1000\n');
+    this.vfs.registerGeneratedFile(`${neigh}/mcast_solicit`, () => '3\n');
+    this.vfs.registerGeneratedFile(`${neigh}/ucast_solicit`, () => '3\n');
+  }
+
+  private registerNetProcFiles(): void {
+    this.vfs.mkdirp('/proc/net', 0o755, 0, 0);
+    this.vfs.registerGeneratedFile('/proc/net/arp', () => this.renderProcNetArp());
+  }
+
+  private renderProcNetArp(): string {
+    const header = 'IP address       HW type     Flags       HW address            Mask     Device\n';
+    if (!this.ipNetworkCtx) return header;
+    const entries = this.ipNetworkCtx.getNeighborTable();
+    const rows = entries.map((n) => {
+      const flag = n.state === 'PERMANENT' ? '0x6' : '0x2';
+      return [
+        n.ip.padEnd(16),
+        '0x1'.padEnd(11),
+        flag.padEnd(11),
+        n.mac.padEnd(21),
+        '*'.padEnd(8),
+        n.iface,
+      ].join(' ');
+    });
+    return header + rows.join('\n') + (rows.length > 0 ? '\n' : '');
   }
 
   /** Tracked set of PIDs currently materialized under /proc as per-pid dirs. */

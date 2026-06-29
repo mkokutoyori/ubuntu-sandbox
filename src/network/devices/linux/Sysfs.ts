@@ -15,11 +15,17 @@ const CHASSIS_CODE: Record<ChassisType, string> = {
   Other: '2',
 };
 
+export interface SysfsHooks {
+  liveMac?: (iface: string) => string | null;
+}
+
 export class SysfsTree {
   private readonly get: () => HardwareProfile;
+  private readonly hooks: SysfsHooks;
 
-  constructor(hw: HardwareProfile | (() => HardwareProfile)) {
+  constructor(hw: HardwareProfile | (() => HardwareProfile), hooks: SysfsHooks = {}) {
     this.get = typeof hw === 'function' ? hw : () => hw;
+    this.hooks = hooks;
   }
 
   private get hw(): HardwareProfile {
@@ -102,15 +108,20 @@ export class SysfsTree {
 
   private net(): SysfsLeaf[] {
     const out: SysfsLeaf[] = [];
+    const live = this.hooks.liveMac;
     for (const a of this.hw.adapters) {
       const base = `/sys/class/net/${a.name}`;
       out.push(
-        { path: `${base}/address`, read: () => `${a.macAddress.toLowerCase()}\n` },
+        { path: `${base}/address`, read: () => `${(live?.(a.name) ?? a.macAddress).toLowerCase()}\n` },
         { path: `${base}/mtu`, read: () => '1500\n' },
         { path: `${base}/operstate`, read: () => 'up\n' },
         { path: `${base}/carrier`, read: () => '1\n' },
         { path: `${base}/speed`, read: () => `${a.speedMbps}\n` },
         { path: `${base}/type`, read: () => '1\n' },
+        { path: `${base}/arp`, read: () => '1\n' },
+        { path: `${base}/flags`, read: () => '0x1003\n' },
+        { path: `${base}/tx_queue_len`, read: () => '1000\n' },
+        { path: `${base}/broadcast`, read: () => 'ff:ff:ff:ff:ff:ff\n' },
       );
     }
     out.push(
@@ -118,6 +129,7 @@ export class SysfsTree {
       { path: '/sys/class/net/lo/mtu', read: () => '65536\n' },
       { path: '/sys/class/net/lo/operstate', read: () => 'unknown\n' },
       { path: '/sys/class/net/lo/type', read: () => '772\n' },
+      { path: '/sys/class/net/lo/arp', read: () => '0\n' },
     );
     return out;
   }
