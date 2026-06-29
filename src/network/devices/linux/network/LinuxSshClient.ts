@@ -139,11 +139,20 @@ function readForceCommand(
   sourceIp?: string,
   sourceHost?: string,
 ): string | null {
+  return effectiveSshdView(machine, user, sourceIp, sourceHost)?.forceCommand ?? null;
+}
+
+function effectiveSshdView(
+  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
+  user: string,
+  sourceIp?: string,
+  sourceHost?: string,
+): import('../../../protocols/ssh/server/SshdServerConfig').SshdEffectiveView | null {
   const raw = machine.executor?.vfs?.readFile('/etc/ssh/sshd_config') ?? '';
   if (!raw) return null;
   const cfg = SshdServerConfig.parse(raw);
   const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
-  return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost }).forceCommand;
+  return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost });
 }
 
 /**
@@ -502,13 +511,16 @@ function setupPortForwards(
   machine: LinuxMachine,
   remoteExec: RemoteExecLike | undefined,
   matchedKey: AuthorizedKey | null | undefined,
+  remoteUser: string,
 ): string {
   const forwards = SshPortForward.collect(flags);
   if (forwards.length === 0) return '';
 
-  const policy = remoteExec
-    ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding')
-    : null;
+  // Match-block aware: a `Match User …` override of AllowTcpForwarding /
+  // GatewayPorts takes precedence over the top-level directive.
+  const eff = effectiveSshdView(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+  const policy = eff?.allowTcpForwarding
+    ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding') : null);
   const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
   const permitOpenList = remoteExec ? readPermitOpenList(remoteExec) : ['any'];
   const permits = (f: SshPortForward): boolean => {
@@ -527,9 +539,8 @@ function setupPortForwards(
     executor?: { forwardingTable?: SshForwardingTable | null };
   }).executor?.forwardingTable;
 
-  const gatewayPolicy = remoteExec
-    ? readRemoteSshdDirective(remoteExec, 'GatewayPorts')
-    : null;
+  const gatewayPolicy = eff?.gatewayPorts
+    ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'GatewayPorts') : null);
 
   let diagnostics = '';
   for (const fwd of forwards) {
@@ -857,7 +868,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Each requested forward opens a listening socket on whichever host
   // owns it (the client for -L/-D, the SSH server for -R). The server's
   // `AllowTcpForwarding` directive decides whether the request stands.
-  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec, auth.matchedKey);
+  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec, auth.matchedKey, remoteUser);
 
   // `-N` (no remote command) — paired with `-f` to hold a tunnel open.
   // The session carries no shell, so there is no banner: only forwarding
@@ -907,9 +918,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     if (forced) remoteCmd = forced;
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     const keyBansAgent = auth.matchedKey?.options?.noAgentForwarding === true;
-    const serverBansAgent = remoteExec
-      ? readRemoteSshdDirective(remoteExec, 'AllowAgentForwarding') === 'no'
-      : false;
+    const effView = effectiveSshdView(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    const serverBansAgent = effView
+      ? effView.allowAgentForwarding === false
+      : (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowAgentForwarding') === 'no' : false);
     const agentForbidden = keyBansAgent || serverBansAgent;
     // `-A` agent forwarding: expose the local agent's identities to the
     // remote command, restoring the remote agent afterwards. The server's
