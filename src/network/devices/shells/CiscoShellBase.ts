@@ -147,6 +147,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLineLogin: 'password' | 'local' | 'none' | null = null;
   protected consoleLinePrivilegeLevel: number | null = null;
 
+  _getAliasRunningConfigLines(): string[] {
+    return this.aliases.toRunningConfig();
+  }
+
   _getConsoleLineConfig(): {
     line: number;
     password: string | null;
@@ -919,6 +923,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerCommonUserCommands(): void {
     this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
+      this.mode = 'privileged';
+      return '';
+    });
+    this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
+      const lvl = args[0] ? parseInt(args[0], 10) : 15;
+      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+        return "% Invalid input detected at '^' marker.";
+      }
       this.mode = 'privileged';
       return '';
     });
@@ -1825,6 +1837,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else { password = args.join(' '); }
       if (password === '') return '% Incomplete command.';
       dev._setEnablePassword?.(password, algo);
+      return '';
+    });
+    this.configTrie.register('no enable secret', 'Remove enable secret', () => {
+      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain') => void };
+      dev._setEnableSecret?.('', 'plain');
+      return '';
+    });
+    this.configTrie.register('no enable password', 'Remove enable password', () => {
+      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain') => void };
+      dev._setEnablePassword?.('', 'plain');
       return '';
     });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures

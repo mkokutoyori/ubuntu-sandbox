@@ -235,7 +235,19 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
-  const shell = (router as unknown as { shell?: { _getConsoleLineConfig?: () => unknown } }).shell;
+  const shell = (router as unknown as {
+    shell?: {
+      _getConsoleLineConfig?: () => unknown;
+      _getAliasRunningConfigLines?: () => string[];
+    };
+  }).shell;
+
+  const aliasLines = shell?._getAliasRunningConfigLines?.() ?? [];
+  if (aliasLines.length > 0) {
+    for (const ln of aliasLines) lines.push(ln);
+    lines.push('!');
+  }
+
   const consoleCfg = shell?._getConsoleLineConfig?.() as null | {
     line: number;
     password: string | null;

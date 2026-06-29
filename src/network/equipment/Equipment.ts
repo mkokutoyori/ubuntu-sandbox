@@ -48,12 +48,12 @@ export abstract class Equipment {
 
   getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
   _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
-    this._enableSecret = { value, algo };
+    this._enableSecret = value === '' ? null : { value, algo };
   }
 
   getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
   _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
-    this._enablePassword = { value, algo };
+    this._enablePassword = value === '' ? null : { value, algo };
   }
 
   getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }

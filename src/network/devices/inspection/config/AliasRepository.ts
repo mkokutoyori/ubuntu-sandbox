@@ -71,4 +71,14 @@ export class AliasRepository {
   reset(): void {
     this.user.clear();
   }
+
+  toRunningConfig(): string[] {
+    const lines: string[] = [];
+    for (const mode of ['exec', 'configure', 'interface', 'router'] as AliasMode[]) {
+      const m = this.user.get(mode);
+      if (!m) continue;
+      for (const [name, cmd] of m) lines.push(`alias ${mode} ${name} ${cmd}`);
+    }
+    return lines;
+  }
 }
