@@ -227,7 +227,14 @@ export function showRunningConfig(router: Router): string {
     '!',
   ];
 
-  // DHCP config
+  for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
+    const text = router.getBanner?.(kind);
+    if (text) {
+      lines.push(`banner ${kind} ^${text}^`);
+      lines.push('!');
+    }
+  }
+
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');
   }

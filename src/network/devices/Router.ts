@@ -1849,16 +1849,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;
+    if (type === 'incoming') return this.incomingBannerText;
     return '';
   }
 
   protected motdBannerText: string = '';
   protected loginBannerText: string = '';
   protected execBannerText: string = '';
+  protected incomingBannerText: string = '';
 
   _setMotdBanner(text: string): void { this.motdBannerText = text; }
   _setLoginBanner(text: string): void { this.loginBannerText = text; }
   _setExecBanner(text: string): void { this.execBannerText = text; }
+  _setIncomingBanner(text: string): void { this.incomingBannerText = text; }
 
   // ── Public accessors used by CLI shells ──────────────────────
 

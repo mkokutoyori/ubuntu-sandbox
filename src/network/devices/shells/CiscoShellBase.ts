@@ -1623,17 +1623,43 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _setMotdBanner?: (b: string) => void;
         _setLoginBanner?: (b: string) => void;
         _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
       };
       const which = args[0]?.toLowerCase();
-      const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
-      if (which === 'motd') {
-        dev._setMotdBanner?.(rest);
-        dev._setSshBanner?.(rest);
-      } else if (which === 'login') {
-        dev._setLoginBanner?.(rest);
-      } else if (which === 'exec') {
-        dev._setExecBanner?.(rest);
+      if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
+        return "% Invalid input detected at '^' marker.";
       }
+      const body = args.slice(1).join(' ').trim();
+      if (body.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const delim = body[0];
+      const lastIdx = body.lastIndexOf(delim);
+      if (lastIdx <= 0) return "% Invalid input detected at '^' marker.";
+      const text = body.slice(1, lastIdx);
+      if (which === 'motd') {
+        dev._setMotdBanner?.(text);
+        dev._setSshBanner?.(text);
+      } else if (which === 'login') {
+        dev._setLoginBanner?.(text);
+      } else if (which === 'exec') {
+        dev._setExecBanner?.(text);
+      } else if (which === 'incoming') {
+        dev._setIncomingBanner?.(text);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no banner', 'Remove a banner', (args) => {
+      const which = args[0]?.toLowerCase();
+      const dev = this.d() as unknown as {
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
+        _setSshBanner?: (b: string) => void;
+      };
+      if (which === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
+      else if (which === 'login') dev._setLoginBanner?.('');
+      else if (which === 'exec') dev._setExecBanner?.('');
+      else if (which === 'incoming') dev._setIncomingBanner?.('');
       return '';
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
