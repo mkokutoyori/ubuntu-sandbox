@@ -218,6 +218,13 @@ function readRemoteSshdDirective(exec: RemoteExecLike, name: string): string | n
   return m ? m[1].toLowerCase() : null;
 }
 
+/** Case-preserving variant — for directives whose value is a path. */
+function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string | null {
+  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
+  return m ? m[1] : null;
+}
+
 /** Value of a client-side `-o Name=value` / `-o "Name value"` option. */
 function clientOption(args: string[], name: string): string | null {
   for (let i = 0; i < args.length; i++) {
@@ -1026,8 +1033,17 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // login banner composition so downstream scripts see a coherent
   // transcript.
   const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
-  const issueNet = remoteVfs.readFile('/etc/issue.net') ?? '';
-  const motd     = remoteVfs.readFile('/etc/motd')      ?? '';
+  // OpenSSH's `Banner` directive selects an arbitrary pre-auth file; OpenSSH
+  // ships it unset (no banner). When set to a real path, the file is shown
+  // *before* the welcome line. The legacy /etc/issue.net stays as a
+  // historical fallback when no banner is configured.
+  const bannerPath = remoteExec ? readRemoteSshdDirectiveRaw(remoteExec, 'Banner') : null;
+  const banner = bannerPath === null
+    ? (remoteVfs.readFile('/etc/issue.net') ?? '')
+    : bannerPath.toLowerCase() === 'none'
+      ? ''
+      : remoteVfs.readFile(bannerPath) ?? '';
+  const motd = remoteVfs.readFile('/etc/motd') ?? '';
 
   // -q / -Q (quiet) suppresses banner output (still connects). Match
   // OpenSSH: stay silent on success.
@@ -1039,7 +1055,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
   const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
   const lines: string[] = [];
-  if (issueNet.trim()) lines.push(issueNet.replace(/\n*$/, ''));
+  if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
   if (printLastLog) {
     lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
