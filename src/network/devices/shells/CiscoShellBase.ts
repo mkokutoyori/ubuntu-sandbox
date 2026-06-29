@@ -847,7 +847,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (head === 'width') {
       if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const n = parseInt(rest[0], 10);
-      if (!Number.isFinite(n) || n < 0 || n > 512) {
+      if (!Number.isFinite(n) || n < 40 || n > 512) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
       this.terminalWidth = n;
@@ -1952,12 +1952,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
-      const range = this.selectedVtyRange;
-      if (!range) return '';
       if (args.length === 0) return '% Incomplete command.';
       if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
         return "% Invalid input detected at '^' marker.";
       }
+      const range = this.selectedVtyRange;
+      if (!range) return '';
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       dev._getVtyLineConfig?.().upsert({
         first: range.first, last: range.last,

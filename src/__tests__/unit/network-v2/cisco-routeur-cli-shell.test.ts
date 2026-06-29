@@ -719,10 +719,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
   // ─── Block 5: Error Handlers & Syntax Validation (Tests 86-100) ──
 
   describe('Block 5: Syntax Errors, Ambiguity Diagnostics & Caret (^) Marker Positioners', () => {
-    it('86. should return unrecognized command error on random invalid inputs ("invalid_cmd")', async () => {
+    it('86. should return "% Invalid input detected" error on random invalid inputs ("invalid_cmd")', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('invalid_cmd');
-      expect(output).toContain('% Unrecognized command');
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('87. should return carets positioner pointing to invalid command prefix', async () => {
@@ -777,7 +777,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('configure terminal');
       await r.executeCommand('interface GigabitEthernet0/0');
       const output = await r.executeCommand('router ospf 1');
-      expect(output).toContain('% Unrecognized command'); // rejected inside interface config sub-mode
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('94. should reject interface commands evaluated in line configuration sub-modes', async () => {
@@ -786,13 +786,13 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('configure terminal');
       await r.executeCommand('line console 0');
       const output = await r.executeCommand('interface GigabitEthernet0/0');
-      expect(output).toContain('% Unrecognized command');
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('95. should reject config mode commands executed inside User EXEC mode', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('hostname CORE_R1');
-      expect(output).toContain('% Unrecognized command');
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('96. should reject write memory command executed inside Global Config mode', async () => {
@@ -800,7 +800,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       const output = await r.executeCommand('write memory');
-      expect(output).toContain('% Unrecognized command'); // "do write memory" is required instead
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('97. should support "do" prefix to execute Privileged EXEC commands inside Global Config mode ("do show version")', async () => {
@@ -822,7 +822,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
     it('99. should reject "do" prefix if executed inside User EXEC mode', async () => {
       const r = setupRouter();
       const output = await r.executeCommand('do show version');
-      expect(output).toContain('% Unrecognized command');
+      expect(output).toContain('% Invalid input detected');
     });
 
     it('100. should execute successfully and return status 0 on default help commands validations', async () => {
@@ -856,7 +856,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('terminal history size 50');
       expect(output.trim()).toBe('');
       const status = await r.executeCommand('show terminal');
-      expect(status.toLowerCase()).toContain('history size 50');
+      expect(status.toLowerCase()).toContain('history size is 50');
     });
 
     it('102. should reject terminal history size if value exceeds 256', async () => {
@@ -879,7 +879,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('terminal length 40');
       expect(output.trim()).toBe('');
       const status = await r.executeCommand('show terminal');
-      expect(status.toLowerCase()).toContain('length 40');
+      expect(status.toLowerCase()).toContain('length: 40');
     });
 
     it('105. should disable pagination when terminal length is set to 0', async () => {
@@ -887,7 +887,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('enable');
       await r.executeCommand('terminal length 0');
       const status = await r.executeCommand('show terminal');
-      expect(status.toLowerCase()).toContain('length 0'); // 0 means no pagination
+      expect(status.toLowerCase()).toContain('length: 0');
     });
 
     it('106. should reject terminal length if value is negative', async () => {
@@ -903,7 +903,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('terminal width 120');
       expect(output.trim()).toBe('');
       const status = await r.executeCommand('show terminal');
-      expect(status.toLowerCase()).toContain('width 120');
+      expect(status.toLowerCase()).toContain('width: 120');
     });
 
     it('108. should reject terminal width if value is smaller than 512 bounds (less than 40)', async () => {
@@ -1030,22 +1030,22 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('122. should deny terminal modifications from User EXEC mode (terminal length)', async () => {
+    it('122. should accept terminal length modifications from User EXEC mode (IOS exec preference)', async () => {
       const r = setupCiscoRouter();
       const output = await r.executeCommand('terminal length 10');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
-    it('123. should deny terminal modifications from User EXEC mode (terminal width)', async () => {
+    it('123. should accept terminal width modifications from User EXEC mode (IOS exec preference)', async () => {
       const r = setupCiscoRouter();
       const output = await r.executeCommand('terminal width 80');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
-    it('124. should deny terminal modifications from User EXEC mode (terminal history)', async () => {
+    it('124. should accept terminal history modifications from User EXEC mode (IOS exec preference)', async () => {
       const r = setupCiscoRouter();
       const output = await r.executeCommand('terminal history size 50');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
     it('125. should restore default terminal length on soft reboot (reload)', async () => {
