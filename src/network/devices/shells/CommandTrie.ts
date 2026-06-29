@@ -282,15 +282,15 @@ export class CommandTrie {
       }
 
       if (matches.length > 1) {
-        // Try disambiguation: if there are more tokens, check which matches
-        // can continue to the next token (lookahead disambiguation)
         if (i < tokens.length - 1) {
           const nextToken = tokens[i + 1].toLowerCase();
           const viable = matches.filter(m => {
             const exactNext = m.children.get(nextToken);
             if (exactNext) return true;
             const prefixNext = this.prefixMatch(m, nextToken);
-            return prefixNext.length > 0;
+            if (prefixNext.length > 0) return true;
+            if (m.greedy && m.children.size === 0) return true;
+            return false;
           });
           if (viable.length === 1) {
             node = viable[0];

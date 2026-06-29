@@ -99,11 +99,15 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial|virtual-template|port-channel|vlan|nve)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|lo|tunnel|tu|serial|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
       if (vMatch) {
         const typeMap: Record<string, string> = {
-          'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial',
-          'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel', 'vlan': 'Vlan',
+          'loopback': 'Loopback', 'lo': 'Loopback',
+          'tunnel': 'Tunnel', 'tu': 'Tunnel',
+          'serial': 'Serial',
+          'virtual-template': 'Virtual-Template',
+          'port-channel': 'Port-channel', 'po': 'Port-channel',
+          'vlan': 'Vlan',
           'nve': 'Nve',
         };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
