@@ -71,6 +71,24 @@ describe('ARP / neighbor coherence across arp, ip neigh, /proc and /sys', () => 
     });
   });
 
+  describe('flush spares static / PERMANENT entries', () => {
+    it('ip neigh flush all removes dynamics but keeps statics', async () => {
+      await pc.executeCommand('arp -s 10.0.0.50 aa:bb:cc:dd:ee:ff');
+      await pc.executeCommand('ip -4 neigh flush all');
+      const out = await pc.executeCommand('arp -n');
+      expect(out).toMatch(/^10\.0\.0\.50\b.*aa:bb:cc:dd:ee:ff.*CM/m);
+      expect(out).not.toMatch(/^10\.0\.0\.2\b/m);
+    });
+
+    it('per-interface flush respects PERMANENT entries on that interface', async () => {
+      await pc.executeCommand('arp -s 10.0.0.50 aa:bb:cc:dd:ee:ff');
+      await pc.executeCommand('ip neigh flush dev eth0');
+      const out = await pc.executeCommand('arp -n');
+      expect(out).toMatch(/10\.0\.0\.50/);
+      expect(out).not.toMatch(/^10\.0\.0\.2\b/m);
+    });
+  });
+
   describe('ARP sysctls under /proc/sys/net/ipv4', () => {
     it('default arp_announce / arp_ignore / arp_accept are readable', async () => {
       expect((await srv.executeCommand('cat /proc/sys/net/ipv4/conf/all/arp_announce')).trim()).toBe('0');

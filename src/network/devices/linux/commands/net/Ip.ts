@@ -215,12 +215,10 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       return '';
     },
     flushNeighbors(ifName?: string): string {
-      if (ifName) {
-        for (const [ip, entry] of net.getArpTable()) {
-          if (entry.iface === ifName) net.deleteARP(ip);
-        }
-      } else {
-        net.clearARPTable();
+      for (const [ip, entry] of net.getArpTable()) {
+        if (entry.type === 'static') continue;
+        if (ifName && entry.iface !== ifName) continue;
+        net.deleteARP(ip);
       }
       return '';
     },
