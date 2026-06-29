@@ -152,6 +152,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     registerHuaweiNATInterfaceCommands(this.interfaceTrie, ctx);
     registerHuaweiNATDisplayCommands(this.userTrie, getRouter);
     registerHuaweiNATDisplayCommands(this.systemTrie, getRouter);
+    registerHuaweiNATDisplayCommands(this.interfaceTrie, getRouter);
   }
 
   getMode(): VRPSwitchMode { return this.mode; }

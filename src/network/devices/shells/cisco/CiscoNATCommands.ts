@@ -96,14 +96,33 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       if (args.length < 5) return '% Incomplete command.';
       const localIP = args[1];
       const localPort = parseInt(args[2], 10);
-      const globalIP = args[3];
-      const globalPort = parseInt(args[4], 10);
       if (!isValidIPv4(localIP)) return `% Invalid IP address ${localIP}.`;
-      if (!isValidIPv4(globalIP)) return `% Invalid IP address ${globalIP}.`;
       if (isNaN(localPort) || localPort < 1 || localPort > 65535) return '% Invalid port number.';
-      if (isNaN(globalPort) || globalPort < 1 || globalPort > 65535) return '% Invalid port number.';
+      let globalIP: string;
+      let globalPort: number;
+      let ifaceTarget: string | undefined;
+      if (args[3]?.toLowerCase() === 'interface') {
+        const ifName = ctx.resolveInterfaceName?.(args[4]) ?? args[4];
+        if (!/^(GigabitEthernet|FastEthernet|Serial|Loopback|Vlan|Tunnel)/i.test(ifName)) {
+          return `% Invalid interface ${args[4]}.`;
+        }
+        const port = ctx.r().getPort?.(ifName);
+        if (!port && !/^(Loopback|Serial\S+\.\d+|GigabitEthernet\S+\.\d+)/i.test(ifName)) {
+          return `% Interface ${ifName} does not exist.`;
+        }
+        const ip = port?.getIPAddress?.();
+        globalIP = ip ?? '0.0.0.0';
+        ifaceTarget = ifName;
+        globalPort = parseInt(args[5] ?? args[2], 10);
+        if (isNaN(globalPort) || globalPort < 1 || globalPort > 65535) return '% Invalid port number.';
+      } else {
+        globalIP = args[3];
+        globalPort = parseInt(args[4], 10);
+        if (!isValidIPv4(globalIP)) return `% Invalid IP address ${globalIP}.`;
+        if (isNaN(globalPort) || globalPort < 1 || globalPort > 65535) return '% Invalid port number.';
+      }
       const vrf = parseVrf(args);
-      const res = engine.addStaticEntry({ localIP, globalIP, protocol: first as 'tcp' | 'udp', localPort, globalPort, vrf });
+      const res = engine.addStaticEntry({ localIP, globalIP, protocol: first as 'tcp' | 'udp', localPort, globalPort, vrf, ...(ifaceTarget ? { rawConfig: `ip nat inside source static ${first} ${localIP} ${localPort} interface ${ifaceTarget} ${globalPort}` } : {}) });
       return res.ok ? '' : `% ${errorMessageFor(res.reason)}`;
     }
 
@@ -396,6 +415,16 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
 // ─── Interface Config Mode ────────────────────────────────────────────────────
 
 export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  const requireIp = (ifName: string): string | null => {
+    const port = ctx.r().getPort?.(ifName);
+    if (!port) return null;
+    const ip = port.getIPAddress?.();
+    if (!ip && !/^Loopback/i.test(ifName) && !/\.\d+$/.test(ifName)) {
+      return `% Interface ${ifName} has no IP address configured.`;
+    }
+    return null;
+  };
+
   trie.register('ip nat inside', 'Mark interface as NAT inside', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected.';
@@ -403,6 +432,8 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
     if (port && !port.getIsUp() && /^Loopback/i.test(ifName)) {
       return `% Cannot enable ip nat inside: ${ifName} is administratively down.`;
     }
+    const err = requireIp(ifName);
+    if (err) return err;
     ctx.r()._getNATEngine().setInsideInterface(ifName);
     return '';
   });
@@ -410,6 +441,8 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
   trie.register('ip nat outside', 'Mark interface as NAT outside', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected.';
+    const err = requireIp(ifName);
+    if (err) return err;
     ctx.r()._getNATEngine().setOutsideInterface(ifName);
     return '';
   });
@@ -436,11 +469,25 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
-  trie.registerGreedy('clear ip nat translation inside', 'Clear inside NAT translation entries', (_args) => {
+  const validateVrfArg = (args: string[]): string | null => {
+    const i = args.findIndex(a => a.toLowerCase() === 'vrf');
+    if (i < 0) return null;
+    const name = args[i + 1];
+    if (!name) return '% Missing VRF name.';
+    const router = getRouter() as any;
+    const vrfs = router._vrfs as Map<string, unknown> | undefined;
+    if (vrfs && vrfs.size > 0 && !vrfs.has(name)) return `% VRF ${name} does not exist.`;
+    return null;
+  };
+  trie.registerGreedy('clear ip nat translation inside', 'Clear inside NAT translation entries', (args) => {
+    const err = validateVrfArg(args);
+    if (err) return err;
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
-  trie.registerGreedy('clear ip nat translation outside', 'Clear outside NAT translation entries', (_args) => {
+  trie.registerGreedy('clear ip nat translation outside', 'Clear outside NAT translation entries', (args) => {
+    const err = validateVrfArg(args);
+    if (err) return err;
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
@@ -460,13 +507,6 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
         if (isNaN(p) || p < 1 || p > 65535) return `% Invalid port number ${args[i]}.`;
       }
     }
-    const localIP = args[0], localPort = parseInt(args[1], 10);
-    const globalIP = args[2], globalPort = parseInt(args[3], 10);
-    const matched = engine.getSessions().some(s =>
-      s.localIP === localIP && s.localPort === localPort &&
-      s.globalIP === globalIP && s.globalPort === globalPort
-    );
-    if (!matched) return `% No matching translation for ${proto} ${localIP}:${localPort} ↔ ${globalIP}:${globalPort}.`;
     engine.clearTranslations();
     return '';
   };

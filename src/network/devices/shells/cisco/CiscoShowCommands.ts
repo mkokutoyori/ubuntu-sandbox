@@ -513,10 +513,9 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
   if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
-    lines.push(` no shutdown`);
-  } else {
-    lines.push(` shutdown`);
   }
+  if (!port.getIsUp()) lines.push(` shutdown`);
+  for (const natLine of runningConfigInterfaceNAT(router, ifName)) lines.push(natLine);
   const helpers = dhcp.getHelperAddresses(ifName);
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);
