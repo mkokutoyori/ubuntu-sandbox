@@ -36,11 +36,19 @@ function cidrToMask(cidr: number): string {
   return uint32ToIp(prefixLengthToMaskUint32(cidr));
 }
 
+function hasUnmatchedQuote(tokens: string[]): boolean {
+  const joined = tokens.join(' ');
+  const dq = (joined.match(/"/g) ?? []).length;
+  const sq = (joined.match(/'/g) ?? []).length;
+  return (dq % 2 !== 0) || (sq % 2 !== 0);
+}
+
 function errorMessageFor(reason: string): string {
   switch (reason) {
     case 'duplicate': return 'duplicate static NAT entry';
     case 'local-already-mapped': return 'inside local IP already mapped';
     case 'global-already-mapped': return 'inside global IP already mapped';
+    case 'global-port-already-mapped': return 'global IP:port already mapped to another inside target';
     default: return reason;
   }
 }
@@ -49,6 +57,7 @@ function errorMessageFor(reason: string): string {
 
 export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip nat inside source static', 'Configure static NAT translation', (rawArgs) => {
+    if (hasUnmatchedQuote(rawArgs)) return '% Unmatched quote in input.';
     const args = rawArgs.map(a => a.replace(/^["']|["']$/g, ''));
     if (args.length < 2) return '% Incomplete command.';
     const engine = ctx.r()._getNATEngine();
@@ -136,7 +145,9 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
 
   // ip nat inside source list <acl> interface <if> overload  (PAT)
   // ip nat inside source list <acl> pool <name>              (pool NAT)
-  trie.registerGreedy('ip nat inside source list', 'Configure dynamic NAT/PAT', (args) => {
+  trie.registerGreedy('ip nat inside source list', 'Configure dynamic NAT/PAT', (rawArgs) => {
+    if (hasUnmatchedQuote(rawArgs)) return '% Unmatched quote in input.';
+    const args = rawArgs.map(a => a.replace(/^["']|["']$/g, ''));
     if (args.length < 3) return '% Incomplete command.';
     const engine = ctx.r()._getNATEngine();
     const aclId = args[0];
@@ -146,6 +157,11 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     if (aclEngine && !aclExists) return `% access-list ${aclId} not defined.`;
     const aclType: string | undefined = aclEngine?.getAclType?.(aclId);
     if (aclType && aclType.toLowerCase().includes('mac')) return '% MAC ACLs cannot be used for NAT.';
+    const vrf = parseVrf(args);
+    if (vrf) {
+      const vrfs = router._vrfs as Map<string, unknown> | undefined;
+      if (!vrfs?.has?.(vrf)) return `% VRF ${vrf} does not exist.`;
+    }
     const keyword = args[1]?.toLowerCase();
 
     if (keyword === 'interface') {
@@ -154,13 +170,17 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       if (!ifaces.has?.(ifName) && !/^GigabitEthernet|^FastEthernet|^Serial|^Loopback|^Vlan/.test(ifName)) {
         return `% Invalid interface ${args[2]}.`;
       }
-      const isOverload = args[3]?.toLowerCase() === 'overload';
+      const isOverload = args.some((a, i) => i >= 3 && a.toLowerCase() === 'overload');
       if (!isOverload) return '% Missing "overload" keyword.';
-      engine.addDynamicRule({ aclId, type: 'overload', interfaceName: ifName });
+      const after = args.slice(3).filter(a => !['overload', 'vrf', vrf ?? ''].includes(a.toLowerCase()));
+      if (after.length > 0) return `% Invalid extra argument(s): ${after.join(' ')}`;
+      engine.addDynamicRule({ aclId, type: 'overload', interfaceName: ifName, ...(vrf ? { vrf } : {}) } as any);
     } else if (keyword === 'pool') {
       const poolName = args[2];
       if (!engine.getPool(poolName)) return `% Pool ${poolName} not defined.`;
-      engine.addDynamicRule({ aclId, type: 'pool', poolName });
+      const after = args.slice(3).filter(a => !['vrf', vrf ?? '', 'overload'].includes(a.toLowerCase()));
+      if (after.length > 0) return `% Invalid extra argument(s): ${after.join(' ')}`;
+      engine.addDynamicRule({ aclId, type: 'pool', poolName, ...(vrf ? { vrf } : {}) } as any);
     } else {
       return '% Invalid command syntax.';
     }
@@ -170,7 +190,9 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   // no ip nat inside source list <acl>
   trie.registerGreedy('no ip nat inside source list', 'Remove dynamic NAT rule', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._getNATEngine().removeDynamicRule(args[0]);
+    const engine = ctx.r()._getNATEngine();
+    engine.removeDynamicRule(args[0]);
+    engine.clearDynamicTranslations();
     return '';
   });
 
@@ -203,6 +225,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     } else {
       return '% Expected "netmask" or "prefix-length" keyword.';
     }
+    if (args.length > 5) return `% Invalid extra argument(s): ${args.slice(5).join(' ')}`;
     const effPrefix = prefixLen ?? (mask ? mask.split('.').reduce((a, p) => a + parseInt(p, 10).toString(2).replace(/0/g, '').length, 0) : 24);
     const netMaskN = prefixLengthToMaskUint32(effPrefix);
     if ((startN & netMaskN) !== (endN & netMaskN)) return '% IP range does not align with netmask.';
@@ -270,7 +293,13 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const outside = args[0], inside = args[1];
     if (!isValidIPv4(outside)) return `% Invalid IP address ${outside}.`;
     if (!isValidIPv4(inside)) return `% Invalid IP address ${inside}.`;
-    ctx.r()._getNATEngine().addOutsideStatic({ outsideGlobal: outside, outsideLocal: inside });
+    const engine = ctx.r()._getNATEngine();
+    for (const e of engine.getStaticEntries()) {
+      if (!e.protocol && (e.localIP === outside || e.globalIP === outside || e.localIP === inside || e.globalIP === inside)) {
+        return `% Outside static mapping overlaps inside static entry ${e.localIP}/${e.globalIP}.`;
+      }
+    }
+    engine.addOutsideStatic({ outsideGlobal: outside, outsideLocal: inside });
     return '';
   });
 
@@ -329,6 +358,13 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     (r._ciscoNatRouteMapRules ??= []).push(raw ?? `ip nat inside source route-map ${args.join(' ')}`);
     return '';
   });
+  trie.registerGreedy('no ip nat inside source route-map', 'Remove route-map NAT', (args) => {
+    const r = ctx.r() as any;
+    const name = args[0];
+    if (!r._ciscoNatRouteMapRules) return '';
+    r._ciscoNatRouteMapRules = (r._ciscoNatRouteMapRules as string[]).filter((s: string) => !s.includes(`route-map ${name}`));
+    return '';
+  });
 
   trie.registerGreedy('ip nat translation timeout', 'Set generic NAT timeout', (args) => {
     const s = parseInt(args[0] ?? '', 10);
@@ -359,6 +395,10 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
   trie.register('ip nat inside', 'Mark interface as NAT inside', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected.';
+    const port = ctx.r().getPort?.(ifName);
+    if (port && !port.getIsUp() && /^Loopback/i.test(ifName)) {
+      return `% Cannot enable ip nat inside: ${ifName} is administratively down.`;
+    }
     ctx.r()._getNATEngine().setInsideInterface(ifName);
     return '';
   });
@@ -402,11 +442,35 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
   });
   trie.registerGreedy('clear ip nat translation tcp', 'Clear TCP NAT translation entries', (args) => {
     if (args.length < 4) return '% Incomplete command: tcp LOCAL LPORT GLOBAL GPORT.';
+    if (args.some(a => a === '*' || a === '?')) return '% Invalid wildcard syntax for clear ip nat translation tcp.';
+    for (let i = 0; i < args.length; i++) {
+      if (i % 2 === 0 && !isValidIPv4(args[i])) return `% Invalid IP address ${args[i]}.`;
+      if (i % 2 === 1) {
+        const p = parseInt(args[i], 10);
+        if (isNaN(p) || p < 1 || p > 65535) return `% Invalid port number ${args[i]}.`;
+      }
+    }
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
   trie.registerGreedy('clear ip nat translation udp', 'Clear UDP NAT translation entries', (args) => {
     if (args.length < 4) return '% Incomplete command: udp LOCAL LPORT GLOBAL GPORT.';
+    for (let i = 0; i < args.length; i++) {
+      if (i % 2 === 0 && !isValidIPv4(args[i])) return `% Invalid IP address ${args[i]}.`;
+      if (i % 2 === 1) {
+        const p = parseInt(args[i], 10);
+        if (isNaN(p) || p < 1 || p > 65535) return `% Invalid port number ${args[i]}.`;
+      }
+    }
+    getRouter()._getNATEngine().clearTranslations();
+    return '';
+  });
+  trie.registerGreedy('clear ip nat translation vrf', 'Clear NAT translations in VRF', (args) => {
+    const vrf = args[0];
+    if (!vrf) return '% Incomplete command.';
+    const router = getRouter() as any;
+    const vrfs = router._vrfs as Map<string, unknown> | undefined;
+    if (!vrfs?.has?.(vrf)) return `% VRF ${vrf} does not exist.`;
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
@@ -469,11 +533,10 @@ export function showNATTranslations(router: Router): string {
   const outsideStatic = engine.getOutsideStaticEntries();
   const networkStatic = engine.getStaticEntries().filter(e => e.isNetwork);
 
-  if (entries.length === 0 && outsideStatic.length === 0 && networkStatic.length === 0) {
-    return 'No NAT entries.';
-  }
-
   const header = 'Pro  Inside global          Inside local           Outside local          Outside global';
+  if (entries.length === 0 && outsideStatic.length === 0 && networkStatic.length === 0) {
+    return `${header}\nNo NAT entries.`;
+  }
   const lines = [header];
   for (const e of entries) {
     const proto = e.proto.padEnd(4);
@@ -548,7 +611,7 @@ export function showNATStatistics(router: Router): string {
     `Expired translations: ${counters.expired}`,
     `Session timeouts (seconds): tcp ${timeouts.tcp / 1000}  udp ${timeouts.udp / 1000}  icmp ${timeouts.icmp / 1000}  syn ${timeouts.tcpHalfOpen / 1000}`,
     ...(hasOverload ? ['Overload: enabled'] : []),
-    ...(maxEntries != null ? [`Max entries: ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
+    ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
     `Dynamic mappings:`,
     ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] :
       engine.getDynamicRules().map(r =>
@@ -591,13 +654,13 @@ export function runningConfigNAT(router: Router): string[] {
     for (const [name, ip] of aliases) lines.unshift(`ip host ${name} ${ip}`);
   }
 
-  // Dynamic rules
   for (const r of engine.getDynamicRules()) {
+    const vrfTail = (r as any).vrf ? ` vrf ${(r as any).vrf}` : '';
     if (r.type === 'overload') {
       const iface = r.interfaceName ?? [...engine.getOutsideInterfaces()][0] ?? 'GigabitEthernet0/1';
-      lines.push(`ip nat inside source list ${r.aclId} interface ${iface} overload`);
+      lines.push(`ip nat inside source list ${r.aclId} interface ${iface} overload${vrfTail}`);
     } else if (r.type === 'pool' && r.poolName) {
-      lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}`);
+      lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}${vrfTail}`);
     }
   }
 

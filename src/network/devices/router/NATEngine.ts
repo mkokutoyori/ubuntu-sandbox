@@ -214,7 +214,8 @@ export class NATEngine {
   addStaticEntry(entry: NatStaticEntry): { ok: true } | { ok: false; reason: string } {
     const exists = this.staticEntries.some(e =>
       e.localIP === entry.localIP && e.globalIP === entry.globalIP &&
-      e.localPort === entry.localPort && e.globalPort === entry.globalPort
+      e.localPort === entry.localPort && e.globalPort === entry.globalPort &&
+      e.protocol === entry.protocol
     );
     if (exists) return { ok: false, reason: 'duplicate' };
     if (!entry.protocol) {
@@ -222,6 +223,14 @@ export class NATEngine {
       if (localClash) return { ok: false, reason: 'local-already-mapped' };
       const globalClash = this.staticEntries.some(e => !e.protocol && e.globalIP === entry.globalIP && e.localIP !== entry.localIP);
       if (globalClash) return { ok: false, reason: 'global-already-mapped' };
+    } else {
+      const globalPortClash = this.staticEntries.some(e =>
+        e.protocol === entry.protocol &&
+        e.globalIP === entry.globalIP &&
+        e.globalPort === entry.globalPort &&
+        (e.localIP !== entry.localIP || e.localPort !== entry.localPort)
+      );
+      if (globalPortClash) return { ok: false, reason: 'global-port-already-mapped' };
     }
     this.staticEntries.push(entry);
     return { ok: true };
