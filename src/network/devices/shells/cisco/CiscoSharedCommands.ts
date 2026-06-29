@@ -65,6 +65,59 @@ export function registerSharedPrivilegedCommands(
   trie.register('write memory', 'Save configuration', () => {
     return saveHandler();
   });
+
+  // ? help suggestions for greedy privileged commands.
+  trie.registerSuggestions('copy', [
+    { keyword: 'running-config', description: 'Current running configuration' },
+    { keyword: 'startup-config', description: 'Saved startup configuration' },
+    { keyword: 'tftp:',          description: 'Trivial File Transfer Protocol' },
+    { keyword: 'flash:',         description: 'Local flash filesystem' },
+    { keyword: 'scp:',           description: 'Secure Copy' },
+  ]);
+  trie.registerSuggestions('copy running-config', [
+    { keyword: 'startup-config', description: 'Save to NVRAM startup-config' },
+    { keyword: 'tftp:',          description: 'Upload to TFTP server' },
+    { keyword: 'scp:',           description: 'Upload over SCP' },
+    { keyword: 'flash:',         description: 'Save to flash filesystem' },
+  ]);
+  trie.registerSuggestions('write', [
+    { keyword: 'memory',   description: 'Write to NVRAM' },
+    { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
+    { keyword: 'erase',    description: 'Erase NVRAM' },
+  ]);
+  trie.registerSuggestions('clear', [
+    { keyword: 'arp-cache', description: 'Clear ARP cache' },
+    { keyword: 'counters',  description: 'Clear interface counters' },
+    { keyword: 'ip',        description: 'Clear an IP subsystem' },
+    { keyword: 'mac',       description: 'Clear MAC address tables' },
+    { keyword: 'access-list', description: 'Clear access-list counters' },
+    { keyword: 'logging',   description: 'Clear logging buffer' },
+  ]);
+  trie.registerSuggestions('debug', [
+    { keyword: 'all',      description: 'Enable all debugging' },
+    { keyword: 'ip',       description: 'Debug IP subsystem' },
+    { keyword: 'ipv6',     description: 'Debug IPv6 subsystem' },
+    { keyword: 'arp',      description: 'Debug ARP' },
+    { keyword: 'crypto',   description: 'Debug crypto subsystem' },
+    { keyword: 'dhcp',     description: 'Debug DHCP' },
+    { keyword: 'ospf',     description: 'Debug OSPF' },
+  ]);
+  trie.registerSuggestions('debug ip', [
+    { keyword: 'icmp',     description: 'Debug ICMP packets' },
+    { keyword: 'packet',   description: 'Debug all IP packets' },
+    { keyword: 'ospf',     description: 'Debug OSPF' },
+    { keyword: 'routing',  description: 'Debug routing table changes' },
+    { keyword: 'nat',      description: 'Debug NAT' },
+    { keyword: 'dhcp',     description: 'Debug DHCP' },
+  ]);
+  trie.registerSuggestions('show ip route', [
+    { keyword: 'static',    description: 'Static routes' },
+    { keyword: 'connected', description: 'Directly connected networks' },
+    { keyword: 'ospf',      description: 'OSPF-learned routes' },
+    { keyword: 'rip',       description: 'RIP-learned routes' },
+    { keyword: 'eigrp',     description: 'EIGRP-learned routes' },
+    { keyword: 'bgp',       description: 'BGP-learned routes' },
+  ]);
 }
 
 // ─── Config Mode Shared Commands ─────────────────────────────────

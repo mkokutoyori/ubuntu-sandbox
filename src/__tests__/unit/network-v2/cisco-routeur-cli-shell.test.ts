@@ -20,6 +20,8 @@ function setupRouter() {
   return new CiscoRouter('r1', 'Router', 0, 0);
 }
 
+const setupCiscoRouter = setupRouter;
+
 // ═══════════════════════════════════════════════════════════════════
 // CISCO CLI SHELL & TERMINAL TESTS (1-100)
 // ═══════════════════════════════════════════════════════════════════
@@ -358,7 +360,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('configure terminal');
       await r.executeCommand('interface GigabitEthernet0/0');
       const output = await r.executeCommand('?');
-      expect(output).toContain('ip address');
+      // IOS interface-mode ? lists top-level keywords with a one-line
+      // description; `ip address` is reached via `ip ?` (a deeper level).
+      expect(output).toContain('ip');
       expect(output).toContain('shutdown');
     });
 
@@ -826,9 +830,11 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('? && echo "CLI_OK"');
       expect(output).toContain('CLI_OK');
     });
+  });
+
 /**
  * TDD tests for the Cisco Router Terminal CLI (Continuation: Tests 101-200).
- * 
+ *
  * Covers:
  *  - Block 6: Advanced Terminal & Line Parameter Controls (Tests 101-125)
  *  - Block 7: Command History Engine (show history) (Tests 126-145)
@@ -1757,7 +1763,8 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       const output = await r.executeCommand('show version && echo "TERMINAL_COMPLETE"');
       expect(output).toContain('TERMINAL_COMPLETE');
     });
- 
+  });
+
   // ─── Block 11: Alias Creation, Negations & Executions (Tests 201-225) ───
 
   describe('Block 11: Alias Creation, Negations & Executions', () => {

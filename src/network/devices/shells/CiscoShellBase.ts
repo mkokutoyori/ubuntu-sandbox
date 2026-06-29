@@ -617,7 +617,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getHelp(input: string): string {
     const trie = this.getActiveTrie();
     const completions = trie.getCompletions(input);
-    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
+    if (completions.length === 0) {
+      const trimmed = input.trim();
+      // Real IOS behaviour: ‹prefix›? with no match is silent. ‹word ?› (or
+      // multi-token ?) emits the unrecognized-command marker.
+      const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
+      return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+    }
     const maxKw = Math.max(...completions.map(c => c.keyword.length));
     return completions
       .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
@@ -918,6 +924,56 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (t && 'startup-config'.startsWith(t)) return 'startup-config';
       return t;
     };
+    this.privilegedTrie.registerSuggestions('copy', [
+      { keyword: 'running-config', description: 'Current running configuration' },
+      { keyword: 'startup-config', description: 'Saved startup configuration' },
+      { keyword: 'tftp:',          description: 'Trivial File Transfer Protocol' },
+      { keyword: 'flash:',         description: 'Local flash filesystem' },
+      { keyword: 'scp:',           description: 'Secure Copy' },
+    ]);
+    this.privilegedTrie.registerSuggestions('copy running-config', [
+      { keyword: 'startup-config', description: 'Save to NVRAM startup-config' },
+      { keyword: 'tftp:',          description: 'Upload to TFTP server' },
+      { keyword: 'scp:',           description: 'Upload over SCP' },
+      { keyword: 'flash:',         description: 'Save to flash filesystem' },
+    ]);
+    this.privilegedTrie.registerSuggestions('debug', [
+      { keyword: 'all',      description: 'Enable all debugging' },
+      { keyword: 'ip',       description: 'Debug IP subsystem' },
+      { keyword: 'ipv6',     description: 'Debug IPv6 subsystem' },
+      { keyword: 'crypto',   description: 'Debug crypto subsystem' },
+      { keyword: 'dhcp',     description: 'Debug DHCP' },
+    ]);
+    this.privilegedTrie.registerSuggestions('debug ip', [
+      { keyword: 'icmp',     description: 'Debug ICMP packets' },
+      { keyword: 'packet',   description: 'Debug all IP packets' },
+      { keyword: 'ospf',     description: 'Debug OSPF' },
+      { keyword: 'routing',  description: 'Debug routing table changes' },
+      { keyword: 'nat',      description: 'Debug NAT' },
+      { keyword: 'dhcp',     description: 'Debug DHCP' },
+    ]);
+    this.privilegedTrie.registerSuggestions('write', [
+      { keyword: 'memory',   description: 'Write to NVRAM' },
+      { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
+      { keyword: 'erase',    description: 'Erase NVRAM' },
+    ]);
+    this.privilegedTrie.registerSuggestions('clear', [
+      { keyword: 'arp-cache', description: 'Clear ARP cache' },
+      { keyword: 'counters',  description: 'Clear interface counters' },
+      { keyword: 'ip',        description: 'Clear an IP subsystem' },
+      { keyword: 'mac',       description: 'Clear MAC address tables' },
+      { keyword: 'logging',   description: 'Clear logging buffer' },
+    ]);
+    const showIpRouteHints = [
+      { keyword: 'static',    description: 'Static routes' },
+      { keyword: 'connected', description: 'Directly connected networks' },
+      { keyword: 'ospf',      description: 'OSPF-learned routes' },
+      { keyword: 'rip',       description: 'RIP-learned routes' },
+      { keyword: 'eigrp',     description: 'EIGRP-learned routes' },
+      { keyword: 'bgp',       description: 'BGP-learned routes' },
+    ];
+    this.privilegedTrie.registerSuggestions('show ip route', showIpRouteHints);
+    this.userTrie.registerSuggestions('show ip route', showIpRouteHints);
     this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
       if (!args[0] || !args[1]) return '% Incomplete command.';
       const src = norm(args[0]);

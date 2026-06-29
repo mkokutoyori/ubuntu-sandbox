@@ -282,6 +282,47 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     }
     return '';
   });
+
+  // ─── ? Help Suggestions — finite-but-greedy command argument spaces ──
+  // These match real Cisco IOS where typing `interface ?`, `line ?`, etc.
+  // emits the family/category list rather than the generic `<WORD>`.
+  trie.registerSuggestions('interface', [
+    { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z' },
+    { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u' },
+    { keyword: 'Ethernet',         description: 'IEEE 802.3' },
+    { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
+    { keyword: 'Loopback',         description: 'Loopback interface' },
+    { keyword: 'Serial',           description: 'Serial' },
+    { keyword: 'Tunnel',           description: 'Tunnel interface' },
+    { keyword: 'Vlan',             description: 'Catalyst VLANs' },
+    { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces' },
+    { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface' },
+  ]);
+  trie.registerSuggestions('line', [
+    { keyword: 'console', description: 'Primary terminal line' },
+    { keyword: 'vty',     description: 'Virtual terminal' },
+    { keyword: 'aux',     description: 'Auxiliary line' },
+    { keyword: 'tty',     description: 'Terminal controller' },
+  ]);
+  trie.registerSuggestions('no', [
+    { keyword: 'hostname',  description: 'Reset system hostname' },
+    { keyword: 'interface', description: 'Remove an interface' },
+    { keyword: 'ip',        description: 'Negate ip subcommand' },
+    { keyword: 'router',    description: 'Disable a routing process' },
+    { keyword: 'access-list', description: 'Remove an access list' },
+    { keyword: 'vlan',      description: 'Remove a VLAN' },
+    { keyword: 'line',      description: 'Remove line configuration' },
+    { keyword: 'banner',    description: 'Remove banner' },
+  ]);
+  trie.registerSuggestions('no ip', [
+    { keyword: 'route',     description: 'Remove a static route' },
+    { keyword: 'routing',   description: 'Disable IP routing' },
+    { keyword: 'access-list', description: 'Remove an IP access list' },
+    { keyword: 'nat',       description: 'Remove NAT configuration' },
+    { keyword: 'dhcp',      description: 'Remove DHCP configuration' },
+    { keyword: 'host',      description: 'Remove a host name alias' },
+    { keyword: 'domain-name', description: 'Remove the default domain name' },
+  ]);
 }
 
 // ─── Interface Config Mode Commands ──────────────────────────────────
