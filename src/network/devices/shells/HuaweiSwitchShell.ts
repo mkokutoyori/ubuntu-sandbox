@@ -1989,12 +1989,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push('#');
     }
 
-    // Vlanif L3 interfaces
-    const sviIPs = (sw as unknown as { _getSviIps?: () => Map<string, { ip: string; mask: string }> })._getSviIps?.();
-    if (sviIPs) {
-      for (const [name, info] of sviIPs) {
+    // Vlanif L3 interfaces (SVIs configured via 'interface Vlanif<N>')
+    const svis = (sw as unknown as { getSvis?: () => Array<{ vlanId: number; ip?: string; mask?: string }> }).getSvis?.();
+    if (svis) {
+      for (const svi of svis) {
+        const name = `Vlanif${svi.vlanId}`;
         lines.push(`interface ${name}`);
-        lines.push(` ip address ${info.ip} ${info.mask}`);
+        if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
         lines.push('#');
       }

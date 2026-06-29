@@ -264,10 +264,14 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     return '';
   });
 
-  // no ip nat pool <name>
   trie.registerGreedy('no ip nat pool', 'Remove NAT address pool', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._getNATEngine().removePool(args[0]);
+    const name = args[0];
+    const engine = ctx.r()._getNATEngine();
+    if (engine.getDynamicRules().some(r => r.type === 'pool' && r.poolName === name)) {
+      return `% Pool is in use by an active list translation.`;
+    }
+    engine.removePool(name);
     return '';
   });
 
@@ -692,9 +696,12 @@ export function runningConfigNAT(router: Router): string[] {
   const engine = router._getNATEngine();
   const lines: string[] = [];
 
-  // NAT pools
   for (const [, pool] of engine.getPools()) {
-    lines.push(`ip nat pool ${pool.name} ${pool.startIP} ${pool.endIP} netmask 255.255.255.0`);
+    const prefixLen = (pool as any).prefixLen as number | undefined;
+    const tail = prefixLen != null
+      ? `prefix-length ${prefixLen}`
+      : `netmask 255.255.255.0`;
+    lines.push(`ip nat pool ${pool.name} ${pool.startIP} ${pool.endIP} ${tail}`);
   }
 
   for (const e of engine.getStaticEntries()) {
