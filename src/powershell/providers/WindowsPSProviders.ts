@@ -17,7 +17,7 @@ import type { WindowsPC } from '@/network/devices/WindowsPC';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { fwRules, resolveAdapterName } from '@/network/devices/windows/WinNetsh';
-import { IPAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 
 type FwRow = {
   name: string; displayName: string; enabled: boolean;
@@ -720,6 +720,26 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return rows;
   }
 
+  addNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias: string): string {
+    const iface = displayNameToPort(ifAlias);
+    const mac = new MACAddress(linkLayerAddress.replace(/-/g, ':').toLowerCase());
+    (this.pc as unknown as { addStaticARP: (ip: string, mac: MACAddress, iface: string) => void })
+      .addStaticARP(ipAddress, mac, iface);
+    return '';
+  }
+
+  removeNeighbor(ipAddress: string, _ifAlias?: string): string {
+    const ok = (this.pc as unknown as { deleteARP: (ip: string) => boolean }).deleteARP(ipAddress);
+    return ok ? '' : `Remove-NetNeighbor : No matching neighbor cache entry found.`;
+  }
+
+  setNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias?: string): string {
+    const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
+    const existing = arp.get(ipAddress);
+    const iface = ifAlias ? displayNameToPort(ifAlias) : (existing?.iface ?? 'eth0');
+    return this.addNeighbor(ipAddress, linkLayerAddress, portToDisplayName(iface));
+  }
+
   getTcpConnections() {
     const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }> } }).getSocketTable?.();
     if (!table) return [];
@@ -875,6 +895,14 @@ function portToDisplayName(portName: string): string {
   if (!m) return portName;
   const idx = parseInt(m[1], 10);
   return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
+}
+
+// Inverse: PS display name → port name (`Ethernet` → `eth0`, `Ethernet 2` → `eth1`).
+function displayNameToPort(alias: string): string {
+  if (alias.toLowerCase() === 'ethernet') return 'eth0';
+  const m = alias.match(/^Ethernet\s+(\d+)$/i);
+  if (m) return `eth${parseInt(m[1], 10) - 1}`;
+  return alias;
 }
 
 // 255.255.255.0 → 24.

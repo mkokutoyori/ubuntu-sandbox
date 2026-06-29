@@ -60,4 +60,21 @@ describe('Get-NetNeighbor reads the host ARP table', () => {
     const out = await ps('Get-NetNeighbor -State Reachable');
     expect(out).toMatch(/10\.0\.0\.1/);
   });
+
+  it('New-NetNeighbor adds a permanent entry visible in arp -a', async () => {
+    await ps("New-NetNeighbor -IPAddress 10.0.0.55 -LinkLayerAddress 'AA-BB-CC-DD-EE-FF' -InterfaceAlias Ethernet");
+    expect(await ps('Get-NetNeighbor')).toMatch(/10\.0\.0\.55\s+AA-BB-CC-DD-EE-FF\s+Permanent/);
+    expect(await win.executeCommand('arp -a')).toMatch(/10\.0\.0\.55\s+aa-bb-cc-dd-ee-ff\s+static/i);
+  });
+
+  it('Remove-NetNeighbor drops the entry', async () => {
+    expect(await ps('Get-NetNeighbor')).toMatch(/10\.0\.0\.1/);
+    await ps('Remove-NetNeighbor -IPAddress 10.0.0.1');
+    expect(await ps('Get-NetNeighbor')).not.toMatch(/^\s*\d+\s+\S+\s+10\.0\.0\.1\b/m);
+  });
+
+  it('Set-NetNeighbor updates the MAC of an existing entry', async () => {
+    await ps("Set-NetNeighbor -IPAddress 10.0.0.1 -LinkLayerAddress '11-22-33-44-55-66'");
+    expect(await ps('Get-NetNeighbor -IPAddress 10.0.0.1')).toMatch(/11-22-33-44-55-66/);
+  });
 });

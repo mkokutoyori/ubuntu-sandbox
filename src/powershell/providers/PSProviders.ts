@@ -235,6 +235,9 @@ export interface INetworkProvider {
   removeIPAddress(ip: string, ifAlias?: string): void;
   getRoutes(ifAlias?: string): RouteInfo[];
   getNeighbors(filter?: { ipAddress?: string; state?: string; ifIndex?: number }): NeighborInfo[];
+  addNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias: string): string;
+  removeNeighbor(ipAddress: string, ifAlias?: string): string;
+  setNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias?: string): string;
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
   /** Modify properties of an existing route — usually nextHop or metric. */
