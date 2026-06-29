@@ -94,6 +94,29 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
+   * Per-vty ? help. Routes through Router.cliHelpForVty so the listed
+   * completions reflect this terminal's current mode (user / privileged /
+   * config / …) rather than whatever the shared shell instance happens to
+   * be in. Fixes the "Router1#? shows the User-EXEC list" UI regression.
+   */
+  protected override resolveCliHelp(currentInput: string): string {
+    const dev = this.device;
+    if (this.vty && dev instanceof Router) {
+      return dev.cliHelpForVty(currentInput, this.vty);
+    }
+    return super.resolveCliHelp(currentInput);
+  }
+
+  /** Per-vty tab completion (same vty-isolation rule as resolveCliHelp). */
+  protected override resolveCliTabComplete(input: string): string | null {
+    const dev = this.device;
+    if (this.vty && dev instanceof Router) {
+      return dev.cliTabCompleteForVty(input, this.vty);
+    }
+    return super.resolveCliTabComplete(input);
+  }
+
+  /**
    * Override updatePrompt to read the prompt from the vty's swapped-in
    * shell state, not from the device's shared default state.
    */
