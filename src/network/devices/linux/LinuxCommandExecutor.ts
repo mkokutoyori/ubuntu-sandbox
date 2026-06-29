@@ -562,7 +562,7 @@ export class LinuxCommandExecutor {
   private renderProcNetArp(): string {
     const header = 'IP address       HW type     Flags       HW address            Mask     Device\n';
     if (!this.ipNetworkCtx) return header;
-    const entries = this.ipNetworkCtx.getNeighborTable();
+    const entries = this.ipNetworkCtx.getNeighborTable().filter((n) => n.state !== 'FAILED');
     const rows = entries.map((n) => {
       const flag = n.state === 'PERMANENT' ? '0x6' : '0x2';
       return [

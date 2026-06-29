@@ -220,7 +220,8 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
   }
 
   // ─── Display mode (default) ──────────────────────────────────
-  let entries = Array.from(ctx.arpTable.entries());
+  let entries = Array.from(ctx.arpTable.entries())
+    .filter(([, e]) => e.type !== 'failed');
 
   // Filter by IP
   if (flags.filterIP) {

@@ -893,7 +893,9 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
   if (addr) neighbors = neighbors.filter(n => n.ip === addr);
   if (neighbors.length > 0) {
     return neighbors
-      .map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
+      .map(n => n.state === 'FAILED'
+        ? `${n.ip} dev ${n.iface}  FAILED`
+        : `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
       .join('\n');
   }
 

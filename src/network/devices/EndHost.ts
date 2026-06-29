@@ -87,8 +87,8 @@ export interface ARPEntry {
   /** Interface on which this entry was learned */
   iface: string;
   timestamp: number;
-  /** Whether this entry was learned dynamically or added manually */
-  type: 'dynamic' | 'static';
+  /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
+  type: 'dynamic' | 'static' | 'failed';
 }
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
@@ -99,6 +99,7 @@ export const ARP_AGING_INTERVAL_MS = 5_000;
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
+  if (entry.type === 'failed') return 'FAILED';
   return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
@@ -1808,7 +1809,7 @@ export abstract class EndHost extends Equipment {
    */
   protected async resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
     const cached = this.arpTable.get(targetIP.toString());
-    if (cached) return cached.mac;
+    if (cached && cached.type !== 'failed') return cached.mac;
 
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
@@ -1846,7 +1847,18 @@ export abstract class EndHost extends Equipment {
       const learned = await waitPromise;
       return new MACAddress(learned.mac);
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) throw new Error('ARP timeout');
+      if (err instanceof WaitForEventTimeoutError) {
+        const prev = this.arpTable.get(targetIpStr);
+        if (!prev || prev.type !== 'static') {
+          this.arpTable.set(targetIpStr, {
+            mac: MACAddress.broadcast(),
+            iface: portName,
+            timestamp: Date.now(),
+            type: 'failed',
+          });
+        }
+        throw new Error('ARP timeout');
+      }
       throw err;
     }
   }
