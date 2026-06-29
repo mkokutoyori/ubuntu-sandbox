@@ -160,6 +160,17 @@ export class SshServerHandler {
             conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
             return;
           }
+          if (channels.size >= this.ctx.config.maxSessions) {
+            conn.write(JSON.stringify({ ok: false, error: 'open failed: administratively prohibited: too many open sessions' }));
+            this.eventBus.emit({
+              kind: 'auth_failure',
+              user: userCtx.username,
+              reason: 'max_sessions',
+              ip: clientIp,
+              method: 'open_channel',
+            });
+            return;
+          }
           const channelType = parsed.channelType as ChannelType;
           const channelId = parsed.channelId as number;
           channels.set(channelId, {
