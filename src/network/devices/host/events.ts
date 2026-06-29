@@ -41,6 +41,13 @@ export interface HostArpRequestSentPayload extends HostDeviceRef {
   targetIp: string;
 }
 
+export interface HostArpIpConflictPayload extends HostDeviceRef {
+  iface: string;
+  ip: string;
+  foreignMac: string;
+  localMac: string;
+}
+
 export interface HostNdpEntryLearnedPayload extends HostDeviceRef {
   ip: string;
   mac: string;
@@ -212,6 +219,7 @@ export type HostDomainEvent =
   | { topic: 'host.arp.entry-learned'; payload: HostArpEntryLearnedPayload }
   | { topic: 'host.arp.entry-expired'; payload: HostArpEntryExpiredPayload }
   | { topic: 'host.arp.request-sent'; payload: HostArpRequestSentPayload }
+  | { topic: 'host.arp.ip-conflict'; payload: HostArpIpConflictPayload }
   | { topic: 'host.ndp.entry-learned'; payload: HostNdpEntryLearnedPayload }
   | { topic: 'host.ndp.entry-expired'; payload: HostNdpEntryExpiredPayload }
   | { topic: 'host.routing.route-added'; payload: HostRouteAddedPayload }

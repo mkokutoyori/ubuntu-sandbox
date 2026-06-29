@@ -1079,6 +1079,19 @@ export abstract class EndHost extends Equipment {
     const myIP = port.getIPAddress();
     if (!myIP) return;
 
+    if (arp.senderIP.equals(myIP) && !arp.senderMAC.equals(port.getMAC())) {
+      this.getBus().publish({
+        topic: 'host.arp.ip-conflict',
+        payload: {
+          ...this.hostRef(),
+          iface: portName,
+          ip: myIP.toString(),
+          foreignMac: arp.senderMAC.toString(),
+          localMac: port.getMAC().toString(),
+        },
+      });
+    }
+
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
       // ARP request for our IP → reply with our MAC
       Logger.info(this.id, 'arp:reply', `${this.name}: ARP reply for ${myIP} via ${portName}`);
