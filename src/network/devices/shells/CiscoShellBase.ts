@@ -450,13 +450,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
+        && this.terminalHistorySize > 0
         && trimmed.toLowerCase() !== 'show history'
         && trimmed.toLowerCase() !== 'clear history') {
       this.cmdHistory.push(trimmed);
       if (this.cmdHistory.length > this.terminalHistorySize) {
         this.cmdHistory = this.cmdHistory.slice(-this.terminalHistorySize);
       }
+    } else if (this.terminalHistorySize === 0) {
+      this.cmdHistory = [];
     }
 
     const parsed = parsePipeFilter(trimmed);
@@ -1571,8 +1575,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
-      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
+      const dev = this.d() as unknown as {
+        _setSshBanner?: (b: string) => void;
+        _setMotdBanner?: (b: string) => void;
+      };
       dev._setSshBanner?.('');
+      dev._setMotdBanner?.('');
       return '';
     });
     this.configTrie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {

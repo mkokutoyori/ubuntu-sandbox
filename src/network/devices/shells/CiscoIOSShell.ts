@@ -427,7 +427,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   protected override cmdExit(): string {
-    // Router: exit at user mode returns '' (no "Connection closed." like switch)
+    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
