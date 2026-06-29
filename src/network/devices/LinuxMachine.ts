@@ -109,6 +109,7 @@ import { renderW } from './linux/network/wFormatter';
 import { renderLast } from './linux/network/lastFormatter';
 import { renderLoginctl } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
+import { LogindStateSync } from './linux/network/LogindStateSync';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
@@ -189,6 +190,9 @@ export abstract class LinuxMachine extends EndHost
     this.sessionTable.attachUtmp(utmpSync);
     this.utmpSync = utmpSync;
     this.executor.setUtmpSync(utmpSync);
+    const logindSync = new LogindStateSync(this.executor.vfs);
+    logindSync.bootstrap();
+    this.logindSync = logindSync;
     this.executor.attachEventBus(this.getBus(), this.id);
     this.syncHostnameFiles(profile.hostname);
 
@@ -501,6 +505,7 @@ export abstract class LinuxMachine extends EndHost
       session.sshdPid = sshdChild.pid;
       session.shellPid = shell.pid;
       this.utmpSync?.updateSessionPids(session.tty, shell.pid, sshdChild.pid);
+      this.persistLogindSession(session.tty, uid, user, shell.pid, fromIp);
       const myIp = this.getPorts()
         .map((p) => p.getIPAddress()?.toString())
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
@@ -650,8 +655,10 @@ export abstract class LinuxMachine extends EndHost
 
   /** Per-machine SSH session table — backs `w`, `who`, `last`. */
   private utmpSync: UtmpSync | null = null;
+  private logindSync: LogindStateSync | null = null;
 
   getUtmpSync(): UtmpSync | null { return this.utmpSync; }
+  getLogindSync(): LogindStateSync | null { return this.logindSync; }
 
   public readonly sessionTable = (() => {
     const t = new SshSessionTable();
@@ -750,12 +757,47 @@ export abstract class LinuxMachine extends EndHost
       if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
       if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
       this.sessionTable.close(s.tty, 'admin');
+      this.dropLogindSession(sessionId, s.uid);
       return { ok: true };
     };
     return {
       terminate: (sid) => terminateSession(sid, 'SIGTERM'),
       kill: (sid, signal) => terminateSession(sid, signal),
     };
+  }
+
+  private persistLogindSession(
+    tty: string, uid: number, user: string, leader: number, fromIp: string,
+  ): void {
+    if (!this.logindSync) return;
+    const sid = String(leader);
+    const sessions = this.sessionTable.list();
+    const sidsForUser = sessions
+      .filter((s) => s.uid === uid)
+      .map((s) => String(s.shellPid ?? s.sshdPid ?? 0))
+      .filter((s) => s !== '0');
+    if (!sidsForUser.includes(sid)) sidsForUser.push(sid);
+    this.logindSync.writeSession({
+      sid, uid, user, tty,
+      leader,
+      service: 'sshd',
+      remote: fromIp !== '' && fromIp !== ':0',
+      remoteHost: fromIp,
+      scope: `session-${sid}.scope`,
+      classOf: 'user',
+      type: 'tty',
+      realtimeMicros: Date.now() * 1000,
+      monotonicMicros: this.executor.lifecycle.uptimeSeconds() * 1_000_000,
+    }, sidsForUser);
+  }
+
+  private dropLogindSession(sid: string, uid: number): void {
+    if (!this.logindSync) return;
+    const remaining = this.sessionTable.list()
+      .filter((s) => s.uid === uid)
+      .map((s) => String(s.shellPid ?? s.sshdPid ?? 0))
+      .filter((s) => s !== '0' && s !== sid);
+    this.logindSync.removeSession(sid, uid, remaining);
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
