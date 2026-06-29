@@ -1041,8 +1041,6 @@ export abstract class LinuxMachine extends EndHost
    */
   private containsNetworkCommand(input: string): boolean {
     if (this.commands.hasNetworkCommandIn(input)) return true;
-    // Additional commands that require EndHost access but are not in
-    // the registry because they need special dispatch logic.
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&]+/);
     return words.some(w =>
@@ -1050,21 +1048,119 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
-  /**
-   * True when the input contains bash control flow / expansion that the
-   * per-line dispatch path can't parse. When this fires we have to let the
-   * bash interpreter own parsing + expansion, even if the body mentions a
-   * network command — otherwise `for i in {1..N}; do ping ... done` is
-   * shredded on `;` and the variable references survive un-expanded.
-   */
+  private async runShellScript(script: string): Promise<string> {
+    const vars: Record<string, string> = {};
+    const outputs: string[] = [];
+    for (const stmt of LinuxMachine.splitStatements(script)) {
+      const out = await this.runStatement(stmt, vars);
+      if (out) outputs.push(out);
+    }
+    return outputs.join('\n');
+  }
+
+  private async runStatement(stmt: string, vars: Record<string, string>): Promise<string> {
+    const trimmed = stmt.trim().replace(/^&\s*|\s*&\s*$/g, '').trim();
+    if (!trimmed) return '';
+    if (trimmed === 'wait') return '';
+
+    const forMatch = LinuxMachine.matchForLoop(trimmed);
+    if (forMatch) {
+      const values = LinuxMachine.expandBraceList(LinuxMachine.expandVarsIn(forMatch.items, vars));
+      const outputs: string[] = [];
+      for (const value of values) {
+        vars[forMatch.varName] = value;
+        for (const body of LinuxMachine.splitStatements(forMatch.body)) {
+          const out = await this.runStatement(body, vars);
+          if (out) outputs.push(out);
+        }
+      }
+      return outputs.join('\n');
+    }
+
+    const assign = trimmed.match(/^([A-Za-z_]\w*)=(.*)$/);
+    if (assign && !assign[2].includes(' ')) {
+      vars[assign[1]] = assign[2];
+      return '';
+    }
+
+    const expanded = LinuxMachine.expandVarsIn(trimmed, vars);
+    return this.executeCommand(expanded);
+  }
+
+  private static splitStatements(input: string): string[] {
+    const out: string[] = [];
+    let buf = '';
+    let quote: '"' | "'" | null = null;
+    let forDepth = 0;
+    let i = 0;
+    while (i < input.length) {
+      const ch = input[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+        buf += ch; i++; continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; buf += ch; i++; continue; }
+      if (/^(\b)(for|while|until|if|case)\b/.test(input.slice(i))) {
+        const m = input.slice(i).match(/^(for|while|until|if|case)\b/);
+        if (m) { forDepth++; buf += m[0]; i += m[0].length; continue; }
+      }
+      if (/^(\b)(done|fi|esac)\b/.test(input.slice(i))) {
+        const m = input.slice(i).match(/^(done|fi|esac)\b/);
+        if (m) { forDepth--; buf += m[0]; i += m[0].length; continue; }
+      }
+      if (forDepth === 0 && (ch === ';' || ch === '\n')) {
+        if (buf.trim()) out.push(buf.trim());
+        buf = ''; i++; continue;
+      }
+      buf += ch; i++;
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out;
+  }
+
+  private static matchForLoop(stmt: string): { varName: string; items: string; body: string } | null {
+    const m = stmt.match(/^for\s+([A-Za-z_]\w*)\s+in\s+([\s\S]+?)\s*;?\s*do\s+([\s\S]+?)\s*;?\s*done\s*$/);
+    if (!m) return null;
+    return { varName: m[1], items: m[2].trim(), body: m[3].trim() };
+  }
+
+  private static expandBraceList(items: string): string[] {
+    const out: string[] = [];
+    for (const token of items.split(/\s+/).filter(Boolean)) {
+      const range = token.match(/^\{(-?\d+)\.\.(-?\d+)(?:\.\.(\d+))?\}$/);
+      if (range) {
+        const start = parseInt(range[1], 10);
+        const end = parseInt(range[2], 10);
+        const step = range[3] ? parseInt(range[3], 10) : 1;
+        if (start <= end) for (let n = start; n <= end; n += step) out.push(String(n));
+        else for (let n = start; n >= end; n -= step) out.push(String(n));
+        continue;
+      }
+      const list = token.match(/^\{([^{}]+)\}$/);
+      if (list) {
+        for (const v of list[1].split(',')) out.push(v);
+        continue;
+      }
+      out.push(token);
+    }
+    return out;
+  }
+
+  private static expandVarsIn(text: string, vars: Record<string, string>): string {
+    return text.replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g, (_m, braced, simple) => {
+      const name = braced ?? simple;
+      return name in vars ? vars[name] : `\$${name}`;
+    });
+  }
+
   private hasShellConstructs(input: string): boolean {
     if (/(^|\s|;|\||&)(for|while|until|if|case|select)\s/.test(input)) return true;
     if (/(^|\s|;|\|)(do|done|then|fi|esac)(\s|$|;)/.test(input)) return true;
-    if (/\{[^{}]*\.\.[^{}]*\}/.test(input)) return true; // brace range {1..N}
-    if (/\$\{[A-Za-z_]/.test(input)) return true;        // ${var}
-    if (/\$[A-Za-z_]\w*/.test(input)) return true;        // $var (incl. inside word)
-    if (/\$\(/.test(input)) return true;                  // $(cmd)
-    if (/\n/.test(input.trim())) return true;             // multi-line script
+    if (/\{[^{}]*\.\.[^{}]*\}/.test(input)) return true;
+    if (/\$\{[A-Za-z_]/.test(input)) return true;
+    if (/\$[A-Za-z_]\w*/.test(input)) return true;
+    if (/\$\(/.test(input)) return true;
+    if (/\n/.test(input.trim())) return true;
     if (/(^|\s)wait(\s|;|$)/.test(input)) return true;
     return false;
   }
@@ -1094,18 +1190,12 @@ export abstract class LinuxMachine extends EndHost
       return this.runTcpdumpCommand(trimmed);
     }
 
-    // Fast path: no network command → straight to bash interpreter.
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
     }
 
-    // Shell constructs (for / while / $var / brace ranges / multi-line) need
-    // bash's parsing and variable expansion. Per-line dispatch on `;` would
-    // shred the script. Route the whole thing through the interpreter even
-    // when the body mentions a network command — the executor's net stubs
-    // produce realistic-looking output on each iteration.
     if (this.hasShellConstructs(trimmed)) {
-      return this.executor.execute(trimmed);
+      return this.runShellScript(trimmed);
     }
 
     // Compound commands: split on a top-level `;` and recurse. Quoted

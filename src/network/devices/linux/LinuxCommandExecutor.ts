@@ -2043,21 +2043,12 @@ export class LinuxCommandExecutor {
     argv: string[],
     env?: Record<string, string>,
   ): { output: string; exitCode: number } {
-    // Remember the shell environment of the command currently being
-    // dispatched so env-aware commands (ssh forwarding, locale) can read
-    // exported variables and `VAR=val` prefix assignments.
     this._cmdEnv = env;
     if (argv.length === 0) return { output: '', exitCode: 0 };
 
-    // The last argument may be pipe input (passed by the interpreter)
-    // Detect: if there are more args than expected and the last contains newlines, treat as stdin
     const cmd = argv[0];
     const args = argv.slice(1);
 
-    // Job-control builtins that the interpreter doesn't model itself.
-    // `wait` in particular is essential for `cmd & ...; wait` patterns —
-    // since the simulator runs backgrounded commands synchronously, wait
-    // just acknowledges and returns 0.
     if (cmd === 'wait')   return { output: this.handleWait(args), exitCode: 0 };
     if (cmd === 'jobs')   return { output: cmdJobs(args, this.jobsCmdContext()).output, exitCode: 0 };
     if (cmd === 'bg')     return { output: cmdBg(args, this.jobsCmdContext()).output, exitCode: 0 };

@@ -48,4 +48,11 @@ wait`;
     expect(out).not.toMatch(/do: command not found/);
     expect(out).not.toMatch(/wait: command not found/);
   });
+
+  it('the sweep actually populates the ARP cache with reachable hosts', async () => {
+    const script = `for i in 1 2 3; do ping -c 1 -W 1 192.168.1.$i >/dev/null; done`;
+    await pc.executeCommand(script);
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
 });
