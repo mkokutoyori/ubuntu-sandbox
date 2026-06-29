@@ -600,7 +600,7 @@ export function showNATTranslations(router: Router): string {
 
   const header = 'Pro  Inside global          Inside local           Outside local          Outside global';
   if (entries.length === 0 && outsideStatic.length === 0 && networkStatic.length === 0) {
-    return `${header}\nNo NAT entries.`;
+    return `${header}\nNo NAT translations.`;
   }
   const lines = [header];
   for (const e of entries) {

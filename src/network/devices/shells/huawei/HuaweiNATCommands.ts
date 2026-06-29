@@ -305,14 +305,14 @@ function displayNATStatic(router: Router): string {
 function displayNATOutbound(router: Router): string {
   const engine = router._getNATEngine();
   const rules = engine.getDynamicRules();
-  if (rules.length === 0) return ' (no outbound rules configured)';
+  if (rules.length === 0) return ' No NAT outbound rules configured';
 
   const lines = [
     ' ACL       Type      Pool                Flags',
     ' ' + '-'.repeat(55),
   ];
   for (const r of rules) {
-    const type = r.type === 'overload' ? 'easy-ip' : 'pool';
+    const type = r.type === 'overload' ? 'easy-ip overload' : 'pool';
     const pool = r.poolName ?? '---';
     const noPat = (r as any).noPat ? 'no-pat' : '';
     lines.push(` ${String(r.aclId).padEnd(10)}${type.padEnd(10)}${pool.padEnd(20)}${noPat}`);
@@ -334,7 +334,9 @@ function displayNATServer(router: Router): string {
 function displayNATSession(router: Router): string {
   const entries = router._getNATEngine().getTranslations();
   const sessions = entries.filter(e => e.proto !== '---');
-  const lines: string[] = [` Total sessions: ${sessions.length}`];
+  const lines: string[] = [
+    sessions.length === 0 ? ' No active NAT sessions' : ` Total sessions: ${sessions.length}`,
+  ];
   if (sessions.length > 0) {
     lines.push('');
     lines.push(' Proto  Inside Local           Inside Global          Outside Global');

@@ -586,7 +586,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     'config-router-ospf': ['interface', 'router'],
     'config-router-ospfv3': ['interface', 'router'],
     'config-vlan': ['interface', 'vlan', 'ip'],
-    'config-vrf': ['interface', 'line', 'router', 'ip', 'vlan'],
+    'config-vrf': ['*'],
     'config-route-map': ['interface', 'vlan'],
   };
 
@@ -603,7 +603,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!heads) return null;
     const head = cmdPart.trim().split(/\s+/)[0]?.toLowerCase();
     if (!head) return null;
-    if (!heads.some(k => k.startsWith(head))) return null;
+    if (!heads.includes('*') && !heads.some(k => k.startsWith(head))) return null;
     const result = this.configTrie.match(cmdPart);
     if (result.status === 'ok' && result.node?.action) {
       return result.node.action(result.args, cmdPart);

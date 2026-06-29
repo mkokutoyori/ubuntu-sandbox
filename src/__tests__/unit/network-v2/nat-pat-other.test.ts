@@ -339,7 +339,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('no ip nat inside source static network 192.168.1.0 203.0.113.0 /24');
       await topo.r1.executeCommand('end');
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('23. should show static NAT configuration in show running-config output', async () => {
@@ -612,7 +612,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('no ip nat inside source static 192.168.1.10 203.0.113.10');
       await topo.r1.executeCommand('end');
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('50. should execute successfully and return status 0 on clean static NAT configuration', async () => {
@@ -789,7 +789,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       await topo.inside_pc1.executeCommand('ping -c 1 -W 1 198.51.100.10'); // Untranslated
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('65. should support using named standard ACLs instead of numbered ones', async () => {
@@ -904,7 +904,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10');
       await topo.r1.executeCommand('clear ip nat translation *');
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('75. should show dynamic pool mapping in show running-config output', async () => {
@@ -2288,7 +2288,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await configureBasicNATRouting(topo);
       await topo.r1.executeCommand('enable');
       const output = await topo.r1.executeCommand('show ip nat translations');
-      expect(output.toLowerCase()).toContain('no nat entries');
+      expect(output.toLowerCase()).toContain('no nat translations');
     });
 
     it('203. should display statistics details correctly on show ip nat statistics', async () => {
@@ -4185,7 +4185,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       await topo.inside_pc1.executeCommand('ping -c 1 -W 1 198.51.100.10'); // dropped/untranslated
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('393. should trigger instant port exhaustion on dynamic PAT pool consisting of single IP and single port if 2 sessions are requested', async () => {
@@ -4219,7 +4219,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('end');
 
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table.toLowerCase()).toContain('no nat entries');
+      expect(table.toLowerCase()).toContain('no nat translations');
     });
 
     it('395. should configure ip nat translation max-entries configuration parameter', async () => {
