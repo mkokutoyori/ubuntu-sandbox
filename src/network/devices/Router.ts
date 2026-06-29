@@ -2163,8 +2163,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
   _setServiceFlag(name: string, on: boolean): void {
-    if (on) this._serviceFlags.set(name, true);
-    else this._serviceFlags.delete(name);
+    this._serviceFlags.set(name, on);
   }
 
   getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }

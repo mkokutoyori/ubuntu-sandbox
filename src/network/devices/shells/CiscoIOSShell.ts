@@ -418,12 +418,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   /** Real saved configuration (null until first `write memory`). */
   private startupConfig: string | null = null;
+  private startupAliases: ReturnType<typeof this.aliases.snapshot> | null = null;
 
   protected onSave(): string {
-    // Snapshot the REAL running-config so `show startup-config`
-    // reflects exactly what was saved (no fabricated content).
     this.startupConfig = Show.showRunningConfig(this.d());
+    this.startupAliases = this.aliases.snapshot();
     return 'Building configuration...\n[OK]';
+  }
+
+  protected override performImmediateReload(): string {
+    const out = super.performImmediateReload();
+    if (this.startupAliases) this.aliases.restore(this.startupAliases);
+    return out;
   }
 
   protected override cmdExit(): string {

@@ -55,7 +55,7 @@ export function renderPasswordField(
 ): string {
   if (algo === 'type-7') return `7 ${value}`;
   if (serviceEncryption) return `7 ${encryptType7(value, deriveType7Salt(value))}`;
-  return `0 ${value}`;
+  return value;
 }
 
 /**

@@ -97,6 +97,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.d().powerOn();
     this.mode = 'user';
     this.terminalMonitor = false;
+    this.cmdHistory = [];
+    this.aliases.reset();
     this.debugConsole.length = 0;
     (this.d() as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
     return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
@@ -107,6 +109,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     device.powerOn();
     this.mode = 'user';
     this.terminalMonitor = false;
+    this.cmdHistory = [];
     this.debugConsole.length = 0;
     (device as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
   }
