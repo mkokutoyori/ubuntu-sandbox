@@ -2040,7 +2040,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('enable password normalpassword');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('enable password normalpassword');
+      expect(running).toContain('enable password 0 normalpassword');
     });
 
     it('230. should encrypt enable password inside show running-config when service password-encryption is enabled', async () => {
