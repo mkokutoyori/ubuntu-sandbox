@@ -79,6 +79,7 @@ export class SshServerHandler {
   private handleConnection(conn: TcpConnection, clientIp: string): void {
     const channels = new Map<number, OpenChannelInfo>();
     let userCtx: SshUserContext | null = null;
+    let authFailures = 0;
 
     conn.onClose?.((reason) => {
       channels.clear();
@@ -119,11 +120,36 @@ export class SshServerHandler {
         }
 
         case 'auth': {
+          const cap = this.ctx.config.maxAuthTries;
+          if (authFailures >= cap) {
+            conn.write(JSON.stringify({ ok: false, error: 'too many authentication failures' }));
+            this.eventBus.emit({
+              kind: 'auth_failure',
+              user: (parsed.user as string | undefined) ?? '',
+              reason: 'max_auth_tries',
+              ip: clientIp,
+              method: parsed.method as string | undefined,
+            });
+            conn.close();
+            return;
+          }
           void this.handleAuth(parsed, clientIp).then((result) => {
             conn.write(JSON.stringify({ ok: result.ok }));
             if (result.ok) {
               userCtx = result.userCtx;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
+              return;
+            }
+            authFailures += 1;
+            if (authFailures >= cap) {
+              this.eventBus.emit({
+                kind: 'auth_failure',
+                user: (parsed.user as string | undefined) ?? '',
+                reason: 'max_auth_tries',
+                ip: clientIp,
+                method: parsed.method as string | undefined,
+              });
+              conn.close();
             }
           });
           break;
