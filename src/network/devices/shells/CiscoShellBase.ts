@@ -549,7 +549,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * the interface sub-mode and enters line configuration. Used as a
    * fallback when the active sub-mode trie does not recognise the command.
    */
-  private static readonly GLOBAL_NAV_HEADS = ['interface', 'line', 'router', 'vlan'];
+  private static readonly GLOBAL_NAV_BY_MODE: Record<string, string[]> = {
+    'config-if': ['interface', 'line'],
+    'config-subif': ['interface', 'vlan'],
+    'config-line': ['line', 'router'],
+    'config-router': ['interface', 'router'],
+    'config-router-ospf': ['interface', 'router'],
+    'config-router-ospfv3': ['interface', 'router'],
+    'config-vlan': ['interface', 'vlan', 'ip'],
+    'config-route-map': ['interface', 'vlan'],
+  };
 
   /**
    * Reproduce IOS's "global commands work from a sub-config mode" behaviour:
@@ -560,9 +569,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected tryGlobalConfigNavigation(cmdPart: string): string | null {
     if (!this.isConfigMode() || this.mode === 'config') return null;
+    const heads = CiscoShellBase.GLOBAL_NAV_BY_MODE[this.mode];
+    if (!heads) return null;
     const head = cmdPart.trim().split(/\s+/)[0]?.toLowerCase();
     if (!head) return null;
-    if (!CiscoShellBase.GLOBAL_NAV_HEADS.some(k => k.startsWith(head))) return null;
+    if (!heads.some(k => k.startsWith(head))) return null;
     const result = this.configTrie.match(cmdPart);
     if (result.status === 'ok' && result.node?.action) {
       return result.node.action(result.args, cmdPart);
