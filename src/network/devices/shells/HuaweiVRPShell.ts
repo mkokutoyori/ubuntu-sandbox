@@ -1240,7 +1240,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('debugging ip packet', 'Enable IP packet debugging', () => svc()?.enable('ip-packet') ?? '');
     t.register('undo debugging ip packet', 'Disable IP packet debugging', () => svc()?.disable('ip-packet') ?? '');
     t.register('undo debugging all', 'Disable all debugging', () => svc()?.disableAll() ?? '');
-    t.register('display debugging', 'Display enabled debug flags', () => svc()?.format() ?? 'No debugging is on');
     t.register('display debug', 'Display enabled debug flags', () => svc()?.format() ?? 'No debugging is on');
 
     t.register('terminal debugging', 'Send debug output to this terminal', () => {

@@ -360,11 +360,8 @@ async function runPing(
   }
 
   let targetIP = await ctx.net.resolveHostname(rawTarget);
-  if (!targetIP && rawTarget.toLowerCase() === 'localhost') {
-    try { targetIP = new IPAddress('127.0.0.1'); } catch { /* ignore */ }
-  }
   if (!targetIP) {
-    return `${cmdName}: unknown host ${rawTarget} (failed to resolve)`;
+    return `${cmdName}: ${rawTarget}: Name or service not known`;
   }
 
   const targetStr = targetIP.toString();
