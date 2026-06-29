@@ -43,12 +43,6 @@ export interface CommandNode {
   action?: CommandAction;
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
-  /**
-   * Optional manual help suggestions emitted on '?' after this node, used when
-   * the trie has no children to enumerate (e.g. a greedy command like
-   * `interface <name>` where the underlying argument space is a finite set of
-   * interface families: GigabitEthernet, Loopback, …).
-   */
   hintSuggestions?: Array<{ keyword: string; description: string }>;
 }
 
@@ -176,21 +170,12 @@ export class CommandTrie {
     if (params) node.params = params;
   }
 
-  /**
-   * Attach manual ? help suggestions to a registered path. Useful for greedy
-   * commands whose argument space is a finite, well-known set
-   * (e.g. `interface ?` → GigabitEthernet / FastEthernet / Loopback / …).
-   * Silently no-ops when the path is unknown.
-   */
   registerSuggestions(path: string, suggestions: Array<{ keyword: string; description: string }>): void {
     const keywords = path.split(/\s+/).map(k => k.toLowerCase());
     let node: CommandNode = this.root;
     for (const kw of keywords) {
       let child = node.children.get(kw);
       if (!child) {
-        // Create a placeholder node so suggestions can be attached even when
-        // the corresponding command tree hasn't been registered yet (or
-        // never will — e.g. `write erase` is a pure suggestion-only path).
         child = this.createNode(kw, kw);
         node.children.set(kw, child);
       }
@@ -472,13 +457,19 @@ export class CommandTrie {
       const isLast = i === tokens.length - 1;
 
       if (isLast && !input.endsWith(' ')) {
-        // Partial token → try to complete
         const matches = this.prefixMatch(node, token);
         if (matches.length === 1) {
           completed.push(matches[0].keyword);
           return completed.join(' ') + ' ';
         }
-        // Ambiguous or no match → no completion
+        if (matches.length === 0 && node.hintSuggestions) {
+          const hintMatches = node.hintSuggestions.filter(h =>
+            h.keyword.toLowerCase().startsWith(token));
+          if (hintMatches.length === 1) {
+            completed.push(hintMatches[0].keyword);
+            return completed.join(' ') + ' ';
+          }
+        }
         return null;
       }
 
@@ -546,10 +537,6 @@ export class CommandTrie {
       results.push({ keyword: `<${param.name}>`, description: param.description });
     }
 
-    // Manual hint suggestions — merged with children so commands whose
-    // argument space spans more keywords than the trie actually has
-    // registered (e.g. `copy ?` should list both `running-config` and
-    // `startup-config` even when only one direction has a handler).
     if (node.hintSuggestions && node.hintSuggestions.length > 0) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const hint of node.hintSuggestions) {
@@ -560,9 +547,6 @@ export class CommandTrie {
       }
     }
 
-    // If node is a greedy command and nothing else has been listed, fall back
-    // to the generic WORD placeholder so the user still sees that an argument
-    // is expected.
     if (node.greedy && results.length === 0) {
       results.push({ keyword: 'WORD', description: node.description });
     }

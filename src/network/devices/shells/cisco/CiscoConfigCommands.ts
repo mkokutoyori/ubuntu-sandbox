@@ -17,7 +17,7 @@ import { resolveCiscoInterfaceName } from '../cli-utils';
 // ─── Shell Context Interface ─────────────────────────────────────────
 
 export type CiscoShellMode =
-  | 'user' | 'privileged' | 'config' | 'config-if'
+  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
   | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
@@ -124,7 +124,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
       if (!ifName) return `% Invalid interface "${raw}"`;
     }
     ctx.setSelectedInterface(ifName);
-    ctx.setMode('config-if');
+    ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
     return '';
   });
 
@@ -283,9 +283,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  // ─── ? Help Suggestions — finite-but-greedy command argument spaces ──
-  // These match real Cisco IOS where typing `interface ?`, `line ?`, etc.
-  // emits the family/category list rather than the generic `<WORD>`.
   trie.registerSuggestions('interface', [
     { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z' },
     { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u' },

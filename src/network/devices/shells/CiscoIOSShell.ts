@@ -441,6 +441,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'privileged': return this.privilegedTrie;
       case 'config': return this.configTrie;
       case 'config-if': return this.configIfTrie;
+      case 'config-subif': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;

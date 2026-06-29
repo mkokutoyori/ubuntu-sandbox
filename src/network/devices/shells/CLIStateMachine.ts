@@ -106,6 +106,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'privileged':                { parent: 'user' },
   'config':                    { parent: 'privileged' },
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
+  'config-subif':              { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
   'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },

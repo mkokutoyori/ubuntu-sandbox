@@ -1804,21 +1804,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return promise;
   }
 
-  /** ? help resolved against the per-vty shell state (no shared-state leak). */
   cliHelpForVty(input: string, session: CliShellSession): string {
     return this.withSwappedVtyState(session, () => this.cliHelp(input)) ?? this.cliHelp(input);
   }
 
-  /** Tab completion resolved against the per-vty shell state. */
   cliTabCompleteForVty(input: string, session: CliShellSession): string | null {
     return this.withSwappedVtyState(session, () => this.cliTabComplete(input));
   }
 
-  /**
-   * Run `fn` with the shared shell state swapped to `session.state`. Returns
-   * `null` when the shell does not expose snapshot hooks (older shells fall
-   * back to the shared state).
-   */
   private withSwappedVtyState<T>(session: CliShellSession, fn: () => T): T | null {
     const shell = this.shell as unknown as {
       snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;

@@ -66,7 +66,6 @@ export function registerSharedPrivilegedCommands(
     return saveHandler();
   });
 
-  // ? help suggestions for greedy privileged commands.
   trie.registerSuggestions('copy', [
     { keyword: 'running-config', description: 'Current running configuration' },
     { keyword: 'startup-config', description: 'Saved startup configuration' },

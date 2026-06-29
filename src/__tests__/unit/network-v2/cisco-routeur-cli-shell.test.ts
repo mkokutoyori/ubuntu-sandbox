@@ -17,7 +17,7 @@ import { Logger } from '@/network/core/Logger';
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function setupRouter() {
-  return new CiscoRouter('r1', 'Router', 0, 0);
+  return new CiscoRouter('Router', 0, 0);
 }
 
 const setupCiscoRouter = setupRouter;

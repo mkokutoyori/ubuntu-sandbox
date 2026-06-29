@@ -54,6 +54,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'privileged':                '{host}#',
   'config':                    '{host}(config)#',
   'config-if':                 '{host}(config-if)#',
+  'config-subif':              '{host}(config-subif)#',
   'config-line':               '{host}(config-line)#',
   'config-dhcp':               '{host}(dhcp-config)#',
   'config-router':             '{host}(config-router)#',

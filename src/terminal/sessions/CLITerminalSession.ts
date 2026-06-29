@@ -314,21 +314,10 @@ export abstract class CLITerminalSession extends TerminalSession {
     // Input is NOT cleared — user continues typing
   }
 
-  /**
-   * Resolve `?` help for the current input. Default implementation defers to
-   * the device's shared shell; vendor-specific sessions (Cisco, Huawei)
-   * override to route the query through their per-vty state so the
-   * displayed completions reflect the current terminal's mode, not the last
-   * mode the shared shell happened to be left in.
-   */
   protected resolveCliHelp(currentInput: string): string {
     return this.cliDevice.cliHelp(currentInput);
   }
 
-  /**
-   * Resolve tab completion for the current input. Same vty-isolation rule
-   * as resolveCliHelp.
-   */
   protected resolveCliTabComplete(input: string): string | null {
     return this.cliDevice.cliTabComplete(input);
   }

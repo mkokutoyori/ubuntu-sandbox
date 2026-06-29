@@ -415,6 +415,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * show shortcut, trie matching, async support, error formatting.
    */
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
+    if (rawInput.endsWith('\t')) {
+      const stem = rawInput.replace(/\s+$/, '');
+      const completed = this.tabComplete(stem);
+      return (completed ?? stem).trimEnd();
+    }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
     if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
@@ -619,8 +624,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const completions = trie.getCompletions(input);
     if (completions.length === 0) {
       const trimmed = input.trim();
-      // Real IOS behaviour: ‹prefix›? with no match is silent. ‹word ?› (or
-      // multi-token ?) emits the unrecognized-command marker.
       const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
       return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
     }
