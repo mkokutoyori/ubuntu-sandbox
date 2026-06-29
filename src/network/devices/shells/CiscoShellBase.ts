@@ -139,6 +139,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
   protected terminalHistorySize: number = 20;
+  protected terminalHistoryEnabled: boolean = true;
   protected terminalMonitor = false;
   protected readonly debugConsole: string[] = [];
   private debugSourceAttached = false;
@@ -422,7 +423,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
-    if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
+    if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
+        && trimmed.toLowerCase() !== 'show history'
+        && trimmed.toLowerCase() !== 'clear history') {
+      this.cmdHistory.push(trimmed);
+      if (this.cmdHistory.length > this.terminalHistorySize) {
+        this.cmdHistory = this.cmdHistory.slice(-this.terminalHistorySize);
+      }
+    }
 
     const parsed = parsePipeFilter(trimmed);
     let cmdPart = parsed.cmd;
@@ -730,7 +738,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
     trie.register('show history', 'Display command history', () =>
-      this.cmdHistory.slice(-20).join('\n'));
+      this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
+    trie.register('clear history', 'Clear command history buffer', () => {
+      this.cmdHistory = [];
+      return '';
+    });
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args));
 
@@ -857,6 +869,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
+      if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
       if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
@@ -867,9 +880,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         const n = parseInt(rest[1] ?? '', 10);
         if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
         this.terminalHistorySize = n;
+        this.terminalHistoryEnabled = true;
         return '';
       }
-      if (rest.length === 0) { this.terminalHistorySize = 20; return ''; }
+      if (rest.length === 0) { this.terminalHistoryEnabled = true; return ''; }
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;
