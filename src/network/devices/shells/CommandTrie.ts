@@ -44,6 +44,7 @@ export interface CommandNode {
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
+  _hintOnly?: boolean;
 }
 
 export type CommandAction = (args: string[], rawLine: string) => string;
@@ -157,6 +158,7 @@ export class CommandTrie {
         child = this.createNode(kw, i === keywords.length - 1 ? description : kw);
         node.children.set(kw, child);
       }
+      child._hintOnly = false;
       if (i === keywords.length - 1) {
         child.description = description;
       }
@@ -177,6 +179,7 @@ export class CommandTrie {
       let child = node.children.get(kw);
       if (!child) {
         child = this.createNode(kw, kw);
+        child._hintOnly = true;
         node.children.set(kw, child);
       }
       node = child;
@@ -199,6 +202,7 @@ export class CommandTrie {
         child = this.createNode(kw, i === keywords.length - 1 ? description : kw);
         node.children.set(kw, child);
       }
+      child._hintOnly = false;
       if (i === keywords.length - 1) {
         child.description = description;
       }
@@ -234,7 +238,8 @@ export class CommandTrie {
       const tokenLower = token.toLowerCase();
 
       // Try exact match first, then prefix match
-      const exactChild = node.children.get(tokenLower);
+      const exactChildRaw = node.children.get(tokenLower);
+      const exactChild = exactChildRaw && !exactChildRaw._hintOnly ? exactChildRaw : undefined;
       if (exactChild) {
         node = exactChild;
         matchedKeywords.push(node.keyword);
@@ -402,10 +407,9 @@ export class CommandTrie {
         return matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
       }
 
-      // Complete token (followed by space or more tokens) → navigate
-      const exact = node.children.get(token);
-      if (exact) {
-        node = exact;
+      const exactRawHelp = node.children.get(token);
+      if (exactRawHelp) {
+        node = exactRawHelp;
         continue;
       }
 
@@ -415,7 +419,6 @@ export class CommandTrie {
         continue;
       }
 
-      // Disambiguate with lookahead if possible
       if (matches.length > 1 && i < tokens.length - 1) {
         const nextToken = tokens[i + 1].toLowerCase();
         const viable = matches.filter(m => {
@@ -428,7 +431,6 @@ export class CommandTrie {
         }
       }
 
-      // Can't navigate further
       return [];
     }
 
@@ -474,7 +476,8 @@ export class CommandTrie {
       }
 
       // Full token → navigate
-      const exact = node.children.get(token);
+      const exactRaw = node.children.get(token);
+      const exact = exactRaw && !exactRaw._hintOnly ? exactRaw : undefined;
       if (exact) {
         completed.push(exact.keyword);
         node = exact;
@@ -513,6 +516,7 @@ export class CommandTrie {
   private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
     const results: CommandNode[] = [];
     for (const [keyword, child] of node.children) {
+      if (child._hintOnly) continue;
       if (keyword.startsWith(prefix)) {
         results.push(child);
       }
@@ -527,7 +531,6 @@ export class CommandTrie {
   private nodeCompletions(node: CommandNode): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
-    // Keyword children
     for (const [, child] of node.children) {
       results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
     }

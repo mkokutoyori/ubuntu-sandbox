@@ -140,6 +140,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalWidth: number = 80;
   protected terminalHistorySize: number = 20;
   protected terminalHistoryEnabled: boolean = true;
+
+  protected selectedConsoleLine: number | null = null;
+  protected consoleLinePassword: string | null = null;
+  protected consoleLinePasswordEncrypted: boolean = false;
+  protected consoleLineLogin: 'password' | 'local' | 'none' | null = null;
+  protected consoleLinePrivilegeLevel: number | null = null;
+
+  _getConsoleLineConfig(): {
+    line: number;
+    password: string | null;
+    passwordEncrypted: boolean;
+    login: 'password' | 'local' | 'none' | null;
+    privilegeLevel: number | null;
+  } | null {
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null) return null;
+    return {
+      line: this.selectedConsoleLine ?? 0,
+      password: this.consoleLinePassword,
+      passwordEncrypted: this.consoleLinePasswordEncrypted,
+      login: this.consoleLineLogin,
+      privilegeLevel: this.consoleLinePrivilegeLevel,
+    };
+  }
   protected terminalMonitor = false;
   protected readonly debugConsole: string[] = [];
   private debugSourceAttached = false;
@@ -1913,14 +1936,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // right VtyLineConfig block.
     this.configTrie.registerGreedy('line', 'Enter line configuration', (args) => {
       this.mode = 'config-line';
-      if (args[0]?.toLowerCase() === 'vty') {
+      const kind = args[0]?.toLowerCase();
+      if (kind === 'vty') {
         const first = Number.parseInt(args[1] ?? '0', 10);
         const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
         this.selectedVtyRange = { first, last };
+        this.selectedConsoleLine = null;
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
         dev._getVtyLineConfig?.().upsert({ first, last });
+      } else if (kind === 'console' || kind === 'con') {
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
       } else {
         this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
       }
       return '';
     });
@@ -1930,7 +1959,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
-        if (!range) return '';
+        if (!range) {
+          if (this.selectedConsoleLine == null) return '';
+          if (kw === 'password') {
+            if (!args[0]) return '% Incomplete command.';
+            let pwArgs = [...args];
+            this.consoleLinePasswordEncrypted = false;
+            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
+            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
+            this.consoleLinePassword = pwArgs.join(' ');
+            return '';
+          }
+          if (kw === 'login') {
+            const sub = args[0]?.toLowerCase();
+            this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            return '';
+          }
+          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+            const lvl = parseInt(args[1], 10);
+            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+              return "% Invalid input detected at '^' marker.";
+            }
+            this.consoleLinePrivilegeLevel = lvl;
+            return '';
+          }
+          if (kw === 'no') {
+            const sub = args[0]?.toLowerCase();
+            if (sub === 'login') {
+              if (args[1]?.toLowerCase() === 'local') {
+                this.consoleLineLogin = null;
+              } else {
+                this.consoleLineLogin = 'none';
+              }
+              return '';
+            }
+            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
+            if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+          }
+          return '';
+        }
         if (kw === 'password' && !args[0]) return '% Incomplete command.';
         const dev = this.d() as unknown as {
           _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };

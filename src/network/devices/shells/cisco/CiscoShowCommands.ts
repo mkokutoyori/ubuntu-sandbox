@@ -235,6 +235,26 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  const shell = (router as unknown as { shell?: { _getConsoleLineConfig?: () => unknown } }).shell;
+  const consoleCfg = shell?._getConsoleLineConfig?.() as null | {
+    line: number;
+    password: string | null;
+    passwordEncrypted: boolean;
+    login: 'password' | 'local' | 'none' | null;
+    privilegeLevel: number | null;
+  };
+  if (consoleCfg) {
+    lines.push(`line console ${consoleCfg.line}`);
+    if (consoleCfg.password != null) {
+      lines.push(` password ${consoleCfg.passwordEncrypted ? '7 ' : ''}${consoleCfg.password}`);
+    }
+    if (consoleCfg.login === 'local') lines.push(' login local');
+    else if (consoleCfg.login === 'password') lines.push(' login');
+    else if (consoleCfg.login === 'none') lines.push(' no login');
+    if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
+    lines.push('!');
+  }
+
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');
   }
