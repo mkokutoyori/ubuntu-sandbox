@@ -121,6 +121,8 @@ export interface SshdServerConfigSnapshot {
   readonly macs: readonly string[];
   readonly kexAlgorithms: readonly string[];
   readonly hostKeyAlgorithms: readonly string[];
+  readonly forceCommand: string | null;
+  readonly chrootDirectory: string | null;
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -259,6 +261,8 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.macs = s.macs;
     this.kexAlgorithms = s.kexAlgorithms;
     this.hostKeyAlgorithms = s.hostKeyAlgorithms;
+    this.forceCommand = s.forceCommand;
+    this.chrootDirectory = s.chrootDirectory;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -310,6 +314,8 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       macs: Object.freeze([...DEFAULT_MACS]),
       kexAlgorithms: Object.freeze([...DEFAULT_KEX]),
       hostKeyAlgorithms: Object.freeze([...DEFAULT_HOSTKEY_ALGOS]),
+      forceCommand: null,
+      chrootDirectory: null,
       matchBlocks: Object.freeze([]),
     });
   }
@@ -409,7 +415,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       x11Forwarding: this.x11Forwarding,
       permitEmptyPasswords: this.permitEmptyPasswords,
       banner: this.bannerPath,
-      forceCommand: null,
+      forceCommand: this.forceCommand,
       acceptEnv: this.acceptEnv,
       allowAgentForwarding: this.allowAgentForwarding,
       gatewayPorts: this.gatewayPorts,
@@ -564,6 +570,8 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'loglevel': return cfg.withLogLevel(value.toUpperCase() as SshdLogLevel);
     case 'syslogfacility': return cfg.withSyslogFacility(value.toUpperCase() as SshdSyslogFacility);
     case 'banner': return cfg.withBannerPath(value === 'none' ? null : value);
+    case 'forcecommand': return cfg.mutate({ forceCommand: value });
+    case 'chrootdirectory': return cfg.mutate({ chrootDirectory: value === 'none' ? null : value });
     case 'motdpath': return cfg.withMotdPath(value);
     case 'allowusers':  return cfg.withAllowUsers(value.split(/\s+/));
     case 'denyusers':   return cfg.withDenyUsers(value.split(/\s+/));

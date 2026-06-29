@@ -800,6 +800,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         exitCode: 1,
       };
     }
+    const originalCmd = remoteCmd;
+    if (forced) remoteCmd = forced;
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     // `-A` agent forwarding: expose the local agent's identities to the
     // remote command, restoring the remote agent afterwards.
@@ -819,6 +821,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       const forwarded = remoteExec
         ? computeForwardedEnv(opts, flags, remoteExec)
         : {};
+      if (originalCmd && remoteCmd !== originalCmd) {
+        forwarded['SSH_ORIGINAL_COMMAND'] = originalCmd;
+      }
       // exec-mode without -t carries no PTY; mark it so the remote
       // `tty` builtin reports "not a tty" and SIGINT-relay logic can
       // decide whether to wire a controlling terminal.
@@ -884,6 +889,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
     return { output: verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
+  }
+
+  // ForceCommand also overrides the interactive shell: the user lands
+  // directly into the forced command instead of getting a login shell.
+  if (!remoteCmd) {
+    const forcedInteractive = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    if (forcedInteractive && forcedInteractive !== 'internal-sftp') {
+      const restore = swapRemoteUser(machine, remoteUser);
+      const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
+      let out = '';
+      try { out = execMod?.execute?.(forcedInteractive) ?? ''; } finally { restore?.(); }
+      return {
+        output: verboseHeader + forwardingError + (out.endsWith('\n') ? out : out + '\n'),
+        exitCode: execMod?.lastExitCode ?? 0,
+        connection,
+      };
+    }
   }
 
   // Interactive form (no command): the simulator returns the typical
