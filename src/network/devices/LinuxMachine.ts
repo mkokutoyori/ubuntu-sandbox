@@ -506,6 +506,7 @@ export abstract class LinuxMachine extends EndHost
       session.shellPid = shell.pid;
       this.utmpSync?.updateSessionPids(session.tty, shell.pid, sshdChild.pid);
       this.persistLogindSession(session.tty, uid, user, shell.pid, fromIp);
+      this.emitSessionOpenedLog(user, uid, sshdChild.pid, String(shell.pid));
       const myIp = this.getPorts()
         .map((p) => p.getIPAddress()?.toString())
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
@@ -754,10 +755,12 @@ export abstract class LinuxMachine extends EndHost
     const terminateSession = (sessionId: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
       const s = findSession(sessionId);
       if (!s) return { ok: false, error: `Failed to terminate session: No session '${sessionId}' known` };
+      const sshdPid = s.sshdPid;
       if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
       if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
       this.sessionTable.close(s.tty, 'admin');
       this.dropLogindSession(sessionId, s.uid);
+      this.emitSessionClosedLog(s.user, sshdPid, sessionId);
       return { ok: true };
     };
     return {
@@ -798,6 +801,52 @@ export abstract class LinuxMachine extends EndHost
       .map((s) => String(s.shellPid ?? s.sshdPid ?? 0))
       .filter((s) => s !== '0' && s !== sid);
     this.logindSync.removeSession(sid, uid, remaining);
+  }
+
+  private logindPid(): number {
+    return this.executor.processMgr.list({ comm: 'systemd-logind' })[0]?.pid ?? 9;
+  }
+
+  private emitSessionOpenedLog(user: string, uid: number, sshdPid: number, sid: string): void {
+    this.executor.logMgr.logAuth(
+      'sshd',
+      `pam_unix(sshd:session): session opened for user ${user}(uid=${uid}) by (uid=0)`,
+      sshdPid,
+      'ssh',
+    );
+    this.executor.logMgr.logAuth(
+      'systemd-logind',
+      `New session ${sid} of user ${user}.`,
+      this.logindPid(),
+      'systemd-logind',
+    );
+    this.executor.logMgr.logAuth(
+      'systemd',
+      `Started Session ${sid} of user ${user}.`,
+      1,
+      'init.scope',
+    );
+  }
+
+  private emitSessionClosedLog(user: string, sshdPid: number, sid: string): void {
+    this.executor.logMgr.logAuth(
+      'sshd',
+      `pam_unix(sshd:session): session closed for user ${user}`,
+      sshdPid,
+      'ssh',
+    );
+    this.executor.logMgr.logAuth(
+      'systemd-logind',
+      `Session ${sid} logged out. Waiting for processes to exit.`,
+      this.logindPid(),
+      'systemd-logind',
+    );
+    this.executor.logMgr.logAuth(
+      'systemd-logind',
+      `Removed session ${sid}.`,
+      this.logindPid(),
+      'systemd-logind',
+    );
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
