@@ -157,6 +157,33 @@ describe('SSH server — authorized_keys per-key options', () => {
     expect(out).toMatch(/administratively prohibited/i);
   });
 
+  it('GatewayPorts=no silently rebinds a wildcard -R listener to loopback', async () => {
+    const { pc, srv } = await buildPair();
+    const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
+    vfs.writeFile('/etc/ssh/sshd_config', 'PasswordAuthentication yes\nGatewayPorts no\n', 0, 0, 0o022);
+    await srv.executeCommand('systemctl reload ssh');
+
+    await pc.executeCommand(
+      'ssh -f -N -R 0.0.0.0:9555:10.0.0.1:80 alice@10.0.0.2',
+    );
+    const ss = await srv.executeCommand('ss -tln');
+    expect(ss).toMatch(/127\.0\.0\.1:9555/);
+    expect(ss).not.toMatch(/0\.0\.0\.0:9555/);
+  });
+
+  it('GatewayPorts=clientspecified honours the client-supplied bind address', async () => {
+    const { pc, srv } = await buildPair();
+    const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
+    vfs.writeFile('/etc/ssh/sshd_config', 'PasswordAuthentication yes\nGatewayPorts clientspecified\n', 0, 0, 0o022);
+    await srv.executeCommand('systemctl reload ssh');
+
+    await pc.executeCommand(
+      'ssh -f -N -R 0.0.0.0:9556:10.0.0.1:80 alice@10.0.0.2',
+    );
+    const ss = await srv.executeCommand('ss -tln');
+    expect(ss).toMatch(/0\.0\.0\.0:9556/);
+  });
+
   it('from="..." pattern that does match the source IP accepts the key', async () => {
     const { pc, srv } = await buildPair();
     const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;

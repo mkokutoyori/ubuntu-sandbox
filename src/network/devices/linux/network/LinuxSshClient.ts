@@ -514,6 +514,10 @@ function setupPortForwards(
     executor?: { forwardingTable?: SshForwardingTable | null };
   }).executor?.forwardingTable;
 
+  const gatewayPolicy = remoteExec
+    ? readRemoteSshdDirective(remoteExec, 'GatewayPorts')
+    : null;
+
   let diagnostics = '';
   for (const fwd of forwards) {
     if (!permits(fwd)) {
@@ -523,13 +527,26 @@ function setupPortForwards(
     }
     if (fwd.listensOnServer) {
       // -R : the listener lives on the SSH server, owned by its sshd.
-      remoteForwarding?.open(fwd, SSHD_PID, 'sshd');
+      // GatewayPorts decides whether the client's bind address survives:
+      // 'no' (default) silently rebinds to loopback; 'yes' / 'clientspecified'
+      // honour it.
+      const honourBind = gatewayPolicy === 'yes' || gatewayPolicy === 'clientspecified';
+      const effective = honourBind ? fwd : rebindToLoopback(fwd);
+      remoteForwarding?.open(effective, SSHD_PID, 'sshd');
     } else {
       // -L / -D : the listener lives on the client host, owned by ssh.
       opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh');
     }
   }
   return diagnostics;
+}
+
+function rebindToLoopback(fwd: SshPortForward): SshPortForward {
+  if (fwd.bindAddress === '127.0.0.1') return fwd;
+  const spec = fwd.destHost && fwd.destPort
+    ? `127.0.0.1:${fwd.listenPort}:${fwd.destHost}:${fwd.destPort}`
+    : `127.0.0.1:${fwd.listenPort}`;
+  return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
