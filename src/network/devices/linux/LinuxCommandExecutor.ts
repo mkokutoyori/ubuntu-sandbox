@@ -44,7 +44,6 @@ import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
-import { parseMtrArgs, MTR_USAGE, MTR_VERSION } from './Mtr';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
@@ -3410,44 +3409,6 @@ export class LinuxCommandExecutor {
       case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (n) => this.resolveServicePort(n)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
-      // @deprecated — The following stubs (ping, traceroute, nslookup, dig,
-      // host) are retained only as a fallback for scripts executed inside the
-      // bash interpreter. Since Phase 3, LinuxMachine intercepts these
-      // commands *before* they reach the executor and routes them through the
-      // real EndHost network stack (see linux/commands/net/Ping.ts, etc.).
-      // These stubs will never fire for interactive terminal commands.
-      case 'ping': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
-        const isRoot = this.userMgr.currentUid === 0;
-        if (args.includes('-f') && !isRoot) {
-          return { output: 'ping: -f: Permission denied (must run as root, privileged operation)', exitCode: 2 };
-        }
-        const iIdx = args.indexOf('-i');
-        if (iIdx !== -1 && args[iIdx + 1]) {
-          const interval = parseFloat(args[iIdx + 1]);
-          if (!isNaN(interval) && interval < 0.2 && !isRoot) {
-            return { output: `ping: -i ${interval}: Permission denied (interval < 200ms requires privileged user)`, exitCode: 2 };
-          }
-        }
-        for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
-          this.publishSyscall(sc);
-        }
-        return { output: `PING ${host} (${host}) 56(84) bytes of data.\n64 bytes from ${host}: icmp_seq=1 ttl=64 time=0.5 ms\n64 bytes from ${host}: icmp_seq=2 ttl=64 time=0.4 ms\n\n--- ${host} ping statistics ---\n2 packets transmitted, 2 received, 0% packet loss, time 1001ms\nrtt min/avg/max/mdev = 0.4/0.45/0.5/0.05 ms`, exitCode: 0 };
-      }
-      case 'traceroute': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'Usage: traceroute host', exitCode: 1 };
-        return { output: `traceroute to ${host}, 30 hops max, 60 byte packets\n 1  gateway (10.0.0.1)  0.5 ms  0.4 ms  0.3 ms\n 2  ${host}  1.2 ms  1.1 ms  1.0 ms`, exitCode: 0 };
-      }
-      case 'mtr': {
-        const parsed = parseMtrArgs(args);
-        if (parsed.showHelp) return { output: MTR_USAGE, exitCode: 0 };
-        if (parsed.showVersion) return { output: MTR_VERSION, exitCode: 0 };
-        if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
-        if (!parsed.target) return { output: 'mtr: no host specified', exitCode: 1 };
-        return { output: '', exitCode: 0 };
-      }
       case 'dstat': {
         const parsed = parseDstatArgs(args);
         if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };
@@ -3455,13 +3416,6 @@ export class LinuxCommandExecutor {
         if (parsed.listStats) return { output: DSTAT_LISTING, exitCode: 0 };
         if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
         return { output: '', exitCode: 0 };
-      }
-      case 'nslookup':
-      case 'dig':
-      case 'host': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: `Usage: ${cmd} hostname`, exitCode: 1 };
-        return { output: `Server:\t\t127.0.0.53\nAddress:\t127.0.0.53#53\n\nNon-authoritative answer:\nName:\t${host}\nAddress: 93.184.216.34`, exitCode: 0 };
       }
 
       // ── Miscellaneous common commands ────────────────────────────────
