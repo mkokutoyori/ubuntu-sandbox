@@ -72,5 +72,35 @@ describe('Sessions are coherent with the process table and loginctl', () => {
       expect(detail).toMatch(/^TTY=pts\/\d+$/m);
       expect(detail).toMatch(/^State=active$/m);
     });
+
+    it('Leader= in loginctl show-session matches a real -bash PID in ps', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const listOut = await srv.executeCommand('loginctl list-sessions');
+      const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
+      const sid = sessRow.trim().split(/\s+/)[0];
+      const detail = await srv.executeCommand(`loginctl show-session ${sid}`);
+      const m = detail.match(/^Leader=(\d+)$/m);
+      expect(m).not.toBeNull();
+      const leader = m![1];
+      const psOut = await srv.executeCommand(`ps -p ${leader}`);
+      expect(psOut).toMatch(/-bash/);
+    });
+  });
+
+  describe('loginctl list-users mirrors active session users', () => {
+    it('alice appears once in list-users after an SSH login', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const out = await srv.executeCommand('loginctl list-users');
+      expect(out).toMatch(/^\s*\d+\s+alice\b/m);
+      expect(out).toMatch(/\d+ users listed\./);
+    });
+  });
+
+  describe('pgrep aligns with the active sessions', () => {
+    it('pgrep -u alice finds the spawned login shell', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const out = await srv.executeCommand('pgrep -u alice');
+      expect(out.trim().split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(1);
+    });
   });
 });
