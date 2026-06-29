@@ -281,6 +281,7 @@ export class PortActivityLogProjection {
     if (p.deviceId !== this.deviceId) return;
     if (p.serviceName) return;
     if (p.user === 'root' && p.comm !== 'sudo') return;
+    if (p.comm === '-bash' || p.comm === 'bash') return;
     this.logManager.logDaemon(p.comm,
       `[${p.pid}] ${p.user}: ${p.command}`);
   }

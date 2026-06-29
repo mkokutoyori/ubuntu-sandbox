@@ -48,6 +48,12 @@ describe('auth.log mirrors PAM + systemd-logind session lifecycle', () => {
       expect(log).toMatch(/pam_unix\(sshd:session\): session closed for user alice/);
     });
 
+    it('the journal does NOT include a duplicate -bash[<pid>]: ... spawn line', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const log = await srv.executeCommand('journalctl');
+      expect(log).not.toMatch(/-bash\[\d+\]:\s+\[\d+\]\s+alice:/);
+    });
+
     it('auth.log gains systemd-logind Removed session N.', async () => {
       await pc.executeCommand('ssh alice@10.0.0.2');
       const sidRow = (await srv.executeCommand('loginctl list-sessions'))

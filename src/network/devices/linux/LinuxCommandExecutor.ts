@@ -529,11 +529,10 @@ export class LinuxCommandExecutor {
    *  files driven live from the process manager. */
   private syncProcPids(): void {
     const live = new Set(this.processMgr.list().map((p) => p.pid));
-    // Remove gone.
     for (const pid of [...this.materializedProcPids]) {
       if (!live.has(pid)) {
         try {
-          for (const f of ['status', 'cmdline', 'comm', 'stat']) {
+          for (const f of ['status', 'cmdline', 'comm', 'stat', 'loginuid', 'sessionid', 'cgroup']) {
             this.vfs.deleteFile(`/proc/${pid}/${f}`);
           }
           this.vfs.rmdir(`/proc/${pid}`);
@@ -578,6 +577,17 @@ export class LinuxCommandExecutor {
           p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
         ].join(' ') + '\n';
       });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/loginuid`, () => {
+        const a = this.auditAttrs(pid);
+        return `${a.loginuid}\n`;
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/sessionid`, () => {
+        const a = this.auditAttrs(pid);
+        return `${a.sessionid}\n`;
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/cgroup`, () => {
+        return `0::${this.cgroupPathFor(pid)}\n`;
+      });
       this.materializedProcPids.add(pid);
     }
     // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
@@ -586,6 +596,49 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
+    const NONE = 4294967295;
+    if (!this.sessionTable) return { loginuid: NONE, sessionid: NONE };
+    const sessions = this.sessionTable.list();
+    const owner = sessions.find((s) => s.shellPid === pid || s.sshdPid === pid);
+    if (!owner) return this.auditAncestor(pid);
+    const sid = owner.shellPid ?? owner.sshdPid ?? 0;
+    return { loginuid: owner.uid, sessionid: sid > 0 ? sid : NONE };
+  }
+
+  private auditAncestor(pid: number): { loginuid: number; sessionid: number } {
+    const NONE = 4294967295;
+    let cur = this.processMgr.get(pid);
+    let hops = 0;
+    while (cur && hops < 64) {
+      const direct = this.sessionTable?.list().find((s) => s.shellPid === cur!.pid || s.sshdPid === cur!.pid);
+      if (direct) {
+        const sid = direct.shellPid ?? direct.sshdPid ?? 0;
+        return { loginuid: direct.uid, sessionid: sid > 0 ? sid : NONE };
+      }
+      if (cur.ppid === 0 || cur.ppid === cur.pid) break;
+      cur = this.processMgr.get(cur.ppid);
+      hops++;
+    }
+    return { loginuid: NONE, sessionid: NONE };
+  }
+
+  private cgroupPathFor(pid: number): string {
+    const a = this.auditAttrs(pid);
+    if (a.loginuid !== 4294967295 && a.sessionid !== 4294967295) {
+      return `/user.slice/user-${a.loginuid}.slice/session-${a.sessionid}.scope`;
+    }
+    const p = this.processMgr.get(pid);
+    if (!p) return '/';
+    if (p.serviceName) return `/system.slice/${p.serviceName}.service`;
+    if (p.comm === 'sshd') return '/system.slice/ssh.service';
+    if (p.comm === 'systemd' && p.pid === 1) return '/init.scope';
+    if (p.comm === 'systemd-logind') return '/system.slice/systemd-logind.service';
+    if (p.comm === 'cron') return '/system.slice/cron.service';
+    if (p.comm === 'rsyslogd') return '/system.slice/rsyslog.service';
+    if (p.comm === 'auditd') return '/system.slice/auditd.service';
+    return '/system.slice';
+  }
 
 
   /**
