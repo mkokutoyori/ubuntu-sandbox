@@ -3268,8 +3268,12 @@ export class LinuxCommandExecutor {
         const r = cmdKillall(args, this.processCmdContext());
         return r;
       }
-      case 'arping':
-        return { output: cmdArping(args), exitCode: 0 };
+      case 'arping': {
+        const ctx = this.ipNetworkCtx;
+        return cmdArping(args, {
+          mac: (ip) => ctx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null,
+        });
+      }
       case 'pgrep': {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
