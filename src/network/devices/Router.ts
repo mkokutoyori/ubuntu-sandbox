@@ -2171,6 +2171,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _recordUnhandledConfigLine(line: string): void {
     if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
   }
+  _removeUnhandledConfigLine(needle: string): void {
+    const idx = this._unhandledConfigLines.findIndex(l => l === needle || l.startsWith(needle));
+    if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
+  }
 
   _setSystemClock(epochMs: number): void {
     this._systemClockOverrideMs = epochMs;

@@ -121,7 +121,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           }
         }
       }
-      if (!ifName) return `% Invalid interface "${raw}"`;
+      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
@@ -357,7 +357,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
           }
         }
       }
-      if (!ifName) return `% Invalid interface "${raw}"`;
+      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');

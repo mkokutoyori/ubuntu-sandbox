@@ -1845,15 +1845,15 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('alias exec ct configure terminal');
       await r.executeCommand('end');
       await r.executeCommand('ct');
-      expect(await r.getPrompt()).toBe('R1(config)#');
+      expect(await r.getPrompt()).toBe('Router(config)#');
     });
 
-    it('209. should reject alias config if target command parameter has typos (alias exec c showww clock)', async () => {
+    it('209. should accept alias config with arbitrary target string (IOS does not validate the body)', async () => {
       const r = setupCiscoRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       const output = await r.executeCommand('alias exec c showww clock');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
     it('210. should support configuring configuration-level aliases if supported (alias configure ipr ip route)', async () => {

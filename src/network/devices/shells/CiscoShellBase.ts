@@ -583,7 +583,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       default: {
         const nav = this.tryGlobalConfigNavigation(cmdPart);
-        return nav !== null ? nav : CISCO_ERRORS.UNRECOGNIZED(cmdPart);
+        return nav !== null ? nav : CISCO_ERRORS.INVALID_INPUT;
       }
     }
   }
@@ -1364,6 +1364,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
       if (args.length < 3) return '% Incomplete command.';
       const [modeTok, name, ...rest] = args;
+      if (name.length > 31) return '% Alias name exceeds 31 characters.';
       this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
       return '';
     });
@@ -1605,8 +1606,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      const mode = args[0]?.toLowerCase();
+      if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      const lvl = parseInt(args[2] ?? '', 10);
+      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      const router = this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> };
+      const key = `${mode} ${args.slice(3).join(' ')}`;
+      (router._ciscoPrivilegeRules ??= new Map()).set(key, lvl);
+      const recorder = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      recorder._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
+      const mode = args[0]?.toLowerCase();
+      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      const router = this.d() as unknown as {
+        _ciscoPrivilegeRules?: Map<string, number>;
+        _removeUnhandledConfigLine?: (pattern: string) => void;
+      };
+      const key = `${mode} ${args.slice(3).join(' ')}`;
+      router._ciscoPrivilegeRules?.delete(key);
+      router._removeUnhandledConfigLine?.(`privilege ${args.join(' ')}`);
       return '';
     });
 
