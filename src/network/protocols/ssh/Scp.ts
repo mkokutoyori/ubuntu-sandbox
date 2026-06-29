@@ -47,7 +47,10 @@ export interface ScpArgs {
   readonly recursive: boolean;
   readonly port: number;
   readonly identityFiles: readonly string[];
+  /** First source — kept for backward compatibility; same as `sources[0]`. */
   readonly source: ScpEndpoint;
+  /** All sources (real OpenSSH allows `scp a b c dst`). */
+  readonly sources: readonly ScpEndpoint[];
   readonly destination: ScpEndpoint;
   readonly preserve: boolean;
   readonly quiet: boolean;
@@ -100,12 +103,14 @@ export function parseScpArgs(args: readonly string[]): ScpArgs | null {
     else if (!a.startsWith('-')) positional.push(a);
   }
   if (positional.length < 2) return null;
+  const sources = positional.slice(0, -1).map(parseScpEndpoint);
   return {
     recursive, preserve, quiet, verbose, compression, skipFilenameCheck,
     port, bandwidthLimitKbps, jumpHost,
     identityFiles: Object.freeze(identityFiles),
     options,
-    source: parseScpEndpoint(positional[0]),
+    source: sources[0],
+    sources: Object.freeze(sources),
     destination: parseScpEndpoint(positional[positional.length - 1]),
   };
 }

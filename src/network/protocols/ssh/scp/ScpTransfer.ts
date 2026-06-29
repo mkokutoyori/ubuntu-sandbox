@@ -81,9 +81,12 @@ export class ScpTransfer {
   private pushFile(srcAbs: string, dstAbs: string): ScpTransferResult {
     const data = this.fs.local.readFile(srcAbs);
     if (!data.ok) return this.fail(`read ${srcAbs}`);
-    const w = this.fs.remote.writeFile(dstAbs, data.value);
-    if (!w.ok) return this.fail(`write ${dstAbs}`);
-    this.preserveAttrs(this.fs.local, this.fs.remote, srcAbs, dstAbs);
+    const finalDst = this.fs.remote.getEntryType(dstAbs) === 'directory'
+      ? `${dstAbs.replace(/\/$/, '')}/${baseName(srcAbs)}`
+      : dstAbs;
+    const w = this.fs.remote.writeFile(finalDst, data.value);
+    if (!w.ok) return this.fail(`write ${finalDst}`);
+    this.preserveAttrs(this.fs.local, this.fs.remote, srcAbs, finalDst);
     const size = data.value.length;
     return this.summary(1, size, srcAbs);
   }
@@ -91,9 +94,12 @@ export class ScpTransfer {
   private pullFile(srcAbs: string, dstAbs: string): ScpTransferResult {
     const data = this.fs.remote.readFile(srcAbs);
     if (!data.ok) return this.fail(`read ${srcAbs}`);
-    const w = this.fs.local.writeFile(dstAbs, data.value);
-    if (!w.ok) return this.fail(`write ${dstAbs}`);
-    this.preserveAttrs(this.fs.remote, this.fs.local, srcAbs, dstAbs);
+    const finalDst = this.fs.local.getEntryType(dstAbs) === 'directory'
+      ? `${dstAbs.replace(/\/$/, '')}/${baseName(srcAbs)}`
+      : dstAbs;
+    const w = this.fs.local.writeFile(finalDst, data.value);
+    if (!w.ok) return this.fail(`write ${finalDst}`);
+    this.preserveAttrs(this.fs.remote, this.fs.local, srcAbs, finalDst);
     const size = data.value.length;
     return this.summary(1, size, srcAbs);
   }
@@ -170,6 +176,12 @@ export class ScpTransfer {
   private fail(error: string): ScpTransferResult {
     return { ok: false, filesTransferred: 0, bytesTransferred: 0, summary: '', error };
   }
+}
+
+function baseName(p: string): string {
+  const trimmed = p.replace(/\/+$/, '');
+  const i = trimmed.lastIndexOf('/');
+  return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
 
 function scaleRate(bytes: number): string {

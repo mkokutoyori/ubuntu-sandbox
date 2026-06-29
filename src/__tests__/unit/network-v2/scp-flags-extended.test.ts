@@ -53,6 +53,42 @@ describe('parseScpArgs — extended OpenSSH flags', () => {
   });
 });
 
+describe('parseScpArgs — multi-source positional', () => {
+  it('puts every positional except the last into sources[]', () => {
+    const r = parseScpArgs(['a.txt', 'b.txt', 'c.txt', 'u@h:/dst'])!;
+    expect(r.sources.map((s) => s.path)).toEqual(['a.txt', 'b.txt', 'c.txt']);
+    expect(r.destination.path).toBe('/dst');
+    expect(r.source.path).toBe('a.txt');
+  });
+
+  it('single source still works (back-compat)', () => {
+    const r = parseScpArgs(['/a', 'u@h:/b'])!;
+    expect(r.sources).toHaveLength(1);
+    expect(r.sources[0].path).toBe('/a');
+  });
+});
+
+describe('ScpSession — multi-source upload to a remote directory', () => {
+  it('copies a.txt + b.txt into /tmp/ on the remote', () => {
+    const localVfs = new VirtualFileSystem();
+    const remoteVfs = new VirtualFileSystem();
+    localVfs.writeFile('/src/a.txt', 'AAA', 0, 0, 0o022);
+    localVfs.writeFile('/src/b.txt', 'BBB', 0, 0, 0o022);
+    remoteVfs.mkdirp('/tmp', 0o755, 0, 0);
+    const local = new VfsSftpFileSystem(localVfs, { uid: 0, gid: 0, umask: 0o022 });
+    const remote = new VfsSftpFileSystem(remoteVfs, { uid: 0, gid: 0, umask: 0o022 });
+    const session = new ScpSession({
+      args: ['/src/a.txt', '/src/b.txt', 'u@h:/tmp'],
+      local: { fs: local, cwd: '/' },
+      resolveRemote: () => remote,
+    });
+    const r = session.run();
+    expect(r.exitCode).toBe(0);
+    expect(remoteVfs.readFile('/tmp/a.txt')).toBe('AAA');
+    expect(remoteVfs.readFile('/tmp/b.txt')).toBe('BBB');
+  });
+});
+
 describe('ScpSession — quiet and summary formatting', () => {
   function makeSession(args: string[]) {
     const localVfs = new VirtualFileSystem();
