@@ -277,7 +277,7 @@ describe('DAI — management ARP snoop-learn', () => {
 
   it('never overwrites a static management ARP entry', () => {
     const sw = setupSwitch();
-    sw._addStaticARP(HOST1_IP, new MACAddress(VICTIM_MAC), 'FastEthernet0/3');
+    sw._addStaticARP(new IPAddress(HOST1_IP), new MACAddress(VICTIM_MAC), 'FastEthernet0/3');
 
     injectArp(sw, 'FastEthernet0/1',
       makeArpFrame(HOST1_MAC, BCAST, HOST1_IP, HOST1_MAC, VICTIM_IP, '00:00:00:00:00:00'));

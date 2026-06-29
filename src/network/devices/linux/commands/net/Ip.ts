@@ -200,8 +200,7 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
       try {
-        const macAddr = new MACAddress(mac);
-        net.addStaticARP(ip, macAddr, ifName);
+        net.addStaticARP(new IPAddress(ip), new MACAddress(mac), ifName);
         return '';
       } catch {
         return 'RTNETLINK answers: Invalid argument';
@@ -210,7 +209,10 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
     deleteNeighbor(ip: string, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
-      const removed = net.deleteARP(ip);
+      let ipObj: IPAddress;
+      try { ipObj = new IPAddress(ip); }
+      catch { return 'RTNETLINK answers: Invalid argument'; }
+      const removed = net.deleteARP(ipObj);
       if (!removed) return 'RTNETLINK answers: No such file or directory';
       return '';
     },
@@ -218,7 +220,7 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       for (const [ip, entry] of net.getArpTable()) {
         if (entry.type === 'static') continue;
         if (ifName && entry.iface !== ifName) continue;
-        net.deleteARP(ip);
+        net.deleteARP(new IPAddress(ip));
       }
       return '';
     },

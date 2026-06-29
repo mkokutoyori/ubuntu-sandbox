@@ -688,7 +688,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   private resolveTargetSync(target: string): IPAddress | null {
     return this.pc.resolveHostnameSync(target);
   }
-  getNeighbors(filter?: { ipAddress?: string; state?: string; ifIndex?: number }) {
+  getNeighbors(filter?: { ipAddress?: IPAddress; state?: string; ifIndex?: number }) {
     const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;
     const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
     const portIndex = new Map(ports.map((p, i) => [p.name, i + 1]));
@@ -701,10 +701,11 @@ class WindowsNetworkAdapter implements INetworkProvider {
       state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
       addressFamily: 'IPv4'; policyStore: 'ActiveStore' | 'PersistentStore';
     }>;
+    const filterIpKey = filter?.ipAddress?.toString();
     for (const [ip, entry] of arp) {
       const state = stateMap[entry.type] ?? 'Reachable';
       const ifIndex = portIndex.get(entry.iface) ?? 1;
-      if (filter?.ipAddress && ip !== filter.ipAddress) continue;
+      if (filterIpKey && ip !== filterIpKey) continue;
       if (filter?.state && state !== filter.state) continue;
       if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
       rows.push({
@@ -720,22 +721,21 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return rows;
   }
 
-  addNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias: string): string {
+  addNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias: string): string {
     const iface = displayNameToPort(ifAlias);
-    const mac = new MACAddress(linkLayerAddress.replace(/-/g, ':').toLowerCase());
-    (this.pc as unknown as { addStaticARP: (ip: string, mac: MACAddress, iface: string) => void })
-      .addStaticARP(ipAddress, mac, iface);
+    (this.pc as unknown as { addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void })
+      .addStaticARP(ipAddress, linkLayerAddress, iface);
     return '';
   }
 
-  removeNeighbor(ipAddress: string, _ifAlias?: string): string {
-    const ok = (this.pc as unknown as { deleteARP: (ip: string) => boolean }).deleteARP(ipAddress);
+  removeNeighbor(ipAddress: IPAddress, _ifAlias?: string): string {
+    const ok = (this.pc as unknown as { deleteARP: (ip: IPAddress) => boolean }).deleteARP(ipAddress);
     return ok ? '' : `Remove-NetNeighbor : No matching neighbor cache entry found.`;
   }
 
-  setNeighbor(ipAddress: string, linkLayerAddress: string, ifAlias?: string): string {
+  setNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias?: string): string {
     const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
-    const existing = arp.get(ipAddress);
+    const existing = arp.get(ipAddress.toString());
     const iface = ifAlias ? displayNameToPort(ifAlias) : (existing?.iface ?? 'eth0');
     return this.addNeighbor(ipAddress, linkLayerAddress, portToDisplayName(iface));
   }

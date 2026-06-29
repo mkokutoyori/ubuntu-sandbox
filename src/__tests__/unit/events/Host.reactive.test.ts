@@ -18,7 +18,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import { HostCaptureActor } from '@/network/devices/host/actors';
-import { MACAddress } from '@/network/core/types';
+import { IPAddress, MACAddress } from '@/network/core/types';
 import type { DomainEvent } from '@/events/types';
 
 function buildHost(name = 'PC1') {
@@ -75,7 +75,7 @@ describe('EndHost — ARP emissions on static add', () => {
   });
 
   it('addStaticARP emits host.arp.entry-learned with source=static', () => {
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
 
     const learned = ctx.trace.find((e) => e.topic === 'host.arp.entry-learned');
     expect(learned).toBeDefined();
@@ -86,7 +86,7 @@ describe('EndHost — ARP emissions on static add', () => {
   });
 
   it('the arp signal reactively reflects the new entry', () => {
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
 
     const arp = ctx.pc.observables.arp.get();
     expect(arp).toHaveLength(1);
@@ -96,8 +96,8 @@ describe('EndHost — ARP emissions on static add', () => {
 
   it('the stats signal counts the ARP cache size', () => {
     expect(ctx.pc.observables.stats.get().arpCacheSize).toBe(0);
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
-    ctx.pc.addStaticARP('10.0.0.43', MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.43'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
     expect(ctx.pc.observables.stats.get().arpCacheSize).toBe(2);
   });
 });
@@ -139,7 +139,7 @@ describe('HostCaptureActor — opt-in tcpdump-like recorder', () => {
   });
 
   it('records arp-learned events from addStaticARP', () => {
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
     const arp = capture.getCapture({ kind: 'arp-learned' });
     expect(arp).toHaveLength(1);
     expect((arp[0].payload as { ip: string }).ip).toBe('10.0.0.42');
@@ -149,8 +149,8 @@ describe('HostCaptureActor — opt-in tcpdump-like recorder', () => {
     const ctx2 = buildHost('PC2');
     capture.start(); // re-attach (idempotent)
 
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
-    ctx2.pc.addStaticARP('10.0.0.43', MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx2.pc.addStaticARP(new IPAddress('10.0.0.43'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
 
     const pc1 = capture.getCapture({ deviceId: ctx.pc.getId() });
     const pc2 = capture.getCapture({ deviceId: ctx2.pc.getId() });
@@ -161,22 +161,22 @@ describe('HostCaptureActor — opt-in tcpdump-like recorder', () => {
   });
 
   it('filters by ip across fromIp/toIp/ip fields', () => {
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
-    ctx.pc.addStaticARP('10.0.0.43', MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.43'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
 
     const m42 = capture.getCapture({ ip: '10.0.0.42' });
     expect(m42).toHaveLength(1);
   });
 
   it('clear() empties the buffer; stop() unsubscribes', () => {
-    ctx.pc.addStaticARP('10.0.0.42', MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
     expect(capture.size()).toBeGreaterThan(0);
 
     capture.clear();
     expect(capture.size()).toBe(0);
 
     capture.stop();
-    ctx.pc.addStaticARP('10.0.0.43', MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
+    ctx.pc.addStaticARP(new IPAddress('10.0.0.43'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
     expect(capture.size()).toBe(0);
   });
 
@@ -184,7 +184,7 @@ describe('HostCaptureActor — opt-in tcpdump-like recorder', () => {
     const small = new HostCaptureActor(ctx.bus, 4);
     small.start();
     for (let i = 0; i < 10; i++) {
-      ctx.pc.addStaticARP(`10.0.0.${i + 1}`, MACAddress.parse(`aa:bb:cc:dd:ee:${i.toString(16).padStart(2, '0')}`), 'eth0');
+      ctx.pc.addStaticARP(new IPAddress(`10.0.0.${i + 1}`), MACAddress.parse(`aa:bb:cc:dd:ee:${i.toString(16).padStart(2, '0')}`), 'eth0');
     }
     expect(small.size()).toBeLessThanOrEqual(5);
     small.stop();

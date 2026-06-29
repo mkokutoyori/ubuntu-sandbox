@@ -1613,12 +1613,12 @@ export abstract class Switch extends Equipment {
 
   _getArpTableInternal() { return this.arpTable; }
 
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
   }
 
-  _deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  _deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   _clearARPCache(): void {

@@ -1034,7 +1034,10 @@ function handleAddNeighbors(ctx: WinCommandContext, joined: string): string {
   const portName = resolveAdapterName(ifName, ctx.ports);
   if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
 
-  ctx.addStaticARP(ip, mac, portName);
+  let ipObj: IPAddress;
+  try { ipObj = new IPAddress(ip); }
+  catch { return `Invalid IPv4 address: "${ip}".`; }
+  ctx.addStaticARP(ipObj, mac, portName);
   return 'Ok.';
 }
 

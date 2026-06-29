@@ -1871,13 +1871,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getArpTableInternal(): Map<string, ARPEntry> { return this.arpTable; }
 
   /** Add a static ARP entry */
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
   }
 
   /** Delete an ARP entry by IP */
-  _deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  _deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   /** Clear all dynamic ARP entries (preserves static) */

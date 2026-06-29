@@ -67,8 +67,8 @@ export interface WinCommandContext {
   arpTable: Map<string, { mac: any; iface: string; type?: 'dynamic' | 'static' }>;
 
   // ARP table mutation
-  addStaticARP(ip: string, mac: any, iface: string): void;
-  deleteARP(ip: string): boolean;
+  addStaticARP(ip: IPAddress, mac: any, iface: string): void;
+  deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
 
   // Network config

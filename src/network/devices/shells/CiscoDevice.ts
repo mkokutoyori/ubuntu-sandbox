@@ -10,7 +10,7 @@
  */
 
 import type { Port } from '../../hardware/Port';
-import type { MACAddress } from '../../core/types';
+import type { IPAddress, MACAddress } from '../../core/types';
 
 // ─── ARP Provider (shared ARP table access) ─────────────────────────
 
@@ -28,8 +28,8 @@ export interface CiscoARPEntry {
  */
 export interface ARPProvider {
   _getArpTableInternal(): Map<string, CiscoARPEntry>;
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void;
-  _deleteARP(ip: string): boolean;
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  _deleteARP(ip: IPAddress): boolean;
   _clearARPCache(): void;
   _getPortsInternal(): Map<string, Port>;
 }

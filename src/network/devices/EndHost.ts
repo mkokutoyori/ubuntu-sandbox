@@ -973,19 +973,20 @@ export abstract class EndHost extends Equipment {
   }
 
   /** Add a static ARP entry. Overwrites any existing entry for the same IP. */
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, {
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    const key = ip.toString();
+    this.arpTable.set(key, {
       mac,
       iface,
       timestamp: Date.now(),
       type: 'static',
     });
-    this.emitArpLearned({ ip, mac: mac.toString(), iface, source: 'static' });
+    this.emitArpLearned({ ip: key, mac: mac.toString(), iface, source: 'static' });
   }
 
   /** Delete a single ARP entry by IP. Returns true if an entry was removed. */
-  deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   /** Clear all ARP entries (both static and dynamic). */

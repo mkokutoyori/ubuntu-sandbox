@@ -1379,10 +1379,10 @@ export abstract class LinuxMachine extends EndHost
       getArpTable(): ReadonlyMap<string, ARPEntry> {
         return self.arpTable;
       },
-      addStaticARP(ip: string, mac: MACAddress, iface: string): void {
+      addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
         self.addStaticARP(ip, mac, iface);
       },
-      deleteARP(ip: string): boolean {
+      deleteARP(ip: IPAddress): boolean {
         return self.deleteARP(ip);
       },
       clearARPTable(): void {

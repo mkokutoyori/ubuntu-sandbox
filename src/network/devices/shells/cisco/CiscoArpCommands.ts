@@ -11,7 +11,7 @@
  *   no arp <ip>                                — remove entry (config)
  */
 
-import { MACAddress } from '../../../core/types';
+import { IPAddress, MACAddress } from '../../../core/types';
 import type { ARPProvider, CiscoARPEntry } from '../CiscoDevice';
 import type { CommandTrie } from '../CommandTrie';
 
@@ -93,7 +93,9 @@ export function registerArpConfigCommands(
 ): void {
   trie.registerGreedy('arp', 'Add static ARP entry', (args) => {
     if (args.length < 2) return '% Incomplete command.';
-    const ip = args[0];
+    let ip: IPAddress;
+    try { ip = new IPAddress(args[0]); }
+    catch { return `% Invalid IP address "${args[0]}"`; }
     const macStr = args[1];
     let mac: MACAddress;
     try {
@@ -119,7 +121,10 @@ export function registerArpConfigCommands(
 
   trie.registerGreedy('no arp', 'Remove ARP entry', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    getProvider()._deleteARP(args[0]);
+    let ip: IPAddress;
+    try { ip = new IPAddress(args[0]); }
+    catch { return `% Invalid IP address "${args[0]}"`; }
+    getProvider()._deleteARP(ip);
     return '';
   });
 }

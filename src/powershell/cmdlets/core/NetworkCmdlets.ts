@@ -11,6 +11,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
   NetworkAdapterInfo, IPAddressInfo, INetworkProvider,
 } from '@/powershell/providers/PSProviders';
@@ -232,8 +233,11 @@ export class GetNetNeighborCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const filter: { ipAddress?: string; state?: string; ifIndex?: number } = {};
-    if (ctx.named['ipaddress']) filter.ipAddress = psValueToString(ctx.named['ipaddress']);
+    const filter: { ipAddress?: IPAddress; state?: string; ifIndex?: number } = {};
+    if (ctx.named['ipaddress']) {
+      try { filter.ipAddress = new IPAddress(psValueToString(ctx.named['ipaddress'])); }
+      catch (e) { throw new PSRuntimeError((e as Error).message); }
+    }
     if (ctx.named['state']) filter.state = psValueToString(ctx.named['state']);
     if (ctx.named['ifindex']) filter.ifIndex = Number.parseInt(psValueToString(ctx.named['ifindex']), 10);
     const neighbors = requireNetwork(ctx).getNeighbors(filter);
@@ -249,18 +253,32 @@ export class GetNetNeighborCmdlet implements ICmdlet {
   }
 }
 
+function parseNeighborIp(ctx: CmdletContext, displayName: string): IPAddress {
+  if (!ctx.named['ipaddress']) {
+    throw new PSRuntimeError(`${displayName} : Missing -IPAddress.`);
+  }
+  try { return new IPAddress(psValueToString(ctx.named['ipaddress'])); }
+  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
+}
+
+function parseNeighborMac(ctx: CmdletContext, displayName: string): MACAddress {
+  if (!ctx.named['linklayeraddress']) {
+    throw new PSRuntimeError(`${displayName} : Missing -LinkLayerAddress.`);
+  }
+  const raw = psValueToString(ctx.named['linklayeraddress']).replace(/-/g, ':').toLowerCase();
+  try { return new MACAddress(raw); }
+  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
+}
+
 export class NewNetNeighborCmdlet implements ICmdlet {
   readonly name = 'new-netneighbor';
   readonly displayName = 'New-NetNeighbor';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = ctx.named['ipaddress'] ? psValueToString(ctx.named['ipaddress']) : '';
-    const mac = ctx.named['linklayeraddress'] ? psValueToString(ctx.named['linklayeraddress']) : '';
+    const ip = parseNeighborIp(ctx, this.displayName);
+    const mac = parseNeighborMac(ctx, this.displayName);
     const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : 'Ethernet';
-    if (!ip || !mac) {
-      throw new PSRuntimeError('New-NetNeighbor : Missing -IPAddress or -LinkLayerAddress.');
-    }
     const err = requireNetwork(ctx).addNeighbor(ip, mac, ifAlias);
     if (err) throw new PSRuntimeError(err);
     return null;
@@ -273,11 +291,8 @@ export class RemoveNetNeighborCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = ctx.named['ipaddress'] ? psValueToString(ctx.named['ipaddress']) : '';
+    const ip = parseNeighborIp(ctx, this.displayName);
     const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    if (!ip) {
-      throw new PSRuntimeError('Remove-NetNeighbor : Missing -IPAddress.');
-    }
     const err = requireNetwork(ctx).removeNeighbor(ip, ifAlias);
     if (err) throw new PSRuntimeError(err);
     return null;
@@ -290,12 +305,9 @@ export class SetNetNeighborCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = ctx.named['ipaddress'] ? psValueToString(ctx.named['ipaddress']) : '';
-    const mac = ctx.named['linklayeraddress'] ? psValueToString(ctx.named['linklayeraddress']) : '';
+    const ip = parseNeighborIp(ctx, this.displayName);
+    const mac = parseNeighborMac(ctx, this.displayName);
     const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    if (!ip || !mac) {
-      throw new PSRuntimeError('Set-NetNeighbor : Missing -IPAddress or -LinkLayerAddress.');
-    }
     const err = requireNetwork(ctx).setNeighbor(ip, mac, ifAlias);
     if (err) throw new PSRuntimeError(err);
     return null;

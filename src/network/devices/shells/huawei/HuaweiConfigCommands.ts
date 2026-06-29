@@ -278,7 +278,11 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     } else {
       return 'Error: Incomplete command.';
     }
-    router._deleteARP(ip);
+    try {
+      router._deleteARP(new IPAddress(ip));
+    } catch {
+      return `Error: Invalid IP address "${ip}".`;
+    }
     return '';
   }
 
