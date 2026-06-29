@@ -106,6 +106,7 @@ export class SshServerHandler {
       switch (op) {
         case 'hello': {
           const protocolInfo = this.negotiateProtocol(parsed);
+          const preAuthBanner = this.ctx.getBanner?.() ?? null;
           conn.write(
             JSON.stringify({
               hostKey: {
@@ -114,6 +115,7 @@ export class SshServerHandler {
               },
               serverVersion: 'SSH-2.0-Sandbox-Server',
               clientVersion: protocolInfo.clientVersion,
+              ...(preAuthBanner ? { preAuthBanner } : {}),
             }),
           );
           break;

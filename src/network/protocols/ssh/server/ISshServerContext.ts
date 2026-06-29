@@ -70,6 +70,13 @@ export interface ISshServerContext {
    * `auth.checkPassword`. Defaults to "rejected" when not implemented.
    */
   permitEmptyPasswords?(): boolean;
+  /**
+   * Pre-auth banner text from sshd_config's `Banner` file directive.
+   * The handler surfaces it in the protocol-hello reply so clients can
+   * display it before prompting for credentials (real OpenSSH emits
+   * SSH_MSG_USERAUTH_BANNER).
+   */
+  getBanner?(): string | null;
 }
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({

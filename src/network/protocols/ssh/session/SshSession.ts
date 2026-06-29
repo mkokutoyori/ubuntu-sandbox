@@ -55,6 +55,7 @@ export interface SshSessionDeps {
 interface ServerBanner {
   readonly hostKey: { algorithm: string; publicKey: string };
   readonly serverVersion: string;
+  readonly preAuthBanner?: string;
 }
 
 export class SshSession implements ISshSession {
@@ -102,6 +103,9 @@ export class SshSession implements ISshSession {
       conn.close();
       this.conn = null;
       return propagateErr(banner);
+    }
+    if (banner.value.preAuthBanner) {
+      this.deps.interactionHandler.showInfo(banner.value.preAuthBanner);
     }
     const hostKey = SshHostKey.fromFiles(
       banner.value.hostKey.publicKey,
