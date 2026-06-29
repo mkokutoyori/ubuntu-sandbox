@@ -118,6 +118,45 @@ describe('SSH server — authorized_keys per-key options', () => {
     expect(out).toMatch(/Permission denied/i);
   });
 
+  it('no-port-forwarding refuses -L despite global AllowTcpForwarding default', async () => {
+    const { pc, srv } = await buildPair();
+    const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
+    vfs.writeFile('/etc/ssh/sshd_config', 'PasswordAuthentication no\n', 0, 0, 0o022);
+    await srv.executeCommand('systemctl reload ssh');
+    await installKeyAndAuthorize(pc, srv, 'no-port-forwarding');
+
+    const out = await pc.executeCommand(
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2',
+    );
+    expect(out).toMatch(/administratively prohibited/i);
+  });
+
+  it('environment="K=V" exposes K to the remote exec env', async () => {
+    const { pc, srv } = await buildPair();
+    const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
+    vfs.writeFile('/etc/ssh/sshd_config', 'PasswordAuthentication no\n', 0, 0, 0o022);
+    await srv.executeCommand('systemctl reload ssh');
+    await installKeyAndAuthorize(pc, srv, 'environment="GREET=salut"');
+
+    const out = await pc.executeCommand(
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 printenv GREET',
+    );
+    expect(out).toMatch(/^salut\s*$/m);
+  });
+
+  it('restrict implies no-port-forwarding (and friends)', async () => {
+    const { pc, srv } = await buildPair();
+    const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;
+    vfs.writeFile('/etc/ssh/sshd_config', 'PasswordAuthentication no\n', 0, 0, 0o022);
+    await srv.executeCommand('systemctl reload ssh');
+    await installKeyAndAuthorize(pc, srv, 'restrict');
+
+    const out = await pc.executeCommand(
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2',
+    );
+    expect(out).toMatch(/administratively prohibited/i);
+  });
+
   it('from="..." pattern that does match the source IP accepts the key', async () => {
     const { pc, srv } = await buildPair();
     const vfs = (srv as unknown as { executor: { vfs: { writeFile(p: string, c: string, u: number, g: number, m: number): void } } }).executor.vfs;

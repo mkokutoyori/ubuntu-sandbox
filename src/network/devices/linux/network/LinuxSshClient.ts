@@ -493,6 +493,7 @@ function setupPortForwards(
   flags: string[],
   machine: LinuxMachine,
   remoteExec: RemoteExecLike | undefined,
+  matchedKey: AuthorizedKey | null | undefined,
 ): string {
   const forwards = SshPortForward.collect(flags);
   if (forwards.length === 0) return '';
@@ -500,7 +501,9 @@ function setupPortForwards(
   const policy = remoteExec
     ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding')
     : null;
+  const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
   const permits = (f: SshPortForward): boolean => {
+    if (keyBansForwarding) return false;
     if (policy === 'no') return false;
     if (policy === 'local') return f.kind !== 'remote';
     if (policy === 'remote') return f.kind === 'remote';
@@ -799,7 +802,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Each requested forward opens a listening socket on whichever host
   // owns it (the client for -L/-D, the SSH server for -R). The server's
   // `AllowTcpForwarding` directive decides whether the request stands.
-  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec);
+  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec, auth.matchedKey);
 
   // `-N` (no remote command) — paired with `-f` to hold a tunnel open.
   // The session carries no shell, so there is no banner: only forwarding
@@ -848,9 +851,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     const originalCmd = remoteCmd;
     if (forced) remoteCmd = forced;
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
+    const keyBansAgent = auth.matchedKey?.options?.noAgentForwarding === true;
     // `-A` agent forwarding: expose the local agent's identities to the
-    // remote command, restoring the remote agent afterwards.
-    const restoreAgent = flags.includes('-A')
+    // remote command, restoring the remote agent afterwards. An
+    // authorized_keys `no-agent-forwarding` option vetoes the request.
+    const restoreAgent = flags.includes('-A') && !keyBansAgent
       ? forwardSshAgent(opts, machine)
       : null;
     let execOut = '';
@@ -871,8 +876,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       }
       // exec-mode without -t carries no PTY; mark it so the remote
       // `tty` builtin reports "not a tty" and SIGINT-relay logic can
-      // decide whether to wire a controlling terminal.
-      const hasTty = flags.includes('-t') || flags.includes('-tt');
+      // decide whether to wire a controlling terminal. An
+      // authorized_keys `no-pty` option suppresses the PTY even
+      // when -t is given.
+      const hasTty = (flags.includes('-t') || flags.includes('-tt'))
+        && auth.matchedKey?.options?.noPty !== true;
       if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
       // -t / -tt: propagate the client TTY's geometry (COLUMNS / LINES)
       // and TERM to the remote shell — matches SIGWINCH + ENV-passing
@@ -885,8 +893,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // -A: expose the local agent through SSH_AUTH_SOCK on the remote
       // shell so any `ssh` invocation inside the remote command finds
       // the forwarded identities — matches OpenSSH agent forwarding.
-      if (flags.includes('-A')) {
+      // Skipped when the authorized_keys entry forbids it.
+      if (flags.includes('-A') && !keyBansAgent) {
         forwarded['SSH_AUTH_SOCK'] = `/tmp/ssh-${remoteUser}/agent.${SSH_CLIENT_FORWARD_PID}`;
+      }
+      // authorized_keys `environment="K=V"` — overlay onto the remote env
+      // exactly the way OpenSSH does, regardless of PermitUserEnvironment.
+      for (const [k, v] of auth.matchedKey?.options?.environment ?? []) {
+        forwarded[k] = v;
       }
       // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
       // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
