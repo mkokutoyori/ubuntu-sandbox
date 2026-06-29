@@ -1061,8 +1061,7 @@ export abstract class EndHost extends Equipment {
 
     const existing = this.arpTable.get(arp.senderIP.toString());
     const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
-    const skipUnsolicited = isGratuitous && !existing && port.getIPAddress() !== null;
-    if (!skipUnsolicited && (!existing || existing.type !== 'static')) {
+    if (!existing || existing.type !== 'static') {
       this.arpTable.set(arp.senderIP.toString(), {
         mac: arp.senderMAC,
         iface: portName,
@@ -1073,7 +1072,7 @@ export abstract class EndHost extends Equipment {
         ip: arp.senderIP.toString(),
         mac: arp.senderMAC.toString(),
         iface: portName,
-        source: arp.operation === 'request' ? 'request' : 'reply',
+        source: isGratuitous ? 'gratuitous' : (arp.operation === 'request' ? 'request' : 'reply'),
       });
     }
 
