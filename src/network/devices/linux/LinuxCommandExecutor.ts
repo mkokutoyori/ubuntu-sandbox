@@ -2054,6 +2054,15 @@ export class LinuxCommandExecutor {
     const cmd = argv[0];
     const args = argv.slice(1);
 
+    // Job-control builtins that the interpreter doesn't model itself.
+    // `wait` in particular is essential for `cmd & ...; wait` patterns —
+    // since the simulator runs backgrounded commands synchronously, wait
+    // just acknowledges and returns 0.
+    if (cmd === 'wait')   return { output: this.handleWait(args), exitCode: 0 };
+    if (cmd === 'jobs')   return { output: cmdJobs(args, this.jobsCmdContext()).output, exitCode: 0 };
+    if (cmd === 'bg')     return { output: cmdBg(args, this.jobsCmdContext()).output, exitCode: 0 };
+    if (cmd === 'disown') return { output: cmdDisown(args, this.jobsCmdContext()).output, exitCode: 0 };
+
     // Handle sudo prefix
     let cmdArgs = [...argv];
     let isSudo = false;

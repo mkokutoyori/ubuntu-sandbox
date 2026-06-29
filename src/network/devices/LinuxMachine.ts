@@ -1051,6 +1051,25 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /**
+   * True when the input contains bash control flow / expansion that the
+   * per-line dispatch path can't parse. When this fires we have to let the
+   * bash interpreter own parsing + expansion, even if the body mentions a
+   * network command — otherwise `for i in {1..N}; do ping ... done` is
+   * shredded on `;` and the variable references survive un-expanded.
+   */
+  private hasShellConstructs(input: string): boolean {
+    if (/(^|\s|;|\||&)(for|while|until|if|case|select)\s/.test(input)) return true;
+    if (/(^|\s|;|\|)(do|done|then|fi|esac)(\s|$|;)/.test(input)) return true;
+    if (/\{[^{}]*\.\.[^{}]*\}/.test(input)) return true; // brace range {1..N}
+    if (/\$\{[A-Za-z_]/.test(input)) return true;        // ${var}
+    if (/\$[A-Za-z_]\w*/.test(input)) return true;        // $var (incl. inside word)
+    if (/\$\(/.test(input)) return true;                  // $(cmd)
+    if (/\n/.test(input.trim())) return true;             // multi-line script
+    if (/(^|\s)wait(\s|;|$)/.test(input)) return true;
+    return false;
+  }
+
+  /**
    * Execute a command string. The dispatch order mirrors the original
    * `LinuxPC.executeCommand()`:
    *
@@ -1077,6 +1096,15 @@ export abstract class LinuxMachine extends EndHost
 
     // Fast path: no network command → straight to bash interpreter.
     if (!this.containsNetworkCommand(trimmed)) {
+      return this.executor.execute(trimmed);
+    }
+
+    // Shell constructs (for / while / $var / brace ranges / multi-line) need
+    // bash's parsing and variable expansion. Per-line dispatch on `;` would
+    // shred the script. Route the whole thing through the interpreter even
+    // when the body mentions a network command — the executor's net stubs
+    // produce realistic-looking output on each iteration.
+    if (this.hasShellConstructs(trimmed)) {
       return this.executor.execute(trimmed);
     }
 
