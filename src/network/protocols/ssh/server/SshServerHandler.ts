@@ -8,6 +8,8 @@
  */
 
 import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler } from '@/events/Scheduler';
 import type { ChannelType } from '../channels/ISshChannel';
 import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
@@ -81,7 +83,33 @@ export class SshServerHandler {
     let userCtx: SshUserContext | null = null;
     let authFailures = 0;
 
+    const timers = new TimerSet(() => getDefaultScheduler());
+    let keepaliveTimer: symbol | null = null;
+    let missedAcks = 0;
+    const intervalSec = this.ctx.config.clientAliveInterval ?? 0;
+    const maxMissed = this.ctx.config.clientAliveCountMax ?? 0;
+    if (intervalSec > 0 && maxMissed > 0) {
+      keepaliveTimer = timers.setInterval(() => {
+        missedAcks += 1;
+        if (missedAcks > maxMissed) {
+          this.eventBus.emit({
+            kind: 'client_disconnected',
+            user: userCtx?.username ?? '',
+            ip: clientIp,
+            reason: 'client-alive-timeout',
+            timestamp: Date.now(),
+          });
+          conn.close();
+          return;
+        }
+        try { conn.write(JSON.stringify({ op: 'keepalive', seq: missedAcks })); }
+        catch { /* socket closed mid-tick */ }
+      }, intervalSec * 1000);
+    }
+
     conn.onClose?.((reason) => {
+      timers.clearAll();
+      keepaliveTimer = null;
       channels.clear();
       this.eventBus.emit({
         kind: 'client_disconnected',
@@ -102,6 +130,7 @@ export class SshServerHandler {
       }
       const op = parsed.op as string | undefined;
       if (!op) return;
+      if (op === 'keepalive_ack') { missedAcks = 0; return; }
 
       switch (op) {
         case 'hello': {

@@ -133,6 +133,15 @@ export class SshSession implements ISshSession {
     const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
 
+    conn.onData((data) => {
+      try {
+        const msg = JSON.parse(data) as { op?: string };
+        if (msg.op === 'keepalive') {
+          conn.write(JSON.stringify({ op: 'keepalive_ack' }));
+        }
+      } catch { /* not JSON or not keepalive — channel layers handle it */ }
+    });
+
     const info: SshConnectionInfo = {
       host: opts.host,
       user: opts.user,

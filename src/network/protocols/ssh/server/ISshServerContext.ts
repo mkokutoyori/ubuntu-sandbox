@@ -17,9 +17,12 @@ export type { SshUserContext };
 export interface SshServerConfig {
   readonly listenPort: number;
   readonly maxAuthTries: number;
+  readonly maxSessions?: number;
   readonly permitRootLogin: boolean;
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
+  readonly clientAliveInterval?: number;
+  readonly clientAliveCountMax?: number;
 }
 
 export interface ILinuxShell {

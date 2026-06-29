@@ -24,7 +24,10 @@ export type DisconnectReason =
   | 'host_key_rejected'
   | 'protocol_error'
   | 'admin_disconnect'
-  | 'throttled';
+  | 'throttled'
+  | 'client-alive-timeout'
+  | 'reset'
+  | 'closed';
 
 /**
  * Specific reason an auth attempt failed. Used by both the syslogger
