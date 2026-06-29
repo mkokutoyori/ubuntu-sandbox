@@ -226,6 +226,41 @@ export class GetNetRouteCmdlet implements ICmdlet {
   }
 }
 
+export class GetNetNeighborCmdlet implements ICmdlet {
+  readonly name = 'get-netneighbor';
+  readonly displayName = 'Get-NetNeighbor';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext, args?: string[]): PSValue {
+    const flags = parseFlags(args ?? []);
+    const filter: { ipAddress?: string; state?: string; ifIndex?: number } = {};
+    if (flags.ipAddress) filter.ipAddress = flags.ipAddress;
+    if (flags.state) filter.state = flags.state;
+    if (flags.ifIndex !== undefined) filter.ifIndex = flags.ifIndex;
+    const neighbors = requireNetwork(ctx).getNeighbors(filter);
+    return neighbors.map((n) => ({
+      ifIndex:          n.ifIndex,
+      InterfaceAlias:   n.ifAlias,
+      IPAddress:        n.ipAddress,
+      LinkLayerAddress: n.linkLayerAddress,
+      State:            n.state,
+      AddressFamily:    n.addressFamily,
+      PolicyStore:      n.policyStore,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+function parseFlags(args: string[]): { ipAddress?: string; state?: string; ifIndex?: number } {
+  const out: { ipAddress?: string; state?: string; ifIndex?: number } = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].toLowerCase();
+    if (a === '-ipaddress' && args[i + 1]) { out.ipAddress = psValueToString(args[++i] as unknown as PSValue); continue; }
+    if (a === '-state' && args[i + 1]) { out.state = psValueToString(args[++i] as unknown as PSValue); continue; }
+    if (a === '-ifindex' && args[i + 1]) { out.ifIndex = Number.parseInt(args[++i], 10); continue; }
+  }
+  return out;
+}
+
 export class GetNetTCPConnectionCmdlet implements ICmdlet {
   readonly name = 'get-nettcpconnection';
   readonly displayName = 'Get-NetTCPConnection';

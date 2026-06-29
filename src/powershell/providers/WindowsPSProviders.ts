@@ -688,6 +688,38 @@ class WindowsNetworkAdapter implements INetworkProvider {
   private resolveTargetSync(target: string): IPAddress | null {
     return this.pc.resolveHostnameSync(target);
   }
+  getNeighbors(filter?: { ipAddress?: string; state?: string; ifIndex?: number }) {
+    const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
+    const portIndex = new Map(ports.map((p, i) => [p.name, i + 1]));
+    const stateMap: Record<string, 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete'> = {
+      static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
+    };
+    const rows = [] as Array<{
+      ifIndex: number; ifAlias: string; ipAddress: string;
+      linkLayerAddress: string;
+      state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
+      addressFamily: 'IPv4'; policyStore: 'ActiveStore' | 'PersistentStore';
+    }>;
+    for (const [ip, entry] of arp) {
+      const state = stateMap[entry.type] ?? 'Reachable';
+      const ifIndex = portIndex.get(entry.iface) ?? 1;
+      if (filter?.ipAddress && ip !== filter.ipAddress) continue;
+      if (filter?.state && state !== filter.state) continue;
+      if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
+      rows.push({
+        ifIndex,
+        ifAlias: portToDisplayName(entry.iface),
+        ipAddress: ip,
+        linkLayerAddress: entry.mac.toString().toUpperCase().replace(/:/g, '-'),
+        state,
+        addressFamily: 'IPv4',
+        policyStore: entry.type === 'static' ? 'PersistentStore' : 'ActiveStore',
+      });
+    }
+    return rows;
+  }
+
   getTcpConnections() {
     const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }> } }).getSocketTable?.();
     if (!table) return [];

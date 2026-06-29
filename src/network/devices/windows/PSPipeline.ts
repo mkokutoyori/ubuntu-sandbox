@@ -792,6 +792,10 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
     return ['Name', 'InterfaceDescription', 'Status', 'MacAddress', 'LinkSpeed'];
   }
+  // NetNeighbor: ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
+  if (lower.has('linklayeraddress') && lower.has('ipaddress') && lower.has('state')) {
+    return ['ifIndex', 'InterfaceAlias', 'IPAddress', 'LinkLayerAddress', 'State', 'PolicyStore'];
+  }
   // NetIPAddress: IPAddress, InterfaceAlias, AddressFamily, PrefixLength
   if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {
     return ['IPAddress', 'InterfaceAlias', 'AddressFamily', 'PrefixLength'];

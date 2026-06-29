@@ -216,6 +216,16 @@ export interface IJobProvider {
 }
 
 
+export interface NeighborInfo {
+  ifIndex: number;
+  ifAlias: string;
+  ipAddress: string;
+  linkLayerAddress: string;
+  state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
+  addressFamily: 'IPv4' | 'IPv6';
+  policyStore: 'ActiveStore' | 'PersistentStore';
+}
+
 export interface INetworkProvider {
   getHostname(): string;
   getAdapters(): NetworkAdapterInfo[];
@@ -224,6 +234,7 @@ export interface INetworkProvider {
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void;
   removeIPAddress(ip: string, ifAlias?: string): void;
   getRoutes(ifAlias?: string): RouteInfo[];
+  getNeighbors(filter?: { ipAddress?: string; state?: string; ifIndex?: number }): NeighborInfo[];
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
   /** Modify properties of an existing route — usually nextHop or metric. */
