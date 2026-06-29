@@ -2039,6 +2039,24 @@ export class LinuxCommandExecutor {
    * Bridge between the bash interpreter and the command dispatcher.
    * Called by the interpreter for external (non-builtin) commands.
    */
+  runScriptWithCollector(
+    script: string,
+    collector: (argv: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+  ): void {
+    const io = this.buildIOContext();
+    runScriptContent(
+      script,
+      'bash',
+      [],
+      collector,
+      this.buildEnvVars(),
+      io,
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      this.aliases,
+      this.functions,
+    );
+  }
+
   private dispatchFromInterpreter(
     argv: string[],
     env?: Record<string, string>,
