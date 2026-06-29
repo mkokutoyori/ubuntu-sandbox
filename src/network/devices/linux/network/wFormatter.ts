@@ -1,5 +1,6 @@
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
+import type { UtmpSync, UtmpRecord } from './UtmpSync';
 import { uptimeHeader } from '../system/SystemInfo';
 
 export interface WOptions {
@@ -71,8 +72,34 @@ export function parseWArgs(args: string[]): ParsedWArgs {
 
 export interface WContext {
   table: SshSessionTable;
+  utmp: UtmpSync | null;
   uptimeSeconds: number;
   now: Date;
+}
+
+function activeSessions(ctx: WContext): SshSession[] {
+  if (!ctx.utmp) return ctx.table.list();
+  const records = ctx.utmp.readUtmp();
+  const byKey = new Map<string, SshSession>();
+  for (const s of ctx.table.list()) byKey.set(`${s.tty}@${s.user}`, s);
+  const out: SshSession[] = [];
+  for (const r of records) {
+    if (r.user === 'reboot') continue;
+    const live = byKey.get(`${r.tty}@${r.user}`);
+    if (live) { out.push(live); continue; }
+    out.push(synthSession(r));
+  }
+  return out;
+}
+
+function synthSession(r: UtmpRecord): SshSession {
+  return {
+    user: r.user, tty: r.tty, fromIp: r.fromIp, fromHost: r.fromHost ?? '',
+    loginAt: new Date(r.loginAt),
+    lastActivityAt: new Date(r.loginAt),
+    shellPid: r.shellPid ?? 0, sshdPid: 0,
+    uid: r.uid ?? 0,
+  } as unknown as SshSession;
 }
 
 function pad(s: string, w: number): string { return s.padEnd(w); }
@@ -127,11 +154,12 @@ export function renderW(ctx: WContext, args: string[]): string {
   if (opts.help) return helpText();
   if (opts.version) return versionText();
 
-  const sessions = ctx.table.list().filter((s) => user === null || s.user === user);
+  const all = activeSessions(ctx);
+  const sessions = all.filter((s) => user === null || s.user === user);
 
   const lines: string[] = [];
   if (!opts.noHeader) {
-    const header = uptimeHeader(ctx.table.list().length, ctx.uptimeSeconds);
+    const header = uptimeHeader(all.length, ctx.uptimeSeconds);
     lines.push(header);
     lines.push(renderHeader(opts));
   }

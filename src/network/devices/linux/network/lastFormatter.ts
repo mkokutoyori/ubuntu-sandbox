@@ -1,5 +1,6 @@
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
+import type { UtmpSync, UtmpRecord } from './UtmpSync';
 
 export interface LastOptions {
   limit: number | null;
@@ -78,8 +79,36 @@ export function parseLastArgs(args: string[]): ParsedLastArgs {
 
 export interface LastContext {
   table: SshSessionTable;
+  utmp: UtmpSync | null;
   bootDate: Date | null;
   now: Date;
+}
+
+function readSessions(ctx: LastContext): SshSession[] {
+  if (!ctx.utmp) return ctx.table.recent(10_000);
+  const records = ctx.utmp.readWtmp();
+  return records
+    .filter((r) => r.user !== 'reboot')
+    .map((r) => synthSession(r))
+    .sort((a, b) => b.loginAt.getTime() - a.loginAt.getTime());
+}
+
+function synthSession(r: UtmpRecord): SshSession {
+  return {
+    user: r.user, tty: r.tty, fromIp: r.fromIp, fromHost: r.fromHost ?? '',
+    loginAt: new Date(r.loginAt),
+    closedAt: r.closedAt ? new Date(r.closedAt) : null,
+    shellPid: r.shellPid ?? 0, sshdPid: 0,
+    uid: r.uid ?? 0,
+  } as unknown as SshSession;
+}
+
+function readRebootEntries(ctx: LastContext): Date[] {
+  if (!ctx.utmp) return ctx.bootDate ? [ctx.bootDate] : [];
+  return ctx.utmp.readWtmp()
+    .filter((r) => r.user === 'reboot')
+    .map((r) => new Date(r.loginAt))
+    .sort((a, b) => b.getTime() - a.getTime());
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -142,10 +171,11 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   if (opts.help) return helpText();
   if (opts.version) return versionText();
 
-  let sessions = ctx.table.recent(10_000);
+  let sessions = readSessions(ctx);
+  const reboots = readRebootEntries(ctx);
   if (filter && filter === 'reboot') {
     const lines: string[] = [];
-    if (ctx.bootDate) lines.push(rebootRow(ctx.bootDate, opts, ctx.now));
+    for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now));
     lines.push('', wtmpFooter(ctx));
     return lines.join('\n');
   }
@@ -155,10 +185,9 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   sessions = sessions.slice(0, limit);
 
   const lines: string[] = sessions.map((s) => renderRow(s, opts, ctx.now));
-  if (ctx.bootDate && (!filter || filter === 'reboot')) {
-    if (!filter) {
-      const idx = limit === 10_000 || sessions.length < limit ? lines.length : -1;
-      if (idx >= 0) lines.push(rebootRow(ctx.bootDate, opts, ctx.now));
+  if (!filter && reboots.length > 0) {
+    if (limit === 10_000 || sessions.length < limit) {
+      for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now));
     }
   }
   lines.push('', wtmpFooter(ctx));
@@ -166,14 +195,22 @@ export function renderLast(ctx: LastContext, args: string[]): string {
 }
 
 function wtmpFooter(ctx: LastContext): string {
-  const boot = ctx.bootDate ?? ctx.now;
-  const dow = DAYS[boot.getDay()];
-  const mon = MONTHS[boot.getMonth()];
-  const day = String(boot.getDate()).padStart(2, ' ');
-  const hh = String(boot.getHours()).padStart(2, '0');
-  const mm = String(boot.getMinutes()).padStart(2, '0');
-  const ss = String(boot.getSeconds()).padStart(2, '0');
-  return `wtmp begins ${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${boot.getFullYear()}`;
+  let when: Date | null = null;
+  if (ctx.utmp) {
+    const recs = ctx.utmp.readWtmp();
+    if (recs.length > 0) {
+      const earliest = recs.reduce((m, r) => (r.loginAt < m ? r.loginAt : m), recs[0].loginAt);
+      when = new Date(earliest);
+    }
+  }
+  if (!when) when = ctx.bootDate ?? ctx.now;
+  const dow = DAYS[when.getDay()];
+  const mon = MONTHS[when.getMonth()];
+  const day = String(when.getDate()).padStart(2, ' ');
+  const hh = String(when.getHours()).padStart(2, '0');
+  const mm = String(when.getMinutes()).padStart(2, '0');
+  const ss = String(when.getSeconds()).padStart(2, '0');
+  return `wtmp begins ${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${when.getFullYear()}`;
 }
 
 function helpText(): string {
@@ -209,4 +246,53 @@ function helpText(): string {
 
 function versionText(): string {
   return 'last from util-linux 2.37.2';
+}
+
+export function renderLastb(ctx: LastContext, args: string[]): string {
+  const { opts, filter, error } = parseLastArgs(args);
+  if (error) return `${error.replace(/^last:/, 'lastb:')}\nTry 'lastb --help' for more information.`;
+  if (opts.help) return helpText().replace(/last\b/g, 'lastb');
+  if (opts.version) return 'lastb from util-linux 2.37.2';
+
+  const records = ctx.utmp?.readBtmp() ?? [];
+  let rows = records
+    .map((r) => ({ user: r.user, tty: r.tty, fromIp: r.fromIp, at: r.at }))
+    .sort((a, b) => b.at - a.at);
+  if (filter) rows = rows.filter((r) => r.user === filter || r.tty === filter);
+  const limit = opts.limit ?? 10_000;
+  rows = rows.slice(0, limit);
+
+  const lines: string[] = [];
+  for (const r of rows) {
+    const cols = [
+      pad(r.user, 8),
+      pad(r.tty, 12),
+    ];
+    if (!opts.nohostname) cols.push(pad(r.fromIp, 16));
+    const at = new Date(r.at);
+    cols.push(fmtTimestamp(at, opts.fulltimes));
+    cols.push(`- ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} (00:00)`);
+    lines.push(cols.join(' '));
+  }
+  lines.push('', btmpFooter(ctx));
+  return lines.join('\n');
+}
+
+function btmpFooter(ctx: LastContext): string {
+  let when: Date | null = null;
+  if (ctx.utmp) {
+    const recs = ctx.utmp.readBtmp();
+    if (recs.length > 0) {
+      const earliest = recs.reduce((m, r) => (r.at < m ? r.at : m), recs[0].at);
+      when = new Date(earliest);
+    }
+  }
+  if (!when) when = ctx.bootDate ?? ctx.now;
+  const dow = DAYS[when.getDay()];
+  const mon = MONTHS[when.getMonth()];
+  const day = String(when.getDate()).padStart(2, ' ');
+  const hh = String(when.getHours()).padStart(2, '0');
+  const mm = String(when.getMinutes()).padStart(2, '0');
+  const ss = String(when.getSeconds()).padStart(2, '0');
+  return `btmp begins ${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${when.getFullYear()}`;
 }

@@ -87,7 +87,7 @@ import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
-import { renderLast } from './network/lastFormatter';
+import { renderLast, renderLastb } from './network/lastFormatter';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -1318,6 +1318,12 @@ export class LinuxCommandExecutor {
   private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
   setTcpProbe(probe: (ip: string, port: number) => boolean): void {
     this.tcpProbe = probe;
+  }
+
+  private utmpSync: import('./network/UtmpSync').UtmpSync | null = null;
+
+  setUtmpSync(sync: import('./network/UtmpSync').UtmpSync): void {
+    this.utmpSync = sync;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -2774,6 +2780,7 @@ export class LinuxCommandExecutor {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
           const out = renderWho({
             table: this.sessionTable,
+            utmp: this.utmpSync,
             currentUser: this.userMgr.currentUser,
             currentTty: 'tty1',
             bootDate: this.lifecycle.bootedAt(),
@@ -2789,6 +2796,7 @@ export class LinuxCommandExecutor {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
           const out = renderW({
             table: this.sessionTable,
+            utmp: this.utmpSync,
             uptimeSeconds: this.lifecycle.uptimeSeconds(),
             now: new Date(),
           }, args);
@@ -2802,6 +2810,7 @@ export class LinuxCommandExecutor {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
           const out = renderLast({
             table: this.sessionTable,
+            utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             now: new Date(),
           }, args);
@@ -2810,7 +2819,19 @@ export class LinuxCommandExecutor {
         }
         return { output: cmdLast(c, args), exitCode: 0 };
       }
-      case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
+      case 'lastb': {
+        if (this.sessionTable && this.utmpSync) {
+          const out = renderLastb({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('lastb: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
+        }
+        return { output: cmdLastb(c, args), exitCode: 0 };
+      }
       case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
       case 'setfacl': return this.cmdSetfacl(args);
       case 'getfacl': return this.cmdGetfacl(args);

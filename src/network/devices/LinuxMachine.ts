@@ -107,6 +107,7 @@ import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
 import { renderW } from './linux/network/wFormatter';
 import { renderLast } from './linux/network/lastFormatter';
+import { UtmpSync } from './linux/network/UtmpSync';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
@@ -177,10 +178,16 @@ export abstract class LinuxMachine extends EndHost
     // ServicePortProjection created in attachEventBus needs the table.
     this.initDefaultSockets(profile.isServer);
     this.executor.setSocketTable(this.socketTable);
-    // Share the SSH session table so `who`/`w`/`last` render from one
-    // source of truth — including via compound commands and ssh exec.
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setTcpProbe((ip, port) => this.tcpProbeSync(new IPAddress(ip), port));
+    const utmpSync = new UtmpSync(this.executor.vfs);
+    utmpSync.bootstrap();
+    if (this.executor.lifecycle.bootedAt()) {
+      utmpSync.appendRebootMark(this.executor.lifecycle.bootedAt()!);
+    }
+    this.sessionTable.attachUtmp(utmpSync);
+    this.utmpSync = utmpSync;
+    this.executor.setUtmpSync(utmpSync);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.syncHostnameFiles(profile.hostname);
 
@@ -462,6 +469,7 @@ export abstract class LinuxMachine extends EndHost
       events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port: 50000 });
     } else {
       events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: 'authentication failure' });
+      this.sessionTable.recordFailedLogin(user, fromIp);
     }
     // Track active sessions in the session table for `w`, `who`, `last`.
     if (accepted) {
@@ -627,6 +635,10 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Per-machine SSH session table — backs `w`, `who`, `last`. */
+  private utmpSync: UtmpSync | null = null;
+
+  getUtmpSync(): UtmpSync | null { return this.utmpSync; }
+
   public readonly sessionTable = (() => {
     const t = new SshSessionTable();
     // Seed the local console session so `who`/`w`/`last` show the
@@ -673,6 +685,7 @@ export abstract class LinuxMachine extends EndHost
     if (cmd === 'w') {
       return renderW({
         table: this.sessionTable,
+        utmp: this.utmpSync,
         uptimeSeconds: this.executor.lifecycle.uptimeSeconds(),
         now: new Date(),
       }, argv.slice(1));
@@ -680,6 +693,7 @@ export abstract class LinuxMachine extends EndHost
     if (cmd === 'who') {
       return renderWho({
         table: this.sessionTable,
+        utmp: this.utmpSync,
         currentUser: this.executor.userMgr.currentUser,
         currentTty: 'tty1',
         bootDate: this.executor.lifecycle.bootedAt(),
@@ -689,6 +703,7 @@ export abstract class LinuxMachine extends EndHost
     if (cmd === 'last') {
       return renderLast({
         table: this.sessionTable,
+        utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
         now: new Date(),
       }, argv.slice(1));

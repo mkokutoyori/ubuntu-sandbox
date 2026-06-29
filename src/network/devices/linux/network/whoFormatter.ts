@@ -1,5 +1,6 @@
 import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
+import type { UtmpSync, UtmpRecord } from './UtmpSync';
 
 export interface WhoOptions {
   all: boolean;
@@ -78,6 +79,7 @@ export function parseWhoArgs(args: string[]): ParsedWhoArgs {
 
 export interface WhoContext {
   table: SshSessionTable;
+  utmp: UtmpSync | null;
   currentUser: string;
   currentTty: string;
   bootDate: Date | null;
@@ -85,6 +87,31 @@ export interface WhoContext {
 }
 
 function pad(s: string, w: number): string { return s.padEnd(w); }
+
+function activeSessions(ctx: WhoContext): SshSession[] {
+  if (!ctx.utmp) return ctx.table.list();
+  const records = ctx.utmp.readUtmp();
+  const byKey = new Map<string, SshSession>();
+  for (const s of ctx.table.list()) byKey.set(`${s.tty}@${s.user}`, s);
+  const out: SshSession[] = [];
+  for (const r of records) {
+    if (r.user === 'reboot') continue;
+    const live = byKey.get(`${r.tty}@${r.user}`);
+    if (live) { out.push(live); continue; }
+    out.push(synthSession(r));
+  }
+  return out;
+}
+
+function synthSession(r: UtmpRecord): SshSession {
+  return {
+    user: r.user, tty: r.tty, fromIp: r.fromIp, fromHost: r.fromHost ?? '',
+    loginAt: new Date(r.loginAt),
+    lastActivityAt: new Date(r.loginAt),
+    shellPid: r.shellPid ?? 0, sshdPid: 0,
+    uid: r.uid ?? 0,
+  } as unknown as SshSession;
+}
 
 function fmtDate(d: Date): string {
   const y = d.getFullYear();
@@ -143,7 +170,7 @@ export function renderWho(ctx: WhoContext, args: string[]): string {
   if (opts.help) return helpText();
   if (opts.version) return versionText();
 
-  const allSessions = ctx.table.list();
+  const allSessions = activeSessions(ctx);
   let sessions = allSessions;
   if (opts.mine) {
     sessions = allSessions.filter((s) => s.user === ctx.currentUser
