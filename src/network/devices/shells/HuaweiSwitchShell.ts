@@ -1888,21 +1888,28 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private displayInterface(sw: Switch, ifName: string): string {
     const portName = this.resolveInterfaceName(ifName) || ifName;
     const port = sw.getPort(portName);
-    if (!port) return `Error: Wrong parameter found at '^' position.`;
+    const isVlanif = /^Vlanif/i.test(portName);
+    const desc = port ? (sw.getInterfaceDescription(portName) || '') : '';
+    const stateLine = port
+      ? `${portName} current state : ${port.getIsUp() ? (port.isConnected() ? 'UP' : 'DOWN') : 'Administratively DOWN'}`
+      : `${portName} current state : UP`;
+    const protoLine = port
+      ? `Line protocol current state : ${port.isConnected() ? 'UP' : 'DOWN'}`
+      : `Line protocol current state : UP`;
 
-    const desc = sw.getInterfaceDescription(portName) || '';
-    const isUp = port.getIsUp();
-    const isConn = port.isConnected();
+    if (!port && !isVlanif) return `Error: Wrong parameter found at '^' position.`;
 
-    return [
-      `${portName} current state : ${isUp ? (isConn ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
-      `Line protocol current state : ${isConn ? 'UP' : 'DOWN'}`,
+    const lines = [
+      stateLine,
+      protoLine,
       `Description: ${desc}`,
       `The Maximum Transmit Unit is 1500`,
       `Internet protocol processing : disabled`,
       `Input:  0 packets, 0 bytes`,
       `Output: 0 packets, 0 bytes`,
-    ].join('\n');
+    ];
+    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    return lines.join('\n');
   }
 
   private displayMacAddress(sw: Switch): string {
@@ -2048,6 +2055,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push(` ${stpLine}`);
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
+    for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
     lines.push('#');
     return lines.join('\n');
   }

@@ -152,11 +152,13 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const engine = ctx.r()._getNATEngine();
     const aclId = args[0];
     const router = ctx.r() as any;
-    const aclEngine = router._getACLEngine?.() ?? router._acl;
-    const aclExists = aclEngine?.hasAcl?.(aclId) ?? (router._aclList?.has?.(String(aclId)) ?? false);
-    if (aclEngine && !aclExists) return `% access-list ${aclId} not defined.`;
-    const aclType: string | undefined = aclEngine?.getAclType?.(aclId);
-    if (aclType && aclType.toLowerCase().includes('mac')) return '% MAC ACLs cannot be used for NAT.';
+    const aclEngine = router.aclEngine ?? router._aclEngine ?? router.getACLEngine?.();
+    const lists: Array<{ id?: number; name?: string; type?: string }> | undefined = aclEngine?.getAccessLists?.();
+    if (lists) {
+      const acl = lists.find(a => String(a.id) === String(aclId) || a.name === aclId);
+      if (!acl) return `% access-list ${aclId} not defined.`;
+      if (acl.type && /mac/i.test(acl.type)) return '% MAC ACLs cannot be used for NAT.';
+    }
     const vrf = parseVrf(args);
     if (vrf) {
       const vrfs = router._vrfs as Map<string, unknown> | undefined;
@@ -172,13 +174,15 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       }
       const isOverload = args.some((a, i) => i >= 3 && a.toLowerCase() === 'overload');
       if (!isOverload) return '% Missing "overload" keyword.';
-      const after = args.slice(3).filter(a => !['overload', 'vrf', vrf ?? ''].includes(a.toLowerCase()));
+      const allowed = new Set(['overload', 'vrf', (vrf ?? '').toLowerCase()]);
+      const after = args.slice(3).filter(a => !allowed.has(a.toLowerCase()));
       if (after.length > 0) return `% Invalid extra argument(s): ${after.join(' ')}`;
       engine.addDynamicRule({ aclId, type: 'overload', interfaceName: ifName, ...(vrf ? { vrf } : {}) } as any);
     } else if (keyword === 'pool') {
       const poolName = args[2];
       if (!engine.getPool(poolName)) return `% Pool ${poolName} not defined.`;
-      const after = args.slice(3).filter(a => !['vrf', vrf ?? '', 'overload'].includes(a.toLowerCase()));
+      const allowed = new Set(['vrf', (vrf ?? '').toLowerCase(), 'overload']);
+      const after = args.slice(3).filter(a => !allowed.has(a.toLowerCase()));
       if (after.length > 0) return `% Invalid extra argument(s): ${after.join(' ')}`;
       engine.addDynamicRule({ aclId, type: 'pool', poolName, ...(vrf ? { vrf } : {}) } as any);
     } else {
@@ -440,9 +444,15 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
-  trie.registerGreedy('clear ip nat translation tcp', 'Clear TCP NAT translation entries', (args) => {
-    if (args.length < 4) return '% Incomplete command: tcp LOCAL LPORT GLOBAL GPORT.';
-    if (args.some(a => a === '*' || a === '?')) return '% Invalid wildcard syntax for clear ip nat translation tcp.';
+  const protoClearHandler = (proto: 'tcp' | 'udp') => (args: string[]) => {
+    if (args.length === 1 && args[0] === '*') {
+      getRouter()._getNATEngine().clearTranslations();
+      return '';
+    }
+    if (args.length < 4) return `% Incomplete command: ${proto} LOCAL LPORT GLOBAL GPORT.`;
+    if (args.some(a => /\*/.test(a) && a !== '*')) return `% Invalid wildcard syntax for clear ip nat translation ${proto}.`;
+    if (args.some(a => a === '*')) return `% Invalid mixed wildcard syntax.`;
+    const engine = getRouter()._getNATEngine();
     for (let i = 0; i < args.length; i++) {
       if (i % 2 === 0 && !isValidIPv4(args[i])) return `% Invalid IP address ${args[i]}.`;
       if (i % 2 === 1) {
@@ -450,21 +460,18 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
         if (isNaN(p) || p < 1 || p > 65535) return `% Invalid port number ${args[i]}.`;
       }
     }
-    getRouter()._getNATEngine().clearTranslations();
+    const localIP = args[0], localPort = parseInt(args[1], 10);
+    const globalIP = args[2], globalPort = parseInt(args[3], 10);
+    const matched = engine.getSessions().some(s =>
+      s.localIP === localIP && s.localPort === localPort &&
+      s.globalIP === globalIP && s.globalPort === globalPort
+    );
+    if (!matched) return `% No matching translation for ${proto} ${localIP}:${localPort} ↔ ${globalIP}:${globalPort}.`;
+    engine.clearTranslations();
     return '';
-  });
-  trie.registerGreedy('clear ip nat translation udp', 'Clear UDP NAT translation entries', (args) => {
-    if (args.length < 4) return '% Incomplete command: udp LOCAL LPORT GLOBAL GPORT.';
-    for (let i = 0; i < args.length; i++) {
-      if (i % 2 === 0 && !isValidIPv4(args[i])) return `% Invalid IP address ${args[i]}.`;
-      if (i % 2 === 1) {
-        const p = parseInt(args[i], 10);
-        if (isNaN(p) || p < 1 || p > 65535) return `% Invalid port number ${args[i]}.`;
-      }
-    }
-    getRouter()._getNATEngine().clearTranslations();
-    return '';
-  });
+  };
+  trie.registerGreedy('clear ip nat translation tcp', 'Clear TCP NAT translation entries', protoClearHandler('tcp'));
+  trie.registerGreedy('clear ip nat translation udp', 'Clear UDP NAT translation entries', protoClearHandler('udp'));
   trie.registerGreedy('clear ip nat translation vrf', 'Clear NAT translations in VRF', (args) => {
     const vrf = args[0];
     if (!vrf) return '% Incomplete command.';
