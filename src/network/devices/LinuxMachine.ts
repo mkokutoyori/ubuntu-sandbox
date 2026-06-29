@@ -728,9 +728,34 @@ export abstract class LinuxMachine extends EndHost
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
         now: new Date(),
+        action: this.buildLoginctlAction(),
       }, argv.slice(1));
     }
     return null;
+  }
+
+  private buildLoginctlAction(): import('./linux/network/loginctlFormatter').LoginctlSessionAction {
+    const findSession = (sessionId: string) => {
+      const sessions = this.sessionTable.list();
+      const idx = sessions.findIndex((s, i) => {
+        const pid = s.shellPid ?? s.sshdPid ?? 0;
+        const sid = pid > 0 ? String(pid) : String(i + 1);
+        return sid === sessionId;
+      });
+      return idx >= 0 ? sessions[idx] : null;
+    };
+    const terminateSession = (sessionId: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
+      const s = findSession(sessionId);
+      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sessionId}' known` };
+      if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
+      if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
+      this.sessionTable.close(s.tty, 'admin');
+      return { ok: true };
+    };
+    return {
+      terminate: (sid) => terminateSession(sid, 'SIGTERM'),
+      kill: (sid, signal) => terminateSession(sid, signal),
+    };
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────

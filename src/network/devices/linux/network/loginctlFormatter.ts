@@ -2,11 +2,19 @@ import type { SshSessionTable } from './SshSessionTable';
 import type { SshSession } from './SshSession';
 import type { UtmpSync, UtmpRecord } from './UtmpSync';
 
+export type LoginctlSignal = 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT';
+
+export interface LoginctlSessionAction {
+  terminate(sessionId: string): { ok: boolean; error?: string };
+  kill(sessionId: string, signal: LoginctlSignal): { ok: boolean; error?: string };
+}
+
 export interface LoginctlContext {
   table: SshSessionTable;
   utmp: UtmpSync | null;
   bootDate: Date | null;
   now: Date;
+  action?: LoginctlSessionAction;
 }
 
 function activeSessions(ctx: LoginctlContext): SshSession[] {
@@ -230,12 +238,15 @@ function versionText(): string {
 
 export function renderLoginctl(ctx: LoginctlContext, args: string[]): string {
   let noLegend = false;
+  let signal: LoginctlSignal = 'SIGTERM';
   const positional: string[] = [];
   for (const a of args) {
     if (a === '--help' || a === '-h') return helpText();
     if (a === '--version') return versionText();
     if (a === '--no-legend') { noLegend = true; continue; }
     if (a === '--no-pager' || a === '--no-ask-password' || a === '-a' || a === '--all' || a === '--value') continue;
+    if (a.startsWith('--signal=')) { signal = normalizeSignal(a.slice('--signal='.length)); continue; }
+    if (a === '-s' || a === '--signal') continue;
     if (a.startsWith('-')) continue;
     positional.push(a);
   }
@@ -266,9 +277,67 @@ export function renderLoginctl(ctx: LoginctlContext, args: string[]): string {
     }
     case 'list-seats':
       return renderListSeats(noLegend);
+    case 'terminate-session':
+      return runTerminate(ctx, positional.slice(1));
+    case 'kill-session':
+      return runKill(ctx, positional.slice(1), signal);
+    case 'terminate-user':
+      return runTerminateUser(ctx, positional.slice(1));
     default:
       return `Unknown command verb '${cmd}'.`;
   }
+}
+
+function normalizeSignal(s: string): LoginctlSignal {
+  const up = s.toUpperCase();
+  if (up === 'SIGTERM' || up === 'TERM' || up === '15') return 'SIGTERM';
+  if (up === 'SIGHUP' || up === 'HUP' || up === '1') return 'SIGHUP';
+  if (up === 'SIGKILL' || up === 'KILL' || up === '9') return 'SIGKILL';
+  if (up === 'SIGINT' || up === 'INT' || up === '2') return 'SIGINT';
+  return 'SIGTERM';
+}
+
+function runTerminate(ctx: LoginctlContext, ids: string[]): string {
+  if (!ctx.action) return 'Failed to terminate session: Not supported';
+  if (ids.length === 0) return 'Failed to terminate session: No session specified';
+  const errors: string[] = [];
+  for (const id of ids) {
+    const r = ctx.action.terminate(id);
+    if (!r.ok) errors.push(r.error ?? `Failed to terminate session: No session '${id}' known`);
+  }
+  return errors.join('\n');
+}
+
+function runKill(ctx: LoginctlContext, ids: string[], signal: LoginctlSignal): string {
+  if (!ctx.action) return 'Failed to kill session: Not supported';
+  if (ids.length === 0) return 'Failed to kill session: No session specified';
+  const errors: string[] = [];
+  for (const id of ids) {
+    const r = ctx.action.kill(id, signal);
+    if (!r.ok) errors.push(r.error ?? `Failed to kill session: No session '${id}' known`);
+  }
+  return errors.join('\n');
+}
+
+function runTerminateUser(ctx: LoginctlContext, names: string[]): string {
+  if (!ctx.action) return 'Failed to terminate user: Not supported';
+  if (names.length === 0) return 'Failed to terminate user: No user specified';
+  const errors: string[] = [];
+  const sessions = activeSessions(ctx);
+  for (const name of names) {
+    const matched = sessions.filter((s) => s.user === name || String(s.uid) === name);
+    if (matched.length === 0) {
+      errors.push(`Failed to terminate user: No user '${name}' known`);
+      continue;
+    }
+    matched.forEach((s, i) => {
+      const sid = sessionId(s, sessions.indexOf(s));
+      const r = ctx.action!.terminate(sid);
+      if (!r.ok) errors.push(r.error ?? `Failed to terminate session: ${sid}`);
+      void i;
+    });
+  }
+  return errors.join('\n');
 }
 
 function renderListSessionsWithLegend(ctx: LoginctlContext, noLegend: boolean): string {

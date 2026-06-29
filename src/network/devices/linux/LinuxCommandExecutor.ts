@@ -1327,6 +1327,29 @@ export class LinuxCommandExecutor {
     this.utmpSync = sync;
   }
 
+  private buildLoginctlAction(table: SshSessionTable): import('./network/loginctlFormatter').LoginctlSessionAction {
+    const findSession = (sid: string) => {
+      const sessions = table.list();
+      const idx = sessions.findIndex((s, i) => {
+        const pid = s.shellPid ?? s.sshdPid ?? 0;
+        return (pid > 0 ? String(pid) : String(i + 1)) === sid;
+      });
+      return idx >= 0 ? sessions[idx] : null;
+    };
+    const terminate = (sid: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
+      const s = findSession(sid);
+      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sid}' known` };
+      if (s.shellPid) this.processMgr.kill(s.shellPid, signal);
+      if (s.sshdPid) this.processMgr.kill(s.sshdPid, signal);
+      table.close(s.tty, 'admin');
+      return { ok: true };
+    };
+    return {
+      terminate: (sid) => terminate(sid, 'SIGTERM'),
+      kill: (sid, signal) => terminate(sid, signal),
+    };
+  }
+
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
   registerProcess(pid: number, user: string, command: string): void {
     this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
@@ -2841,8 +2864,9 @@ export class LinuxCommandExecutor {
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
             now: new Date(),
+            action: this.buildLoginctlAction(this.sessionTable),
           }, args);
-          const exit = out.startsWith('Failed to get') || out.startsWith('Unknown command') ? 1 : 0;
+          const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
           return { output: out, exitCode: exit };
         }
         return { output: 'loginctl: command not found', exitCode: 127 };

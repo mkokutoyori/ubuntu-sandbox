@@ -103,4 +103,40 @@ describe('Sessions are coherent with the process table and loginctl', () => {
       expect(out.trim().split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('loginctl terminate-session closes the session everywhere', () => {
+    it('removes the session from who, kills its bash, and stamps a close in wtmp', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const listOut = await srv.executeCommand('loginctl list-sessions');
+      const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
+      const sid = sessRow.trim().split(/\s+/)[0];
+      const detail = await srv.executeCommand(`loginctl show-session ${sid}`);
+      const leaderPid = detail.match(/^Leader=(\d+)$/m)?.[1] ?? '';
+      expect(leaderPid).toMatch(/^\d+$/);
+
+      await srv.executeCommand(`loginctl terminate-session ${sid}`);
+
+      const whoAfter = await srv.executeCommand('who');
+      expect(whoAfter).not.toMatch(/^alice\b/m);
+
+      const psAfter = await srv.executeCommand(`ps -p ${leaderPid}`);
+      expect(psAfter).not.toMatch(new RegExp(`^\\s*${leaderPid}\\b`, 'm'));
+
+      const lastAfter = await srv.executeCommand('last -F');
+      expect(lastAfter).toMatch(/^alice\b/m);
+      const aliceRow = lastAfter.split('\n').find((l) => /^alice\b/.test(l)) ?? '';
+      expect(aliceRow).not.toMatch(/still logged in/);
+    });
+  });
+
+  describe('loginctl kill-session sends the requested signal', () => {
+    it('kill-session --signal=SIGTERM also closes the session', async () => {
+      await pc.executeCommand('ssh alice@10.0.0.2');
+      const listOut = await srv.executeCommand('loginctl list-sessions');
+      const sid = (listOut.split('\n').find((l) => /alice/.test(l)) ?? '').trim().split(/\s+/)[0];
+      await srv.executeCommand(`loginctl kill-session --signal=SIGTERM ${sid}`);
+      const out = await srv.executeCommand('loginctl list-sessions');
+      expect(out).not.toMatch(/\balice\b/);
+    });
+  });
 });
