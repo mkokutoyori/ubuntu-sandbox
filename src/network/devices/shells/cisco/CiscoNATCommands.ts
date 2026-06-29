@@ -103,11 +103,11 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       let ifaceTarget: string | undefined;
       if (args[3]?.toLowerCase() === 'interface') {
         const ifName = ctx.resolveInterfaceName?.(args[4]) ?? args[4];
-        if (!/^(GigabitEthernet|FastEthernet|Serial|Loopback|Vlan|Tunnel)/i.test(ifName)) {
-          return `% Invalid interface ${args[4]}.`;
-        }
+        const exactPrefix = /^(GigabitEthernet|FastEthernet|Serial|Loopback|Vlan|Tunnel)\d/i.test(ifName);
+        if (!exactPrefix) return `% Invalid interface ${args[4]}.`;
         const port = ctx.r().getPort?.(ifName);
-        if (!port && !/^(Loopback|Serial\S+\.\d+|GigabitEthernet\S+\.\d+)/i.test(ifName)) {
+        const isSubInterface = /\.\d+$/.test(ifName);
+        if (!port && !/^Loopback\d/i.test(ifName) && !isSubInterface) {
           return `% Interface ${ifName} does not exist.`;
         }
         const ip = port?.getIPAddress?.();
@@ -187,8 +187,8 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
 
     if (keyword === 'interface') {
       const ifName = ctx.resolveInterfaceName(args[2]) ?? args[2];
-      const ifaces = (ctx.r() as any).getInterfaces?.() ?? new Map();
-      if (!ifaces.has?.(ifName) && !/^GigabitEthernet|^FastEthernet|^Serial|^Loopback|^Vlan/.test(ifName)) {
+      const port = ctx.r().getPort?.(ifName);
+      if (!port && !/^Loopback/i.test(ifName) && !/\.\d+$/.test(ifName)) {
         return `% Invalid interface ${args[2]}.`;
       }
       const isOverload = args.some((a, i) => i >= 3 && a.toLowerCase() === 'overload');
@@ -647,27 +647,41 @@ export function showNATStatistics(router: Router): string {
   const maxEntries = engine.getMaxEntries?.();
   const hasOverload = engine.getDynamicRules().some(r => r.type === 'overload');
 
+  const poolUsage: string[] = [];
+  if (pools > 0) {
+    poolUsage.push(`Pools:`);
+    for (const [, p] of engine.getPools()) {
+      const startN = p.startIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+      const endN = p.endIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+      const cap = (endN - startN + 1) || 1;
+      const used = engine.getSessions().filter(s => {
+        const n = s.globalIP.split('.').reduce((a, x) => (a << 8) + parseInt(x, 10), 0) >>> 0;
+        return n >= startN && n <= endN;
+      }).length;
+      const pct = Math.round((used * 100) / cap);
+      poolUsage.push(` ${p.name}: ${p.startIP} - ${p.endIP} — used ${used}/${cap} (${pct}%)`);
+    }
+  }
+
   return [
     `Total active translations: ${total} (${statics} static, ${dynamicSessions} dynamic; 0 extended)`,
+    `Total translations: ${total}`,
     `Static translations: ${statics}`,
     `Dynamic translations: ${dynamicSessions}`,
     `Translation errors: 0`,
     `Outside interfaces:  ${outside}`,
     `Inside interfaces:   ${inside}`,
     `Hits: ${counters.hits}  Misses: ${counters.misses}`,
-    `Expired translations: ${counters.expired}`,
+    ...(counters.expired > 0 ? [`Expired translations: ${counters.expired}`] : []),
     `Session timeouts (seconds): tcp ${timeouts.tcp / 1000}  udp ${timeouts.udp / 1000}  icmp ${timeouts.icmp / 1000}  syn ${timeouts.tcpHalfOpen / 1000}`,
-    ...(hasOverload ? ['Overload: enabled'] : []),
+    ...(hasOverload ? ['Overloaded mappings: yes'] : []),
     ...(maxEntries != null ? [`max-entries ${maxEntries}`, ...(dynamicSessions >= maxEntries ? ['Limit reached: new translations blocked'] : [])] : []),
     `Dynamic mappings:`,
     ...(dynamic === 0 ? ['-- No dynamic NAT rules configured --'] :
       engine.getDynamicRules().map(r =>
         ` -- Inside Source [acl ${r.aclId}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
       )),
-    ...(pools > 0 ? [
-      `Pools:`,
-      ...[...engine.getPools().values()].map(p => ` ${p.name}: ${p.startIP} - ${p.endIP}${(p as any).prefixLen != null ? ` /${(p as any).prefixLen}` : ''}`),
-    ] : []),
+    ...poolUsage,
     `Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)`,
   ].join('\n');
 }
