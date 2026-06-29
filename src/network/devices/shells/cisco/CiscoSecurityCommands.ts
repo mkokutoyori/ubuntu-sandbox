@@ -8,6 +8,7 @@ import {
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import { encryptType7, md5Hex } from '@/crypto';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -163,8 +164,17 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
-    const r = ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+    const r = ctx.r() as unknown as {
+      _setServiceFlag?: (n: string, on: boolean) => void;
+      getEnablePassword?: () => { value: string; algo: 'plain' | 'type-7' } | null;
+      _setEnablePassword?: (v: string, algo: 'plain' | 'type-7') => void;
+    };
     r._setServiceFlag?.('password-encryption', true);
+    const ep = r.getEnablePassword?.();
+    if (ep && ep.algo === 'plain') {
+      const salt = parseInt(md5Hex(`cisco-type7:${ep.value}`).slice(0, 1), 16);
+      r._setEnablePassword?.(encryptType7(ep.value, salt), 'type-7');
+    }
     return '';
   });
 

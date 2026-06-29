@@ -172,6 +172,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configDhcpTrie = new CommandTrie();
   private configDhcpPoolClassTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
+  private configVrfTrie = new CommandTrie();
+  private configVlanTrie = new CommandTrie();
+  private selectedVRF: string | null = null;
+  private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
@@ -298,6 +302,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getSelectedDHCPPool(): string | null { return this.selectedDHCPPool; }
   setSelectedDHCPPool(pool: string | null): void { this.selectedDHCPPool = pool; }
+  setSelectedVRF(name: string | null): void { this.selectedVRF = name; }
+  setSelectedVLAN(id: number | null): void { this.selectedVLAN = id; }
 
   resolveInterfaceName(input: string): string | null {
     return resolveInterfaceName(this.r(), input);
@@ -452,6 +458,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
+      case 'config-vrf': return this.configVrfTrie;
+      case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
@@ -602,6 +610,48 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
+
+    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(id) || id < 1 || id > 4094) return "% Invalid input detected at '^' marker.";
+      this.selectedVLAN = id;
+      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
+      const vlans = r._vlans ??= new Map();
+      if (!vlans.has(id)) vlans.set(id, { id });
+      this.mode = 'config-vlan';
+      return '';
+    });
+    this.configVlanTrie.registerGreedy('name', 'VLAN name', (args) => {
+      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
+      const name = args.join(' ');
+      if (!name) return '% Incomplete command.';
+      const bareName = name.replace(/^"|"$/g, '');
+      if (bareName.length > 32) return "% Invalid input detected at '^' marker.";
+      if (this.selectedVLAN != null) {
+        const v = r._vlans?.get(this.selectedVLAN);
+        if (v) v.name = bareName;
+      }
+      return '';
+    });
+
+    this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
+      const rd = args.join(' ').trim();
+      const m = /^(\d+):(\d+)$/.exec(rd);
+      if (!m) return "% Invalid input detected at '^' marker.";
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
+      if (this.selectedVRF != null) {
+        const v = r._vrfs?.get(this.selectedVRF);
+        if (v) v.rd = rd;
+      }
+      return '';
+    });
+    this.configVrfTrie.registerGreedy('route-target', 'Route target', () => '');
+    this.configVrfTrie.registerGreedy('description', 'Description', () => '');
     // IPSec
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);

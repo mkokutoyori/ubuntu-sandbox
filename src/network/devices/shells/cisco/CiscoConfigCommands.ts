@@ -20,6 +20,7 @@ export type CiscoShellMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
   | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
+  | 'config-vrf' | 'config-vlan'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   | 'config-dhcp-pool-class'
   // IPSec modes
@@ -748,10 +749,15 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (!port) return '';
+    const type = args[0]?.toLowerCase() ?? '';
+    if (!type) return '% Incomplete command.';
+    let vlan: number | undefined;
+    if (args[1] !== undefined) {
+      if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
+      vlan = parseInt(args[1], 10);
+    }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
-      type: args[0]?.toLowerCase() ?? '',
-      vlan: args[1] ? parseInt(args[1], 10) : undefined,
-      native: args.includes('native'),
+      type, vlan, native: args.includes('native'),
     };
     return '';
   });

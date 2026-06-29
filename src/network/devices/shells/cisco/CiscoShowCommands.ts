@@ -254,6 +254,8 @@ export function showRunningConfig(router: Router): string {
     passwordEncrypted: boolean;
     login: 'password' | 'local' | 'none' | null;
     privilegeLevel: number | null;
+    execTimeoutMin: number | null;
+    execTimeoutSec: number;
   };
   if (consoleCfg) {
     lines.push(`line console ${consoleCfg.line}`);
@@ -264,6 +266,9 @@ export function showRunningConfig(router: Router): string {
     else if (consoleCfg.login === 'password') lines.push(' login');
     else if (consoleCfg.login === 'none') lines.push(' no login');
     if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
+    if (consoleCfg.execTimeoutMin != null) {
+      lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
+    }
     lines.push('!');
   }
 
@@ -298,6 +303,10 @@ export function showRunningConfig(router: Router): string {
     if (desc) lines.push(` description ${desc}`);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
+    const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
+    if (enc && enc.type) {
+      lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
+    }
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
     if (!port.getIsUp()) lines.push(` shutdown`);
@@ -375,6 +384,34 @@ export function showRunningConfig(router: Router): string {
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
+    }
+  }
+
+  const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
+  if (vrfs && vrfs.size > 0) {
+    lines.push('!');
+    for (const v of vrfs.values()) {
+      lines.push(`ip vrf ${v.name}`);
+      if (v.rd) lines.push(` rd ${v.rd}`);
+    }
+  }
+
+  const vlans = (router as unknown as { _vlans?: Map<number, { id: number; name?: string }> })._vlans;
+  if (vlans && vlans.size > 0) {
+    lines.push('!');
+    for (const v of vlans.values()) {
+      lines.push(`vlan ${v.id}`);
+      if (v.name) lines.push(` name ${v.name}`);
+    }
+  }
+
+  const ospfRun = router._getOSPFEngineInternal?.();
+  if (ospfRun) {
+    const cfg = ospfRun.getConfig();
+    lines.push('!');
+    lines.push(`router ospf ${cfg.processId}`);
+    for (const n of cfg.networks) {
+      lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
     }
   }
 
@@ -549,6 +586,10 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
   ];
   const desc = router.getInterfaceDescription(ifName);
   if (desc) lines.push(` description ${desc}`);
+  const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
+  if (enc && enc.type) {
+    lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
+  }
   if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);

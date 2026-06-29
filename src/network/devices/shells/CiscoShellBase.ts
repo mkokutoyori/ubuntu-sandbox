@@ -44,6 +44,7 @@ import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepos
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
+import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -149,6 +150,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLinePasswordEncrypted: boolean = false;
   protected consoleLineLogin: 'password' | 'local' | 'none' | null = null;
   protected consoleLinePrivilegeLevel: number | null = null;
+  protected consoleLineExecTimeoutMin: number | null = null;
+  protected consoleLineExecTimeoutSec: number = 0;
 
   _getAliasRunningConfigLines(): string[] {
     return this.aliases.toRunningConfig();
@@ -160,14 +163,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     passwordEncrypted: boolean;
     login: 'password' | 'local' | 'none' | null;
     privilegeLevel: number | null;
+    execTimeoutMin: number | null;
+    execTimeoutSec: number;
   } | null {
-    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null) return null;
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
       passwordEncrypted: this.consoleLinePasswordEncrypted,
       login: this.consoleLineLogin,
       privilegeLevel: this.consoleLinePrivilegeLevel,
+      execTimeoutMin: this.consoleLineExecTimeoutMin,
+      execTimeoutSec: this.consoleLineExecTimeoutSec,
     };
   }
   protected terminalMonitor = false;
@@ -579,6 +586,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     'config-router-ospf': ['interface', 'router'],
     'config-router-ospfv3': ['interface', 'router'],
     'config-vlan': ['interface', 'vlan', 'ip'],
+    'config-vrf': ['interface', 'line', 'router', 'ip', 'vlan'],
     'config-route-map': ['interface', 'vlan'],
   };
 
@@ -1896,14 +1904,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
-      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void };
+      const dev = this.d() as unknown as {
+        _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void;
+        getServiceFlags?: () => ReadonlyMap<string, boolean>;
+      };
       let algo: 'plain' | 'type-7' = 'plain';
       let password = '';
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
       else { password = args.join(' '); }
       if (password === '') return '% Incomplete command.';
-      dev._setEnablePassword?.(password, algo);
+      if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
+        const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
+        dev._setEnablePassword?.(_encryptType7(password, salt), 'type-7');
+      } else {
+        dev._setEnablePassword?.(password, algo);
+      }
       return '';
     });
     this.configTrie.register('no enable secret', 'Remove enable secret', () => {
@@ -2153,7 +2169,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return "% Invalid input detected at '^' marker.";
       }
       const range = this.selectedVtyRange;
-      if (!range) return '';
+      if (!range) {
+        if (this.selectedConsoleLine != null) {
+          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
+          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
+        }
+        return '';
+      }
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       dev._getVtyLineConfig?.().upsert({
         first: range.first, last: range.last,

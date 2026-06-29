@@ -367,6 +367,8 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const vrfs: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }> =
       router._vrfs ??= new Map();
     if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+    (ctx as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
+    ctx.setMode('config-vrf');
     return '';
   });
   trie.registerGreedy('no ip vrf', 'Remove a VRF instance', (args) => {
