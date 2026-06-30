@@ -78,6 +78,7 @@ import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
+import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/CiscoSecurityConfig';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
 export type { RIPConfig } from './router/RouterRIPEngine';
@@ -227,7 +228,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private ipv6Engine!: IPv6DataPlane;
 
   // ── ACL (Access Control Lists) — delegated to ACLEngine ────
-  private aclEngine = new ACLEngine();
+  private aclEngine = (() => {
+    const e = new ACLEngine();
+    // Wire the Cisco time-range resolver — ACL entries tagged
+    // `time-range NAME` consult getSecurityConfig().timeRanges to know
+    // whether they are currently active. Done lazily so the security
+    // config is created on demand by the security-CLI handlers.
+    e.setTimeRangeResolver((name, now) => {
+      const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+        Symbol.for('CiscoSecurityConfig')
+      ];
+      const tr = sec?.timeRanges.get(name);
+      if (!tr) return false;
+      return isTimeRangeActive(tr, now);
+    });
+    return e;
+  })();
 
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();

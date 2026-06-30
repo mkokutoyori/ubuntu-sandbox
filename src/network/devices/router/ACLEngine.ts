@@ -243,14 +243,25 @@ export class ACLEngine {
     return direction === 'in' ? binding.inbound : binding.outbound;
   }
 
+  /**
+   * Optional resolver for time-range references on individual ACEs. When
+   * set, an entry tagged `time-range NAME` only matches if the resolver
+   * returns true for `(name, now)`. When unset (default), time-range
+   * entries are treated as always-active — the historical behaviour.
+   */
+  private timeRangeResolver: ((name: string, now: Date) => boolean) | null = null;
+  setTimeRangeResolver(fn: ((name: string, now: Date) => boolean) | null): void {
+    this.timeRangeResolver = fn;
+  }
+
   /** Evaluate a named/numbered ACL by name — used by IPSecEngine for crypto ACL matching. */
-  evaluateACLByName(name: string, ipPkt: IPv4Packet): 'permit' | 'deny' | null {
+  evaluateACLByName(name: string, ipPkt: IPv4Packet, now: Date = new Date()): 'permit' | 'deny' | null {
     const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
-    return this.evaluateACL(ref, ipPkt);
+    return this.evaluateACL(ref, ipPkt, now);
   }
 
   /** Evaluate an ACL against a packet. Returns 'permit', 'deny', or null (no ACL). */
-  evaluateACL(aclRef: number | string | null, ipPkt: IPv4Packet): 'permit' | 'deny' | null {
+  evaluateACL(aclRef: number | string | null, ipPkt: IPv4Packet, now: Date = new Date()): 'permit' | 'deny' | null {
     if (aclRef === null) return null;
 
     const acl = typeof aclRef === 'number'
@@ -262,6 +273,10 @@ export class ACLEngine {
     }
 
     for (const entry of acl.entries) {
+      if (entry.timeRange && this.timeRangeResolver
+          && !this.timeRangeResolver(entry.timeRange, now)) {
+        continue; // inactive time-range → skip ACE (next-rule semantics)
+      }
       if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
         entry.matchCount++;
         return entry.action;

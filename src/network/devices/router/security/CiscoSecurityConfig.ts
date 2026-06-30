@@ -206,6 +206,67 @@ export interface TimeRange {
   periodic: TimeRangePeriodic[];
 }
 
+/** Cisco day-keyword → JS getDay() (0=Sunday..6=Saturday) set. */
+const TIME_RANGE_DAY_SETS: Record<string, ReadonlySet<number>> = {
+  monday:    new Set([1]),
+  tuesday:   new Set([2]),
+  wednesday: new Set([3]),
+  thursday:  new Set([4]),
+  friday:    new Set([5]),
+  saturday:  new Set([6]),
+  sunday:    new Set([0]),
+  weekdays:  new Set([1, 2, 3, 4, 5]),
+  weekend:   new Set([0, 6]),
+  daily:     new Set([0, 1, 2, 3, 4, 5, 6]),
+};
+
+/**
+ * Decide whether a Cisco time-range is "active" at the given instant.
+ * An ACE tagged `time-range NAME` only matches when this returns true.
+ *
+ * - absolute start/end (if set) gate the whole range — outside the
+ *   window every periodic clause is inactive.
+ * - inside the absolute window, the range is active if AT LEAST ONE
+ *   periodic clause covers `now`'s weekday + time of day. A range
+ *   with no periodic clauses is treated as "always-active inside the
+ *   absolute window" (matches IOS).
+ *
+ * `now` is interpreted in the device's local timezone (the simulator
+ * does not model timezones, so JS `Date.getHours()` / `getDay()` give
+ * "device-local"). Cisco's time-range also runs in device-local time
+ * by default — fidelity is exact for the educational scenarios.
+ */
+export function isTimeRangeActive(tr: TimeRange, now: Date): boolean {
+  if (tr.absolute) {
+    const ts = now.getTime();
+    if (tr.absolute.start) {
+      const s = Date.UTC(
+        tr.absolute.start.year, tr.absolute.start.month - 1,
+        tr.absolute.start.day, tr.absolute.start.hour, tr.absolute.start.minute,
+      );
+      if (ts < s) return false;
+    }
+    if (tr.absolute.end) {
+      const e = Date.UTC(
+        tr.absolute.end.year, tr.absolute.end.month - 1,
+        tr.absolute.end.day, tr.absolute.end.hour, tr.absolute.end.minute,
+      );
+      if (ts > e) return false;
+    }
+  }
+  if (tr.periodic.length === 0) return true;
+  const day = now.getDay();
+  const minOfDay = now.getHours() * 60 + now.getMinutes();
+  for (const p of tr.periodic) {
+    const set = TIME_RANGE_DAY_SETS[p.days.toLowerCase()];
+    if (!set || !set.has(day)) continue;
+    const start = p.startHour * 60 + p.startMinute;
+    const end   = p.endHour   * 60 + p.endMinute;
+    if (minOfDay >= start && minOfDay <= end) return true;
+  }
+  return false;
+}
+
 export interface PkiTrustpoint {
   name: string;
   enrollmentUrl?: string;

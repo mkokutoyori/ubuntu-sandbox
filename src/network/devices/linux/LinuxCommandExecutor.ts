@@ -2184,6 +2184,21 @@ export class LinuxCommandExecutor {
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
+        // Real sudo audits the refusal too — `sudo: <u> : user NOT in
+        // sudoers ; …` lands in /var/log/auth.log next to the existing
+        // "Accepted password" line. Critical for the SSH→sudo
+        // traceability scenario where the SOC needs to see who tried
+        // to escalate without permission.
+        if (this.serviceMgr.isActive('rsyslog')) {
+          const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+          const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+          const u = this.userMgr.currentUser;
+          const cmdStr = cmdArgs.join(' ');
+          const fail = `${ts} ${hostname} sudo: ${u} : user NOT in sudoers ; TTY=pts/0 ; ` +
+            `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
+          const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+          this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
+        }
         return {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,

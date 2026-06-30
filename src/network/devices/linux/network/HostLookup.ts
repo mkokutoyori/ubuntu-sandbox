@@ -94,7 +94,7 @@ export function findReachableHost(srcIp: string, dstIp: string): Equipment | nul
 
 interface RouterAclSurface {
   getInterfaceACL?(ifName: string, direction: 'in' | 'out'): number | string | null;
-  evaluateACLByName?(name: string, ipPkt: IPv4Packet): 'permit' | 'deny' | null;
+  evaluateACLByName?(name: string, ipPkt: IPv4Packet, now?: Date): 'permit' | 'deny' | null;
 }
 
 /**
@@ -115,6 +115,7 @@ interface RouterAclSurface {
  */
 export function transitTcpAclVerdict(
   srcIp: string, dstIp: string, dstPort: number,
+  now: Date = new Date(),
 ): 'permit' | 'deny' {
   if (srcIp === dstIp) return 'permit';
   const registry = EquipmentRegistry.getInstance();
@@ -149,14 +150,14 @@ export function transitTcpAclVerdict(
       const ingressIface = peerPort.getName();
       const inbound = router.getInterfaceACL(ingressIface, 'in');
       if (inbound !== null) {
-        const verdict = router.evaluateACLByName(String(inbound), synth);
+        const verdict = router.evaluateACLByName(String(inbound), synth, now);
         if (verdict === 'deny') return 'deny';
       }
       for (const sibling of peerDev.getPorts()) {
         if (sibling === peerPort) continue;
         const outbound = router.getInterfaceACL(sibling.getName(), 'out');
         if (outbound !== null) {
-          const verdict = router.evaluateACLByName(String(outbound), synth);
+          const verdict = router.evaluateACLByName(String(outbound), synth, now);
           if (verdict === 'deny') return 'deny';
         }
         queue.push(sibling);
