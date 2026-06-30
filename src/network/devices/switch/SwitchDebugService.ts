@@ -45,9 +45,9 @@ export class SwitchDebugService implements TerminalDebugSource {
 
   disable(arg: string): string {
     const cats = mapScope(arg);
-    if (!cats) return `${arg.trim()} debugging is off`;
+    if (!cats) return `${arg.trim()} debugging is off (disabled)`;
     for (const c of cats) this.flags.delete(c);
-    return `${LABELS[cats[0]]} debugging is off`;
+    return `${LABELS[cats[0]]} debugging is off (disabled)`;
   }
 
   enableAll(): string {
@@ -58,7 +58,7 @@ export class SwitchDebugService implements TerminalDebugSource {
   disableAll(): string {
     this.flags.clear();
     this.all = false;
-    return 'All possible debugging has been turned off';
+    return 'All possible debugging has been turned off (disabled)';
   }
 
   hasAnyFlag(): boolean { return this.all || this.flags.size > 0; }

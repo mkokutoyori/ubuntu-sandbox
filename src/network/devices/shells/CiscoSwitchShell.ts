@@ -298,6 +298,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     // ── Interface ── trust + limit rate
+    this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(n) || n < 64 || n > 9216) return "% Invalid input detected at '^' marker.";
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const port = this.d().getPort(i);
+        if (port) (port as unknown as { setMTU?: (m: number) => void }).setMTU?.(n);
+      }
+      return '';
+    });
     this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
@@ -1303,10 +1313,20 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
       const full = this.showMACAddressTable(this.d());
-      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+      const a = args.map(x => x.toLowerCase());
+      let i = 0;
+      if (a[i] === 'dynamic' || a[i] === 'static' || a[i] === 'multicast') i++;
+      if (a[i] === 'vlan' && a[i + 1]) {
         const lines = full.split('\n');
-        return [lines[0] ?? '', ...lines.filter(l =>
-          new RegExp(`\\b${args[1]}\\b`).test(l))].join('\n');
+        return [lines[0] ?? '', ...lines.filter(l => new RegExp(`\\b${args[i + 1]}\\b`).test(l))].join('\n');
+      }
+      if (a[i] === 'interface' && a[i + 1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l => l.includes(args[i + 1]))].join('\n');
+      }
+      if (a[i] === 'address' && a[i + 1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l => l.includes(args[i + 1]))].join('\n');
       }
       return full;
     });
@@ -1405,7 +1425,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         }
         return this.showTrunkTable([name]);
       }
-      if (args.length === 1 && last === 'status') return this.showInterfacesStatus(this.d());
+      if (args.length === 1 && 'status'.startsWith(last) && last.length >= 3) return this.showInterfacesStatus(this.d());
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name);
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
@@ -1858,8 +1878,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     };
+    this.configIfTrie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
+      if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const t = (args[0] ?? '').toLowerCase();
+      if (t !== 'dot1q' && t !== 'negotiate') {
+        return `% ${args[0]} encapsulation is not supported on this platform`;
+      }
+      return recordIf(`switchport trunk encapsulation ${args.join(' ')}`.trim());
+    });
     for (const sub of [
-      'switchport trunk encapsulation',
       'switchport voice', 'switchport priority',
       'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
@@ -2131,6 +2160,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
+
+    const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
+    if (unhandled.length > 0) {
+      lines.push('!');
+      lines.push(...unhandled);
+    }
 
     lines.push('end');
     return lines.join('\n');

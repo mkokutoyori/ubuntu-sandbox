@@ -165,6 +165,16 @@ export abstract class Switch extends Equipment {
 
   getPortMirror(): PortMirror { return this.portMirror; }
 
+  private readonly _unhandledConfigLines: string[] = [];
+  getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
+  _recordUnhandledConfigLine(line: string): void {
+    if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
+  }
+  _removeUnhandledConfigLine(needle: string): void {
+    const idx = this._unhandledConfigLines.findIndex(l => l === needle || l.startsWith(needle));
+    if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
+  }
+
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
   protected readonly initialHostname: string;

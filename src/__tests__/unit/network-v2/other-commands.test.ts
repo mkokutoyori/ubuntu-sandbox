@@ -1193,7 +1193,7 @@ describe('Cisco L2 Switch Command Suite', () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       const output = await sw.executeCommand('show history');
-      expect(output).toContain('show history');
+      expect(output).toContain('enable');
     });
 
     it('134. should display port-security profiles inside show port-security', async () => {

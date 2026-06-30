@@ -794,7 +794,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.register('show diag', 'Display chassis diagnostics', () => 'Slot 0:  Built-in PID (real)\n  Power: OK\n  Temperature: nominal');
     trie.register('show idprom backplane', 'Display IDPROM backplane', () => 'IDPROM for backplane: serial number, PID match show inventory');
-    trie.register('show mac address-table', 'Display MAC address table', () => {
+    trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
       const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
       const table = dev.getMacTable?.();
       if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
@@ -1212,7 +1212,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         (port as unknown as { resetCounters?: () => void }).resetCounters?.();
         count++;
       }
-      return count === 0 ? '% No matching interface' : '';
+      if (count === 0) return '% No matching interface';
+      const scope = target ? `interface ${target}` : 'all interfaces';
+      return `Clear "show interface" counters on ${scope} [confirm]`;
     });
     this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
       const dev = this.d() as unknown as { _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown> };
@@ -1240,9 +1242,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
-      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      const dev = this.d() as unknown as {
+        getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent;
+        _recordUnhandledConfigLine?: (line: string) => void;
+      };
+      const agent = dev.getNtpAgent?.();
+      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
+    });
+    this.configTrie.registerGreedy('sntp unicast', 'SNTP unicast client', (_args) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
+      dev._recordUnhandledConfigLine?.('sntp unicast client');
+      return '';
+    });
+    this.configTrie.registerGreedy('no sntp server', 'Remove SNTP server', (args) => {
+      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void; getNtpAgent?: () => { removeServer?: (ip: string) => void } };
+      const agent = dev.getNtpAgent?.();
+      if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
+      dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
+      return '';
+    });
+    this.privilegedTrie.register('show sntp', 'Show SNTP', () => {
+      const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[]; getNtpAgent?: () => { getConfig?: () => { associations?: Map<string, unknown> } } };
+      const agent = dev.getNtpAgent?.();
+      if (agent?.getConfig) {
+        const cfg = agent.getConfig();
+        if (cfg.associations && cfg.associations.size > 0) {
+          return ['SNTP server   Stratum   Version   Last Receive', ...[...cfg.associations.keys()].map(k => `${k.padEnd(14)}1         4         00:00:01`)].join('\n');
+        }
+      }
+      const lines = dev.getUnhandledConfigLines?.() ?? [];
+      const sntpLines = lines.filter(l => l.startsWith('sntp server'));
+      if (sntpLines.length === 0) return 'No SNTP servers configured';
+      return ['SNTP server   Stratum   Version   Last Receive', ...sntpLines.map(l => `${l.split(/\s+/)[2]?.padEnd(14) ?? ''}1         4         00:00:01`)].join('\n');
     });
 
     this.registerCommonShowCommands(this.privilegedTrie);
@@ -1401,7 +1434,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.register('no hostname', 'Reset hostname', () => {
-      this.d()._setHostnameInternal('Router');
+      const dev = this.d();
+      const ctor = dev.constructor.name;
+      const defaultName = ctor === 'CiscoSwitch' || ctor === 'GenericSwitch' ? 'Switch' : 'Router';
+      dev._setHostnameInternal(defaultName);
       return '';
     });
 
