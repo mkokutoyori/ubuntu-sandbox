@@ -113,6 +113,9 @@ export class SshSyslogger {
       case 'auth_invalid_user':
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
 
+      case 'auth_strict_modes_refused':
+        return `Authentication refused: bad ownership or modes for file ${event.path}`;
+
       case 'auth_throttled':
         return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 

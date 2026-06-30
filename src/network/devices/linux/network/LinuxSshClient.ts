@@ -316,12 +316,19 @@ function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern:
  */
 function findMatchedAuthorizedKey(
   exec: RemoteExecLike, remoteUser: string, identity: string,
+  onStrictModesRefusal?: (offendingPath: string) => void,
 ): import('../../../protocols/ssh/SshPureUtils').AuthorizedKey | null {
   const entry = exec.userMgr.getUser(remoteUser);
   if (!entry) return null;
   const home = entry.home ?? `/home/${remoteUser}`;
   const strictModesOn = readRemoteSshdDirective(exec, 'StrictModes') !== 'no';
-  if (strictModesOn && !passesStrictModes(exec, entry.uid, home)) return null;
+  if (strictModesOn) {
+    const offending = firstStrictModesViolation(exec, entry.uid, home);
+    if (offending) {
+      onStrictModesRefusal?.(offending);
+      return null;
+    }
+  }
   const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
   const [idAlgo, idMaterial] = identity.split(/\s+/);
   for (const line of ak.split('\n')) {
@@ -348,18 +355,36 @@ function findMatchedAuthorizedKey(
  * directive — default yes per OpenSSH).
  */
 function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
-  if (!exec.vfs.resolveInode) return true;
-  const sshDir = exec.vfs.resolveInode(`${home}/.ssh`, true);
-  if (sshDir) {
-    if (sshDir.uid !== userUid && sshDir.uid !== 0) return false;
-    if ((sshDir.permissions & 0o022) !== 0) return false;
+  return firstStrictModesViolation(exec, userUid, home) === null;
+}
+
+/**
+ * Run StrictModes against $HOME, ~/.ssh and ~/.ssh/authorized_keys and
+ * return the first offending path so the caller can name it in the
+ * "Authentication refused: bad ownership or modes for file …" log line.
+ * Returns null when nothing fails.
+ *
+ * - $HOME and ~/.ssh share the OpenSSH stock check (no group/world write).
+ * - authorized_keys uses the stricter 0o077 mask (no group/other access at
+ *   all) — the "must be 0600" rule taught by every SSH guide.
+ */
+function firstStrictModesViolation(
+  exec: RemoteExecLike, userUid: number, home: string,
+): string | null {
+  if (!exec.vfs.resolveInode) return null;
+  for (const path of [home, `${home}/.ssh`]) {
+    const inode = exec.vfs.resolveInode(path, true);
+    if (!inode) continue;
+    if (inode.uid !== userUid && inode.uid !== 0) return path;
+    if ((inode.permissions & 0o022) !== 0) return path;
   }
-  const ak = exec.vfs.resolveInode(`${home}/.ssh/authorized_keys`, true);
+  const akPath = `${home}/.ssh/authorized_keys`;
+  const ak = exec.vfs.resolveInode(akPath, true);
   if (ak) {
-    if (ak.uid !== userUid && ak.uid !== 0) return false;
-    if ((ak.permissions & 0o077) !== 0) return false;
+    if (ak.uid !== userUid && ak.uid !== 0) return akPath;
+    if ((ak.permissions & 0o077) !== 0) return akPath;
   }
-  return true;
+  return null;
 }
 
 /**
@@ -372,6 +397,7 @@ function resolveSshAuthMethod(
   flags: string[],
   exec: RemoteExecLike | undefined,
   remoteUser: string,
+  onStrictModesRefusal?: (offendingPath: string) => void,
 ): SshAuthResolution {
   const clientPubkey = clientOption(flags, 'PubkeyAuthentication') !== 'no';
   const clientPassword = clientOption(flags, 'PasswordAuthentication') !== 'no';
@@ -388,7 +414,7 @@ function resolveSshAuthMethod(
   if (clientPubkey && serverPubkey) {
     const identity = localIdentityPublicKey(opts, flags);
     if (identity) {
-      const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity);
+      const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal);
       if (matchedKey) {
         if (matchedKey.options?.from && !sourceMatchesFromPattern(opts.sourceIp, opts.sourceHostname, matchedKey.options.from)) {
           // fall through to password
@@ -818,9 +844,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   // Authentication-method negotiation: public key first, then password —
   // honouring both the server's Pubkey/PasswordAuthentication directives
-  // and the client's `-o` overrides.
+  // and the client's `-o` overrides. A StrictModes refusal of the user's
+  // ~/.ssh / authorized_keys triggers the OpenSSH-compatible auth.log
+  // line "Authentication refused: bad ownership or modes for file …"
+  // before the negotiation silently falls back to password.
   const remoteExec = machine.executor as unknown as RemoteExecLike | undefined;
-  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser);
+  const remoteEvents = (machine as unknown as {
+    getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number }) => void } };
+  }).getSshServerContext?.()?.events;
+  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, (offendingPath) => {
+    remoteEvents?.emit({
+      kind: 'auth_strict_modes_refused',
+      user: remoteUser,
+      ip: opts.sourceIp,
+      path: offendingPath,
+      port: 22,
+    });
+  });
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     throttler?.recordFailure(opts.sourceIp, Date.now());

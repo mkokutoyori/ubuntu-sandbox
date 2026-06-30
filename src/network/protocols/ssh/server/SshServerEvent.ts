@@ -74,6 +74,17 @@ export type SshServerEvent =
       timestamp?: number;
     }
   | {
+      // Emitted when StrictModes refuses ~/.ssh or ~/.ssh/authorized_keys
+      // before even looking at the offered key. Real sshd writes this as
+      // `Authentication refused: bad ownership or modes for file <path>`.
+      kind: 'auth_strict_modes_refused';
+      user: string;
+      ip: string;
+      path: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
       kind: 'auth_throttled';
       ip: string;
       failuresInWindow: number;
