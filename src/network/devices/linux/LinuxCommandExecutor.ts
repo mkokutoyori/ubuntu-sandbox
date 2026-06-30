@@ -2094,6 +2094,9 @@ export class LinuxCommandExecutor {
     env?: Record<string, string>,
   ): { output: string; exitCode: number } {
     this._cmdEnv = env;
+    if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
+      this.cwd = env['PWD'];
+    }
     if (argv.length === 0) return { output: '', exitCode: 0 };
 
     const cmd = argv[0];
