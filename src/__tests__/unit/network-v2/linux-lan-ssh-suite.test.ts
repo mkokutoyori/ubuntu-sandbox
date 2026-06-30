@@ -550,7 +550,10 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin yes → root accepted',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -558,7 +561,10 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin prohibit-password also blocks password root',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin prohibit-password"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin prohibit-password"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: [/Permission denied/],
@@ -602,14 +608,20 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
   const rows: Row[] = [
     {
       name: 'AllowUsers alice → alice succeeds',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'AllowUsers alice → bob is rejected',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
@@ -617,22 +629,29 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
     },
     {
       name: 'AllowUsers with glob "a*" lets alice and admin in',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers a*\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers a*\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh admin@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'DenyUsers bob → bob refused even when AllowUsers absent',
-      setup: (l) => { void l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
     },
     {
       name: 'DenyUsers takes precedence over AllowUsers',
-      setup: (l) => {
-        void l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',

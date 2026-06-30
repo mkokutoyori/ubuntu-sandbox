@@ -161,7 +161,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
-  'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
+  'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
   'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
@@ -1018,7 +1018,7 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
 
-  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
+  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
@@ -1039,6 +1039,7 @@ export class LinuxCommandExecutor {
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
+      offeredPassword,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -3653,6 +3654,44 @@ export class LinuxCommandExecutor {
       case 'sftp':
       case 'rsync': {
         return this.runSshTransport(cmd, args, stdin);
+      }
+      case 'sshpass': {
+        // sshpass [-p PASSWORD | -f FILE | -e] ssh ...
+        // We support -p <pw> only — the most common form. The wrapped
+        // command must be `ssh` (rejecting other wrappers matches the
+        // typical brute-force script shape).
+        let password: string | undefined;
+        let i = 0;
+        while (i < args.length) {
+          if (args[i] === '-p' && args[i + 1] !== undefined) {
+            password = args[i + 1];
+            i += 2;
+            continue;
+          }
+          break;
+        }
+        if (args[i] !== 'ssh') {
+          return { output: 'sshpass: only `sshpass -p <pw> ssh …` is supported in the simulator', exitCode: 1 };
+        }
+        const sshArgs = args.slice(i + 1);
+        const sshpassResult = runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));
+        if (sshpassResult.connection) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpHandshake(
+            { ip: sshpassResult.connection.localIp, port: srcPort },
+            { ip: sshpassResult.connection.peerIp, port: sshpassResult.connection.peerPort },
+          );
+        }
+        if (sshpassResult.droppedSyn) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpSynDropped(
+            { ip: sshpassResult.droppedSyn.localIp, port: srcPort },
+            { ip: sshpassResult.droppedSyn.peerIp, port: sshpassResult.droppedSyn.peerPort },
+          );
+        }
+        return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
       }
       case 'ssh': {
         const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));

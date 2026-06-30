@@ -89,6 +89,14 @@ export interface SshClientOpts {
    * its identities are exposed to the remote command for its duration.
    */
   localAgent?: SshAgent;
+  /**
+   * Password offered to the remote (e.g. via `sshpass -p`). When set,
+   * the simulator's password-auth path validates it against the remote
+   * userMgr's checkPassword and emits an `auth_failure` event on
+   * mismatch — that's what wires the brute-force detection chain
+   * end-to-end.
+   */
+  offeredPassword?: string;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
@@ -435,6 +443,26 @@ function resolveSshAuthMethod(
     return { method: 'password', clientMethods };
   }
   return { method: null, clientMethods };
+}
+
+/**
+ * When the client supplied a password (via `sshpass -p <pw>`), validate
+ * it against the remote userMgr.checkPassword. Returns 'wrong-password'
+ * when the password is set but does not match. Returns 'ok' otherwise
+ * (no password supplied, or password matches, or the user has no
+ * password at all — keep the simulator's existing "trust"  default
+ * intact for callers that don't drive sshpass).
+ */
+function verifyOfferedPassword(
+  exec: RemoteExecLike | undefined,
+  remoteUser: string,
+  offeredPassword: string | undefined,
+): 'ok' | 'wrong-password' {
+  if (offeredPassword === undefined) return 'ok';
+  if (!exec) return 'ok';
+  const mgr = exec.userMgr as unknown as { checkPassword?: (u: string, p: string) => boolean };
+  if (typeof mgr.checkPassword !== 'function') return 'ok';
+  return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
 }
 
 // ─── SendEnv / AcceptEnv environment forwarding ─────────────────────
@@ -855,6 +883,21 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (!login.ok) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     throttler?.recordFailure(opts.sourceIp, Date.now());
+    // Surface the specific policy in /var/log/auth.log via the bus —
+    // real sshd writes `User <u> not allowed because not listed in
+    // AllowUsers` or `User <u> not allowed because listed in DenyUsers`
+    // or `ROOT LOGIN REFUSED FROM <ip>` before the generic
+    // "Failed password" line.
+    const policyEvents = (machine as unknown as {
+      getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; reason?: string; port?: number }) => void } };
+    }).getSshServerContext?.()?.events;
+    policyEvents?.emit({
+      kind: 'auth_policy_refused',
+      user: remoteUser,
+      ip: opts.sourceIp,
+      reason: login.reason ?? 'policy refused',
+      port: 22,
+    });
     return {
       output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
@@ -880,6 +923,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       port: 22,
     });
   });
+  // When the client supplied a password (via sshpass), validate it now.
+  // Wrong passwords drive the brute-force detection chain: the
+  // auth_failure event lands on the throttler which trips fail2ban.
+  if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword) === 'wrong-password') {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
+      exitCode: 255,
+    };
+  }
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     throttler?.recordFailure(opts.sourceIp, Date.now());

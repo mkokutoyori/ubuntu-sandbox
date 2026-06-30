@@ -414,8 +414,12 @@ export abstract class LinuxMachine extends EndHost
    *   - DenyUsers takes precedence over AllowUsers
    */
   sshdAcceptsLogin(user: string, ctx?: { address?: string; host?: string }): { ok: boolean; reason?: string } {
-    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-    const config = SshdServerConfig.parse(raw);
+    // Use the live sshd-context-cached snapshot, NOT a fresh re-parse.
+    // Real sshd holds its config in memory until SIGHUP / `systemctl
+    // reload ssh`; editing /etc/ssh/sshd_config without reloading does
+    // not change the policy. The simulator follows the same rule via
+    // getSshServerContext() (which is replaced on reload).
+    const config = this.getSshServerContext().effectiveSshdServerConfig();
 
     const policy = config.permitRootLogin;
     if (user === 'root' && policy !== 'yes') {

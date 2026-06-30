@@ -116,6 +116,26 @@ export class SshSyslogger {
       case 'auth_strict_modes_refused':
         return `Authentication refused: bad ownership or modes for file ${event.path}`;
 
+      case 'auth_policy_refused': {
+        const r = event.reason;
+        if (event.user === 'root' && /^PermitRootLogin/i.test(r)) {
+          return `ROOT LOGIN REFUSED FROM ${event.ip}`;
+        }
+        if (/AllowUsers/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because not listed in AllowUsers`;
+        }
+        if (/DenyUsers/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because listed in DenyUsers`;
+        }
+        if (/AllowGroups/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because none of user's groups are listed in AllowGroups`;
+        }
+        if (/DenyGroups/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because a group is listed in DenyGroups`;
+        }
+        return `Connection refused for ${event.user} from ${event.ip}: ${r}`;
+      }
+
       case 'auth_throttled':
         return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 

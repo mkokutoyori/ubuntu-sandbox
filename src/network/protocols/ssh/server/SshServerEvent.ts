@@ -85,6 +85,18 @@ export type SshServerEvent =
       timestamp?: number;
     }
   | {
+      // Emitted when sshdAcceptsLogin rejects on policy grounds before
+      // any auth method runs. `reason` carries the human-readable
+      // motive: `PermitRootLogin no`, `not in AllowUsers`, `DenyUsers
+      // match`, etc.
+      kind: 'auth_policy_refused';
+      user: string;
+      ip: string;
+      reason: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
       kind: 'auth_throttled';
       ip: string;
       failuresInWindow: number;
