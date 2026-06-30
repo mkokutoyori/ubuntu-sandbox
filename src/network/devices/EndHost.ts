@@ -851,9 +851,15 @@ export abstract class EndHost extends Equipment {
       // Direct connection to a Router
       tryRegisterRouter(remoteEquip);
 
-      // If connected to a Switch, traverse through the switch's other ports
+      // If connected to a Switch, traverse through the switch's other ports.
+      // We can't rely on the DeviceType string alone (test fixtures often
+      // pass arbitrary ids as the type), so also duck-type by the SVI
+      // surface — any L2/L3 switch in the simulator exposes getSvis.
       const remoteType = remoteEquip.getDeviceType();
-      if (remoteType.includes('switch')) {
+      const looksLikeSwitch =
+        remoteType.includes('switch')
+        || typeof (remoteEquip as unknown as { getSvis?: unknown }).getSvis === 'function';
+      if (looksLikeSwitch) {
         for (const swPort of remoteEquip.getPorts()) {
           if (swPort === remotePort) continue; // Skip the port we came from
           const swCable = swPort.getCable();
@@ -863,6 +869,22 @@ export abstract class EndHost extends Equipment {
           const farId = farPort.getEquipmentId();
           const farEquip = Equipment.getById(farId);
           if (farEquip) tryRegisterRouter(farEquip);
+        }
+        // DHCP relay (ip helper-address / dhcp relay server-ip): even
+        // when the upstream DHCP server is several L3 hops away, the
+        // L3 switch's SVI explicitly points clients at it. Resolve each
+        // helper IP to its hosting Equipment and register its server.
+        const helperBearer = remoteEquip as unknown as {
+          getDhcpHelpersForIngressPort?: (port: string) => string[];
+        };
+        const helpers = helperBearer.getDhcpHelpersForIngressPort?.(remotePort.getName()) ?? [];
+        for (const helperIp of helpers) {
+          for (const candidate of Equipment.getAllEquipment()) {
+            if (candidate.getPorts().some((p) => p.getIPAddress()?.toString() === helperIp)) {
+              tryRegisterRouter(candidate);
+              break;
+            }
+          }
         }
       }
     }

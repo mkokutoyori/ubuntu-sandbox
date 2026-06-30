@@ -15,6 +15,12 @@ export interface SviInterface {
   mask?: SubnetMask;
   /** `no shutdown` state. SVIs are administratively down until brought up. */
   adminUp: boolean;
+  /**
+   * Configured DHCP relay targets (IOS `ip helper-address X` /
+   * VRP `dhcp relay server-ip X`). Empty when the SVI is not relaying.
+   * DHCP clients on this VLAN reach upstream DHCP servers through them.
+   */
+  helperAddresses: string[];
 }
 
 /** The minimal surface the SVI plane needs from its hosting switch. */
@@ -55,8 +61,24 @@ export class SwitchSvi {
   /** `interface Vlan N` — materialise the SVI (admin-down, no IP) if new. */
   ensure(vlan: number): SviInterface {
     let svi = this.svis.get(vlan);
-    if (!svi) { svi = { vlan, adminUp: false }; this.svis.set(vlan, svi); }
+    if (!svi) { svi = { vlan, adminUp: false, helperAddresses: [] }; this.svis.set(vlan, svi); }
     return svi;
+  }
+
+  /** Append a DHCP relay target on `vlan`'s SVI (idempotent). */
+  addHelperAddress(vlan: number, ip: string): void {
+    const svi = this.ensure(vlan);
+    if (!svi.helperAddresses.includes(ip)) svi.helperAddresses.push(ip);
+  }
+
+  /** Remove one DHCP relay target on `vlan`'s SVI. */
+  removeHelperAddress(vlan: number, ip: string): boolean {
+    const svi = this.svis.get(vlan);
+    if (!svi) return false;
+    const i = svi.helperAddresses.indexOf(ip);
+    if (i < 0) return false;
+    svi.helperAddresses.splice(i, 1);
+    return true;
   }
 
   /** Create/replace the IP on `interface Vlan <vlan>`; preserves admin state. */

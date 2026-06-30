@@ -1319,6 +1319,27 @@ export abstract class Switch extends Equipment {
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
   isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }
 
+  /** Append a DHCP relay target on `vlan`'s SVI. */
+  addSviHelperAddress(vlan: number, ip: string): void {
+    this.svi.addHelperAddress(vlan, ip);
+  }
+  /** Remove a DHCP relay target from `vlan`'s SVI. */
+  removeSviHelperAddress(vlan: number, ip: string): boolean {
+    return this.svi.removeHelperAddress(vlan, ip);
+  }
+
+  /**
+   * Helpers configured for the SVI the given physical port belongs to.
+   * Lets a downstream DHCP client follow `ip helper-address` to find
+   * its upstream server even when no direct cable path exists.
+   */
+  getDhcpHelpersForIngressPort(portName: string): string[] {
+    const cfg = this._getSwitchportConfigs().get(portName);
+    if (!cfg) return [];
+    const vlan = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
+    return this.svi.getSvi(vlan)?.helperAddresses ?? [];
+  }
+
   executePingSequence(
     target: IPAddress, count = 5, timeoutMs = 2000, sourceIPStr?: string,
   ): Promise<CiscoPingRow[]> {

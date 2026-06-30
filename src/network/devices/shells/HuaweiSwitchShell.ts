@@ -164,6 +164,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   /** Vlanif interfaces with `dhcp select global` recorded — for display this. */
   private readonly dhcpSelectGlobalIfaces: Set<string> = new Set();
+  /** Vlanif interfaces in DHCP relay mode (`dhcp select relay`). */
+  private readonly dhcpSelectRelayIfaces: Set<string> = new Set();
 
   private buildDhcpCommands(): void {
     // `ip pool <name>` enters the DHCP pool view.
@@ -200,6 +202,42 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'Stop serving DHCP from the global pool on this interface', () => {
         if (!this.selectedInterface) return '';
         this.dhcpSelectGlobalIfaces.delete(this.selectedInterface);
+        return '';
+      });
+
+    // DHCP relay (Vlanif-only). Real VRP needs both `dhcp select relay`
+    // (mark the SVI as relay mode) and `dhcp relay server-ip X` (the
+    // upstream target). Either alone configures nothing useful.
+    this.interfaceTrie.register('dhcp select relay',
+      'Set this SVI to DHCP relay mode', () => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        this.dhcpSelectRelayIfaces.add(this.selectedInterface);
+        return '';
+      });
+    this.interfaceTrie.register('undo dhcp select relay',
+      'Stop DHCP relay on this SVI', () => {
+        if (!this.selectedInterface) return '';
+        this.dhcpSelectRelayIfaces.delete(this.selectedInterface);
+        return '';
+      });
+    this.interfaceTrie.registerGreedy('dhcp relay server-ip',
+      'Add a DHCP relay target on this SVI', (args) => {
+        const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
+        if (!m || args.length < 1) return 'Error: Incomplete command.';
+        try {
+          new IPAddress(args[0]);
+        } catch {
+          return `Error: Invalid IP address ${args[0]}.`;
+        }
+        if (!this.swRef) return '';
+        this.swRef.addSviHelperAddress(parseInt(m[1], 10), args[0]);
+        return '';
+      });
+    this.interfaceTrie.registerGreedy('undo dhcp relay server-ip',
+      'Remove a DHCP relay target', (args) => {
+        const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
+        if (!m || args.length < 1 || !this.swRef) return '';
+        this.swRef.removeSviHelperAddress(parseInt(m[1], 10), args[0]);
         return '';
       });
 

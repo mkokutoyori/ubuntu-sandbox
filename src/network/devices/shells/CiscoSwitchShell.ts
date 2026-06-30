@@ -553,6 +553,26 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
 
+    // DHCP relay (`ip helper-address X`) — valid on SVI only. Each
+    // helper is appended; `no ip helper-address X` removes one.
+    this.configIfTrie.registerGreedy('ip helper-address',
+      'Set a DHCP relay target on this SVI', (args) => {
+        const vlan = this.sviVlanId(this.selectedInterface ?? '');
+        if (vlan === null) return '% Command rejected: not applicable on this interface.';
+        if (args.length < 1 || !IPAddress.isValid(args[0])) {
+          return "% Invalid input detected at '^' marker.";
+        }
+        this.d().addSviHelperAddress(vlan, args[0]);
+        return '';
+      });
+    this.configIfTrie.registerGreedy('no ip helper-address',
+      'Remove a DHCP relay target from this SVI', (args) => {
+        const vlan = this.sviVlanId(this.selectedInterface ?? '');
+        if (vlan === null) return '';
+        if (args.length >= 1) this.d().removeSviHelperAddress(vlan, args[0]);
+        return '';
+      });
+
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
       'Auto-recover ports err-disabled by port-security', () => {
@@ -2165,6 +2185,29 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         lines.push(` shutdown`);
       }
       lines.push('!');
+    }
+
+    // SVI (interface Vlan N) blocks — IP address, helper-address, admin
+    // state. Rendered after the physical interfaces so the running-config
+    // mirrors how real IOS prints it.
+    for (const svi of sw.getSvis()) {
+      lines.push(`interface Vlan${svi.vlan}`);
+      if (svi.ip && svi.mask) {
+        lines.push(` ip address ${svi.ip} ${svi.mask}`);
+      } else {
+        lines.push(' no ip address');
+      }
+      for (const helper of svi.helperAddresses) {
+        lines.push(` ip helper-address ${helper}`);
+      }
+      if (!svi.adminUp) lines.push(' shutdown');
+      lines.push('!');
+    }
+
+    // Static routes (`ip route NET MASK GW`).
+    for (const r of sw.getL3RoutingTable()) {
+      if (r.proto !== 'static' || !r.nextHop) continue;
+      lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
