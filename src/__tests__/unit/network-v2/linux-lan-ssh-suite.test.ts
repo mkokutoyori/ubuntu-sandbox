@@ -1709,13 +1709,16 @@ describe('§26 — SSH public-key authentication', () => {
       contains: [/-rw-------.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
     },
     {
+      // ssh-copy-id pose authorized_keys en 0600 (réservé à alice) ;
+      // `sudo cat` permet à l'opérateur courant (pc2 = 'user') de lire
+      // le fichier au nom de root.
       name: 'ssh-copy-id installs the public key on the remote',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
       },
       on: l => l.pc2,
-      cmd: 'cat /home/alice/.ssh/authorized_keys',
+      cmd: 'sudo cat /home/alice/.ssh/authorized_keys',
       contains: [/^ssh-ed25519 /m],
     },
     {

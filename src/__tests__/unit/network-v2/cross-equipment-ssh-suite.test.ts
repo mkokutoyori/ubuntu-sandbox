@@ -1815,15 +1815,19 @@ describe('§27 — Strict-mode permission coherence', () => {
 
   const rows: Row[] = [
     {
-      name: 'authorized_keys mode 0644 is accepted',
+      // authorized_keys ne doit garder *aucune* permission group/other —
+      // c'est la règle universelle des guides SSH (« le fichier doit être
+      // 0600 »). Le simulateur l'applique strictement : 0644 (lecture
+      // group/other) est refusé au même titre que 0777.
+      name: 'authorized_keys mode 0644 is refused (read-bit leaks to group/other)',
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chmod 0644 /home/alice/.ssh/authorized_keys');
+        await l.linux2.executeCommand('sudo chmod 0644 /home/alice/.ssh/authorized_keys');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
-      contains: [/^alice$/m],
+      contains: [/Permission denied/i],
     },
     {
       name: 'authorized_keys mode 0777 is refused (StrictModes yes)',

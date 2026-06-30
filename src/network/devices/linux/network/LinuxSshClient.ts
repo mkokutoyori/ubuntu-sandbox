@@ -332,18 +332,32 @@ function findMatchedAuthorizedKey(
 }
 
 /**
- * OpenSSH StrictModes check: ~/.ssh and authorized_keys must be owned by
- * the user (or root) and not be group/world writable. Caller decides
- * whether to run the check based on the StrictModes directive (default
- * yes per OpenSSH).
+ * StrictModes check, hardened-distro flavour. Two layers:
+ *
+ *  - ~/.ssh must be owned by the user (or root) and not group/world
+ *    writable — that's the stock OpenSSH check (0o022 mask).
+ *  - ~/.ssh/authorized_keys must be owned by the user (or root) AND
+ *    have *no* group/other access bits at all (0o077 mask). This is
+ *    stricter than the OpenSSH default of "no group/world write" — it
+ *    matches the universally-taught contract that authorized_keys
+ *    "must be 0600" and what hardened sshd setups enforce in
+ *    production. A file at 0o644 is rejected here, exactly like a
+ *    learner expects when reading SSH best-practice guides.
+ *
+ * Caller decides whether to run the check at all (StrictModes
+ * directive — default yes per OpenSSH).
  */
 function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
   if (!exec.vfs.resolveInode) return true;
-  for (const path of [`${home}/.ssh`, `${home}/.ssh/authorized_keys`]) {
-    const inode = exec.vfs.resolveInode(path, true);
-    if (!inode) continue;
-    if (inode.uid !== userUid && inode.uid !== 0) return false;
-    if ((inode.permissions & 0o022) !== 0) return false;
+  const sshDir = exec.vfs.resolveInode(`${home}/.ssh`, true);
+  if (sshDir) {
+    if (sshDir.uid !== userUid && sshDir.uid !== 0) return false;
+    if ((sshDir.permissions & 0o022) !== 0) return false;
+  }
+  const ak = exec.vfs.resolveInode(`${home}/.ssh/authorized_keys`, true);
+  if (ak) {
+    if (ak.uid !== userUid && ak.uid !== 0) return false;
+    if ((ak.permissions & 0o077) !== 0) return false;
   }
   return true;
 }

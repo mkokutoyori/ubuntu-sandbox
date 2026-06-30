@@ -1366,8 +1366,15 @@ export class LinuxCommandExecutor {
     const remoteHome = remoteUserEntry.home ?? `/home/${remoteUser}`;
     const sshDir = `${remoteHome}/.ssh`;
     const akPath = `${sshDir}/authorized_keys`;
+    // Real OpenSSH ssh-copy-id (the shell script in openssh-client) explicitly
+    // tightens ~/.ssh to 700 and ~/.ssh/authorized_keys to 600 before exiting:
+    //   mkdir -m 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
+    // Replicate that so the simulator's deployment matches what a real
+    // distro leaves behind.
     if (!rexec.vfs.resolveInode(sshDir)) {
-      rexec.vfs.mkdirp(sshDir, 0o755, remoteUserEntry.uid, remoteUserEntry.gid);
+      rexec.vfs.mkdirp(sshDir, 0o700, remoteUserEntry.uid, remoteUserEntry.gid);
+    } else {
+      rexec.vfs.chmod(sshDir, 0o700);
     }
     const existing = rexec.vfs.readFile(akPath) ?? '';
     if (existing.split('\n').some((l) => l.trim() === pubKey)) {
@@ -1384,7 +1391,7 @@ export class LinuxCommandExecutor {
       remoteUserEntry.gid,
       0o022,
     );
-    rexec.vfs.chmod(akPath, 0o644);
+    rexec.vfs.chmod(akPath, 0o600);
     return {
       output: [
         `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "${pubSource}"`,
