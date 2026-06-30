@@ -1115,6 +1115,42 @@ export class LinuxCommandExecutor {
     if (!sourceIp || sourceIp === '127.0.0.1') {
       return { output: `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`, exitCode: 1 };
     }
+
+    // Loopback / own-IP target — when an `ssh -L` tunnel is bound on this
+    // port, the outbound side is opened by the remote sshd process, so
+    // re-source the probe from the SSH server's vantage point. This is
+    // exactly the bypass an SSH tunnel grants: a transit ACL aimed at
+    // (client → backend) does not stop the tunnel because the connection
+    // to the backend actually originates from the SSH server.
+    const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if ((isLoopback || host === sourceIp) && this.forwarding) {
+      const fwd = this.forwarding.list().find(f => f.listenPort === port);
+      if (fwd && fwd.kind === 'local' && fwd.destHost && fwd.destPort) {
+        const originIp = this.forwarding.getOrigin(port);
+        if (originIp) {
+          const sshServer = findHostByAddress(originIp);
+          const dest = findHostByAddress(fwd.destHost, { readFile: (p) => this.vfs.readFile(p) });
+          if (!sshServer || !dest) {
+            return { output: `nc: connect to ${host} port ${port} (tcp) failed: No route to host`, exitCode: 1 };
+          }
+          const jumpProbe = (sshServer.device as unknown as {
+            tcpProbeSync?: (ip: IPAddress, p: number) => boolean;
+          }).tcpProbeSync;
+          const ok = jumpProbe
+            ? jumpProbe.call(sshServer.device, new IPAddress(dest.ip), fwd.destPort)
+            : false;
+          if (ok) {
+            if (zero && verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
+            if (zero) return { output: '', exitCode: 0 };
+            if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
+            return { output: '', exitCode: 0 };
+          }
+          if (verbose) return { output: `nc: connect to ${host} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
+          return { output: '', exitCode: 1 };
+        }
+      }
+    }
+
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
     if (!found) {
       return { output: `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`, exitCode: 1 };

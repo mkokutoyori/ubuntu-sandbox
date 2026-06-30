@@ -634,7 +634,14 @@ function setupPortForwards(
       remoteForwarding?.open(effective, SSHD_PID, 'sshd');
     } else {
       // -L / -D : the listener lives on the client host, owned by ssh.
+      // The outbound side is re-originated FROM the SSH server: tag the
+      // forward with that server's IP so a local probe (`nc`) hitting the
+      // tunnel listener is evaluated as if it came from the sshd process.
       opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh');
+      const sshServerIp = machine.getPorts()
+        .map(p => p.getIPAddress()?.toString())
+        .find(Boolean);
+      if (sshServerIp) opts.localForwarding?.setOrigin(fwd.listenPort, sshServerIp);
     }
   }
   return diagnostics;
