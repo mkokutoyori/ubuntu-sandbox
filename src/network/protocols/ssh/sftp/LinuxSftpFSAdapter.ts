@@ -92,7 +92,7 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     );
     return success
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: write failed` });
+      : err({ kind: 'IO_ERROR', message: `Couldn't open remote file: Permission denied` });
   }
 
   mkdir(path: string): Result<void> {
