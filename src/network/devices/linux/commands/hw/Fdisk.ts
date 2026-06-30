@@ -8,7 +8,8 @@ interface Options {
 
 const SECTOR_SIZE = 512;
 
-export function cmdFdisk(profile: HardwareProfile, args: string[], _isPrivileged: boolean): { output: string; exitCode: number } {
+export function cmdFdisk(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
+  if (!isPrivileged) return { output: 'fdisk: cannot open /dev/sda: Permission denied', exitCode: 1 };
   const parsed = parseArgs(args);
   if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
   const opts = parsed.opts;

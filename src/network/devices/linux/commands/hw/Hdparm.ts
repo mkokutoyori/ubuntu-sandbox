@@ -15,7 +15,8 @@ interface Options {
 
 const KNOWN = new Set(['I', 't', 'T', 'g', 'r', 'W', 'd', 'v', 'h', 'V']);
 
-export function cmdHdparm(profile: HardwareProfile, args: string[], _isPrivileged: boolean): { output: string; exitCode: number } {
+export function cmdHdparm(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
+  if (!isPrivileged) return { output: 'hdparm: cannot open /dev/sda: Permission denied', exitCode: 1 };
   const parsed = parseArgs(args);
   if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
   const opts = parsed.opts;

@@ -3490,7 +3490,7 @@ export class LinuxCommandExecutor {
       case 'dmidecode': return cmdDmidecode(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'lshw': return cmdLshw(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'hwinfo': return cmdHwinfo(this.hardware, args);
-      case 'blkid': return cmdBlkid(this.hardware, args);
+      case 'blkid': return cmdBlkid(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'parted': return cmdParted(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };

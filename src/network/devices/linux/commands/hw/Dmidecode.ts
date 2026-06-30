@@ -18,7 +18,8 @@ const STRINGS = new Set([
   'processor-frequency',
 ]);
 
-export function cmdDmidecode(profile: HardwareProfile, args: string[], _isPrivileged: boolean): { output: string; exitCode: number } {
+export function cmdDmidecode(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
+  if (!isPrivileged) return { output: '/dev/mem: Permission denied', exitCode: 1 };
 
   let typeFilter: string | null = null;
   let stringKey: string | null = null;

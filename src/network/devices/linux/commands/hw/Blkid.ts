@@ -1,7 +1,8 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 
-export function cmdBlkid(profile: HardwareProfile, args: string[]): { output: string; exitCode: number } {
+export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
+  if (!isPrivileged && args.length === 0) return { output: '', exitCode: 0 };
   const targets: string[] = [];
   for (const a of args) {
     if (a === '-h' || a === '--help') return { output: helpText(), exitCode: 0 };

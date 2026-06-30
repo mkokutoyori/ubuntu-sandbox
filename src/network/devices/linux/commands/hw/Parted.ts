@@ -1,7 +1,8 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice } from '@/network/devices/host/hardware/StorageDevice';
 
-export function cmdParted(profile: HardwareProfile, args: string[], _isPrivileged: boolean): { output: string; exitCode: number } {
+export function cmdParted(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
+  if (!isPrivileged) return { output: 'Error: Could not stat device /dev/sda - Permission denied', exitCode: 1 };
   let list = false;
   const positional: string[] = [];
   for (const a of args) {

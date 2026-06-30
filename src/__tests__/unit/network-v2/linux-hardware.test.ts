@@ -20,6 +20,10 @@ import { Logger } from '@/network/core/Logger';
 function setupHardwarePC() {
   const pc = new LinuxPC('linux-pc', 'HWHost');
   pc.setHostname('HWHost');
+  const exec = (pc as unknown as { executor: { userMgr: { currentUser: string; currentUid: number; currentGid: number } } }).executor;
+  exec.userMgr.currentUser = 'root';
+  exec.userMgr.currentUid = 0;
+  exec.userMgr.currentGid = 0;
   return pc;
 }
 
