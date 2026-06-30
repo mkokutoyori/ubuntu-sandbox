@@ -131,6 +131,8 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
   private readonly utmpProjection: LinuxUtmpProjection | null;
+  readonly rawConfig: string;
+  private cachedEffective: SshdServerConfig | null = null;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -200,6 +202,8 @@ export class LinuxSshServerContext implements ISshServerContext {
     // LinuxSshServerContext, so we deliberately do NOT subscribe a
     // second writer here (it would double every row).
     this.utmpProjection = null;
+
+    this.rawConfig = this.vfs.readFile('/etc/ssh/sshd_config') ?? '';
   }
 
   /** Tell SshServerHandler whether the source IP is currently rate-limited. */
@@ -240,8 +244,6 @@ export class LinuxSshServerContext implements ISshServerContext {
    * on-disk file are only honoured after `systemctl reload ssh` (the
    * real sshd behaviour). The text snapshot lives in {@link rawConfig}.
    */
-  readonly rawConfig: string = this.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  private cachedEffective: SshdServerConfig | null = null;
   effectiveSshdServerConfig(): SshdServerConfig {
     if (!this.cachedEffective) this.cachedEffective = SshdServerConfig.parse(this.rawConfig);
     return this.cachedEffective;
