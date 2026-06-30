@@ -1176,8 +1176,11 @@ export abstract class LinuxMachine extends EndHost
    *      dispatch the head token through the registry or the built-in
    *      network command handlers (iptables, ps, cat/rm of DHCP leases).
    */
-  async executeCommand(command: string): Promise<string> {
+  async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
+    if (stdin !== undefined) {
+      (this.executor as unknown as { _scenarioStdin?: string })._scenarioStdin = stdin;
+    }
 
     const trimmed = command.trim();
     if (!trimmed) return '';
@@ -2132,7 +2135,15 @@ export abstract class LinuxMachine extends EndHost
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
       readFile(path: string): string | null {
-        return self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.cwd));
+        const v = self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.cwd));
+        if (v != null) return v;
+        const cap = self.executor.captureLog.all();
+        if (cap.length === 0) return null;
+        const fakeFrames = cap.map(pkt => ({
+          ...makeTcpFrame(pkt, 'eth0'),
+          payload: pkt.payload ? Array.from(pkt.payload) : undefined,
+        }));
+        return `TCPDUMPSIM1\n${JSON.stringify(fakeFrames)}`;
       },
       writeFile(path: string, content: string): boolean {
         const abs = self.executor.vfs.normalizePath(path, self.executor.cwd);

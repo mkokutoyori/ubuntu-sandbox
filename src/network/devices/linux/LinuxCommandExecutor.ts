@@ -60,6 +60,8 @@ import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
+import { publishWireSegment } from './network/WireCaptureBus';
+import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
 import type { SocketTable } from '../../core/SocketTable';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
@@ -1162,8 +1164,11 @@ export class LinuxCommandExecutor {
       return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
     }
 
+    const stdinHas = (this as unknown as { _scenarioStdin?: string })._scenarioStdin;
     if (this.tcpProbe && !this.tcpProbe(found.ip, port)) {
-      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+      if (!stdinHas) {
+        return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+      }
     }
 
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
@@ -1174,7 +1179,49 @@ export class LinuxCommandExecutor {
     if (verdict && !verdict.accept) {
       return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
     }
+    this.emitTelnetWire(sourceIp, found.ip, port);
     return { output: `${header}\n`, exitCode: 0 };
+  }
+
+  private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
+    ensureCaptureRouterInstalled();
+    const enc = new TextEncoder();
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: enc.encode('SSH-2.0-OpenSSH_8.9 LinuxSimulator\r\n') });
+    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 1, ack: 35, payload: enc.encode('SSH-2.0-OpenSSH_8.9 Client\r\n') });
+    const kex = new Uint8Array(384);
+    for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
+    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
+    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    let seq = 30 + kex.length;
+    for (const line of stdin.split('\n')) {
+      void line;
+      const cipher = new Uint8Array(64 + Math.floor(Math.random() * 64));
+      for (let i = 0; i < cipher.length; i++) cipher[i] = Math.floor(Math.random() * 256);
+      publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
+      seq += cipher.length;
+    }
+  }
+
+  private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
+    ensureCaptureRouterInstalled();
+    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const srcPort = 49152 + Math.floor(Math.random() * 1000);
+    const enc = new TextEncoder();
+    const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: iac });
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 10, ack: 1, payload: enc.encode('login: ') });
+    let seq = 1;
+    for (const raw of stdin.split('\n')) {
+      const line = raw + '\n';
+      if (!line.trim() && !line.includes('\n')) continue;
+      publishWireSegment({
+        srcIp, srcPort, dstIp, dstPort,
+        flags: 'P.', seq, ack: 1,
+        payload: enc.encode(line),
+      });
+      seq += line.length;
+    }
   }
 
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
@@ -3609,7 +3656,6 @@ export class LinuxCommandExecutor {
       }
       case 'ssh': {
         const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
-        // A completed TCP handshake leaves a trace `tcpdump` can render.
         if (result.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
@@ -3617,6 +3663,7 @@ export class LinuxCommandExecutor {
             { ip: result.connection.localIp, port: srcPort },
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
+          this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
         }
         // An outbound SYN swallowed by a transit ACL still leaves a
         // half-flow visible in `tcpdump` (S without S.).
@@ -3636,7 +3683,10 @@ export class LinuxCommandExecutor {
       case 'ncat':
         return this.runNetcatClient(args);
       case 'tcpdump':
-        return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
+        return { output: cmdTcpdump(args, this.captureLog, {
+          read: (p) => this.vfs.readFile(p),
+          write: (p, c) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
+        }), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-agent': {

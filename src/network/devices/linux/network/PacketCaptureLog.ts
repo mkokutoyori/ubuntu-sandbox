@@ -20,6 +20,7 @@ export interface CapturedPacket {
   readonly seq: number;
   readonly ack: number;
   readonly length: number;
+  readonly payload?: Uint8Array;
 }
 
 export class PacketCaptureLog {
@@ -68,6 +69,22 @@ export class PacketCaptureLog {
       srcIp: src.ip, srcPort: src.port,
       dstIp: dst.ip, dstPort: dst.port,
       flags: 'S', seq: 0, ack: 0, length: 0,
+    });
+  }
+
+  captureTcpData(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+    payload: Uint8Array,
+    seq = 1,
+    ack = 1,
+  ): void {
+    this.capture({
+      at: new Date(),
+      srcIp: src.ip, srcPort: src.port,
+      dstIp: dst.ip, dstPort: dst.port,
+      flags: 'P.', seq, ack, length: payload.length,
+      payload,
     });
   }
 

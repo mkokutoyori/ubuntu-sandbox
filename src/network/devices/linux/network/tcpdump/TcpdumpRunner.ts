@@ -123,9 +123,11 @@ function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): string {
   }
   let frames: CaptureFrame[];
   try {
-    frames = (JSON.parse(content.slice(newline + 1)) as CaptureFrame[]).map((f) => ({
+    const parsed = JSON.parse(content.slice(newline + 1)) as Array<CaptureFrame & { payload?: number[] }>;
+    frames = parsed.map((f) => ({
       ...f,
       at: new Date(f.at),
+      tcpPayload: f.tcpPayload ?? f.payload,
     }));
   } catch {
     return `tcpdump: error: ${opt.readFile}: bad dump file format`;

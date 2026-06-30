@@ -64,6 +64,7 @@ export interface CaptureFrame {
   arpTargetMac?: string;
   raw: number[];
   rawLinkOffset: number;
+  tcpPayload?: number[];
 }
 
 function macBytes(mac: string): number[] {
@@ -262,6 +263,7 @@ export function makeTcpFrame(
   pkt: {
     at: Date; srcIp: string; srcPort: number; dstIp: string; dstPort: number;
     flags: string; seq: number; ack: number; length: number;
+    payload?: Uint8Array;
   },
   iface: string,
 ): CaptureFrame {
@@ -305,8 +307,9 @@ export function makeTcpFrame(
     tcpSeq: pkt.seq,
     tcpAck: pkt.ack,
     tcpWindow: 0,
-    raw: [...header, ...tcp],
+    raw: [...header, ...tcp, ...(pkt.payload ? Array.from(pkt.payload) : [])],
     rawLinkOffset: 0,
+    tcpPayload: pkt.payload ? Array.from(pkt.payload) : undefined,
   };
 }
 

@@ -558,17 +558,29 @@ export interface TcpdumpOptions {
   iface: string;
   count: number;
   portFilter: number | null;
+  asciiDump: boolean;
+  hexDump: boolean;
+  writeFile: string | null;
+  readFile: string | null;
 }
 
 export function parseTcpdumpArgs(args: string[]): TcpdumpOptions {
   let iface = 'eth0';
   let count = Infinity;
   let portFilter: number | null = null;
+  let asciiDump = false;
+  let hexDump = false;
+  let writeFile: string | null = null;
+  let readFile: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === 'port') { portFilter = Number.parseInt(args[++i], 10) || null; continue; }
     if (!a.startsWith('-')) continue;
+    if (a === '-A') { asciiDump = true; continue; }
+    if (a === '-X' || a === '-XX') { hexDump = true; asciiDump = true; continue; }
+    if (a === '-w' || a === '--write') { writeFile = args[++i] ?? null; continue; }
+    if (a === '-r' || a === '--read') { readFile = args[++i] ?? null; continue; }
     const chars = a.slice(1);
     for (let c = 0; c < chars.length; c++) {
       const ch = chars[c];
@@ -581,7 +593,7 @@ export function parseTcpdumpArgs(args: string[]): TcpdumpOptions {
       }
     }
   }
-  return { iface, count, portFilter };
+  return { iface, count, portFilter, asciiDump, hexDump, writeFile, readFile };
 }
 
 export function tcpdumpHeader(iface: string): string[] {
@@ -603,14 +615,90 @@ export function packetMatchesPort(p: CapturedPacket, portFilter: number | null):
   return portFilter === null || p.srcPort === portFilter || p.dstPort === portFilter;
 }
 
-export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string {
-  const { iface, count, portFilter } = parseTcpdumpArgs(args);
+export interface TcpdumpFs {
+  read: (path: string) => string | null;
+  write: (path: string, content: string) => void;
+}
+
+export function cmdTcpdump(args: string[], log: PacketCaptureLog | null, fs?: TcpdumpFs): string {
+  const opts = parseTcpdumpArgs(args);
+
+  if (opts.readFile) {
+    const raw = fs?.read(opts.readFile);
+    let packets: CapturedPacket[];
+    if (raw != null) {
+      packets = deserializeCapture(raw);
+      if (packets.length === 0 && log) packets = [...log.all()];
+    } else if (log) {
+      packets = [...log.all()];
+    } else {
+      return `tcpdump: error: ${opts.readFile}: No such file or directory`;
+    }
+    const matching = packets
+      .filter((p) => packetMatchesPort(p, opts.portFilter))
+      .slice(0, opts.count === Infinity ? undefined : opts.count);
+    return [`reading from file ${opts.readFile}, link-type EN10MB (Ethernet)`,
+      ...matching.flatMap(p => formatPacket(p, opts.asciiDump, opts.hexDump))].join('\n');
+  }
+
   const captured = log ? log.all() : [];
   const matching = captured
-    .filter((p) => packetMatchesPort(p, portFilter))
-    .slice(0, count === Infinity ? undefined : count);
-  const body = matching.map(formatTcpdumpPacket);
-  return [...tcpdumpHeader(iface), ...body, ...tcpdumpFooter(matching.length)].join('\n');
+    .filter((p) => packetMatchesPort(p, opts.portFilter))
+    .slice(0, opts.count === Infinity ? undefined : opts.count);
+
+  if (opts.writeFile && fs) {
+    fs.write(opts.writeFile, serializeCapture(matching));
+    return `tcpdump: listening on ${opts.iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n${matching.length} packets captured`;
+  }
+
+  const body = matching.flatMap(p => formatPacket(p, opts.asciiDump, opts.hexDump));
+  return [...tcpdumpHeader(opts.iface), ...body, ...tcpdumpFooter(matching.length)].join('\n');
+}
+
+function formatPacket(p: CapturedPacket, ascii: boolean, hex: boolean): string[] {
+  const out: string[] = [formatTcpdumpPacket(p)];
+  if ((ascii || hex) && p.payload && p.payload.length > 0) {
+    if (hex) out.push(formatHexDump(p.payload));
+    if (ascii) out.push(formatAsciiDump(p.payload));
+  }
+  return out;
+}
+
+function formatAsciiDump(bytes: Uint8Array): string {
+  let s = '';
+  for (const b of bytes) s += (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.';
+  return s;
+}
+
+function formatHexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const hexBytes = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    lines.push(`\t0x${i.toString(16).padStart(4, '0')}: ${hexBytes.padEnd(48)} ${formatAsciiDump(chunk)}`);
+  }
+  return lines.join('\n');
+}
+
+function serializeCapture(packets: readonly CapturedPacket[]): string {
+  return JSON.stringify(packets.map(p => ({
+    at: p.at.toISOString(),
+    srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
+    flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
+    payload: p.payload ? Array.from(p.payload) : undefined,
+  })));
+}
+
+function deserializeCapture(raw: string): CapturedPacket[] {
+  try {
+    const arr = JSON.parse(raw) as Array<{ at: string; srcIp: string; srcPort: number; dstIp: string; dstPort: number; flags: string; seq: number; ack: number; length: number; payload?: number[] }>;
+    return arr.map(p => ({
+      at: new Date(p.at),
+      srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
+      flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
+      payload: p.payload ? new Uint8Array(p.payload) : undefined,
+    }));
+  } catch { return []; }
 }
 
 /** Render one captured segment in tcpdump's default one-line form. */
