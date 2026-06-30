@@ -113,6 +113,7 @@ export const CISCO_SWITCH_PROMPTS: PromptMap = {
   'config-mst':  '{host}(config-mst)#',
   'config-line': '{host}(config-line)#',
   'config-acl':  '{host}(config-ext-nacl)#',
+  'config-dhcp': '{host}(dhcp-config)#',
 };
 
 // ─── Huawei VRP Prompt Map ────────────────────────────────────────

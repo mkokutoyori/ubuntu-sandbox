@@ -26,11 +26,14 @@ import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRen
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion } from './cisco/CiscoCommonShow';
+import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
+import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
+import type { Router } from '../Router';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
-  | 'config-mst' | 'config-line' | 'config-acl';
+  | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp';
 
 export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
@@ -44,6 +47,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
   private configMstTrie = new CommandTrie();
+  private configDhcpTrie = new CommandTrie();
+  private selectedDhcpPool: string | null = null;
 
   // STP state (switch-only, L2)
   private stpMode = 'pvst';
@@ -113,6 +118,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       case 'config-mst':  return this.configMstTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-acl':  return this.configAclTrie;
+      case 'config-dhcp': return this.configDhcpTrie;
       default:            return this.userTrie;
     }
   }
@@ -123,6 +129,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
       if (f === 'selectedVlan') this.selectedVlan = null;
       if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
+      if (f === 'selectedDhcpPool') this.selectedDhcpPool = null;
     }
   }
 
@@ -192,6 +199,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     });
+    this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.register('show ip interface brief', 'Display IP interface brief', () =>
         this.showIpInterfaceBrief());
@@ -2745,6 +2753,186 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private sviVlanId(iface: string): number | null {
     const m = /^vlan(\d+)$/i.exec(iface);
     return m ? parseInt(m[1], 10) : null;
+  }
+
+  /**
+   * Wire the IOS Layer-3 surface: `ip routing`, `ip route`, the
+   * `ip dhcp pool` sub-mode (reusing the shared DHCP pool builder),
+   * `ip dhcp excluded-address`, and the matching show / clear views.
+   * Every command targets the Switch's own DHCPServer / SVI routing
+   * table — the same machinery that lights up inter-VLAN routing.
+   */
+  private registerL3Commands(): void {
+    const cfg = this.configTrie;
+
+    // `ip routing` / `no ip routing` — global L3 enable (IOS requires
+    // it on some 2960 SKUs; we accept it as a no-op since the switch
+    // base already routes through its SVI plane).
+    cfg.register('ip routing', 'Enable Layer-3 routing', () => '');
+    cfg.register('no ip routing', 'Disable Layer-3 routing', () => '');
+
+    // ip route <net> <mask> <next-hop>
+    cfg.registerGreedy('ip route', 'Add a static route', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+      this.d().addStaticRoute(net, mask, gw);
+      return '';
+    });
+    cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      let net: IPAddress, mask: SubnetMask;
+      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+      this.d().removeStaticRoute(net, mask);
+      return '';
+    });
+
+    // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
+    cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const dhcp = this.d()._getDHCPServerInternal();
+      if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
+      dhcp.enable(); // IOS auto-enables the DHCP service when a pool is created
+      this.selectedDhcpPool = args[0];
+      this.mode = 'config-dhcp';
+      return '';
+    });
+    cfg.registerGreedy('no ip dhcp pool', 'Remove a DHCP pool', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d()._getDHCPServerInternal().deletePool(args[0]);
+      return '';
+    });
+    cfg.registerGreedy('ip dhcp excluded-address',
+      'Exclude IP range from DHCP allocation', (args) => {
+        if (args.length < 1) return '% Incomplete command.';
+        this.d()._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
+        return '';
+      });
+
+    // Pool sub-mode trie: reuse the shared Cisco builder. Only the
+    // handful of accessors the pool commands actually call need to be
+    // populated; the rest of CiscoShellContext is irrelevant on a
+    // switch (no IPSec / routing-proto state here).
+    const dhcpCtx = {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      getSelectedDHCPPool: () => this.selectedDhcpPool,
+      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
+    } as unknown as CiscoShellContext;
+    buildConfigDhcpCommands(this.configDhcpTrie, dhcpCtx);
+
+    // ── Show commands ──────────────────────────────────────────────
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show ip route', 'Display IP routing table', () =>
+        this.showIpRoute());
+      t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
+        this.showIpDhcpBinding());
+      t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', () =>
+        this.showIpDhcpPool());
+      t.register('show arp', 'Display ARP cache', () => this.showArp());
+      t.register('show ip arp', 'Display IP ARP cache', () => this.showArp());
+    }
+  }
+
+  /** IOS-style `show ip route` rendering from the Switch's L3 table. */
+  private showIpRoute(): string {
+    const rows = this.d().getL3RoutingTable();
+    const header = [
+      'Codes: C - connected, S - static, R - RIP, D - EIGRP, O - OSPF',
+      '       B - BGP, * - candidate default',
+      '',
+      'Gateway of last resort is not set',
+      '',
+    ];
+    const lines: string[] = [];
+    // SVI iface naming differs by vendor (Huawei `Vlanif10` vs Cisco
+    // `Vlan10`). The routing-table model lives on the shared Switch
+    // base, so rewrite to IOS-style here for display purposes only.
+    const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
+    for (const r of rows) {
+      const dest = `${r.network}/${r.mask.toCIDR()}`;
+      if (r.proto === 'connected') {
+        lines.push(`C    ${dest} is directly connected, ${cisco(r.iface)}`);
+      } else {
+        // Static (or default) route — IOS prefixes a `*` on the
+        // candidate default route entry.
+        const isDefault = r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0;
+        const code = isDefault ? 'S*' : 'S';
+        const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
+        lines.push(`${code}    ${dest} [1/0] via ${nh}`);
+      }
+    }
+    if (lines.length === 0) lines.push('% No routes installed');
+    return [...header, ...lines].join('\n');
+  }
+
+  /** IOS `show ip dhcp binding` table — leases currently held by the server. */
+  private showIpDhcpBinding(): string {
+    const dhcp = this.d()._getDHCPServerInternal();
+    const bindings = Array.from(dhcp.getBindings().values());
+    const lines: string[] = [
+      'Bindings from all pools not associated with VRF:',
+      'IP address          Client-ID/              Lease expiration        Type',
+      '                    Hardware address/',
+      '                    User name',
+    ];
+    for (const b of bindings) {
+      const expire = b.leaseExpiration
+        ? new Date(b.leaseExpiration).toUTCString().slice(5, 25)
+        : 'Infinite';
+      lines.push(`${b.ipAddress.padEnd(20)}01${b.clientId.replace(/:/g, '').toLowerCase().padEnd(22)}${expire.padEnd(24)}Automatic`);
+    }
+    if (bindings.length === 0) lines.push('% No bindings');
+    return lines.join('\n');
+  }
+
+  /** IOS `show ip dhcp pool` — render each configured pool's parameters. */
+  private showIpDhcpPool(): string {
+    const dhcp = this.d()._getDHCPServerInternal();
+    const pools = Array.from(dhcp.getAllPools().values());
+    if (pools.length === 0) return '% No DHCP pools configured';
+    const allBindings = Array.from(dhcp.getBindings().values());
+    const blocks: string[] = [];
+    for (const pool of pools) {
+      const leased = allBindings.filter(
+        b => pool.network && pool.mask && this.ipInSubnet(b.ipAddress, pool.network, pool.mask),
+      ).length;
+      blocks.push([
+        `Pool ${pool.name} :`,
+        ` Utilization mark (high/low)    : 100 / 0`,
+        ` Subnet size (first/next)       : 0 / 0`,
+        ` Total addresses                : 254`,
+        ` Leased addresses               : ${leased}`,
+        ` Pending event                  : none`,
+        ` 1 subnet is currently in the pool :`,
+        ` Current index        IP address range                    Leased addresses`,
+        ` ${(pool.network ?? '?').padEnd(20)} ${(pool.network ?? '?')} - ${pool.network ?? '?'}                ${leased}`,
+      ].join('\n'));
+    }
+    return blocks.join('\n');
+  }
+
+  private ipInSubnet(ip: string, network: string, mask: string): boolean {
+    try {
+      const ipN = new IPAddress(ip);
+      const netN = new IPAddress(network);
+      const m = new SubnetMask(mask);
+      return ipN.isInSameSubnet(netN, m);
+    } catch { return false; }
+  }
+
+  /** IOS `show arp` — the switch's shared mgmt ARP cache. */
+  private showArp(): string {
+    const arp = this.d()._getArpTableInternal();
+    const lines: string[] = ['Protocol  Address          Age (min)  Hardware Addr   Type   Interface'];
+    for (const [ip, e] of arp.entries()) {
+      const age = e.type === 'static' ? '-' : '0';
+      lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(11)}${e.mac.toString().padEnd(16)}ARPA   ${e.iface}`);
+    }
+    return lines.join('\n');
   }
 
   /** `show ip interface brief` — the switch carries IPs only on SVIs. */

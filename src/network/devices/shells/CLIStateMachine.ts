@@ -165,6 +165,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-mst':  { parent: 'config' },
   'config-line': { parent: 'config' },
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
+  'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
 };
 
 // ─── Huawei VRP Mode Hierarchy ────────────────────────────────────
