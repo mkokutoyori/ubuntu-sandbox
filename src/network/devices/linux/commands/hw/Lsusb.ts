@@ -23,7 +23,7 @@ export function cmdLsusb(bus: UsbBus, args: string[]): { output: string; exitCod
     const m = /^\/dev\/bus\/usb\/(\d+)\/(\d+)$/.exec(opts.descriptorPath);
     if (!m) return { output: `lsusb: cannot open ${opts.descriptorPath}: No such file or directory`, exitCode: 1 };
     const found = bus.bySlot(parseInt(m[1], 10), parseInt(m[2], 10));
-    if (!found) return { output: `lsusb: cannot open ${opts.descriptorPath}: No such device`, exitCode: 1 };
+    if (!found) return { output: `lsusb: cannot open ${opts.descriptorPath}: No such file or directory`, exitCode: 1 };
     return { output: renderVerbose([found]), exitCode: 0 };
   }
 
@@ -180,7 +180,7 @@ function renderTree(bus: UsbBus, _filter: readonly UsbDevice[]): string {
   const others = bus.list().filter(d => !d.isHub);
   const lines: string[] = [];
   for (const h of hubs) {
-    lines.push(`/:  Bus ${h.bus.toString().padStart(2, '0')}.Port 001: Dev 1, Class=root_hub, Driver=ehci_hcd/2p, ${h.speed}`);
+    lines.push(`/:  Bus ${h.bus.toString().padStart(2, '0')}.Port 001: Dev 1, Class=Hub, Driver=hub/2p, ${h.speed}`);
     for (const d of others.filter(o => o.parentBus === h.bus)) {
       lines.push(`    |__ Port ${(d.parentPort ?? 1).toString().padStart(3, '0')}: Dev ${d.device}, If 0, Class=HID, Driver=usbhid, ${d.speed}`);
     }

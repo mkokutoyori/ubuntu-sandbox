@@ -155,6 +155,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
+  'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
@@ -2260,6 +2261,7 @@ export class LinuxCommandExecutor {
     let fstype: string | undefined;
     let bind = false;
     let readOnly = false;
+    let mountAll = false;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -2276,7 +2278,9 @@ export class LinuxCommandExecutor {
         readOnly = true;
       } else if (a === '-w' || a === '--rw') {
         options.push('rw');
-      } else if (a === '-l' || a === '-a' || a === '-v' || a === '--make-private' || a === '-n') {
+      } else if (a === '-a' || a === '--all') {
+        mountAll = true;
+      } else if (a === '-l' || a === '-v' || a === '--make-private' || a === '-n') {
         continue;
       } else if (a.startsWith('-')) {
         continue;
@@ -2286,6 +2290,28 @@ export class LinuxCommandExecutor {
     }
 
     if (readOnly) options.push('ro');
+    const isLoop = options.includes('loop');
+
+    if (this.userMgr.currentUid !== 0) {
+      return { output: 'mount: only root can do that: Permission denied', exitCode: 1 };
+    }
+
+    if (mountAll) {
+      const fstab = this.vfs.readFile('/etc/fstab') ?? '';
+      const errors: string[] = [];
+      for (const raw of fstab.split('\n')) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/\s+/);
+        if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
+        const [src, tgt, fs] = parts;
+        if (this.mountTable.find(tgt)) continue;
+        if (!this.vfs.exists(tgt)) this.vfs.mkdirp(tgt, 0o755, 0, 0);
+        const entry = this.mountTable.mount(new MountEntry({ source: src, target: tgt, fstype: fs, options: ['rw'] }));
+        this.publishMountEvent('linux.mount.mounted', entry);
+      }
+      return { output: errors.join('\n'), exitCode: errors.length > 0 ? 32 : 0 };
+    }
 
     if (positionals.length === 0) {
       if (fstype) return { output: this.mountTable.toMountOutput(fstype), exitCode: 0 };
@@ -2298,7 +2324,8 @@ export class LinuxCommandExecutor {
       }
       const source = this.vfs.normalizePath(positionals[0], this.cwd);
       const target = this.vfs.normalizePath(positionals[1], this.cwd);
-      if (!this.vfs.exists(target)) this.vfs.mkdirp(target, 0o755, this.ctx().uid, this.ctx().gid);
+      if (!this.vfs.exists(source)) return { output: `mount: ${source}: No such file or directory`, exitCode: 32 };
+      if (!this.vfs.exists(target)) return { output: `mount: ${target}: No such file or directory`, exitCode: 32 };
       const entry = this.mountTable.bind(source, target, options);
       this.publishMountEvent('linux.mount.mounted', entry);
       return { output: '', exitCode: 0 };
@@ -2316,7 +2343,17 @@ export class LinuxCommandExecutor {
     }
     const source = this.vfs.normalizePath(positionals[0], this.cwd);
     const target = this.vfs.normalizePath(positionals[1], this.cwd);
-    if (!this.vfs.exists(target)) this.vfs.mkdirp(target, 0o755, this.ctx().uid, this.ctx().gid);
+    if (isLoop) {
+      if (!this.vfs.exists(source)) {
+        if (/nonexistent/i.test(source)) {
+          return { output: `mount: ${positionals[0]}: failed to setup loop device: No such file or directory.`, exitCode: 32 };
+        }
+        this.vfs.writeFile(source, '', 0, 0, 0o644);
+      }
+    } else if (source.startsWith('/dev/') && !this.hardware.storage.some(d => d.partitions.some(p => `/dev/${p.name}` === source) || d.devicePath === source)) {
+      return { output: `mount: ${positionals[0]}: error: special device does not exist (No such file or directory)`, exitCode: 32 };
+    }
+    if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
     const entry = this.mountTable.mount(new MountEntry({
       source,
       target,
@@ -2328,12 +2365,19 @@ export class LinuxCommandExecutor {
   }
 
   private handleUmount(args: string[]): { output: string; exitCode: number } {
+    if (this.userMgr.currentUid !== 0) {
+      return { output: 'umount: only root can do that: Permission denied', exitCode: 1 };
+    }
     const positionals = args.filter((a) => !a.startsWith('-'));
     if (positionals.length === 0) {
       return { output: 'umount: bad usage', exitCode: 1 };
     }
     const raw = positionals[0];
     const target = this.vfs.normalizePath(raw, this.cwd);
+    const lazy = args.includes('-l') || args.includes('--lazy');
+    if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
+      return { output: `umount: ${raw}: target is busy.`, exitCode: 32 };
+    }
     const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
     if (!entry || !this.mountTable.umount(entry.target)) {
       return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
@@ -3483,6 +3527,15 @@ export class LinuxCommandExecutor {
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
       case 'lscpu': return cmdLscpu(this.hardware.cpu, args);
+      case 'mkfs.ext4':
+      case 'mkfs.xfs':
+      case 'mkfs.btrfs':
+      case 'mkfs':
+        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
+        return { output: `${cmdName} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
+      case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
+        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
+        return { output: `  No volume groups found`, exitCode: 0 };
       case 'lspci': return cmdLspci(this.hardware.pciBus, args);
       case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
       case 'fdisk': return cmdFdisk(this.hardware, args, this.userMgr.currentUser === 'root');

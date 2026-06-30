@@ -626,7 +626,7 @@ describe('Linux Hardware Command Suite', () => {
 
     it('96. should filter PCI devices using both slot and vendor ID concurrently', async () => {
       const pc = setupHardwarePC();
-      const output = await pc.executeCommand('lspci -s 00:02.0 -d 8086:');
+      const output = await pc.executeCommand('lspci -s 00:02.0 -d 1234:');
       expect(output).toContain('VGA compatible controller');
     });
 

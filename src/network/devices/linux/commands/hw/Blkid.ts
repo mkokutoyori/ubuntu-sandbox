@@ -2,7 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 
 export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
-  if (!isPrivileged && args.length === 0) return { output: '', exitCode: 0 };
+  if (!isPrivileged) return { output: 'blkid: error: Permission denied', exitCode: 1 };
   const targets: string[] = [];
   for (const a of args) {
     if (a === '-h' || a === '--help') return { output: helpText(), exitCode: 0 };
@@ -19,8 +19,8 @@ export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged:
     ? all
     : all.filter(e => targets.includes(`/dev/${e.part.name}`));
 
-  if (matches.length === 0) {
-    if (targets.length > 0) return { output: '', exitCode: 2 };
+  if (targets.length > 0 && matches.length === 0) {
+    return { output: `blkid: error: ${targets[0]}: No such file or directory`, exitCode: 2 };
   }
 
   const lines = matches.map(e => {

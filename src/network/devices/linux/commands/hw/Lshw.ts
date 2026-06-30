@@ -44,9 +44,9 @@ function parseArgs(args: string[]): { opts: Options } | { error: string } {
     }
     if (a === '-version') return { error: 'lshw B.02.19.2' };
     if (a === '-help' || a === '-h') return { error: helpText() };
-    if (a.startsWith('--')) return { error: `lshw: unrecognized option '${a}'` };
+    if (a.startsWith('--')) return { error: `lshw: error: invalid option '${a}'` };
     if (a.startsWith('-') && !['-json', '-xml', '-html', '-short', '-C', '-class', '-version', '-help', '-h'].includes(a)) {
-      return { error: `lshw: unrecognized option '${a}'` };
+      return { error: `lshw: error: invalid option '${a}'` };
     }
   }
   return { opts };
@@ -57,7 +57,7 @@ function entries(profile: HardwareProfile, filter: string | null): Array<{ class
     { class: 'system', id: profile.productUuid, description: 'Computer', product: profile.productName, vendor: profile.manufacturer },
     { class: 'firmware', id: 'firmware', description: 'BIOS', product: profile.firmware.version, vendor: profile.firmware.vendor },
     { class: 'cpu', id: 'cpu', description: 'CPU', product: profile.cpu.modelName, vendor: profile.cpu.vendor },
-    { class: 'memory', id: 'memory', description: 'System memory', product: `${Math.ceil(profile.memory.totalKib / 1024)} MiB`, vendor: profile.manufacturer },
+    { class: 'memory', id: 'memory', description: 'System Memory', product: `${Math.ceil(profile.memory.totalKib / 1024)} MiB`, vendor: profile.manufacturer },
     ...profile.adapters.map(a => ({ class: 'network', id: a.name, description: 'Ethernet interface', product: a.model ?? 'Ethernet Controller', vendor: 'Intel Corporation' })),
     ...profile.storage.map(d => ({ class: 'disk', id: d.name, description: 'ATA Disk', product: d.model, vendor: d.vendor })),
     { class: 'display', id: 'display', description: 'VGA compatible controller', product: 'Virtual Video Controller', vendor: 'QEMU' },

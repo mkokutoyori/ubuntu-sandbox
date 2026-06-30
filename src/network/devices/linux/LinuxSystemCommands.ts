@@ -85,10 +85,20 @@ function dfTable(ctx: ShellContext): DfEntry[] {
   ];
 }
 
+function dfTableAll(ctx: ShellContext): DfEntry[] {
+  return [
+    ...dfTable(ctx),
+    { fs: 'proc', type: 'proc', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/proc' },
+    { fs: 'sysfs', type: 'sysfs', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys' },
+    { fs: 'devpts', type: 'devpts', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/dev/pts' },
+    { fs: 'cgroup', type: 'cgroup2', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys/fs/cgroup' },
+  ];
+}
+
 export function cmdDf(ctx: ShellContext, args: string[]): string {
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
-  const showType = args.includes('-T') || args.includes('--print-type');
+  let showType = args.includes('-T') || args.includes('--print-type');
   const all = args.includes('-a') || args.includes('--all');
 
   const includeTypes: string[] = [];
@@ -114,7 +124,8 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
     }
   }
 
-  let rows = dfTable(ctx);
+  if (includeTypes.length > 0) showType = true;
+  let rows = all ? dfTableAll(ctx) : dfTable(ctx);
   if (includeTypes.length > 0) {
     rows = rows.filter(r => includeTypes.includes(r.type));
     if (rows.length === 0) return `df: no file systems processed`;
@@ -122,10 +133,17 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
   if (excludeTypes.length > 0) rows = rows.filter(r => !excludeTypes.includes(r.type));
   if (!all) rows = rows.filter(r => !(r.fs === 'tmpfs' && r.usedKb === 0));
   if (targets.length > 0) {
-    rows = rows.filter(r => targets.some(t => {
+    const annotated = targets.map(t => {
       const tp = ctx.vfs.normalizePath(t, ctx.cwd);
-      return tp === r.mount || tp.startsWith(r.mount + '/') || (r.mount === '/' && tp.startsWith('/'));
-    }));
+      let best: DfEntry | undefined;
+      for (const r of rows) {
+        if (tp === r.mount || tp.startsWith(r.mount === '/' ? '/' : r.mount + '/')) {
+          if (!best || r.mount.length > best.mount.length) best = r;
+        }
+      }
+      return best ? { ...best, mount: tp } : null;
+    }).filter((r): r is DfEntry => r !== null);
+    rows = annotated;
   }
 
   const rootUsedBytes = vfsDirectorySize(ctx, '/');

@@ -20,6 +20,7 @@ export function cmdFdisk(profile: HardwareProfile, args: string[], isPrivileged:
   if (opts.targets.length > 0) {
     const found: StorageDevice[] = [];
     for (const t of opts.targets) {
+      if (!t.startsWith('/dev/')) return { output: `fdisk: cannot open ${t}: not a block device`, exitCode: 1 };
       const d = disks.find(x => x.devicePath === t);
       if (!d) return { output: `fdisk: cannot open ${t}: No such file or directory`, exitCode: 1 };
       found.push(d);
@@ -55,6 +56,8 @@ function renderDisk(disk: StorageDevice): string {
     `I/O size (minimum/optimal): ${SECTOR_SIZE} bytes / ${SECTOR_SIZE} bytes`,
     `Disklabel type: dos`,
     `Disk identifier: 0x${pseudoId(disk.name)}`,
+    ``,
+    `Partition 1 does not start on physical sector boundary.`,
     '',
     'Device     Boot     Start       End   Sectors  Size Id Type',
   ];

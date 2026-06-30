@@ -25,6 +25,7 @@ export function cmdHdparm(profile: HardwareProfile, args: string[], isPrivileged
 
   const sections: string[] = [];
   for (const t of opts.targets) {
+    if (!t.startsWith('/dev/')) return { output: `hdparm: ${t}: not a block device`, exitCode: 1 };
     const disk = profile.storage.find(d => d.devicePath === t);
     if (!disk) return { output: `hdparm: ${t}: No such file or directory`, exitCode: 1 };
     sections.push(renderDisk(disk, opts));
@@ -132,8 +133,23 @@ function renderIdentify(disk: StorageDevice): string {
     `\t--`,
     `\tCHS current addressable sectors:    16514064`,
     `\tLBA    user addressable sectors:   ${Math.floor(disk.sizeBytes / 512)}`,
+    `\tLogical/Physical Sector size:           512 bytes`,
     `\tdevice size with M = 1024*1024:    ${Math.floor(disk.sizeBytes / 1024 ** 2)} MBytes`,
     `\tdevice size with M = 1000*1000:    ${Math.floor(disk.sizeBytes / 1000 ** 2)} MBytes`,
+    `Capabilities:`,
+    `\tLBA, IORDY(can be disabled)`,
+    `\tQueue depth: 32`,
+    `\tStandby timer values: spec'd by Standard, no device specific minimum`,
+    `\tR/W multiple sector transfer: Max = 1\tCurrent = 1`,
+    `\tDMA: mdma0 mdma1 mdma2 udma0 udma1 *udma5`,
+    `\t     Cycle time: min=120ns recommended=120ns`,
+    `Security:`,
+    `\tMaster password revision code = 65534`,
+    `\t\tsupported`,
+    `\tnot\tenabled`,
+    `\tnot\tlocked`,
+    `\tnot\tfrozen`,
+    `\tnot\texpired: security count`,
   ].join('\n');
 }
 

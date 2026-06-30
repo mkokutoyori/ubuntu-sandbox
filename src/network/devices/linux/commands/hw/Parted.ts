@@ -9,7 +9,8 @@ export function cmdParted(profile: HardwareProfile, args: string[], isPrivileged
     if (a === '-l' || a === '--list') { list = true; continue; }
     if (a === '-h' || a === '--help') return { output: helpText(), exitCode: 0 };
     if (a === '-v' || a === '--version') return { output: 'parted (GNU parted) 3.4', exitCode: 0 };
-    if (a.startsWith('-')) return { output: `parted: invalid option -- '${a.slice(1)}'`, exitCode: 1 };
+    if (a.startsWith('--')) return { output: `parted: error: unrecognized option '${a}'`, exitCode: 1 };
+    if (a.startsWith('-')) return { output: `parted: error: invalid option -- '${a.slice(1)}'`, exitCode: 1 };
     positional.push(a);
   }
 

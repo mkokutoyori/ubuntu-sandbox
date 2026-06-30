@@ -22,6 +22,11 @@ const COLUMNS = new Map<string, (row: Row) => string>([
   ['PATH',        r => `/dev/${r.name}`],
   ['LOG-SEC',     r => '512'],
   ['PHY-SEC',     r => '512'],
+  ['SSZ',         r => '512'],
+  ['ALIGNMENT',   r => '0'],
+  ['MIN-IO',      r => '512'],
+  ['OPT-IO',      r => '0'],
+  ['RA',          r => '128'],
 ]);
 
 interface Row {
@@ -106,13 +111,17 @@ export function cmdLsblk(profile: HardwareProfile, args: string[]): { output: st
     }
     maj += 16;
   }
+  rows.push(loopRow());
   if (opts.all) rows.push(romRow());
 
   if (opts.fs && !opts.columns) opts.columns = ['NAME', 'FSTYPE', 'LABEL', 'UUID', 'MOUNTPOINT'];
-  if (opts.topology && !opts.columns) opts.columns = ['NAME', 'PHY-SEC', 'LOG-SEC'];
+  if (opts.topology && !opts.columns) opts.columns = ['NAME', 'ALIGNMENT', 'MIN-IO', 'OPT-IO', 'PHY-SEC', 'LOG-SEC', 'SSZ', 'RA'];
   if (opts.perms && !opts.columns) opts.columns = ['NAME', 'SIZE', 'OWNER', 'GROUP', 'MODE'];
 
   const columns = opts.columns ?? ['NAME', 'MAJ:MIN', 'RM', 'SIZE', 'RO', 'TYPE', 'MOUNTPOINT'];
+
+  const formats = [opts.json, opts.raw, opts.list].filter(Boolean).length;
+  if (formats + (opts.pathPrefix ? 1 : 0) > 2) return { output: `lsblk: invalid combination of options`, exitCode: 1 };
 
   if (opts.json) return { output: renderJson(rows, columns), exitCode: 0 };
   if (opts.raw) return { output: renderRaw(rows, columns), exitCode: 0 };
@@ -139,8 +148,9 @@ function diskRow(d: StorageDevice, opts: Options, maj: number, min: number): Row
 }
 
 function partitionRow(p: DiskPartition, opts: Options, maj: number, min: number): Row {
+  const prefix = opts.raw || opts.list || opts.json ? '' : '├─';
   return {
-    name: opts.pathPrefix ? `/dev/${p.name}` : (`├─${p.name}`),
+    name: opts.pathPrefix ? `/dev/${p.name}` : `${prefix}${p.name}`,
     majMin: `${maj}:${min}`,
     removable: '0',
     size: opts.bytes ? String(p.sizeBytes) : humanSize(p.sizeBytes),
@@ -158,6 +168,10 @@ function partitionRow(p: DiskPartition, opts: Options, maj: number, min: number)
 
 function romRow(): Row {
   return { name: 'sr0', majMin: '11:0', removable: '1', size: '1024M', readOnly: '0', type: 'rom', mountPoint: '', uuid: '', fsType: '', label: '', model: 'QEMU DVD-ROM', serial: '', vendor: 'QEMU' };
+}
+
+function loopRow(): Row {
+  return { name: 'loop0', majMin: '7:0', removable: '0', size: '0', readOnly: '1', type: 'loop', mountPoint: '', uuid: '', fsType: '', label: '', model: '', serial: '', vendor: '' };
 }
 
 function humanSize(bytes: number): string {

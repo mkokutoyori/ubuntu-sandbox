@@ -146,12 +146,11 @@ export class MountTable {
 
   bind(source: string, target: string, options: Iterable<string> = []): MountEntry {
     const origin = normalizeTarget(source);
-    const originMount = this.resolve(origin);
     const entry = new MountEntry({
       source: origin,
       target,
-      fstype: originMount?.fstype ?? 'none',
-      options: ['rw', 'relatime', ...options],
+      fstype: 'none',
+      options: ['bind', ...options],
       bindOrigin: origin,
     });
     return this.mount(entry);
@@ -190,7 +189,13 @@ export class MountTable {
   toMountOutput(filterType?: string): string {
     return this.entries
       .filter((e) => !filterType || e.fstype === filterType)
-      .map((e) => `${e.source} on ${e.target} type ${e.fstype} (${e.optionString()})`)
+      .map((e) => {
+        let opts: string;
+        if (e.isBind) opts = 'bind';
+        else if (e.options.has('loop')) opts = 'loop';
+        else opts = e.optionString();
+        return `${e.source} on ${e.target} type ${e.fstype} (${opts})`;
+      })
       .join('\n');
   }
 
