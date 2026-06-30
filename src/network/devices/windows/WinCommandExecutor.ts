@@ -138,4 +138,20 @@ export interface WinCommandContext {
   portProxy: import('./PortProxyTable').PortProxyTable;
 
   dnsCache: import('./WinDnsCache').WindowsDnsCache;
+
+  /**
+   * Per-device firewall rule store shared by:
+   *   - `netsh advfirewall firewall add/show/delete rule`
+   *   - PowerShell `New-NetFirewallRule` / `Get-NetFirewallRule`
+   *   - the Windows Filtering Platform packet check
+   *     (`firewallFilter()` on WindowsPC)
+   * so a rule added through one surface is honoured by the data plane
+   * and visible through the other.
+   */
+  dynamicFirewallRules: Map<string, {
+    name: string; displayName: string; enabled: boolean;
+    action: string; direction: string;
+    protocol: string; localPort: string; remotePort: string;
+    description: string;
+  }>;
 }

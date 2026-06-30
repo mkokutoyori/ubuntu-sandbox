@@ -1281,6 +1281,26 @@ function runCrossPlatformExec(
     };
   }
 
+  // Windows Filtering Platform — when the target is a WindowsPC and any
+  // Inbound Block rule matches our (srcIp, dstPort) TCP SYN, the host
+  // silently drops the packet (no RST, no ICMP), so the client times
+  // out. The matching Security event (5152) is emitted via the
+  // simulator's event bus → WindowsEventLogProjection.
+  const windowsTarget = target as unknown as {
+    inboundSshFirewallVerdict?: (srcIp: string, dstPort: number) => 'accept' | 'drop';
+  };
+  if (typeof windowsTarget.inboundSshFirewallVerdict === 'function') {
+    const verdict = windowsTarget.inboundSshFirewallVerdict(opts.sourceIp, port);
+    if (verdict === 'drop') {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return {
+        output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
+        exitCode: 255,
+        droppedSyn: { localIp: opts.sourceIp, peerIp: host, peerPort: port },
+      };
+    }
+  }
+
   const remoteCmd = joinRemoteCommand(positional.slice(1));
 
   if (sshHost) {

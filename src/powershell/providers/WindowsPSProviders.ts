@@ -16,7 +16,7 @@
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
-import { fwRules, resolveAdapterName } from '@/network/devices/windows/WinNetsh';
+import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 
 type FwRow = {
@@ -769,28 +769,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
       { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
       { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
     ];
-    // Coherent view: dynamic rules added via PowerShell live in
-    // `state.dynamicFirewallRules`; cmd's `netsh advfirewall firewall add`
-    // pushes into the shared module-level `fwRules` array. We merge both
-    // sources by displayName so callers see a single coherent list.
+    // Single per-device store: both PowerShell `New-NetFirewallRule`
+    // and cmd's `netsh advfirewall firewall add rule` write to the same
+    // `state.dynamicFirewallRules` map. No more cross-host leakage.
     const dynamicMap = new Map<string, FwRow>();
     for (const r of this.state.dynamicFirewallRules.values()) {
       dynamicMap.set((r.displayName ?? r.name).toLowerCase(), { ...r });
-    }
-    for (const r of fwRules) {
-      const key = r.name.toLowerCase();
-      if (dynamicMap.has(key)) continue;
-      dynamicMap.set(key, {
-        name: r.name,
-        displayName: r.name,
-        enabled: true,
-        action: r.action.charAt(0).toUpperCase() + r.action.slice(1),
-        direction: r.dir === 'out' ? 'Outbound' : 'Inbound',
-        protocol: r.protocol,
-        localPort: r.localport,
-        remotePort: 'Any',
-        description: '',
-      });
     }
     return [...builtins, ...dynamicMap.values()];
   }
@@ -808,19 +792,6 @@ class WindowsNetworkAdapter implements INetworkProvider {
       remotePort: rule.remotePort ?? 'Any',
       description: rule.description ?? '',
     });
-    // Mirror into the cmd-visible store so `netsh advfirewall firewall show
-    // rule name="<n>"` can find the same rule.
-    if (!fwRules.some(r => r.name.toLowerCase() === rule.name.toLowerCase())) {
-      fwRules.push({
-        name:      rule.name,
-        dir:       rule.direction === 'Outbound' ? 'out' : 'in',
-        action:    rule.action.toLowerCase(),
-        protocol:  rule.protocol ?? 'TCP',
-        localport: rule.localPort ?? 'Any',
-        program:   '',
-        profile:   'any',
-      });
-    }
   }
   setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
     const key = name.toLowerCase();
@@ -833,9 +804,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   removeFirewallRule(name: string): string {
     const key = name.toLowerCase();
     const removed = this.state.dynamicFirewallRules.delete(key);
-    const i = fwRules.findIndex(r => r.name.toLowerCase() === name.toLowerCase());
-    if (i >= 0) fwRules.splice(i, 1);
-    return (removed || i >= 0) ? '' : `No firewall rule named '${name}'.`;
+    return removed ? '' : `No firewall rule named '${name}'.`;
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import { EndHost, PingResult } from './EndHost';
 import { WindowsDnsCache } from './windows/WinDnsCache';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
+import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -1295,6 +1295,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       portProxy: this.portProxyTable,
+      dynamicFirewallRules: this.dynamicFirewallRules,
       eventLog: this.eventLog,
       dnsCache: this.dnsCache,
     };
@@ -1782,6 +1783,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.cwd = b.cwd;
     this.env = b.env;
     this._activeShellSession = null;
+  }
+
+  /**
+   * Public surface used by the topology-bypass SSH client: synthesize an
+   * inbound TCP SYN to (dstIp, dstPort) coming from `srcIp` and feed it
+   * through {@link firewallFilter}. The Windows Filtering Platform
+   * silently drops blocked packets (no RST, no ICMP) so the client times
+   * out — exactly like a real Windows host. The matching Security event
+   * `5152` is still emitted via the bus → WindowsEventLogProjection.
+   */
+  inboundSshFirewallVerdict(srcIp: string, dstPort: number): 'accept' | 'drop' {
+    const dstIp = this.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
+    const tcp: TCPPacket = {
+      type: 'tcp',
+      sourcePort: 49152, destinationPort: dstPort,
+      sequenceNumber: 0, acknowledgementNumber: 0,
+      flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+      windowSize: 65535, checksum: 0, payload: null,
+    };
+    const ipPkt = createIPv4Packet(
+      new IPAddress(srcIp), new IPAddress(dstIp),
+      IP_PROTO_TCP, 64, tcp, 20,
+    );
+    const verdict = this.firewallFilter(this.getPorts()[0]?.getName() ?? 'eth0', ipPkt, 'in');
+    return verdict === 'accept' ? 'accept' : 'drop';
   }
 
   protected override firewallFilter(

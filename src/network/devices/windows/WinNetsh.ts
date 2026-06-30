@@ -249,7 +249,7 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
   if (args[0].toLowerCase() === 'advfirewall') {
     const gate = requireWindowsService(ctx, 'mpssvc');
     if (!gate.ok) return gate.error;
-    return handleNetshAdvfirewall(args.slice(1));
+    return handleNetshAdvfirewall(ctx, args.slice(1));
   }
 
   // netsh namespace ...
@@ -2609,13 +2609,14 @@ function handleNetshBridge(ctx: WinCommandContext, args: string[]): string {
 // ─── netsh advfirewall ───────────────────────────────────────────────
 
 /**
- * Shared firewall rule store: both cmd's `netsh advfirewall firewall add` and
- * PowerShell's `New-NetFirewallRule` write here so the two surfaces stay
- * coherent (a rule added from cmd is visible from `Get-NetFirewallRule`, and
- * vice versa). Module-level singleton — accumulates across tests by design.
+ * Legacy type kept for backward-compat. The real rule store now lives
+ * per-device on WinCommandContext.dynamicFirewallRules so a netsh-added
+ * rule is honoured by the WindowsPC.firewallFilter() data path and is
+ * visible through PowerShell `Get-NetFirewallRule`. The `fwRules`
+ * module-level singleton was a fixture that leaked across hosts —
+ * removed.
  */
 export interface FwRule { name: string; dir: string; action: string; protocol: string; localport: string; program: string; profile: string; }
-export const fwRules: FwRule[] = [];
 
 const NETSH_ADVFW_HELP = `The following commands are available:
 
@@ -2664,19 +2665,35 @@ const NETSH_ADVFW_FIREWALL_ADD_RULE_HELP = `Usage: add rule name=<string>
        [profile=domain|private|public|any]
        [enable=yes|no]`;
 
-function handleNetshAdvfirewall(args: string[]): string {
+function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
     return NETSH_ADVFW_HELP;
   }
   const sub = args[0].toLowerCase();
-  if (sub === 'firewall') return handleAdvfwFirewall(args.slice(1));
-  if (sub === 'reset')    return 'Ok.';
+  if (sub === 'firewall') return handleAdvfwFirewall(ctx, args.slice(1));
+  if (sub === 'reset')    { ctx.dynamicFirewallRules.clear(); return 'Ok.'; }
   if (sub === 'show')     return 'Ok.';
   if (sub === 'set')      return 'Ok.';
   return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
 }
 
-function handleAdvfwFirewall(args: string[]): string {
+function nameToKey(name: string): string { return name.trim().toLowerCase(); }
+
+function normalizeDirection(dir: string): 'Inbound' | 'Outbound' {
+  return dir.toLowerCase() === 'out' ? 'Outbound' : 'Inbound';
+}
+function normalizeAction(action: string): 'Allow' | 'Block' {
+  return action.toLowerCase() === 'block' ? 'Block' : 'Allow';
+}
+function normalizeProtocol(proto: string): string {
+  const p = proto.toUpperCase();
+  if (p === 'TCP') return 'TCP';
+  if (p === 'UDP') return 'UDP';
+  if (p === 'ICMPV4' || p === 'ICMP') return 'ICMPv4';
+  return 'Any';
+}
+
+function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
     return NETSH_ADVFW_FIREWALL_HELP;
   }
@@ -2689,15 +2706,18 @@ function handleAdvfwFirewall(args: string[]): string {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
       if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
-      if (fwRules.find(r => r.name === name)) return `The rule "${name}" already exists.`;
-      fwRules.push({
+      const key = nameToKey(name);
+      if (ctx.dynamicFirewallRules.has(key)) return `The rule "${name}" already exists.`;
+      ctx.dynamicFirewallRules.set(key, {
         name,
-        dir:       params['dir']       || 'in',
-        action:    params['action']    || 'allow',
-        protocol:  params['protocol'] || 'Any',
-        localport: params['localport'] || 'Any',
-        program:   params['program']  || '',
-        profile:   params['profile']  || 'any',
+        displayName: name,
+        enabled: (params['enable'] ?? 'yes').toLowerCase() !== 'no',
+        action:    normalizeAction(params['action'] ?? 'allow'),
+        direction: normalizeDirection(params['dir'] ?? 'in'),
+        protocol:  normalizeProtocol(params['protocol'] ?? 'Any'),
+        localPort: params['localport'] ?? '',
+        remotePort: params['remoteport'] ?? '',
+        description: '',
       });
       return 'Ok.';
     }
@@ -2709,19 +2729,20 @@ function handleAdvfwFirewall(args: string[]): string {
     if (obj === 'rule') {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
-      const matches = name ? fwRules.filter(r => r.name === name) : fwRules;
+      const matches = name
+        ? Array.from(ctx.dynamicFirewallRules.values()).filter(r => r.name === name)
+        : Array.from(ctx.dynamicFirewallRules.values());
       if (matches.length === 0) return `No rules match the specified criteria.`;
       const lines: string[] = [''];
       for (const r of matches) {
         lines.push(`Rule Name:                            ${r.name}`);
         lines.push(`----------------------------------------------------------------------`);
-        lines.push(`Enabled:                              Yes`);
-        lines.push(`Direction:                            ${r.dir}`);
-        lines.push(`Profiles:                             ${r.profile}`);
-        lines.push(`Action:                               ${r.action.charAt(0).toUpperCase() + r.action.slice(1)}`);
+        lines.push(`Enabled:                              ${r.enabled ? 'Yes' : 'No'}`);
+        lines.push(`Direction:                            ${r.direction.toLowerCase().startsWith('out') ? 'out' : 'in'}`);
+        lines.push(`Profiles:                             Any`);
+        lines.push(`Action:                               ${r.action}`);
         lines.push(`Protocol:                             ${r.protocol}`);
-        lines.push(`LocalPort:                            ${r.localport}`);
-        if (r.program) lines.push(`Program:                              ${r.program}`);
+        lines.push(`LocalPort:                            ${r.localPort || 'Any'}`);
         lines.push('');
       }
       return lines.join('\n');
@@ -2734,10 +2755,14 @@ function handleAdvfwFirewall(args: string[]): string {
     if (obj === 'rule') {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
-      const before = fwRules.length;
-      const toRemove = fwRules.filter(r => !name || r.name === name);
-      toRemove.forEach(r => { const i = fwRules.indexOf(r); if (i >= 0) fwRules.splice(i, 1); });
-      return fwRules.length < before ? 'Ok.' : `No rules match the specified criteria.`;
+      let removed = 0;
+      for (const [key, rule] of Array.from(ctx.dynamicFirewallRules.entries())) {
+        if (!name || rule.name === name) {
+          ctx.dynamicFirewallRules.delete(key);
+          removed++;
+        }
+      }
+      return removed > 0 ? 'Ok.' : `No rules match the specified criteria.`;
     }
     return NETSH_ADVFW_FIREWALL_HELP;
   }
