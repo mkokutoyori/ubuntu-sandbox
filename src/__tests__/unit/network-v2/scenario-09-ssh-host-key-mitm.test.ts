@@ -26,8 +26,8 @@ async function buildLab(): Promise<Lab> {
   } } }).executor.userMgr;
   if (!um.getUser('alice')) {
     um.useradd('alice', { m: true, s: '/bin/bash' });
-    um.setPassword('alice', 'wonderland');
   }
+  um.setPassword('alice', 'wonderland');
   return { client, server, sw };
 }
 

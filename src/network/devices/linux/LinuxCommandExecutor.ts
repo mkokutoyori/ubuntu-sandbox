@@ -3745,7 +3745,8 @@ export class LinuxCommandExecutor {
         return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
       }
       case 'ssh': {
-        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
+        const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
+        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
         if (result.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);

@@ -90,9 +90,9 @@ export interface SshClientOpts {
    */
   localAgent?: SshAgent;
   /**
-   * Password offered to the remote (e.g. via `sshpass -p`). When set,
-   * the simulator's password-auth path validates it against the remote
-   * userMgr's checkPassword and emits an `auth_failure` event on
+   * Password offered to the remote (heredoc / piped stdin or `sshpass -p`).
+   * When set, the simulator's password-auth path validates it against the
+   * remote userMgr's checkPassword and emits an `auth_failure` event on
    * mismatch — that's what wires the brute-force detection chain
    * end-to-end.
    */
@@ -934,7 +934,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.
   if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword) === 'wrong-password') {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, 'password');
+    throttler?.recordFailure(opts.sourceIp, Date.now());
+    const ev = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'auth_failure'; user: string; ip: string; method: 'password'; port?: number; fromHost?: string }) => void } } }).getSshServerContext?.()?.events;
+    ev?.emit({ kind: 'auth_failure', user: remoteUser, ip: opts.sourceIp, method: 'password', port: 22, fromHost: opts.sourceHostname });
     return {
       output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
       exitCode: 255,
