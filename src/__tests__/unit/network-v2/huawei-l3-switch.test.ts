@@ -103,6 +103,32 @@ describe('Huawei L3 switch — inter-VLAN routing', () => {
     expect(out).toMatch(/ ip address 10\.0\.10\.1 255\.255\.255\.0/);
   });
 
+  it('display ip interface brief liste les Vlanif avec leur IP et état', async () => {
+    const { sw } = await buildLan();
+    const out = await sw.executeCommand('display ip interface brief');
+    expect(out).toMatch(/Vlanif10\s+10\.0\.10\.1\/24\s+up\s+up/);
+    expect(out).toMatch(/Vlanif20\s+10\.0\.20\.1\/24\s+up\s+up/);
+  });
+
+  it('display arp affiche les entrées apprises après un ping inter-VLAN', async () => {
+    const { sw, pc1 } = await buildLan();
+    await pc1.executeCommand('ping -c 1 10.0.20.10');
+    const out = await sw.executeCommand('display arp');
+    expect(out).toMatch(/10\.0\.10\.10.*dynamic/);
+    expect(out).toMatch(/10\.0\.20\.10.*dynamic/);
+  });
+
+  it('ip route-static 0.0.0.0 0.0.0.0 <gw> apparaît comme route par défaut', async () => {
+    const { sw } = await buildLan();
+    for (const cmd of [
+      'system-view',
+      'ip route-static 0.0.0.0 0.0.0.0 10.0.20.99',
+      'quit',
+    ]) await sw.executeCommand(cmd);
+    const out = await sw.executeCommand('display ip routing-table');
+    expect(out).toMatch(/0\.0\.0\.0\/0.*Static.*10\.0\.20\.99/);
+  });
+
   it('SVI Vlanif20 en shutdown : PC1 ne joint plus PC2', async () => {
     const { sw, pc1 } = await buildLan();
     for (const cmd of [

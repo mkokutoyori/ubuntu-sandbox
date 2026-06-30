@@ -1194,16 +1194,58 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return full;
     });
 
-    // L2 switch: only the management interface has an IP. Recognised so
-    // the command doesn't error (no Vlanif/L3 routing on an L2 switch).
+    // L3 switch: every Vlanif with an IP appears here, plus the
+    // management Ethernet placeholder. Each row reflects the live
+    // admin/protocol state so the operator can see at a glance which
+    // SVI is up.
     trie.register('display ip interface brief', 'Display IP interface brief', () => {
-      const host = this.swRef?.getHostname() ?? 'SW';
-      return [
+      if (!this.swRef) return '';
+      const svis = this.swRef.getSvis();
+      const lines: string[] = [
         `*down: administratively down`,
+        `^down: standby`,
+        `(l): loopback`,
+        `(s): spoofing`,
         `Interface                   IP Address/Mask      Physical   Protocol`,
-        `MEth0/0/1                   unassigned           down       down`,
-        `(${host}: L2 switch — no Vlanif/L3 interfaces)`,
-      ].join('\n');
+      ];
+      for (const svi of svis) {
+        const name = `Vlanif${svi.vlan}`;
+        const addr = svi.ip && svi.mask
+          ? `${svi.ip}/${svi.mask.toCIDR()}`
+          : 'unassigned';
+        const lineUp = this.swRef.isSviLineUp(svi);
+        const phys = svi.adminUp ? (lineUp ? 'up' : 'down') : '*down';
+        const proto = lineUp ? 'up' : 'down';
+        lines.push(`${name.padEnd(28)}${addr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+      }
+      lines.push(`MEth0/0/1                   unassigned           down       down`);
+      return lines.join('\n');
+    });
+
+    // display arp [all] — render the switch's shared mgmt ARP cache,
+    // populated by every SVI reply / learned ingress. The view IS the
+    // L3 switch's neighbour table.
+    trie.registerGreedy('display arp', 'Display ARP table', (args) => {
+      if (!this.swRef) return '';
+      const filter = (args[0] ?? '').toLowerCase();
+      const table = this.swRef._getArpTableInternal();
+      const rows: string[] = [
+        `IP ADDRESS      MAC ADDRESS    EXPIRE(M) TYPE   INTERFACE    VPN-INSTANCE`,
+        `                                          VLAN/CEVLAN PVC`,
+        `------------------------------------------------------------------------------`,
+      ];
+      const entries = [...table.entries()];
+      for (const [ip, e] of entries) {
+        if (filter === 'static' && e.type !== 'static') continue;
+        if (filter === 'dynamic' && e.type !== 'dynamic') continue;
+        const expire = e.type === 'static' ? '-' : '20';
+        rows.push(
+          `${ip.padEnd(16)}${e.mac.toString().padEnd(15)}${expire.padEnd(10)}${e.type.padEnd(7)}${e.iface}`,
+        );
+      }
+      rows.push(`------------------------------------------------------------------------------`);
+      rows.push(`Total: ${entries.length}        Dynamic: ${entries.filter(([, e]) => e.type === 'dynamic').length}      Static: ${entries.filter(([, e]) => e.type === 'static').length}`);
+      return rows.join('\n');
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──
