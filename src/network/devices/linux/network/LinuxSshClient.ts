@@ -16,7 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
-import { findHostByAddress, isPathReachable } from './HostLookup';
+import { findHostByAddress, isPathReachable, transitTcpAclVerdict } from './HostLookup';
 import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -46,6 +46,13 @@ export interface SshClientResult {
    * record the connection for `tcpdump` / socket accounting.
    */
   connection?: SshConnectionTuple;
+  /**
+   * Set when an outbound SYN was sent toward `peerIp:peerPort` but the
+   * handshake never completed because a transit ACL dropped it. Lets the
+   * caller log the lone SYN so `tcpdump` shows the same trace a real
+   * client gets when a Cisco extended ACL eats the packet.
+   */
+  droppedSyn?: SshConnectionTuple;
 }
 
 export interface SshClientOpts {
@@ -816,6 +823,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
       exitCode: 255,
+    };
+  }
+
+  // Transit router ACL — any Cisco extended ACL on a router along the
+  // path that denies the synth SYN drops the packet silently, so the
+  // client times out (no SYN-ACK, no RST).
+  if (transitTcpAclVerdict(opts.sourceIp, destIp, port) === 'deny') {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
+      exitCode: 255,
+      droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
     };
   }
 

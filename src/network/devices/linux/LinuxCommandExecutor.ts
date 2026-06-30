@@ -3618,6 +3618,16 @@ export class LinuxCommandExecutor {
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
         }
+        // An outbound SYN swallowed by a transit ACL still leaves a
+        // half-flow visible in `tcpdump` (S without S.).
+        if (result.droppedSyn) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpSynDropped(
+            { ip: result.droppedSyn.localIp, port: srcPort },
+            { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
+          );
+        }
         return { output: result.output, exitCode: result.exitCode };
       }
       case 'telnet':

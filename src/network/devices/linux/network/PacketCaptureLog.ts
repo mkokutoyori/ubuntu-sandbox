@@ -55,6 +55,22 @@ export class PacketCaptureLog {
     this.capture({ at: new Date(t + 2), srcIp: src.ip, srcPort: src.port, dstIp: dst.ip, dstPort: dst.port, flags: '.',  seq: 1, ack: 1, length: 0 });
   }
 
+  /**
+   * Record an outbound SYN that never received a SYN-ACK — the trace a
+   * real tcpdump shows when a transit ACL silently drops the handshake.
+   */
+  captureTcpSynDropped(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+  ): void {
+    this.capture({
+      at: new Date(),
+      srcIp: src.ip, srcPort: src.port,
+      dstIp: dst.ip, dstPort: dst.port,
+      flags: 'S', seq: 0, ack: 0, length: 0,
+    });
+  }
+
   /** Every packet captured so far, oldest first. */
   all(): readonly CapturedPacket[] {
     return [...this.packets];
