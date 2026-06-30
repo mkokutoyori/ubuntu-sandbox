@@ -31,6 +31,7 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
+import { DHCPServer } from '../dhcp/DHCPServer';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
 import {
@@ -1618,6 +1619,16 @@ export abstract class Switch extends Equipment {
       },
     });
   }
+
+  // ─── DHCP server on an L3 switch ────────────────────────────────
+  //
+  // A Layer-3 switch can serve DHCP to its directly attached VLANs the
+  // same way a router does. The server is created lazily, kept disabled
+  // until `dhcp enable`, and is what EndHost.autoDiscoverDHCPServers
+  // finds when it duck-types `getDHCPServer` on any reachable Equipment.
+  private readonly dhcpServer: DHCPServer = new DHCPServer();
+  _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+  getDHCPServer(): DHCPServer { return this.dhcpServer; }
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 

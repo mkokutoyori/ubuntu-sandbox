@@ -818,12 +818,20 @@ export abstract class EndHost extends Equipment {
       if (typeof router.getDHCPServer === 'function') {
         const dhcpServer: DHCPServer = router.getDHCPServer();
         if (dhcpServer && dhcpServer.isEnabled()) {
-          // Find a configured IP on the router to use as server identifier
+          // Find a configured IP to use as server identifier. Physical
+          // port IPs cover routers; L3 switches expose IPs only through
+          // their Vlanif SVIs (their physical ports stay L2), so fall
+          // back to the SVI list when no port carries an address.
           const routerPorts = equip.getPorts();
           let serverIP = '0.0.0.0';
           for (const rPort of routerPorts) {
             const ip = rPort.getIPAddress();
             if (ip) { serverIP = ip.toString(); break; }
+          }
+          if (serverIP === '0.0.0.0' && typeof router.getSvis === 'function') {
+            const svis = router.getSvis() as { ip?: { toString(): string } }[];
+            const sviIp = svis.find((s) => s.ip)?.ip?.toString();
+            if (sviIp) serverIP = sviIp;
           }
           this.dhcpClient.registerServer(dhcpServer, serverIP);
         }

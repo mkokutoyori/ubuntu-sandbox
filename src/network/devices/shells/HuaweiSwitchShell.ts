@@ -36,10 +36,11 @@ import type { Router } from '../Router';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
+import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface' | 'acl';
+  | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -56,6 +57,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private aaaTrie = new CommandTrie();
   private userIfTrie = new CommandTrie();
   private aclTrie = new CommandTrie();
+  private dhcpPoolTrie = new CommandTrie();
+  private selectedPool: string | null = null;
   private uiLabel = '';
   private selectedAcl: string | null = null;
   private acls = new Map<string, {
@@ -129,6 +132,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildAaaCommands();
     this.buildUserInterfaceCommands();
     this.buildAclCommands();
+    this.buildDhcpCommands();
     this.wireHuaweiNAT();
     this.buildPortMirroringCommands();
   }
@@ -143,6 +147,82 @@ export class HuaweiSwitchShell implements ISwitchShell {
       setSelectedPool: () => { /* unused on switch */ },
       getDhcpSelectGlobal: () => new Set<string>(),
     };
+  }
+
+  /** Context handed to the shared Huawei DHCP pool builder. */
+  private dhcpContext(): HuaweiShellContext {
+    return {
+      r: () => this.swRef as unknown as Router,
+      setMode: (m) => { this.mode = m as VRPSwitchMode; },
+      getSelectedInterface: () => this.selectedInterface,
+      setSelectedInterface: (i) => { this.selectedInterface = i; },
+      getSelectedPool: () => this.selectedPool,
+      setSelectedPool: (n) => { this.selectedPool = n; },
+      getDhcpSelectGlobal: () => this.dhcpSelectGlobalIfaces,
+    };
+  }
+
+  /** Vlanif interfaces with `dhcp select global` recorded — for display this. */
+  private readonly dhcpSelectGlobalIfaces: Set<string> = new Set();
+
+  private buildDhcpCommands(): void {
+    // `ip pool <name>` enters the DHCP pool view.
+    this.systemTrie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
+      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      const dhcp = this.swRef._getDHCPServerInternal();
+      if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
+      this.selectedPool = args[0];
+      this.mode = 'dhcp-pool';
+      return '';
+    });
+    this.systemTrie.registerGreedy('undo ip pool', 'Delete a DHCP pool', (args) => {
+      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      this.swRef._getDHCPServerInternal().deletePool(args[0]);
+      return '';
+    });
+    this.systemTrie.registerGreedy('dhcp server forbidden-ip',
+      'Exclude IP range from DHCP allocation', (args) => {
+        if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+        this.swRef._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
+        return '';
+      });
+
+    // Inside Vlanif view: `dhcp select global` marks the SVI as a
+    // recipient interface for the global DHCP pool. Recorded for
+    // `display this`; the server itself is interface-agnostic.
+    this.interfaceTrie.register('dhcp select global',
+      'Use the global DHCP pool on this interface', () => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        this.dhcpSelectGlobalIfaces.add(this.selectedInterface);
+        return '';
+      });
+    this.interfaceTrie.register('undo dhcp select global',
+      'Stop serving DHCP from the global pool on this interface', () => {
+        if (!this.selectedInterface) return '';
+        this.dhcpSelectGlobalIfaces.delete(this.selectedInterface);
+        return '';
+      });
+
+    // Pool view trie — reuse the shared Huawei pool command set so the
+    // L3 switch supports the exact same `network/gateway-list/dns-list
+    // /lease/excluded-ip-address/domain-name/option …` vocabulary as
+    // the router (DRY).
+    buildDhcpPoolCommands(this.dhcpPoolTrie, this.dhcpContext());
+
+    this.dhcpPoolTrie.register('display this', 'Display active pool configuration', () => {
+      if (!this.swRef || !this.selectedPool) return '';
+      const pool = this.swRef._getDHCPServerInternal().getPool(this.selectedPool);
+      if (!pool) return '';
+      const lines: string[] = [`ip pool ${pool.name}`];
+      if (pool.network && pool.mask) lines.push(` network ${pool.network} mask ${pool.mask}`);
+      if (pool.defaultRouter) lines.push(` gateway-list ${pool.defaultRouter}`);
+      if (pool.dnsServers.length > 0) lines.push(` dns-list ${pool.dnsServers.join(' ')}`);
+      if (pool.domainName) lines.push(` domain-name ${pool.domainName}`);
+      const days = Math.floor(pool.leaseDuration / 86400);
+      if (days > 0 && pool.leaseDuration === days * 86400) lines.push(` lease day ${days}`);
+      lines.push('#');
+      return lines.join('\n');
+    });
   }
 
   private wireHuaweiNAT(): void {
@@ -172,6 +252,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const a = this.selectedAcl ? this.acls.get(this.selectedAcl) : undefined;
         return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
       }
+      case 'dhcp-pool': return `[${host}-ip-pool-${this.selectedPool ?? ''}]`;
       default:          return `<${host}>`;
     }
   }
@@ -288,6 +369,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'system';
         this.selectedAcl = null;
         return '';
+      case 'dhcp-pool':
+        this.mode = 'system';
+        this.selectedPool = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -309,6 +394,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'aaa':       return this.aaaTrie;
       case 'user-interface': return this.userIfTrie;
       case 'acl':       return this.aclTrie;
+      case 'dhcp-pool': return this.dhcpPoolTrie;
       default:          return this.userTrie;
     }
   }
@@ -458,10 +544,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
       this.swRef.getSecurityService().setDhcpEnabled(true);
+      // Bring the L3 switch's DHCP engine up too so it actually answers
+      // discovers — the security-service flag alone never reaches it.
+      this.swRef._getDHCPServerInternal().enable();
       return '';
     });
     this.systemTrie.register('undo dhcp enable', 'Disable DHCP', () => {
       this.swRef.getSecurityService().setDhcpEnabled(false);
+      this.swRef._getDHCPServerInternal().disable();
       return '';
     });
     this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', (args) => {
