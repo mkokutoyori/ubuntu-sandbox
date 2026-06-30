@@ -1896,14 +1896,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private displayInterface(sw: Switch, ifName: string): string {
     const portName = this.resolveInterfaceName(ifName) || ifName;
     const port = sw.getPort(portName);
-    const isVlanif = /^Vlanif/i.test(portName);
+    const vlanIfMatch = portName.match(/^Vlanif(\d+)$/i);
+    const isVlanif = vlanIfMatch !== null;
+    const svi = isVlanif ? sw.getSvi(parseInt(vlanIfMatch[1], 10)) : undefined;
+    const lineUp = isVlanif
+      ? (svi ? sw.isSviLineUp(svi) : false)
+      : !!(port?.isConnected());
+    const adminUp = isVlanif ? !!svi?.adminUp : !!port?.getIsUp();
     const desc = port ? (sw.getInterfaceDescription(portName) || '') : '';
-    const stateLine = port
-      ? `${portName} current state : ${port.getIsUp() ? (port.isConnected() ? 'UP' : 'DOWN') : 'Administratively DOWN'}`
-      : `${portName} current state : UP`;
-    const protoLine = port
-      ? `Line protocol current state : ${port.isConnected() ? 'UP' : 'DOWN'}`
-      : `Line protocol current state : UP`;
+    const stateLine = `${portName} current state : ${adminUp ? (lineUp ? 'UP' : 'DOWN') : 'Administratively DOWN'}`;
+    const protoLine = `Line protocol current state : ${lineUp ? 'UP' : 'DOWN'}`;
 
     if (!port && !isVlanif) return `Error: Wrong parameter found at '^' position.`;
 
@@ -1912,10 +1914,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
       protoLine,
       `Description: ${desc}`,
       `The Maximum Transmit Unit is 1500`,
-      `Internet protocol processing : disabled`,
+    ];
+    if (isVlanif && svi?.ip && svi.mask) {
+      lines.push(
+        `Internet Address is ${svi.ip}/${svi.mask.toCIDR()}`,
+        `IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${sw.getBridgeMac()}`,
+      );
+    } else {
+      lines.push(`Internet protocol processing : disabled`);
+    }
+    lines.push(
       `Input:  0 packets, 0 bytes`,
       `Output: 0 packets, 0 bytes`,
-    ];
+    );
     for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
     return lines.join('\n');
   }
@@ -2031,6 +2042,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayCurrentConfigInterface(sw: Switch, ifName: string): string {
     const portName = this.resolveInterfaceName(ifName) || ifName;
+    const vlanIfMatch = portName.match(/^Vlanif(\d+)$/i);
+    if (vlanIfMatch) {
+      const svi = sw.getSvi(parseInt(vlanIfMatch[1], 10));
+      const out = [`interface ${portName}`];
+      if (svi?.ip && svi.mask) {
+        out.push(` ip address ${svi.ip} ${svi.mask}`);
+      }
+      if (svi && !svi.adminUp) out.push(` shutdown`);
+      out.push('#');
+      return out.join('\n');
+    }
     const port = sw.getPort(portName);
     const cfg = sw.getSwitchportConfig(portName);
     if (!port || !cfg) return `Error: Wrong parameter found at '^' position.`;
