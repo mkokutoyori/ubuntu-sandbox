@@ -79,4 +79,10 @@ wait`;
     const arp = await pc.executeCommand('arp -n');
     expect(arp).toMatch(/^192\.168\.1\.2\b/m);
   });
+
+  it('su <user> -c "<network cmd>" reaches the real stack under the swapped uid', async () => {
+    await pc.executeCommand('su root -c "ping -c 1 -W 1 192.168.1.2 >/dev/null"');
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
 });

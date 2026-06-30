@@ -2060,6 +2060,26 @@ export class LinuxCommandExecutor {
     );
   }
 
+  async runAsUser<T>(username: string, fn: () => Promise<T>): Promise<T> {
+    const user = this.userMgr.getUser(username);
+    if (!user) return fn();
+    const prev = {
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+    };
+    this.userMgr.currentUser = user.username;
+    this.userMgr.currentUid = user.uid;
+    this.userMgr.currentGid = user.gid;
+    try {
+      return await fn();
+    } finally {
+      this.userMgr.currentUser = prev.user;
+      this.userMgr.currentUid = prev.uid;
+      this.userMgr.currentGid = prev.gid;
+    }
+  }
+
   private dispatchFromInterpreter(
     argv: string[],
     env?: Record<string, string>,
@@ -3430,21 +3450,6 @@ export class LinuxCommandExecutor {
       case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (n) => this.resolveServicePort(n)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
-      case 'ping':
-      case 'ping6': {
-        const isRoot = this.userMgr.currentUid === 0;
-        if (args.includes('-f') && !isRoot) {
-          return { output: 'ping: -f flood: Permission denied (privileged operation, must run as root)', exitCode: 2 };
-        }
-        const iIdx = args.indexOf('-i');
-        if (iIdx !== -1 && args[iIdx + 1]) {
-          const interval = parseFloat(args[iIdx + 1]);
-          if (!isNaN(interval) && interval < 0.2 && !isRoot) {
-            return { output: `ping: -i ${interval}: Permission denied (privileged operation, interval < 200ms requires root)`, exitCode: 2 };
-          }
-        }
-        return { output: '', exitCode: 0 };
-      }
       case 'dstat': {
         const parsed = parseDstatArgs(args);
         if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };
