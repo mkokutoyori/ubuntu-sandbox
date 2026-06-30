@@ -2877,7 +2877,64 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         this.showIpDhcpPool());
       t.register('show arp', 'Display ARP cache', () => this.showArp());
       t.register('show ip arp', 'Display IP ARP cache', () => this.showArp());
+      t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
+        if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
+          return this.showIpInterfaceBrief();
+        }
+        return this.showIpInterfaceVerbose(args.join(' '));
+      });
     }
+  }
+
+  /**
+   * IOS `show ip interface Vlan<N>` — the verbose per-SVI L3 view used
+   * for sanity checks: IP/mask, MTU, MAC, broadcast, line/protocol
+   * state, and the configured `ip helper-address` list. Falls back to a
+   * "% Invalid interface" for non-SVI names since L2 ports carry no IP.
+   */
+  private showIpInterfaceVerbose(iface: string): string {
+    const vlanIfMatch = iface.match(/^(?:vl|vlan)\s*(\d+)$/i);
+    if (!vlanIfMatch) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    const vlan = parseInt(vlanIfMatch[1], 10);
+    const svi = this.d().getSvi(vlan);
+    if (!svi) return `Vlan${vlan} is administratively down, line protocol is down (svi not configured)`;
+
+    const adminUp = svi.adminUp;
+    const lineUp = adminUp && this.d().isSviLineUp(svi);
+    const stateLine = `Vlan${vlan} is ${adminUp ? (lineUp ? 'up' : 'down') : 'administratively down'}, ` +
+      `line protocol is ${lineUp ? 'up' : 'down'}`;
+    const lines = [stateLine];
+    if (svi.ip && svi.mask) {
+      const network = svi.ip.networkAddress(svi.mask);
+      const bcast = `${network.toString().replace(/\.0$/, '')}.255`;
+      lines.push(`  Internet address is ${svi.ip}/${svi.mask.toCIDR()}`);
+      lines.push(`  Broadcast address is ${bcast}`);
+    } else {
+      lines.push('  Internet protocol processing disabled');
+    }
+    lines.push('  MTU is 1500 bytes');
+    lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac()}`);
+    if (svi.helperAddresses.length > 0) {
+      for (const h of svi.helperAddresses) {
+        lines.push(`  Helper address is ${h}`);
+      }
+    } else {
+      lines.push('  Helper address is not set');
+    }
+    lines.push('  Directed broadcast forwarding is disabled');
+    lines.push('  Outgoing access list is not set');
+    lines.push('  Inbound  access list is not set');
+    lines.push('  Proxy ARP is enabled');
+    lines.push('  Security level is default');
+    lines.push('  Split horizon is enabled');
+    lines.push('  ICMP redirects are always sent');
+    lines.push('  ICMP unreachables are always sent');
+    lines.push('  ICMP mask replies are never sent');
+    lines.push('  IP fast switching is enabled');
+    lines.push('  IP CEF switching is enabled');
+    return lines.join('\n');
   }
 
   /** IOS-style `show ip route` rendering from the Switch's L3 table. */

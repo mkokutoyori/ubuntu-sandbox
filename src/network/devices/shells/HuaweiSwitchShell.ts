@@ -2090,6 +2090,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `Internet Address is ${svi.ip}/${svi.mask.toCIDR()}`,
         `IP Sending Frames' Format is PKTFMT_ETHNT_2, Hardware address is ${sw.getBridgeMac()}`,
       );
+      for (const helper of svi.helperAddresses) {
+        lines.push(`DHCP relay server-ip ${helper}`);
+      }
     } else {
       lines.push(`Internet protocol processing : disabled`);
     }

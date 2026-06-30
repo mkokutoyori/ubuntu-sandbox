@@ -98,6 +98,17 @@ describe('Cisco L3 switch — ip helper-address relays DHCP to a central server'
     const out = await router.executeCommand('show ip dhcp binding');
     expect(out).toMatch(/10\.0\.10\.\d+/);
   });
+
+  it('show ip interface Vlan10 (verbose) liste l\'IP, la MAC et le helper', async () => {
+    const { sw } = await buildLan();
+    const out = await sw.executeCommand('show ip interface Vlan10');
+    expect(out).toMatch(/Vlan10 is up, line protocol is up/);
+    expect(out).toMatch(/Internet address is 10\.0\.10\.1\/24/);
+    expect(out).toMatch(/Broadcast address is 10\.0\.10\.255/);
+    expect(out).toMatch(/Hardware is EtherSVI/);
+    expect(out).toMatch(/Helper address is 10\.0\.100\.1/);
+    expect(out).toMatch(/MTU is 1500 bytes/);
+  });
 });
 
 describe('Huawei L3 switch — dhcp select relay + dhcp relay server-ip', () => {
@@ -155,5 +166,12 @@ describe('Huawei L3 switch — dhcp select relay + dhcp relay server-ip', () => 
     await pc1.executeCommand('dhclient eth0');
     const out = await router.executeCommand('show ip dhcp binding');
     expect(out).toMatch(/10\.0\.10\.\d+/);
+  });
+
+  it('display interface Vlanif10 montre le helper-address (DHCP relay server-ip)', async () => {
+    const { sw } = await buildLan();
+    const out = await sw.executeCommand('display interface Vlanif10');
+    expect(out).toMatch(/Internet Address is 10\.0\.10\.1\/24/);
+    expect(out).toMatch(/DHCP relay server-ip 10\.0\.100\.1/);
   });
 });
