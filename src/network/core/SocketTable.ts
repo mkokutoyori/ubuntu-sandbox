@@ -130,6 +130,73 @@ export class SocketTable {
   }
 
   /**
+   * Find-or-create a 4-tuple (active) socket entry, updating its state.
+   * Mirrors what the kernel's socket table does as a TCP connection
+   * moves through SYN_SENT → ESTABLISHED → … → TIME_WAIT, so `ss -tan`
+   * / `netstat -tan` show the live state. Listening sockets keep their
+   * `remoteAddress = '*'` and are never matched here (use {@link bind}).
+   */
+  upsertConnection(params: {
+    protocol: SocketProtocol;
+    localAddress: string;
+    localPort: number;
+    remoteAddress: string;
+    remotePort: number;
+    state: SocketState;
+    pid?: number;
+    processName?: string;
+  }): SocketEntry {
+    for (const entry of this.sockets.values()) {
+      if (entry.remoteAddress === '*') continue;
+      if (entry.protocol !== params.protocol) continue;
+      if (entry.localPort !== params.localPort) continue;
+      if (entry.remoteAddress !== params.remoteAddress) continue;
+      if (entry.remotePort !== params.remotePort) continue;
+      entry.state = params.state;
+      if (params.pid !== undefined) entry.pid = params.pid;
+      if (params.processName !== undefined) entry.processName = params.processName;
+      return entry;
+    }
+    this.idCounter++;
+    const entry: SocketEntry = {
+      id: this.idCounter,
+      protocol: params.protocol,
+      localAddress: params.localAddress,
+      localPort: params.localPort,
+      remoteAddress: params.remoteAddress,
+      remotePort: params.remotePort,
+      state: params.state,
+      pid: params.pid,
+      processName: params.processName,
+    };
+    this.sockets.set(this.idCounter, entry);
+    return entry;
+  }
+
+  /**
+   * Remove an active 4-tuple entry — invoked when a connection reaches
+   * CLOSED (the kernel removes the TCB from the socket table). The
+   * listening socket on the same port (if any) is untouched.
+   */
+  removeConnection(params: {
+    protocol: SocketProtocol;
+    localPort: number;
+    remoteAddress: string;
+    remotePort: number;
+  }): boolean {
+    for (const [id, entry] of this.sockets) {
+      if (entry.remoteAddress === '*') continue;
+      if (entry.protocol !== params.protocol) continue;
+      if (entry.localPort !== params.localPort) continue;
+      if (entry.remoteAddress !== params.remoteAddress) continue;
+      if (entry.remotePort !== params.remotePort) continue;
+      this.sockets.delete(id);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Remove any socket bound to (protocol, port) on the given local addr.
    * Returns the number of sockets removed. Used by service-lifecycle
    * reactors (e.g. `systemctl stop ssh` → unbind tcp:22).

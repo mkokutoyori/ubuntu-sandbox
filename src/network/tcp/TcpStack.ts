@@ -532,6 +532,13 @@ export class TcpStack {
     const flags = noFlags(); flags.ack = true;
     this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
     this._transition(socket, 'close-wait');
+    // Reciprocate the peer's FIN: most simulator-side applications (SSH
+    // accept loop, simple echo-style listeners) have no further data to
+    // send once the peer half-closes, so the kernel proceeds through
+    // LAST-ACK → CLOSED autonomously. Real OpenSSH does the same on
+    // SIGPIPE/EOF; without this, the server-side socket would linger in
+    // CLOSE-WAIT and appear in `ss -tan` as an orphan after every session.
+    this._initiateClose(socket);
   }
 
   private emitOpened(socket: TcpSocket): void {

@@ -109,6 +109,8 @@ import { renderW } from './linux/network/wFormatter';
 import { renderLast } from './linux/network/lastFormatter';
 import { renderLoginctl } from './linux/network/loginctlFormatter';
 import { UtmpSync } from './linux/network/UtmpSync';
+import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
+import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
@@ -194,6 +196,13 @@ export abstract class LinuxMachine extends EndHost
     logindSync.bootstrap();
     this.logindSync = logindSync;
     this.executor.attachEventBus(this.getBus(), this.id);
+    // Mirror TcpStack state transitions into the kernel-visible socket
+    // table so `ss -tan` / `netstat -tan` show ESTABLISHED → FIN-WAIT →
+    // TIME-WAIT during a real handshake/close, and feed the per-device
+    // packet log so `tcpdump` shows the SYN/SYN-ACK/ACK/FIN bytes the
+    // simulated stack actually exchanges.
+    new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
+    new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
     this.syncHostnameFiles(profile.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
