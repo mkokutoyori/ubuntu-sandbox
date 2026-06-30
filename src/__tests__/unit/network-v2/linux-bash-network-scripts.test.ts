@@ -61,4 +61,22 @@ wait`;
     const arp = await pc.executeCommand('arp -n');
     expect(arp).toMatch(/^192\.168\.1\.2\b/m);
   });
+
+  it('timeout wrapper around a network command reaches the real stack', async () => {
+    await pc.executeCommand('timeout 5 ping -c 1 -W 1 192.168.1.2 >/dev/null');
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
+
+  it('env VAR=v wrapper around a network command reaches the real stack', async () => {
+    await pc.executeCommand('env FOO=bar ping -c 1 -W 1 192.168.1.2 >/dev/null');
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
+
+  it('nohup wrapper around a network command reaches the real stack', async () => {
+    await pc.executeCommand('nohup ping -c 1 -W 1 192.168.1.2 >/dev/null');
+    const arp = await pc.executeCommand('arp -n');
+    expect(arp).toMatch(/^192\.168\.1\.2\b/m);
+  });
 });

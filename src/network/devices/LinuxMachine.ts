@@ -1054,10 +1054,14 @@ export abstract class LinuxMachine extends EndHost
     const collect = (argv: string[]): { output: string; exitCode: number } => {
       if (argv.length === 0) return { output: '', exitCode: 0 };
       if (skipBuiltins.has(argv[0])) return { output: '', exitCode: 0 };
-      const inner = LinuxMachine.extractBashCScript(argv);
-      if (inner !== null) {
-        this.executor.runScriptWithCollector(inner, collect);
+      const innerScript = LinuxMachine.extractInlineScript(argv);
+      if (innerScript !== null) {
+        this.executor.runScriptWithCollector(innerScript, collect);
         return { output: '', exitCode: 0 };
+      }
+      const innerArgv = LinuxMachine.unwrapTransparentPrefix(argv);
+      if (innerArgv !== null && innerArgv.length > 0) {
+        return collect(innerArgv);
       }
       collected.push(LinuxMachine.quoteArgv(argv));
       return { output: '', exitCode: 0 };
@@ -1072,12 +1076,47 @@ export abstract class LinuxMachine extends EndHost
     return outputs.join('\n');
   }
 
-  private static extractBashCScript(argv: string[]): string | null {
+  private static extractInlineScript(argv: string[]): string | null {
     if (argv[0] !== 'bash' && argv[0] !== 'sh') return null;
     for (let i = 1; i < argv.length; i++) {
       const a = argv[i];
       if (!a.startsWith('-') || a === '-') break;
       if (a.includes('c')) return argv[i + 1] ?? null;
+    }
+    return null;
+  }
+
+  private static unwrapTransparentPrefix(argv: string[]): string[] | null {
+    const head = argv[0];
+    if (head === 'nohup' || head === 'setsid') {
+      return argv.slice(1);
+    }
+    if (head === 'timeout') {
+      let i = 1;
+      while (i < argv.length && argv[i].startsWith('-')) {
+        if (argv[i] === '-s' || argv[i] === '-k' || argv[i] === '--signal' || argv[i] === '--kill-after') i += 2;
+        else i++;
+      }
+      if (i >= argv.length) return null;
+      return argv.slice(i + 1);
+    }
+    if (head === 'nice') {
+      let i = 1;
+      if (argv[i] === '-n' || argv[i] === '--adjustment') i += 2;
+      else if (argv[i]?.startsWith('-')) i++;
+      return argv.slice(i);
+    }
+    if (head === 'env') {
+      let i = 1;
+      while (i < argv.length) {
+        const a = argv[i];
+        if (a === '-i' || a === '--ignore-environment' || a === '-') { i++; continue; }
+        if (a === '-u' || a === '--unset') { i += 2; continue; }
+        if (a.startsWith('-')) { i++; continue; }
+        if (/^[A-Za-z_][A-Za-z_0-9]*=/.test(a)) { i++; continue; }
+        break;
+      }
+      return i < argv.length ? argv.slice(i) : null;
     }
     return null;
   }
@@ -1096,6 +1135,7 @@ export abstract class LinuxMachine extends EndHost
     if (/\n/.test(input.trim())) return true;
     if (/(^|\s)wait(\s|;|$)/.test(input)) return true;
     if (/(^|\s|;|\||&)(bash|sh)(\s+-[a-zA-Z]*c\b|\s+-[a-zA-Z]*c$)/.test(input)) return true;
+    if (/^\s*(timeout|env|nohup|setsid|nice)\s/.test(input)) return true;
     return false;
   }
 
