@@ -151,12 +151,10 @@ export function importTopology(json: TopologyExport): ImportResult {
     throw new Error('Invalid topology file: unsupported version or format');
   }
 
-  // Reset counters for fresh ID generation
   resetDeviceCounters();
   resetCounters();
   Logger.reset();
 
-  // Map old IDs to new devices
   const idMap = new Map<string, Equipment>();
   const deviceInstances = new Map<string, Equipment>();
 
@@ -171,21 +169,41 @@ export function importTopology(json: TopologyExport): ImportResult {
       device.powerOff();
     }
 
-    // Configure interface IPs
+    idMap.set(devData.id, device);
+    deviceInstances.set(device.getId(), device);
+  }
+
+  const connections: Connection[] = [];
+
+  for (const connData of json.connections) {
+    const sourceDevice = idMap.get(connData.sourceDeviceId);
+    const targetDevice = idMap.get(connData.targetDeviceId);
+    if (!sourceDevice || !targetDevice) continue;
+
+    const connection = buildConnection(
+      sourceDevice, connData.sourceInterfaceId,
+      targetDevice, connData.targetInterfaceId,
+      connData.type,
+    );
+    if (connection) connections.push(connection);
+  }
+
+  for (const devData of json.devices) {
+    const device = idMap.get(devData.id);
+    if (!device) continue;
+
     for (const ifConfig of devData.interfaces) {
-      if (ifConfig.ipAddress && ifConfig.subnetMask) {
+      if (!ifConfig.ipAddress || !ifConfig.subnetMask) continue;
+      const ip = new IPAddress(ifConfig.ipAddress);
+      const mask = new SubnetMask(ifConfig.subnetMask);
+      if (device instanceof EndHost || device instanceof Router) {
+        device.configureInterface(ifConfig.name, ip, mask);
+      } else {
         const port = device.getPort(ifConfig.name);
-        if (port) {
-          port.configureIP(
-            new IPAddress(ifConfig.ipAddress),
-            new SubnetMask(ifConfig.subnetMask),
-          );
-        }
+        if (port) port.configureIP(ip, mask);
       }
     }
 
-    // Restore L3 configuration after the interfaces are addressed —
-    // addStaticRoute() verifies next-hop reachability against port subnets.
     if (devData.defaultGateway && device instanceof EndHost) {
       try {
         device.setDefaultGateway(new IPAddress(devData.defaultGateway));
@@ -203,25 +221,6 @@ export function importTopology(json: TopologyExport): ImportResult {
         } catch { /* malformed route in file — skip */ }
       }
     }
-
-    idMap.set(devData.id, device);
-    deviceInstances.set(device.getId(), device);
-  }
-
-  // Recreate connections
-  const connections: Connection[] = [];
-
-  for (const connData of json.connections) {
-    const sourceDevice = idMap.get(connData.sourceDeviceId);
-    const targetDevice = idMap.get(connData.targetDeviceId);
-    if (!sourceDevice || !targetDevice) continue;
-
-    const connection = buildConnection(
-      sourceDevice, connData.sourceInterfaceId,
-      targetDevice, connData.targetInterfaceId,
-      connData.type,
-    );
-    if (connection) connections.push(connection);
   }
 
   return {
