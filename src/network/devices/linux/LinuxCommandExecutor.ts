@@ -43,6 +43,14 @@ import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
 import { cmdLspci } from './commands/hw/Lspci';
 import { cmdLsusb } from './commands/hw/Lsusb';
 import { cmdLscpu } from './commands/hw/Lscpu';
+import { cmdFdisk } from './commands/hw/Fdisk';
+import { cmdHdparm } from './commands/hw/Hdparm';
+import { cmdDmidecode } from './commands/hw/Dmidecode';
+import { cmdLshw } from './commands/hw/Lshw';
+import { cmdHwinfo } from './commands/hw/Hwinfo';
+import { cmdBlkid } from './commands/hw/Blkid';
+import { cmdParted } from './commands/hw/Parted';
+import { cmdLsblk as cmdLsblkNew } from './commands/hw/Lsblk';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
@@ -3440,7 +3448,7 @@ export class LinuxCommandExecutor {
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);
-      case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
+      case 'lsblk': return cmdLsblkNew(this.hardware, args);
       case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
@@ -3477,6 +3485,13 @@ export class LinuxCommandExecutor {
       case 'lscpu': return cmdLscpu(this.hardware.cpu, args);
       case 'lspci': return cmdLspci(this.hardware.pciBus, args);
       case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
+      case 'fdisk': return cmdFdisk(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'hdparm': return cmdHdparm(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'dmidecode': return cmdDmidecode(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'lshw': return cmdLshw(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'hwinfo': return cmdHwinfo(this.hardware, args);
+      case 'blkid': return cmdBlkid(this.hardware, args);
+      case 'parted': return cmdParted(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {

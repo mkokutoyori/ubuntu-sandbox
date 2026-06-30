@@ -18,7 +18,9 @@ import { Logger } from '@/network/core/Logger';
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function setupHardwarePC() {
-  return new LinuxPC('HWHost', 0, 0);
+  const pc = new LinuxPC('linux-pc', 'HWHost');
+  pc.setHostname('HWHost');
+  return pc;
 }
 
 // ═══════════════════════════════════════════════════════════════════

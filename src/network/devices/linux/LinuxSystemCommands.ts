@@ -189,14 +189,14 @@ export function cmdFree(args: string[], memory: MemoryProfile): string {
     if (a === '-c' || a === '--count') {
       const v = args[++i];
       if (!v || !/^\d+$/.test(v) || parseInt(v, 10) < 1) {
-        return `free: option requires an argument: '${a}': '${v ?? ''}'`;
+        return `free: invalid count value '${v ?? ''}'`;
       }
       continue;
     }
     if (a === '-s' || a === '--seconds') {
       const v = args[++i];
       if (!v || !/^\d+(?:\.\d+)?$/.test(v)) {
-        return `free: seconds argument 'failed to be parsed': '${v ?? ''}'`;
+        return `free: invalid seconds value '${v ?? ''}'`;
       }
       continue;
     }
