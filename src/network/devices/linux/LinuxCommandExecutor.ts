@@ -40,6 +40,9 @@ import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
+import { cmdLspci } from './commands/hw/Lspci';
+import { cmdLsusb } from './commands/hw/Lsusb';
+import { cmdLscpu } from './commands/hw/Lscpu';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
@@ -143,6 +146,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   // Networking
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
@@ -3217,9 +3221,26 @@ export class LinuxCommandExecutor {
 
       // Hostname
       case 'hostname': {
-        if (args[0]) return { output: args[0], exitCode: 0 };
-        const hn = this.vfs.readFile('/etc/hostname');
-        return { output: (hn ?? 'localhost').trim(), exitCode: 0 };
+        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const valid = new Set(['-s', '--short', '-f', '--fqdn', '-i', '--ip-address', '-d', '--domain', '-A', '--all-fqdns', '-I', '--all-ip-addresses']);
+        for (const a of args) {
+          if (a.startsWith('-') && !valid.has(a)) return { output: `hostname: unrecognized option: ${a}`, exitCode: 1 };
+        }
+        if (args.includes('-s') || args.includes('--short')) return { output: hn.split('.')[0], exitCode: 0 };
+        if (args.includes('-d') || args.includes('--domain')) return { output: hn.includes('.') ? hn.split('.').slice(1).join('.') : '', exitCode: 0 };
+        if (args.includes('-f') || args.includes('--fqdn')) return { output: hn, exitCode: 0 };
+        if (args.includes('-i') || args.includes('--ip-address')) return { output: '127.0.1.1', exitCode: 0 };
+        if (args.includes('-I') || args.includes('--all-ip-addresses')) return { output: '127.0.1.1', exitCode: 0 };
+        if (args.includes('-A') || args.includes('--all-fqdns')) return { output: hn, exitCode: 0 };
+        if (args.length > 0 && !args[0].startsWith('-')) {
+          this.vfs.writeFile('/etc/hostname', args[0] + '\n');
+          return { output: '', exitCode: 0 };
+        }
+        return { output: hn, exitCode: 0 };
+      }
+      case 'arch': {
+        if (args.length > 0) return { output: `arch: extra operand '${args[0]}'`, exitCode: 1 };
+        return { output: this.hardware.cpu.architecture, exitCode: 0 };
       }
 
       // history — command history management
@@ -3448,7 +3469,9 @@ export class LinuxCommandExecutor {
         if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
-      case 'lscpu': return { output: this.hardware.cpu.toLscpu(), exitCode: 0 };
+      case 'lscpu': return cmdLscpu(this.hardware.cpu, args);
+      case 'lspci': return cmdLspci(this.hardware.pciBus, args);
+      case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {

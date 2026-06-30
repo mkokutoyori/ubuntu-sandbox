@@ -73,6 +73,10 @@ export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
  */
 export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
   const seconds = lifecycle.uptimeSeconds();
+  const valid = new Set(['-p', '--pretty', '-s', '--since', '-h', '--help', '-V', '--version']);
+  for (const a of args) {
+    if (a.startsWith('-') && !valid.has(a)) return `uptime: invalid option -- '${a.replace(/^-+/, '')}'`;
+  }
   if (args.includes('-p') || args.includes('--pretty')) {
     return prettyUptime(Math.floor(seconds / 60));
   }
@@ -90,6 +94,20 @@ export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
  * and `/proc/sys/kernel/*`.
  */
 export function cmdUname(args: string[], hostname: string, kernel: KernelInfo): string {
+  const validShort = new Set(['a', 's', 'n', 'r', 'v', 'm', 'p', 'i', 'o']);
+  for (const a of args) {
+    if (a === '-' || !a.startsWith('-')) continue;
+    if (a.startsWith('--')) {
+      const long = a.slice(2);
+      if (!['all', 'kernel-name', 'nodename', 'kernel-release', 'kernel-version', 'machine', 'processor', 'hardware-platform', 'operating-system', 'help', 'version'].includes(long)) {
+        return `uname: unrecognized option '${a}'`;
+      }
+      continue;
+    }
+    for (const ch of a.slice(1)) {
+      if (!validShort.has(ch)) return `uname: invalid option -- '${ch}'`;
+    }
+  }
   const flags = args.filter(a => a.startsWith('-')).join('').replace(/-/g, '');
   const all = flags.includes('a');
   const want = (f: string): boolean => all || flags.includes(f);

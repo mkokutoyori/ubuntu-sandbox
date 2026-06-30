@@ -184,6 +184,23 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
  * so it stays coherent with `/proc/meminfo` and the hardware inventory.
  */
 export function cmdFree(args: string[], memory: MemoryProfile): string {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-c' || a === '--count') {
+      const v = args[++i];
+      if (!v || !/^\d+$/.test(v) || parseInt(v, 10) < 1) {
+        return `free: option requires an argument: '${a}': '${v ?? ''}'`;
+      }
+      continue;
+    }
+    if (a === '-s' || a === '--seconds') {
+      const v = args[++i];
+      if (!v || !/^\d+(?:\.\d+)?$/.test(v)) {
+        return `free: seconds argument 'failed to be parsed': '${v ?? ''}'`;
+      }
+      continue;
+    }
+  }
   const human = args.includes('-h') || args.includes('--human-readable');
   const wide = args.includes('-w') || args.includes('--wide');
   const total = args.includes('-t') || args.includes('--total');
