@@ -339,7 +339,7 @@ export abstract class EndHost extends Equipment {
     const now = Date.now();
     let purged = false;
     for (const [ip, entry] of this.arpTable) {
-      if (entry.type === 'static') continue;
+      if (entry.type !== 'failed') continue;
       if (now - entry.timestamp > ARP_GC_STALE_TIME_MS) {
         this.arpTable.delete(ip);
         purged = true;
