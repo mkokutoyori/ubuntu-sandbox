@@ -33,6 +33,7 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
+import { IP_PROTO_VRRP } from '../vrrp/types';
 import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
@@ -1086,6 +1087,18 @@ export abstract class Switch extends Equipment {
     // but still allowed to flood, so `intercept` returns false for it.
     if (this.svi.intercept(ingressVlan, portName, frame)) {
       return;
+    }
+    // ─── Step 2.6: VRRP advertisement snoop (RFC 5798) ─────────
+    // Multicast VRRP packets on 224.0.0.18 must reach the local
+    // agent whichever Vlanif they arrived on, so the RFC state
+    // machine on both switches sees the peer and one of them
+    // stays Master while the other becomes Backup. The frame keeps
+    // flooding the VLAN normally afterwards.
+    if (this._vrrpAgent && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip && ip.type === 'ipv4' && ip.protocol === IP_PROTO_VRRP) {
+        this._vrrpAgent.handleIp(`Vlanif${ingressVlan}`, ip.sourceIP, ip);
+      }
     }
 
     // ─── Step 3: Forwarding Decision ────────────────────────────

@@ -13,7 +13,7 @@
  *    FHRP: a stable gateway MAC across failovers).
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
@@ -142,5 +142,83 @@ describe('Huawei L3 switch — VRRP on Vlanif SVI', () => {
     await pc1.executeCommand('ping -c 1 10.0.10.1');
     const arpOut = await pc1.executeCommand('arp -n');
     expect(arpOut).toMatch(/10\.0\.10\.1\s+.*00:00:5e:00:01:01/);
+  });
+});
+
+describe('L3 switches paire — VRRP failover Master/Backup', () => {
+  /**
+   * Two Huawei L3 switches on the same VLAN, VRRP group 1 shared. The
+   * higher-priority switch owns the VIP as Master; the peer stays
+   * Backup and only takes over when the Master's SVI goes down.
+   * A PC in the VLAN uses the VIP as its gateway — its ARP entry for
+   * the VIP is the virtual MAC and survives the failover.
+   */
+  async function buildRedundantLan() {
+    const swA = new HuaweiSwitch('switch-huawei', 'SW-A', 8, 0, 0);
+    const swB = new HuaweiSwitch('switch-huawei', 'SW-B', 8, 0, 0);
+    const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
+
+    // Trunk between the two switches carries VLAN 10; PC1 sits on
+    // SW-A's access port.
+    new Cable('trunk').connect(
+      swA.getPort('GigabitEthernet0/0/2')!,
+      swB.getPort('GigabitEthernet0/0/2')!,
+    );
+    new Cable('c1').connect(pc1.getPorts()[0], swA.getPort('GigabitEthernet0/0/1')!);
+    pc1.getPorts()[0].configureIP(new IPAddress('10.0.10.10'), new SubnetMask('255.255.255.0'));
+    pc1.setDefaultGateway(new IPAddress('10.0.10.1'));
+
+    const cfg = (sw: HuaweiSwitch, ip: string, prio: number) => [
+      'system-view',
+      'vlan batch 10',
+      'interface GigabitEthernet0/0/1',
+      'port link-type access', 'port default vlan 10', 'quit',
+      'interface GigabitEthernet0/0/2',
+      'port link-type trunk', 'port trunk allow-pass vlan 10', 'quit',
+      'interface Vlanif10',
+      `ip address ${ip} 255.255.255.0`, 'undo shutdown',
+      'vrrp vrid 1 virtual-ip 10.0.10.1',
+      `vrrp vrid 1 priority ${prio}`,
+      'vrrp vrid 1 preempt-mode',
+      'quit', 'quit',
+    ];
+    for (const cmd of cfg(swA, '10.0.10.2', 200)) await swA.executeCommand(cmd);
+    for (const cmd of cfg(swB, '10.0.10.3', 100)) await swB.executeCommand(cmd);
+    return { swA, swB, pc1 };
+  }
+
+  it('SW-A (priority 200) reste Master ; SW-B (priority 100) passe Backup', async () => {
+    const { swA, swB } = await buildRedundantLan();
+    const a = swA.getVrrpAgent().listGroups()[0];
+    const b = swB.getVrrpAgent().listGroups()[0];
+    expect(a.state).toBe('master');
+    expect(b.state).toBe('backup');
+  });
+
+  it('display vrrp diverge côté Master et Backup', async () => {
+    const { swA, swB } = await buildRedundantLan();
+    const outA = await swA.executeCommand('display vrrp');
+    const outB = await swB.executeCommand('display vrrp');
+    expect(outA).toMatch(/State : Master/);
+    expect(outB).toMatch(/State : Backup/);
+  });
+
+  it('failover : shutdown Vlanif10 sur le Master → SW-B devient Master', async () => {
+    const { swA, swB } = await buildRedundantLan();
+    for (const cmd of [
+      'system-view', 'interface Vlanif10', 'shutdown', 'quit', 'quit',
+    ]) await swA.executeCommand(cmd);
+    // SW-A's group returns to Init (its Vlanif is down).
+    expect(swA.getVrrpAgent().listGroups()[0].state).toBe('init');
+    // SW-B stops hearing Master hellos → after the master-down
+    // interval (3 × advert + skew ≈ 3.6s at priority 100), it
+    // elects itself. Fast-forward the clock past that window and
+    // drive the expiry sweep.
+    const now = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(now + 5_000);
+    (swB.getVrrpAgent() as unknown as { expireDue(): void }).expireDue();
+    expect(swB.getVrrpAgent().listGroups()[0].state).toBe('master');
+    vi.useRealTimers();
   });
 });
