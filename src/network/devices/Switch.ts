@@ -744,6 +744,9 @@ export abstract class Switch extends Equipment {
       if (vlan) vlan.ports.add(portName);
     }
 
+    const dtp = (this as unknown as { getDtpAgent?: () => { setAdminMode(p: string, m: string): void } }).getDtpAgent?.();
+    dtp?.setAdminMode(portName, mode === 'trunk' ? 'trunk' : 'access');
+
     Logger.info(this.id, 'switch:switchport-mode', `${this.name}: ${portName} set to ${mode}`);
     return true;
   }

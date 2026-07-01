@@ -30,6 +30,8 @@ import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
+import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -152,6 +154,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly doskey: DoskeyTable = new DoskeyTable();
   /** Per-device PowerShell shim state (functions, aliases, vars). */
   readonly psShimState: PsShimState = createShimState();
+  /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
+  private psInterpreter: PSInterpreter | null = null;
+
+  getPowerShellInterpreter(): PSInterpreter {
+    if (!this.psInterpreter) {
+      this.psInterpreter = new PSInterpreter(createWindowsPSProviders(this, {
+        registry: this.registry,
+        eventLog: this.eventLog,
+        network: {
+          extraIPs: this.extraIPs,
+          extraRoutes: this.extraRoutes,
+          adapterOverrides: this.adapterOverrides,
+          dynamicFirewallRules: this.dynamicFirewallRules,
+          networkProfiles: this.networkProfiles,
+        },
+        vpn: { vpnConnections: this.vpnConnections },
+      }));
+    }
+    return this.psInterpreter;
+  }
   /** Reactive consumer: account/group/logon events → Security event log. */
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
@@ -884,6 +906,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
+          runFullPs: (code) => this.getPowerShellInterpreter().execute(code),
         }, args);
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;

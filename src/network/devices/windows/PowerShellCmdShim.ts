@@ -23,6 +23,14 @@ export interface PsCmdShimContext {
   executeCmdCommand(line: string): Promise<string>;
   /** Persistent shim state across `powershell -Command` invocations. */
   shimState?: PsShimState;
+  /**
+   * When present, cmdlet-shaped tokens (Verb-Noun) unknown to the shim
+   * are routed to the full PowerShell runtime instead of falling back
+   * to cmd.exe. Callers should reuse the same interpreter across shim
+   * invocations so `$vars`, aliases and functions defined in previous
+   * -Command lines persist.
+   */
+  runFullPs?(code: string): string | Promise<string>;
 }
 
 export interface PsShimState {
@@ -152,8 +160,16 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
     return evalStatement(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
   }
 
+  if (ctx.runFullPs && looksLikeCmdlet(headWord)) {
+    return String(await ctx.runFullPs(stmt)).replace(/\s+$/, '');
+  }
+
   // Fall through to cmd.exe (covers ssh, hostname, etc.).
   return (await ctx.executeCmdCommand(stmt)).trim();
+}
+
+function looksLikeCmdlet(word: string): boolean {
+  return /^[A-Za-z]+-[A-Za-z][\w-]*$/.test(word);
 }
 
 async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext): Promise<string> {
@@ -182,6 +198,10 @@ async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext)
   if (target) {
     const rest = expr.slice(head.length).trim();
     return evalExpression(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
+  }
+
+  if (ctx.runFullPs && looksLikeCmdlet(head)) {
+    return String(await ctx.runFullPs(expr)).replace(/\s+$/, '');
   }
 
   // External command via cmd.exe
