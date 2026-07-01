@@ -44,6 +44,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];
   private selectedVlan: number | null = null;
+  private hsrpVersionByIface = new Map<string, 1 | 2>();
 
   // ─── FSM (switch-specific mode hierarchy) ────────────────────────
   protected readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
@@ -639,11 +640,21 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return '% Incomplete command.';
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group) || group < 0 || group > 255) return '% Invalid HSRP group.';
       const iface = `Vlanif${vlan}`;
       const agent = this.d().getHsrpAgent();
-      agent.ensureGroup(iface, group);
+      if (args[0] === 'version') {
+        const v = parseInt(args[1] ?? '', 10);
+        if (v !== 1 && v !== 2) return '% Invalid version (1..2).';
+        this.hsrpVersionByIface.set(iface, v as 1 | 2);
+        agent.setVersion(iface, v as 1 | 2);
+        return '';
+      }
+      const version = this.hsrpVersionByIface.get(iface) ?? 1;
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group)) return '% Invalid HSRP group.';
+      const maxGrp = version === 2 ? 4095 : 255;
+      if (group < 0 || group > maxGrp) return '% Invalid HSRP group.';
+      agent.ensureGroup(iface, group, version);
       switch (args[1]) {
         case 'ip':
           if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
@@ -3162,7 +3173,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`${iface} - Group ${g.group}`);
       lines.push(`  State is ${stateStr}`);
       lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
-      lines.push(`  Virtual MAC address is ${hsrpVirtualMac(g.group, g.version)}`);
+      lines.push(`  Virtual MAC address is ${hsrpVirtualMac(g.group, g.version)} (v${g.version} default)`);
       if (effPrio === g.priority) {
         lines.push(`  Priority ${g.priority}`);
       } else {
