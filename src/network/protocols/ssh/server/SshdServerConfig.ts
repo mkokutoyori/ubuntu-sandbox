@@ -166,6 +166,50 @@ function globMatch(pattern: string, value: string): boolean {
   return new RegExp(reSrc).test(value);
 }
 
+function ipv4ToUint32(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let acc = 0;
+  for (const p of parts) {
+    const n = Number.parseInt(p, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
+    acc = ((acc << 8) | n) >>> 0;
+  }
+  return acc;
+}
+
+function singleAddressMatches(pattern: string, ip: string): boolean {
+  if (pattern === '*' || pattern === 'any') return true;
+  if (pattern === ip) return true;
+  if (pattern.includes('/')) {
+    const [base, bitsStr] = pattern.split('/');
+    const bits = Number.parseInt(bitsStr, 10);
+    const a = ipv4ToUint32(base);
+    const b = ipv4ToUint32(ip);
+    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (a & mask) === (b & mask);
+  }
+  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
+  return false;
+}
+
+function addressListMatches(patternList: string, ip: string): boolean {
+  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  let anyPositive = false;
+  let matchedPositive = false;
+  for (const t of tokens) {
+    if (t.startsWith('!')) {
+      if (singleAddressMatches(t.slice(1), ip)) return false;
+    } else {
+      anyPositive = true;
+      if (singleAddressMatches(t, ip)) matchedPositive = true;
+    }
+  }
+  return anyPositive ? matchedPositive : true;
+}
+
 export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly ports: readonly number[];
   readonly listenAddresses: readonly string[];
@@ -441,7 +485,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
         case 'Group':      if (!(ctx.groups ?? []).some(g => globMatch(c.value, g))) return false; break;
         case 'Host':       if (!ctx.host || !globMatch(c.value, ctx.host)) return false; break;
         case 'Address':
-        case 'LocalAddress': if (!ctx.address || !globMatch(c.value, ctx.address)) return false; break;
+        case 'LocalAddress': if (!ctx.address || !addressListMatches(c.value, ctx.address)) return false; break;
         case 'LocalPort':  if (ctx.localPort === undefined || String(ctx.localPort) !== c.value) return false; break;
       }
     }

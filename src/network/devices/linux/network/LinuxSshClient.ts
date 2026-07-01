@@ -865,7 +865,6 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // path that denies the synth SYN drops the packet silently, so the
   // client times out (no SYN-ACK, no RST).
   if (transitTcpAclVerdict(opts.sourceIp, destIp, port) === 'deny') {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
       exitCode: 255,
@@ -873,10 +872,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  // Inbound firewall (iptables/ufw): synth a SYN packet, ask filter.
   const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
   if (verdict === 'drop' || verdict === 'reject') {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: verdict === 'reject'
         ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
