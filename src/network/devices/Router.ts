@@ -245,6 +245,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return e;
   })();
 
+  protected isIcmpUnreachablesEnabled(ifName: string): boolean {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    if (!sec) return true;
+    return !sec.ifaceFlags(ifName).noUnreachables;
+  }
+
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
 
@@ -1160,6 +1168,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-in',
           `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+        if (this.isIcmpUnreachablesEnabled(inPort)) {
+          this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
+        }
         return;
       }
     }
@@ -1502,6 +1513,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
+        if (this.isIcmpUnreachablesEnabled(inPort)) {
+          this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
+        }
         return;
       }
     }
