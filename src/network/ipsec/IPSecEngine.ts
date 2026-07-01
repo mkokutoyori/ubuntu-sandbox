@@ -37,6 +37,7 @@ import {
   aesCbcEncrypt, aesCbcDecrypt,
 } from '@/crypto';
 import { encodePacket, decodePacket } from './packetCodec';
+import { computeOuterTos } from './DscpTunnelMarker';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -2275,28 +2276,7 @@ export class IPSecEngine implements IProtocolEngine {
    *   - ECN  (bits 1-0): per RFC 6040
    */
   private computeOuterTos(innerPkt: IPv4Packet, sa: IPSec_SA): number {
-    const innerDscp = (innerPkt.tos >> 2) & 0x3f; // bits 7-2
-    const innerEcn  = innerPkt.tos & 0x03;         // bits 1-0
-
-    let outerDscp: number;
-    switch (sa.dscpEcnConfig.dscpMode) {
-      case 'copy':
-        outerDscp = innerDscp;
-        break;
-      case 'set':
-        outerDscp = sa.dscpEcnConfig.dscpValue & 0x3f;
-        break;
-      case 'map':
-        outerDscp = sa.dscpEcnConfig.dscpMap.get(innerDscp) ?? innerDscp;
-        break;
-      default:
-        outerDscp = innerDscp;
-    }
-
-    // RFC 6040: copy ECN if enabled, otherwise clear
-    const outerEcn = sa.dscpEcnConfig.ecnEnabled ? innerEcn : 0;
-
-    return (outerDscp << 2) | outerEcn;
+    return computeOuterTos(innerPkt.tos, sa.dscpEcnConfig);
   }
 
   /**
