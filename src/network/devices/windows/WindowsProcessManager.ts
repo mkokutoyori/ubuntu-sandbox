@@ -128,6 +128,9 @@ export class WindowsProcessManager {
     this.addProcess(2400, 'LanmanWorkstation.exe', 620, 'Services', 0,
       'NT AUTHORITY\\NetworkService', 280, 8, 4096, 10000, 0.2, 'Running', '', false, true,
       ['LanmanWorkstation']);
+    this.addProcess(1088, 'sshd.exe', 620, 'Services', 0,
+      'NT AUTHORITY\\SYSTEM', 260, 12, 8192, 18000, 0.4, 'Running', 'OpenSSH SSH Server', false, true,
+      ['sshd']);
   }
 
   private addSystem(

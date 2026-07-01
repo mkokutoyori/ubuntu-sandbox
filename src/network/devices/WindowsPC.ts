@@ -242,11 +242,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
-    // Port-proxy rules announce on the bus; the projection keeps the
-    // socket table coherent so `netstat` reflects every active rule.
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
     this.portProxyTable.attachBus(bus, this.id);
+
+    this._processSocketReaperOff?.();
+    this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
+      const payload = e.payload as { pid: number; name: string };
+      const { pid, name } = payload;
+      const stack = this.getTcpStack();
+      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      for (const sock of this.socketTable.getAll()) {
+        const matchesByPid = sock.pid === pid;
+        const matchesByName = name && sock.processName === name;
+        if (!matchesByPid && !matchesByName) continue;
+        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
+      }
+      for (const s of toUnbind) {
+        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
+        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
+          stack.closeListener(s.localPort, s.localAddress);
+        }
+      }
+      stack.abortSocketsOwnedBy(pid);
+    });
   }
+
+  private _processSocketReaperOff: (() => void) | null = null;
 
   private initDefaultSockets(): void {
     // OpenSSH Server — SFTP transport
