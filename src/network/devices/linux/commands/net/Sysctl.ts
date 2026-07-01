@@ -38,17 +38,24 @@ export const sysctlCommand: LinuxCommand = {
     const wIdx = args.indexOf('-w');
     const params = wIdx !== -1 ? args.slice(wIdx + 1) : args.filter(a => !a.startsWith('-'));
 
+    const outputs: string[] = [];
     for (const param of params) {
       const [key, val] = param.split('=');
       if (key === 'net.ipv4.ip_forward') {
-        if (val !== undefined) {
-          ctx.net.setIpForward(val === '1');
-        }
+        if (val !== undefined) ctx.net.setIpForward(val === '1');
         const current = ctx.net.isIpForwardEnabled() ? '1' : '0';
-        return `net.ipv4.ip_forward = ${val ?? current}`;
+        outputs.push(`net.ipv4.ip_forward = ${val ?? current}`);
+        continue;
+      }
+      if (key === 'net.ipv4.tcp_tw_reuse') {
+        const st = (ctx.executor as unknown as { socketTable?: { setTcpTwReuse(v: boolean): void; getTcpTwReuse(): boolean } }).socketTable;
+        if (val !== undefined && st) st.setTcpTwReuse(val === '1');
+        const current = st?.getTcpTwReuse?.() ? '1' : '0';
+        outputs.push(`net.ipv4.tcp_tw_reuse = ${val ?? current}`);
+        continue;
       }
     }
 
-    return '';
+    return outputs.join('\n');
   },
 };

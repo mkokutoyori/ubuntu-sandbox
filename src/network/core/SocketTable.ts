@@ -99,10 +99,17 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
+    options?: { reuseAddr?: boolean },
   ): SocketEntry {
     const key = this.bindKey(protocol, localPort, localAddress);
     if (this.bindings.has(key)) {
-      throw new Error(`EADDRINUSE: Port ${localPort}/${protocol} already in use`);
+      const holder = this.findByBinding(protocol, localPort, localAddress);
+      const timeWaitOnly = holder !== undefined && holder.state === 'TIME_WAIT';
+      const reuse = options?.reuseAddr === true || this.twReuseEnabled;
+      if (!timeWaitOnly || !reuse) {
+        throw new Error(`EADDRINUSE: Port ${localPort}/${protocol} already in use`);
+      }
+      this.evictTimeWait(holder);
     }
 
     this.idCounter++;
@@ -182,6 +189,58 @@ export class SocketTable {
     if (!entry) return false;
     entry.state = state;
     return true;
+  }
+
+  private twReuseEnabled = false;
+  private twTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private twDurationMs = 60_000;
+
+  setTcpTwReuse(enabled: boolean): void {
+    this.twReuseEnabled = enabled;
+  }
+
+  getTcpTwReuse(): boolean {
+    return this.twReuseEnabled;
+  }
+
+  setTimeWaitDuration(ms: number): void {
+    if (Number.isFinite(ms) && ms >= 0) this.twDurationMs = ms;
+  }
+
+  startTimeWait(socketId: number, durationMs?: number): boolean {
+    const entry = this.sockets.get(socketId);
+    if (!entry) return false;
+    entry.state = 'TIME_WAIT';
+    const existing = this.twTimers.get(socketId);
+    if (existing) clearTimeout(existing);
+    const ms = durationMs ?? this.twDurationMs;
+    const timer = setTimeout(() => {
+      this.twTimers.delete(socketId);
+      const held = this.sockets.get(socketId);
+      if (held && held.state === 'TIME_WAIT') this.evictTimeWait(held);
+    }, ms);
+    if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+      (timer as unknown as { unref: () => void }).unref();
+    }
+    this.twTimers.set(socketId, timer);
+    return true;
+  }
+
+  private findByBinding(protocol: SocketProtocol, port: number, localAddress: string): SocketEntry | undefined {
+    for (const s of this.sockets.values()) {
+      if (s.protocol === protocol && s.localPort === port && s.localAddress === localAddress) return s;
+    }
+    for (const s of this.sockets.values()) {
+      if (s.protocol === protocol && s.localPort === port) return s;
+    }
+    return undefined;
+  }
+
+  private evictTimeWait(entry: SocketEntry): void {
+    const timer = this.twTimers.get(entry.id);
+    if (timer) { clearTimeout(timer); this.twTimers.delete(entry.id); }
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+    this.sockets.delete(entry.id);
   }
 
   /**
