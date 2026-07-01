@@ -246,6 +246,7 @@ export abstract class LinuxMachine extends EndHost
     this.initSshFiles();
 
     this.attachSshTcpListeners();
+    this.attachProcessSocketReaper();
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
     this.startCronTicker();
@@ -412,10 +413,14 @@ export abstract class LinuxMachine extends EndHost
         this._sshdActivePorts.delete(port);
       }
     }
+    const sshdPid = this.socketTable.getAll().find((s) => s.processName === 'sshd')?.pid ?? null;
     for (const port of desired) {
       if (this._sshdActivePorts.has(port)) continue;
       stack.listen(port, {
-        onAccept: (socket) => this.getSshServerHandler().register(socket, socket.remoteIp),
+        onAccept: (socket) => {
+          if (sshdPid !== null) stack.setSocketOwner(socket, sshdPid);
+          this.getSshServerHandler().register(socket, socket.remoteIp);
+        },
       });
       this._sshdActivePorts.add(port);
     }
@@ -427,6 +432,30 @@ export abstract class LinuxMachine extends EndHost
       stack.closeListener(port, '0.0.0.0');
     }
     this._sshdActivePorts.clear();
+  }
+
+  private attachProcessSocketReaper(): void {
+    const bus = this.getBus();
+    bus.subscribe('linux.process.exited', (e) => {
+      const payload = e.payload as { pid: number; comm: string };
+      const { pid, comm } = payload;
+      const stack = this.getTcpStack();
+      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      for (const sock of this.socketTable.getAll()) {
+        const matchesByPid = sock.pid === pid;
+        const matchesByName = comm && sock.processName === comm;
+        if (!matchesByPid && !matchesByName) continue;
+        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
+      }
+      for (const s of toUnbind) {
+        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
+        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
+          stack.closeListener(s.localPort, s.localAddress);
+          this._sshdActivePorts.delete(s.localPort);
+        }
+      }
+      stack.abortSocketsOwnedBy(pid);
+    });
   }
 
   // ─── Reactive surface for cross-device commands (ssh, scp, sftp) ─────

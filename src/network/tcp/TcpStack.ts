@@ -68,6 +68,12 @@ export class TcpSocket {
   recvBuffer = '';
   /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
   timeWaitTimer: symbol | null = null;
+  /**
+   * PID of the userspace process that owns this socket. Set by the
+   * listener via `stack.setSocketOwner(...)` so `abortSocketsOwnedBy(pid)`
+   * can slam-close everything when the process dies.
+   */
+  ownerPid: number | null = null;
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -214,6 +220,20 @@ export class TcpStack {
 
   listSockets(): TcpSocket[] {
     return Array.from(this.sockets.values()).sort((a, b) => a.key().localeCompare(b.key()));
+  }
+
+  abortSocketsOwnedBy(pid: number): number {
+    let count = 0;
+    for (const sock of Array.from(this.sockets.values())) {
+      if (sock.ownerPid !== pid) continue;
+      this._teardown(sock, 'shutdown');
+      count++;
+    }
+    return count;
+  }
+
+  setSocketOwner(socket: TcpSocket, pid: number): void {
+    socket.ownerPid = pid;
   }
 
   connect(remoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
