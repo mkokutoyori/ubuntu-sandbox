@@ -158,7 +158,22 @@ export class TcpStack {
   private enabled = true;
   private running = false;
   private nextEphemeralPort = 49152;
+  private ephemeralMin = 49152;
+  private ephemeralMax = 65535;
   private startedAtMs = Date.now();
+
+  setEphemeralRange(min: number, max: number): void {
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max > 65535 || min > max) {
+      throw new Error(`Invalid ephemeral range: [${min}, ${max}]`);
+    }
+    this.ephemeralMin = min;
+    this.ephemeralMax = max;
+    this.nextEphemeralPort = min;
+  }
+
+  getEphemeralRange(): { min: number; max: number } {
+    return { min: this.ephemeralMin, max: this.ephemeralMax };
+  }
 
   private readonly timers = new TimerSet(() => this.getScheduler());
 
@@ -243,7 +258,11 @@ export class TcpStack {
     const localIpAddr = egress.port.getIPAddress();
     if (!localIpAddr) { this.dropped(remoteIp, remotePort, 'no-source-ip'); return null; }
     const localIp = localIpAddr.toString();
-    const localPort = this.nextEphemeral();
+    const localPort = this.nextEphemeral(localIp);
+    if (localPort === -1) {
+      this.dropped(remoteIp, remotePort, 'no-ephemeral');
+      return null;
+    }
     const socket = new TcpSocket(this, localIp, localPort, remoteIp, remotePort);
     if (opts.onOpen) socket.onOpen(opts.onOpen);
     if (opts.onData) socket.onData(opts.onData);
@@ -682,14 +701,41 @@ export class TcpStack {
     return this.listeners.get(makeListenerKey('0.0.0.0', port));
   }
 
-  private nextEphemeral(): number {
-    const port = this.nextEphemeralPort;
-    this.nextEphemeralPort++;
-    if (this.nextEphemeralPort > 65535) this.nextEphemeralPort = 49152;
-    return port;
+  private nextEphemeral(localIp?: string): number {
+    const size = this.ephemeralMax - this.ephemeralMin + 1;
+    const inUse = new Set<number>();
+    for (const s of this.sockets.values()) {
+      if (localIp && s.localIp !== localIp) continue;
+      inUse.add(s.localPort);
+    }
+    for (const l of this.listeners.values()) inUse.add(l.localPort);
+    let start = this.nextEphemeralPort;
+    if (start < this.ephemeralMin || start > this.ephemeralMax) start = this.ephemeralMin;
+    for (let i = 0; i < size; i++) {
+      const port = this.ephemeralMin + ((start - this.ephemeralMin + i) % size);
+      if (!inUse.has(port)) {
+        this.nextEphemeralPort = port + 1;
+        if (this.nextEphemeralPort > this.ephemeralMax) this.nextEphemeralPort = this.ephemeralMin;
+        return port;
+      }
+    }
+    return -1;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum'): void {
+  hasFreeEphemeralPort(localIp?: string): boolean {
+    const inUse = new Set<number>();
+    for (const s of this.sockets.values()) {
+      if (localIp && s.localIp !== localIp) continue;
+      if (s.localPort >= this.ephemeralMin && s.localPort <= this.ephemeralMax) inUse.add(s.localPort);
+    }
+    for (const l of this.listeners.values()) {
+      if (l.localPort >= this.ephemeralMin && l.localPort <= this.ephemeralMax) inUse.add(l.localPort);
+    }
+    const size = this.ephemeralMax - this.ephemeralMin + 1;
+    return inUse.size < size;
+  }
+
+  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral'): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {

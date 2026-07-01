@@ -63,7 +63,7 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   destinationIp: string;
   sourcePort: number;
   destinationPort: number;
-  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum';
+  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral';
 }
 
 export type TcpDomainEvent =

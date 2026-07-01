@@ -181,6 +181,7 @@ export abstract class LinuxMachine extends EndHost
     // Wire the socket table before the event bus: the reactive
     // ServicePortProjection created in attachEventBus needs the table.
     this.socketTable.setEphemeralRange(32768, 60999);
+    this.tcpv2.setEphemeralRange(32768, 60999);
     this.initDefaultSockets(profile.isServer);
     this.executor.setSocketTable(this.socketTable);
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
@@ -190,6 +191,8 @@ export abstract class LinuxMachine extends EndHost
       if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);
       return this.tcpProbeSync(new IPAddress(ip), port);
     });
+    this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
+    this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);
     utmpSync.bootstrap();
     if (this.executor.lifecycle.bootedAt()) {

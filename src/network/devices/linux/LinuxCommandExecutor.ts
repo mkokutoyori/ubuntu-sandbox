@@ -1187,6 +1187,11 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 1 };
       }
     }
+    if (!this.hasFreeEphemeralPort()) {
+      const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
+      if (verbose) return { output: msg, exitCode: 1 };
+      return { output: '', exitCode: 1 };
+    }
     const ok = this.tcpProbe ? this.tcpProbe(found.ip, port) : true;
     if (!ok) {
       if (verbose) {
@@ -1592,6 +1597,24 @@ export class LinuxCommandExecutor {
   private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
   setTcpProbe(probe: (ip: string, port: number) => boolean): void {
     this.tcpProbe = probe;
+  }
+
+  private setStackEphemeralRangeFn: ((min: number, max: number) => void) | null = null;
+  setEphemeralRangeApplier(fn: (min: number, max: number) => void): void {
+    this.setStackEphemeralRangeFn = fn;
+  }
+  applyEphemeralRange(min: number, max: number): void {
+    this.socketTable?.setEphemeralRange(min, max);
+    this.setStackEphemeralRangeFn?.(min, max);
+    this.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', `${min}\t${max}\n`, 0, 0, 0o022);
+  }
+
+  private ephemeralPoolFreeChecker: (() => boolean) | null = null;
+  setEphemeralPoolFreeChecker(fn: () => boolean): void {
+    this.ephemeralPoolFreeChecker = fn;
+  }
+  hasFreeEphemeralPort(): boolean {
+    return this.ephemeralPoolFreeChecker ? this.ephemeralPoolFreeChecker() : true;
   }
 
   private utmpSync: import('./network/UtmpSync').UtmpSync | null = null;
