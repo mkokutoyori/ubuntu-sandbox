@@ -279,6 +279,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
           agent.addTrack(iface, vrid, target, red);
           return '';
         }
+        case 'timer': {
+          if (args[2] !== 'advertise') return 'Error: Incomplete command.';
+          const sec = parseInt(args[3] ?? '', 10);
+          if (!Number.isFinite(sec) || sec < 1) return 'Error: Wrong parameter found.';
+          agent.setAdvertiseSec(iface, vrid, sec);
+          return '';
+        }
         default: return '';
       }
     });
@@ -1403,10 +1410,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display vrrp [brief] — one block per VRRP group configured on
     // an SVI (Vlanif). Matches the VRP `display vrrp` shape a learner
     // can compare against real hardware.
-    trie.registerGreedy('display vrrp', 'Display VRRP groups on SVIs', () => {
+    trie.registerGreedy('display vrrp', 'Display VRRP groups on SVIs', (args) => {
       if (!this.swRef) return '';
       const groups = this.swRef.getVrrpAgent().listGroups();
       if (groups.length === 0) return 'Info: No VRRP configuration.';
+      if (args[0] === 'brief') {
+        const header = 'VRID  State       Interface       Type     Virtual IP';
+        const rows = groups.map((g) => {
+          const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';
+          return `${String(g.vrid).padEnd(6)}${state.padEnd(12)}${g.iface.padEnd(16)}${'Normal'.padEnd(9)}${g.vip ?? 'unassigned'}`;
+        });
+        return [header, ...rows].join('\n');
+      }
       const out: string[] = [];
       for (const g of groups) {
         const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';

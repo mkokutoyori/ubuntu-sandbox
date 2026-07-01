@@ -613,6 +613,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           agent.addTrack(iface, group, target, decr);
           return '';
         }
+        case 'timers': {
+          if (args[2] !== 'advertise') return '% Incomplete command.';
+          const sec = parseInt(args[3] ?? '', 10);
+          if (!Number.isFinite(sec) || sec < 1) return '% Invalid advertise interval.';
+          agent.setAdvertiseSec(iface, group, sec);
+          return '';
+        }
         default: return '';
       }
     });
@@ -658,6 +665,20 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
           agent.addTrack(iface, group, target, decr);
           return '';
+        }
+        case 'timers': {
+          const hello = parseInt(args[2] ?? '', 10);
+          const hold = parseInt(args[3] ?? '', 10);
+          if (!Number.isFinite(hello) || !Number.isFinite(hold) || hello < 1 || hold <= hello) {
+            return '% Invalid timers (hello >= 1, hold > hello).';
+          }
+          agent.setTimers(iface, group, hello, hold);
+          return '';
+        }
+        case 'authentication': {
+          if (args[2] === 'text' && args[3]) { agent.setAuth(iface, group, args[3]); return ''; }
+          if (args[2]) { agent.setAuth(iface, group, args[2]); return ''; }
+          return '% Missing authentication text.';
         }
         default: return '';
       }
@@ -3043,12 +3064,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         }
         return this.showIpInterfaceVerbose(args.join(' '));
       });
-      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', () =>
-        this.showVrrp());
-      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', () =>
-        this.showStandby());
-      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', () =>
-        this.showGlbp());
+      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showVrrpBrief() : this.showVrrp());
+      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showStandbyBrief() : this.showStandby());
+      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showGlbpBrief() : this.showGlbp());
     }
   }
 
@@ -3158,6 +3179,61 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('');
     }
     return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showVrrpBrief(): string {
+    const groups = this.d().getVrrpAgent().listGroups();
+    const header = 'Interface          Grp Pri Time    Own Pre State    Master addr     Group addr';
+    const rows = groups.map((g) => {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
+      return `${iface.padEnd(19)}${String(g.vrid).padEnd(4)}${String(vrrpEffectivePriority(g)).padEnd(4)}` +
+        `${String(3 * g.advertiseSec * 1000).padEnd(8)}${'N'.padEnd(4)}${(g.preempt ? 'Y' : 'N').padEnd(4)}` +
+        `${state.padEnd(9)}${(g.masterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+    });
+    return [header, ...rows].join('\n');
+  }
+
+  private showStandbyBrief(): string {
+    const groups = this.d().getHsrpAgent().listGroups();
+    const header = '                     P indicates configured to preempt.\n' +
+      '                     |\nInterface   Grp  Pri P State    Active          Standby         Virtual IP';
+    const rows = groups.map((g) => {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const state =
+        g.state === 'active' ? 'Active'
+        : g.state === 'standby' ? 'Standby'
+        : g.state === 'speak' ? 'Speak'
+        : g.state === 'listen' ? 'Listen'
+        : g.state === 'learn' ? 'Learn'
+        : 'Init';
+      return `${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(hsrpEffectivePriority(g)).padEnd(4)}` +
+        `${(g.preempt ? 'P' : ' ').padEnd(2)}${state.padEnd(9)}` +
+        `${(g.activeRouterIp ?? 'unknown').padEnd(16)}${(g.standbyRouterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+    });
+    return [header, ...rows].join('\n');
+  }
+
+  private showGlbpBrief(): string {
+    const groups = this.d().getGlbpAgent().listGroups();
+    const header = 'Interface   Grp  Fwd Pri State    Address         Active router   Standby router';
+    const rows: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const avgState =
+        g.avgState === 'active' ? 'Active'
+        : g.avgState === 'standby' ? 'Standby'
+        : g.avgState === 'init' ? 'Init'
+        : 'Disabled';
+      rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${'-'.padEnd(4)}` +
+        `${String(g.priority).padEnd(4)}${avgState.padEnd(9)}` +
+        `${(g.vip ?? 'unassigned').padEnd(16)}${(g.avgIp ?? 'local').padEnd(16)}unknown`);
+      for (const f of g.forwarders.values()) {
+        rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(f.forwarderNumber).padEnd(4)}` +
+          `${String(f.priority).padEnd(4)}${f.state.padEnd(9)}${f.vmac.padEnd(16)}${(f.ownerIp ?? 'local').padEnd(16)}unknown`);
+      }
+    }
+    return [header, ...rows].join('\n');
   }
 
   /**
