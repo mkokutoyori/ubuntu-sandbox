@@ -22,6 +22,7 @@ export interface TcpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   resolveMac?(nextHopIp: string): MACAddress | null;
+  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
 }
 
 export interface TcpAcceptHandler {
@@ -749,11 +750,20 @@ export class TcpStack {
   }
 
   private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
+    if (this.host.resolveRoute) {
+      const route = this.host.resolveRoute(targetIp);
+      if (route) {
+        const port = this.host.getPort(route.iface);
+        if (port && port.getIPAddress() && port.getIsUp()) {
+          return { name: port.getName(), port };
+        }
+      }
+    }
     const target = targetIp.split('.').map(Number);
     for (const port of this.host.getPorts()) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
+      if (!ip || !mask || !port.getIsUp()) continue;
       const local = ip.toString().split('.').map(Number);
       const maskBits = mask.toString().split('.').map(Number);
       let same = true;

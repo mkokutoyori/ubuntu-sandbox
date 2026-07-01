@@ -69,7 +69,11 @@ export interface LinuxNetKernel {
   getIPv6RoutingTable(): HostIPv6RouteEntry[];
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
   addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
-  removeRoute(network: IPAddress, mask: SubnetMask): boolean;
+  removeRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): boolean;
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;

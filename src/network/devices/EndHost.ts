@@ -517,6 +517,13 @@ export abstract class EndHost extends Equipment {
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
+      resolveRoute: (targetIp: string) => {
+        const addr = IPAddress.tryParse(targetIp);
+        if (!addr) return null;
+        const r = this.resolveRoute(addr);
+        if (!r) return null;
+        return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
+      },
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
     this.tcpv2.start();
@@ -969,13 +976,27 @@ export abstract class EndHost extends Equipment {
    * Remove a route by network/mask match.
    * Returns true if a route was removed.
    */
-  removeRoute(network: IPAddress, mask: SubnetMask): boolean {
-    const removed = this.routingTable.find(
-      r => r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static',
-    );
-    this.routingTable = this.routingTable.filter(
-      r => !(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')
-    );
+  removeRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    filter: { nextHop?: IPAddress | null; metric?: number } = {},
+  ): boolean {
+    const matches = (r: HostRouteEntry): boolean => {
+      if (!(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')) {
+        return false;
+      }
+      if (filter.nextHop !== undefined) {
+        if (filter.nextHop === null) {
+          if (r.nextHop !== null) return false;
+        } else {
+          if (!r.nextHop || !r.nextHop.equals(filter.nextHop)) return false;
+        }
+      }
+      if (filter.metric !== undefined && r.metric !== filter.metric) return false;
+      return true;
+    };
+    const removed = this.routingTable.find(matches);
+    this.routingTable = this.routingTable.filter(r => !matches(r));
     if (removed) {
       this.emitRouteRemoved({
         destination: network.toString(), mask: mask.toString(), iface: removed.iface,

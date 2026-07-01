@@ -154,10 +154,14 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         if (!network.networkAddress(mask).equals(network)) {
           return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
-        const exists = net.getRoutingTable().some(
-          r => r.network.toString() === network.toString() && r.mask.toCIDR() === cidr);
-        if (exists) return 'RTNETLINK answers: File exists';
-        if (!net.addStaticRoute(network, mask, gateway, metric ?? 100)) {
+        const wantedMetric = metric ?? 100;
+        const duplicate = net.getRoutingTable().some(
+          r => r.network.toString() === network.toString()
+            && r.mask.toCIDR() === cidr
+            && r.metric === wantedMetric
+            && (r.nextHop ? r.nextHop.toString() === gateway.toString() : false));
+        if (duplicate) return 'RTNETLINK answers: File exists';
+        if (!net.addStaticRoute(network, mask, gateway, wantedMetric)) {
           return 'RTNETLINK answers: Network is unreachable';
         }
         return '';
@@ -184,10 +188,14 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       net.clearDefaultGateway();
       return '';
     },
-    deleteRoute(network: IPAddress, cidr: number): string {
+    deleteRoute(
+      network: IPAddress,
+      cidr: number,
+      filter?: { nextHop?: IPAddress | null; metric?: number },
+    ): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.removeRoute(network, mask)) {
+        if (!net.removeRoute(network, mask, filter)) {
           return 'RTNETLINK answers: No such process';
         }
         return '';

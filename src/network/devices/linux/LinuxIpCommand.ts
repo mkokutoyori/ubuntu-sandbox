@@ -76,7 +76,11 @@ export interface IpNetworkContext {
   addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string;
   addDeviceRoute?(network: IPAddress, cidr: number, iface: string): string;
   deleteDefaultRoute(): string;
-  deleteRoute(network: IPAddress, cidr: number): string;
+  deleteRoute(
+    network: IPAddress,
+    cidr: number,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): string;
   getNeighborTable(): IpNeighborEntry[];
   addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string;
   deleteNeighbor(ip: IPAddress, ifName: string): string;
@@ -833,7 +837,7 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
     return ctx.deleteDefaultRoute();
   }
 
-  // Delete static: <net>/<cidr>
+  // Delete static: <net>/<cidr> [via <gw>] [metric <n>]
   const prefix = args[0];
   const slashIdx = prefix.indexOf('/');
   if (slashIdx === -1) return 'Error: invalid prefix.';
@@ -845,31 +849,64 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
   try { network = new IPAddress(networkStr); }
   catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
 
-  return ctx.deleteRoute(network, cidr);
+  const filter: { nextHop?: IPAddress | null; metric?: number } = {};
+  const viaIdx = args.indexOf('via');
+  if (viaIdx !== -1 && args[viaIdx + 1]) {
+    try { filter.nextHop = new IPAddress(args[viaIdx + 1]); }
+    catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
+  }
+  const metricIdx = args.indexOf('metric');
+  if (metricIdx !== -1 && args[metricIdx + 1]) {
+    const m = parseInt(args[metricIdx + 1], 10);
+    if (!isNaN(m)) filter.metric = m;
+  }
+
+  return ctx.deleteRoute(network, cidr, filter);
 }
 
 function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   if (args.length === 0) return 'Error: need a valid destination address.';
 
   const dest = args[0];
+  const destAddr = IPAddress.tryParse(dest);
+  if (!destAddr) return `Error: ${dest} is not a valid IPv4 address.`;
+
   const table = ctx.getRoutingTable();
+  const best = pickBestRoute(destAddr, table);
+  if (!best) return `RTNETLINK answers: Network is unreachable`;
 
-  // Find best matching route (simple: default if nothing else matches)
-  const defaultRoute = table.find(r => r.type === 'default');
-  const connectedRoutes = table.filter(r => r.type === 'connected' || r.type === 'static');
+  const iface = ctx.getInterfaceInfo(best.iface);
+  const src = iface?.ip ?? undefined;
 
-  // Simple matching: check if dest is in a connected/static network
-  for (const route of connectedRoutes) {
-    if (isInSubnet(dest, route.network, route.cidr)) {
-      return `${dest} dev ${route.iface} src ${route.srcIp || route.network}`;
+  if (best.type === 'default') {
+    const suffix = src ? ` src ${src}` : '';
+    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  }
+  if (best.nextHop) {
+    const suffix = src ? ` src ${src}` : '';
+    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  }
+  const suffix = src ? ` src ${src}` : (best.srcIp ? ` src ${best.srcIp}` : '');
+  return `${dest} dev ${best.iface}${suffix}`;
+}
+
+function pickBestRoute(dest: IPAddress, table: IpRouteEntry[]): IpRouteEntry | null {
+  const destInt = dest.toUint32();
+  let best: IpRouteEntry | null = null;
+  let bestPrefix = -1;
+  for (const route of table) {
+    const cidr = route.type === 'default' ? 0 : route.cidr;
+    const mask = SubnetMask.fromCIDR(cidr).toUint32();
+    const netParsed = IPAddress.tryParse(route.network);
+    const netInt = netParsed ? netParsed.toUint32() : 0;
+    if ((destInt & mask) !== (netInt & mask)) continue;
+    if (cidr > bestPrefix
+      || (cidr === bestPrefix && best !== null && route.metric < best.metric)) {
+      bestPrefix = cidr;
+      best = route;
     }
   }
-
-  if (defaultRoute) {
-    return `${dest} via ${defaultRoute.nextHop} dev ${defaultRoute.iface}`;
-  }
-
-  return `RTNETLINK answers: Network is unreachable`;
+  return best;
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {

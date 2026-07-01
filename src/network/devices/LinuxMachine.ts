@@ -1575,8 +1575,12 @@ export abstract class LinuxMachine extends EndHost
       addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean {
         return self.addDeviceRoute(network, mask, iface, metric ?? 0);
       },
-      removeRoute(network: IPAddress, mask: SubnetMask): boolean {
-        return self.removeRoute(network, mask);
+      removeRoute(
+        network: IPAddress,
+        mask: SubnetMask,
+        filter?: { nextHop?: IPAddress | null; metric?: number },
+      ): boolean {
+        return self.removeRoute(network, mask, filter);
       },
       setDefaultGateway(gw: IPAddress): void {
         self.setDefaultGateway(gw);
