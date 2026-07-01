@@ -37,6 +37,7 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
+import { vrrpVirtualMac } from '../../vrrp/types';
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
@@ -240,6 +241,47 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.swRef.removeSviHelperAddress(parseInt(m[1], 10), args[0]);
         return '';
       });
+
+    // VRRP on SVI — Huawei VRP grammar. In Vlanif view:
+    //   vrrp vrid <n> virtual-ip <ip>
+    //   vrrp vrid <n> priority <p>
+    //   vrrp vrid <n> preempt-mode timer delay <sec>   (recorded)
+    // A group without a virtual-ip is registered but stays silent —
+    // matching real VRP that reports it as "invalid" in `display vrrp`.
+    this.interfaceTrie.registerGreedy('vrrp vrid', 'VRRP group config', (args) => {
+      const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
+      if (!m || !this.swRef) return "Error: VRRP is valid on Vlanif interfaces only.";
+      if (args.length < 2) return 'Error: Incomplete command.';
+      const vrid = parseInt(args[0], 10);
+      if (!Number.isFinite(vrid) || vrid < 1 || vrid > 255) return 'Error: Wrong parameter found.';
+      const iface = this.selectedInterface!;
+      const agent = this.swRef.getVrrpAgent();
+      agent.ensureGroup(iface, vrid);
+      switch (args[1]) {
+        case 'virtual-ip':
+          if (!args[2] || !IPAddress.isValid(args[2])) return `Error: Invalid IP ${args[2] ?? ''}.`;
+          agent.setVip(iface, vrid, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 1 || p > 254) return 'Error: Wrong parameter found.';
+          agent.setPriority(iface, vrid, p);
+          return '';
+        }
+        case 'preempt-mode':
+          agent.setPreempt(iface, vrid, true);
+          return '';
+        default: return '';
+      }
+    });
+    this.interfaceTrie.registerGreedy('undo vrrp vrid', 'Remove a VRRP group', (args) => {
+      const m = (this.selectedInterface ?? '').match(/^Vlanif(\d+)$/);
+      if (!m || !this.swRef || !args[0]) return '';
+      const vrid = parseInt(args[0], 10);
+      if (!Number.isFinite(vrid)) return '';
+      this.swRef.getVrrpAgent().removeGroup(this.selectedInterface!, vrid);
+      return '';
+    });
 
     // Pool view trie — reuse the shared Huawei pool command set so the
     // L3 switch supports the exact same `network/gateway-list/dns-list
@@ -1348,6 +1390,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       lines.push(`MEth0/0/1                   unassigned           down       down`);
       return lines.join('\n');
+    });
+
+    // display vrrp [brief] — one block per VRRP group configured on
+    // an SVI (Vlanif). Matches the VRP `display vrrp` shape a learner
+    // can compare against real hardware.
+    trie.registerGreedy('display vrrp', 'Display VRRP groups on SVIs', () => {
+      if (!this.swRef) return '';
+      const groups = this.swRef.getVrrpAgent().listGroups();
+      if (groups.length === 0) return 'Info: No VRRP configuration.';
+      const out: string[] = [];
+      for (const g of groups) {
+        const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';
+        out.push(`${g.iface} | Virtual Router ${g.vrid}`);
+        out.push(`  State : ${state}`);
+        out.push(`  Virtual IP : ${g.vip ?? 'unassigned'}`);
+        out.push(`  Virtual MAC : ${vrrpVirtualMac(g.vrid)}`);
+        out.push(`  Priority : ${g.priority}`);
+        out.push(`  Preempt : ${g.preempt ? 'YES' : 'NO'}`);
+        out.push('');
+      }
+      return out.join('\n').replace(/\n$/, '');
     });
 
     // display arp [all] — render the switch's shared mgmt ARP cache,

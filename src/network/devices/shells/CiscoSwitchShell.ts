@@ -29,6 +29,7 @@ import { showSwitchVersion } from './cisco/CiscoCommonShow';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
+import { vrrpVirtualMac } from '../../vrrp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -572,6 +573,49 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (args.length >= 1) this.d().removeSviHelperAddress(vlan, args[0]);
         return '';
       });
+
+    // ── VRRP on SVI (first-hop redundancy) ──
+    // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
+    // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
+    // a Vlanif alias in `interface Vlan10` view means the group lives
+    // on that SVI's VLAN plane.
+    this.configIfTrie.registerGreedy('vrrp', 'VRRP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getVrrpAgent();
+      agent.ensureGroup(iface, group);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 1 || p > 254) return '% Invalid priority (1..254).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no vrrp', 'Remove a VRRP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getVrrpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
 
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
@@ -2883,7 +2927,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         }
         return this.showIpInterfaceVerbose(args.join(' '));
       });
+      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', () =>
+        this.showVrrp());
     }
+  }
+
+  /** IOS `show vrrp` — one block per group, cross-vendor field names. */
+  private showVrrp(): string {
+    const groups = this.d().getVrrpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
+      lines.push(`${iface} - Group ${g.vrid}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Virtual MAC address is ${vrrpVirtualMac(g.vrid)}`);
+      lines.push(`  Priority is ${g.priority}`);
+      lines.push(`  Preemption is ${g.preempt ? 'enabled' : 'disabled'}`);
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
   }
 
   /**

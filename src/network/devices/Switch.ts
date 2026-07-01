@@ -32,6 +32,8 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { DHCPServer } from '../dhcp/DHCPServer';
+import { VrrpAgent } from '../vrrp/VrrpAgent';
+import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
 import {
@@ -229,6 +231,8 @@ export abstract class Switch extends Equipment {
       if (existing && existing.type === 'static') return;
       this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'dynamic' });
     },
+    fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
+      this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp) ?? null,
   });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
@@ -1313,7 +1317,18 @@ export abstract class Switch extends Equipment {
     this.svi.configure(vlan, ip, mask);
   }
   clearSviIp(vlan: number): void { this.svi.clearIp(vlan); }
-  setSviAdminUp(vlan: number, up: boolean): void { this.svi.setAdminUp(vlan, up); }
+  setSviAdminUp(vlan: number, up: boolean): void {
+    this.svi.setAdminUp(vlan, up);
+    // Feed the FHRP link-state signal so any VRRP group on this
+    // Vlanif recomputes (Init→Master when the SVI comes up, or the
+    // reverse on shutdown). The FhrpAgentBase already subscribes to
+    // port.link.up/down filtered on our deviceId.
+    const portName = `Vlanif${vlan}`;
+    this.getBus().publish({
+      topic: up ? 'port.link.up' : 'port.link.down',
+      payload: { deviceId: this.id, portName },
+    });
+  }
   hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
   getSvis(): SviInterface[] { return this.svi.list(); }
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
@@ -1650,6 +1665,25 @@ export abstract class Switch extends Equipment {
   private readonly dhcpServer: DHCPServer = new DHCPServer();
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
   getDHCPServer(): DHCPServer { return this.dhcpServer; }
+
+  // ─── VRRP on SVI (first-hop redundancy for L3 switches) ─────────
+  // The FHRP agent runs against the SVI plane through a per-switch
+  // adapter that presents each Vlanif as a synthetic "port". Elections
+  // still use the same VRRP state machine as on routers — the only
+  // change is where the interface lives (Vlanif vs GigabitEthernet0/0).
+  private _vrrpAgent: VrrpAgent | null = null;
+  private ensureVrrpAgent(): VrrpAgent {
+    if (this._vrrpAgent) return this._vrrpAgent;
+    const host = makeSwitchVrrpHost(this, {
+      egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
+      vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+      getBridgeMac: () => this.getBridgeMac(),
+    });
+    this._vrrpAgent = new VrrpAgent(host, () => this.getBus());
+    this._vrrpAgent.start();
+    return this._vrrpAgent;
+  }
+  getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 

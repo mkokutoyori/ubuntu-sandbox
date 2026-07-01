@@ -39,6 +39,13 @@ export interface SviHost {
   learnArp(ip: string, mac: MACAddress, iface: string): void;
   /** Forget an ARP entry. */
   forgetArp?(ip: string): void;
+  /**
+   * FHRP (VRRP/HSRP) VIP resolver — when configured, an ARP request
+   * for a virtual IP the switch owns as Master returns the virtual
+   * MAC that hosts must learn as their default-gateway MAC. Called
+   * with the Vlanif name (e.g. `Vlanif10`) and the requester's IP.
+   */
+  fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
 }
 
 export interface SwitchStaticRoute {
@@ -210,6 +217,20 @@ export class SwitchSvi {
       if (arp.operation === 'request' && arp.targetIP.equals(selfIp)) {
         this.sendArpReply(ingressVlan, selfIp, arp);
         return false; // broadcast request still floods the VLAN
+      }
+      // VRRP: any group Master on this SVI answers ARP for the VIP
+      // with the group's virtual MAC. Hosts thus learn the shared
+      // gateway MAC rather than any physical bridge address.
+      if (arp.operation === 'request' && this.host.fhrpVipArpOwner) {
+        const vmac = this.host.fhrpVipArpOwner(
+          `Vlanif${ingressVlan}`,
+          arp.targetIP.toString(),
+          arp.senderIP.toString(),
+        );
+        if (vmac) {
+          this.sendVirtualArpReply(ingressVlan, arp, arp.targetIP, new MACAddress(vmac));
+          return false;
+        }
       }
       if (arp.operation === 'reply' && (forUs || arp.targetIP.equals(selfIp))) {
         return true; // unicast reply addressed to us — consume
@@ -403,6 +424,27 @@ export class SwitchSvi {
     };
     this.host.egressOnVlan(vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: req.senderMAC,
+      etherType: ETHERTYPE_ARP, payload: reply,
+    });
+  }
+
+  /**
+   * VRRP-flavoured ARP reply — sender MAC is the group's virtual MAC
+   * (RFC 5798 §7.3), not the bridge MAC. Hosts thus learn the shared
+   * gateway MAC and keep sending to it across a Master/Backup swap.
+   */
+  private sendVirtualArpReply(
+    vlan: number, req: ARPPacket, vip: IPAddress, virtualMac: MACAddress,
+  ): void {
+    Logger.info(this.host.deviceId, 'svi:vrrp-arp-reply',
+      `${this.host.getHostname()}: VRRP ARP reply for ${vip} → ${virtualMac} (Vlan${vlan})`);
+    const reply: ARPPacket = {
+      type: 'arp', operation: 'reply',
+      senderMAC: virtualMac, senderIP: vip,
+      targetMAC: req.senderMAC, targetIP: req.senderIP,
+    };
+    this.host.egressOnVlan(vlan, {
+      srcMAC: virtualMac, dstMAC: req.senderMAC,
       etherType: ETHERTYPE_ARP, payload: reply,
     });
   }
