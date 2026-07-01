@@ -62,6 +62,9 @@ import {
   type IPSecObservables,
 } from './observables';
 import { IPSecSignalRefreshActor } from './actors';
+import { PkiKeyPair } from '../pki/PkiKeyPair';
+import { verificationToIkeReason } from './IkeCertAuthConfig';
+import type { X509Certificate } from '../pki/X509Certificate';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -497,6 +500,7 @@ export class IPSecEngine implements IProtocolEngine {
   // ── SA Database ──────────────────────────────────────────────────
   /** peerIP → IKE_SA */
   private ikeSADB: Map<string, IKE_SA> = new Map();
+  private ikeCertAuth: import('./IkeCertAuthConfig').IkeCertAuthConfig | null = null;
   /** peerIP → IKEv2_SA */
   private ikev2SADB: Map<string, IKEv2_SA> = new Map();
   /** peerIP → IPSec_SA[] */
@@ -558,6 +562,14 @@ export class IPSecEngine implements IProtocolEngine {
   readonly outboundChain: FilterChain<IPSecOutboundContext>;
 
   /** Test-only / multi-topology bus injection. */
+  setIkeCertAuth(config: import('./IkeCertAuthConfig').IkeCertAuthConfig): void {
+    this.ikeCertAuth = config;
+  }
+
+  clearIkeCertAuth(): void {
+    this.ikeCertAuth = null;
+  }
+
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
     this.attachActors();
@@ -2826,6 +2838,14 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiInitIn,
       natTHint: apparentSrcIP !== localIP,
     };
+    if (this.ikeCertAuth) {
+      
+      offer.authMode = 'x509';
+      offer.certPayload = {
+        cert: this.ikeCertAuth.localCert,
+        authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${apparentSrcIP}|${peerIP}|${spiInitIn}`),
+      };
+    }
     this.pendingIke.set(peerIP, { entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer });
     this.router._sendIkeUdp(peerIP, offer);
     this.pendingIke.delete(peerIP);
@@ -2891,10 +2911,43 @@ export class IPSecEngine implements IProtocolEngine {
       if (!chosenPolicy) { this.rejectIke(srcIp, 'No matching policy'); this.createFailedIKESA(srcIp, '', 'No matching policy'); return; }
     }
 
-    const myPSK = isV2
-      ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
-      : (this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || '');
-    if (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof) {
+    const usingCert = offer.authMode === 'x509' || !!this.ikeCertAuth;
+    if (usingCert) {
+      
+      
+      if (!this.ikeCertAuth || !offer.certPayload) {
+        this.rejectIke(srcIp, 'Certificate unknown');
+        this.createFailedIKESA(srcIp, '', 'Certificate unknown');
+        return;
+      }
+      const peerCert = offer.certPayload.cert as X509Certificate;
+      const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
+      if (!peerVerdict.ok) {
+        const reason = verificationToIkeReason(peerVerdict);
+        this.rejectIke(srcIp, reason);
+        this.createFailedIKESA(srcIp, '', reason);
+        return;
+      }
+      const authInput = `${offer.identity}|${dstIp}|${offer.ipsecSpiIn}`;
+      if (!PkiKeyPair.verify(peerCert.publicKey, authInput, offer.certPayload.authSignature)) {
+        this.rejectIke(srcIp, 'Certificate signature invalid');
+        this.createFailedIKESA(srcIp, '', 'Certificate signature invalid');
+        return;
+      }
+      const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);
+      if (!localVerdict.ok) {
+        const reason = verificationToIkeReason(localVerdict);
+        this.rejectIke(srcIp, reason);
+        this.createFailedIKESA(srcIp, '', reason);
+        return;
+      }
+    }
+    const myPSK = usingCert
+      ? 'cert-auth-key'
+      : (isV2
+        ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
+        : (this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || ''));
+    if (!usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
       return;
@@ -2973,6 +3026,13 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
       lifetimeSec, lifetimeKB, natT,
     };
+    if (this.ikeCertAuth) {
+      
+      accept.certPayload = {
+        cert: this.ikeCertAuth.localCert,
+        authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${responderSpi}|${srcIp}`),
+      };
+    }
     this.router._sendIkeUdp(srcIp, accept);
   }
 
@@ -2980,12 +3040,34 @@ export class IPSecEngine implements IProtocolEngine {
     const pending = this.pendingIke.get(srcIp);
     if (!pending) return;
     const isV2 = pending.offer.version === 2;
-    const myPSK = isV2
-      ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
-      : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '');
-    if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
-      this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
+    if (this.ikeCertAuth) {
+      
+      if (!accept.certPayload) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'Certificate unknown');
+        return;
+      }
+      const peerCert = accept.certPayload.cert as X509Certificate;
+      const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
+      if (!peerVerdict.ok) {
+        this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(peerVerdict));
+        return;
+      }
+      const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);
+      if (!localVerdict.ok) {
+        this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(localVerdict));
+        return;
+      }
+    } else {
+      const myPSK = isV2
+        ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
+        : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '');
+      if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
+      }
     }
+    const myPSK = isV2
+      ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
+      : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
     const transforms = accept.chosenTransform.transforms;
     const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);
@@ -3122,7 +3204,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
     const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
-    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy/i.test(r);
+    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL/i.test(r);
     const existing = this.ikeSADB.get(peerIP);
     if (existing) {
       const currentSpecific = existing.failureReason ? isSpecific(existing.failureReason) : false;

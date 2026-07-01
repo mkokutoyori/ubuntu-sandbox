@@ -219,6 +219,11 @@ export interface IkeV2Chosen {
   propName: string;
 }
 
+export interface X509CertPayload {
+  readonly cert: unknown;
+  readonly authSignature: string;
+}
+
 export interface IkeOfferMessage {
   type: 'ike';
   step: 'offer';
@@ -236,6 +241,8 @@ export interface IkeOfferMessage {
   lifetimeKB: number;
   ipsecSpiIn: number;
   natTHint: boolean;
+  authMode?: 'psk' | 'x509';
+  certPayload?: X509CertPayload;
 }
 
 export interface IkeAcceptMessage {
@@ -243,6 +250,7 @@ export interface IkeAcceptMessage {
   step: 'accept';
   responderSpi: string;
   pskProof: string;
+  certPayload?: X509CertPayload;
   chosenPolicy?: IkePolicyProposal;
   chosenIkev2?: IkeV2Chosen;
   chosenTransform: IkeTransformProposal;

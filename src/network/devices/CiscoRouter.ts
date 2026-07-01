@@ -54,8 +54,38 @@ import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 
 export class CiscoRouter extends Router {
+  installIkeCertAuth(config: {
+    localCert: import('../pki/X509Certificate').X509Certificate;
+    localKey: import('../pki/PkiKeyPair').PkiPrivateKey;
+    trustAnchors: readonly import('../pki/X509Certificate').X509Certificate[];
+    crls?: readonly import('../pki/CertificateRevocationList').CertificateRevocationList[];
+    revocationCheck?: 'none' | 'crl' | 'crl-strict';
+    clock?: () => number;
+  }): void {
+    const verifier = new CertificateVerifierImpl({
+      trustAnchors: config.trustAnchors,
+      crls: config.crls,
+      revocationCheck: config.revocationCheck ?? 'none',
+      clock: config.clock,
+    });
+    this._getOrCreateIPSecEngine().setIkeCertAuth({
+      localCert: config.localCert,
+      localKey: config.localKey,
+      trustAnchors: config.trustAnchors,
+      crls: config.crls,
+      revocationCheck: config.revocationCheck,
+      clock: config.clock,
+      verifier,
+    });
+  }
+
+  clearIkeCertAuth(): void {
+    this._getIPSecEngineInternal()?.clearIkeCertAuth();
+  }
+
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
   private readonly hsrpAgent: HsrpAgent;
