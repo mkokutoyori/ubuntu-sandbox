@@ -2506,6 +2506,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (!this.checkAntiReplay(sa, esp.sequenceNumber)) {
       sa.pktsReplay++;
       sa.recvErrors++;
+      Logger.warn(this.router.id, 'ipsec:anti-replay',
+        `${this.router.name}: %CRYPTO-4-PKT_REPLAY_ERR replay check failed, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}, peer=${sa.peerIP}`);
       if (this.debugIpsec) {
         Logger.info(this.router.id, 'debug:ipsec',
           `IPSEC(i): anti-replay check FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
@@ -2566,6 +2568,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (!this.checkAntiReplay(sa, ah.sequenceNumber)) {
       sa.pktsReplay++;
       sa.recvErrors++;
+      Logger.warn(this.router.id, 'ipsec:anti-replay',
+        `${this.router.name}: %CRYPTO-4-PKT_REPLAY_ERR replay check failed (AH), spi=${spiHex(ah.spi)}, seq=${ah.sequenceNumber}, peer=${sa.peerIP}`);
       return null;
     }
 
@@ -3494,7 +3498,8 @@ export class IPSecEngine implements IProtocolEngine {
         lines.push(`   #pkts compressed: 0, #pkts decompressed: 0`);
         lines.push(`   #pkts not compressed: 0, #pkts compr. failed: 0`);
         lines.push(`   #pkts not decompressed: 0, #pkts decompress failed: 0`);
-        lines.push(`   #pkts replay: ${sa.pktsReplay}`);
+        lines.push(`   #pkts replay rollover (send): 0, #pkts replay rollover (rcv) 0`);
+        lines.push(`   #pkts replay failed (rcv): ${sa.pktsReplay}`);
         lines.push(`   #send errors ${sa.sendErrors}, #recv errors ${sa.recvErrors}`);
         lines.push('');
         lines.push(`    local crypto endpt.: ${sa.localIP} remote crypto endpt.: ${peerIP}`);
