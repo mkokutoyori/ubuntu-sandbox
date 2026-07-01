@@ -4,7 +4,6 @@ import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsQuestion } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
-/** A zone cannot be registered in a {@link ZoneStore} (e.g. duplicate origin). */
 export class ZoneStoreError extends Error {
   constructor(message: string) {
     super(message);
@@ -29,11 +28,6 @@ function parentOf(name: string): string | null {
   return dot === -1 ? null : name.slice(dot + 1);
 }
 
-/**
- * Holds every authoritative zone this server is configured for and routes
- * incoming questions to the zone whose origin is the longest matching
- * suffix of the queried name (RFC 1034 §4.3.2 zone-selection step).
- */
 export class ZoneStore {
   private readonly zonesByOrigin = new Map<string, Zone>();
 
@@ -51,7 +45,7 @@ export class ZoneStore {
       if (zone) return zone;
       candidate = parentOf(candidate);
     }
-    return null;
+    return this.zonesByOrigin.get('') ?? null;
   }
 
   answer(question: DnsQuestion): ZoneStoreAnswer {
@@ -85,7 +79,6 @@ export class ZoneStore {
     }
   }
 
-  /** Glue: A/AAAA records for the target names referenced by NS/MX records (RFC 1034 §4.3.2). */
   private collectGlue(
     zone: Zone, records: readonly ResourceRecord<ResourceRecordData>[],
   ): ResourceRecord<ResourceRecordData>[] {

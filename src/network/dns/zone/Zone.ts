@@ -3,7 +3,6 @@ import type {
   ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, CnameRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 
-/** A record or query violates the structural invariants of a zone (RFC 1034 §4). */
 export class ZoneError extends Error {
   constructor(message: string) {
     super(message);
@@ -29,22 +28,14 @@ function normalize(name: string): string {
 }
 
 function isWithinOrigin(name: string, origin: string): boolean {
-  return name === origin || name.endsWith(`.${origin}`);
+  return origin === '' || name === origin || name.endsWith(`.${origin}`);
 }
 
-/** The immediate parent name, or null if `name` is already the root. */
 function parentOf(name: string): string | null {
   const dot = name.indexOf('.');
   return dot === -1 ? null : name.slice(dot + 1);
 }
 
-/**
- * An in-memory authoritative zone (RFC 1034 §4, RFC 1035 §5): an origin, its
- * SOA, and the RRSets of every owner name at or below that origin. Delegated
- * subzones remain present as NS RRsets marking a "zone cut" — the parent
- * still stores them (plus any glue) but answers below the cut with a
- * referral rather than as authoritative data.
- */
 export class Zone {
   readonly origin: string;
   private readonly soaRecord: ResourceRecord<SoaRecordData>;
@@ -92,7 +83,6 @@ export class Zone {
     return this.rrsets.has(normalize(name));
   }
 
-  /** The nearest strict ancestor of `name` (exclusive) that is a zone-cut NS owner, if any. */
   private findEnclosingDelegation(name: string): readonly ResourceRecord<NsRecordData>[] | null {
     let ancestor = parentOf(name);
     while (ancestor !== null && isWithinOrigin(ancestor, this.origin) && ancestor !== this.origin) {
