@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -158,5 +159,152 @@ describe('GLBP on SVI — interface tracking weighting', () => {
     const out = await sw.executeCommand('show glbp');
     expect(out).toMatch(/Weighting 100 \(configured 150\)/);
     expect(out).toMatch(/GigabitEthernet0\/2 Down decrement 50/);
+  });
+});
+
+describe('VRRP Cisco IOS — vrrp <g> track sur SVI', () => {
+  async function buildPair() {
+    const swA = new CiscoSwitch('switch-cisco', 'SW-A', 26, 0, 0);
+    const swB = new CiscoSwitch('switch-cisco', 'SW-B', 26, 0, 0);
+    const uplink = new LinuxPC('stub', 'STUB', 0, 0);
+    new Cable('trunk').connect(
+      swA.getPort('GigabitEthernet0/1')!,
+      swB.getPort('GigabitEthernet0/1')!,
+    );
+    new Cable('up').connect(uplink.getPorts()[0], swA.getPort('GigabitEthernet0/2')!);
+
+    const cfgA = [
+      'enable', 'configure terminal',
+      'vlan 10', 'exit',
+      'interface GigabitEthernet0/1',
+      'switchport mode trunk', 'switchport trunk allowed vlan 10', 'exit',
+      'interface Vlan10',
+      'ip address 10.0.10.2 255.255.255.0',
+      'vrrp 1 ip 10.0.10.1',
+      'vrrp 1 priority 200',
+      'vrrp 1 preempt',
+      'vrrp 1 track GigabitEthernet0/2 decrement 80',
+      'no shutdown', 'exit', 'end',
+    ];
+    const cfgB = [
+      'enable', 'configure terminal',
+      'vlan 10', 'exit',
+      'interface GigabitEthernet0/1',
+      'switchport mode trunk', 'switchport trunk allowed vlan 10', 'exit',
+      'interface Vlan10',
+      'ip address 10.0.10.3 255.255.255.0',
+      'vrrp 1 ip 10.0.10.1',
+      'vrrp 1 priority 150',
+      'vrrp 1 preempt',
+      'no shutdown', 'exit', 'end',
+    ];
+    for (const c of cfgA) await swA.executeCommand(c);
+    for (const c of cfgB) await swB.executeCommand(c);
+    return { swA, swB };
+  }
+
+  it('track enregistré, SW-A reste Master avec la piste Up', async () => {
+    const { swA, swB } = await buildPair();
+    const gA = swA.getVrrpAgent().listGroups()[0];
+    expect(gA.state).toBe('master');
+    expect(gA.tracks).toHaveLength(1);
+    expect(gA.tracks[0].target).toBe('GigabitEthernet0/2');
+    expect(gA.tracks[0].down).toBe(false);
+    expect(swB.getVrrpAgent().listGroups()[0].state).toBe('backup');
+  });
+
+  it('shutdown Gi0/2 sur SW-A → 200-80=120 < 150 → SW-B préempt Master', async () => {
+    const { swA, swB } = await buildPair();
+    for (const cmd of [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/2', 'shutdown', 'end',
+    ]) await swA.executeCommand(cmd);
+    expect(swA.getVrrpAgent().listGroups()[0].tracks[0].down).toBe(true);
+    expect(swB.getVrrpAgent().listGroups()[0].state).toBe('master');
+    expect(swA.getVrrpAgent().listGroups()[0].state).not.toBe('master');
+  });
+
+  it('show vrrp affiche la priorité effective + tracks', async () => {
+    const { swA } = await buildPair();
+    for (const cmd of [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/2', 'shutdown', 'end',
+    ]) await swA.executeCommand(cmd);
+    const out = await swA.executeCommand('show vrrp');
+    expect(out).toMatch(/Priority is 120 \(configured 200\)/);
+    expect(out).toMatch(/GigabitEthernet0\/2 Down decrement 80/);
+  });
+});
+
+describe('VRRP Huawei VRP — vrrp vrid <n> track interface sur Vlanif', () => {
+  async function buildPair() {
+    const swA = new HuaweiSwitch('switch-huawei', 'SW-A', 8, 0, 0);
+    const swB = new HuaweiSwitch('switch-huawei', 'SW-B', 8, 0, 0);
+    const uplink = new LinuxPC('stub', 'STUB', 0, 0);
+    new Cable('trunk').connect(
+      swA.getPort('GigabitEthernet0/0/2')!,
+      swB.getPort('GigabitEthernet0/0/2')!,
+    );
+    new Cable('up').connect(uplink.getPorts()[0], swA.getPort('GigabitEthernet0/0/3')!);
+
+    const cfgA = [
+      'system-view',
+      'vlan batch 10',
+      'interface GigabitEthernet0/0/2',
+      'port link-type trunk', 'port trunk allow-pass vlan 10', 'quit',
+      'interface Vlanif10',
+      'ip address 10.0.10.2 255.255.255.0', 'undo shutdown',
+      'vrrp vrid 1 virtual-ip 10.0.10.1',
+      'vrrp vrid 1 priority 200',
+      'vrrp vrid 1 preempt-mode',
+      'vrrp vrid 1 track interface GigabitEthernet0/0/3 reduced 80',
+      'quit', 'quit',
+    ];
+    const cfgB = [
+      'system-view',
+      'vlan batch 10',
+      'interface GigabitEthernet0/0/2',
+      'port link-type trunk', 'port trunk allow-pass vlan 10', 'quit',
+      'interface Vlanif10',
+      'ip address 10.0.10.3 255.255.255.0', 'undo shutdown',
+      'vrrp vrid 1 virtual-ip 10.0.10.1',
+      'vrrp vrid 1 priority 150',
+      'vrrp vrid 1 preempt-mode',
+      'quit', 'quit',
+    ];
+    for (const c of cfgA) await swA.executeCommand(c);
+    for (const c of cfgB) await swB.executeCommand(c);
+    return { swA, swB };
+  }
+
+  it('track interface enregistré + SW-A Master, SW-B Backup', async () => {
+    const { swA, swB } = await buildPair();
+    const gA = swA.getVrrpAgent().listGroups()[0];
+    expect(gA.state).toBe('master');
+    expect(gA.tracks).toHaveLength(1);
+    expect(gA.tracks[0].target).toBe('GigabitEthernet0/0/3');
+    expect(gA.tracks[0].decrement).toBe(80);
+    expect(swB.getVrrpAgent().listGroups()[0].state).toBe('backup');
+  });
+
+  it('shutdown de la piste → SW-B devient Master via annonce sur trunk', async () => {
+    const { swA, swB } = await buildPair();
+    for (const cmd of [
+      'system-view', 'interface GigabitEthernet0/0/3', 'shutdown', 'quit', 'quit',
+    ]) await swA.executeCommand(cmd);
+    expect(swA.getVrrpAgent().listGroups()[0].tracks[0].down).toBe(true);
+    expect(swB.getVrrpAgent().listGroups()[0].state).toBe('master');
+  });
+
+  it('display vrrp montre PriorityRun/PriorityConfig + Track IF', async () => {
+    const { swA } = await buildPair();
+    for (const cmd of [
+      'system-view', 'interface GigabitEthernet0/0/3', 'shutdown', 'quit', 'quit',
+    ]) await swA.executeCommand(cmd);
+    const out = await swA.executeCommand('display vrrp');
+    expect(out).toMatch(/PriorityRun : 120/);
+    expect(out).toMatch(/PriorityConfig : 200/);
+    expect(out).toMatch(/Track IF : 1/);
+    expect(out).toMatch(/GigabitEthernet0\/0\/3 Priority reduced : 80 State : Down/);
   });
 });

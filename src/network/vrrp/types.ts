@@ -15,6 +15,12 @@ export interface VrrpPacket extends NetworkPdu {
   senderIp: string;
 }
 
+export interface VrrpTrackEntry {
+  target: string;
+  decrement: number;
+  down: boolean;
+}
+
 export interface VrrpGroupRuntime {
   iface: string;
   vrid: number;
@@ -27,6 +33,15 @@ export interface VrrpGroupRuntime {
   masterPriority: number;
   lastHeardMasterMs: number;
   lastTransitionMs: number;
+  tracks: VrrpTrackEntry[];
+}
+
+export function effectivePriority(g: VrrpGroupRuntime): number {
+  let p = g.priority;
+  for (const t of g.tracks) if (t.down) p -= t.decrement;
+  if (p < 1) p = 1;
+  if (p > 254) p = 254;
+  return p;
 }
 
 export interface VrrpConfig {
@@ -48,6 +63,7 @@ export function defaultGroupRuntime(iface: string, vrid: number): VrrpGroupRunti
     advertiseSec: 1,
     masterIp: null, masterPriority: 0,
     lastHeardMasterMs: 0, lastTransitionMs: Date.now(),
+    tracks: [],
   };
 }
 

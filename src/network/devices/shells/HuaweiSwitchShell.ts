@@ -37,7 +37,7 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
-import { vrrpVirtualMac } from '../../vrrp/types';
+import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
@@ -271,6 +271,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
         case 'preempt-mode':
           agent.setPreempt(iface, vrid, true);
           return '';
+        case 'track': {
+          if (args[2] !== 'interface' || !args[3]) return 'Error: Incomplete command.';
+          const target = this.resolveInterfaceName(args[3]) ?? args[3];
+          const redIdx = args.indexOf('reduced');
+          const red = redIdx >= 0 ? (parseInt(args[redIdx + 1] ?? '10', 10) || 10) : 10;
+          agent.addTrack(iface, vrid, target, red);
+          return '';
+        }
         default: return '';
       }
     });
@@ -1402,12 +1410,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const out: string[] = [];
       for (const g of groups) {
         const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Initialize';
+        const effPrio = vrrpEffectivePriority(g);
         out.push(`${g.iface} | Virtual Router ${g.vrid}`);
         out.push(`  State : ${state}`);
         out.push(`  Virtual IP : ${g.vip ?? 'unassigned'}`);
         out.push(`  Virtual MAC : ${vrrpVirtualMac(g.vrid)}`);
-        out.push(`  Priority : ${g.priority}`);
+        if (effPrio === g.priority) {
+          out.push(`  Priority : ${g.priority}`);
+        } else {
+          out.push(`  PriorityRun : ${effPrio}`);
+          out.push(`  PriorityConfig : ${g.priority}`);
+        }
         out.push(`  Preempt : ${g.preempt ? 'YES' : 'NO'}`);
+        if (g.tracks.length > 0) {
+          out.push(`  Track IF : ${g.tracks.length}`);
+          for (const t of g.tracks) {
+            out.push(`    ${t.target} Priority reduced : ${t.decrement} State : ${t.down ? 'Down' : 'Up'}`);
+          }
+        }
         out.push('');
       }
       return out.join('\n').replace(/\n$/, '');

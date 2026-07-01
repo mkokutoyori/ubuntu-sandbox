@@ -32,6 +32,7 @@ import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
 import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
+import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -604,6 +605,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         case 'preempt':
           agent.setPreempt(iface, group, true);
           return '';
+        case 'track': {
+          const target = this.resolveInterfaceName(args[2] ?? '') ?? args[2];
+          if (!target) return '% Missing tracked interface.';
+          const decrIdx = args.indexOf('decrement');
+          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+          agent.addTrack(iface, group, target, decr);
+          return '';
+        }
         default: return '';
       }
     });
@@ -3050,12 +3059,24 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     for (const g of groups) {
       const iface = g.iface.replace(/^Vlanif/, 'Vlan');
       const stateStr = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
+      const effPrio = vrrpEffectivePriority(g);
       lines.push(`${iface} - Group ${g.vrid}`);
       lines.push(`  State is ${stateStr}`);
       lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
       lines.push(`  Virtual MAC address is ${vrrpVirtualMac(g.vrid)}`);
-      lines.push(`  Priority is ${g.priority}`);
+      if (effPrio === g.priority) {
+        lines.push(`  Priority is ${g.priority}`);
+      } else {
+        lines.push(`  Priority is ${effPrio} (configured ${g.priority})`);
+      }
       lines.push(`  Preemption is ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
       lines.push('');
     }
     return lines.join('\n').replace(/\n$/, '');
