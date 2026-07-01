@@ -55,6 +55,7 @@ import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
+import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 
 export class CiscoRouter extends Router {
   installIkeCertAuth(config: {
@@ -84,6 +85,24 @@ export class CiscoRouter extends Router {
 
   clearIkeCertAuth(): void {
     this._getIPSecEngineInternal()?.clearIkeCertAuth();
+  }
+
+  getInterfaceTcpAdjustMss(iface: string): number | null {
+    const port = this.getPort(iface);
+    if (!port) return null;
+    const v = (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
+    return typeof v === 'number' ? v : null;
+  }
+
+  applyTcpMssClamp(
+    seg: import('../ipsec/TcpMssClamper').TcpMssCarrier,
+    iface: string,
+  ): import('../ipsec/TcpMssClamper').TcpMssClampResult {
+    const clamp = this.getInterfaceTcpAdjustMss(iface);
+    if (clamp === null) {
+      return { modified: false, before: null, after: null, reason: 'no-config' };
+    }
+    return TcpMssClamperImpl.clamp(seg, clamp);
   }
 
   private readonly cdpAgent: CdpAgent;

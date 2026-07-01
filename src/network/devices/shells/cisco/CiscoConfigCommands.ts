@@ -525,6 +525,21 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     }
     return '';
   });
+  trie.registerGreedy('ip tcp adjust-mss', 'Clamp TCP MSS on outgoing SYN', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && Number.isFinite(n) && n > 0) {
+      (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss = n;
+    }
+    return '';
+  });
+  trie.register('no ip tcp adjust-mss', 'Remove TCP MSS clamp', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) delete (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
+    return '';
+  });
   trie.registerGreedy('ipv6 mtu', 'Set IPv6 MTU', (args) => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
