@@ -1214,6 +1214,10 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('show ip route', 'Display IP routing table', (args) => {
     if (args.length === 0) return showIpRouteAll(getRouter());
     const first = args[0].toLowerCase();
+    if (first === 'vrf') {
+      if (!args[1]) return '% Incomplete command.';
+      return showIpRouteVrf(getRouter(), args[1]);
+    }
     if (first === 'ospf') return showIpRouteOspf(getRouter());
     if (first === 'summary') return showIpRouteSummary(getRouter());
     if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
@@ -2306,6 +2310,31 @@ function showIpRouteSummary(router: Router): string {
   }
   lines.push(`${'Total'.padEnd(16)}${String(totN).padEnd(12)}${String(totS).padEnd(12)}${String(totR).padEnd(12)}${String(totO).padEnd(12)}${totM}`);
   return lines.join('\n');
+}
+
+function showIpRouteVrf(router: Router, vrfName: string): string {
+  const r = router as unknown as { _vrfs?: Map<string, unknown>; _ciscoVrfRoutes?: Map<string, Array<{ network: string; mask: string; nextHop: string | null; iface: string | null }>> };
+  if (!r._vrfs || !r._vrfs.has(vrfName)) return `% No such VRF, ${vrfName}`;
+  const routes = r._ciscoVrfRoutes?.get(vrfName) ?? [];
+  const codes = [
+    'Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP',
+    '       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area',
+    '       * - candidate default, U - per-user static route, o - ODR',
+    '',
+    `Routing Table: ${vrfName}`,
+    '',
+  ];
+  if (routes.length === 0) {
+    codes.push(`Routes: 0 in VRF ${vrfName}`);
+    return codes.join('\n');
+  }
+  const lines: string[] = [];
+  for (const entry of routes) {
+    const cidr = maskToCIDR(entry.mask);
+    const via = entry.nextHop ? `via ${entry.nextHop}` : entry.iface ? `directly connected, ${entry.iface}` : '';
+    lines.push(`S       ${entry.network}/${cidr} [1/0] ${via}`);
+  }
+  return [...codes, ...lines].join('\n');
 }
 
 function showIpRouteSpecific(router: Router, destIP: string): string {

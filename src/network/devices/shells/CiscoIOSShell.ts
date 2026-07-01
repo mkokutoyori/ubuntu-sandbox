@@ -591,6 +591,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
+    this.configIfTrie.registerGreedy('ip vrf forwarding', 'Bind interface to a VRF', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vrfName = args[0];
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      if (!router._vrfs?.has(vrfName)) return `% VRF ${vrfName} not configured`;
+      router._vrfs.get(vrfName)!.interfaces.add(ifName);
+      (router._ifaceVrf ??= new Map()).set(ifName, vrfName);
+      for (const [name, vrf] of router._vrfs) {
+        if (name !== vrfName) vrf.interfaces.delete(ifName);
+      }
+      return '';
+    });
+    this.configIfTrie.registerGreedy('no ip vrf forwarding', 'Unbind interface from VRF', (args) => {
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      const bound = router._ifaceVrf?.get(ifName);
+      if (bound) {
+        router._vrfs?.get(bound)?.interfaces.delete(ifName);
+        router._ifaceVrf?.delete(ifName);
+      }
+      void args;
+      return '';
+    });
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);

@@ -609,9 +609,20 @@ export function showHosts(router?: { _getHostsTable?: () => import('../../router
   return lines.join('\n');
 }
 
-/** `show vrf` / `show ip vrf` — no VRF instances exist in the model. */
-export function showVrf(): string {
-  return '  Name                             Default RD            Protocols   Interfaces';
+/** `show vrf` / `show ip vrf` — enumerate configured VRF instances. */
+export function showVrf(router?: unknown): string {
+  const header = '  Name                             Default RD            Protocols   Interfaces';
+  if (!router) return header;
+  const r = router as { _vrfs?: Map<string, { name: string; rd?: string; interfaces: Set<string> }> };
+  const vrfs = r._vrfs;
+  if (!vrfs || vrfs.size === 0) return header;
+  const lines = [header];
+  for (const vrf of vrfs.values()) {
+    const rd = vrf.rd ?? '<not set>';
+    const ifaces = [...vrf.interfaces].join(', ') || '<none>';
+    lines.push(`  ${vrf.name.padEnd(33)}${rd.padEnd(22)}${'ipv4'.padEnd(12)}${ifaces}`);
+  }
+  return lines.join('\n');
 }
 
 export function showBoot(): string {

@@ -854,8 +854,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
-    trie.register('show ip vrf', 'Display VRFs', () => showVrf());
-    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf());
+    trie.register('show ip vrf', 'Display VRFs', () => showVrf(this.d()));
+    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf(this.d()));
     trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
