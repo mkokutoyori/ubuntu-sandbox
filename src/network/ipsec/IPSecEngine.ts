@@ -1920,6 +1920,27 @@ export class IPSecEngine implements IProtocolEngine {
     return null;
   }
 
+  findAllMatchingCryptoEntries(pkt: IPv4Packet, egressIface: string): CryptoMapEntry[] {
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return [];
+    const mapName = this.ifaceCryptoMap.get(egressIface);
+    if (!mapName) return [];
+    const cmap = this.cryptoMaps.get(mapName);
+    if (!cmap) return [];
+    const out: CryptoMapEntry[] = [];
+    const seqs = [...cmap.staticEntries.keys()].sort((a, b) => a - b);
+    for (const seq of seqs) {
+      const entry = cmap.staticEntries.get(seq)!;
+      if (entry.aclName && this.matchACL(entry.aclName, pkt)) out.push(entry);
+    }
+    if (out.length > 1) {
+      Logger.warn(this.router.id, 'ipsec:overlap',
+        `Multiple crypto map entries match ${pkt.destinationIP.toString()} on ${egressIface}: `
+        + `${out.map(e => `seq ${e.seq} (peer=${e.peers[0]}, acl=${e.aclName})`).join(', ')}. `
+        + `Entry seq ${out[0].seq} wins (lowest sequence).`);
+    }
+    return out;
+  }
+
   private buildTunnelProtectionEntry(ifName: string, tp: TunnelProtection): CryptoMapEntry | null {
     const profile = this.ipsecProfiles.get(tp.profileName);
     if (!profile) return null;
