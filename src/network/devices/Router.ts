@@ -1368,6 +1368,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
+  /** @internal RFC 3948 §4 single-byte 0xFF NAT-T keepalive on UDP 4500. */
+  _sendNatTKeepalive(destIp: string): boolean {
+    const dst = new IPAddress(destIp);
+    const route = this.lookupRoute(dst);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const srcIp = egress?.getIPAddress();
+    if (!egress || !srcIp) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 4500, destinationPort: 4500,
+      length: 8 + 1, checksum: 0,
+      payload: { type: 'nat-t-keepalive', bytes: new Uint8Array([0xff]) },
+    };
+    const ipPkt = createIPv4Packet(srcIp, dst, IP_PROTO_UDP, 64, udp, 20 + 8 + 1);
+    const arpHit = this.arpTable.get(
+      (route.nextHop ?? dst).toString(),
+    ) ?? this.arpTable.get(dst.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+    return true;
+  }
+
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
 
   protected recordNetflowSample(_input: NetFlowRecordInput): void {}

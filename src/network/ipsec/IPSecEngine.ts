@@ -475,6 +475,7 @@ export class IPSecEngine implements IProtocolEngine {
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
   }>();
   private natKeepaliveInterval: number = 0;
+  private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
   private dpdConfig: DPDConfig | null = null;
   private globalSALifetimeSeconds: number = 3600;
   private globalSALifetimeKB: number = 4608000; // 4608000 KB default
@@ -900,6 +901,36 @@ export class IPSecEngine implements IProtocolEngine {
 
   setNATKeepalive(interval: number): void {
     this.natKeepaliveInterval = interval;
+    for (const [peerIP, sa] of this.ikeSADB) {
+      if (sa.natT) this.rearmNatTKeepalive(peerIP);
+    }
+  }
+
+  private rearmNatTKeepalive(peerIP: string): void {
+    const existing = this.natKeepaliveTimers.get(peerIP);
+    if (existing) {
+      this.timers.clear(existing);
+      this.natKeepaliveTimers.delete(peerIP);
+    }
+    if (this.natKeepaliveInterval <= 0) return;
+    const periodMs = this.natKeepaliveInterval * 1000;
+    const token = this.timers.setInterval(() => {
+      const sa = this.ikeSADB.get(peerIP);
+      if (!sa || !sa.natT) {
+        this.cancelNatTKeepalive(peerIP);
+        return;
+      }
+      this.router._sendNatTKeepalive(peerIP);
+    }, periodMs);
+    this.natKeepaliveTimers.set(peerIP, token);
+  }
+
+  private cancelNatTKeepalive(peerIP: string): void {
+    const token = this.natKeepaliveTimers.get(peerIP);
+    if (token) {
+      this.timers.clear(token);
+      this.natKeepaliveTimers.delete(peerIP);
+    }
   }
 
   getNATKeepalive(): number {
@@ -1405,6 +1436,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   clearSAsForPeer(peerIP: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' = 'manual'): void {
+    this.cancelNatTKeepalive(peerIP);
     const ikeSA = this.ikeSADB.get(peerIP);
     if (ikeSA) {
       ikeSA.status = 'MM_NO_STATE';
@@ -3013,6 +3045,7 @@ export class IPSecEngine implements IProtocolEngine {
         lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
       }));
     }
+    if (natT) this.rearmNatTKeepalive(srcIp);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: isV2 ? 2 : 1, lifetimeSec: ikeLifetime },
@@ -3102,6 +3135,7 @@ export class IPSecEngine implements IProtocolEngine {
         exchangeMode: pending.offer.exchangeMode,
       }));
     }
+    if (accept.natT) this.rearmNatTKeepalive(srcIp);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: pending.localIP, version: isV2 ? 2 : 1, lifetimeSec: accept.ikeLifetimeSec },
