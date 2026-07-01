@@ -180,8 +180,11 @@ export abstract class LinuxMachine extends EndHost
     );
     // Wire the socket table before the event bus: the reactive
     // ServicePortProjection created in attachEventBus needs the table.
+    this.socketTable.setEphemeralRange(32768, 60999);
     this.initDefaultSockets(profile.isServer);
     this.executor.setSocketTable(this.socketTable);
+    this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
+    this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setTcpProbe((ip, port) => {
       if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);

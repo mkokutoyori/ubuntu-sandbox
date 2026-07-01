@@ -51,9 +51,22 @@ export interface SocketEntry {
 
 export class SocketTable {
   private readonly sockets: Map<number, SocketEntry> = new Map();
-  /** Bound port tracking: `${protocol}:${family}:${port}` */
   private readonly bindings: Set<string> = new Set();
   private idCounter = 0;
+  private ephemeralMin: number = EPHEMERAL_PORT_MIN;
+  private ephemeralMax: number = EPHEMERAL_PORT_MAX;
+
+  setEphemeralRange(min: number, max: number): void {
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max > 65535 || min > max) {
+      throw new Error(`Invalid ephemeral range: [${min}, ${max}]`);
+    }
+    this.ephemeralMin = min;
+    this.ephemeralMax = max;
+  }
+
+  getEphemeralRange(): { min: number; max: number } {
+    return { min: this.ephemeralMin, max: this.ephemeralMax };
+  }
 
   // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -131,7 +144,15 @@ export class SocketTable {
     };
 
     this.sockets.set(this.idCounter, entry);
+    this.bindings.add(this.bindKey(protocol, actualPort, localAddress));
     return entry;
+  }
+
+  transition(socketId: number, state: SocketState): boolean {
+    const entry = this.sockets.get(socketId);
+    if (!entry) return false;
+    entry.state = state;
+    return true;
   }
 
   /**
@@ -272,25 +293,18 @@ export class SocketTable {
    * Tries a random port first, then falls back to linear scan.
    */
   allocateEphemeralPort(): number {
-    const range = EPHEMERAL_PORT_MAX - EPHEMERAL_PORT_MIN + 1;
-
-    // Random probe (avoids sequential clustering under light load)
+    const range = this.ephemeralMax - this.ephemeralMin + 1;
     for (let attempt = 0; attempt < 256; attempt++) {
-      const port = EPHEMERAL_PORT_MIN + Math.floor(Math.random() * range);
-      if (!this.isPortBound(port, 'tcp') &&
-          !this.isPortBound(port, 'udp')) {
+      const port = this.ephemeralMin + Math.floor(Math.random() * range);
+      if (!this.isPortBound(port, 'tcp') && !this.isPortBound(port, 'udp')) {
         return port;
       }
     }
-
-    // Linear fallback (guarantees success unless all ports are exhausted)
-    for (let port = EPHEMERAL_PORT_MIN; port <= EPHEMERAL_PORT_MAX; port++) {
-      if (!this.isPortBound(port, 'tcp') &&
-          !this.isPortBound(port, 'udp')) {
+    for (let port = this.ephemeralMin; port <= this.ephemeralMax; port++) {
+      if (!this.isPortBound(port, 'tcp') && !this.isPortBound(port, 'udp')) {
         return port;
       }
     }
-
     throw new Error('EADDRINUSE: No ephemeral ports available');
   }
 

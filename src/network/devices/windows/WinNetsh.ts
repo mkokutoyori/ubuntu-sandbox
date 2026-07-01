@@ -650,11 +650,27 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
     return handleShowNeighbors(ctx);
   }
 
+  if (sub === 'dynamicport') {
+    const proto = (args[1] ?? 'tcp').toLowerCase();
+    return renderDynamicPort(proto);
+  }
+
   if (sub === '?') {
     return NETSH_IP_SHOW_HELP;
   }
 
   return `The subcommand "${args[0]}" was not found in this context.\nType "netsh interface ipv4 show ?" for more information.`;
+}
+
+function renderDynamicPort(proto: string): string {
+  const label = proto === 'udp' ? 'udp' : 'tcp';
+  return [
+    `Protocol ${label} Dynamic Port Range`,
+    '---------------------------------',
+    'Start Port      : 49152',
+    'Number of Ports : 16384',
+    '',
+  ].join('\n');
 }
 
 function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {

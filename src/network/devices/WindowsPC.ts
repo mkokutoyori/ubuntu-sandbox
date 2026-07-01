@@ -527,13 +527,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  /** `ssh user@host [command]` — outbound SSH client. */
   private cmdSsh(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
+    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     return runWindowsSshClient({
       args,
       sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
+      sourceIp,
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localFs: {
@@ -544,7 +544,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return this.fs.createFile(p, c);
         },
       },
-    }).then(r => r.output);
+    }).then(r => {
+      const peerIp = this.resolveSshPeer(args);
+      if (peerIp && !/Permission denied|refused|timed out|Could not resolve|No route/i.test(r.output)) {
+        const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
+        this.socketTable.transition(entry.id, 'TIME_WAIT');
+      }
+      return r.output;
+    });
+  }
+
+  private resolveSshPeer(args: string[]): string | null {
+    for (const a of args) {
+      if (a.startsWith('-')) continue;
+      const at = a.includes('@') ? a.split('@')[1] : a;
+      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(at)) return at;
+    }
+    return null;
   }
 
   private cmdSftp(args: string[]): Promise<string> {

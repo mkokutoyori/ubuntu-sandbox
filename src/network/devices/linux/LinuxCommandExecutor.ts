@@ -3760,16 +3760,19 @@ export class LinuxCommandExecutor {
         const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
         const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
         if (result.connection) {
-          const srcPort = this.socketTable?.allocateEphemeralPort()
-            ?? 49152 + Math.floor(Math.random() * 16000);
+          const entry = this.socketTable?.connect(
+            'tcp', result.connection.localIp, 0,
+            result.connection.peerIp, result.connection.peerPort,
+            undefined, 'ssh',
+          );
+          const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
           this.captureLog.captureTcpHandshake(
             { ip: result.connection.localIp, port: srcPort },
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
           this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+          if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
         }
-        // An outbound SYN swallowed by a transit ACL still leaves a
-        // half-flow visible in `tcpdump` (S without S.).
         if (result.droppedSyn) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
