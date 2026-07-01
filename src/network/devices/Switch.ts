@@ -36,6 +36,8 @@ import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
 import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
+import { GlbpAgent } from '../glbp/GlbpAgent';
+import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
@@ -239,6 +241,7 @@ export abstract class Switch extends Equipment {
     fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
       this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? null,
   });
 
@@ -1100,16 +1103,21 @@ export abstract class Switch extends Equipment {
     // machine on both switches sees the peer and one of them
     // stays Master while the other becomes Backup. The frame keeps
     // flooding the VLAN normally afterwards.
-    if ((this._vrrpAgent || this._hsrpAgent) && frame.etherType === ETHERTYPE_IPV4) {
+    if ((this._vrrpAgent || this._hsrpAgent || this._glbpAgent) && frame.etherType === ETHERTYPE_IPV4) {
       const ip = frame.payload as IPv4Packet | undefined;
       if (ip && ip.type === 'ipv4') {
         if (ip.protocol === IP_PROTO_VRRP && this._vrrpAgent) {
           this._vrrpAgent.handleIp(`Vlanif${ingressVlan}`, ip.sourceIP, ip);
         }
-        if (ip.protocol === IP_PROTO_UDP && this._hsrpAgent) {
+        if (ip.protocol === IP_PROTO_UDP) {
           const udp = ip.payload as UDPPacket | undefined;
-          if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_HSRP) {
-            this._hsrpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+          if (udp && udp.type === 'udp') {
+            if (udp.destinationPort === UDP_PORT_HSRP && this._hsrpAgent) {
+              this._hsrpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+            }
+            if (udp.destinationPort === UDP_PORT_GLBP && this._glbpAgent) {
+              this._glbpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+            }
           }
         }
       }
@@ -1719,8 +1727,16 @@ export abstract class Switch extends Equipment {
     this._hsrpAgent.start();
     return this._hsrpAgent;
   }
+  private _glbpAgent: GlbpAgent | null = null;
+  private ensureGlbpAgent(): GlbpAgent {
+    if (this._glbpAgent) return this._glbpAgent;
+    this._glbpAgent = new GlbpAgent(this.fhrpHost(), () => this.getBus());
+    this._glbpAgent.start();
+    return this._glbpAgent;
+  }
   getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
   getHsrpAgent(): HsrpAgent { return this.ensureHsrpAgent(); }
+  getGlbpAgent(): GlbpAgent { return this.ensureGlbpAgent(); }
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 

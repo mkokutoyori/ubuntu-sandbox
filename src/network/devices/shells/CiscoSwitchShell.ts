@@ -656,6 +656,57 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
 
+    this.configIfTrie.registerGreedy('glbp', 'GLBP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group) || group < 0 || group > 1023) return '% Invalid GLBP group.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getGlbpAgent();
+      agent.ensureGroup(iface, group);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 1 || p > 255) return '% Invalid priority (1..255).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        case 'weighting': {
+          const w = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(w) || w < 1 || w > 254) return '% Invalid weighting (1..254).';
+          agent.setWeighting(iface, group, w);
+          return '';
+        }
+        case 'load-balancing': {
+          const mode = args[2];
+          if (mode === 'round-robin' || mode === 'weighted' || mode === 'host-dependent') {
+            agent.setLoadBalancing(iface, group, mode);
+          }
+          return '';
+        }
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no glbp', 'Remove a GLBP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getGlbpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
+
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
       'Auto-recover ports err-disabled by port-security', () => {
@@ -2970,6 +3021,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         this.showVrrp());
       t.registerGreedy('show standby', 'Display HSRP groups on SVIs', () =>
         this.showStandby());
+      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', () =>
+        this.showGlbp());
     }
   }
 
@@ -2986,6 +3039,36 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`  Virtual MAC address is ${vrrpVirtualMac(g.vrid)}`);
       lines.push(`  Priority is ${g.priority}`);
       lines.push(`  Preemption is ${g.preempt ? 'enabled' : 'disabled'}`);
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showGlbp(): string {
+    const groups = this.d().getGlbpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr =
+        g.avgState === 'active' ? 'Active'
+        : g.avgState === 'standby' ? 'Standby'
+        : g.avgState === 'init' ? 'Init'
+        : 'Disabled';
+      lines.push(`${iface} - Group ${g.group}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Priority ${g.priority}`);
+      lines.push(`  Weighting ${g.weighting}`);
+      lines.push(`  Load-balancing ${g.loadBalancing}`);
+      lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+      const fwds = [...g.forwarders.values()];
+      if (fwds.length > 0) {
+        lines.push(`  ${fwds.length} forwarder(s):`);
+        for (const f of fwds) {
+          lines.push(`    Forwarder ${f.forwarderNumber} vmac ${f.vmac} state ${f.state}`);
+        }
+      }
       lines.push('');
     }
     return lines.join('\n').replace(/\n$/, '');
