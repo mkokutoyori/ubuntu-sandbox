@@ -18,12 +18,23 @@ import type { InstanceState } from '../OracleInstance';
 
 export type ListenerConnectOutcome = { ok: true } | { ok: false; error: string };
 
+export type ListenerScanEvent = 'syn-probe' | 'tns-connect' | 'tns-status' | 'tns-invalid';
+
+export interface ListenerScanLogEntry {
+  readonly timestamp: string;
+  readonly sourceIp: string;
+  readonly destinationPort: number;
+  readonly event: ListenerScanEvent;
+}
+
 export class ListenerControl {
   private _running = false;
   private _startedAt: Date | null = null;
   private _established = 0;
   private _refused = 0;
   private _port = ORACLE_CONFIG.PORT;
+  private _scanLog: ListenerScanLogEntry[] = [];
+  private _noBanner = false;
 
   constructor(private readonly env: {
     sid: () => string;
@@ -45,6 +56,21 @@ export class ListenerControl {
   get startedAt(): Date | null { return this._startedAt; }
   get established(): number { return this._established; }
   get refused(): number { return this._refused; }
+
+  recordScanAttempt(sourceIp: string, event: ListenerScanEvent = 'syn-probe'): void {
+    this._scanLog.push({
+      timestamp: new Date().toISOString(),
+      sourceIp, destinationPort: this._port, event,
+    });
+  }
+
+  getScanLog(): readonly ListenerScanLogEntry[] { return [...this._scanLog]; }
+
+  clearScanLog(): void { this._scanLog = []; }
+
+  setNoBannerMode(enabled: boolean): void { this._noBanner = enabled; }
+
+  isNoBannerMode(): boolean { return this._noBanner; }
 
   /** @returns false when the listener was already running (TNS-01106). */
   start(): boolean {
