@@ -60,6 +60,7 @@ export interface ServiceUnit {
   activeSince?: Date;
   /** Runtime resource-control overrides set via `systemctl set-property`. */
   props?: Record<string, string>;
+  readinessDelayMs?: number;
 }
 
 export interface ServiceManagerOptions {
@@ -440,9 +441,78 @@ export class LinuxServiceManager {
         return verdict;
       }
     }
+    if (u.readinessDelayMs && u.readinessDelayMs > 0) {
+      const r = this.beginActivation(u);
+      if (!r.ok) return r;
+      const pending = { name: u.name, complete: () => this.completeDelayedActivation(u.name) };
+      this.pendingReadiness.set(u.name, pending);
+      const timer = setTimeout(() => {
+        if (this.pendingReadiness.get(u.name) === pending) pending.complete();
+      }, u.readinessDelayMs);
+      if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+        (timer as unknown as { unref: () => void }).unref();
+      }
+      return { ok: true };
+    }
     const r = this.activate(u);
     if (r.ok) this.emitLifecycle('start', u.name);
     return r;
+  }
+
+  setReadinessDelay(name: string, delayMs: number): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    unit.unit.readinessDelayMs = delayMs;
+    return { ok: true };
+  }
+
+  flushReadiness(name?: string): void {
+    if (name) {
+      const p = this.pendingReadiness.get(name);
+      if (p) p.complete();
+      return;
+    }
+    for (const p of Array.from(this.pendingReadiness.values())) p.complete();
+  }
+
+  private readonly pendingReadiness = new Map<string, { name: string; complete: () => void }>();
+
+  private beginActivation(u: LinuxService): OperationResult {
+    const prev = u.state;
+    u.state = 'activating';
+    const userEntry = u.user || 'root';
+    let uid = userEntry === 'root' ? 0 : 1;
+    let gid = userEntry === 'root' ? 0 : 1;
+    if (u.dynamicUser && this.dynamicUsers) {
+      const allocated = this.dynamicUsers.allocate(userEntry);
+      uid = allocated.uid;
+      gid = allocated.gid;
+    }
+    const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
+    const expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    const profile = serviceMemoryProfile(u.name);
+    const proc = this.processMgr.spawn({
+      command: expanded,
+      user: userEntry,
+      uid,
+      gid,
+      serviceName: u.name,
+      vsize: profile.vsize,
+      rss: profile.rss,
+    });
+    u.mainPid = proc.pid;
+    this.emitStateChanged(u.name, prev, 'activating');
+    return { ok: true };
+  }
+
+  private completeDelayedActivation(name: string): void {
+    const u = this.units.get(name);
+    if (!u || u.state !== 'activating') { this.pendingReadiness.delete(name); return; }
+    u.activeSince = new Date();
+    u.state = 'active';
+    this.pendingReadiness.delete(name);
+    this.emitStateChanged(u.name, 'activating', 'active');
+    this.emitLifecycle('start', u.name);
   }
 
   /** Stop a service. Kills its main process if running. */
