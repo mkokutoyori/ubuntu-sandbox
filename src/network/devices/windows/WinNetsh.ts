@@ -27,22 +27,18 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 
-// ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
+// ─── Per-device IPv6 route state (WeakMap keyed by ctx.ports for test isolation) ──
+// IPv6 addresses live on the real Port (port.configureIPv6/getIPv6Addresses),
+// not here — so ipconfig, ping -6 and the data plane all see the same state.
 
-interface IPv6InterfaceEntry { address: string; prefixLen: number; }
 interface IPv6RouteEntry { prefix: string; prefixLen: number; iface: string; nexthop: string; metric: number; published: boolean; }
 
-const ipv6AddrStore = new WeakMap<Map<string, any>, Map<string, IPv6InterfaceEntry[]>>();
 const ipv6RouteStore = new WeakMap<Map<string, any>, IPv6RouteEntry[]>();
 
-function getIPv6Addrs(ctx: WinCommandContext): Map<string, IPv6InterfaceEntry[]> {
-  if (!ipv6AddrStore.has(ctx.ports)) ipv6AddrStore.set(ctx.ports, new Map());
-  return ipv6AddrStore.get(ctx.ports)!;
-}
 function getIPv6Routes(ctx: WinCommandContext): IPv6RouteEntry[] {
   if (!ipv6RouteStore.has(ctx.ports)) ipv6RouteStore.set(ctx.ports, []);
   return ipv6RouteStore.get(ctx.ports)!;
@@ -1234,12 +1230,14 @@ To view help for a command, type the command, followed by a space, and then
       const addrRaw = rest[2] || '';
       if (!ifName || !addrRaw) return `Usage: netsh interface ipv6 add address [interface=]<string> [address=]<IPv6 address>[/<prefix>]`;
       const portName = resolveAdapterName(ifName, ctx.ports);
-      if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      const port = ctx.ports.get(portName);
+      if (!port) return `The interface "${ifName}" was not found.`;
       const [addr, pfxStr] = addrRaw.split('/');
       const prefixLen = pfxStr ? parseInt(pfxStr, 10) : 64;
-      const store = getIPv6Addrs(ctx);
-      if (!store.has(portName)) store.set(portName, []);
-      store.get(portName)!.push({ address: addr, prefixLen });
+      let parsed: IPv6Address;
+      try { parsed = new IPv6Address(addr); }
+      catch { return `The value for the IP address is invalid.`; }
+      port.configureIPv6(parsed, prefixLen);
       return 'Ok.';
     }
 
@@ -1272,17 +1270,18 @@ To view help for a command, type the command, followed by a space, and then
     const ifFilter = rest[1] || '';
 
     if (obj === 'addresses') {
-      const store = getIPv6Addrs(ctx);
       const lines: string[] = [''];
-      for (const [portName, entries] of store) {
+      for (const [portName, port] of ctx.ports) {
         if (ifFilter) {
           const resolved = resolveAdapterName(ifFilter, ctx.ports);
           if (portName !== resolved) continue;
         }
+        const entries = port.getIPv6Addresses();
+        if (entries.length === 0) continue;
         const displayName = portName.replace(/^eth/, 'Ethernet ');
         lines.push(`Interface ${displayName} Parameters`);
         for (const e of entries) {
-          lines.push(`  Address ${e.address}/${e.prefixLen}`);
+          lines.push(`  Address ${e.address.toString()}/${e.prefixLength}`);
           lines.push(`    Type:          Unicast`);
           lines.push(`    DAD State:     Preferred`);
           lines.push('');
@@ -1319,6 +1318,22 @@ To view help for a command, type the command, followed by a space, and then
         return `Usage: netsh interface ipv6 delete route [prefix=]<string> [interface=]<string>`;
       }
       return 'Ok.';
+    }
+    if (obj === 'address') {
+      // netsh interface ipv6 delete address <iface> <addr>
+      const ifName = rest[1] || '';
+      const addrRaw = rest[2] || '';
+      if (!ifName || !addrRaw || addrRaw === '?') {
+        return `Usage: netsh interface ipv6 delete address [interface=]<string> [address=]<IPv6 address>`;
+      }
+      const portName = resolveAdapterName(ifName, ctx.ports);
+      const port = ctx.ports.get(portName);
+      if (!port) return `The interface "${ifName}" was not found.`;
+      let parsed: IPv6Address;
+      try { parsed = new IPv6Address(addrRaw); }
+      catch { return `The value for the IP address is invalid.`; }
+      const removed = port.removeIPv6Address(parsed);
+      return removed ? 'Ok.' : `The specified value does not exist.`;
     }
     if (obj === '?') return `Usage: netsh interface ipv6 delete route|address ...`;
     return `Usage: netsh interface ipv6 delete route|address ...`;

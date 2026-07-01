@@ -108,18 +108,24 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     const mask = port.getSubnetMask();
     const displayName = portDisplayName(port.getName());
     const isConnected = port.isConnected();
+    const global6 = port.getGlobalIPv6();
+    const linkLocal6 = port.getLinkLocalIPv6();
+    const adapterUp = port.getIsUp() && (isConnected || !!ip || !!global6 || !!linkLocal6);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
     lines.push(`   Connection-specific DNS Suffix  . : ${suffix}`);
 
-    if (!port.getIsUp() || (!isConnected && !ip)) {
+    if (!adapterUp) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
-    } else if (ip) {
-      lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
-      lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
-      lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway || ''}`);
     } else {
-      lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
+      if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}`);
+      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}`);
+
+      if (ip) {
+        lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
+        lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
+      }
+      pushDefaultGatewayLines(lines, ctx);
     }
     lines.push('');
   }
@@ -148,10 +154,13 @@ function ipconfigAll(ctx: WinCommandContext): string {
     const displayName = portDisplayName(name);
     const isDHCP = ctx.isDHCPConfigured(name);
     const isConnected = port.isConnected();
+    const global6 = port.getGlobalIPv6();
+    const linkLocal6 = port.getLinkLocalIPv6();
+    const adapterUp = port.getIsUp() && (isConnected || !!ip || !!global6 || !!linkLocal6);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
 
-    if (!port.getIsUp() || (!isConnected && !ip)) {
+    if (!adapterUp) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
@@ -164,6 +173,9 @@ function ipconfigAll(ctx: WinCommandContext): string {
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
+
+      if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}(Preferred)`);
+      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}(Preferred)`);
 
       if (ip) {
         lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}(Preferred)`);
@@ -178,7 +190,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
           }
         }
 
-        lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway || ''}`);
+        pushDefaultGatewayLines(lines, ctx);
 
         if (isDHCP) {
           const dhcpState = ctx.getDHCPState(name);
@@ -202,6 +214,9 @@ function ipconfigAll(ctx: WinCommandContext): string {
           }
         }
 
+        lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
+      } else if (global6 || linkLocal6) {
+        pushDefaultGatewayLines(lines, ctx);
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
       } else {
         lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
@@ -307,6 +322,16 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
+
+/** Real ipconfig lists the IPv6 gateway first, the IPv4 one on a continuation line. */
+function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext): void {
+  if (ctx.defaultGateway6) {
+    lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway6}`);
+    if (ctx.defaultGateway) lines.push(`                                       ${ctx.defaultGateway}`);
+    return;
+  }
+  lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway ?? ''}`);
+}
 
 function portDisplayName(portName: string): string {
   return portName.replace(/^eth/, 'Ethernet ');

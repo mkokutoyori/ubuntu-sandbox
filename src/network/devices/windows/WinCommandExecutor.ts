@@ -63,6 +63,8 @@ export interface WinCommandContext {
   ports: Map<string, Port>;
   /** Default gateway IP string or null */
   defaultGateway: string | null;
+  /** IPv6 default gateway string or null (router-advertised or static) */
+  defaultGateway6: string | null;
   /** ARP table */
   arpTable: Map<string, { mac: any; iface: string; type?: 'dynamic' | 'static' }>;
 

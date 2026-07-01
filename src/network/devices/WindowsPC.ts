@@ -1231,6 +1231,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       hostname: this.hostname,
       ports: this.ports,
       defaultGateway: this.defaultGateway?.toString() || null,
+      defaultGateway6: this.getDefaultGateway6()?.toString() || null,
       arpTable: this.arpTable,
 
       configureInterface: (ifName: string, ip: IPAddress, mask: SubnetMask) =>
