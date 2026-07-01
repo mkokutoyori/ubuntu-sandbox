@@ -242,8 +242,6 @@ export function findHostByAddress(
           return { device: dev, ip: target, resolvedFrom: target };
         }
       }
-      // Switch management SVIs (`interface Vlan N`) carry IPs that live on no
-      // physical port — resolve them too.
       const sviHost = dev as unknown as {
         getSvis?: () => Array<{ ip?: { toString(): string }; vlan: number }>;
         isSviLineUp?: (svi: unknown) => boolean;
@@ -255,6 +253,31 @@ export function findHostByAddress(
         } else if (!sviHost.isSviLineUp?.(svi)) {
           off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
         } else {
+          return { device: dev, ip: target, resolvedFrom: target };
+        }
+      }
+    }
+    return off;
+  }
+
+  if (target.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(target)) {
+    const bareTarget = target.split('%')[0].toLowerCase();
+    let off: RemoteHost | null = null;
+    for (const dev of registry.getAll()) {
+      for (const port of dev.getPorts()) {
+        const matched = port.getIPv6Addresses().some((entry) => {
+          const a = entry.address.toString().split('%')[0].toLowerCase();
+          return a === bareTarget;
+        });
+        if (matched) {
+          if (!dev.getIsPoweredOn()) {
+            off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+            continue;
+          }
+          if (!port.getIsUp()) {
+            off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
+            continue;
+          }
           return { device: dev, ip: target, resolvedFrom: target };
         }
       }

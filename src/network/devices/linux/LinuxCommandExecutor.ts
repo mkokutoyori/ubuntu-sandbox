@@ -284,6 +284,7 @@ export class LinuxCommandExecutor {
   readonly systemdNss = new SystemdNssSource(this.dynamicUsers);
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
+  readonly ip6tables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
@@ -397,6 +398,7 @@ export class LinuxCommandExecutor {
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
+    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.auditLog = new LinuxAuditLog(this.vfs);
@@ -1111,17 +1113,12 @@ export class LinuxCommandExecutor {
       return { output: `nc: port number invalid: ${positional[1]}`, exitCode: 1 };
     }
 
-    const sourceIp = this.firstConfiguredIp();
+    const targetIsV6 = this.isIPv6Literal(host);
+    const sourceIp = targetIsV6 ? this.firstConfiguredIpv6() : this.firstConfiguredIp();
     if (!sourceIp || sourceIp === '127.0.0.1') {
       return { output: `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`, exitCode: 1 };
     }
 
-    // Loopback / own-IP target — when an `ssh -L` tunnel is bound on this
-    // port, the outbound side is opened by the remote sshd process, so
-    // re-source the probe from the SSH server's vantage point. This is
-    // exactly the bypass an SSH tunnel grants: a transit ACL aimed at
-    // (client → backend) does not stop the tunnel because the connection
-    // to the backend actually originates from the SSH server.
     const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
     if ((isLoopback || host === sourceIp) && this.forwarding) {
       const fwd = this.forwarding.list().find(f => f.listenPort === port);
@@ -1496,11 +1493,26 @@ export class LinuxCommandExecutor {
     for (const name of this.ipNetworkCtx.getInterfaceNames()) {
       if (name === 'lo') continue;
       const info = this.ipNetworkCtx.getInterfaceInfo(name);
-      // An administratively-down NIC cannot source traffic, so its address
-      // is unusable until the interface is brought back up.
       if (info?.ip && info.isUp) return info.ip;
     }
     return null;
+  }
+
+  private firstConfiguredIpv6(): string | null {
+    if (!this.ipNetworkCtx) return null;
+    for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+      if (name === 'lo') continue;
+      const info = this.ipNetworkCtx.getInterfaceInfo(name);
+      if (!info?.isUp) continue;
+      for (const v6 of info.ipv6 ?? []) {
+        if (v6.scope === 'global') return v6.address;
+      }
+    }
+    return null;
+  }
+
+  private isIPv6Literal(host: string): boolean {
+    return host.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(host);
   }
 
   /** Wire the device's socket table so netstat/ss output is dynamic */

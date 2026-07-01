@@ -66,6 +66,8 @@ export interface IpNetworkContext {
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
   configureInterface(ifName: string, ip: IPAddress, cidr: number): string;
   addInterfaceIP?(ifName: string, ip: IPAddress, cidr: number): string;
+  addInterfaceIPv6?(ifName: string, addr: string, prefixLength: number): string;
+  removeInterfaceIPv6?(ifName: string, addr: string): string;
   removeInterfaceAddress?(ifName: string, ip: IPAddress): string;
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(): IpRouteEntry[];
@@ -464,13 +466,20 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
 
   const ipStr = addrStr.slice(0, slashIdx);
-  const cidr = parseInt(addrStr.slice(slashIdx + 1), 10);
-  if (isNaN(cidr) || cidr < 1 || cidr > 32) return 'Error: invalid prefix length.';
+  const prefix = parseInt(addrStr.slice(slashIdx + 1), 10);
+
+  if (ipStr.includes(':')) {
+    if (isNaN(prefix) || prefix < 1 || prefix > 128) return 'Error: invalid prefix length.';
+    if (!ctx.addInterfaceIPv6) return `Error: IPv6 address configuration is not supported on this interface.`;
+    return ctx.addInterfaceIPv6(devName, ipStr, prefix);
+  }
+
+  if (isNaN(prefix) || prefix < 1 || prefix > 32) return 'Error: invalid prefix length.';
   let ip: IPAddress;
   try { ip = new IPAddress(ipStr); }
   catch { return `Error: ${ipStr} is not a valid IPv4 address.`; }
 
-  return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, cidr) : ctx.configureInterface(devName, ip, cidr);
+  return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, prefix) : ctx.configureInterface(devName, ip, prefix);
 }
 
 function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {

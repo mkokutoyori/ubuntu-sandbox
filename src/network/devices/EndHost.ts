@@ -19,6 +19,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import { Port } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
@@ -2283,6 +2284,61 @@ export abstract class EndHost extends Equipment {
     const established = socket.state === 'established';
     socket.close();
     return established;
+  }
+
+  tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
+    const bareTarget = targetAddr.split('%')[0].toLowerCase();
+    const sourceAddr = this.findFirstGlobalIPv6();
+    if (!sourceAddr) return false;
+
+    const registry = EquipmentRegistry.getInstance();
+    for (const dev of registry.getAll()) {
+      for (const port6 of dev.getPorts()) {
+        const owns = port6.getIPv6Addresses().some((e) =>
+          e.address.toString().split('%')[0].toLowerCase() === bareTarget,
+        );
+        if (!owns) continue;
+        if (!dev.getIsPoweredOn()) return false;
+        if (!port6.getIsUp()) return false;
+
+        const targetHost = dev as unknown as {
+          socketTable?: { getAll(): Array<{ protocol: string; localAddress: string; localPort: number; state: string }> };
+          executor?: {
+            ip6tables?: { hasDropOnInputPort?: (port: number) => boolean };
+            captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void };
+          };
+        };
+        if (!targetHost.socketTable) return false;
+        const hasListener = targetHost.socketTable.getAll().some((s) =>
+          s.protocol === 'tcp' &&
+          s.state === 'LISTEN' &&
+          s.localPort === port &&
+          (s.localAddress === '::' || s.localAddress.toLowerCase() === bareTarget),
+        );
+        if (!hasListener) return false;
+
+        if (targetHost.executor?.ip6tables?.hasDropOnInputPort?.(port)) return false;
+
+        const srcPort = 49152 + Math.floor(Math.random() * 16000);
+        const localCapture = (this as unknown as { executor?: { captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void } } }).executor?.captureLog;
+        localCapture?.captureTcpHandshake({ ip: sourceAddr, port: srcPort }, { ip: bareTarget, port });
+        targetHost.executor?.captureLog?.captureTcpHandshake({ ip: sourceAddr, port: srcPort }, { ip: bareTarget, port });
+
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private findFirstGlobalIPv6(): string | null {
+    for (const port of this.ports.values()) {
+      if (!port.getIsUp()) continue;
+      for (const entry of port.getIPv6Addresses()) {
+        if (entry.origin === 'link-local') continue;
+        return entry.address.toString().split('%')[0];
+      }
+    }
+    return null;
   }
 
   async tracerouteStreamInSession(

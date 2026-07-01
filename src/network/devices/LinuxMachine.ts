@@ -183,7 +183,10 @@ export abstract class LinuxMachine extends EndHost
     this.initDefaultSockets(profile.isServer);
     this.executor.setSocketTable(this.socketTable);
     this.executor.setSessionTable(this.sessionTable);
-    this.executor.setTcpProbe((ip, port) => this.tcpProbeSync(new IPAddress(ip), port));
+    this.executor.setTcpProbe((ip, port) => {
+      if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);
+      return this.tcpProbeSync(new IPAddress(ip), port);
+    });
     const utmpSync = new UtmpSync(this.executor.vfs);
     utmpSync.bootstrap();
     if (this.executor.lifecycle.bootedAt()) {
@@ -912,14 +915,13 @@ export abstract class LinuxMachine extends EndHost
    * used by ps/netstat output so the two are coherent.
    */
   private initDefaultSockets(isServer: boolean): void {
-    // sshd — listens on all interfaces (every Linux machine has SSH)
     this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
-    // systemd-resolved — DNS stub resolver bound to loopback only
+    this.socketTable.bind('tcp', '::', 22, 985, 'sshd');
     this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
 
     if (isServer) {
-      // Oracle TNS listener — only on server profiles
       this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr');
+      this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr');
     }
   }
 
@@ -1014,12 +1016,12 @@ export abstract class LinuxMachine extends EndHost
       return ports.length ? ports : [22];
     };
     const rebindPorts = (): void => {
-      // Drop any currently-bound 'sshd' listeners then bind the configured set.
       for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
         this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
       }
       for (const p of portsFromConfig()) {
         try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd'); } catch { /* already bound */ }
+        try { this.socketTable.bind('tcp', '::', p, 985, 'sshd'); } catch { /* already bound */ }
       }
     };
     const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
@@ -1057,7 +1059,9 @@ export abstract class LinuxMachine extends EndHost
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&"'`()]+/);
     return words.some(w =>
-      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' || w === 'ps' || w === 'man',
+      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' ||
+      w === 'ip6tables' || w === 'ip6tables-save' || w === 'ip6tables-restore' ||
+      w === 'ps' || w === 'man',
     );
   }
 
@@ -1376,11 +1380,22 @@ export abstract class LinuxMachine extends EndHost
         return this.executor.iptables.execute(iptArgs).output;
       }
       case 'iptables-save': {
-        if (noSudo.includes('>')) return null; // redirect → let bash handle it
+        if (noSudo.includes('>')) return null;
         return this.executor.iptables.executeSave();
       }
       case 'iptables-restore': {
-        return null; // always let bash handle (needs < file redirection)
+        return null;
+      }
+      case 'ip6tables': {
+        const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
+        return this.executor.ip6tables.execute(iptArgs).output;
+      }
+      case 'ip6tables-save': {
+        if (noSudo.includes('>')) return null;
+        return this.executor.ip6tables.executeSave();
+      }
+      case 'ip6tables-restore': {
+        return null;
       }
       case 'ps': {
         // Run the executor's ps first (shows init, bash, oracle, etc.)

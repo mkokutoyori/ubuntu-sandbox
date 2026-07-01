@@ -118,10 +118,30 @@ export class LinuxIptablesManager {
   private conntrack: Map<string, number> = new Map();
   private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
 
-  constructor(vfs?: VirtualFileSystem, resolveService?: IptablesServiceResolver) {
+  readonly family: 4 | 6;
+
+  constructor(
+    vfs?: VirtualFileSystem,
+    resolveService?: IptablesServiceResolver,
+    opts?: { family?: 4 | 6 },
+  ) {
     if (vfs) this.vfs = vfs;
     if (resolveService) this.resolveService = resolveService;
+    this.family = opts?.family ?? 4;
     this.initializeTables();
+  }
+
+  hasDropOnInputPort(port: number, protocol: 'tcp' | 'udp' = 'tcp'): boolean {
+    const filter = this.tables.get('filter');
+    const input = filter?.chains.get('INPUT');
+    if (!input) return false;
+    for (const rule of input.rules) {
+      if (rule.target !== 'DROP' && rule.target !== 'REJECT') continue;
+      if (rule.protocol && rule.protocol !== protocol) continue;
+      if (rule.dport !== String(port)) continue;
+      return true;
+    }
+    return false;
   }
 
   private initializeTables(): void {

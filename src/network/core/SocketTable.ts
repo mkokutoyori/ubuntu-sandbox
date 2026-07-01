@@ -51,14 +51,19 @@ export interface SocketEntry {
 
 export class SocketTable {
   private readonly sockets: Map<number, SocketEntry> = new Map();
-  /** Bound port tracking: `${protocol}:${port}` */
+  /** Bound port tracking: `${protocol}:${family}:${port}` */
   private readonly bindings: Set<string> = new Set();
   private idCounter = 0;
 
   // ─── Helpers ────────────────────────────────────────────────────────
 
-  private bindKey(protocol: SocketProtocol, port: number): string {
-    return `${protocol}:${port}`;
+  private static isV6Address(addr: string): boolean {
+    return addr.includes(':');
+  }
+
+  private bindKey(protocol: SocketProtocol, port: number, localAddress: string): string {
+    const family = SocketTable.isV6Address(localAddress) ? 'v6' : 'v4';
+    return `${protocol}:${family}:${port}`;
   }
 
   // ─── Core operations ────────────────────────────────────────────────
@@ -74,7 +79,7 @@ export class SocketTable {
     pid?: number,
     processName?: string,
   ): SocketEntry {
-    const key = this.bindKey(protocol, localPort);
+    const key = this.bindKey(protocol, localPort, localAddress);
     if (this.bindings.has(key)) {
       throw new Error(`EADDRINUSE: Port ${localPort}/${protocol} already in use`);
     }
@@ -205,7 +210,7 @@ export class SocketTable {
     let removed = 0;
     for (const [id, entry] of this.sockets) {
       if (entry.protocol === protocol && entry.localAddress === localAddress && entry.localPort === localPort) {
-        this.bindings.delete(this.bindKey(entry.protocol, entry.localPort));
+        this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
         this.sockets.delete(id);
         removed++;
       }
@@ -221,15 +226,18 @@ export class SocketTable {
     const entry = this.sockets.get(socketId);
     if (!entry) return false;
 
-    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort));
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
     this.sockets.delete(socketId);
     return true;
   }
 
   // ─── Queries ────────────────────────────────────────────────────────
 
-  isPortBound(port: number, protocol: SocketProtocol): boolean {
-    return this.bindings.has(this.bindKey(protocol, port));
+  isPortBound(port: number, protocol: SocketProtocol, family: 'v4' | 'v6' | 'any' = 'any'): boolean {
+    if (family === 'any') {
+      return this.bindings.has(`${protocol}:v4:${port}`) || this.bindings.has(`${protocol}:v6:${port}`);
+    }
+    return this.bindings.has(`${protocol}:${family}:${port}`);
   }
 
   getAll(): SocketEntry[] {
@@ -269,16 +277,16 @@ export class SocketTable {
     // Random probe (avoids sequential clustering under light load)
     for (let attempt = 0; attempt < 256; attempt++) {
       const port = EPHEMERAL_PORT_MIN + Math.floor(Math.random() * range);
-      if (!this.bindings.has(this.bindKey('tcp', port)) &&
-          !this.bindings.has(this.bindKey('udp', port))) {
+      if (!this.isPortBound(port, 'tcp') &&
+          !this.isPortBound(port, 'udp')) {
         return port;
       }
     }
 
     // Linear fallback (guarantees success unless all ports are exhausted)
     for (let port = EPHEMERAL_PORT_MIN; port <= EPHEMERAL_PORT_MAX; port++) {
-      if (!this.bindings.has(this.bindKey('tcp', port)) &&
-          !this.bindings.has(this.bindKey('udp', port))) {
+      if (!this.isPortBound(port, 'tcp') &&
+          !this.isPortBound(port, 'udp')) {
         return port;
       }
     }

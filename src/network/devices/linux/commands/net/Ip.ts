@@ -16,7 +16,7 @@ import {
   type IpNeighborEntry,
   type IpXfrmContext,
 } from '../../LinuxIpCommand';
-import { IPAddress, SubnetMask, MACAddress } from '../../../../core/types';
+import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
 import { getNUDState } from '../../../EndHost';
 
 export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
@@ -70,6 +70,26 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         const mask = SubnetMask.fromCIDR(cidr);
         if (!port.getIPAddress()) net.configureInterface(ifName, ip, mask);
         else port.addSecondaryIP(ip, mask);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    addInterfaceIPv6(ifName: string, addr: string, prefixLength: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.configureIPv6(new IPv6Address(addr), prefixLength);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    removeInterfaceIPv6(ifName: string, addr: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.removeIPv6Address(new IPv6Address(addr));
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
