@@ -195,7 +195,8 @@ export function resolveOracleConnectTarget(
   if (desc.port !== db.instance.listener.port) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
   }
-  const outcome = db.instance.listener.attemptConnect(desc.service);
+  const sourceIp = remote ? (primaryIpv4(localDevice) ?? '0.0.0.0') : '127.0.0.1';
+  const outcome = db.instance.listener.attemptConnect(desc.service, sourceIp);
   if (!outcome.ok) {
     return { ok: false, error: outcome.error };
   }

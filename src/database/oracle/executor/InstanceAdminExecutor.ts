@@ -189,7 +189,10 @@ export class InstanceAdminExecutor {
 
   executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
     const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT';
-    const datafiles = [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }];
+    const datafiles = [{
+      path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false,
+      maxSize: stmt.autoextend?.maxSize,
+    }];
     this.storage.createTablespace({
       name: stmt.name.toUpperCase(),
       type,
@@ -251,7 +254,7 @@ export class InstanceAdminExecutor {
       });
     switch (action.kind) {
       case 'ADD_DATAFILE': {
-        const df = { path: action.path, size: action.size, autoextend: action.autoextend ?? false };
+        const df = { path: action.path, size: action.size, autoextend: action.autoextend ?? false, maxSize: action.maxSize };
         const updated = storage.addDatafileToTablespace(name, df);
         if (!updated) return;
         this.bus.publish({

@@ -13,6 +13,7 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
+import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
@@ -27,6 +28,8 @@ const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
 const oracleAuditSyslogSyncs: Map<string, OracleAuditSyslogSync> = new Map();
+/** Per-device listener↔TcpStack binder — keeps TCP 1521 a genuinely connectable socket. */
+const oracleListenerTcpSyncs: Map<string, OracleListenerTcpSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -133,6 +136,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     auditSyslog.start();
     oracleAuditSyslogSyncs.set(deviceId, auditSyslog);
 
+    const listenerTcp = new OracleListenerTcpSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    listenerTcp.start();
+    oracleListenerTcpSyncs.set(deviceId, listenerTcp);
+
     db.instance.startup('OPEN');
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
@@ -145,6 +155,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // materialised so it never recreates a file the user later deletes.
     sync.primeDatafiles(deviceId);
     sync.primeSgaMemory(deviceId);
+    listenerTcp.primeListener(deviceId);
   }
   return db;
 }
@@ -297,6 +308,8 @@ export function resetAllOracleInstances(): void {
   oracleSystemdSyncs.clear();
   for (const sync of oracleAuditSyslogSyncs.values()) sync.stop();
   oracleAuditSyslogSyncs.clear();
+  for (const sync of oracleListenerTcpSyncs.values()) sync.stop();
+  oracleListenerTcpSyncs.clear();
   for (const db of oracleInstances.values()) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }

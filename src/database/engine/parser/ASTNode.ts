@@ -677,7 +677,7 @@ export interface DropTablespaceStatement extends ASTNode {
 }
 
 export type AlterTablespaceAction =
-  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean }
+  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean; maxSize?: string }
   | { kind: 'ONLINE' }
   | { kind: 'OFFLINE'; mode?: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' }
   | { kind: 'READ_ONLY' }

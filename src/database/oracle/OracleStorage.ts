@@ -9,14 +9,19 @@ import type { IndexValueSemantics } from '../engine/storage/RowIndexCache';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
 import { ORACLE_CONFIG } from './OracleConfig';
 import { TransactionCoordinator } from './transaction/TransactionCoordinator';
-import { parseSize } from './views/_fileSize';
+import { parseSize, ROW_FOOTPRINT_BYTES, UNLIMITED_DATAFILE_BYTES } from './views/_fileSize';
 import { implicitToDate } from './functions/valueUtils';
+
+export interface TablespaceCapacityResult {
+  ok: boolean;
+  shortfallBytes: number;
+}
 
 export interface TablespaceMeta {
   name: string;
   type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
   status: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
-  datafiles: { path: string; size: string; autoextend: boolean }[];
+  datafiles: { path: string; size: string; autoextend: boolean; maxSize?: string }[];
   blockSize: number;
   /** LOGGING / NOLOGGING — affects whether DML against the tablespace generates redo. */
   logging: boolean;
@@ -73,6 +78,7 @@ export function normaliseTablespace(
 export class OracleStorage extends BaseStorage {
   private tablespaces: Map<string, TablespaceMeta> = new Map();
   private readonly txnCoordinator = new TransactionCoordinator();
+  private alertSink: ((message: string) => void) | null = null;
 
   constructor() {
     super();
@@ -223,5 +229,62 @@ export class OracleStorage extends BaseStorage {
       }
     }
     return null;
+  }
+
+  setAlertSink(sink: (message: string) => void): void {
+    this.alertSink = sink;
+  }
+
+  getTablespaceAllocatedBytes(name: string): number {
+    const ts = this.tablespaces.get(name.toUpperCase());
+    if (!ts) return 0;
+    return ts.datafiles.reduce((sum, df) => sum + parseSize(df.size), 0);
+  }
+
+  getTablespaceUsedBytes(name: string): number {
+    const target = name.toUpperCase();
+    let used = 0;
+    for (const meta of this.getAllTables()) {
+      const owner = (meta.tablespace ?? 'USERS').toUpperCase();
+      if (owner === target) used += meta.rowCount * ROW_FOOTPRINT_BYTES;
+    }
+    return used;
+  }
+
+  getTablespaceFreeBytes(name: string): number {
+    return Math.max(this.getTablespaceAllocatedBytes(name) - this.getTablespaceUsedBytes(name), 0);
+  }
+
+  private datafileMaxBytes(df: TablespaceMeta['datafiles'][number]): number {
+    if (!df.autoextend) return parseSize(df.size);
+    if (!df.maxSize || df.maxSize.toUpperCase() === 'UNLIMITED') return UNLIMITED_DATAFILE_BYTES;
+    return parseSize(df.maxSize);
+  }
+
+  reserveTablespaceSpace(name: string, growthBytes: number): TablespaceCapacityResult {
+    const ts = this.tablespaces.get(name.toUpperCase());
+    if (!ts) return { ok: true, shortfallBytes: 0 };
+    let free = this.getTablespaceFreeBytes(ts.name);
+    if (free >= growthBytes) return { ok: true, shortfallBytes: 0 };
+
+    for (const df of ts.datafiles) {
+      if (free >= growthBytes) break;
+      if (!df.autoextend) continue;
+      const current = parseSize(df.size);
+      const maxBytes = this.datafileMaxBytes(df);
+      if (current >= maxBytes) continue;
+      const shortfall = growthBytes - free;
+      const increment = Math.max(shortfall, ts.nextExtent);
+      const newSize = Math.min(current + increment, maxBytes);
+      if (newSize <= current) continue;
+      df.size = String(newSize);
+      free += newSize - current;
+      this.alertSink?.(
+        `Extending datafile ${df.path} from ${current} to ${newSize} bytes ` +
+        `(tablespace ${ts.name} AUTOEXTEND)`,
+      );
+    }
+
+    return { ok: free >= growthBytes, shortfallBytes: Math.max(growthBytes - free, 0) };
   }
 }

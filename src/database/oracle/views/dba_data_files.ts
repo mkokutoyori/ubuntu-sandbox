@@ -7,9 +7,7 @@
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
-import { parseSize, bytesToBlocks, DEFAULT_BLOCK_SIZE } from './_fileSize';
-
-const UNLIMITED_BYTES = 34359721984; // ~32G — same value real 19c reports for AUTOEXTEND ON without MAXSIZE.
+import { parseSize, bytesToBlocks, DEFAULT_BLOCK_SIZE, UNLIMITED_DATAFILE_BYTES } from './_fileSize';
 
 registerView({
   name: 'DBA_DATA_FILES',
@@ -22,7 +20,9 @@ registerView({
       for (const df of ts.datafiles) {
         const bytes = parseSize(df.size);
         const blocks = bytesToBlocks(bytes, ts.blockSize || DEFAULT_BLOCK_SIZE);
-        const maxBytes = df.autoextend ? UNLIMITED_BYTES : bytes;
+        const maxBytes = df.autoextend
+          ? (df.maxSize && df.maxSize.toUpperCase() !== 'UNLIMITED' ? parseSize(df.maxSize) : UNLIMITED_DATAFILE_BYTES)
+          : bytes;
         const maxBlocks = bytesToBlocks(maxBytes, ts.blockSize || DEFAULT_BLOCK_SIZE);
         const userBytes = Math.max(bytes - 65536, 0); // 8 reserved blocks header
         const userBlocks = bytesToBlocks(userBytes, ts.blockSize || DEFAULT_BLOCK_SIZE);

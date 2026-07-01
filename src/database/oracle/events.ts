@@ -53,6 +53,10 @@ export interface OracleAlertLogEntryAddedPayload extends OracleDeviceRef {
   line: string;
 }
 
+export interface OracleListenerConnectionLoggedPayload extends OracleDeviceRef {
+  line: string;
+}
+
 export interface OracleParameterChangedPayload extends OracleDeviceRef {
   key: string;
   oldValue: string | undefined;
@@ -511,6 +515,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.instance.server-process-started';     payload: OracleServerProcessStartedPayload }
   | { topic: 'oracle.instance.server-process-stopped';     payload: OracleServerProcessStoppedPayload }
   | { topic: 'oracle.instance.alert-log-entry-added';    payload: OracleAlertLogEntryAddedPayload }
+  | { topic: 'oracle.listener.connection-logged';        payload: OracleListenerConnectionLoggedPayload }
   | { topic: 'oracle.instance.parameter-changed';        payload: OracleParameterChangedPayload }
   | { topic: 'oracle.instance.redo-log-switched';        payload: OracleRedoLogSwitchedPayload }
   | { topic: 'oracle.archive-log.created';               payload: OracleArchiveLogCreatedPayload }

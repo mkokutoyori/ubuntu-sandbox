@@ -111,6 +111,22 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.listener.connection-logged', (e) => {
+        const { deviceId, sid } = e.payload;
+        const dev = this.dev(deviceId);
+        if (!dev) return;
+        const path = `${ORACLE_CONFIG.BASE}/diag/tnslsnr/${sid.toLowerCase()}/listener/trace/listener.log`;
+        const db = this.ctx.resolveDatabase(deviceId);
+        if (db) {
+          writeAsOracle(dev, path, db.instance.getListenerLog()
+            .map(entry => `${entry.timestamp} * (CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
+              + `(ADDRESS=(PROTOCOL=tcp)(HOST=${entry.sourceIp})) * ${entry.result} * ${entry.returnCode}`)
+            .join('\n') + '\n');
+        } else {
+          writeAsOracle(dev, path, e.payload.line + '\n');
+        }
+      }),
+
       this.bus.subscribe('oracle.instance.state-changed', (e) => {
         const { deviceId, newState } = e.payload;
         // Datafile materialisation only makes sense once the DB is at least mounted.

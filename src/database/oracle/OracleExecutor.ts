@@ -34,6 +34,7 @@ import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
+import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -2294,7 +2295,7 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(stmt.whenNotMatched.values[i], combinedRow, combinedCols);
           }
         }
-        this.storage.insertRow(targetSchema, targetName, newRow);
+        this.insertRowChecked(targetSchema, targetName, targetMeta, newRow);
         insertedCount++;
       }
     }
@@ -2413,6 +2414,16 @@ export class OracleExecutor extends BaseExecutor {
     return meta;
   }
 
+  private insertRowChecked(schema: string, tableName: string, tableMeta: TableMeta, row: StorageRow): void {
+    const tsName = tableMeta.tablespace ?? 'USERS';
+    const capacity = this.storage.reserveTablespaceSpace(tsName, ROW_FOOTPRINT_BYTES);
+    if (!capacity.ok) {
+      throw new OracleError(1653,
+        `unable to extend table ${schema}.${tableName} by ${Math.ceil(capacity.shortfallBytes / 8192)} in tablespace ${tsName}`);
+    }
+    this.storage.insertRow(schema, tableName, row);
+  }
+
   /** Resolve a column name to its ordinal or raise ORA-00904. */
   private requireColumnIndex(tableMeta: TableMeta, colName: string): number {
     const idx = this.findColumnIndex(tableMeta, colName);
@@ -2443,7 +2454,7 @@ export class OracleExecutor extends BaseExecutor {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     } else if (stmt.query) {
@@ -2474,7 +2485,7 @@ export class OracleExecutor extends BaseExecutor {
         this.applyColumnDefaults(tableMeta, row, provided);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     }

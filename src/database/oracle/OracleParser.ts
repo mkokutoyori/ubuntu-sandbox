@@ -701,16 +701,20 @@ export class OracleParser extends BaseParser {
       this.expectKeyword('SIZE');
       const size = readSize();
       let autoextend: boolean | undefined;
+      let maxSize: string | undefined;
       if (this.matchKeyword('AUTOEXTEND')) {
         if (this.matchKeyword('ON')) autoextend = true;
         else if (this.matchKeyword('OFF')) autoextend = false;
-        // Optional NEXT/MAXSIZE clauses are accepted but not parsed in detail.
-        while (this.matchKeyword('NEXT') || this.matchKeyword('MAXSIZE')) {
-          if (this.matchKeyword('UNLIMITED')) continue;
-          readSize();
+        for (;;) {
+          if (this.matchKeyword('NEXT')) { readSize(); continue; }
+          if (this.matchKeyword('MAXSIZE')) {
+            maxSize = this.matchKeyword('UNLIMITED') ? 'UNLIMITED' : readSize();
+            continue;
+          }
+          break;
         }
       }
-      return { kind: 'ADD_DATAFILE', path, size, autoextend } as A;
+      return { kind: 'ADD_DATAFILE', path, size, autoextend, maxSize } as A;
     }
     if (this.matchKeyword('ONLINE')) return { kind: 'ONLINE' };
     if (this.matchKeyword('OFFLINE')) {

@@ -284,6 +284,7 @@ export class OracleDatabase implements SqlCommandHost {
     // The instance checks datafile existence at OPEN time but does not
     // own the storage layer — give it the canonical V$DATAFILE list.
     this.instance.setDatafileLister(() => this.storage.listDatafiles());
+    this.storage.setAlertSink((message) => this.instance.logAlertEvent(message));
     this.catalog = new OracleCatalog(this.storage, this.instance);
     // UTL_FILE resolves directory objects from the catalog and reads/writes
     // through the instance's host-VFS hooks (wired by the terminal layer).

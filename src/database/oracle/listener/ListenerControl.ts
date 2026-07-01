@@ -27,6 +27,23 @@ export interface ListenerScanLogEntry {
   readonly event: ListenerScanEvent;
 }
 
+export interface ListenerConnectionLogEntry {
+  readonly timestamp: string;
+  readonly sourceIp: string;
+  readonly service: string;
+  readonly result: 'established' | 'refused';
+  readonly returnCode: number;
+}
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+function pad2(n: number): string { return String(n).padStart(2, '0'); }
+
+function formatListenerTimestamp(d: Date): string {
+  return `${pad2(d.getUTCDate())}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()} `
+    + `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`;
+}
+
 export class ListenerControl {
   private _running = false;
   private _startedAt: Date | null = null;
@@ -34,7 +51,9 @@ export class ListenerControl {
   private _refused = 0;
   private _port = ORACLE_CONFIG.PORT;
   private _scanLog: ListenerScanLogEntry[] = [];
+  private _connectionLog: ListenerConnectionLogEntry[] = [];
   private _noBanner = false;
+  private _logSink: ((line: string) => void) | null = null;
 
   constructor(private readonly env: {
     sid: () => string;
@@ -67,6 +86,22 @@ export class ListenerControl {
   getScanLog(): readonly ListenerScanLogEntry[] { return [...this._scanLog]; }
 
   clearScanLog(): void { this._scanLog = []; }
+
+  setLogSink(sink: (line: string) => void): void { this._logSink = sink; }
+
+  getConnectionLog(): readonly ListenerConnectionLogEntry[] { return [...this._connectionLog]; }
+
+  private recordConnection(sourceIp: string, service: string, result: 'established' | 'refused', returnCode: number): void {
+    const entry: ListenerConnectionLogEntry = {
+      timestamp: new Date().toISOString(), sourceIp, service: service.toUpperCase(), result, returnCode,
+    };
+    this._connectionLog.push(entry);
+    const line = `${formatListenerTimestamp(new Date())} * `
+      + `(CONNECT_DATA=(SERVICE_NAME=${entry.service})) * `
+      + `(ADDRESS=(PROTOCOL=tcp)(HOST=${sourceIp})) * `
+      + `${result} * ${returnCode}`;
+    this._logSink?.(line);
+  }
 
   setNoBannerMode(enabled: boolean): void { this._noBanner = enabled; }
 
@@ -102,13 +137,14 @@ export class ListenerControl {
    * Outcomes mirror the real error ladder: no listener (ORA-12541),
    * unknown service (ORA-12514), instance blocking (ORA-12528).
    */
-  attemptConnect(service: string): ListenerConnectOutcome {
+  attemptConnect(service: string, sourceIp = 'unknown'): ListenerConnectOutcome {
     if (!this._running) {
       return { ok: false, error: 'ORA-12541: TNS:no listener' };
     }
     const known = this.registeredServices().some(s => s.toUpperCase() === service.toUpperCase());
     if (!known) {
       this._refused++;
+      this.recordConnection(sourceIp, service, 'refused', 12514);
       return {
         ok: false,
         error: 'ORA-12514: TNS:listener does not currently know of service requested in connect descriptor',
@@ -117,6 +153,7 @@ export class ListenerControl {
     const status = this.serviceStatus();
     if (status === null) {
       this._refused++;
+      this.recordConnection(sourceIp, service, 'refused', 12514);
       return {
         ok: false,
         error: 'ORA-12514: TNS:listener does not currently know of service requested in connect descriptor',
@@ -124,12 +161,14 @@ export class ListenerControl {
     }
     if (status === 'BLOCKED') {
       this._refused++;
+      this.recordConnection(sourceIp, service, 'refused', 12528);
       return {
         ok: false,
         error: 'ORA-12528: TNS:listener: all appropriate instances are blocking new connections',
       };
     }
     this._established++;
+    this.recordConnection(sourceIp, service, 'established', 0);
     return { ok: true };
   }
 

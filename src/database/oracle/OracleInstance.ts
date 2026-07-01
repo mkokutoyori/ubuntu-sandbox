@@ -216,9 +216,13 @@ export class OracleInstance {
     this._archiveLogMode = this.config.archiveLogMode;
     this.initParameters();
     this.initRedoLogs();
-    // Attach the signal refresh actor immediately so observables work
-    // even when no explicit setEventBus/setDeviceId is called.
     this.reattachRefreshActor();
+    this._listener.setLogSink((line) => {
+      this.getBus().publish({
+        topic: 'oracle.listener.connection-logged',
+        payload: { ...this.ref(), line },
+      });
+    });
   }
 
   /** Inject (or replace) the bus this instance publishes to. */
@@ -1080,6 +1084,10 @@ export class OracleInstance {
 
   getAlertLog(): string[] {
     return [...this._alertLog];
+  }
+
+  getListenerLog(): import('./listener/ListenerControl').ListenerConnectionLogEntry[] {
+    return [...this._listener.getConnectionLog()];
   }
 
   // ── Archive log mode ─────────────────────────────────────────────

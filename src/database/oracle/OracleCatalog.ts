@@ -1456,16 +1456,25 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── DBA_ views ───────────────────────────────────────────────────
 
-  private queryDBA(viewName: string, _currentUser: string): ResultSet | null {
-    // Every DBA_ dictionary view is self-registered under views/*.ts.
+  private queryDBA(viewName: string, currentUser: string): ResultSet | null {
+    if (!this.canAccessDbaViews(currentUser)) return null;
     const fromRegistry = queryView(viewName, {
       instance: this.instance,
       storage: this.storage,
       runtime: this.instance.getRuntimeState(),
       catalog: this,
-      currentUser: _currentUser,
+      currentUser,
     });
     return fromRegistry ?? null; // Unknown view — fall through to table lookup
+  }
+
+  private canAccessDbaViews(user: string): boolean {
+    if (user === 'SYS') return true;
+    const engine = this.getSecurityEngine();
+    if (!engine) return true;
+    if (engine.privileges.isDba(user)) return true;
+    if (engine.privileges.hasSystemPrivilege(user, 'SELECT ANY DICTIONARY')) return true;
+    return engine.privileges.getGrantedRoles(user).includes('SELECT_CATALOG_ROLE');
   }
 
 
