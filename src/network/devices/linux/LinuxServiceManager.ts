@@ -61,6 +61,7 @@ export interface ServiceUnit {
   /** Runtime resource-control overrides set via `systemctl set-property`. */
   props?: Record<string, string>;
   readinessDelayMs?: number;
+  portOverride?: { port: number; source: 'cli' | 'env' | 'config-reload'; cliArg?: string };
 }
 
 export interface ServiceManagerOptions {
@@ -455,8 +456,24 @@ export class LinuxServiceManager {
       return { ok: true };
     }
     const r = this.activate(u);
-    if (r.ok) this.emitLifecycle('start', u.name);
+    if (r.ok) {
+      this.emitLifecycle('start', u.name);
+      this.logPortSource(u);
+    }
     return r;
+  }
+
+  private logPortSource(u: LinuxService): void {
+    const binding = this.getPortBinding(u.name);
+    if (!binding || binding.sockets.length === 0) return;
+    const port = binding.sockets[0].port;
+    const source = u.portOverride ? u.portOverride.source : 'config';
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const line = `${now} systemd[1]: ${u.name}.service: bound port ${port} (source: ${source})\n`;
+    const path = '/var/log/messages';
+    if (!this.vfs.exists('/var/log')) this.vfs.mkdirp('/var/log', 0o755, 0, 0);
+    const existing = this.vfs.readFile(path) ?? '';
+    this.vfs.writeFile(path, existing + line, 0, 0, 0o022);
   }
 
   setReadinessDelay(name: string, delayMs: number): OperationResult {
@@ -464,6 +481,23 @@ export class LinuxServiceManager {
     if (!unit.ok) return unit;
     unit.unit.readinessDelayMs = delayMs;
     return { ok: true };
+  }
+
+  setPortOverride(
+    name: string,
+    port: number,
+    source: 'cli' | 'env' | 'config-reload',
+    cliArg?: string,
+  ): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    const u = unit.unit;
+    u.portOverride = { port, source, cliArg };
+    return { ok: true };
+  }
+
+  getPortOverride(name: string): { port: number; source: string; cliArg?: string } | undefined {
+    return this.units.get(name)?.portOverride;
   }
 
   flushReadiness(name?: string): void {
@@ -489,7 +523,8 @@ export class LinuxServiceManager {
       gid = allocated.gid;
     }
     const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
-    const expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    let expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    if (u.portOverride?.cliArg) expanded = `${expanded} ${u.portOverride.cliArg}`;
     const profile = serviceMemoryProfile(u.name);
     const proc = this.processMgr.spawn({
       command: expanded,
@@ -758,11 +793,15 @@ export class LinuxServiceManager {
     const unit = this.units.get(name);
     const listener = this.listenerSpecFor(name);
     if (!unit || !listener || listener.sockets.length === 0) return undefined;
+    const override = unit.portOverride;
+    const sockets = override
+      ? [{ port: override.port, protocol: listener.sockets[0].protocol }]
+      : listener.sockets.map((s) => ({ ...s }));
     return {
       name,
       mainPid: unit.mainPid,
       processName: listener.processName,
-      sockets: listener.sockets.map((s) => ({ ...s })),
+      sockets,
     };
   }
 
@@ -804,7 +843,8 @@ export class LinuxServiceManager {
     // The process the unit leaves behind: the daemon it forks when the
     // listener spec declares one (lsnrctl start → tnslsnr), else ExecStart.
     const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
-    const expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    let expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    if (u.portOverride?.cliArg) expanded = `${expanded} ${u.portOverride.cliArg}`;
     const profile = serviceMemoryProfile(u.name);
     const proc = this.processMgr.spawn({
       command: expanded,
