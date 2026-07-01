@@ -1099,8 +1099,61 @@ live avec src/dst/MAC/iface, sent rep, prompt libre, arrêt sur
 `cisco-debug-subscription` (OSPF) et `cisco-switch-debug-subscription`
 (STP) — 6/6.
 
+## Real-Time Monitoring — Router (Cisco IOS) : `ping` en streaming (`!!!!!`)
+
+- **Constat** : `ping`, `traceroute`, `debug`, `terminal monitor` côté PC Linux /
+  Windows passaient déjà par le pipeline, mais le `ping` du **routeur** lui-même
+  restait un bloc — `CiscoIOSShell._handlePing` attendait tout le
+  `executePingSequence` puis rendait la transcription d'un coup via
+  `formatCiscoPing`. Le vrai IOS imprime les `!`/`.` **un par un** au fil des
+  échos, prompt bloqué, abortable par la séquence d'échappement.
+- **Contrôleur générique** : ajout d'un hook `tryInterceptAsyncCommand(command)`
+  dans `CLITerminalSession.executeCommand` (défaut `false`, avant le dispatch
+  bloc). Toute session CLI (Cisco, Huawei) peut désormais revendiquer une
+  commande pour la piloter en job async sans réécrire la boucle de saisie —
+  même rôle que les `tryStart*` de `LinuxTerminalSession`.
+- **Modèle** : `Router.executePingSequence` accepte des hooks optionnels
+  (`onResult`, `shouldStop`). Émis à chaque écho (self-ping et chemin réel),
+  `shouldStop` sondé en tête de boucle pour un Ctrl+C prompt. Zéro changement
+  pour les appelants existants (bloc IOS, tests) : sans hook, le tableau final
+  est identique.
+- **Présentation** : extraction de `formatCiscoPingSummary(results, count)` de
+  `formatCiscoPing` — la ligne `Success rate is N percent …` (avec
+  `round-trip min/avg/max`) est désormais partagée par le bloc et le streaming,
+  zéro duplication de rendu.
+- **Controller** (`CiscoTerminalSession.tryStartCiscoPing`) : intercepte
+  `ping <ip>` en mode exec (user/privileged), hors `source` (laissé au bloc /
+  ping étendu). Job `mode: foreground`, `kind: streaming` : deux lignes
+  d'en-tête (`Type escape sequence to abort.` / `Sending N, B-byte ICMP Echos
+  to …`), puis une ligne de marques repeinte **en place** à chaque `onResult`
+  (`!` succès / `.` timeout) — vraie progression à l'écran, fidèle au ruban IOS
+  qui accumule sur une seule ligne. Cible hors route → `.....` + `0 percent`
+  (fidèle au bloc, pas de progression car le modèle court-circuite sans route).
+  Ctrl+C → `^C` + `Success rate` partiel via `onInterrupt` ; garde de
+  cancellation sur `onResult` pour qu'un écho tardif ne réécrase pas le `^C` /
+  résumé déjà imprimés (le repaint tronque à `marksBase`).
+
+Critères couverts : affichage progressif ligne/marque par marque (pas de dump),
+prompt bloquant (foreground) avec interruption Ctrl+C propre + résumé partiel,
+isolation des sessions (chaque vty a son propre runtime/job), données reflétant
+l'état réel (les `!` viennent des vrais échos ICMP sur le fil via
+`_sendPing`/bus), commande exec IOS (gating user/privileged).
+
+Validation : `cisco-ping-stream-ui.test.ts` — 4/4 (marques `!!!!!` + prompt
+verrouillé dès l'Enter + `100 percent (5/5)` ; Ctrl+C sur ARP en
+attente → `^C` + résumé + déverrouillage ; cible sans route = vrai
+`0 percent (0/5)` avec `.....`, jamais faké ; deux terminaux du même routeur
+pinguent indépendamment). Régressions : `cisco-router-ping` (bloc, 11),
+`cisco-debug-subscription`, `cisco-switch-debug-subscription`,
+`cisco-terminal-monitor`, `cli-terminal-length`, `switch-cli` — verts.
+`tsc --noEmit` : 0 erreur ; lint : 0 nouvelle erreur (les 2 `any` de `Router.ts`
+sont pré-existants). Le seul échec `network-v2` (`tracert-ping` #… résolution
+d'un hostname Linux inexistant) est pré-existant et sans rapport.
+
 ## Suite
 
+- Router : brancher `traceroute` (Cisco IOS) sur le même socle (hooks `onHop`
+  sur `Router.executeTraceroute`, déjà async) pour un rendu saut-par-saut.
 - Linux : `sar`/`iostat -x` métriques disque réelles si un sous-système bloc
   est un jour modélisé (les compteurs d'I/O deviendraient non nuls). Avec
   un tel sous-système, `dstat` pourrait aussi remplir ses colonnes `read`

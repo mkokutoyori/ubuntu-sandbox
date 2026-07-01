@@ -12,6 +12,8 @@ import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './T
 import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
+import { IPAddress } from '@/network/core/types';
+import { parsePingArgs, formatCiscoPingSummary, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -183,6 +185,62 @@ export class CiscoTerminalSession extends CLITerminalSession {
   protected override afterCommandExecuted(_command: string): void {
     this.reconcileDebugSubscription();
     this.reconcileTerminalMonitor();
+  }
+
+  protected override tryInterceptAsyncCommand(command: string): boolean {
+    return this.tryStartCiscoPing(command);
+  }
+
+  private tryStartCiscoPing(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof Router)) return false;
+    const mode = this.vty?.state.mode;
+    if (mode !== 'user' && mode !== 'privileged') return false;
+
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'ping') return false;
+    const parsed = parsePingArgs(toks.slice(1));
+    if (parsed.error || parsed.sourceIP) return false;
+
+    const targetIP = new IPAddress(parsed.target);
+    const results: CiscoPingRow[] = [];
+    let marksBase = this.lines.length;
+
+    const repaintMarks = () => {
+      this.lines = this.lines.slice(0, marksBase);
+      this.addLine(results.map((r) => (r.success ? '!' : '.')).join(''));
+      this.notify();
+    };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      label: `ping ${parsed.target}`,
+      run: async (ctx) => {
+        ctx.sink.line('Type escape sequence to abort.');
+        ctx.sink.line(`Sending ${parsed.count}, ${parsed.sizeBytes}-byte ICMP Echos to ${parsed.target}, timeout is ${parsed.timeoutMs / 1000} seconds:`);
+        marksBase = this.lines.length;
+        this.addLine('');
+        this.notify();
+
+        await dev.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, undefined, {
+          onResult: (row) => { if (ctx.cancelled()) return; results.push(row); repaintMarks(); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+
+        if (results.length === 0) {
+          this.lines = this.lines.slice(0, marksBase);
+          this.addLine('.'.repeat(parsed.count));
+          this.notify();
+        }
+        ctx.sink.line(formatCiscoPingSummary(results, parsed.count));
+      },
+      onInterrupt: (ctx) => { ctx.sink.line(formatCiscoPingSummary(results, parsed.count)); },
+    });
+    return job !== null;
   }
 
   private reconcileDebugSubscription(): void {

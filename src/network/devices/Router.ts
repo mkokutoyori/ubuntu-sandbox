@@ -2543,6 +2543,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     count: number = 5,
     timeoutMs: number = 2000,
     sourceIPStr?: string,
+    hooks?: {
+      onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void;
+      shouldStop?: () => boolean;
+    },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
@@ -2550,7 +2554,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (myIP && myIP.equals(targetIP)) {
         const results = [];
         for (let seq = 1; seq <= count; seq++) {
-          results.push({ success: true, rttMs: 0.01, ttl: this.defaultTTL, seq, fromIP: targetIP.toString() });
+          if (hooks?.shouldStop?.()) break;
+          const row = { success: true, rttMs: 0.01, ttl: this.defaultTTL, seq, fromIP: targetIP.toString() };
+          results.push(row);
+          hooks?.onResult?.(row);
         }
         return results;
       }
@@ -2591,12 +2598,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Send pings
     const results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }> = [];
     for (let seq = 1; seq <= count; seq++) {
+      if (hooks?.shouldStop?.()) break;
+      let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
       try {
-        const result = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
-        results.push(result);
+        row = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
       } catch {
-        results.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
       }
+      results.push(row);
+      hooks?.onResult?.(row);
     }
     return results;
   }

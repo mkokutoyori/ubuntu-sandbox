@@ -238,6 +238,8 @@ export abstract class CLITerminalSession extends TerminalSession {
       return;
     }
 
+    if (this.tryInterceptAsyncCommand(trimmed)) return;
+
     const exitBeforeExec = this.isRemoteChild && this.isTopLevelExit(trimmed);
 
     try {
@@ -286,6 +288,13 @@ export abstract class CLITerminalSession extends TerminalSession {
    * device's post-command state.
    */
   protected afterCommandExecuted(_command: string): void {}
+
+  /**
+   * Hook fired before a command is dispatched to the device. A subclass returns
+   * true to claim the command and drive it as a foreground/background async job
+   * (streaming ping, live debug, …) instead of the one-shot block path.
+   */
+  protected tryInterceptAsyncCommand(_command: string): boolean { return false; }
 
   // ── Flow completion hook ────────────────────────────────────────
 

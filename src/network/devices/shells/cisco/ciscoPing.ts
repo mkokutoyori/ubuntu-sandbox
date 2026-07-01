@@ -108,6 +108,16 @@ export function formatCiscoPing(
   }
   lines.push(chars.join(''));
 
+  lines.push(formatCiscoPingSummary(results, count));
+  return lines.join('\n');
+}
+
+/**
+ * Render the trailing `Success rate is …` line on its own, so the streaming
+ * ping (which paints the `!!!!!` marks progressively) and the block ping share
+ * one summary implementation.
+ */
+export function formatCiscoPingSummary(results: CiscoPingRow[], count: number): string {
   const successes = results.filter(r => r.success).length;
   const total = results.length || count;
   const pct = Math.round((successes / total) * 100);
@@ -120,6 +130,5 @@ export function formatCiscoPing(
     const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
     summary += `, round-trip min/avg/max = ${min.toFixed(0)}/${avg.toFixed(0)}/${max.toFixed(0)} ms`;
   }
-  lines.push(summary);
-  return lines.join('\n');
+  return summary;
 }
