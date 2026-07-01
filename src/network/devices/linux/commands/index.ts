@@ -32,6 +32,8 @@ import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
 import { dhclientPsLines } from './dhcp/PsDhclientAugment';
 import { applyIptablesNatHook } from './net/IptablesNatHook';
+import { nmapCommand } from './net/Nmap';
+import { curlCommand } from './net/Curl';
 
 export {
   sysctlCommand,
@@ -51,6 +53,8 @@ export {
   isDhcpLeasePath,
   dhclientPsLines,
   applyIptablesNatHook,
+  nmapCommand,
+  curlCommand,
 };
 
 /**
@@ -73,4 +77,6 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   hostCommand,
   dnsmasqCommand,
   dhclientCommand,
+  nmapCommand,
+  curlCommand,
 ];

@@ -245,13 +245,7 @@ export abstract class LinuxMachine extends EndHost
     //    pre-auth Banner have realistic content.
     this.initSshFiles();
 
-    // 6. TCP SSH server on port 22 — handles SSH auth + SFTP subsystem
-    //    in one place.  Replaces the legacy SFTP-only handler.
-    this.getTcpStack().listen(22, {
-      onAccept: (socket) => {
-        this.getSshServerHandler().register(socket, socket.remoteIp);
-      },
-    });
+    this.attachSshTcpListeners();
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
     this.startCronTicker();
@@ -383,7 +377,6 @@ export abstract class LinuxMachine extends EndHost
 
   /** Persist SSH server configuration + host key + MOTD on the VFS. */
   private initSshFiles(): void {
-    // Instantiating the context as a side effect creates the files.
     this.getSshServerContext();
     const vfs = this.executor.vfs;
     if (!vfs.exists('/etc/motd')) {
@@ -398,6 +391,42 @@ export abstract class LinuxMachine extends EndHost
     if (!vfs.exists('/etc/issue.net')) {
       vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
     }
+  }
+
+  private readonly _sshdActivePorts = new Set<number>();
+
+  private sshdPortsFromConfig(): number[] {
+    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
+      .map((m) => Number(m[1]))
+      .filter((n) => Number.isFinite(n) && n > 0 && n < 65536);
+    return ports.length ? ports : [22];
+  }
+
+  private attachSshTcpListeners(): void {
+    const stack = this.getTcpStack();
+    const desired = new Set(this.sshdPortsFromConfig());
+    for (const port of this._sshdActivePorts) {
+      if (!desired.has(port)) {
+        stack.closeListener(port, '0.0.0.0');
+        this._sshdActivePorts.delete(port);
+      }
+    }
+    for (const port of desired) {
+      if (this._sshdActivePorts.has(port)) continue;
+      stack.listen(port, {
+        onAccept: (socket) => this.getSshServerHandler().register(socket, socket.remoteIp),
+      });
+      this._sshdActivePorts.add(port);
+    }
+  }
+
+  private detachSshTcpListeners(): void {
+    const stack = this.getTcpStack();
+    for (const port of this._sshdActivePorts) {
+      stack.closeListener(port, '0.0.0.0');
+    }
+    this._sshdActivePorts.clear();
   }
 
   // ─── Reactive surface for cross-device commands (ssh, scp, sftp) ─────
@@ -918,13 +947,15 @@ export abstract class LinuxMachine extends EndHost
    * used by ps/netstat output so the two are coherent.
    */
   private initDefaultSockets(isServer: boolean): void {
-    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
-    this.socketTable.bind('tcp', '::', 22, 985, 'sshd');
+    const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
+    this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd', sshdBanner);
+    this.socketTable.bind('tcp', '::', 22, 985, 'sshd', sshdBanner);
     this.socketTable.bind('udp', '127.0.0.53', 53, 540, 'systemd-resolved');
 
     if (isServer) {
-      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr');
-      this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr');
+      const tnsBanner = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
+      this.socketTable.bind('tcp', '0.0.0.0', 1521, 2001, 'tnslsnr', tnsBanner);
+      this.socketTable.bind('tcp', '::', 1521, 2001, 'tnslsnr', tnsBanner);
     }
   }
 
@@ -1010,27 +1041,22 @@ export abstract class LinuxMachine extends EndHost
     };
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
-    // Reactive socket-table sync: unbind :22 on stop, rebind on start.
-    // Read the configured Port from sshd_config (or fall back to 22)
-    // so listener / unlistener honour custom Port directives.
-    const portsFromConfig = (): number[] => {
-      const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-      const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim)).map(m => Number(m[1])).filter(n => Number.isFinite(n) && n > 0 && n < 65536);
-      return ports.length ? ports : [22];
-    };
     const rebindPorts = (): void => {
       for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
         this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
       }
-      for (const p of portsFromConfig()) {
-        try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd'); } catch { /* already bound */ }
-        try { this.socketTable.bind('tcp', '::', p, 985, 'sshd'); } catch { /* already bound */ }
+      const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
+      for (const p of this.sshdPortsFromConfig()) {
+        try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd', sshdBanner); } catch { /* already bound */ }
+        try { this.socketTable.bind('tcp', '::', p, 985, 'sshd', sshdBanner); } catch { /* already bound */ }
       }
+      this.attachSshTcpListeners();
     };
     const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
       for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
         this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
       }
+      this.detachSshTcpListeners();
     });
     const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
@@ -1548,6 +1574,10 @@ export abstract class LinuxMachine extends EndHost
         ttl?: number,
       ): Promise<PingResult[]> {
         return self.executePingSequence(target, count, timeoutMs, ttl);
+      },
+      tcpProbe(target: string, port: number): boolean {
+        if (target.includes(':')) return self.tcpProbeSyncIPv6(target, port);
+        return self.tcpProbeSync(new IPAddress(target), port);
       },
       ping6Sequence(
         target: IPv6Address,

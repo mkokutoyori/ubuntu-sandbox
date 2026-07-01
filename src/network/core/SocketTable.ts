@@ -45,6 +45,13 @@ export interface SocketEntry {
   pid?: number;
   /** Human-readable process name (optional) */
   processName?: string;
+  /**
+   * Application-layer greeting the service writes as the first bytes on a
+   * fresh TCP connection (e.g. `SSH-2.0-...\r\n`, `220 mail.example.com\r\n`).
+   * Read by nc/nmap-style banner grabbers so a service on a non-standard
+   * port stays identifiable by its protocol.
+   */
+  banner?: string;
 }
 
 // ─── SocketTable ───────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ export class SocketTable {
     localPort: number,
     pid?: number,
     processName?: string,
+    banner?: string,
   ): SocketEntry {
     const key = this.bindKey(protocol, localPort, localAddress);
     if (this.bindings.has(key)) {
@@ -108,11 +116,32 @@ export class SocketTable {
       state: 'LISTEN',
       pid,
       processName,
+      banner,
     };
 
     this.sockets.set(this.idCounter, entry);
     this.bindings.add(key);
     return entry;
+  }
+
+  getBannerForPort(protocol: SocketProtocol, port: number): string | null {
+    for (const entry of this.sockets.values()) {
+      if (entry.state !== 'LISTEN') continue;
+      if (entry.protocol !== protocol) continue;
+      if (entry.localPort !== port) continue;
+      if (entry.banner) return entry.banner;
+    }
+    return null;
+  }
+
+  getListenerProcess(protocol: SocketProtocol, port: number): string | null {
+    for (const entry of this.sockets.values()) {
+      if (entry.state !== 'LISTEN') continue;
+      if (entry.protocol !== protocol) continue;
+      if (entry.localPort !== port) continue;
+      if (entry.processName) return entry.processName;
+    }
+    return null;
   }
 
   /**

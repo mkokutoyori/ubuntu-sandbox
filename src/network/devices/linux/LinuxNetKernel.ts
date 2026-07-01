@@ -100,6 +100,12 @@ export interface LinuxNetKernel {
   /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
   sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean;
 
+  /**
+   * Synchronous TCP handshake probe used by nc / nmap-style service
+   * discovery. Accepts an IPv4 dotted string OR an IPv6 literal.
+   */
+  tcpProbe(target: string, port: number): boolean;
+
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;

@@ -82,6 +82,7 @@ import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
+import { grabBanner as grabRemoteBanner } from './commands/net/ServiceBannerGrab';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -1170,6 +1171,22 @@ export class LinuxCommandExecutor {
     if (zero) {
       return { output: '', exitCode: 0 };
     }
+
+    const banner = grabRemoteBanner(found.device, port);
+    if (banner) {
+      const srcPort = this.socketTable?.allocateEphemeralPort()
+        ?? 49152 + Math.floor(Math.random() * 16000);
+      this.captureLog.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
+      const bannerBytes = new TextEncoder().encode(banner);
+      this.captureLog.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
+      const remoteCap = (found.device as unknown as { executor?: { captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void; captureTcpData(src: { ip: string; port: number }, dst: { ip: string; port: number }, payload: Uint8Array, seq?: number, ack?: number): void } } }).executor?.captureLog;
+      remoteCap?.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
+      remoteCap?.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
+      const printable = banner.replace(/\r\n$/, '');
+      if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!\n${printable}`, exitCode: 0 };
+      return { output: printable, exitCode: 0 };
+    }
+
     if (verbose) {
       return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
     }
