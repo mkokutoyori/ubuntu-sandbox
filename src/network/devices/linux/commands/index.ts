@@ -34,6 +34,8 @@ import { dhclientPsLines } from './dhcp/PsDhclientAugment';
 import { applyIptablesNatHook } from './net/IptablesNatHook';
 import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
+import { ssCommand } from './net/Ss';
+import { ncCommand } from './net/Nc';
 
 export {
   sysctlCommand,
@@ -55,6 +57,8 @@ export {
   applyIptablesNatHook,
   nmapCommand,
   curlCommand,
+  ssCommand,
+  ncCommand,
 };
 
 /**
@@ -79,4 +83,6 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   dhclientCommand,
   nmapCommand,
   curlCommand,
+  ssCommand,
+  ncCommand,
 ];

@@ -1810,6 +1810,20 @@ export abstract class LinuxMachine extends EndHost
     if (!this.isPoweredOn) return 'Device is powered off';
     const trimmed = command.trim();
     if (!trimmed) return '';
+
+    // Commands living in the LinuxCommandRegistry (route/ifconfig/ss/nc/...)
+    // never reach LinuxCommandExecutor's switch anymore. Synchronous ones
+    // (run() returning a bare string, not a Promise) still work from this
+    // bypass path; genuinely async commands (ping, traceroute, dhclient)
+    // cannot — same limitation they already had once migrated.
+    const head = trimmed.split(/\s+/)[0];
+    const cmd = this.commands.get(head);
+    if (cmd && cmd.needsNetworkContext) {
+      const args = trimmed.split(/\s+/).slice(1);
+      const result = cmd.run(this.buildCommandContext(), args);
+      if (typeof result === 'string') return result;
+    }
+
     return this.executor.execute(trimmed);
   }
 

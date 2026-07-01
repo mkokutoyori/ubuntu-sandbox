@@ -58,7 +58,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -81,8 +81,7 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSy
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
-import { findHostByAddress, isPathReachable, findReachableHost, transitTcpAclVerdict } from './network/HostLookup';
-import { grabBanner as grabRemoteBanner } from './commands/net/ServiceBannerGrab';
+import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -306,8 +305,10 @@ export class LinuxCommandExecutor {
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  getSocketTable(): SocketTable | null { return this.socketTable; }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
+  getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
@@ -1011,12 +1012,12 @@ export class LinuxCommandExecutor {
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
-  private resolveServiceName(port: number, proto: string): string | null {
+  resolveServiceName(port: number, proto: string): string | null {
     const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyport?.(port, proto));
     return r.status === 'SUCCESS' && r.entry ? r.entry.name : null;
   }
 
-  private resolveServicePort(name: string): number | null {
+  resolveServicePort(name: string): number | null {
     const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyname?.(name));
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
@@ -1073,166 +1074,6 @@ export class LinuxCommandExecutor {
    * (a line that mandates a password but has none set is refused, matching
    * IOS "Password required, but none set").
    */
-  private runNetcatClient(args: string[]): { output: string; exitCode: number } {
-    const positional: string[] = [];
-    let zero = false;
-    let verbose = false;
-    let listen = false;
-    let udp = false;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-z') zero = true;
-      else if (a === '-v') verbose = true;
-      else if (a === '-vv') { verbose = true; }
-      else if (a === '-l') listen = true;
-      else if (a === '-u') udp = true;
-      else if (a === '-w' && i + 1 < args.length) { i++; }
-      else if (a === '-p' && i + 1 < args.length) { i++; }
-      else if (!a.startsWith('-')) positional.push(a);
-      else if (/^-[a-zA-Z]+$/.test(a)) {
-        for (const ch of a.slice(1)) {
-          if (ch === 'z') zero = true;
-          else if (ch === 'v') verbose = true;
-          else if (ch === 'l') listen = true;
-          else if (ch === 'u') udp = true;
-        }
-      }
-    }
-
-    if (listen) {
-      return { output: `nc: listen mode is not supported in this simulator`, exitCode: 1 };
-    }
-    if (udp) {
-      return { output: `nc: UDP mode (-u) is not supported in this simulator`, exitCode: 1 };
-    }
-    if (positional.length < 2) {
-      return { output: 'usage: nc [-z] [-v] [-w secs] host port', exitCode: 1 };
-    }
-    const host = positional[0];
-    const portToken = positional[1];
-    let port = parseInt(portToken, 10);
-    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      const resolved = this.resolveServicePort(portToken);
-      if (resolved !== null) port = resolved;
-    }
-    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      return { output: `nc: port number invalid: ${portToken}`, exitCode: 1 };
-    }
-
-    const targetIsV6 = this.isIPv6Literal(host);
-    const sourceIp = targetIsV6 ? this.firstConfiguredIpv6() : this.firstConfiguredIp();
-    if (!sourceIp || sourceIp === '127.0.0.1') {
-      return { output: `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`, exitCode: 1 };
-    }
-
-    const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-    if (isLoopback) {
-      const bound = this.socketTable?.isPortBound?.(port, 'tcp') ?? false;
-      if (bound) {
-        if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
-        return { output: '', exitCode: 0 };
-      }
-      if (verbose) return { output: `nc: connect to ${host} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
-      return { output: '', exitCode: 1 };
-    }
-    if ((isLoopback || host === sourceIp) && this.forwarding) {
-      const fwd = this.forwarding.list().find(f => f.listenPort === port);
-      if (fwd && fwd.kind === 'local' && fwd.destHost && fwd.destPort) {
-        const originIp = this.forwarding.getOrigin(port);
-        if (originIp) {
-          const sshServer = findHostByAddress(originIp);
-          const dest = findHostByAddress(fwd.destHost, { readFile: (p) => this.vfs.readFile(p) });
-          if (!sshServer || !dest) {
-            return { output: `nc: connect to ${host} port ${port} (tcp) failed: No route to host`, exitCode: 1 };
-          }
-          const jumpProbe = (sshServer.device as unknown as {
-            tcpProbeSync?: (ip: IPAddress, p: number) => boolean;
-          }).tcpProbeSync;
-          const ok = jumpProbe
-            ? jumpProbe.call(sshServer.device, new IPAddress(dest.ip), fwd.destPort)
-            : false;
-          if (ok) {
-            if (zero && verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
-            if (zero) return { output: '', exitCode: 0 };
-            if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
-            return { output: '', exitCode: 0 };
-          }
-          if (verbose) return { output: `nc: connect to ${host} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
-          return { output: '', exitCode: 1 };
-        }
-      }
-    }
-
-    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
-    if (!found) {
-      return { output: `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`, exitCode: 1 };
-    }
-    if (found.poweredOff || found.interfaceDown) {
-      return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`, exitCode: 1 };
-    }
-
-    if (transitTcpAclVerdict(sourceIp, found.ip, port) === 'deny') {
-      if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`, exitCode: 1 };
-      return { output: '', exitCode: 1 };
-    }
-    const dstIptables = (found.device as unknown as { executor?: {
-      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
-    } }).executor?.iptables;
-    if (dstIptables?.filterPacket) {
-      const verdict = dstIptables.filterPacket({
-        direction: 'in', protocol: 6, srcIP: sourceIp, dstIP: found.ip,
-        srcPort: 50000, dstPort: port, iface: 'eth0',
-      });
-      if (verdict === 'drop') {
-        if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`, exitCode: 1 };
-        return { output: '', exitCode: 1 };
-      }
-      if (verdict === 'reject') {
-        if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
-        return { output: '', exitCode: 1 };
-      }
-    }
-    if (!this.hasFreeEphemeralPort()) {
-      const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
-      if (verbose) return { output: msg, exitCode: 1 };
-      return { output: '', exitCode: 1 };
-    }
-    const ok = this.tcpProbe ? this.tcpProbe(found.ip, port) : true;
-    if (!ok) {
-      if (verbose) {
-        return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
-      }
-      return { output: '', exitCode: 1 };
-    }
-
-    if (zero && verbose) {
-      return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
-    }
-    if (zero) {
-      return { output: '', exitCode: 0 };
-    }
-
-    const banner = grabRemoteBanner(found.device, port);
-    if (banner) {
-      const srcPort = this.socketTable?.allocateEphemeralPort()
-        ?? 49152 + Math.floor(Math.random() * 16000);
-      this.captureLog.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
-      const bannerBytes = new TextEncoder().encode(banner);
-      this.captureLog.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
-      const remoteCap = (found.device as unknown as { executor?: { captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void; captureTcpData(src: { ip: string; port: number }, dst: { ip: string; port: number }, payload: Uint8Array, seq?: number, ack?: number): void } } }).executor?.captureLog;
-      remoteCap?.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port });
-      remoteCap?.captureTcpData({ ip: found.ip, port }, { ip: sourceIp, port: srcPort }, bannerBytes);
-      const printable = banner.replace(/\r\n$/, '');
-      if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!\n${printable}`, exitCode: 0 };
-      return { output: printable, exitCode: 0 };
-    }
-
-    if (verbose) {
-      return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
-    }
-    return { output: '', exitCode: 0 };
-  }
-
   private runTelnetClient(args: string[]): { output: string; exitCode: number } {
     const positional = args.filter(a => !a.startsWith('-'));
     const host = positional[0];
@@ -3695,7 +3536,6 @@ export class LinuxCommandExecutor {
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
       case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (n) => this.resolveServicePort(n)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
@@ -3860,9 +3700,6 @@ export class LinuxCommandExecutor {
       }
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'nc':
-      case 'ncat':
-        return this.runNetcatClient(args);
       case 'tcpdump':
         return { output: cmdTcpdump(args, this.captureLog, {
           read: (p) => this.vfs.readFile(p),
