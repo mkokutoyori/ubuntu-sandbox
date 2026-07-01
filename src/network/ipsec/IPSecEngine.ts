@@ -2279,6 +2279,25 @@ export class IPSecEngine implements IProtocolEngine {
     return computeOuterTos(innerPkt.tos, sa.dscpEcnConfig);
   }
 
+  computeOuterTosForPeer(peerIP: string, innerTos: number): number | null {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return null;
+    return computeOuterTos(innerTos, sas[0].dscpEcnConfig);
+  }
+
+  getSADscpConfigForPeer(peerIP: string): import('./IPSecTypes').SADscpEcnConfig | null {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return null;
+    return sas[0].dscpEcnConfig;
+  }
+
+  setSADscpConfigForPeer(peerIP: string, cfg: import('./IPSecTypes').SADscpEcnConfig): boolean {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return false;
+    for (const sa of sas) sa.dscpEcnConfig = cfg;
+    return true;
+  }
+
   /**
    * After inbound decapsulation (tunnel mode), propagate ECN marks
    * from the outer header to the inner header per RFC 6040 §4.
