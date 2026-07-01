@@ -4111,37 +4111,58 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   clearISAKMPSAs(peer?: string): number {
-    if (!peer) {
-      const n = this.ikeSADB.size;
-      this.ikeSADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ikeSADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      if (!this.ikeSADB.has(p)) continue;
+      this.cancelNatTKeepalive(p);
+      this.ikeSADB.delete(p);
+      removed++;
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: p, reason: 'manual' },
+      });
     }
-    const had = this.ikeSADB.delete(peer);
-    return had ? 1 : 0;
+    return removed;
   }
 
   clearIKEv2SAs(peer?: string): number {
-    if (!peer) {
-      const n = this.ikev2SADB.size;
-      this.ikev2SADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ikev2SADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      if (!this.ikev2SADB.has(p)) continue;
+      this.ikev2SADB.delete(p);
+      removed++;
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: p, reason: 'manual' },
+      });
     }
-    const had = this.ikev2SADB.delete(peer);
-    return had ? 1 : 0;
+    return removed;
   }
 
   clearIPSecSAs(peer?: string): number {
-    if (!peer) {
-      let n = 0;
-      for (const arr of this.ipsecSADB.values()) n += arr.length;
-      this.ipsecSADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ipsecSADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      const arr = this.ipsecSADB.get(p);
+      if (!arr) continue;
+      for (const sa of arr) {
+        this.spiToSA.delete(sa.spiIn);
+        this.getBus().publish({
+          topic: 'ipsec.sa.deleted',
+          payload: {
+            ...this.deviceRef(),
+            peerIp: p,
+            spiInbound: sa.spiIn,
+            reason: 'manual',
+          },
+        });
+      }
+      removed += arr.length;
+      this.ipsecSADB.delete(p);
     }
-    const arr = this.ipsecSADB.get(peer);
-    if (!arr) return 0;
-    const count = arr.length;
-    this.ipsecSADB.delete(peer);
-    return count;
+    return removed;
   }
 
   clearAllSAs(): { ikeSAs: number; ikev2SAs: number; ipsecSAs: number } {
