@@ -30,7 +30,8 @@ import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
-import { hsrpVirtualMac } from '../../hsrp/types';
+import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
+import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -641,6 +642,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         case 'preempt':
           agent.setPreempt(iface, group, true);
           return '';
+        case 'track': {
+          const target = this.resolveInterfaceName(args[2] ?? '') ?? args[2];
+          if (!target) return '% Missing tracked interface.';
+          const decrIdx = args.indexOf('decrement');
+          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+          agent.addTrack(iface, group, target, decr);
+          return '';
+        }
         default: return '';
       }
     });
@@ -680,6 +689,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           agent.setPreempt(iface, group, true);
           return '';
         case 'weighting': {
+          if (args[2] === 'track') {
+            const target = this.resolveInterfaceName(args[3] ?? '') ?? args[3];
+            if (!target) return '% Missing tracked interface.';
+            const decrIdx = args.indexOf('decrement');
+            const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+            agent.addTrack(iface, group, target, decr);
+            return '';
+          }
           const w = parseInt(args[2] ?? '', 10);
           if (!Number.isFinite(w) || w < 1 || w > 254) return '% Invalid weighting (1..254).';
           agent.setWeighting(iface, group, w);
@@ -3055,13 +3072,25 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : g.avgState === 'standby' ? 'Standby'
         : g.avgState === 'init' ? 'Init'
         : 'Disabled';
+      const effWeight = glbpEffectiveWeighting(g);
       lines.push(`${iface} - Group ${g.group}`);
       lines.push(`  State is ${stateStr}`);
       lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
       lines.push(`  Priority ${g.priority}`);
-      lines.push(`  Weighting ${g.weighting}`);
+      if (effWeight === g.weighting) {
+        lines.push(`  Weighting ${g.weighting}`);
+      } else {
+        lines.push(`  Weighting ${effWeight} (configured ${g.weighting})`);
+      }
       lines.push(`  Load-balancing ${g.loadBalancing}`);
       lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
       const fwds = [...g.forwarders.values()];
       if (fwds.length > 0) {
         lines.push(`  ${fwds.length} forwarder(s):`);
@@ -3087,12 +3116,24 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         : g.state === 'speak' ? 'Speak'
         : g.state === 'learn' ? 'Learn'
         : 'Init';
+      const effPrio = hsrpEffectivePriority(g);
       lines.push(`${iface} - Group ${g.group}`);
       lines.push(`  State is ${stateStr}`);
       lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
       lines.push(`  Virtual MAC address is ${hsrpVirtualMac(g.group, g.version)}`);
-      lines.push(`  Priority ${g.priority}`);
+      if (effPrio === g.priority) {
+        lines.push(`  Priority ${g.priority}`);
+      } else {
+        lines.push(`  Priority ${effPrio} (configured ${g.priority})`);
+      }
       lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
       lines.push('');
     }
     return lines.join('\n').replace(/\n$/, '');
