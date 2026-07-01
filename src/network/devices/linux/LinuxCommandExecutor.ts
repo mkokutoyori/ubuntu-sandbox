@@ -81,7 +81,7 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSy
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
-import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
+import { findHostByAddress, isPathReachable, findReachableHost, transitTcpAclVerdict } from './network/HostLookup';
 import { grabBanner as grabRemoteBanner } from './commands/net/ServiceBannerGrab';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
@@ -1121,6 +1121,15 @@ export class LinuxCommandExecutor {
     }
 
     const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if (isLoopback) {
+      const bound = this.socketTable?.isPortBound?.(port, 'tcp') ?? false;
+      if (bound) {
+        if (verbose) return { output: `Connection to ${host} ${port} port [tcp/*] succeeded!`, exitCode: 0 };
+        return { output: '', exitCode: 0 };
+      }
+      if (verbose) return { output: `nc: connect to ${host} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
+      return { output: '', exitCode: 1 };
+    }
     if ((isLoopback || host === sourceIp) && this.forwarding) {
       const fwd = this.forwarding.list().find(f => f.listenPort === port);
       if (fwd && fwd.kind === 'local' && fwd.destHost && fwd.destPort) {
@@ -1157,6 +1166,27 @@ export class LinuxCommandExecutor {
       return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`, exitCode: 1 };
     }
 
+    if (transitTcpAclVerdict(sourceIp, found.ip, port) === 'deny') {
+      if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`, exitCode: 1 };
+      return { output: '', exitCode: 1 };
+    }
+    const dstIptables = (found.device as unknown as { executor?: {
+      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
+    } }).executor?.iptables;
+    if (dstIptables?.filterPacket) {
+      const verdict = dstIptables.filterPacket({
+        direction: 'in', protocol: 6, srcIP: sourceIp, dstIP: found.ip,
+        srcPort: 50000, dstPort: port, iface: 'eth0',
+      });
+      if (verdict === 'drop') {
+        if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`, exitCode: 1 };
+        return { output: '', exitCode: 1 };
+      }
+      if (verdict === 'reject') {
+        if (verbose) return { output: `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`, exitCode: 1 };
+        return { output: '', exitCode: 1 };
+      }
+    }
     const ok = this.tcpProbe ? this.tcpProbe(found.ip, port) : true;
     if (!ok) {
       if (verbose) {
