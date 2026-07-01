@@ -33,6 +33,7 @@ import { vrrpVirtualMac } from '../../vrrp/types';
 import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -45,6 +46,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private selectedInterfaceRange: string[] = [];
   private selectedVlan: number | null = null;
   private hsrpVersionByIface = new Map<string, 1 | 2>();
+  private trackObjects = new TrackObjectRegistry();
 
   // ─── FSM (switch-specific mode hierarchy) ────────────────────────
   protected readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
@@ -170,6 +172,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const l = this.acls.get(n) ?? [];
       l.push(`access-list ${args.join(' ')}`);
       this.acls.set(n, l);
+      return '';
+    });
+    this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(id) || id < 1) return '% Invalid track id.';
+      if (args[1] === 'interface' && args[2]) {
+        const iface = this.resolveInterfaceName(args[2]) ?? args[2];
+        const kind = args[3] === 'ip' && args[4] === 'routing' ? 'ip-routing' : 'line-protocol';
+        this.trackObjects.set(id, iface, kind);
+        return '';
+      }
+      return '% Incomplete command.';
+    });
+    this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
@@ -607,7 +625,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           agent.setPreempt(iface, group, true);
           return '';
         case 'track': {
-          const target = this.resolveInterfaceName(args[2] ?? '') ?? args[2];
+          const raw = args[2] ?? '';
+          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
           if (!target) return '% Missing tracked interface.';
           const decrIdx = args.indexOf('decrement');
           const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
@@ -670,7 +689,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           agent.setPreempt(iface, group, true);
           return '';
         case 'track': {
-          const target = this.resolveInterfaceName(args[2] ?? '') ?? args[2];
+          const raw = args[2] ?? '';
+          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
           if (!target) return '% Missing tracked interface.';
           const decrIdx = args.indexOf('decrement');
           const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
@@ -731,7 +751,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           return '';
         case 'weighting': {
           if (args[2] === 'track') {
-            const target = this.resolveInterfaceName(args[3] ?? '') ?? args[3];
+            const raw = args[3] ?? '';
+            const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
             if (!target) return '% Missing tracked interface.';
             const decrIdx = args.indexOf('decrement');
             const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
@@ -2382,6 +2403,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // SVI (interface Vlan N) blocks — IP address, helper-address, admin
     // state. Rendered after the physical interfaces so the running-config
     // mirrors how real IOS prints it.
+    for (const o of this.trackObjects.list()) {
+      const kind = o.kind === 'ip-routing' ? 'ip routing' : 'line-protocol';
+      lines.push(`track ${o.id} interface ${o.target} ${kind}`);
+    }
+    if (this.trackObjects.list().length > 0) lines.push('!');
+
     for (const svi of sw.getSvis()) {
       lines.push(`interface Vlan${svi.vlan}`);
       if (svi.ip && svi.mask) {
@@ -3117,6 +3144,21 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           return this.showIpInterfaceBrief();
         }
         return this.showIpInterfaceVerbose(args.join(' '));
+      });
+      t.registerGreedy('show track', 'Display tracked objects', (args) => {
+        const objs = this.trackObjects.list();
+        if (objs.length === 0) return '';
+        const filterId = parseInt(args[0] ?? '', 10);
+        const filtered = Number.isFinite(filterId) ? objs.filter((o) => o.id === filterId) : objs;
+        const lines: string[] = [];
+        for (const o of filtered) {
+          const state = this.trackObjects.stateOf(this.d(), o.id);
+          const kindStr = o.kind === 'ip-routing' ? 'ip routing' : 'line-protocol';
+          lines.push(`Track ${o.id}`);
+          lines.push(`  Interface ${o.target} ${kindStr}`);
+          lines.push(`  ${kindStr} is ${state}`);
+        }
+        return lines.join('\n');
       });
       t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) =>
         args[0] === 'brief' ? this.showVrrpBrief() : this.showVrrp());
