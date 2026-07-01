@@ -3264,6 +3264,13 @@ export class IPSecEngine implements IProtocolEngine {
   private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
     const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
     const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL/i.test(r);
+    if (/Certificate revoked/i.test(reason)) {
+      Logger.warn(this.router.id, 'ipsec:cert-revoked',
+        `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="Certificate revoked"`);
+    } else if (/Certificate/i.test(reason) || /CRL/i.test(reason)) {
+      Logger.warn(this.router.id, 'ipsec:cert-verify-failed',
+        `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="${reason}"`);
+    }
     const existing = this.ikeSADB.get(peerIP);
     if (existing) {
       const currentSpecific = existing.failureReason ? isSpecific(existing.failureReason) : false;

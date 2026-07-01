@@ -63,14 +63,16 @@ export class CiscoRouter extends Router {
     localKey: import('../pki/PkiKeyPair').PkiPrivateKey;
     trustAnchors: readonly import('../pki/X509Certificate').X509Certificate[];
     crls?: readonly import('../pki/CertificateRevocationList').CertificateRevocationList[];
-    revocationCheck?: 'none' | 'crl' | 'crl-strict';
+    revocationCheck?: 'none' | 'crl' | 'crl-strict' | 'ocsp';
     clock?: () => number;
+    ocspResponder?: import('../pki/OcspResponder').IOcspResponder;
   }): void {
     const verifier = new CertificateVerifierImpl({
       trustAnchors: config.trustAnchors,
       crls: config.crls,
       revocationCheck: config.revocationCheck ?? 'none',
       clock: config.clock,
+      ocspResponder: config.ocspResponder,
     });
     this._getOrCreateIPSecEngine().setIkeCertAuth({
       localCert: config.localCert,

@@ -2,6 +2,7 @@ import { PkiKeyPair } from './PkiKeyPair';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
+import type { IOcspResponder } from './OcspResponder';
 
 export type VerificationReason = 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted';
 
@@ -9,13 +10,14 @@ export interface VerificationOk { readonly ok: true }
 export interface VerificationFailure { readonly ok: false; readonly reason: VerificationReason }
 export type VerificationResult = VerificationOk | VerificationFailure;
 
-export type RevocationCheckMode = 'none' | 'crl' | 'crl-strict';
+export type RevocationCheckMode = 'none' | 'crl' | 'crl-strict' | 'ocsp';
 
 export interface CertificateVerifierOptions {
   readonly trustAnchors: readonly X509Certificate[];
   readonly crls?: readonly CertificateRevocationList[];
   readonly revocationCheck?: RevocationCheckMode;
   readonly clock?: () => number;
+  readonly ocspResponder?: IOcspResponder;
 }
 
 export class CertificateVerifier {
@@ -23,12 +25,14 @@ export class CertificateVerifier {
   private readonly crls: readonly CertificateRevocationList[];
   private readonly revocationCheck: RevocationCheckMode;
   private readonly clock: () => number;
+  private readonly ocspResponder?: IOcspResponder;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
     this.crls = opts.crls ?? [];
     this.revocationCheck = opts.revocationCheck ?? 'none';
     this.clock = opts.clock ?? Date.now;
+    this.ocspResponder = opts.ocspResponder;
   }
 
   verify(cert: X509Certificate): VerificationResult {
@@ -40,6 +44,13 @@ export class CertificateVerifier {
     }
     if (now < cert.notBefore) return { ok: false, reason: 'not-yet-valid' };
     if (now > cert.notAfter) return { ok: false, reason: 'expired' };
+    if (this.revocationCheck === 'ocsp') {
+      if (!this.ocspResponder) return { ok: false, reason: 'crl-stale' };
+      const resp = this.ocspResponder.check(cert, now);
+      if (resp.status === 'revoked') return { ok: false, reason: 'revoked' };
+      if (resp.status === 'unknown') return { ok: false, reason: 'unknown' };
+      return { ok: true };
+    }
     if (this.revocationCheck !== 'none') {
       const crl = this.crls.find(c => c.issuer === cert.issuer);
       if (!crl) {
