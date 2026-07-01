@@ -1,18 +1,14 @@
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsHeaderFlags } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+import {
+  findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
+} from '@/network/dns/wire/EdnsOptRecord';
 import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
 
 type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
 
-/**
- * Answers DNS queries authoritatively from a {@link ZoneStore} (RFC 1035
- * §4.2, §6): AA=1 for names covered by a hosted zone, non-authoritative
- * referrals/NXDOMAIN/NODATA exactly as produced by zone lookup. Never sets
- * TC — truncation for the 512-octet classic UDP limit is a transport-layer
- * concern (see `transport/DnsUdpTransport.ts`), not something the engine
- * that builds the logical answer should decide.
- */
 export class AuthoritativeServer {
   constructor(private readonly zones: ZoneStore) {}
 
@@ -26,8 +22,26 @@ export class AuthoritativeServer {
       return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
     }
 
+    const queryOpt = findOpt(query);
+    if (queryOpt && queryOpt.data.version > EDNS_VERSION) {
+      return {
+        id: query.id,
+        flags: { ...baseFlags, opcode: DnsOpcode.QUERY, aa: false, tc: false, rcode: DnsRcode.NOERROR },
+        questions: query.questions,
+        answers: [],
+        authorities: [],
+        additionals: [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, {
+          extendedRcodeHigh: EDNS_BADVERS_EXTENDED_RCODE_HIGH,
+        })],
+      };
+    }
+
     const question = query.questions[0];
     const result = this.zones.answer(question);
+    const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
+    if (queryOpt) {
+      additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE));
+    }
 
     return {
       id: query.id,
@@ -35,7 +49,7 @@ export class AuthoritativeServer {
       questions: [question],
       answers: result.answers,
       authorities: result.authority,
-      additionals: result.additional,
+      additionals,
     };
   }
 

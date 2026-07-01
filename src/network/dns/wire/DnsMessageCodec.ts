@@ -1,14 +1,14 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { encodeDnsHeaderFlags, decodeDnsHeaderFlags } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
+import { packOptTtl, unpackOptTtl } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage, DnsQuestion } from '@/network/dns/wire/DnsMessage';
 import type {
-  ResourceRecord, ResourceRecordData,
+  ResourceRecord, ResourceRecordData, OptRecordData,
   ARecordData, AaaaRecordData, NsRecordData, CnameRecordData, PtrRecordData,
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 
-/** The wire-format bytes of a DNS message are malformed or truncated. */
 export class DnsMessageError extends Error {
   constructor(message: string) {
     super(message);
@@ -21,8 +21,6 @@ const MAX_LABEL_OCTETS = 63;
 const MAX_POINTER_OFFSET = 0x3fff;
 const POINTER_MARKER = 0xc0;
 const MAX_POINTER_HOPS = 128;
-
-// ─── Encoding ──────────────────────────────────────────────────────────
 
 function writeUint16(out: number[], value: number): void {
   out.push((value >> 8) & 0xff, value & 0xff);
@@ -38,7 +36,6 @@ function nameLabels(name: string): string[] {
   return labels[labels.length - 1] === '' ? labels.slice(0, -1) : labels;
 }
 
-/** Encode a domain name with RFC 1035 §4.1.4 pointer compression. */
 function encodeName(name: string, out: number[], compressionMap: Map<string, number>): void {
   const labels = nameLabels(name);
 
@@ -118,21 +115,36 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
       writeUint16(out, data.port);
       encodeName(data.target, out, compressionMap);
       return;
+    case RRType.OPT:
+      return;
     default:
       throw new DnsMessageError(`cannot encode RDATA for unsupported record type ${(data as { type: number }).type}`);
   }
 }
 
+function encodeOptRecord(data: OptRecordData, out: number[]): void {
+  out.push(0x00);
+  writeUint16(out, RRType.OPT);
+  writeUint16(out, data.udpPayloadSize);
+  writeUint32(out, packOptTtl(data));
+  writeUint16(out, 0);
+}
+
 function encodeResourceRecord(
   rr: ResourceRecord<ResourceRecordData>, out: number[], compressionMap: Map<string, number>,
 ): void {
+  if (rr.data.type === RRType.OPT) {
+    encodeOptRecord(rr.data as OptRecordData, out);
+    return;
+  }
+
   encodeName(rr.name, out, compressionMap);
   writeUint16(out, rr.data.type);
   writeUint16(out, rr.rrClass);
   writeUint32(out, rr.ttl);
 
   const rdlengthPos = out.length;
-  writeUint16(out, 0); // placeholder, patched below
+  writeUint16(out, 0);
   const rdataStart = out.length;
   encodeRData(rr.data, out, compressionMap);
   const rdlength = out.length - rdataStart;
@@ -158,8 +170,6 @@ export function encodeDnsMessage(message: DnsMessage): Uint8Array {
 
   return Uint8Array.from(out);
 }
-
-// ─── Decoding ──────────────────────────────────────────────────────────
 
 class Cursor {
   constructor(readonly view: Uint8Array, public pos: number = 0) {}
@@ -324,6 +334,13 @@ function decodeResourceRecord(cursor: Cursor): ResourceRecord<ResourceRecordData
   const ttl = cursor.readUint32();
   const rdlength = cursor.readUint16();
   cursor.assertAvailable(rdlength);
+
+  if (type === RRType.OPT) {
+    cursor.pos += rdlength;
+    const data: OptRecordData = { type: RRType.OPT, udpPayloadSize: rrClass, ...unpackOptTtl(ttl) };
+    return { name, ttl, rrClass, data };
+  }
+
   const data = decodeRData(type, cursor.view, cursor.pos, rdlength);
   cursor.pos += rdlength;
   return { name, ttl, rrClass: rrClass as DnsClass, data };

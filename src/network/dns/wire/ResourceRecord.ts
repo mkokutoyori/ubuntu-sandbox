@@ -1,7 +1,6 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 
-/** RFC 1035 §3.1: a domain name is malformed (label/name length, empty label). */
 export class DnsNameError extends Error {
   constructor(message: string) {
     super(message);
@@ -9,7 +8,6 @@ export class DnsNameError extends Error {
   }
 }
 
-/** A resource record's TTL or RDATA violates its RFC-mandated constraints. */
 export class DnsRecordError extends Error {
   constructor(message: string) {
     super(message);
@@ -24,21 +22,15 @@ const MAX_UINT16 = 0xffff;
 const MAX_UINT32 = 0xffffffff;
 const MAX_CHARACTER_STRING_OCTETS = 255;
 
-/**
- * Validate a domain name against RFC 1035 §3.1 (label/name length limits)
- * and §2.3.4 (no empty labels except the root).
- */
 export function validateDnsName(name: string): void {
   if (name === '' || name === '.') return;
 
   const labels = name.split('.');
-  // A trailing dot (fully-qualified name) yields one trailing empty label,
-  // which is legal — only genuinely empty labels elsewhere are rejected.
   const effectiveLabels = labels[labels.length - 1] === '' ? labels.slice(0, -1) : labels;
 
   if (effectiveLabels.length === 0) return;
 
-  let wireLength = 1; // root zero-length octet terminator
+  let wireLength = 1;
   for (const label of effectiveLabels) {
     if (label.length === 0) {
       throw new DnsNameError(`domain name "${name}" contains an empty label`);
@@ -142,6 +134,14 @@ export interface SrvRecordData {
   readonly target: string;
 }
 
+export interface OptRecordData {
+  readonly type: typeof RRType.OPT;
+  readonly udpPayloadSize: number;
+  readonly version: number;
+  readonly dnssecOk: boolean;
+  readonly extendedRcodeHigh: number;
+}
+
 export type ResourceRecordData =
   | ARecordData
   | AaaaRecordData
@@ -151,12 +151,13 @@ export type ResourceRecordData =
   | SoaRecordData
   | MxRecordData
   | TxtRecordData
-  | SrvRecordData;
+  | SrvRecordData
+  | OptRecordData;
 
 export interface ResourceRecord<TData extends ResourceRecordData = ResourceRecordData> {
   readonly name: string;
   readonly ttl: number;
-  readonly rrClass: DnsClass;
+  readonly rrClass: DnsClass | number;
   readonly data: TData;
 }
 
