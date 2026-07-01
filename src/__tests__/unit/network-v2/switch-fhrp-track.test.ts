@@ -94,15 +94,8 @@ describe('HSRP on SVI — interface tracking failover', () => {
     const gA = swA.getHsrpAgent().listGroups()[0];
     expect(gA.tracks[0].down).toBe(true);
 
-    const now = Date.now();
-    vi.useFakeTimers();
-    vi.setSystemTime(now + 5_000);
-    (swB.getHsrpAgent() as unknown as { expireDue(): void }).expireDue();
-    (swA.getHsrpAgent() as unknown as { expireDue(): void }).expireDue();
-
     expect(swB.getHsrpAgent().listGroups()[0].state).toBe('active');
     expect(swA.getHsrpAgent().listGroups()[0].state).not.toBe('active');
-    vi.useRealTimers();
   });
 
   it('show standby après track Down affiche la priorité effective', async () => {
