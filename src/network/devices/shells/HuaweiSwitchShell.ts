@@ -2285,6 +2285,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
         if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
+        for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
         for (const natLine of runningConfigNATHuawei(sw as unknown as Router, name)) lines.push(natLine);
         lines.push('#');
       }
@@ -2309,6 +2310,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     lines.push('return');
     return lines.join('\n');
+  }
+
+  private renderVlanifVrrpLines(sw: Switch, iface: string): string[] {
+    const out: string[] = [];
+    const groups = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
+    for (const g of groups) {
+      if (g.vip) out.push(` vrrp vrid ${g.vrid} virtual-ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` vrrp vrid ${g.vrid} priority ${g.priority}`);
+      if (g.preempt) out.push(` vrrp vrid ${g.vrid} preempt-mode`);
+      if (g.advertiseSec !== 1) out.push(` vrrp vrid ${g.vrid} timer advertise ${g.advertiseSec}`);
+      for (const t of g.tracks) {
+        out.push(` vrrp vrid ${g.vrid} track interface ${t.target}${t.decrement !== 10 ? ` reduced ${t.decrement}` : ''}`);
+      }
+    }
+    return out;
   }
 
   private displayCurrentConfigInterface(sw: Switch, ifName: string): string {

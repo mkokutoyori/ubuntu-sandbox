@@ -2392,6 +2392,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       for (const helper of svi.helperAddresses) {
         lines.push(` ip helper-address ${helper}`);
       }
+      for (const l of this.renderSviFhrpLines(sw, svi.vlan)) lines.push(l);
       if (!svi.adminUp) lines.push(' shutdown');
       lines.push('!');
     }
@@ -2412,6 +2413,48 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     lines.push('end');
     return lines.join('\n');
+  }
+
+  private renderSviFhrpLines(sw: Switch, vlan: number): string[] {
+    const iface = `Vlanif${vlan}`;
+    const out: string[] = [];
+
+    const vrrp = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
+    for (const g of vrrp) {
+      if (g.vip) out.push(` vrrp ${g.vrid} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` vrrp ${g.vrid} priority ${g.priority}`);
+      if (g.preempt) out.push(` vrrp ${g.vrid} preempt`);
+      if (g.advertiseSec !== 1) out.push(` vrrp ${g.vrid} timers advertise ${g.advertiseSec}`);
+      for (const t of g.tracks) {
+        out.push(` vrrp ${g.vrid} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+
+    const hsrpGroups = sw.getHsrpAgent().listGroups().filter((g) => g.iface === iface);
+    if (hsrpGroups.some((g) => g.version === 2)) out.push(' standby version 2');
+    for (const g of hsrpGroups) {
+      if (g.vip) out.push(` standby ${g.group} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` standby ${g.group} priority ${g.priority}`);
+      if (g.preempt) out.push(` standby ${g.group} preempt`);
+      if (g.helloSec !== 3 || g.holdSec !== 10) out.push(` standby ${g.group} timers ${g.helloSec} ${g.holdSec}`);
+      if (g.authText !== 'cisco') out.push(` standby ${g.group} authentication text ${g.authText}`);
+      for (const t of g.tracks) {
+        out.push(` standby ${g.group} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+
+    const glbp = sw.getGlbpAgent().listGroups().filter((g) => g.iface === iface);
+    for (const g of glbp) {
+      if (g.vip) out.push(` glbp ${g.group} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` glbp ${g.group} priority ${g.priority}`);
+      if (g.preempt) out.push(` glbp ${g.group} preempt`);
+      if (g.weighting !== 100) out.push(` glbp ${g.group} weighting ${g.weighting}`);
+      if (g.loadBalancing !== 'round-robin') out.push(` glbp ${g.group} load-balancing ${g.loadBalancing}`);
+      for (const t of g.tracks) {
+        out.push(` glbp ${g.group} weighting track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+    return out;
   }
 
   // ─── Show Command Implementations ────────────────────────────────
