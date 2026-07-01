@@ -127,6 +127,17 @@ export interface WinCommandContext {
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
 
+  // DHCP class id (option 60 vendor class) — `ipconfig /showclassid|/setclassid`
+  getClassId(ifName: string): string | null;
+  setClassId(ifName: string, classId: string | null): void;
+  // DHCPv6 class id — `ipconfig /showclassid6|/setclassid6`
+  getClassId6(ifName: string): string | null;
+  setClassId6(ifName: string, classId: string | null): void;
+
+  // IPv6 Router Solicitation — `ipconfig /renew6` re-solicits the
+  // on-link router(s) for a fresh SLAAC prefix (no DHCPv6 lease to renew).
+  sendRouterSolicitation(ifName: string): void;
+
   // Hostname resolution. The DNS step queries the configured servers over
   // UDP/53 through the simulated network — hence asynchronous.
   resolveHostname(name: string): Promise<IPAddress | null>;

@@ -3262,8 +3262,11 @@ export abstract class EndHost extends Equipment {
 
   /**
    * Send Router Solicitation to discover routers and obtain prefix info.
+   * Public: used directly by `ipconfig /renew6` (Windows) and the
+   * Linux equivalent — a SLAAC-only network has no DHCPv6 lease to
+   * renew, so a real renew there re-solicits the on-link router(s).
    */
-  protected sendRouterSolicitation(portName: string): void {
+  sendRouterSolicitation(portName: string): void {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
 

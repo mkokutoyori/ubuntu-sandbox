@@ -363,6 +363,18 @@ export class Port {
     this.ipv6Addresses = this.ipv6Addresses.filter(e => e.origin === 'link-local');
   }
 
+  /**
+   * Release every dynamically-obtained IPv6 address (SLAAC / DHCPv6),
+   * keeping link-local and manually-configured static addresses intact.
+   * Mirrors `ipconfig /release6` — a real DHCP release only ever touches
+   * leased addresses, never a static assignment.
+   */
+  releaseDynamicIPv6Addresses(): IPv6AddressEntry[] {
+    const released = this.ipv6Addresses.filter(e => e.origin === 'slaac' || e.origin === 'dhcpv6');
+    this.ipv6Addresses = this.ipv6Addresses.filter(e => e.origin !== 'slaac' && e.origin !== 'dhcpv6');
+    return released;
+  }
+
   // ─── Speed & Duplex (IEEE 802.3) ─────────────────────────────────
 
   getSpeed(): PortSpeed { return this.speed; }

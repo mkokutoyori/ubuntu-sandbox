@@ -141,6 +141,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
+  /** Per-interface DHCP class id (option 60 vendor class), set via `ipconfig /setclassid`. */
+  private dhcpClassIds: Map<string, string> = new Map();
+  /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
+  private dhcpClassIds6: Map<string, string> = new Map();
   readonly dnsCache = new WindowsDnsCache();
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
@@ -1343,8 +1347,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
         // Migrate DHCP state
         if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
+        // Migrate DHCP class ids
+        const cid = this.dhcpClassIds.get(oldName);
+        if (cid) { this.dhcpClassIds.delete(oldName); this.dhcpClassIds.set(newName, cid); }
+        const cid6 = this.dhcpClassIds6.get(oldName);
+        if (cid6) { this.dhcpClassIds6.delete(oldName); this.dhcpClassIds6.set(newName, cid6); }
         return true;
       },
+
+      getClassId: (ifName: string) => this.getClassId(ifName),
+      setClassId: (ifName: string, classId: string | null) => this.setClassId(ifName, classId),
+      getClassId6: (ifName: string) => this.getClassId6(ifName),
+      setClassId6: (ifName: string, classId: string | null) => this.setClassId6(ifName, classId),
+      sendRouterSolicitation: (ifName: string) => this.sendRouterSolicitation(ifName),
 
       // Hostname resolution
       resolveHostname: (name: string) => this.resolveHostname(name),
@@ -1515,6 +1530,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  getClassId(ifName: string): string | null { return this.dhcpClassIds.get(ifName) ?? null; }
+  setClassId(ifName: string, classId: string | null): void {
+    if (classId) this.dhcpClassIds.set(ifName, classId);
+    else this.dhcpClassIds.delete(ifName);
+  }
+  getClassId6(ifName: string): string | null { return this.dhcpClassIds6.get(ifName) ?? null; }
+  setClassId6(ifName: string, classId: string | null): void {
+    if (classId) this.dhcpClassIds6.set(ifName, classId);
+    else this.dhcpClassIds6.delete(ifName);
   }
 
   private cmdDoskey(args: string[]): string {
