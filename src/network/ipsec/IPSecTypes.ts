@@ -179,6 +179,8 @@ export interface IKE_SA {
   dpdAwaitingAck?: boolean;
   /** IKE exchange mode: main (default) or aggressive */
   exchangeMode?: 'main' | 'aggressive';
+  failureReason?: string;
+  failedPhase?: 1 | 2;
 }
 
 /** DPD notify carried over UDP 500 — the ACK must echo the probe's seq (RFC 3706). */

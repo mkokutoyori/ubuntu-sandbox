@@ -3120,8 +3120,18 @@ export class IPSecEngine implements IProtocolEngine {
     return null;
   }
 
-  private createFailedIKESA(peerIP: string, _iface: string, _reason: string): void {
-    if (this.ikeSADB.has(peerIP)) return;
+  private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
+    const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
+    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy/i.test(r);
+    const existing = this.ikeSADB.get(peerIP);
+    if (existing) {
+      const currentSpecific = existing.failureReason ? isSpecific(existing.failureReason) : false;
+      if (!existing.failureReason || (isSpecific(reason) && !currentSpecific) || (!isSpecific(reason) && !currentSpecific)) {
+        existing.failureReason = reason;
+        existing.failedPhase = phase;
+      }
+      return;
+    }
     this.ikeSADB.set(peerIP, {
       peerIP, localIP: '',
       status: 'MM_NO_STATE',
@@ -3131,6 +3141,8 @@ export class IPSecEngine implements IProtocolEngine {
       role: 'initiator',
       natT: false,
       dpdEnabled: false,
+      failureReason: reason,
+      failedPhase: phase,
     });
   }
 
@@ -3264,6 +3276,9 @@ export class IPSecEngine implements IProtocolEngine {
       extra.push('');
       extra.push(`Crypto ISAKMP SA towards ${sa.peerIP}`);
       extra.push(`   Status: ${sa.status}, role: ${sa.role}`);
+      if (sa.failureReason) {
+        extra.push(`   Last negotiation failure: ${sa.failureReason} (phase ${sa.failedPhase ?? 1})`);
+      }
       extra.push(`   Exchange mode: ${sa.exchangeMode || 'main'}`);
       extra.push(`   Encryption: ${sa.encryption}, Hash: ${sa.hash}, DH Group: ${sa.group}`);
       extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
