@@ -249,6 +249,31 @@ export class OracleDatabase implements SqlCommandHost {
       `Dedicated server process for session sid=${sid} killed at the OS level; session terminated`);
   }
 
+  /**
+   * Dead Connection Detection (DCD, SQLNET.EXPIRE_TIME) cleanup path.
+   * The client vanished mid-transaction without a COMMIT or ROLLBACK —
+   * unlike a clean logoff, any uncommitted work MUST be rolled back, not
+   * committed, then every lock and the V$SESSION/V$TRANSACTION entries
+   * are released so no residual state survives the network outage.
+   */
+  terminateDeadSession(sid: number): { rolledBack: boolean } | null {
+    const conn = this.connections.get(sid);
+    if (!conn && !this.sessions.has(sid)) return null;
+    const rolledBack = conn?.executor?.rollbackOnDeadConnection() ?? false;
+    this.instance.lockManager.releaseSession(String(sid));
+    this.securityEngine.sessions.killBySid(sid);
+    this.connections.delete(sid);
+    this.closeSession(sid);
+    this.instance.logAlertEvent(
+      `Dead connection detected (DCD): session sid=${sid} terminated`
+      + (rolledBack ? '; uncommitted transaction automatically rolled back' : ''));
+    this.instance.getBus().publish({
+      topic: 'oracle.session.dead-connection',
+      payload: { deviceId: this.instance.getDeviceId(), sid, rolledBack },
+    });
+    return { rolledBack };
+  }
+
   /** All currently-open sessions. */
   getOpenSessions(): readonly OracleSession[] {
     return [...this.sessions.values()];

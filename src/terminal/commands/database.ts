@@ -17,7 +17,7 @@ import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
-import { resolveOracleConnectTarget, parseConnectIdentifier } from './oracleNet';
+import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
@@ -207,7 +207,13 @@ export function createSQLPlusSession(
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit
   // trail records the real OSUSER/MACHINE instead of a hardcoded default.
-  if (osCtx) session.setOsContext(osCtx);
+  // TCP sessions also carry the client's real IPv4 — needed by the
+  // server-side Dead Connection Detection (DCD) sweep to probe whether
+  // the peer is still reachable.
+  if (osCtx) {
+    const clientIp = viaOracleNet && localDevice ? primaryIpv4(localDevice) : undefined;
+    session.setOsContext(clientIp ? { ...osCtx, clientIp } : osCtx);
+  }
   // In-session CONNECT user/pass@X resolves through the same client.
   if (localDevice) {
     session.setTnsResolver((id) =>

@@ -87,6 +87,11 @@ export interface OracleSessionDisconnectedPayload extends OracleDeviceRef {
   sessionId: string;
 }
 
+export interface OracleSessionDeadConnectionPayload extends OracleDeviceRef {
+  sid: number;
+  rolledBack: boolean;
+}
+
 export interface OracleSessionRef extends OracleDeviceRef {
   sessionId: string;
 }
@@ -525,6 +530,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.archive-log.created';               payload: OracleArchiveLogCreatedPayload }
   | { topic: 'oracle.session.connected';                 payload: OracleSessionConnectedPayload }
   | { topic: 'oracle.session.disconnected';              payload: OracleSessionDisconnectedPayload }
+  | { topic: 'oracle.session.dead-connection';           payload: OracleSessionDeadConnectionPayload }
   | { topic: 'oracle.transaction.started';               payload: OracleTxnStartedPayload }
   | { topic: 'oracle.transaction.committed';             payload: OracleTxnCommittedPayload }
   | { topic: 'oracle.transaction.rolled-back';           payload: OracleTxnRolledBackPayload }

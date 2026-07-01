@@ -776,6 +776,21 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  get hasActiveTransaction(): boolean { return this.txn.isActive; }
+
+  /**
+   * Abrupt termination path: unlike `commitOnLogoff` (a clean client
+   * exit, which commits), a session whose underlying connection has
+   * simply vanished — network cut, dead-connection detection — must
+   * never commit work the client never asked to keep. Mirrors real
+   * Oracle PMON cleanup of an aborted session.
+   */
+  rollbackOnDeadConnection(): boolean {
+    if (!this.txn.isActive) return false;
+    this.txn.rollback();
+    return true;
+  }
+
   private isConstraintDeferred(c: import('../engine/storage/BaseStorage').ConstraintMeta): boolean {
     if (!c.deferrable) return false;
     if (this.constraintMode === 'IMMEDIATE') return false;

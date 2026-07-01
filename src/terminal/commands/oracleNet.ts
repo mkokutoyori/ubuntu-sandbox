@@ -105,7 +105,7 @@ function escapeRe(s: string): string {
 }
 
 /** First configured IPv4 of a device, as a dotted string, if any. */
-function primaryIpv4(dev: unknown): string | undefined {
+export function primaryIpv4(dev: unknown): string | undefined {
   const ports = (dev as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null }> }).getPorts?.();
   if (!ports) return undefined;
   for (const p of ports) {
