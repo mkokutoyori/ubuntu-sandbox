@@ -1005,6 +1005,42 @@ export abstract class EndHost extends Equipment {
     return removed !== undefined;
   }
 
+  installTunnelRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    nextHop: IPAddress | null,
+    iface: string,
+    type: 'static' | 'default',
+    metric: number = 100,
+  ): void {
+    if (type === 'default') {
+      this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+      this.defaultGateway = nextHop;
+      this.routingTable.push({
+        network: new IPAddress('0.0.0.0'),
+        mask: new SubnetMask('0.0.0.0'),
+        nextHop,
+        iface,
+        type: 'default',
+        metric,
+      });
+    } else {
+      this.routingTable.push({ network, mask, nextHop, iface, type: 'static', metric });
+    }
+  }
+
+  removeTunnelRoute(network: IPAddress, mask: SubnetMask, iface: string): boolean {
+    const before = this.routingTable.length;
+    const matches = (r: HostRouteEntry): boolean =>
+      r.iface === iface
+      && r.network.equals(network)
+      && r.mask.toCIDR() === mask.toCIDR();
+    const removed = this.routingTable.find(matches);
+    this.routingTable = this.routingTable.filter(r => !matches(r));
+    if (removed?.type === 'default') this.defaultGateway = null;
+    return this.routingTable.length !== before;
+  }
+
   // ─── ARP Table ─────────────────────────────────────────────────
 
   getARPTable(): Map<string, MACAddress> {
