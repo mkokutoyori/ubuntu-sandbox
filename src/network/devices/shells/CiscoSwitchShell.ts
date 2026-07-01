@@ -30,6 +30,7 @@ import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
+import { hsrpVirtualMac } from '../../hsrp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -612,6 +613,44 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (!Number.isFinite(group)) return '';
       const iface = `Vlanif${vlan}`;
       const agent = this.d().getVrrpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
+
+    this.configIfTrie.registerGreedy('standby', 'HSRP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group) || group < 0 || group > 255) return '% Invalid HSRP group.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getHsrpAgent();
+      agent.ensureGroup(iface, group);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 0 || p > 255) return '% Invalid priority (0..255).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no standby', 'Remove an HSRP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getHsrpAgent();
       if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
       agent.removeGroup(iface, group);
       return '';
@@ -2929,10 +2968,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       });
       t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', () =>
         this.showVrrp());
+      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', () =>
+        this.showStandby());
     }
   }
 
-  /** IOS `show vrrp` — one block per group, cross-vendor field names. */
   private showVrrp(): string {
     const groups = this.d().getVrrpAgent().listGroups();
     if (groups.length === 0) return '';
@@ -2946,6 +2986,30 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`  Virtual MAC address is ${vrrpVirtualMac(g.vrid)}`);
       lines.push(`  Priority is ${g.priority}`);
       lines.push(`  Preemption is ${g.preempt ? 'enabled' : 'disabled'}`);
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showStandby(): string {
+    const groups = this.d().getHsrpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr =
+        g.state === 'active' ? 'Active'
+        : g.state === 'standby' ? 'Standby'
+        : g.state === 'listen' ? 'Listen'
+        : g.state === 'speak' ? 'Speak'
+        : g.state === 'learn' ? 'Learn'
+        : 'Init';
+      lines.push(`${iface} - Group ${g.group}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Virtual MAC address is ${hsrpVirtualMac(g.group, g.version)}`);
+      lines.push(`  Priority ${g.priority}`);
+      lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
       lines.push('');
     }
     return lines.join('\n').replace(/\n$/, '');

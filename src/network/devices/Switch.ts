@@ -34,6 +34,10 @@ import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
+import { HsrpAgent } from '../hsrp/HsrpAgent';
+import { UDP_PORT_HSRP } from '../hsrp/types';
+import { IP_PROTO_UDP } from '../core/types';
+import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
@@ -233,7 +237,9 @@ export abstract class Switch extends Equipment {
       this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'dynamic' });
     },
     fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
-      this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp) ?? null,
+      this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? null,
   });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
@@ -1094,10 +1100,18 @@ export abstract class Switch extends Equipment {
     // machine on both switches sees the peer and one of them
     // stays Master while the other becomes Backup. The frame keeps
     // flooding the VLAN normally afterwards.
-    if (this._vrrpAgent && frame.etherType === ETHERTYPE_IPV4) {
+    if ((this._vrrpAgent || this._hsrpAgent) && frame.etherType === ETHERTYPE_IPV4) {
       const ip = frame.payload as IPv4Packet | undefined;
-      if (ip && ip.type === 'ipv4' && ip.protocol === IP_PROTO_VRRP) {
-        this._vrrpAgent.handleIp(`Vlanif${ingressVlan}`, ip.sourceIP, ip);
+      if (ip && ip.type === 'ipv4') {
+        if (ip.protocol === IP_PROTO_VRRP && this._vrrpAgent) {
+          this._vrrpAgent.handleIp(`Vlanif${ingressVlan}`, ip.sourceIP, ip);
+        }
+        if (ip.protocol === IP_PROTO_UDP && this._hsrpAgent) {
+          const udp = ip.payload as UDPPacket | undefined;
+          if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_HSRP) {
+            this._hsrpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+          }
+        }
       }
     }
 
@@ -1685,18 +1699,28 @@ export abstract class Switch extends Equipment {
   // still use the same VRRP state machine as on routers — the only
   // change is where the interface lives (Vlanif vs GigabitEthernet0/0).
   private _vrrpAgent: VrrpAgent | null = null;
-  private ensureVrrpAgent(): VrrpAgent {
-    if (this._vrrpAgent) return this._vrrpAgent;
-    const host = makeSwitchVrrpHost(this, {
+  private _hsrpAgent: HsrpAgent | null = null;
+  private fhrpHost() {
+    return makeSwitchVrrpHost(this, {
       egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
       vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
       getBridgeMac: () => this.getBridgeMac(),
     });
-    this._vrrpAgent = new VrrpAgent(host, () => this.getBus());
+  }
+  private ensureVrrpAgent(): VrrpAgent {
+    if (this._vrrpAgent) return this._vrrpAgent;
+    this._vrrpAgent = new VrrpAgent(this.fhrpHost(), () => this.getBus());
     this._vrrpAgent.start();
     return this._vrrpAgent;
   }
+  private ensureHsrpAgent(): HsrpAgent {
+    if (this._hsrpAgent) return this._hsrpAgent;
+    this._hsrpAgent = new HsrpAgent(this.fhrpHost(), () => this.getBus());
+    this._hsrpAgent.start();
+    return this._hsrpAgent;
+  }
   getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
+  getHsrpAgent(): HsrpAgent { return this.ensureHsrpAgent(); }
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 
