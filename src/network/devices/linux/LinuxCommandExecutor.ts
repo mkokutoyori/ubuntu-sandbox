@@ -1109,9 +1109,14 @@ export class LinuxCommandExecutor {
       return { output: 'usage: nc [-z] [-v] [-w secs] host port', exitCode: 1 };
     }
     const host = positional[0];
-    const port = parseInt(positional[1], 10);
+    const portToken = positional[1];
+    let port = parseInt(portToken, 10);
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      return { output: `nc: port number invalid: ${positional[1]}`, exitCode: 1 };
+      const resolved = this.resolveServicePort(portToken);
+      if (resolved !== null) port = resolved;
+    }
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      return { output: `nc: port number invalid: ${portToken}`, exitCode: 1 };
     }
 
     const targetIsV6 = this.isIPv6Literal(host);
