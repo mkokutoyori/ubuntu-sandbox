@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type UdpDelivery, getNUDState } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
@@ -72,12 +72,11 @@ import {
   formatIpMonitorNeigh,
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
-import {
-  UDP_PORT_DNS,
-  isDnsWireQuery,
-  estimateDnsMessageSize,
-  type DnsWireResponse,
-} from '../dns/DnsWire';
+import { UDP_PORT_DNS } from '../dns/DnsWire';
+import { bindDnsUdpServer } from '../dns/transport/DnsUdpTransport';
+import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
+import type { DnsMessage } from '../dns/wire/DnsMessage';
+import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -264,41 +263,27 @@ export abstract class LinuxMachine extends EndHost
   // ─── DNS over the wire (server side) ─────────────────────────────────
 
   private bindDnsServerPort(): void {
-    // Like on real Ubuntu, dnsmasq cannot share port 53 with the
-    // systemd-resolved stub listener: taking over the port supersedes it.
-    this.socketTable.unbind('udp', '127.0.0.53', UDP_PORT_DNS);
+    // bindDnsUdpServer supersedes the systemd-resolved stub listener on
+    // 127.0.0.53, like real dnsmasq taking over port 53 on Ubuntu.
     try {
-      this.udpBind(UDP_PORT_DNS, (delivery) => this.handleDnsWireQuery(delivery), 'dnsmasq');
+      bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), UDP_PORT_DNS, 'dnsmasq');
     } catch { /* port already bound (e.g. service restarted) */ }
   }
 
-  private handleDnsWireQuery({ sourceIP, udp }: UdpDelivery): void {
-    const query = udp.payload;
-    if (!isDnsWireQuery(query)) return;
+  private answerDnsQuery(query: DnsMessage): DnsMessage {
+    const question = query.questions[0];
+    if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
 
-    const answers = query.qtype.toUpperCase() === 'PTR'
-      ? this.dnsService.reverseQuery(query.name)
-      : this.dnsService.query(query.name, query.qtype);
+    const qtype = rrTypeName(question.qtype as number);
+    const answers = this.dnsService.query(question.qname, qtype);
 
     // NXDOMAIN only when the whole domain is unknown; a known domain with
     // no record of the requested type answers NOERROR with zero answers,
     // like a real authoritative server.
-    const rcode = answers.length > 0 || this.dnsService.hasDomain(query.name)
+    const rcode = answers.length > 0 || this.dnsService.hasDomain(question.qname)
       ? 'NOERROR'
       : 'NXDOMAIN';
-
-    const response: DnsWireResponse = {
-      kind: 'dns-response',
-      id: query.id,
-      rcode,
-      name: query.name,
-      qtype: query.qtype,
-      answers,
-    };
-    this.sendUdpDatagram(
-      sourceIP, udp.sourcePort, UDP_PORT_DNS, response,
-      estimateDnsMessageSize(query.name, answers),
-    );
+    return buildLegacyResponseMessage(query, rcode, answers);
   }
 
   private cronTimer: symbol | null = null;

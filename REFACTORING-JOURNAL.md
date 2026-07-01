@@ -2276,3 +2276,95 @@ les échecs venaient d'un **décalage tests/produit**.
 - `npx playwright test` (suite e2e complète) : **73/73 verts**.
 - Aucune modification de code produit ; tests unitaires `adduser`/`sudo`/`ssh`
   inchangés et verts (210).
+
+## Entrée n°42 — 2026-07-01 — DNS phase 9 (1ʳᵉ tranche) : le chemin DNS vivant des PC parle RFC 1035 binaire sur le câble
+
+### Contexte
+
+Les phases 1 à 6 du PRD-DNS (`docs/PRD-DNS.md`) ont livré un moteur DNS complet
+(codec binaire avec compression de noms, zones, serveur autoritaire, résolveur
+récursif, EDNS(0), NOTIFY/AXFR/IXFR) — mais le chemin DNS **vivant** des PC
+(résolution de noms de `ping`/`ssh`, `dig`/`nslookup`/`host`, la source NSS
+`dns`, le dnsmasq de `LinuxMachine`) continuait d'échanger des payloads JSON
+`{kind: 'dns-query', …}` sur UDP 53 (`DnsWire.ts`). Deux formats de « wire »
+coexistaient donc : un vrai (le moteur) et un simulacre (les PC). La phase 9 du
+PRD prévoit la résorption de cette duplication, fichier par fichier.
+
+### Défaillances corrigées
+
+1. **Wire format irréaliste** — un sniffer sur le câble voyait un objet JSON, pas
+   un datagramme DNS ; la taille UDP était *estimée* (`estimateDnsMessageSize`)
+   au lieu d'être la longueur réelle de l'encodage.
+2. **QNAME PTR faux** — pour une requête inverse, le client envoyait l'IP brute
+   (`10.0.1.88`) comme nom de question ; un vrai stub resolver envoie le nom
+   `88.1.0.10.in-addr.arpa` (RFC 1035 §3.5). Le serveur avait en conséquence un
+   chemin spécial `reverseQuery` côté wire, désormais inutile.
+3. **Pas de troncature** — le dnsmasq simulé répondait sans limite de taille ;
+   il applique maintenant TC=1 + élagage des sections au-delà de 512 octets (ou
+   de la taille EDNS négociée), via le `bindDnsUdpServer` du moteur — la même
+   troncature que le serveur autoritaire, dédupliquée.
+4. **Réponses non validées** — le client acceptait tout objet ayant le bon `id` ;
+   il exige désormais un message binaire bien formé, `id` correspondant **et**
+   bit QR levé (anti-spoofing minimal d'un vrai résolveur, testé).
+5. **Duplication de l'allocation d'id et du serveur UDP 53** — le compteur de
+   transaction et le binding serveur vivent maintenant à un seul endroit
+   (`compat/DnsWireCompat.ts`, `transport/DnsUdpTransport.ts`).
+
+### Correction (structurelle, conforme au plan de migration du PRD §5/§7)
+
+- **Nouveau pont transitoire `src/network/dns/compat/DnsWireCompat.ts`** :
+  conversions bidirectionnelles `DnsRecord` ⇄ `ResourceRecord` (avec découpage
+  des TXT en character-strings ≤ 255 octets RFC 1035 §3.3.14, SOA sérialisé en
+  7 champs), rcodes nom ⇄ numérique, mnémoniques ⇄ types RR numériques
+  (`TYPEnnn` RFC 3597 pour l'inconnu), normalisation PTR → in-addr.arpa,
+  constructeurs de messages requête/réponse. Un enregistrement inencodable sur
+  le wire est omis (comme dans la réalité) au lieu de circuler par magie.
+- **`EndHost.queryDnsServer`/`queryDnsServerSync`** (partagés Linux + Windows) :
+  encodent la requête avec `DnsMessageCodec`, envoient les octets réels
+  (longueur UDP exacte), décodent et valident la réponse binaire. Un nom
+  qu'un vrai `getaddrinfo()` refuserait (label > 63 octets, type inconnu)
+  échoue **avant** d'atteindre le câble.
+- **`LinuxMachine`** : dnsmasq répond via `bindDnsUdpServer` du moteur
+  (décodage, troncature TC, taille EDNS négociée gratuits) ; la sémantique
+  NXDOMAIN/NOERROR-sans-réponse existante est préservée ; QDCOUNT=0 → FORMERR.
+  `bindDnsUdpServer` gagne un paramètre `processName` pour que `ss -ulpn`
+  continue d'afficher `dnsmasq` (et non un tag générique).
+- **`DnsWire.ts` réduit aux formes d'API** (`DnsRecord`, `DnsWireResponse`,
+  `DnsQueryFn`) : `DnsWireQuery`, `isDnsWireQuery/Response`,
+  `estimateDnsMessageSize`, `nextDnsTransactionId` supprimés du module (le
+  compteur d'id vit dans le pont). Prochaines tranches : migrer les outils et
+  la source NSS vers le modèle natif du moteur, puis supprimer `DnsWire.ts`.
+
+### Anti-doublon
+
+Le serveur UDP 53, la troncature et la négociation EDNS ne sont **pas**
+réimplémentés côté dnsmasq : réutilisation de `bindDnsUdpServer`/
+`truncateForUdp` déjà livrés en phases 3/5. Aucune nouvelle table de
+correspondance type↔nom : dérivée de l'objet `RRType` existant.
+
+### Interopérabilité prouvée
+
+Le client natif du moteur (`queryDnsOverUdp`) interroge le dnsmasq migré et
+obtient une réponse binaire correcte (id, QR/RA, question écho, RR A) — les
+deux mondes parlent désormais le même protocole sur le même câble.
+
+### Fichiers
+
+`src/network/dns/compat/DnsWireCompat.ts` (nouveau),
+`src/network/dns/transport/DnsUdpTransport.ts`,
+`src/network/devices/EndHost.ts`, `src/network/devices/LinuxMachine.ts`,
+`src/network/dns/DnsWire.ts`,
+`src/__tests__/unit/network-v2/dns-wire-binary.test.ts` (nouveau, 9 tests).
+
+### Validation
+
+- Nouveau banc `dns-wire-binary` : **9/9 verts** (binaire sur le câble décodé
+  par un listener brut, réponse forgée au codec consommée par le stub, spoof
+  d'id ignoré, interop moteur↔dnsmasq, tag processus `dnsmasq`, TC=1 sur
+  réponse > 512 octets, QNAME in-addr.arpa sur le câble + résolution PTR de
+  bout en bout, échecs pré-wire pour nom/type invalides).
+- Golden masters : `dns-over-wire`, `nss-dns-wire`, `nslookup-skeleton1`,
+  `windows-dns-cache`, `windows-netsh-dhcp-dns` : **99/99 verts**.
+- `tsc --noEmit` : 0 erreur. `eslint` : aucune erreur nouvelle (5 préexistantes
+  inchangées ailleurs). Suite `network-v2` complète lancée en fond au moment du
+  commit ; verdict consigné ici dès réception.

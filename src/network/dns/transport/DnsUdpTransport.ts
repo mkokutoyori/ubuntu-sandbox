@@ -43,7 +43,12 @@ function negotiatedUdpSize(query: DnsMessage): number {
   );
 }
 
-export function bindDnsUdpServer(host: EndHost, handler: DnsMessageHandler, port: number = DNS_PORT): void {
+export function bindDnsUdpServer(
+  host: EndHost,
+  handler: DnsMessageHandler,
+  port: number = DNS_PORT,
+  processName: string = 'dns',
+): void {
   if (port === DNS_PORT) host.getSocketTable().unbind('udp', '127.0.0.53', port);
   host.udpBind(port, ({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
@@ -56,7 +61,7 @@ export function bindDnsUdpServer(host: EndHost, handler: DnsMessageHandler, port
     const response = truncateForUdp(handler(query), negotiatedUdpSize(query));
     const bytes = encodeDnsMessage(response);
     host.sendUdpDatagram(sourceIP, udp.sourcePort, port, bytes, bytes.length);
-  }, 'dns');
+  }, processName);
 }
 
 export function unbindDnsUdpServer(host: EndHost, port: number = DNS_PORT): void {

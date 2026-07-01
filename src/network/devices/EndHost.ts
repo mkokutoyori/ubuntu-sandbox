@@ -64,14 +64,14 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
+import { UDP_PORT_DNS, type DnsWireResponse } from '../dns/DnsWire';
+import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
+import type { DnsMessage } from '../dns/wire/DnsMessage';
 import {
-  UDP_PORT_DNS,
-  isDnsWireResponse,
   nextDnsTransactionId,
-  estimateDnsMessageSize,
-  type DnsWireQuery,
-  type DnsWireResponse,
-} from '../dns/DnsWire';
+  buildLegacyQueryMessage,
+  messageToLegacyResponse,
+} from '../dns/compat/DnsWireCompat';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -1811,7 +1811,8 @@ export abstract class EndHost extends Equipment {
     qtype: string,
     timeoutMs: number = 2000,
   ): Promise<DnsWireResponse | null> {
-    const id = nextDnsTransactionId();
+    const wire = this.encodeDnsQuery(name, qtype);
+    if (!wire) return null;
     let sourcePort: number;
     try {
       sourcePort = this.socketTable.allocateEphemeralPort();
@@ -1832,19 +1833,16 @@ export abstract class EndHost extends Equipment {
 
       try {
         this.udpBind(sourcePort, ({ udp }) => {
-          const msg = udp.payload;
-          if (isDnsWireResponse(msg) && msg.id === id) finish(msg);
+          const response = this.decodeDnsReply(udp.payload, wire.id);
+          if (response) finish(messageToLegacyResponse(response, name, qtype));
         }, 'resolver');
       } catch {
         resolve(null);
         return;
       }
 
-      const query: DnsWireQuery = {
-        kind: 'dns-query', id, name, qtype, recursionDesired: true,
-      };
       const sent = this.sendUdpDatagram(
-        serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+        serverIP, UDP_PORT_DNS, sourcePort, wire.bytes, wire.bytes.length,
       );
       if (!sent) {
         finish(null);
@@ -1864,30 +1862,59 @@ export abstract class EndHost extends Equipment {
     name: string,
     qtype: string,
   ): DnsWireResponse | null {
+    const wire = this.encodeDnsQuery(name, qtype);
+    if (!wire) return null;
     let sourcePort: number;
     try {
       sourcePort = this.socketTable.allocateEphemeralPort();
     } catch {
       return null;
     }
-    const id = nextDnsTransactionId();
     let reply: DnsWireResponse | null = null;
     try {
       this.udpBind(sourcePort, ({ udp }) => {
-        const msg = udp.payload;
-        if (isDnsWireResponse(msg) && msg.id === id) reply = msg;
+        const response = this.decodeDnsReply(udp.payload, wire.id);
+        if (response) reply = messageToLegacyResponse(response, name, qtype);
       }, 'resolver');
     } catch {
       return null;
     }
-    const query: DnsWireQuery = {
-      kind: 'dns-query', id, name, qtype, recursionDesired: true,
-    };
     this.sendUdpDatagram(
-      serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+      serverIP, UDP_PORT_DNS, sourcePort, wire.bytes, wire.bytes.length,
     );
     this.udpClose(sourcePort);
     return reply;
+  }
+
+  /**
+   * RFC 1035 binary query for a (name, qtype) lookup. Null when the name
+   * or type cannot be put on the wire — the same lookups a real
+   * getaddrinfo() rejects before ever sending a packet.
+   */
+  private encodeDnsQuery(name: string, qtype: string): { id: number; bytes: Uint8Array } | null {
+    const id = nextDnsTransactionId();
+    const query = buildLegacyQueryMessage(id, name, qtype);
+    if (!query) return null;
+    try {
+      return { id, bytes: encodeDnsMessage(query) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Decode a UDP payload as the response to transaction `id`: must be
+   * binary, well-formed, matching id, with QR set — anything else is
+   * ignored and the client keeps waiting, like a real stub resolver.
+   */
+  private decodeDnsReply(payload: unknown, id: number): DnsMessage | null {
+    if (!(payload instanceof Uint8Array)) return null;
+    try {
+      const message = decodeDnsMessage(payload);
+      return message.id === id && message.flags.qr ? message : null;
+    } catch {
+      return null;
+    }
   }
 
   // ─── ARP Resolution ────────────────────────────────────────────
