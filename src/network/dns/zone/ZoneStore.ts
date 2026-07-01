@@ -38,6 +38,10 @@ export class ZoneStore {
     this.zonesByOrigin.set(zone.origin, zone);
   }
 
+  removeZone(origin: string): boolean {
+    return this.zonesByOrigin.delete(normalize(origin));
+  }
+
   findZone(qname: string): Zone | null {
     let candidate: string | null = normalize(qname);
     while (candidate !== null) {
