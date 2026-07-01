@@ -57,6 +57,31 @@ const TERMINATING_SIGNALS: ReadonlySet<string> = new Set([
 const ORACLE_OS_UID = 54321;
 const ORACLE_OS_GID = 54321;
 
+function scrambledHex(seed: string, bytes = 256): string {
+  let h1 = 0x811c9dc5, h2 = 0x1000193;
+  for (let i = 0; i < seed.length; i++) {
+    const c = seed.charCodeAt(i);
+    h1 = (h1 ^ c) * 0x01000193 >>> 0;
+    h2 = (h2 + c * 0x9e3779b1) >>> 0;
+  }
+  const out: string[] = [];
+  for (let i = 0; i < bytes; i++) {
+    h1 = (h1 * 1103515245 + 12345) >>> 0;
+    h2 = (h2 * 1664525 + 1013904223) >>> 0;
+    out.push(((h1 ^ h2) & 0xff).toString(16).padStart(2, '0'));
+  }
+  return out.join('');
+}
+
+function datafileContent(
+  ts: { name: string; type: string; encrypted: boolean },
+  df: { path: string; size: string },
+): string {
+  if (ts.encrypted) return scrambledHex(`${ts.name}:${df.path}`);
+  const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+  return `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
+}
+
 function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
   if (!dev.installSystemFile) {
     dev.writeFileFromEditor(path, content);
@@ -136,6 +161,10 @@ export class OracleFilesystemSync {
         this.syncSgaMemory(deviceId, newState === 'OPEN');
       }),
 
+      this.bus.subscribe('oracle.storage.tablespace-encrypted', (e) => {
+        this.reencryptTablespaceDatafiles(e.payload.deviceId, e.payload.name);
+      }),
+
       this.bus.subscribe('oracle.instance.background-process-started', (e) => {
         const { deviceId, sid, name, pid } = e.payload;
         const dev = this.dev(deviceId);
@@ -186,25 +215,20 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        const ts = this.ctx.resolveDatabase(e.payload.deviceId)?.storage.getTablespace(e.payload.name);
         for (const df of e.payload.datafiles) {
           this.markDatafileMaterialized(e.payload.deviceId, df.path);
-          writeAsOracle(dev, 
-            df.path,
-            `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
-          );
+          writeAsOracle(dev, df.path, ts ? datafileContent(ts, df) : `[ORACLE ${e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE'} - ${e.payload.name} tablespace - ${df.size}]`);
         }
       }),
 
       this.bus.subscribe('oracle.storage.datafile-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        const ts = this.ctx.resolveDatabase(e.payload.deviceId)?.storage.getTablespace(e.payload.tablespace);
         this.markDatafileMaterialized(e.payload.deviceId, e.payload.path);
-        writeAsOracle(dev, 
-          e.payload.path,
-          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
-        );
+        const df = { path: e.payload.path, size: e.payload.size };
+        writeAsOracle(dev, e.payload.path, ts ? datafileContent(ts, df) : `[ORACLE ${e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE'} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`);
       }),
 
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
@@ -476,9 +500,7 @@ export class OracleFilesystemSync {
         // rewrites the file) are about.
         if (seen.has(df.path)) continue;
         seen.add(df.path);
-        const typeLabel = ts.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
-        const content = `[ORACLE ${typeLabel} - ${ts.name} tablespace - ${df.size}]`;
-        writeAsOracle(dev, df.path, content);
+        writeAsOracle(dev, df.path, datafileContent(ts, df));
       }
     }
 
@@ -501,6 +523,18 @@ export class OracleFilesystemSync {
       seen.add(f);
       writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
+  }
+
+  private reencryptTablespaceDatafiles(deviceId: string, tablespaceName: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    const ts = storage.getTablespace(tablespaceName);
+    if (!ts) return;
+    for (const df of ts.datafiles) {
+      writeAsOracle(dev, df.path, datafileContent(ts, df));
+    }
   }
 }
 

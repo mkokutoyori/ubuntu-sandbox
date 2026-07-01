@@ -179,6 +179,13 @@ export class OracleStorage extends BaseStorage {
     return ts;
   }
 
+  setTablespaceEncrypted(name: string, encrypted: boolean): TablespaceMeta | null {
+    const ts = this.tablespaces.get(name.toUpperCase());
+    if (!ts) return null;
+    ts.encrypted = encrypted;
+    return ts;
+  }
+
   /** Rename a tablespace (keys + meta name). */
   renameTablespace(oldName: string, newName: string): TablespaceMeta | null {
     const key = oldName.toUpperCase();

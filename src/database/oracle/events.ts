@@ -274,6 +274,10 @@ export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
   newStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
 }
 
+export interface OracleTablespaceEncryptedPayload extends OracleDeviceRef {
+  name: string;
+}
+
 export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
   oldName: string;
   newName: string;
@@ -545,6 +549,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
   | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload }
   | { topic: 'oracle.instance.parameter-file-requested'; payload: OracleParameterFileRequestedPayload }

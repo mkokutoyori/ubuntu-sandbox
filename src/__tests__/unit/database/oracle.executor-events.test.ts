@@ -128,12 +128,13 @@ describe('Phase 7b — OracleExecutor transaction + DML + DDL events', () => {
     const { executor } = db.connectAsSysdba();
     executor.setSessionId('s4');
 
-    // Trigger an error: select from missing table — uses executeWithAudit
-    // through the SQL*Plus normal path, so we go via OracleDatabase.executeSql
-    // which catches OracleError and returns it as a result, NOT via the
-    // executeWithAudit path. To test the error emission directly:
+    // execute() itself now records the audit trail and emits
+    // oracle.error.raised on failure (previously only the unused
+    // executeWithAudit did this — real DML/DDL failures never reached
+    // DBA_AUDIT_TRAIL because OracleDatabase.executeSql calls execute()
+    // directly).
     try {
-      executor.executeWithAudit({
+      executor.execute({
         type: 'DropTableStatement',
         tableName: 'NONEXISTENT_TABLE_PH7E',
       } as never);

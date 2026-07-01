@@ -752,6 +752,12 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('SHRINK')) { this.matchKeyword('SPACE'); return { kind: 'SHRINK_SPACE' }; }
     if (this.matchKeyword('COALESCE')) return { kind: 'COALESCE' };
+    if (this.matchKeyword('ENCRYPTION')) {
+      if (!this.matchKeyword('ONLINE')) this.matchKeyword('OFFLINE');
+      if (this.matchKeyword('USING')) readQuoted();
+      this.matchKeyword('ENCRYPT');
+      return { kind: 'ENCRYPT' };
+    }
     // Fallback: swallow the rest so we don't choke on unknown clauses.
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
     return { kind: 'LOGGING' };

@@ -693,7 +693,8 @@ export type AlterTablespaceAction =
   | { kind: 'FLASHBACK_OFF' }
   | { kind: 'SHRINK_SPACE' }
   | { kind: 'COALESCE' }
-  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string };
+  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string }
+  | { kind: 'ENCRYPT' };
 
 export interface AlterTablespaceStatement extends ASTNode {
   type: 'AlterTablespaceStatement';

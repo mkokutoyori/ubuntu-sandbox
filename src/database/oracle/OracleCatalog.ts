@@ -779,6 +779,11 @@ export class OracleCatalog extends BaseCatalog {
     if (actions.size === 0) this.objAuditOpts.delete(key);
   }
 
+  /** Audit mode configured for one object/action pair, if any. */
+  getObjectAuditOption(schema: string, object: string, action: string): ObjectAuditMode | undefined {
+    return this.objAuditOpts.get(`${schema.toUpperCase()}.${object.toUpperCase()}`)?.get(action.toUpperCase());
+  }
+
   /** Flattened, read-only snapshot of every object audit option. */
   getObjectAuditOptions(): ObjectAuditOption[] {
     const out: ObjectAuditOption[] = [];

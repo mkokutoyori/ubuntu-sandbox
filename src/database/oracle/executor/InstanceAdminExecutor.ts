@@ -39,6 +39,7 @@ export class InstanceAdminExecutor {
   constructor(private readonly deps: InstanceAdminDeps) {}
 
   private get storage(): OracleStorage { return this.deps.storage; }
+  private get catalog(): OracleCatalog { return this.deps.catalog; }
   private get instance(): OracleInstance { return this.deps.instance; }
   private get bus() { return this.instance.getBus(); }
   private get deviceId() { return this.instance.getDeviceId(); }
@@ -188,6 +189,7 @@ export class InstanceAdminExecutor {
   // ── Tablespaces ───────────────────────────────────────────────────
 
   executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
+    if (stmt.encrypted) this.requireOpenTdeWallet();
     const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT';
     const datafiles = [{
       path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false,
@@ -310,6 +312,22 @@ export class InstanceAdminExecutor {
       case 'BEGIN_BACKUP': case 'END_BACKUP':
       case 'SHRINK_SPACE': case 'COALESCE':
         return;
+      case 'ENCRYPT': {
+        this.requireOpenTdeWallet();
+        storage.setTablespaceEncrypted(name, true);
+        this.bus.publish({
+          topic: 'oracle.storage.tablespace-encrypted',
+          payload: { deviceId: this.deviceId, sid: this.sid, name },
+        });
+        return;
+      }
+    }
+  }
+
+  private requireOpenTdeWallet(): void {
+    const wallet = this.catalog.getTdeWallet();
+    if (!wallet || wallet.status !== 'OPEN') {
+      throw new OracleError(28365, 'wallet is not open');
     }
   }
 

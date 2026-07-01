@@ -260,7 +260,16 @@ export class OracleExecutor extends BaseExecutor {
   execute(statement: Statement): ResultSet {
     const parseStart = performance.now();
     this.emitSqlParsed(statement);
-    const result = this.executeStatement(statement);
+    let result: ResultSet;
+    try {
+      result = this.executeStatement(statement);
+    } catch (e: unknown) {
+      const code = e instanceof OracleError ? parseInt(e.code.replace('ORA-', ''), 10) : 600;
+      const message = e instanceof Error ? e.message : String(e);
+      this.recordAuditForStatement(statement, code);
+      this.emitError(code, message);
+      throw e;
+    }
     const elapsed = performance.now() - parseStart;
     this.emitSqlExecuted(statement, result, elapsed);
     this.recordAuditForStatement(statement, 0);
@@ -332,22 +341,6 @@ export class OracleExecutor extends BaseExecutor {
     return s.sourceText ?? stmt.type;
   }
 
-  /** Try to execute, recording errors in audit trail */
-  executeWithAudit(statement: Statement): ResultSet {
-    try {
-      const result = this.executeStatement(statement);
-      this.recordAuditForStatement(statement, 0);
-      this.emitForStatement(statement, result);
-      return result;
-    } catch (e: unknown) {
-      const code = e instanceof OracleError ? e.code : 600;
-      const message = e instanceof Error ? e.message : String(e);
-      this.recordAuditForStatement(statement, code);
-      this.emitError(code, message);
-      throw e;
-    }
-  }
-
   /** Post-dispatch reactive emissions (DML rows, DDL kind/name). */
   private emitForStatement(statement: Statement, result: ResultSet): void {
     const t = statement.type;
@@ -378,8 +371,15 @@ export class OracleExecutor extends BaseExecutor {
       DeleteStatement: 'DELETE',
     };
     const dmlAction = dmlMap[stmtType];
+    const objInfo = this.getObjInfo(statement);
+    // AUDIT SELECT ON schema.table BY ACCESS — object-level audit options,
+    // consulted per DML action against the accessed object.
+    const objectAuditMode = dmlAction && objInfo.owner && objInfo.name
+      ? catalog.getObjectAuditOption(objInfo.owner, objInfo.name, dmlAction)
+      : undefined;
     const audited = dmlAction
-      ? catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
+      ? (objectAuditMode !== undefined && objectAuditMode.success !== '-')
+        || catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
       : !!actionName;
     if (!audited) {
       // Even when not audited at the statement level, fine-grained
@@ -388,11 +388,15 @@ export class OracleExecutor extends BaseExecutor {
       return;
     }
 
-    const objInfo = this.getObjInfo(statement);
     const effectiveAction = actionName ?? dmlAction!;
     const fullSqlText = this._lastSqlText || this.statementText(statement);
     const sqlText = fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText;
     const sessionIdNum = parseInt(this._sessionId, 10) || 0;
+    const session = this.context.session as { osUser?: string; machine?: string; terminal?: string } | undefined;
+    const osUsername = session?.osUser ?? 'oracle';
+    const userhost = session?.machine ?? 'localhost';
+    const terminal = session?.terminal ?? 'pts/0';
+    const timestamp = new Date();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -403,6 +407,10 @@ export class OracleExecutor extends BaseExecutor {
       privUsed: null,
       sqlText,
       statementType: effectiveAction,
+      osUsername,
+      userhost,
+      terminal,
+      timestamp,
     });
     this.bus.publish({
       topic: 'oracle.audit.recorded',
@@ -416,10 +424,10 @@ export class OracleExecutor extends BaseExecutor {
         objOwner: objInfo.owner ?? null,
         returncode,
         sqlText,
-        timestamp: new Date(),
-        osUsername: 'oracle',
-        userhost: 'localhost',
-        terminal: 'pts/0',
+        timestamp,
+        osUsername,
+        userhost,
+        terminal,
       },
     });
     if (dmlAction) {
@@ -3108,7 +3116,8 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {
-        // Validate that the column exists, then record TDE metadata.
+        const wallet = (this.catalog as OracleCatalog).getTdeWallet();
+        if (!wallet || wallet.status !== 'OPEN') throw new OracleError(28365, 'wallet is not open');
         const meta = this.requireTableMeta(schema, tableName);
         const col = meta.columns.find(c => c.name === action.columnName.toUpperCase());
         if (!col) throw new OracleError(904, `"${action.columnName.toUpperCase()}": invalid identifier`);
