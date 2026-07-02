@@ -398,6 +398,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (this._sshHandlerMounted) return;
     this._sshHandlerMounted = true;
     this.bindSshListener();
+    this.bindTelnetListener();
   }
 
   private bindSshListener(): void {
@@ -409,10 +410,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  private bindTelnetListener(): void {
+    this.tcpv2.listen(23, { onAccept: () => {} });
+  }
+
+  private telnetAllowedByTransport(): boolean {
+    return this.vtyTransportInput === 'all' || this.vtyTransportInput === 'telnet';
+  }
+
   private syncSshListener(): void {
-    const bound = this.tcpv2.listListeners().some(l => l.localPort === 22);
-    if (this.sshServerEnabled && !bound) this.bindSshListener();
-    if (!this.sshServerEnabled && bound) this.tcpv2.closeListener(22);
+    const sshBound = this.tcpv2.listListeners().some(l => l.localPort === 22);
+    if (this.sshServerEnabled && !sshBound) this.bindSshListener();
+    if (!this.sshServerEnabled && sshBound) this.tcpv2.closeListener(22);
+    const telnetWanted = this.telnetAllowedByTransport();
+    const telnetBound = this.tcpv2.listListeners().some(l => l.localPort === 23);
+    if (telnetWanted && !telnetBound) this.bindTelnetListener();
+    if (!telnetWanted && telnetBound) this.tcpv2.closeListener(23);
   }
 
   private _sshHostKeyCache: SshHostKey | null = null;

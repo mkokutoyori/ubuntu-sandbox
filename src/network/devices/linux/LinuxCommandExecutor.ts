@@ -1106,11 +1106,23 @@ export class LinuxCommandExecutor {
 
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
     const dev = (reachable ?? found.device) as unknown as {
+      vtyAdmissionVerdict?: (transport: 'telnet', sourceIp: string) => {
+        accept: boolean; kind?: 'acl' | 'line-password' | 'no-line'; reason?: string;
+      };
       _getVtyLineConfig?: () => { incomingVerdict: () => { accept: boolean; reason: string } };
     };
-    const verdict = dev._getVtyLineConfig?.().incomingVerdict();
-    if (verdict && !verdict.accept) {
-      return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+    const admission = dev.vtyAdmissionVerdict?.('telnet', sourceIp);
+    if (admission && !admission.accept) {
+      if (admission.kind === 'line-password') {
+        return { output: `${header}\n\n[${admission.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+      }
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+    }
+    if (!admission) {
+      const verdict = dev._getVtyLineConfig?.().incomingVerdict();
+      if (verdict && !verdict.accept) {
+        return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+      }
     }
     this.emitTelnetWire(sourceIp, found.ip, port);
     return { output: `${header}\n`, exitCode: 0 };
