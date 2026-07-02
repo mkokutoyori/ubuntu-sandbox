@@ -19,9 +19,13 @@ export function bindDnsTcpServer(host: EndHost, handler: DnsMessageHandler, port
           socket.close();
           return;
         }
-        const response = handler(query, IPAddress.tryParse(socket.remoteIp) ?? undefined);
-        socket.send(encodeDnsMessage(response));
-        socket.close();
+        const send = (response: DnsMessage): void => {
+          socket.send(encodeDnsMessage(response));
+          socket.close();
+        };
+        const result = handler(query, IPAddress.tryParse(socket.remoteIp) ?? undefined);
+        if (result instanceof Promise) void result.then(send);
+        else send(result);
       });
     },
   });
