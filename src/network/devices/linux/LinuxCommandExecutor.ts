@@ -3520,6 +3520,7 @@ export class LinuxCommandExecutor {
       case 'reboot':
       case 'shutdown': {
         this.auditRules.rebootReset();
+        this.serviceMgr.rebootCycle();
         return { output: '', exitCode: 0 };
       }
       case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };

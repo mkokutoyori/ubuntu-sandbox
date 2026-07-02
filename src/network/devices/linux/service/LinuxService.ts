@@ -28,6 +28,14 @@ export class LinuxService extends OSService implements ServiceUnit {
   declare enabled: EnabledState;
   declare restart: RestartPolicy;
   dynamicUser: boolean;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
+  lastExit?: { code?: number; signal?: string };
+  failedReason?: string;
+  startLimitHit?: boolean;
+  autoRestartPending?: boolean;
+  restartEpochs?: number[];
 
   constructor(init: ServiceUnit) {
     super({
@@ -56,6 +64,13 @@ export class LinuxService extends OSService implements ServiceUnit {
     if (init.mainPid !== undefined) this.mainPid = init.mainPid;
     if (init.activeSince !== undefined) this.activeSince = init.activeSince;
     this.dynamicUser = init.dynamicUser ?? false;
+    this.restartSec = init.restartSec;
+    this.startLimitBurst = init.startLimitBurst;
+    this.startLimitIntervalSec = init.startLimitIntervalSec;
+    this.lastExit = init.lastExit;
+    this.failedReason = init.failedReason;
+    this.startLimitHit = init.startLimitHit;
+    this.restartEpochs = init.restartEpochs;
   }
 
   /** Linux supervisor only resurrects these three restart policies. */

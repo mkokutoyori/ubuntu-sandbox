@@ -349,23 +349,53 @@ export interface SysCtlResult {
   exitCode: number;
 }
 
+function unitFailedResult(u: ServiceUnit): string {
+  if (u.failedReason === 'start-limit-hit') return 'start-limit-hit';
+  if (u.lastExit?.signal !== undefined) return 'signal';
+  if (u.lastExit?.code !== undefined && u.lastExit.code !== 0) return 'exit-code';
+  return 'exit-code';
+}
+
+function unitActiveLine(u: ServiceUnit): string {
+  switch (u.state) {
+    case 'active':
+      return `active (running) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
+    case 'activating':
+      return u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)';
+    case 'deactivating':
+      return 'deactivating (stop)';
+    case 'failed':
+      return `failed (Result: ${unitFailedResult(u)})`;
+    default:
+      return 'inactive (dead)';
+  }
+}
+
+function unitProcessLine(u: ServiceUnit): string | null {
+  const exit = u.lastExit;
+  if (!exit) return null;
+  const cause = exit.signal !== undefined
+    ? `code=killed, signal=${exit.signal.replace(/^SIG/, '')}`
+    : `code=exited, status=${exit.code ?? 0}/${(exit.code ?? 0) === 0 ? 'SUCCESS' : 'FAILURE'}`;
+  return `    Process: ExecStart=${u.execStart} (${cause})`;
+}
+
 /** Render the multi-line `systemctl status NAME` block for one unit. */
 function renderUnitStatus(u: ServiceUnit): string {
   const dot = u.state === 'active' ? '●' : u.state === 'failed' ? '×' : '○';
-  const sub = u.state === 'active' ? 'running' : 'dead';
   const loadedLine = `     Loaded: loaded (${u.loadedFrom}; ${u.enabled}; vendor preset: enabled)`;
-  const activeStr =
-    u.state === 'active'
-      ? `active (${sub}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`
-      : `inactive (dead)`;
   const lines = [
     `${dot} ${u.name}.service - ${u.description}`,
     loadedLine,
-    `     Active: ${activeStr}`,
+    `     Active: ${unitActiveLine(u)}`,
   ];
-  if (u.mainPid !== undefined) {
+  const processLine = u.state !== 'active' ? unitProcessLine(u) : null;
+  if (processLine) lines.push(processLine);
+  if (u.state === 'active' && u.mainPid !== undefined) {
     lines.push(`   Main PID: ${u.mainPid} (${u.name})`);
     lines.push(`      Tasks: 1`);
+    lines.push(`     Memory: ${(2 + (u.mainPid % 40) / 10).toFixed(1)}M`);
+    lines.push(`        CPU: ${10 + (u.mainPid % 500)}ms`);
     lines.push(`     CGroup: /system.slice/${u.name}.service`);
     lines.push(`             └─${u.mainPid} ${u.execStart}`);
   }

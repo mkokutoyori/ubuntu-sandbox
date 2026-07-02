@@ -301,6 +301,28 @@ export class LinuxProcessManager {
     }
   }
 
+  /** Deliver a non-lethal signal (a daemon trapping SIGHUP for reload). */
+  deliverSignal(pid: number, signal: Signal): boolean {
+    const p = this.processes.get(pid);
+    this.publish({
+      topic: 'linux.process.signalled',
+      payload: { deviceId: this.deviceId, pid, comm: p?.comm ?? '', signal, delivered: !!p },
+    });
+    return !!p;
+  }
+
+  /** The process terminates by itself with an exit status. */
+  exit(pid: number, exitCode: number): boolean {
+    const p = this.processes.get(pid);
+    if (!p || pid === INIT_PID) return false;
+    const reparented = this.terminate(pid);
+    this.publish({
+      topic: 'linux.process.exited',
+      payload: { deviceId: this.deviceId, pid, comm: p.comm, exitCode, reparented },
+    });
+    return true;
+  }
+
   /** Apply a state transition and publish the state-changed event. */
   private transition(p: ProcessInfo, to: ProcessState): void {
     const from = p.state;

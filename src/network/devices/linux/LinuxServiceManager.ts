@@ -58,6 +58,9 @@ export interface ServiceUnit {
   partOf: string[];
   conflicts: string[];
   restart: RestartPolicy;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
   /** Source file the unit was loaded from. */
   loadedFrom: string;
   // ── Runtime state (mutated by start/stop/etc.) ────────────────
@@ -65,6 +68,11 @@ export interface ServiceUnit {
   enabled: EnabledState;
   mainPid?: number;
   activeSince?: Date;
+  lastExit?: { code?: number; signal?: string };
+  failedReason?: string;
+  startLimitHit?: boolean;
+  autoRestartPending?: boolean;
+  restartEpochs?: number[];
   /** Runtime resource-control overrides set via `systemctl set-property`. */
   props?: Record<string, string>;
   readinessDelayMs?: number;
@@ -473,6 +481,9 @@ export class LinuxServiceManager {
     if (!unit.ok) return unit;
     const u = unit.unit;
     if (u.state === 'active') return { ok: true };
+    if (u.startLimitHit) {
+      return { ok: false, error: `Unit ${u.name}.service has a start-limit-hit.` };
+    }
     const check = this.configChecks.get(u.name);
     if (check) {
       const verdict = check();
@@ -631,14 +642,14 @@ export class LinuxServiceManager {
       return { ok: false, error: `Job for ${name}.service failed because the unit is not active.` };
     }
     if (!u.execReload) {
-      return { ok: false, error: `${name}.service: Refusing to reload: ExecReload= is not set.` };
+      return { ok: false, error: `Job type reload is not applicable for unit ${name}.service.` };
     }
     const check = this.configChecks.get(u.name);
     if (check) {
       const verdict = check();
       if (!verdict.ok) return verdict;
     }
-    this.processMgr.kill(u.mainPid, 'SIGHUP');
+    this.processMgr.deliverSignal(u.mainPid, 'SIGHUP');
     this.emitLifecycle('reload', u.name);
     return { ok: true };
   }
@@ -704,12 +715,86 @@ export class LinuxServiceManager {
     const units = name ? [this.units.get(name)].filter(Boolean) as LinuxService[]
       : [...this.units.values()];
     for (const u of units) {
+      u.startLimitHit = false;
+      u.restartEpochs = [];
+      u.failedReason = undefined;
       if (u.state === 'failed') {
         const from = u.state;
         u.state = 'inactive';
         this.emitStateChanged(u.name, from, 'inactive');
       }
     }
+  }
+
+  noteMainExited(name: string, exit: { code?: number; signal?: string }): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    u.lastExit = exit;
+    u.mainPid = undefined;
+    this.bus?.publish({
+      topic: 'linux.service.main-exited',
+      payload: { deviceId: this.deviceId, name, exitCode: exit.code, signal: exit.signal },
+    });
+  }
+
+  deactivateAfterExit(name: string): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    const from = u.state;
+    u.state = 'inactive';
+    u.activeSince = undefined;
+    this.emitStateChanged(name, from, 'inactive');
+  }
+
+  scheduleAutoRestart(name: string, counter: number, delayMs: number): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    const from = u.state;
+    u.state = 'activating';
+    u.autoRestartPending = true;
+    this.emitStateChanged(name, from, 'activating');
+    this.bus?.publish({
+      topic: 'linux.service.restart-scheduled',
+      payload: { deviceId: this.deviceId, name, counter, delayMs },
+    });
+  }
+
+  completeAutoRestart(name: string): void {
+    const u = this.units.get(name);
+    if (!u || !u.autoRestartPending || u.state !== 'activating') return;
+    u.autoRestartPending = false;
+    u.state = 'inactive';
+    const r = this.start(name);
+    if (r.ok) this.emitLifecycle('restart', name);
+  }
+
+  hitStartLimit(name: string): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    u.startLimitHit = true;
+    u.autoRestartPending = false;
+    this.bus?.publish({
+      topic: 'linux.service.start-limited',
+      payload: { deviceId: this.deviceId, name },
+    });
+    this.markFailed(name, 'start-limit-hit');
+  }
+
+  rebootCycle(): void {
+    for (const u of [...this.units.values()]) {
+      u.autoRestartPending = false;
+      u.startLimitHit = false;
+      u.restartEpochs = [];
+      u.failedReason = undefined;
+      u.lastExit = undefined;
+      if (u.state === 'active' || u.state === 'activating') {
+        this.stopOne(u.name);
+      } else if (u.state === 'failed') {
+        u.state = 'inactive';
+      }
+    }
+    this.daemonReload();
+    this.startEnabledServices();
   }
 
   /** Return the unit, or null if not loaded. */
@@ -731,6 +816,7 @@ export class LinuxServiceManager {
     if (!u) return;
     const from = u.state;
     u.state = 'failed';
+    u.failedReason = reason;
     u.mainPid = undefined;
     u.activeSince = undefined;
     this.emitStateChanged(name, from, 'failed');
@@ -738,6 +824,7 @@ export class LinuxServiceManager {
       topic: 'linux.service.failed',
       payload: { deviceId: this.deviceId, name, reason },
     });
+    this.jobEngine().stop(name);
   }
 
   /** True if the service is currently active. */
@@ -796,6 +883,9 @@ export class LinuxServiceManager {
         partOf: parsed.partOf ?? [],
         conflicts: parsed.conflicts ?? [],
         restart: parsed.restart ?? 'no',
+        restartSec: parsed.restartSec,
+        startLimitBurst: parsed.startLimitBurst,
+        startLimitIntervalSec: parsed.startLimitIntervalSec,
         loadedFrom: src.path,
         // Preserve previous runtime state if the unit already existed.
         state: previous?.state ?? 'inactive',
@@ -975,16 +1065,11 @@ export class LinuxServiceManager {
     }
   }
 
-  /** Start every unit that has startByDefault and is enabled. */
+  /** Start every enabled unit — the boot-time multi-user.target job. */
   private startEnabledServices(): void {
-    const startByDefault = new Set(
-      [...BASE_UNITS, ...(this.opts.isServer ? SERVER_UNITS : [])]
-        .filter(u => u.startByDefault)
-        .map(u => u.name),
-    );
-    for (const u of this.units.values()) {
-      if (startByDefault.has(u.name) && u.enabled === 'enabled') {
-        this.activate(u);
+    for (const u of [...this.units.values()]) {
+      if (u.enabled === 'enabled' && u.state !== 'active') {
+        this.startOne(u.name);
       }
     }
   }
@@ -1031,6 +1116,9 @@ interface ParsedUnit {
   partOf?: string[];
   conflicts?: string[];
   restart?: RestartPolicy;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
 }
 
 /** Minimal ini-style parser for systemd unit files. */
@@ -1058,6 +1146,8 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'BindsTo') out.bindsTo = val.split(/\s+/);
       else if (key === 'PartOf') out.partOf = val.split(/\s+/);
       else if (key === 'Conflicts') out.conflicts = val.split(/\s+/);
+      else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
+      else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
     } else if (section === 'Service') {
       if (key === 'Type') out.type = val as ServiceType;
       else if (key === 'ExecStart') out.execStart = val;
@@ -1067,6 +1157,9 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'Group') out.group = val;
       else if (key === 'DynamicUser') out.dynamicUser = /^(yes|true|1|on)$/i.test(val);
       else if (key === 'Restart') out.restart = val as RestartPolicy;
+      else if (key === 'RestartSec') out.restartSec = parseFloat(val);
+      else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
+      else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
     } else if (section === 'Install') {
       if (key === 'WantedBy') out.wantedBy = val.split(/\s+/);
     }

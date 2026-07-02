@@ -20,6 +20,16 @@ export class SystemdJobEngine {
   buildStartTransaction(unit: string): Transaction {
     const graph = this.hooks.graph();
     const closure = [...graph.activationClosure(unit)].filter((u) => this.hooks.exists(u));
+    for (const u of closure) {
+      const missing = [...graph.edges(u, 'requires'), ...graph.edges(u, 'bindsTo')]
+        .find((dep) => !this.hooks.exists(dep));
+      if (missing) {
+        return {
+          jobs: [], ...EMPTY_TRANSACTION_MAPS,
+          error: `Unit ${missing}.service not found.`,
+        };
+      }
+    }
     const { order, cycle } = orderUnits(closure, graph);
     if (cycle) {
       return {

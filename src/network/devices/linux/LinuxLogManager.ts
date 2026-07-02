@@ -30,6 +30,7 @@ interface JournalEntry {
   timestamp: Date;
   monotonicUsec: number;  // microseconds since boot
   priority: number;
+  displayPid?: boolean;
   facility: number;
   unit: string;
   tag: string;
@@ -192,7 +193,7 @@ export class LinuxLogManager {
     }
 
     const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
-    const pid = includePid ? this.nextPid++ : 0;
+    const pid = this.nextPid++;
     const echoed: string[] = [];
     for (const message of messages) {
       this.addEntry({
@@ -202,6 +203,7 @@ export class LinuxLogManager {
         tag: safeTag,
         message,
         pid,
+        displayPid: includePid,
         hostname: this.hostname,
       });
       if (toStderr) {
@@ -566,9 +568,22 @@ export class LinuxLogManager {
 
   // ── Internal methods ───────────────────────────────────────────
 
+  logService(unit: string, tag: string, message: string, pid: number): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit,
+      tag,
+      message,
+      pid,
+      hostname: this.hostname,
+    });
+  }
+
   private addEntry(opts: {
     priority: number; facility: number; unit: string;
     tag: string; message: string; pid: number; hostname: string;
+    displayPid?: boolean;
   }): void {
     this.monotonicCounter += 1000;
     const entry: JournalEntry = {
@@ -580,6 +595,7 @@ export class LinuxLogManager {
       tag: opts.tag,
       message: opts.message,
       pid: opts.pid,
+      displayPid: opts.displayPid,
       hostname: this.currentHostname(),
     };
     // journald keeps the in-memory journal regardless of rsyslog's state.
@@ -622,7 +638,7 @@ export class LinuxLogManager {
 
   private formatSyslogLine(entry: JournalEntry): string {
     const ts = fmtSyslogTimestamp(entry.timestamp);
-    const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+    const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
     return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
   }
 
@@ -691,12 +707,12 @@ export class LinuxLogManager {
     switch (format) {
       case 'short': {
         const ts = fmtSyslogTimestamp(entry.timestamp);
-        const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
       case 'short-iso': {
         const ts = fmtIsoTimestamp(entry.timestamp);
-        const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
       case 'cat':

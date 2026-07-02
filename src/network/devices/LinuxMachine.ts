@@ -73,6 +73,7 @@ import {
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
+import { ServiceScriptRunner } from './linux/service/ServiceScriptRunner';
 
 import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
@@ -286,6 +287,63 @@ export abstract class LinuxMachine extends EndHost
       else if (event === 'reload') this.applyBind9(this.bind9.reload());
       else if (event === 'stop') this.bind9.stop();
     });
+
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (event === 'start' || event === 'restart') this.startScriptRunner(name);
+      else if (event === 'stop') this.stopScriptRunner(name);
+    });
+  }
+
+  private readonly scriptRunners = new Map<string, ServiceScriptRunner>();
+
+  private startScriptRunner(name: string): void {
+    this.stopScriptRunner(name);
+    const unit = this.executor.serviceMgr.status(name);
+    if (!unit) return;
+    const scriptPath = unit.execStart.split(/\s+/)[0];
+    if (!scriptPath.startsWith('/')) return;
+    const content = this.executor.vfs.readFile(scriptPath);
+    if (content === null || !content.startsWith('#!')) return;
+
+    const pid = unit.mainPid;
+    const runner = new ServiceScriptRunner({
+      readFile: (path) => this.executor.vfs.readFile(path),
+      runAsRoot: (command) => Promise.resolve(this.runServiceScript(command)),
+      runCondition: async (command) => {
+        this.runServiceScript(command);
+        return this.executor.lastExitCode === 0;
+      },
+      emitOutput: (line) =>
+        this.executor.logMgr.logService(`${name}.service`, name, line, pid ?? 0),
+      stillCurrent: () => {
+        const current = this.executor.serviceMgr.status(name);
+        return current?.state === 'active' && current.mainPid === pid;
+      },
+    });
+    this.scriptRunners.set(name, runner);
+    void runner.start(scriptPath);
+  }
+
+  private stopScriptRunner(name: string): void {
+    this.scriptRunners.get(name)?.stop();
+    this.scriptRunners.delete(name);
+  }
+
+  private runServiceScript(command: string): string {
+    const um = this.executor.userMgr;
+    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
+    um.currentUser = 'root';
+    um.currentUid = 0;
+    um.currentGid = 0;
+    try {
+      return this.executor.executeWithEnv(command, {}) ?? '';
+    } catch {
+      return '';
+    } finally {
+      um.currentUser = prev.user;
+      um.currentUid = prev.uid;
+      um.currentGid = prev.gid;
+    }
   }
 
   private applyBind9(result: { ok: boolean; error?: string }): void {

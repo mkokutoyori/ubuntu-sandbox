@@ -51,6 +51,8 @@ export interface ProcessSpawnedPayload extends ProcessRef {
 export interface ProcessExitedPayload extends ProcessRef {
   /** Signal that terminated it, when the exit was signal-driven. */
   signal?: string;
+  /** Exit status, when the process terminated by itself. */
+  exitCode?: number;
   /** Children reparented to init as a result of this exit. */
   reparented: number;
 }
@@ -93,6 +95,18 @@ export interface ServiceEnablementChangedPayload extends ServiceRef {
 export interface ServiceFailedPayload extends ServiceRef {
   reason: string;
 }
+
+export interface ServiceMainExitedPayload extends ServiceRef {
+  exitCode?: number;
+  signal?: string;
+}
+
+export interface ServiceRestartScheduledPayload extends ServiceRef {
+  counter: number;
+  delayMs: number;
+}
+
+export type ServiceStartLimitedPayload = ServiceRef;
 
 // ── Port / socket lifecycle ─────────────────────────────────────────────
 
@@ -183,6 +197,9 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.service.masked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.unmasked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.failed'; payload: ServiceFailedPayload }
+  | { topic: 'linux.service.main-exited'; payload: ServiceMainExitedPayload }
+  | { topic: 'linux.service.restart-scheduled'; payload: ServiceRestartScheduledPayload }
+  | { topic: 'linux.service.start-limited'; payload: ServiceStartLimitedPayload }
   | { topic: 'linux.port.bound'; payload: PortBoundPayload }
   | { topic: 'linux.port.released'; payload: PortReleasedPayload }
   | { topic: 'linux.fs.accessed'; payload: FileAccessedPayload }
