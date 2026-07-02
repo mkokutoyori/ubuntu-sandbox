@@ -101,6 +101,7 @@ import { buildIpCtx } from './linux/commands/net/Ip';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 import { renderWho } from './linux/network/whoFormatter';
@@ -190,6 +191,8 @@ export abstract class LinuxMachine extends EndHost
       if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);
       return this.tcpProbeSync(new IPAddress(ip), port);
     });
+    this.executor.setSshHostKeyProbe((ip, port) =>
+      probeSshHostKey(this.tcpv2.connect(ip, port)));
     this.executor.setEphemeralRangeApplier((min, max) => this.tcpv2.setEphemeralRange(min, max));
     this.executor.setEphemeralPoolFreeChecker(() => this.tcpv2.hasFreeEphemeralPort());
     const utmpSync = new UtmpSync(this.executor.vfs);

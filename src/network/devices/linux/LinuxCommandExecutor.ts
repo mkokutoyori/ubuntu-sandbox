@@ -82,6 +82,7 @@ import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
+import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -1157,16 +1158,19 @@ export class LinuxCommandExecutor {
   }
 
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
-    const host = args.find(a => !a.startsWith('-'));
+    let port = 22;
+    const positional: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-p' && i + 1 < args.length) { port = parseInt(args[++i], 10) || 22; }
+      else if (!args[i].startsWith('-')) positional.push(args[i]);
+    }
+    const host = positional[0];
     if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
     const found = findHostByAddress(host);
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
-    const remoteVfs = (found.device as unknown as { executor: { vfs: { readFile: (p: string) => string | null } } }).executor?.vfs;
-    if (!remoteVfs) return { output: `# ${host} no host key`, exitCode: 1 };
-    const pub = (remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '').trim();
-    if (!pub) return { output: `# ${host} no host key`, exitCode: 1 };
-    const tokens = pub.split(/\s+/);
-    return { output: `${found.ip} ${tokens[0]} ${tokens[1]}`, exitCode: 0 };
+    const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
+    if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
+    return { output: `${found.ip} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
   }
 
   /**
@@ -1443,6 +1447,11 @@ export class LinuxCommandExecutor {
   private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
   setTcpProbe(probe: (ip: string, port: number) => boolean): void {
     this.tcpProbe = probe;
+  }
+
+  private sshHostKeyProbe: ((ip: string, port: number) => ProbedHostKey | null) | null = null;
+  setSshHostKeyProbe(probe: (ip: string, port: number) => ProbedHostKey | null): void {
+    this.sshHostKeyProbe = probe;
   }
 
   private setStackEphemeralRangeFn: ((min: number, max: number) => void) | null = null;

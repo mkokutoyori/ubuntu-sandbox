@@ -49,9 +49,9 @@ function buildLan(): Lan {
   const pc4 = new LinuxPC('linux-pc', 'pc4', 0, 0);
   const srv1 = new LinuxServer('linux-server', 'srv1', 0, 0);
   const srv2 = new LinuxServer('linux-server', 'srv2', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const sw = new GenericSwitch('switch', 'core-sw', 8, 0, 0);
   const all: (LinuxPC | LinuxServer)[] = [pc1, pc2, pc3, pc4, srv1, srv2];
-  all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
+  all.forEach((d, i) => { new Cable(`c${i}`).connect(d.getPorts()[0], sw.getPorts()[i]); });
 
   const mask = new SubnetMask('255.255.255.0');
   pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
