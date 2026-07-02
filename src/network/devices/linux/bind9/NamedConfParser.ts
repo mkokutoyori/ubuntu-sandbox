@@ -6,9 +6,14 @@ export interface NamedConfValue {
   readonly quoted: boolean;
 }
 
+export type NamedConfPart =
+  | { readonly kind: 'value'; readonly value: NamedConfValue }
+  | { readonly kind: 'block'; readonly statements: readonly NamedConfStatement[] };
+
 export interface NamedConfStatement {
   readonly values: readonly NamedConfValue[];
   readonly block: readonly NamedConfStatement[] | null;
+  readonly parts: readonly NamedConfPart[];
   readonly file: string;
   readonly line: number;
 }
@@ -89,8 +94,7 @@ function parseStatement(
     throw new NamedConfSyntaxError(first.file, first.line, `unexpected '${first.text}'`);
   }
 
-  const values: NamedConfValue[] = [];
-  let block: NamedConfStatement[] | null = null;
+  const parts: NamedConfPart[] = [];
 
   for (;;) {
     const token = cursor.peek();
@@ -111,21 +115,22 @@ function parseStatement(
     }
 
     if (token.kind === '{') {
-      if (block !== null) {
-        throw new NamedConfSyntaxError(token.file, token.line, "unexpected '{'");
-      }
       cursor.next();
-      block = parseStatements(cursor, readInclude, token);
+      parts.push({ kind: 'block', statements: parseStatements(cursor, readInclude, token) });
       continue;
     }
 
-    if (block !== null) {
-      throw new NamedConfSyntaxError(token.file, token.line, "missing ';' before '" + token.text + "'");
-    }
-
     cursor.next();
-    values.push({ text: token.text, quoted: token.kind === 'string' });
+    parts.push({ kind: 'value', value: { text: token.text, quoted: token.kind === 'string' } });
   }
+
+  const values = parts
+    .filter((part): part is Extract<NamedConfPart, { kind: 'value' }> => part.kind === 'value')
+    .map((part) => part.value);
+  const firstBlock = parts.find(
+    (part): part is Extract<NamedConfPart, { kind: 'block' }> => part.kind === 'block',
+  );
+  const block = firstBlock ? [...firstBlock.statements] : null;
 
   if (values.length === 0) {
     throw new NamedConfSyntaxError(first.file, first.line, 'empty statement');
@@ -135,7 +140,7 @@ function parseStatement(
     return expandInclude(values, first, readInclude);
   }
 
-  return [{ values, block, file: first.file, line: first.line }];
+  return [{ values, block, parts, file: first.file, line: first.line }];
 }
 
 function expandInclude(

@@ -32,6 +32,7 @@ import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
 import { dhclientPsLines } from './dhcp/PsDhclientAugment';
 import { applyIptablesNatHook } from './net/IptablesNatHook';
+import { namedCheckconfCommand } from './dns/NamedCheckconf';
 import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
 import { ssCommand } from './net/Ss';
@@ -50,6 +51,7 @@ export {
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  namedCheckconfCommand,
   dhclientCommand,
   readDhcpLeaseFile,
   isDhcpLeasePath,
@@ -80,6 +82,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nslookupCommand,
   hostCommand,
   dnsmasqCommand,
+  namedCheckconfCommand,
   dhclientCommand,
   nmapCommand,
   curlCommand,
