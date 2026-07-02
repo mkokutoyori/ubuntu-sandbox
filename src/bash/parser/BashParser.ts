@@ -128,6 +128,12 @@ export class BashParser {
 
   private parsePipeline(): Pipeline {
     const pos = this.peek().position;
+    let negated = false;
+    while (this.peek().type === TokenType.WORD && this.peek().value === '!'
+           && this.canStartCommand(this.peekAt(1))) {
+      negated = !negated;
+      this.advance();
+    }
     const commands: Command[] = [this.parseCommand()];
 
     while (this.check(TokenType.PIPE)) {
@@ -136,7 +142,20 @@ export class BashParser {
       commands.push(this.parseCommand());
     }
 
-    return makePipeline(commands, pos);
+    const pipeline = makePipeline(commands, pos);
+    if (negated) pipeline.negated = true;
+    return pipeline;
+  }
+
+  private canStartCommand(tok: Token | undefined): boolean {
+    if (!tok) return false;
+    return tok.type !== TokenType.NEWLINE
+      && tok.type !== TokenType.EOF
+      && tok.type !== TokenType.SEMI
+      && tok.type !== TokenType.AMP
+      && tok.type !== TokenType.PIPE
+      && tok.type !== TokenType.AND_IF
+      && tok.type !== TokenType.OR_IF;
   }
 
   // ─── Command (Grammar Rules 12-15) ────────────────────────────

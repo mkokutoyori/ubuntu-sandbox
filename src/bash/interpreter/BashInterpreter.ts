@@ -397,10 +397,13 @@ export class BashInterpreter {
     return (this.env.get('SHELLOPTS') ?? '').split(':').includes('nounset');
   }
 
+  private lastPipelineNegated = false;
+
   private *visitCommandList(node: CommandList): Effects<void> {
     for (const andOr of node.commands) {
       yield* this.visitAndOrList(andOr);
-      if (this.errexitSuppress === 0 && this.isErrExit() && this.env.lastExitCode !== 0) {
+      if (this.errexitSuppress === 0 && this.isErrExit() && this.env.lastExitCode !== 0
+          && !this.lastPipelineNegated) {
         throw new ExitSignal(this.env.lastExitCode);
       }
     }
@@ -429,6 +432,16 @@ export class BashInterpreter {
   }
 
   private *visitPipeline(node: Pipeline): Effects<void> {
+    this.lastPipelineNegated = node.negated === true;
+    if (node.negated) this.errexitSuppress++;
+    try {
+      yield* this.runPipelineStages(node);
+    } finally {
+      if (node.negated) this.errexitSuppress--;
+    }
+  }
+
+  private *runPipelineStages(node: Pipeline): Effects<void> {
     if (node.commands.length === 1) {
       yield* this.visitCommand(node.commands[0]);
       if (node.negated) this.env.lastExitCode = this.env.lastExitCode === 0 ? 1 : 0;
