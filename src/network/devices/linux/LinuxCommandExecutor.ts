@@ -29,6 +29,8 @@ import {
 } from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
+import { CommandPrivilegePolicy, type PrivilegeActor } from './iam/policy/CommandPrivilegePolicy';
+import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
@@ -1456,6 +1458,16 @@ export class LinuxCommandExecutor {
     this.sessionTable = table;
   }
 
+  readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
+
+  private privilegeActor(): PrivilegeActor {
+    return {
+      uid: this.userMgr.currentUid,
+      user: this.userMgr.currentUser,
+      groups: this.userMgr.getUserGroups(this.userMgr.currentUser).map(g => g.name),
+    };
+  }
+
   private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
   setTcpProbe(probe: (ip: string, port: number) => boolean): void {
     this.tcpProbe = probe;
@@ -2725,26 +2737,8 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
-    // Root-only commands — reject if not root. `ufw` is intentionally
-    // absent: like `iptables` (which the device router runs un-gated), the
-    // simulator's interactive operator manages the firewall directly.
-    const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
-      'ausearch', 'aureport', 'auditctl', 'logrotate',
-      'iptables', 'iptables-save', 'iptables-restore',
-      'reboot', 'shutdown'];
-    const sudoRequired = ['chown', 'chgrp'];
-    if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
-        && !this.userMgr.getUserGroups(this.userMgr.currentUser).some(g => g.name === 'sudo' || g.name === 'wheel')) {
-      return { output: `${cmd}: Operation not permitted`, exitCode: 1 };
-    }
-    if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
-      return { output: `${cmd}: Permission denied`, exitCode: 1 };
-    }
-    // passwd: non-root can only change own password (no args)
-    if (cmd === 'passwd' && this.userMgr.currentUid !== 0 && args.length > 0 && !args[0].startsWith('-')) {
-      return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
-    }
+    const privilegeDenial = this.commandPrivileges.check(cmd, args, this.privilegeActor());
+    if (privilegeDenial) return privilegeDenial;
 
     if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
       const abs = this.vfs.normalizePath(cmd, this.cwd);
@@ -4015,9 +4009,6 @@ export class LinuxCommandExecutor {
       else if (!a.startsWith('-')) { op = 'install'; fileArg = a; }
     }
 
-    if (explicitUser && this.userMgr.currentUid !== 0 && targetUser !== this.userMgr.currentUser) {
-      return { output: 'crontab: must be privileged to use -u', exitCode: 1 };
-    }
     if (explicitUser && !this.userMgr.getUser(targetUser)) {
       return { output: `crontab: user '${targetUser}' unknown`, exitCode: 1 };
     }
