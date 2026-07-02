@@ -16,7 +16,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
+import { IPAddress, MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -27,9 +27,9 @@ function setupLinuxLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -40,9 +40,9 @@ function setupWindowsLAN() {
   const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
-  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+  cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   const cable2 = new Cable('c2');
-  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
   return { pc1, pc2, sw };
 }
@@ -600,7 +600,7 @@ describe('EndHost ARP table management', () => {
   it('addStaticARP should add an entry accessible via getARPTable()', () => {
     const pc = new LinuxPC('PC1', 0, 0);
     const mac = new MACAddress('aa:bb:cc:dd:ee:ff');
-    pc.addStaticARP('10.0.0.50', mac, 'eth0');
+    pc.addStaticARP(new IPAddress('10.0.0.50'), mac, 'eth0');
 
     const table = pc.getARPTable();
     expect(table.has('10.0.0.50')).toBe(true);
@@ -610,9 +610,9 @@ describe('EndHost ARP table management', () => {
   it('deleteARP should remove an existing entry', async () => {
     const pc = new LinuxPC('PC1', 0, 0);
     const mac = new MACAddress('aa:bb:cc:dd:ee:ff');
-    pc.addStaticARP('10.0.0.50', mac, 'eth0');
+    pc.addStaticARP(new IPAddress('10.0.0.50'), mac, 'eth0');
 
-    const deleted = pc.deleteARP('10.0.0.50');
+    const deleted = pc.deleteARP(new IPAddress('10.0.0.50'));
     expect(deleted).toBe(true);
 
     const table = pc.getARPTable();
@@ -621,14 +621,14 @@ describe('EndHost ARP table management', () => {
 
   it('deleteARP should return false for non-existent entry', () => {
     const pc = new LinuxPC('PC1', 0, 0);
-    const deleted = pc.deleteARP('10.0.0.99');
+    const deleted = pc.deleteARP(new IPAddress('10.0.0.99'));
     expect(deleted).toBe(false);
   });
 
   it('clearARPTable should remove all entries', async () => {
     const pc = new LinuxPC('PC1', 0, 0);
-    pc.addStaticARP('10.0.0.1', new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
-    pc.addStaticARP('10.0.0.2', new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
+    pc.addStaticARP(new IPAddress('10.0.0.1'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+    pc.addStaticARP(new IPAddress('10.0.0.2'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
 
     pc.clearARPTable();
     expect(pc.getARPTable().size).toBe(0);
@@ -639,9 +639,9 @@ describe('EndHost ARP table management', () => {
     const pc2 = new LinuxPC('PC2', 100, 0);
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
     const cable1 = new Cable('c1');
-    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
@@ -650,7 +650,7 @@ describe('EndHost ARP table management', () => {
     await pc1.executeCommand('ping -c 1 10.0.0.2');
 
     // Static entry
-    pc1.addStaticARP('10.0.0.50', new MACAddress('aa:bb:cc:dd:ee:ff'), 'eth0');
+    pc1.addStaticARP(new IPAddress('10.0.0.50'), new MACAddress('aa:bb:cc:dd:ee:ff'), 'eth0');
 
     const table = pc1.getARPTableFull();
     const dynamicEntry = table.get('10.0.0.2');
@@ -680,9 +680,9 @@ describe('Cisco IOS arp commands', () => {
     const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
 
     const cable1 = new Cable('c1');
-    cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     return { r1, pc1, sw };
   }

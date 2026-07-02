@@ -11,7 +11,38 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
-import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
+import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
+import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
+import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
+import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
+import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
+import {
+  parseMpstatArgs,
+  mpstatColumnHeader,
+  formatMpstatRow,
+  formatMpstatAverageRow,
+  MpstatAccumulator,
+} from '@/network/devices/linux/system/Mpstat';
+import {
+  parsePidstatArgs,
+  pidstatColumnHeader,
+  formatPidstatCpuRow,
+  formatPidstatMemRow,
+  formatPidstatAverageCpuRow,
+  formatPidstatAverageMemRow,
+  PidstatAccumulator,
+  type PidstatCpuRow,
+  type PidstatMemRow,
+} from '@/network/devices/linux/system/Pidstat';
+import { parseIostatArgs, renderIostatReport } from '@/network/devices/linux/system/Iostat';
+import {
+  parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
+  DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
+} from '@/network/devices/linux/system/Dstat';
+import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
+import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
+import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
+import { formatPingHeader, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
@@ -19,6 +50,7 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -38,21 +70,8 @@ import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import {
-  LinuxPromptStrategy as LinuxStrategyRef,
-  CiscoPromptStrategy as CiscoStrategyRef,
-  HuaweiPromptStrategy as HuaweiStrategyRef,
-  WindowsPromptStrategy as WindowsStrategyRef,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
-import {
-  RemoteDeviceSubShell,
-  CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
-  strategyForShellKind,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
@@ -323,6 +342,34 @@ export class LinuxTerminalSession extends TerminalSession {
 
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? this.currentUser;
+  }
+
+  protected override applyRemoteEnv(env: Record<string, string>): void {
+    const shellEnv = (this.shell as unknown as { env?: { set(k: string, v: string): void } } | null)?.env;
+    if (!shellEnv) return;
+    for (const [k, v] of Object.entries(env)) shellEnv.set(k, v);
+  }
+
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) {
+      this.currentUser = user;
+      this.currentPath = `/home/${user}`;
+      return;
+    }
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user });
+    this.currentUser = user;
+    this.currentPath = this.shell.cwd;
+    if (this.rootBash) {
+      this.rootBash.deactivate();
+      this.rootBash.dispose();
+      this.rootBash = null;
+    }
+  }
+
   /**
    * Route every command through the per-terminal shell session so that
    * cwd / env / su stack mutations stay local to this terminal. Falls back
@@ -348,6 +395,7 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
@@ -371,6 +419,15 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string; hostname: string; path: string; promptChar: string;
     foreign?: boolean;
   } {
+    if (this.hasActiveChild && this.foreground.getSessionType() !== 'linux') {
+      return {
+        user: this.currentUser,
+        hostname: this.device.getHostname() || 'localhost',
+        path: this.currentPath,
+        promptChar: '$',
+        foreign: true,
+      };
+    }
     if (this.activeSubShell) {
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
         ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
@@ -459,6 +516,7 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -498,6 +556,8 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -583,6 +643,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
     if (this.inputMode.type === 'editor') return false;
+
+    if (e.key === 'd' && e.ctrlKey && this.input === '') {
+      if (this.endRemoteSession()) return true;
+      if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
+      this._onRequestClose?.();
+      return true;
+    }
 
     return super.handleKey(e);
   }
@@ -791,6 +858,515 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
+  private tryStartTracerouteStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'traceroute') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const parsed = parseTracerouteArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        let hopCount = 0;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: parsed.probesPerHop,
+          firstTtl: parsed.firstTtl,
+          onResolved: (ip, hostname) => ctx.sink.line(formatTracerouteHeader(ip, parsed.maxHops, hostname)),
+          onHop: (hop) => { hopCount++; ctx.sink.line(formatTracerouteHopLine(hop)); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved) { ctx.sink.error(`traceroute: unknown host ${parsed.targetStr}`); return; }
+        if (hopCount === 0) ctx.sink.line(' * * * Network is unreachable');
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartMtrStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mtr') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+
+    const parsed = parseMtrArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(MTR_USAGE); this.notify(); return true; }
+    if (parsed.showVersion) { this.addLine(MTR_VERSION); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+    if (!parsed.target) { this.addLine('mtr: no host specified'); this.notify(); return true; }
+
+    const intervalMs = Math.max(100, parsed.intervalSec * 1000);
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        const hopIps: (string | null)[] = [];
+        let resolved = false;
+        const discovery = await dev.tracerouteStreamInSession(parsed.target, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          onResolved: () => { resolved = true; },
+          onHop: (hop) => { hopIps.push(hop.ip ?? null); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!discovery.resolved) {
+          ctx.sink.error(`mtr: Failed to resolve host: ${parsed.target}`);
+          return;
+        }
+        if (!resolved || hopIps.length === 0) {
+          ctx.sink.error('mtr: no hops discovered');
+          return;
+        }
+
+        const stats = hopIps.map(() => new MtrHopStats());
+        const startedAt = new Date();
+        const hostname = dev.getHostname();
+        const targetIpStr = hopIps[hopIps.length - 1] ?? parsed.target;
+
+        const paint = () => {
+          this.lines = this.lines.slice(0, baseLen);
+          const frame = formatMtrFrame({ hostname, target: targetIpStr, startedAt, hops: stats },
+            parsed.reportMode ? 'report' : 'live');
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+        };
+        paint();
+
+        for (let cycle = 0; ; cycle++) {
+          if (ctx.cancelled()) return;
+          if (parsed.reportMode && cycle >= parsed.cycles) break;
+          for (let i = 0; i < hopIps.length; i++) {
+            const ip = hopIps[i];
+            let probe: MtrHopProbe;
+            if (!ip) {
+              probe = { lost: true };
+            } else {
+              try {
+                const result = dev.sendPingProbeSync(new IPAddress(ip));
+                probe = result.success
+                  ? { ip, rttMs: result.rttMs, lost: false }
+                  : { ip, lost: true };
+              } catch {
+                probe = { ip, lost: true };
+              }
+            }
+            stats[i].record(probe);
+          }
+          paint();
+          if (parsed.reportMode && cycle + 1 >= parsed.cycles) break;
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const shell = this.shell;
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const frame = dev.runCommandFrameInSession(commandLine, shell);
+          this.lines = this.lines.slice(0, baseLen);
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartWatchStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'watch') return false;
+    let parsed: ReturnType<typeof parseWatchArgs>;
+    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
+    if (parsed.command.length === 0) return false;
+    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000));
+  }
+
+  private tryStartTopStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'top') return false;
+    if (toks.includes('-n') || toks.includes('-b')) return false;
+    const dIdx = toks.indexOf('-d');
+    const delay = dIdx >= 0 ? parseFloat(toks[dIdx + 1]) : 3;
+    const intervalMs = Math.max(100, (Number.isFinite(delay) && delay > 0 ? delay : 3) * 1000);
+    return this.startRepaintingMonitor(commandLine, intervalMs);
+  }
+
+  private tryStartTcpdump(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'tcpdump') return false;
+    if (/[|<>]/.test(commandLine)) return false;
+
+    const inv = parseInvocation(toks.slice(1));
+    if (inv.kind !== 'capture' || inv.options.readFile || inv.options.writeFile) {
+      const job = this.startAsyncCommand({
+        mode: 'foreground',
+        kind: 'streaming',
+        command: commandLine,
+        prepare: () => true,
+        run: async (ctx) => {
+          const out = await dev.executeCommand(commandLine);
+          if (out) for (const l of out.split('\n')) ctx.sink.line(l);
+        },
+      });
+      return job !== null;
+    }
+
+    const opts = inv.options;
+    const filter = compileFilter(opts.filterTokens);
+    let captured = 0;
+    let prev: Date | null = null;
+    let unsubscribe: (() => void) | null = null;
+    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooterLines(captured, captured)) ctx.sink.line(l); };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        if (filter.ok === false) { ctx.sink.line(filter.message); return false; }
+        for (const h of tcpdumpBanner(opts)) ctx.sink.line(h);
+        return true;
+      },
+      run: async (ctx) => {
+        if (filter.ok === false) return;
+        if (opts.count === 0) { footer(ctx); return; }
+        await new Promise<void>((resolve) => {
+          const finish = () => { unsubscribe?.(); unsubscribe = null; resolve(); };
+          if (ctx.cancelled()) { resolve(); return; }
+          unsubscribe = dev.openTcpdumpCapture(opts.iface, (frame) => {
+            if (filter.ok && !filter.predicate(frame)) return;
+            ctx.sink.line(formatCaptureFrame(frame, opts, prev));
+            prev = frame.at;
+            captured++;
+            if (opts.count !== null && captured >= opts.count) finish();
+          });
+          ctx.onCancel(finish);
+        });
+        if (!ctx.cancelled()) footer(ctx);
+      },
+      onInterrupt: (ctx) => footer(ctx),
+    });
+    return job !== null;
+  }
+
+  private tryStartJournalFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'journalctl') return false;
+    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const shell = this.shell;
+
+    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
+    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
+    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
+    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
+    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
+    const initialCommand = ['journalctl', ...initialArgs].join(' ');
+
+    return this.startFollowStream({
+      commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
+        for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      subscribe: (sink) => dev.followJournal({ unit }, sink),
+    });
+  }
+
+  private tryStartIpMonitor(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'ip') return false;
+    let i = 1;
+    while (i < toks.length && toks[i].startsWith('-')) i++;
+    if (toks[i] !== 'monitor') return false;
+
+    const spec = parseIpMonitorSpec(toks.slice(i + 1));
+    if ('error' in spec) { this.addLine(spec.error); return true; }
+
+    return this.startFollowStream({
+      commandLine,
+      kind: 'subscription',
+      subscribe: (sink) => dev.monitorNetlink(
+        { objects: spec.objects, labelled: spec.labelled },
+        (block) => { for (const line of block.split('\n')) sink(line); },
+      ),
+    });
+  }
+
+  private tryStartDmesgFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'dmesg') return false;
+    if (!toks.includes('-w') && !toks.includes('--follow')) return false;
+    const shell = this.shell;
+
+    let raw = false;
+    let humanTime = false;
+    let levelFilter: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if (a === '-T' || a === '--ctime' || a === '-H' || a === '--human') humanTime = true;
+      else if (a === '-r' || a === '--raw') raw = true;
+      else if (a === '-l' || a === '--level') {
+        levelFilter = (toks[++i] || '').split(',').map((l) => l.trim()).filter(Boolean);
+      } else if (a.startsWith('--level=')) {
+        levelFilter = a.slice(8).split(',').map((l) => l.trim()).filter(Boolean);
+      }
+    }
+
+    const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
+    const initialCommand = ['dmesg', ...initialArgs].join(' ');
+
+    return this.startFollowStream({
+      commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
+          ctx.sink.line(initial);
+          return false;
+        }
+        if (initial) for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      subscribe: (sink) => dev.followDmesg({ raw, humanTime, levelFilter }, sink),
+    });
+  }
+
+  private tryStartNetstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'netstat') return false;
+    const continuous = toks.some(
+      (t) => t.startsWith('-') && !t.startsWith('--') && t.includes('c'),
+    ) || toks.includes('--continuous');
+    if (!continuous) return false;
+    const shell = this.shell;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: 1000,
+      frame: () => dev.runCommandFrameInSession(commandLine, shell),
+    });
+  }
+
+  private tryStartFreeStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'free') return false;
+    let intervalSeconds: number | null = null;
+    let count: number | null = null;
+    const rest: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if ((a === '-s' || a === '--seconds') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        intervalSeconds = v;
+      } else if ((a === '-c' || a === '--count') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        count = v;
+      } else {
+        rest.push(a);
+      }
+    }
+    if (intervalSeconds === null) return false;
+    const shell = this.shell;
+    const rendered = ['free', ...rest].join(' ').trim();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, intervalSeconds * 1000),
+      maxFrames: count ?? undefined,
+      frame: () => dev.runCommandFrameInSession(rendered, shell),
+    });
+  }
+
+  private tryStartVmstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'vmstat') return false;
+    const parsed = parseVmstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => vmstatHeader(parsed),
+      frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
+    });
+  }
+
+  private tryStartMpstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mpstat') return false;
+    const parsed = parseMpstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    const accumulator = new MpstatAccumulator();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(new Date())}`,
+      frame: () => {
+        const rows = dev.sampleMpstatSnapshot(parsed);
+        accumulator.add(rows);
+        const now = new Date();
+        return rows.map((r) => formatMpstatRow(now, r)).join('\n');
+      },
+      trailer: () => {
+        if (accumulator.sampleCount() === 0) return '';
+        const lines = ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))];
+        return lines.join('\n');
+      },
+    });
+  }
+
+  private tryStartPidstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'pidstat') return false;
+    const parsed = parsePidstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    if (parsed.report === 'cpu') {
+      const accumulator = new PidstatAccumulator<PidstatCpuRow>('cpu');
+      return this.startScrollingMonitor({
+        commandLine,
+        intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+        maxFrames: parsed.count ?? undefined,
+        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+        frame: () => {
+          const rows = dev.samplePidstatCpu(parsed);
+          accumulator.add(rows);
+          const now = new Date();
+          return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
+        },
+        trailer: () => {
+          if (accumulator.sampleCount() === 0) return '';
+          return ['', ...accumulator.averages().map((r) => formatPidstatAverageCpuRow(r))].join('\n');
+        },
+      });
+    }
+    const accumulator = new PidstatAccumulator<PidstatMemRow>('memory');
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+      frame: () => {
+        const rows = dev.samplePidstatMemory(parsed);
+        accumulator.add(rows);
+        const now = new Date();
+        return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
+      },
+      trailer: () => {
+        if (accumulator.sampleCount() === 0) return '';
+        return ['', ...accumulator.averages().map((r) => formatPidstatAverageMemRow(r))].join('\n');
+      },
+    });
+  }
+
+  private tryStartIostatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'iostat') return false;
+    const parsed = parseIostatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => dev.iostatBannerLine(),
+      frame: () => `\n${renderIostatReport(
+        parsed,
+        dev.sampleIostatCpuSnapshot(),
+        dev.sampleIostatDevicesSnapshot(parsed),
+        new Date(),
+      )}`,
+    });
+  }
+
+  private tryStartDstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'dstat') return false;
+
+    const parsed = parseDstatArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(DSTAT_USAGE); this.notify(); return true; }
+    if (parsed.showVersion) { this.addLine(DSTAT_VERSION); this.notify(); return true; }
+    if (parsed.listStats) { this.addLine(DSTAT_LISTING); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+
+    const rate = newDstatRateState();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => formatDstatHeader(parsed.groups),
+      frame: () => formatDstatRow(dev.sampleDstatSnapshot(rate), parsed.groups),
+    });
+  }
+
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -846,6 +1422,7 @@ export class LinuxTerminalSession extends TerminalSession {
         this.popRemoteDevice();
         return;
       }
+      if (this.endRemoteSession()) return;
       // Signal close — the view/manager will handle it
       this._onRequestClose?.();
       return;
@@ -858,6 +1435,22 @@ export class LinuxTerminalSession extends TerminalSession {
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
+    if (this.tryStartTracerouteStream(trimmed)) return;
+    if (this.tryStartMtrStream(trimmed)) return;
+    if (this.tryStartWatchStream(trimmed)) return;
+    if (this.tryStartTopStream(trimmed)) return;
+    if (this.tryStartJournalFollow(trimmed)) return;
+    if (this.tryStartIpMonitor(trimmed)) return;
+    if (this.tryStartDmesgFollow(trimmed)) return;
+    if (this.tryStartNetstatStream(trimmed)) return;
+    if (this.tryStartVmstatStream(trimmed)) return;
+    if (this.tryStartFreeStream(trimmed)) return;
+    if (this.tryStartMpstatStream(trimmed)) return;
+    if (this.tryStartPidstatStream(trimmed)) return;
+    if (this.tryStartIostatStream(trimmed)) return;
+    if (this.tryStartDstatStream(trimmed)) return;
+    if (this.tryStartTcpdump(trimmed)) return;
+    if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -1143,6 +1736,46 @@ export class LinuxTerminalSession extends TerminalSession {
     this.syncDeviceState();
   }
 
+  private _pendingCrontabEdit: { user: string; tmpPath: string } | null = null;
+
+  private tryCrontabEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    let toks = commandLine.trim().split(/\s+/);
+    if (toks[0] === 'sudo') toks = toks.slice(1);
+    if (toks[0] !== 'crontab' || !toks.includes('-e')) return false;
+
+    const current = dev.getCurrentUser();
+    const uIdx = toks.indexOf('-u');
+    const user = uIdx >= 0 ? (toks[uIdx + 1] ?? current) : current;
+    if (user !== current && current !== 'root') {
+      this.addLine('crontab: must be privileged to use -u');
+      return true;
+    }
+
+    const template = dev.crontabEditTemplate(user);
+    const tmpPath = `/tmp/crontab.${Math.floor(Math.random() * 1e6)}`;
+    dev.writeFileFromEditorInSession(tmpPath, template, this.shell);
+    this._pendingCrontabEdit = { user, tmpPath };
+    this.openEditor('nano', [tmpPath]);
+    return true;
+  }
+
+  private finishCrontabEdit(saved: boolean): void {
+    const pending = this._pendingCrontabEdit;
+    this._pendingCrontabEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (saved && dev instanceof LinuxMachine && this.shell) {
+      const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+      dev.installCrontabContent(content, pending!.user);
+      this.addLine('crontab: installing new crontab');
+    } else {
+      this.addLine('no changes made to crontab');
+    }
+    this.notify();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
@@ -1173,8 +1806,8 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** Called by the view when editor saves a file. */
-  editorSave(content: string, filePath: string): void {
+  override editorSave(content: string, filePath: string): void {
+    if (this.hasActiveChild) { super.editorSave(content, filePath); return; }
     const dev = this.device;
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
@@ -1191,7 +1824,9 @@ export class LinuxTerminalSession extends TerminalSession {
    * making the editor "succeed" for chain semantics; `saved=false`
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
-  editorExit(saved: boolean = true): void {
+  override editorExit(saved: boolean = true): void {
+    if (this.hasActiveChild) { super.editorExit(saved); return; }
+    if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
@@ -1330,7 +1965,15 @@ export class LinuxTerminalSession extends TerminalSession {
       const { host, user } = JSON.parse(xvendor) as { host: string; user: string };
       const target = this.crossVendorPushTarget;
       this.crossVendorPushTarget = null;
-      this.pushRemoteDeviceWithStrategy(target.device, user, host, target.strategy);
+      const child = createSessionForDevice(target.device, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const clientPort = 50_000 + (user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, user, host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${host} 22`,
+          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
+        });
+      }
       return;
     }
     this.crossVendorPushTarget = null;
@@ -1676,9 +2319,6 @@ export class LinuxTerminalSession extends TerminalSession {
       | undefined;
     if (!sshHost) return false;
 
-    const strategy = pickVendorPromptStrategy(target);
-    if (!strategy) return false;
-
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -1701,7 +2341,7 @@ export class LinuxTerminalSession extends TerminalSession {
           });
           const decision = sshHost.evaluate(request);
           if (decision.outcome !== 'accepted') {
-            this.addLine(`${user}@${host}: Permission denied (password).`, 'error');
+            this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
             return;
           }
           ctx.metadata.set('xvendor_push', JSON.stringify({ host, user }));
@@ -1709,12 +2349,12 @@ export class LinuxTerminalSession extends TerminalSession {
       },
     ];
 
-    this.crossVendorPushTarget = { device: target, strategy };
+    this.crossVendorPushTarget = { device: target };
     this.startFlowFromSteps(steps, `ssh ${user}@${host}`);
     return true;
   }
 
-  private crossVendorPushTarget: { device: Equipment; strategy: RemotePromptStrategy } | null = null;
+  private crossVendorPushTarget: { device: Equipment } | null = null;
 
   private lookupSourceIp(): string {
     const portsObj = (this.device as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
@@ -1878,16 +2518,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     //
-    // Banner composition: prefer the in-process LinuxMachine path because
-    // it gives us the canonical OpenSSH ordering (Welcome → motd → blank
-    // → Last login). Falls back to the exec-channel reads when the remote
-    // is a synthetic handler that doesn't materialise a LinuxMachine.
-    const remoteForBanner = findLinuxMachineByIp(host);
-    const bannerLines = remoteForBanner
-      ? composeLoginBanner(remoteForBanner, user)
-      : await this.composeLoginBannerViaExec(session, user);
-    for (const line of bannerLines) this.addLine(line);
-
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
     const forwarders = this.installLocalForwards(session, host, meta);
@@ -1914,22 +2544,18 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
-      // Non-Linux peers (Windows / Cisco / Huawei) need their vendor
-      // shell on the stack — otherwise the terminal renders the bash
-      // prompt for a Windows cwd and routes commands to the bare
-      // device.executeCommand, so `powershell` / mode-switches never
-      // engage. Linux peers keep the generic push (no foreign shell).
-      const vendorStrategy = anyRemoteDevice instanceof LinuxMachine
-        ? null
-        : pickVendorPromptStrategy(anyRemoteDevice);
-      if (vendorStrategy) {
-        this.pushRemoteDeviceWithStrategy(
-          anyRemoteDevice, user, host, vendorStrategy, onSessionEnd,
-        );
-      } else {
-        this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const serverIp = host;
+        const clientPort = 50_000 + (user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, user, host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} 22`,
+          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
+        });
+        child.registerTearDown(onSessionEnd);
+        return;
       }
-      return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
@@ -2643,44 +3269,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  pushRemoteDeviceWithStrategy(
-    remote: Equipment,
-    user: string,
-    label: string,
-    strategy: RemotePromptStrategy,
-    onPop: () => void = () => undefined,
-  ): void {
-    const pausedShell = this.shell;
-    this.sshStack.push({
-      device: this.device,
-      user: this.currentUser,
-      path: this.currentPath,
-      pausedShell,
-      onPop: () => { try { onPop(); } catch { /* swallow */ } },
-      label,
-    });
-    this.device = remote;
-    this.shell = null;
-    this.currentUser = user;
-    this.currentPath = `~`;
-
-    installDefaultShells();
-    const primaryKind = pickPrimaryKindFromStrategy(strategy);
-    if (primaryKind && ShellFactory.has(primaryKind)) {
-      const xshell = new CrossVendorRemoteShell({
-        device: remote, user, remoteHost: label, primaryKind,
-      });
-      this.activeSubShell = new ShellSubShellAdapter(xshell);
-    } else {
-      this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
-    }
-    this.notify();
-  }
-
-  /**
-   * Restore the previous device. Prints "logout / Connection to <host>
-   * closed." and runs the saved `onPop` (e.g. SshSession.disconnect).
-   */
   popRemoteDevice(): void {
     const frame = this.sshStack.pop();
     if (!frame) return;
@@ -2698,9 +3286,8 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** True while the terminal is operating on a remote device. */
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0;
+    return this.sshStack.length > 0 || this.hasActiveChild;
   }
 
   /**
@@ -2895,19 +3482,6 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
-function pickPrimaryKindFromStrategy(s: RemotePromptStrategy): string | null {
-  if (s === CiscoStrategyRef) return 'cisco-ios';
-  if (s === HuaweiStrategyRef) return 'huawei-vrp';
-  if (s === WindowsStrategyRef) return 'cmd';
-  if (s === LinuxStrategyRef) return 'bash';
-  return null;
-}
-
-function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
-  const kind = primaryShellKindFor(eq);
-  return kind === 'bash' ? null : strategyForShellKind(kind);
-}
-
 function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
     .getAllEquipment();

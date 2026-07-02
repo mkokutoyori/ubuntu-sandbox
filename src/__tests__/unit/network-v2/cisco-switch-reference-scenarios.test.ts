@@ -21,8 +21,8 @@ async function buildLab(): Promise<Lab> {
   const sw = new CiscoSwitch('cisco-sw', 'Switch1', 24, 0, 0);
   const srv = new LinuxServer('Linux-SRV');
   const win = new WindowsPC('Win-Client');
-  new Cable('c1').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
-  new Cable('c2').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+  new Cable('c1').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+  new Cable('c2').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
   await srv.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');
   win.configureInterface('eth0', new IPAddress('192.168.1.20'), new SubnetMask('255.255.255.0'));
   return { sw, srv, win };
@@ -57,14 +57,14 @@ describe('Switch reference scenarios — USER EXEC', () => {
     expect(await sw.executeCommand('show running-config')).toMatch(/enable secret/);
   });
 
-  it('3. "show mac address-table" reflects the CAM entry learned from Linux-SRV on Fa0/1', async () => {
+  it('3. "show mac address-table" reflects the CAM entry learned from Linux-SRV on Fa0/2', async () => {
     const { sw, srv } = await buildLab();
     await srv.executeCommand('ping -c 2 192.168.1.20');
     await sw.executeCommand('enable');
     const table = await sw.executeCommand('show mac address-table');
     const srvMac = srv.getPort('eth0')!.getMAC().toString().toLowerCase();
     expect(table.toLowerCase()).toContain(srvMac);
-    expect(table).toContain('FastEthernet0/1');
+    expect(table).toContain('FastEthernet0/2');
     expect(table).toContain('DYNAMIC');
   });
 
@@ -98,10 +98,10 @@ describe('Switch reference scenarios — PRIVILEGED EXEC', () => {
     expect(sw.getPrompt()).toBe('Switch1(config)#');
     await sw.executeCommand('vlan 10'); await sw.executeCommand('exit');
     await sw.executeCommand('vlan 20'); await sw.executeCommand('exit');
-    await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('interface FastEthernet0/2');
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('exit');
-    await sw.executeCommand('interface FastEthernet0/2');
+    await sw.executeCommand('interface FastEthernet0/3');
     await sw.executeCommand('switchport access vlan 20');
     await sw.executeCommand('end');
 
@@ -151,8 +151,8 @@ describe('Switch reference scenarios — PRIVILEGED EXEC', () => {
   it('15b. "clear mac address-table dynamic" keeps administrator static entries', async () => {
     const { sw } = await buildLab();
     const table = (sw as unknown as { macTable: Map<string, { mac: string; vlan: number; port: string; type: string; age: number; timestamp: number }> }).macTable;
-    table.set('1:0000.0000.00aa', { mac: '0000.0000.00aa', vlan: 1, port: 'FastEthernet0/1', type: 'dynamic', age: 300, timestamp: Date.now() });
-    table.set('1:0000.0000.00bb', { mac: '0000.0000.00bb', vlan: 1, port: 'FastEthernet0/2', type: 'static', age: 0, timestamp: Date.now() });
+    table.set('1:0000.0000.00aa', { mac: '0000.0000.00aa', vlan: 1, port: 'FastEthernet0/2', type: 'dynamic', age: 300, timestamp: Date.now() });
+    table.set('1:0000.0000.00bb', { mac: '0000.0000.00bb', vlan: 1, port: 'FastEthernet0/3', type: 'static', age: 0, timestamp: Date.now() });
     await sw.executeCommand('enable');
     await sw.executeCommand('clear mac address-table dynamic');
     const remaining = sw.getMACTable();

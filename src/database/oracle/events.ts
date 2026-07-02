@@ -53,6 +53,10 @@ export interface OracleAlertLogEntryAddedPayload extends OracleDeviceRef {
   line: string;
 }
 
+export interface OracleListenerConnectionLoggedPayload extends OracleDeviceRef {
+  line: string;
+}
+
 export interface OracleParameterChangedPayload extends OracleDeviceRef {
   key: string;
   oldValue: string | undefined;
@@ -81,6 +85,11 @@ export interface OracleSessionConnectedPayload extends OracleDeviceRef {
 
 export interface OracleSessionDisconnectedPayload extends OracleDeviceRef {
   sessionId: string;
+}
+
+export interface OracleSessionDeadConnectionPayload extends OracleDeviceRef {
+  sid: number;
+  rolledBack: boolean;
 }
 
 export interface OracleSessionRef extends OracleDeviceRef {
@@ -268,6 +277,10 @@ export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
   name: string;
   oldStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
   newStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
+}
+
+export interface OracleTablespaceEncryptedPayload extends OracleDeviceRef {
+  name: string;
 }
 
 export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
@@ -511,11 +524,13 @@ export type OracleDomainEvent =
   | { topic: 'oracle.instance.server-process-started';     payload: OracleServerProcessStartedPayload }
   | { topic: 'oracle.instance.server-process-stopped';     payload: OracleServerProcessStoppedPayload }
   | { topic: 'oracle.instance.alert-log-entry-added';    payload: OracleAlertLogEntryAddedPayload }
+  | { topic: 'oracle.listener.connection-logged';        payload: OracleListenerConnectionLoggedPayload }
   | { topic: 'oracle.instance.parameter-changed';        payload: OracleParameterChangedPayload }
   | { topic: 'oracle.instance.redo-log-switched';        payload: OracleRedoLogSwitchedPayload }
   | { topic: 'oracle.archive-log.created';               payload: OracleArchiveLogCreatedPayload }
   | { topic: 'oracle.session.connected';                 payload: OracleSessionConnectedPayload }
   | { topic: 'oracle.session.disconnected';              payload: OracleSessionDisconnectedPayload }
+  | { topic: 'oracle.session.dead-connection';           payload: OracleSessionDeadConnectionPayload }
   | { topic: 'oracle.transaction.started';               payload: OracleTxnStartedPayload }
   | { topic: 'oracle.transaction.committed';             payload: OracleTxnCommittedPayload }
   | { topic: 'oracle.transaction.rolled-back';           payload: OracleTxnRolledBackPayload }
@@ -540,6 +555,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
   | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload }
   | { topic: 'oracle.instance.parameter-file-requested'; payload: OracleParameterFileRequestedPayload }

@@ -53,9 +53,16 @@ export class CrossVendorRemoteShell implements IShell {
    *  decide "is the inner host POSIX or Windows or a router?". */
   readonly primaryKind: string;
   private readonly onClose: () => void;
+  private closeFired = false;
 
   /** Bottom = primary login shell; top = active child. */
   private readonly stack: IShell[] = [];
+
+  private fireClose(): void {
+    if (this.closeFired) return;
+    this.closeFired = true;
+    this.onClose();
+  }
 
   constructor(opts: CrossVendorRemoteShellOptions) {
     this.device = opts.device;
@@ -148,7 +155,7 @@ export class CrossVendorRemoteShell implements IShell {
         // The primary shell has exited — the whole SSH session ends.
         // Append the OpenSSH "Connection to <host> closed." footer the
         // user expects regardless of which vendor's shell was on top.
-        this.onClose();
+        this.fireClose();
         return {
           output: [...result.output, `Connection to ${this.remoteHost} closed.`],
           styledOutput: result.styledOutput,
@@ -188,6 +195,7 @@ export class CrossVendorRemoteShell implements IShell {
       s.deactivate();
       s.dispose();
     }
+    this.fireClose();
   }
 
   dispose(): void { this.deactivate(); }

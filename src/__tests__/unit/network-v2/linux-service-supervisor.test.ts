@@ -32,7 +32,7 @@ describe('LinuxServiceSupervisor', () => {
     exec.attachEventBus(bus, 'sup-1');
   });
 
-  it('auto-restarts a Restart=always daemon when its main process is killed', () => {
+  it('auto-restarts a Restart=always daemon when its main process is killed', async () => {
     writeUnit(exec, 'alpha', 'always');
     exec.execute('systemctl start alpha');
     const u1 = exec.serviceMgr.status('alpha');
@@ -41,6 +41,8 @@ describe('LinuxServiceSupervisor', () => {
 
     // Simulate a crash: something external kills the main process.
     exec.processMgr.kill(oldPid, 'SIGKILL');
+    expect(exec.serviceMgr.status('alpha')?.state).toBe('activating');
+    await new Promise((r) => setTimeout(r, 250));
 
     const u2 = exec.serviceMgr.status('alpha');
     expect(u2?.state).toBe('active');
@@ -80,13 +82,14 @@ describe('LinuxServiceSupervisor', () => {
     expect(() => exec.processMgr.kill(p.pid, 'SIGKILL')).not.toThrow();
   });
 
-  it('a restarted daemon stays supervised across successive crashes', () => {
+  it('a restarted daemon stays supervised across successive crashes', async () => {
     writeUnit(exec, 'delta', 'on-failure');
     exec.execute('systemctl start delta');
 
     for (let i = 0; i < 3; i++) {
       const pid = exec.serviceMgr.status('delta')!.mainPid!;
       exec.processMgr.kill(pid, 'SIGKILL');
+      await new Promise((r) => setTimeout(r, 250));
       expect(exec.serviceMgr.status('delta')?.state).toBe('active');
     }
   });

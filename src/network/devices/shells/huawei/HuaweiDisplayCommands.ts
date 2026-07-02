@@ -234,26 +234,32 @@ export function displayIpRoutingTableForDest(router: Router, dest: string): stri
 
 export function displayIpIntBrief(router: Router): string {
   const ports = router._getPortsInternal();
+  let upPhys = 0, downPhys = 0, upProto = 0, downProto = 0;
+  const rows: string[] = [];
+  for (const [name, port] of ports) {
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
+    const phys = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
+    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+    if (phys === 'up') upPhys++; else downPhys++;
+    if (proto === 'up') upProto++; else downProto++;
+    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    rows.push(`${renderedName.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+  }
   const lines = [
     '*down: administratively down',
     '^down: standby',
     '(l): loopback',
     '(s): spoofing',
-    'The number of interface that is UP in Physical is 0',
-    'The number of interface that is DOWN in Physical is 0',
-    'The number of interface that is UP in Protocol is 0',
-    'The number of interface that is DOWN in Protocol is 0',
+    `The number of interface that is UP in Physical is ${upPhys}`,
+    `The number of interface that is DOWN in Physical is ${downPhys}`,
+    `The number of interface that is UP in Protocol is ${upProto}`,
+    `The number of interface that is DOWN in Protocol is ${downProto}`,
     '',
     'Interface                         IP Address/Mask      Physical   Protocol',
+    ...rows,
   ];
-  for (const [name, port] of ports) {
-    const ip = port.getIPAddress();
-    const mask = port.getSubnetMask();
-    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const phys = (port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down').toUpperCase();
-    const proto = (port.getIsUp() && port.isConnected() ? 'up' : 'down').toUpperCase();
-    lines.push(`${name.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
-  }
   return lines.join('\n');
 }
 

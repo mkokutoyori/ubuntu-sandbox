@@ -98,7 +98,7 @@ describe('Syslog — wire format', () => {
         }
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     Logger.info(r.id, 'sys:restart', 'Configuration changed by console');
@@ -117,7 +117,7 @@ describe('Syslog — reactive bus', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ serverIp: string; severity: string }> = [];
@@ -135,7 +135,7 @@ describe('Syslog — reactive bus', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99', { severityThreshold: 'warning' });
     const sent: Array<{ severity: string }> = [];
@@ -183,7 +183,7 @@ describe('Syslog — vendor-neutral', () => {
     const r = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ message: string }> = [];
@@ -200,8 +200,8 @@ describe('Syslog — switch as source', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getPort('FastEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getPort('FastEthernet0/1')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     sw1.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ deviceId: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));

@@ -4,7 +4,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 3.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from './ISshLocalFs';
 import { type Result, ok, err } from './Result';
 import { SshFingerprint } from './SshFingerprint';
 import { deriveKeyMaterial } from './sshKeyMaterial';
@@ -42,7 +42,7 @@ export class SshKeyPair {
    * The public key is expected at `${privateKeyPath}.pub`.
    */
   static fromVfs(
-    vfs: VirtualFileSystem,
+    vfs: ISshLocalFs,
     privateKeyPath: string,
   ): Result<SshKeyPair> {
     const pubPath = `${privateKeyPath}.pub`;

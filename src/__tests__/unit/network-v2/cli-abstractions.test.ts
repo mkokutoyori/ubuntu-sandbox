@@ -314,7 +314,7 @@ describe('cli-utils', () => {
     });
 
     it('should return null for unknown interface', () => {
-      expect(resolveCiscoInterfaceName(ports, 'FastEthernet0/0')).toBeNull();
+      expect(resolveCiscoInterfaceName(ports, 'FastEthernet0/1')).toBeNull();
     });
   });
 
@@ -330,7 +330,7 @@ describe('cli-utils', () => {
     });
 
     it('should return null for unknown interface', () => {
-      expect(resolveHuaweiInterfaceName(ports, 'FastEthernet0/0')).toBeNull();
+      expect(resolveHuaweiInterfaceName(ports, 'FastEthernet0/1')).toBeNull();
     });
   });
 });

@@ -8,7 +8,7 @@
  */
 
 import { findHostByAddress } from './network/HostLookup';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import { broadcastAddress } from '../../core/ip';
 
 // ─── Network Context Interface ──────────────────────────────────────
@@ -25,6 +25,7 @@ export interface IpInterfaceInfo {
   isDHCP: boolean;
   counters: { framesIn: number; framesOut: number; bytesIn: number; bytesOut: number };
   ipv6?: IpInterfaceV6Address[];
+  secondaryIPs?: Array<{ ip: string; cidr: number }>;
 }
 
 export interface IpInterfaceV6Address {
@@ -63,17 +64,26 @@ export interface IpV6RouteEntry {
 export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
-  configureInterface(ifName: string, ip: string, cidr: number): string;
+  configureInterface(ifName: string, ip: IPAddress, cidr: number): string;
+  addInterfaceIP?(ifName: string, ip: IPAddress, cidr: number): string;
+  addInterfaceIPv6?(ifName: string, addr: string, prefixLength: number): string;
+  removeInterfaceIPv6?(ifName: string, addr: string): string;
+  removeInterfaceAddress?(ifName: string, ip: IPAddress): string;
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
-  addDefaultRoute(gateway: string): string;
-  addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string;
+  addDefaultRoute(gateway: IPAddress): string;
+  addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string;
+  addDeviceRoute?(network: IPAddress, cidr: number, iface: string): string;
   deleteDefaultRoute(): string;
-  deleteRoute(network: string, cidr: number): string;
+  deleteRoute(
+    network: IPAddress,
+    cidr: number,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): string;
   getNeighborTable(): IpNeighborEntry[];
-  addNeighbor(ip: string, mac: string, ifName: string): string;
-  deleteNeighbor(ip: string, ifName: string): string;
+  addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string;
+  deleteNeighbor(ip: IPAddress, ifName: string): string;
   flushNeighbors(ifName?: string): string;
   setInterfaceUp(ifName: string): string;
   setInterfaceDown(ifName: string): string;
@@ -299,6 +309,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'x':
       return ipXfrm(ctx, subArgs);
 
+    case 'monitor':
+      return '';
+
     default:
       return `Object "${object}" is unknown, try "ip help".`;
   }
@@ -331,27 +344,29 @@ function ipAddrFlush(ctx: IpNetworkContext, args: string[]): string {
 }
 
 function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
-  // Parse "dev <name>" filter
+  // Filter by "dev <name>" or a bare interface name (iproute2 accepts both).
+  const SCOPE_KW = new Set(['scope', 'to', 'label', 'up', 'down', 'permanent', 'dynamic', 'primary', 'secondary']);
   let filterDev: string | null = null;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'dev' && args[i + 1]) {
-      filterDev = args[i + 1];
-      break;
+    if (args[i] === 'dev' && args[i + 1]) { filterDev = args[i + 1]; break; }
+    if (!filterDev && !args[i].startsWith('-') && args[i] !== 'show' && args[i] !== 'list'
+      && !SCOPE_KW.has(args[i]) && !/^(scope|to|label)$/.test(args[i - 1] ?? '')) {
+      filterDev = args[i];
     }
   }
+
+  const allNames = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
 
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
-    const names = ctx.getInterfaceNames();
-    const idx = names.indexOf(filterDev) + 1;
+    const idx = allNames.indexOf(filterDev) + 1;
     return formatAddrInterface(info, idx, family);
   }
 
-  const names = ctx.getInterfaceNames();
   const lines: string[] = [];
-  for (let i = 0; i < names.length; i++) {
-    const info = ctx.getInterfaceInfo(names[i]);
+  for (let i = 0; i < allNames.length; i++) {
+    const info = ctx.getInterfaceInfo(allNames[i]);
     if (!info) continue;
     if (lines.length > 0) lines.push('');
     lines.push(formatAddrInterface(info, i + 1, family));
@@ -394,6 +409,10 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamil
     const brd = broadcastAddress(info.ip, info.cidr);
     const brdStr = brd ? ` brd ${brd}` : '';
     lines.push(`    inet ${info.ip}/${info.cidr}${brdStr}${dynFlag} scope ${scope} ${info.name}`);
+    for (const sec of info.secondaryIPs ?? []) {
+      const secBrd = broadcastAddress(sec.ip, sec.cidr);
+      lines.push(`    inet ${sec.ip}/${sec.cidr}${secBrd ? ` brd ${secBrd}` : ''} scope ${scope} secondary ${info.name}`);
+    }
   }
 
   if (family !== 'inet') {
@@ -428,6 +447,49 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   // ip addr add <ip>/<cidr> dev <name>
   let addrStr: string | null = null;
   let devName: string | null = null;
+  const unknown: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) {
+      devName = args[i + 1];
+      i++;
+    } else if (!addrStr && !args[i].startsWith('-')) {
+      addrStr = args[i];
+    } else {
+      unknown.push(args[i]);
+    }
+  }
+
+  if (!addrStr) return 'Error: either "local" or "peer" address is required.';
+  if (unknown.length > 0) {
+    return `Error: garbage instead of arguments "${unknown.join(' ')}", try "ip addr help".`;
+  }
+  if (!devName) return 'Not enough information: "dev" argument is required.';
+
+  const slashIdx = addrStr.indexOf('/');
+  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
+
+  const ipStr = addrStr.slice(0, slashIdx);
+  const prefix = parseInt(addrStr.slice(slashIdx + 1), 10);
+
+  if (ipStr.includes(':')) {
+    if (isNaN(prefix) || prefix < 1 || prefix > 128) return 'Error: invalid prefix length.';
+    if (!ctx.addInterfaceIPv6) return `Error: IPv6 address configuration is not supported on this interface.`;
+    return ctx.addInterfaceIPv6(devName, ipStr, prefix);
+  }
+
+  if (isNaN(prefix) || prefix < 1 || prefix > 32) return 'Error: invalid prefix length.';
+  let ip: IPAddress;
+  try { ip = new IPAddress(ipStr); }
+  catch { return `Error: ${ipStr} is not a valid IPv4 address.`; }
+
+  return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, prefix) : ctx.configureInterface(devName, ip, prefix);
+}
+
+function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
+  // ip addr del <ip>/<cidr> dev <name>
+  let addrStr: string | null = null;
+  let devName: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -438,31 +500,19 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
     }
   }
 
-  if (!addrStr) return 'Error: either "local" or "peer" address is required.';
   if (!devName) return 'Not enough information: "dev" argument is required.';
 
-  const slashIdx = addrStr.indexOf('/');
-  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
-
-  const ip = addrStr.slice(0, slashIdx);
-  const cidr = parseInt(addrStr.slice(slashIdx + 1), 10);
-  if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
-
-  return ctx.configureInterface(devName, ip, cidr);
-}
-
-function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
-  // ip addr del <ip>/<cidr> dev <name>
-  let devName: string | null = null;
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'dev' && args[i + 1]) {
-      devName = args[i + 1];
-      i++;
+  if (addrStr) {
+    const ipStr = addrStr.split('/')[0];
+    let ip: IPAddress;
+    try { ip = new IPAddress(ipStr); }
+    catch { return 'RTNETLINK answers: Cannot assign requested address'; }
+    if (ctx.removeInterfaceAddress) return ctx.removeInterfaceAddress(devName, ip);
+    const info = ctx.getInterfaceInfo(devName);
+    if (info && info.ip !== ipStr) {
+      return 'RTNETLINK answers: Cannot assign requested address';
     }
   }
-
-  if (!devName) return 'Not enough information: "dev" argument is required.';
 
   return ctx.removeInterfaceIP(devName);
 }
@@ -538,6 +588,111 @@ function formatLinkInterface(info: IpInterfaceInfo, idx: number): string {
   return lines.join('\n');
 }
 
+export type IpMonitorObject = 'link' | 'addr' | 'route' | 'neigh';
+
+export interface IpMonitorLinkChange {
+  iface: string;
+}
+
+export interface IpMonitorAddrChange {
+  iface: string;
+  ip: string;
+  cidr: number;
+  deleted: boolean;
+}
+
+export interface IpMonitorRouteChange {
+  destination: string;
+  mask: string;
+  gateway: string | null;
+  iface: string;
+  metric: number;
+  deleted: boolean;
+}
+
+export interface IpMonitorNeighChange {
+  ip: string;
+  mac: string;
+  iface: string;
+  state: string;
+  deleted: boolean;
+}
+
+export interface IpMonitorSpec {
+  objects: Set<IpMonitorObject>;
+  labelled: boolean;
+}
+
+const IP_MONITOR_ALIASES: Record<string, IpMonitorObject> = {
+  link: 'link', l: 'link',
+  address: 'addr', addr: 'addr', a: 'addr',
+  route: 'route', r: 'route',
+  neigh: 'neigh', neighbour: 'neigh', neighbor: 'neigh', n: 'neigh',
+};
+
+const IP_MONITOR_ALL: IpMonitorObject[] = ['link', 'addr', 'route', 'neigh'];
+
+export function parseIpMonitorSpec(args: string[]): IpMonitorSpec | { error: string } {
+  if (args.length === 0) return { objects: new Set(IP_MONITOR_ALL), labelled: true };
+  const objects = new Set<IpMonitorObject>();
+  for (const arg of args) {
+    if (arg === 'all') { for (const o of IP_MONITOR_ALL) objects.add(o); continue; }
+    const mapped = IP_MONITOR_ALIASES[arg];
+    if (!mapped) return { error: `Error: argument "${arg}" is wrong: unknown object, try "ip monitor help".` };
+    objects.add(mapped);
+  }
+  return { objects, labelled: objects.size > 1 };
+}
+
+function monitorLabel(object: IpMonitorObject, labelled: boolean): string {
+  if (!labelled) return '';
+  switch (object) {
+    case 'link': return '[LINK]';
+    case 'addr': return '[ADDR]';
+    case 'route': return '[ROUTE]';
+    case 'neigh': return '[NEIGH]';
+  }
+}
+
+export function formatIpMonitorLink(
+  ctx: IpNetworkContext, change: IpMonitorLinkChange, labelled: boolean,
+): string | null {
+  const info = ctx.getInterfaceInfo(change.iface);
+  if (!info) return null;
+  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  return monitorLabel('link', labelled) + formatLinkInterface(info, idx);
+}
+
+export function formatIpMonitorAddr(
+  ctx: IpNetworkContext, change: IpMonitorAddrChange, labelled: boolean,
+): string {
+  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  const brd = broadcastAddress(change.ip, change.cidr);
+  const brdStr = brd ? ` brd ${brd}` : '';
+  const head = `${idx}: ${change.iface}    inet ${change.ip}/${change.cidr}${brdStr} scope global ${change.iface}`;
+  const body = '       valid_lft forever preferred_lft forever';
+  const prefix = monitorLabel('addr', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${head}\n${body}`;
+}
+
+export function formatIpMonitorRoute(change: IpMonitorRouteChange, labelled: boolean): string {
+  const cidr = new SubnetMask(change.mask).toCIDR();
+  const dest = cidr === 0 ? 'default' : `${change.destination}/${cidr}`;
+  const via = change.gateway ? ` via ${change.gateway}` : '';
+  const metricStr = change.metric > 0 ? ` metric ${change.metric}` : '';
+  const line = `${dest}${via} dev ${change.iface}${metricStr}`;
+  const prefix = monitorLabel('route', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${line}`;
+}
+
+export function formatIpMonitorNeigh(change: IpMonitorNeighChange, labelled: boolean): string {
+  const dev = change.iface ? ` dev ${change.iface}` : '';
+  const lladdr = change.mac ? ` lladdr ${change.mac}` : '';
+  const line = `${change.ip}${dev}${lladdr} ${change.state}`;
+  const prefix = monitorLabel('neigh', labelled) + (change.deleted ? 'Deleted ' : '');
+  return `${prefix}${line}`;
+}
+
 function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
   if (args.length === 0) return 'Not enough information: arguments are required.';
 
@@ -597,9 +752,12 @@ function ipRouteShow(ctx: IpNetworkContext): string {
     } else if (route.type === 'connected') {
       const srcStr = route.srcIp ? ` src ${route.srcIp}` : '';
       lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto kernel scope link${srcStr} metric ${route.metric}`);
-    } else {
-      // static
+    } else if (route.nextHop) {
+      // static via a gateway
       lines.push(`${route.network}/${route.cidr} via ${route.nextHop} dev ${route.iface} proto static metric ${route.metric}`);
+    } else {
+      // static on-link (dev route, no gateway)
+      lines.push(`${route.network}/${route.cidr} dev ${route.iface} proto static scope link metric ${route.metric}`);
     }
   }
 
@@ -632,7 +790,9 @@ function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
   if (args[0] === 'default') {
     const viaIdx = args.indexOf('via');
     if (viaIdx === -1 || !args[viaIdx + 1]) return 'Error: "via" is required for default route.';
-    const gateway = args[viaIdx + 1];
+    let gateway: IPAddress;
+    try { gateway = new IPAddress(args[viaIdx + 1]); }
+    catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
     return ctx.addDefaultRoute(gateway);
   }
 
@@ -641,13 +801,25 @@ function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
   const slashIdx = prefix.indexOf('/');
   if (slashIdx === -1) return 'Error: invalid prefix (expected <network>/<cidr>).';
 
-  const network = prefix.slice(0, slashIdx);
+  const networkStr = prefix.slice(0, slashIdx);
   const cidr = parseInt(prefix.slice(slashIdx + 1), 10);
   if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
+  let network: IPAddress;
+  try { network = new IPAddress(networkStr); }
+  catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
 
+  const devIdx = args.indexOf('dev');
   const viaIdx = args.indexOf('via');
+
+  // On-link route: "ip route add <net>/<cidr> dev <iface>" (no gateway).
+  if (viaIdx === -1 && devIdx !== -1 && args[devIdx + 1]) {
+    if (ctx.addDeviceRoute) return ctx.addDeviceRoute(network, cidr, args[devIdx + 1]);
+  }
+
   if (viaIdx === -1 || !args[viaIdx + 1]) return 'Error: "via" is required.';
-  const gateway = args[viaIdx + 1];
+  let gateway: IPAddress;
+  try { gateway = new IPAddress(args[viaIdx + 1]); }
+  catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
 
   let metric: number | undefined;
   const metricIdx = args.indexOf('metric');
@@ -665,40 +837,76 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
     return ctx.deleteDefaultRoute();
   }
 
-  // Delete static: <net>/<cidr>
+  // Delete static: <net>/<cidr> [via <gw>] [metric <n>]
   const prefix = args[0];
   const slashIdx = prefix.indexOf('/');
   if (slashIdx === -1) return 'Error: invalid prefix.';
 
-  const network = prefix.slice(0, slashIdx);
+  const networkStr = prefix.slice(0, slashIdx);
   const cidr = parseInt(prefix.slice(slashIdx + 1), 10);
   if (isNaN(cidr)) return 'Error: invalid prefix.';
+  let network: IPAddress;
+  try { network = new IPAddress(networkStr); }
+  catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
 
-  return ctx.deleteRoute(network, cidr);
+  const filter: { nextHop?: IPAddress | null; metric?: number } = {};
+  const viaIdx = args.indexOf('via');
+  if (viaIdx !== -1 && args[viaIdx + 1]) {
+    try { filter.nextHop = new IPAddress(args[viaIdx + 1]); }
+    catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
+  }
+  const metricIdx = args.indexOf('metric');
+  if (metricIdx !== -1 && args[metricIdx + 1]) {
+    const m = parseInt(args[metricIdx + 1], 10);
+    if (!isNaN(m)) filter.metric = m;
+  }
+
+  return ctx.deleteRoute(network, cidr, filter);
 }
 
 function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   if (args.length === 0) return 'Error: need a valid destination address.';
 
   const dest = args[0];
+  const destAddr = IPAddress.tryParse(dest);
+  if (!destAddr) return `Error: ${dest} is not a valid IPv4 address.`;
+
   const table = ctx.getRoutingTable();
+  const best = pickBestRoute(destAddr, table);
+  if (!best) return `RTNETLINK answers: Network is unreachable`;
 
-  // Find best matching route (simple: default if nothing else matches)
-  const defaultRoute = table.find(r => r.type === 'default');
-  const connectedRoutes = table.filter(r => r.type === 'connected' || r.type === 'static');
+  const iface = ctx.getInterfaceInfo(best.iface);
+  const src = iface?.ip ?? undefined;
 
-  // Simple matching: check if dest is in a connected/static network
-  for (const route of connectedRoutes) {
-    if (isInSubnet(dest, route.network, route.cidr)) {
-      return `${dest} dev ${route.iface} src ${route.srcIp || route.network}`;
+  if (best.type === 'default') {
+    const suffix = src ? ` src ${src}` : '';
+    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  }
+  if (best.nextHop) {
+    const suffix = src ? ` src ${src}` : '';
+    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  }
+  const suffix = src ? ` src ${src}` : (best.srcIp ? ` src ${best.srcIp}` : '');
+  return `${dest} dev ${best.iface}${suffix}`;
+}
+
+function pickBestRoute(dest: IPAddress, table: IpRouteEntry[]): IpRouteEntry | null {
+  const destInt = dest.toUint32();
+  let best: IpRouteEntry | null = null;
+  let bestPrefix = -1;
+  for (const route of table) {
+    const cidr = route.type === 'default' ? 0 : route.cidr;
+    const mask = SubnetMask.fromCIDR(cidr).toUint32();
+    const netParsed = IPAddress.tryParse(route.network);
+    const netInt = netParsed ? netParsed.toUint32() : 0;
+    if ((destInt & mask) !== (netInt & mask)) continue;
+    if (cidr > bestPrefix
+      || (cidr === bestPrefix && best !== null && route.metric < best.metric)) {
+      bestPrefix = cidr;
+      best = route;
     }
   }
-
-  if (defaultRoute) {
-    return `${dest} via ${defaultRoute.nextHop} dev ${defaultRoute.iface}`;
-  }
-
-  return `RTNETLINK answers: Network is unreachable`;
+  return best;
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {
@@ -747,7 +955,9 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
   if (addr) neighbors = neighbors.filter(n => n.ip === addr);
   if (neighbors.length > 0) {
     return neighbors
-      .map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
+      .map(n => n.state === 'FAILED'
+        ? `${n.ip} dev ${n.iface}  FAILED`
+        : `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
       .join('\n');
   }
 
@@ -770,28 +980,37 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
 
 // ip neigh add <IP> lladdr <MAC> dev <DEV> [nud permanent|static]
 function ipNeighAdd(ctx: IpNetworkContext, args: string[]): string {
-  const ip = args[0];
-  if (!ip) return 'Usage: ip neigh add ADDRESS lladdr LLADDR dev DEV';
+  const ipStr = args[0];
+  if (!ipStr) return 'Usage: ip neigh add ADDRESS lladdr LLADDR dev DEV';
+  let ip: IPAddress;
+  try { ip = new IPAddress(ipStr); }
+  catch { return 'RTNETLINK answers: Invalid argument'; }
 
-  let mac: string | null = null;
+  let macStr: string | null = null;
   let dev: string | null = null;
 
   for (let i = 1; i < args.length; i++) {
-    if (args[i] === 'lladdr' && args[i + 1]) { mac = args[++i]; }
+    if (args[i] === 'lladdr' && args[i + 1]) { macStr = args[++i]; }
     else if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
     else if (args[i] === 'nud') { i++; } // accept but ignore (always static)
   }
 
-  if (!mac) return 'RTNETLINK answers: Invalid argument (missing lladdr)';
+  if (!macStr) return 'RTNETLINK answers: Invalid argument (missing lladdr)';
   if (!dev) return 'RTNETLINK answers: Invalid argument (missing dev)';
+  let mac: MACAddress;
+  try { mac = new MACAddress(macStr); }
+  catch { return 'RTNETLINK answers: Invalid argument'; }
 
   return ctx.addNeighbor(ip, mac, dev);
 }
 
 // ip neigh del <IP> dev <DEV>
 function ipNeighDel(ctx: IpNetworkContext, args: string[]): string {
-  const ip = args[0];
-  if (!ip) return 'Usage: ip neigh del ADDRESS dev DEV';
+  const ipStr = args[0];
+  if (!ipStr) return 'Usage: ip neigh del ADDRESS dev DEV';
+  let ip: IPAddress;
+  try { ip = new IPAddress(ipStr); }
+  catch { return 'RTNETLINK answers: Invalid argument'; }
 
   let dev: string | null = null;
   for (let i = 1; i < args.length; i++) {

@@ -5,6 +5,7 @@
 
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
+import { VfsPath, type PathActor } from './VfsPath';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -61,9 +62,19 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
+  private readOnlyResolver?: (path: string) => boolean;
 
   constructor() {
     this.initializeRootFS();
+  }
+
+  setReadOnlyResolver(resolver: (path: string) => boolean): void {
+    this.readOnlyResolver = resolver;
+  }
+
+  isReadOnly(path: string): boolean {
+    if (!this.readOnlyResolver) return false;
+    return this.readOnlyResolver(this.canonicalKey(path));
   }
 
   private initializeRootFS(): void {
@@ -77,13 +88,13 @@ export class VirtualFileSystem {
     const dirs = [
       '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
       '/usr/local', '/usr/local/bin',
-      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
+      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
-      '/var/local', '/var/opt', '/var/backups', '/var/run',
+      '/var/local', '/var/opt', '/var/backups', '/var/run', '/var/spool/cron/crontabs',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
     ];
@@ -114,13 +125,23 @@ export class VirtualFileSystem {
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.createFileAt('/etc/crontab',
+      'SHELL=/bin/sh\n' +
+      'PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n' +
+      '\n' +
+      '17 *\t* * *\troot\tcd / && run-parts --report /etc/cron.hourly\n' +
+      '25 6\t* * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )\n' +
+      '47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n' +
+      '52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )\n',
+      0o644, 0, 0);
+    this.chmod('/var/spool/cron/crontabs', 0o1730);
     this.createFileAt('/etc/hosts',
       '127.0.0.1\tlocalhost\n' +
       '127.0.1.1\tlocalhost\n' +
       '\n' +
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0o644, 0, 0);
+      0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',
@@ -268,6 +289,48 @@ export class VirtualFileSystem {
       }
     }
     return '/' + resolved.join('/');
+  }
+
+  path(input: string, cwd = '/', actor?: PathActor): VfsPath {
+    return new VfsPath(this, input, cwd, actor);
+  }
+
+  realpath(path: string, cwd = '/', requireFinal = true): string | null {
+    const input = path.startsWith('/')
+      ? path
+      : cwd.replace(/\/$/, '') + '/' + path;
+    let remaining = input.split('/').filter(Boolean);
+    const out: string[] = [];
+    let links = 0;
+
+    while (remaining.length > 0) {
+      const comp = remaining.shift()!;
+      if (comp === '.') continue;
+      if (comp === '..') { out.pop(); continue; }
+
+      const candidate = '/' + [...out, comp].join('/');
+      const node = this.resolveInode(candidate, false);
+
+      if (!node) {
+        if (remaining.length === 0 && !requireFinal) {
+          out.push(comp);
+          break;
+        }
+        return null;
+      }
+
+      if (node.type === 'symlink') {
+        if (++links > 40) return null;
+        const targetParts = node.target.split('/').filter(Boolean);
+        if (node.target.startsWith('/')) out.length = 0;
+        remaining = [...targetParts, ...remaining];
+        continue;
+      }
+
+      out.push(comp);
+    }
+
+    return '/' + out.join('/');
   }
 
   /**
@@ -473,23 +536,28 @@ export class VirtualFileSystem {
   /** POSIX-ish write check on an existing file: root bypass, owner→
    *  user-w, group→group-w, other→other-w. Generated pseudo-files are
    *  treated as writable so /proc no-op writes still succeed. */
-  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
+  checkAccess(
+    inode: INode,
+    mode: 'r' | 'w' | 'x',
+    uid: number,
+    gid: number,
+    gids: number[] = [],
+  ): boolean {
     if (uid === 0) return true;
-    if (inode.generator) return true;
-    const m = inode.permissions;
-    if (uid === inode.uid) return (m & 0o200) !== 0;
-    if (gid === inode.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    if (mode === 'w' && inode.generator) return true;
+    const perms = inode.permissions & 0o777;
+    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+    if (inode.uid === uid) return ((perms >> 6) & bit) !== 0;
+    if (inode.gid === gid || gids.includes(inode.gid)) return ((perms >> 3) & bit) !== 0;
+    return (perms & bit) !== 0;
   }
 
-  /** POSIX-ish write check on a directory: needed both to create a new
-   *  child and to delete an existing one. */
+  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
+    return this.checkAccess(inode, 'w', uid, gid);
+  }
+
   private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
-    if (uid === 0) return true;
-    const m = parent.permissions;
-    if (uid === parent.uid) return (m & 0o200) !== 0;
-    if (gid === parent.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    return this.checkAccess(parent, 'w', uid, gid);
   }
 
   writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false): boolean {
@@ -503,6 +571,7 @@ export class VirtualFileSystem {
     if (inode?.type === 'file') {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
+      if (this.isReadOnly(path)) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
       const previous = inode.content;
       if (append) {
@@ -523,6 +592,7 @@ export class VirtualFileSystem {
     }
 
     if (!inode) {
+      if (this.isReadOnly(path)) return false;
       // Ensure parent directories exist (auto-create like mkdir -p)
       const lastSlash = path.lastIndexOf('/');
       if (lastSlash > 0) {
@@ -760,6 +830,15 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclUsers) return false;
     const had = inode.aclUsers.delete(user);
+    if (had) inode.ctime = Date.now();
+    return had;
+  }
+
+  /** Drop a per-group ACL entry. */
+  removeGroupAcl(path: string, group: string): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode?.aclGroups) return false;
+    const had = inode.aclGroups.delete(group);
     if (had) inode.ctime = Date.now();
     return had;
   }

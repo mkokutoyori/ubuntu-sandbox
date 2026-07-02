@@ -63,12 +63,14 @@ export interface WinCommandContext {
   ports: Map<string, Port>;
   /** Default gateway IP string or null */
   defaultGateway: string | null;
+  /** IPv6 default gateway string or null (router-advertised or static) */
+  defaultGateway6: string | null;
   /** ARP table */
   arpTable: Map<string, { mac: any; iface: string; type?: 'dynamic' | 'static' }>;
 
   // ARP table mutation
-  addStaticARP(ip: string, mac: any, iface: string): void;
-  deleteARP(ip: string): boolean;
+  addStaticARP(ip: IPAddress, mac: any, iface: string): void;
+  deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
 
   // Network config
@@ -93,7 +95,7 @@ export interface WinCommandContext {
 
   // Network operations
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number): Promise<PingResult[]>;
-  executeTraceroute(target: IPAddress, maxHops?: number): Promise<TracerouteHop[]>;
+  executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 
   // TCP/IP stack reset
   resetStack(): void;
@@ -125,13 +127,44 @@ export interface WinCommandContext {
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
 
+  // DHCP class id (option 60 vendor class) — `ipconfig /showclassid|/setclassid`
+  getClassId(ifName: string): string | null;
+  setClassId(ifName: string, classId: string | null): void;
+  // DHCPv6 class id — `ipconfig /showclassid6|/setclassid6`
+  getClassId6(ifName: string): string | null;
+  setClassId6(ifName: string, classId: string | null): void;
+
+  // IPv6 Router Solicitation — `ipconfig /renew6` re-solicits the
+  // on-link router(s) for a fresh SLAAC prefix (no DHCPv6 lease to renew).
+  sendRouterSolicitation(ifName: string): void;
+
   // Hostname resolution. The DNS step queries the configured servers over
   // UDP/53 through the simulated network — hence asynchronous.
   resolveHostname(name: string): Promise<IPAddress | null>;
+
+  reverseLookup?(ip: string): string | null;
 
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;
 
   // Port-proxy rules (netsh interface portproxy)
   portProxy: import('./PortProxyTable').PortProxyTable;
+
+  dnsCache: import('./WinDnsCache').WindowsDnsCache;
+
+  /**
+   * Per-device firewall rule store shared by:
+   *   - `netsh advfirewall firewall add/show/delete rule`
+   *   - PowerShell `New-NetFirewallRule` / `Get-NetFirewallRule`
+   *   - the Windows Filtering Platform packet check
+   *     (`firewallFilter()` on WindowsPC)
+   * so a rule added through one surface is honoured by the data plane
+   * and visible through the other.
+   */
+  dynamicFirewallRules: Map<string, {
+    name: string; displayName: string; enabled: boolean;
+    action: string; direction: string;
+    protocol: string; localPort: string; remotePort: string;
+    description: string;
+  }>;
 }

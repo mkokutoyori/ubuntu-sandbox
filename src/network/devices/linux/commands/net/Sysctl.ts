@@ -38,17 +38,45 @@ export const sysctlCommand: LinuxCommand = {
     const wIdx = args.indexOf('-w');
     const params = wIdx !== -1 ? args.slice(wIdx + 1) : args.filter(a => !a.startsWith('-'));
 
+    const outputs: string[] = [];
     for (const param of params) {
       const [key, val] = param.split('=');
       if (key === 'net.ipv4.ip_forward') {
-        if (val !== undefined) {
-          ctx.net.setIpForward(val === '1');
-        }
+        if (val !== undefined) ctx.net.setIpForward(val === '1');
         const current = ctx.net.isIpForwardEnabled() ? '1' : '0';
-        return `net.ipv4.ip_forward = ${val ?? current}`;
+        outputs.push(`net.ipv4.ip_forward = ${val ?? current}`);
+        continue;
+      }
+      if (key === 'net.ipv4.ip_local_port_range') {
+        const exec = ctx.executor as unknown as {
+          applyEphemeralRange(min: number, max: number): void;
+          socketTable?: { getEphemeralRange(): { min: number; max: number } };
+        };
+        let rawVal = (val ?? '').replace(/["']/g, '');
+        if (rawVal.split(/\s+/).filter(Boolean).length < 2) {
+          const idx = params.indexOf(param);
+          const next = (params[idx + 1] ?? '').replace(/["']/g, '');
+          if (/^\d+$/.test(next)) rawVal = `${rawVal} ${next}`;
+        }
+        const parts = rawVal.replace(/\s+/g, '\t').split('\t').filter(Boolean);
+        const min = Number(parts[0]);
+        const max = Number(parts[1] ?? parts[0]);
+        if (val !== undefined && Number.isFinite(min) && Number.isFinite(max) && min > 0 && max <= 65535 && min <= max) {
+          exec.applyEphemeralRange(min, max);
+        }
+        const r = exec.socketTable?.getEphemeralRange();
+        outputs.push(`net.ipv4.ip_local_port_range = ${r?.min ?? 32768}\t${r?.max ?? 60999}`);
+        continue;
+      }
+      if (key === 'net.ipv4.tcp_tw_reuse') {
+        const st = (ctx.executor as unknown as { socketTable?: { setTcpTwReuse(v: boolean): void; getTcpTwReuse(): boolean } }).socketTable;
+        if (val !== undefined && st) st.setTcpTwReuse(val === '1');
+        const current = st?.getTcpTwReuse?.() ? '1' : '0';
+        outputs.push(`net.ipv4.tcp_tw_reuse = ${val ?? current}`);
+        continue;
       }
     }
 
-    return '';
+    return outputs.join('\n');
   },
 };

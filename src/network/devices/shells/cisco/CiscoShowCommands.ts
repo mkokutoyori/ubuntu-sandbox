@@ -53,6 +53,13 @@ export function showIpRoute(router: Router): string {
   const table = router.getRoutingTable();
   const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, ' +
     'D - EIGRP, B - BGP, * - candidate default', ''];
+  const def = table.find(r => r.type === 'default'
+    || (r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0));
+  if (def && def.nextHop) {
+    lines.push(`Gateway of last resort is ${def.nextHop} to network 0.0.0.0`, '');
+  } else {
+    lines.push('Gateway of last resort is not set', '');
+  }
   const sorted = [...table].sort((a, b) => {
     const order: Record<string, number> = {
       connected: 0, ospf: 1, eigrp: 2, bgp: 3, rip: 4, static: 5, default: 6,
@@ -220,7 +227,51 @@ export function showRunningConfig(router: Router): string {
     '!',
   ];
 
-  // DHCP config
+  for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
+    const text = router.getBanner?.(kind);
+    if (text) {
+      lines.push(`banner ${kind} ^${text}^`);
+      lines.push('!');
+    }
+  }
+
+  const shell = (router as unknown as {
+    shell?: {
+      _getConsoleLineConfig?: () => unknown;
+      _getAliasRunningConfigLines?: () => string[];
+    };
+  }).shell;
+
+  const aliasLines = shell?._getAliasRunningConfigLines?.() ?? [];
+  if (aliasLines.length > 0) {
+    for (const ln of aliasLines) lines.push(ln);
+    lines.push('!');
+  }
+
+  const consoleCfg = shell?._getConsoleLineConfig?.() as null | {
+    line: number;
+    password: string | null;
+    passwordEncrypted: boolean;
+    login: 'password' | 'local' | 'none' | null;
+    privilegeLevel: number | null;
+    execTimeoutMin: number | null;
+    execTimeoutSec: number;
+  };
+  if (consoleCfg) {
+    lines.push(`line console ${consoleCfg.line}`);
+    if (consoleCfg.password != null) {
+      lines.push(` password ${consoleCfg.passwordEncrypted ? '7 ' : ''}${consoleCfg.password}`);
+    }
+    if (consoleCfg.login === 'local') lines.push(' login local');
+    else if (consoleCfg.login === 'password') lines.push(' login');
+    else if (consoleCfg.login === 'none') lines.push(' no login');
+    if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
+    if (consoleCfg.execTimeoutMin != null) {
+      lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
+    }
+    lines.push('!');
+  }
+
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');
   }
@@ -252,9 +303,13 @@ export function showRunningConfig(router: Router): string {
     if (desc) lines.push(` description ${desc}`);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
+    const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
+    if (enc && enc.type) {
+      lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
+    }
     if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
-    lines.push(port.getIsUp() ? ` no shutdown` : ` shutdown`);
+    if (!port.getIsUp()) lines.push(` shutdown`);
     const helpers = dhcp.getHelperAddresses(name);
     for (const h of helpers) {
       lines.push(` ip helper-address ${h}`);
@@ -329,6 +384,34 @@ export function showRunningConfig(router: Router): string {
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
+    }
+  }
+
+  const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
+  if (vrfs && vrfs.size > 0) {
+    lines.push('!');
+    for (const v of vrfs.values()) {
+      lines.push(`ip vrf ${v.name}`);
+      if (v.rd) lines.push(` rd ${v.rd}`);
+    }
+  }
+
+  const vlans = (router as unknown as { _vlans?: Map<number, { id: number; name?: string }> })._vlans;
+  if (vlans && vlans.size > 0) {
+    lines.push('!');
+    for (const v of vlans.values()) {
+      lines.push(`vlan ${v.id}`);
+      if (v.name) lines.push(` name ${v.name}`);
+    }
+  }
+
+  const ospfRun = router._getOSPFEngineInternal?.();
+  if (ospfRun) {
+    const cfg = ospfRun.getConfig();
+    lines.push('!');
+    lines.push(`router ospf ${cfg.processId}`);
+    for (const n of cfg.networks) {
+      lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
     }
   }
 
@@ -503,13 +586,16 @@ export function showRunningConfigInterface(router: Router, ifName: string): stri
   ];
   const desc = router.getInterfaceDescription(ifName);
   if (desc) lines.push(` description ${desc}`);
+  const enc = (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation;
+  if (enc && enc.type) {
+    lines.push(` encapsulation ${enc.type}${enc.vlan != null ? ' ' + enc.vlan : ''}${enc.native ? ' native' : ''}`);
+  }
   if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
     for (const sec of port.getSecondaryIPs()) lines.push(` ip address ${sec.ip} ${sec.mask} secondary`);
-    lines.push(` no shutdown`);
-  } else {
-    lines.push(` shutdown`);
   }
+  if (!port.getIsUp()) lines.push(` shutdown`);
+  for (const natLine of runningConfigInterfaceNAT(router, ifName)) lines.push(natLine);
   const helpers = dhcp.getHelperAddresses(ifName);
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);

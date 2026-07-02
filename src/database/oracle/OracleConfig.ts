@@ -107,6 +107,8 @@ export const ORACLE_ERRORS = {
   ORA_01555: 'ORA-01555: snapshot too old: rollback segment number %s with name "%s" too small',
   /** Unable to extend temp segment */
   ORA_01652: 'ORA-01652: unable to extend temp segment by %s in tablespace %s',
+  /** Unable to extend table/segment — tablespace full and not (further) autoextensible */
+  ORA_01653: 'ORA-01653: unable to extend table %s.%s by %s in tablespace %s',
   /** Invalid number */
   ORA_01722: 'ORA-01722: invalid number',
   /** Not a valid month */

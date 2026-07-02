@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { useMacTable } from '@/react/hooks';
+import { useMacTable, useConnectionPerf } from '@/react/hooks';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, Trash2, Cable, Activity } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
@@ -38,7 +38,8 @@ export function PropertiesPanel() {
     selectedDeviceId,
     selectedConnectionId,
     updateDevice,
-    selectDevice
+    selectDevice,
+    deviceInstances,
   } = useNetworkStore();
 
   const [expandedSections, setExpandedSections] = useState<string[]>(['general', 'interfaces']);
@@ -90,6 +91,10 @@ export function PropertiesPanel() {
     const sourceDevice = devices.find(d => d.id === selectedConnection.sourceDeviceId);
     const targetDevice = devices.find(d => d.id === selectedConnection.targetDeviceId);
     const details = getConnectionDetails(selectedConnection);
+    const perf = useConnectionPerf(
+      selectedConnection,
+      (id) => deviceInstances?.get(id),
+    );
 
     return (
       <div className="w-72 bg-card/30 backdrop-blur-xl border-l border-white/10 flex flex-col">
@@ -152,11 +157,11 @@ export function PropertiesPanel() {
             <div className="grid grid-cols-2 gap-2">
               <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
                 <div className="text-[10px] text-muted-foreground">Bandwidth</div>
-                <div className="text-sm font-medium text-foreground/90">{details.bandwidth}</div>
+                <div className="text-sm font-medium text-foreground/90">{perf.bandwidthLabel}</div>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
                 <div className="text-[10px] text-muted-foreground">Latency</div>
-                <div className="text-sm font-medium text-foreground/90">{details.latency}</div>
+                <div className="text-sm font-medium text-foreground/90">{perf.latencyLabel}</div>
               </div>
             </div>
           </div>

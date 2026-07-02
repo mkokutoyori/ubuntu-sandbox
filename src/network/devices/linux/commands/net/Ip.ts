@@ -16,7 +16,7 @@ import {
   type IpNeighborEntry,
   type IpXfrmContext,
 } from '../../LinuxIpCommand';
-import { IPAddress, SubnetMask, MACAddress } from '../../../../core/types';
+import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
 import { getNUDState } from '../../../EndHost';
 
 export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
@@ -25,6 +25,15 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       return [...net.getPorts().keys()];
     },
     getInterfaceInfo(name: string): IpInterfaceInfo | null {
+      if (name === 'lo') {
+        return {
+          name: 'lo', mac: '00:00:00:00:00:00',
+          ip: '127.0.0.1', mask: '255.0.0.0', cidr: 8,
+          mtu: 65536, isUp: true, isConnected: true, isDHCP: false,
+          counters: { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 },
+          ipv6: [{ address: '::1', prefixLength: 128, scope: 'global' as const }],
+        };
+      }
       const port = net.getPorts().get(name);
       if (!port) return null;
       const ip = port.getIPAddress();
@@ -51,7 +60,47 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
           prefixLength: entry.prefixLength,
           scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
         })),
+        secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };
+    },
+    addInterfaceIP(ifName: string, ip: IPAddress, cidr: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        const mask = SubnetMask.fromCIDR(cidr);
+        if (!port.getIPAddress()) net.configureInterface(ifName, ip, mask);
+        else port.addSecondaryIP(ip, mask);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    addInterfaceIPv6(ifName: string, addr: string, prefixLength: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.configureIPv6(new IPv6Address(addr), prefixLength);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    removeInterfaceIPv6(ifName: string, addr: string): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.removeIPv6Address(new IPv6Address(addr));
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    removeInterfaceAddress(ifName: string, ip: IPAddress): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      if (port.getIPAddress()?.equals(ip)) { net.clearInterfaceIP(ifName); return ''; }
+      if (port.getSecondaryIPs().some(e => e.ip.equals(ip))) { port.removeSecondaryIP(ip); return ''; }
+      return 'RTNETLINK answers: Cannot assign requested address';
     },
     getIPv6RoutingTable() {
       return net.getIPv6RoutingTable().map(r => ({
@@ -63,12 +112,12 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
         metric: r.metric,
       }));
     },
-    configureInterface(ifName: string, ip: string, cidr: number): string {
+    configureInterface(ifName: string, ip: IPAddress, cidr: number): string {
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        net.configureInterface(ifName, new IPAddress(ip), mask);
+        net.configureInterface(ifName, ip, mask);
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -95,19 +144,39 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
           : undefined,
       }));
     },
-    addDefaultRoute(gateway: string): string {
+    addDefaultRoute(gateway: IPAddress): string {
+      net.setDefaultGateway(gateway);
+      return '';
+    },
+    addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string {
       try {
-        net.setDefaultGateway(new IPAddress(gateway));
+        const mask = SubnetMask.fromCIDR(cidr);
+        if (!network.networkAddress(mask).equals(network)) {
+          return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
+        }
+        const wantedMetric = metric ?? 100;
+        const duplicate = net.getRoutingTable().some(
+          r => r.network.toString() === network.toString()
+            && r.mask.toCIDR() === cidr
+            && r.metric === wantedMetric
+            && (r.nextHop ? r.nextHop.toString() === gateway.toString() : false));
+        if (duplicate) return 'RTNETLINK answers: File exists';
+        if (!net.addStaticRoute(network, mask, gateway, wantedMetric)) {
+          return 'RTNETLINK answers: Network is unreachable';
+        }
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
-    addStaticRoute(network: string, cidr: number, gateway: string, metric?: number): string {
+    addDeviceRoute(network: IPAddress, cidr: number, iface: string): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.addStaticRoute(new IPAddress(network), mask, new IPAddress(gateway), metric ?? 100)) {
-          return 'RTNETLINK answers: Network is unreachable';
+        if (!network.networkAddress(mask).equals(network)) {
+          return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
+        }
+        if (!net.addDeviceRoute(network, mask, iface, 0)) {
+          return `Cannot find device "${iface}"`;
         }
         return '';
       } catch (e) {
@@ -119,10 +188,14 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       net.clearDefaultGateway();
       return '';
     },
-    deleteRoute(network: string, cidr: number): string {
+    deleteRoute(
+      network: IPAddress,
+      cidr: number,
+      filter?: { nextHop?: IPAddress | null; metric?: number },
+    ): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.removeRoute(new IPAddress(network), mask)) {
+        if (!net.removeRoute(network, mask, filter)) {
           return 'RTNETLINK answers: No such process';
         }
         return '';
@@ -142,18 +215,13 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       }
       return entries;
     },
-    addNeighbor(ip: string, mac: string, ifName: string): string {
+    addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
-      try {
-        const macAddr = new MACAddress(mac);
-        net.addStaticARP(ip, macAddr, ifName);
-        return '';
-      } catch {
-        return 'RTNETLINK answers: Invalid argument';
-      }
+      net.addStaticARP(ip, mac, ifName);
+      return '';
     },
-    deleteNeighbor(ip: string, ifName: string): string {
+    deleteNeighbor(ip: IPAddress, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';
       const removed = net.deleteARP(ip);
@@ -161,12 +229,10 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       return '';
     },
     flushNeighbors(ifName?: string): string {
-      if (ifName) {
-        for (const [ip, entry] of net.getArpTable()) {
-          if (entry.iface === ifName) net.deleteARP(ip);
-        }
-      } else {
-        net.clearARPTable();
+      for (const [ip, entry] of net.getArpTable()) {
+        if (entry.type === 'static') continue;
+        if (ifName && entry.iface !== ifName) continue;
+        net.deleteARP(new IPAddress(ip));
       }
       return '';
     },

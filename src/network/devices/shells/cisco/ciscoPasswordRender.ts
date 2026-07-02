@@ -10,7 +10,9 @@
 
 import { md5Crypt, ciscoType8, ciscoType9, encryptType7, md5Hex } from '@/crypto';
 
-export type SecretAlgo = 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+export type SecretAlgo =
+  | 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'
+  | 'sha512' | 'cipher' | 'irreversible-cipher';
 
 /** Map a modular-crypt prefix to the Cisco "type" number IOS prints for it. */
 function cryptPrefixType(value: string): number | null {

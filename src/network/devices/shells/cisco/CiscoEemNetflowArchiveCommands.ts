@@ -11,6 +11,7 @@ export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   getFlowRecord?(): string | null;
   setFlowMonitor?(name: string | null): void;
   getFlowMonitor?(): string | null;
+  syncNetflowAgent?(): void;
 }
 
 export function buildEemNetflowArchiveConfigCommands(
@@ -69,6 +70,7 @@ export function buildEemNetflowArchiveConfigCommands(
     } else if (args[0] === 'version' && args[1]) {
       nf().setLegacyVersion(parseInt(args[1], 10));
     }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('ip flow-cache', 'NetFlow cache timeout', (args) => {
@@ -77,6 +79,7 @@ export function buildEemNetflowArchiveConfigCommands(
     } else if (args[0] === 'timeout' && args[1] === 'inactive' && args[2]) {
       nf().setLegacyCacheInactiveSec(parseInt(args[2], 10));
     }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip route-cache flow', 'Enable NetFlow on all interfaces', () => '');
@@ -184,19 +187,23 @@ export function buildFlowExporterSubmode(trie: CommandTrie, ctx: CiscoEemNetflow
   };
   trie.registerGreedy('destination', 'Exporter destination', (args) => {
     const e = get(); if (e && args[0]) e.destination = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('source', 'Exporter source interface', (args) => {
     const e = get(); if (e && args[0]) e.source = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('transport udp', 'Exporter transport port', (args) => {
     const e = get(); if (e && args[0]) { e.transportProtocol = 'udp'; e.transportPort = parseInt(args[0], 10); }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('export-protocol', 'Exporter protocol', (args) => {
     const e = get();
     if (e && (args[0] === 'netflow-v9' || args[0] === 'ipfix' || args[0] === 'netflow-v5')) e.exportProtocol = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('template data timeout', 'Template timeout', (args) => {
@@ -231,14 +238,17 @@ export function buildFlowMonitorSubmode(trie: CommandTrie, ctx: CiscoEemNetflowA
   });
   trie.registerGreedy('exporter', 'Monitor exporter', (args) => {
     const m = get(); if (m && args[0] && !m.exporterNames.includes(args[0])) m.exporterNames.push(args[0]);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache timeout active', 'Cache active timeout', (args) => {
     const m = get(); if (m && args[0]) m.cacheTimeoutActiveSec = parseInt(args[0], 10);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache timeout inactive', 'Cache inactive timeout', (args) => {
     const m = get(); if (m && args[0]) m.cacheTimeoutInactiveSec = parseInt(args[0], 10);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache entries', 'Cache max entries', (args) => {
@@ -294,16 +304,19 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
   trie.register('ip route-cache flow', 'Enable legacy NetFlow on interface', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip flow ingress', 'Enable ingress NetFlow', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip flow egress', 'Enable egress NetFlow', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'egress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('ip flow monitor', 'Attach Flexible NetFlow monitor', (args) => {
@@ -311,6 +324,7 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
     if (!i || !args[0]) return '';
     const dir = args[1] === 'output' ? 'output' : 'input';
     nf().attachToInterface(i, args[0], dir);
+    ctx.syncNetflowAgent?.();
     return '';
   });
 }

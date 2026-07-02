@@ -1,12 +1,12 @@
 /**
  * PortsFilesystem — keeps the on-disk view of the port subsystem coherent.
  *
- * Two responsibilities, both pure projections of the port model:
- *   - `/etc/services` — the IANA port⇄name database, seeded from
- *     {@link IanaServiceRegistry}. `getent services` reads it back.
- *   - `/proc/net/tcp` & `/proc/net/udp` — the kernel socket tables exposed
- *     as procfs files, *generated on every read* from the live
- *     {@link SocketTable}, so they never go stale as services bind / unbind.
+ * Exposes `/proc/net/tcp`, `/proc/net/udp` and `/proc/net/snmp` — the kernel
+ * socket tables surfaced as procfs files, *generated on every read* from the
+ * live {@link SocketTable}, so they never go stale as services bind / unbind.
+ * (`/etc/services` is seeded separately at device construction from the
+ * canonical SystemFiles list — the single source of truth `getent services`
+ * reads back.)
  *
  * Separated from the SocketTable itself (Single Responsibility): the table
  * reasons about sockets, this class reasons about their file representation.
@@ -14,7 +14,6 @@
 
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { SocketTable, SocketEntry, SocketState } from '../../../core/SocketTable';
-import type { IanaServiceRegistry } from '../../../core/ports/IanaServiceRegistry';
 
 /** Canonical filesystem locations the port subsystem maintains. */
 export const PORT_PATHS = {
@@ -42,16 +41,6 @@ const PROC_STATE_HEX: Record<SocketState, string> = {
 
 export class PortsFilesystem {
   constructor(private readonly vfs: VirtualFileSystem) {}
-
-  /**
-   * Seed `/etc/services` from the IANA registry. Idempotent — an existing
-   * file (operator edits, a later boot) is never clobbered.
-   */
-  seedServicesFile(registry: IanaServiceRegistry): void {
-    if (!this.vfs.exists(PORT_PATHS.services)) {
-      this.vfs.createFileAt(PORT_PATHS.services, registry.render(), 0o644, 0, 0);
-    }
-  }
 
   /**
    * Register `/proc/net/tcp` and `/proc/net/udp` as generated files: their

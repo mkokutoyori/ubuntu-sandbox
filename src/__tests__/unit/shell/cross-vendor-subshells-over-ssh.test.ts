@@ -116,43 +116,43 @@ describe('Sub-shells launched OVER SSH land in the right primary', () => {
 
   test('Windows → Linux + sqlplus enters the SQL*Plus prompt remotely', async () => {
     await sshLogin(term, 'ssh alice@10.0.0.2', 'alice');
-    expect(term.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(term.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(term, 'sqlplus / as sysdba');
-    expect(term.getPrompt()).toMatch(/^SQL>/);
+    expect(term.foreground.getPrompt()).toMatch(/^SQL>/);
   });
 
   test('Windows → Linux + sqlplus + exit returns to the remote bash', async () => {
     await sshLogin(term, 'ssh alice@10.0.0.2', 'alice');
     await typeSub(term, 'sqlplus / as sysdba');
     await typeSub(term, 'exit');
-    expect(term.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(term.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   test('Windows → Windows + powershell + cmd nests both children correctly', async () => {
     await sshLogin(term, 'ssh User@10.0.0.4', 'user');
-    expect(term.getPrompt()).toMatch(/C:\\Users\\User>/);
+    expect(term.foreground.getPrompt()).toMatch(/C:\\Users\\User>/);
     await typeSub(term, 'powershell');
-    expect(term.getPrompt()).toMatch(/^PS /);
+    expect(term.foreground.getPrompt()).toMatch(/^PS /);
     await typeSub(term, 'cmd');
-    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
     await typeSub(term, 'exit');
-    expect(term.getPrompt()).toMatch(/^PS /);
+    expect(term.foreground.getPrompt()).toMatch(/^PS /);
     await typeSub(term, 'exit');
-    expect(term.getPrompt()).toMatch(/C:\\Users\\User>/);
+    expect(term.foreground.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 
   test('Windows → Cisco IOS exit-words `quit` and `exit` both close cleanly', async () => {
     await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
-    expect(term.getPrompt()).toMatch(/cisco/);
+    expect(term.foreground.getPrompt()).toMatch(/cisco/);
     await typeSub(term, 'quit');
-    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   test('Windows → Huawei VRP exit-word `quit` closes cleanly (VRP-native)', async () => {
     await sshLogin(term, 'ssh admin@10.0.0.6', 'Admin@123');
-    expect(term.getPrompt()).toMatch(/<huawei>/);
+    expect(term.foreground.getPrompt()).toMatch(/<huawei>/);
     await typeSub(term, 'quit');
-    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   test('SSH session connection-closed footer is emitted on every vendor', async () => {
@@ -166,7 +166,7 @@ describe('Sub-shells launched OVER SSH land in the right primary', () => {
       const t = new WindowsTerminalSession(`tt-${host}`, lan.winA);
       await t.init();
       await sshLogin(t, cmd, pw);
-      const exitWord = host === '10.0.0.6' ? 'quit' : 'exit';
+      const exitWord = (host === '10.0.0.5' || host === '10.0.0.6') ? 'logout' : 'exit';
       await typeSub(t, exitWord);
       const lines = t.lines.map(l => l.text);
       const found = lines.some(line => new RegExp(`Connection to ${host.replace(/\./g, '\\.')} closed`).test(line));

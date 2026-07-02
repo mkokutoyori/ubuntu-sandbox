@@ -1,4 +1,5 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { createDefaultFhrpConfig, type FhrpTrackEntry } from '../fhrp/types';
 export const UDP_PORT_GLBP = 3222;
 export const GLBP_MULTICAST_IP = '224.0.0.102';
 export const GLBP_MULTICAST_MAC = '01:00:5e:00:00:66';
@@ -7,11 +8,7 @@ export type GlbpAvgState = 'disabled' | 'init' | 'standby' | 'active';
 export type GlbpAvfState = 'disabled' | 'init' | 'listen' | 'active';
 export type GlbpLoadBalancing = 'round-robin' | 'weighted' | 'host-dependent';
 
-export interface GlbpTrackEntry {
-  target: string;
-  decrement: number;
-  down: boolean;
-}
+export type GlbpTrackEntry = FhrpTrackEntry;
 
 export interface GlbpForwarder {
   forwarderNumber: number;
@@ -86,12 +83,10 @@ export interface GlbpConfig {
   groups: Map<string, GlbpGroupRuntime>;
 }
 
-export function makeKey(iface: string, group: number): string {
-  return `${iface}|${group}`;
-}
+export { makeFhrpKey as makeKey } from '../fhrp/types';
 
 export function createDefaultGlbpConfig(): GlbpConfig {
-  return { enabled: true, groups: new Map() };
+  return createDefaultFhrpConfig<GlbpGroupRuntime>();
 }
 
 export function defaultGroupRuntime(iface: string, group: number): GlbpGroupRuntime {

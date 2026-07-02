@@ -118,6 +118,8 @@ export class Environment {
 
   // ─── trap handlers ────────────────────────────────────────────
 
+  getParent(): Environment | null { return this.parent; }
+
   /** Install (or replace) the handler for `signal`. */
   setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
   /** Drop the handler for `signal`. */

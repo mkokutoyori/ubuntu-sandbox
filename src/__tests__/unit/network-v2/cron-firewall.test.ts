@@ -90,18 +90,23 @@ describe('CF-02 — LinuxCronManager crontab table', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('CF-03 — cron logs a reload / firing to syslog', () => {
-  it('installing a crontab while cron runs writes a CRON line to syslog', async () => {
+  it('installing a crontab while cron runs logs a RELOAD, and ticking logs the CMD', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand('echo "* * * * * /bin/true" | crontab -');
-    const out = await pc.executeCommand('tail -100 /var/log/syslog');
+    let out = await pc.executeCommand('tail -100 /var/log/syslog');
     expect(out).toMatch(/cron\[\d+\]/i);
-    expect(out).toContain('/bin/true');
+    expect(out).toMatch(/RELOAD \(crontabs\/\w+\)/);
+
+    pc.cronTick(new Date(2030, 0, 1, 12, 0));
+    out = await pc.executeCommand('tail -100 /var/log/syslog');
+    expect(out).toMatch(/CRON\[\d+\]: \(\w+\) CMD \(\/bin\/true\)/);
   });
 
   it('no syslog cron line once the cron service is stopped', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand('systemctl stop cron');
     await pc.executeCommand('echo "* * * * * /bin/true" | crontab -');
+    pc.cronTick(new Date(2030, 0, 1, 12, 0));
     const out = await pc.executeCommand('tail -100 /var/log/syslog');
     expect(out).not.toContain('/bin/true');
   });

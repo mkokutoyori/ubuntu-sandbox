@@ -49,7 +49,10 @@ import type { NetFlowDomainEvent } from '@/network/netflow/events';
 import type { TacacsDomainEvent } from '@/network/tacacs/events';
 import type { VxlanDomainEvent } from '@/network/vxlan/events';
 import type { TcpDomainEvent } from '@/network/tcp/events';
-import type { UdpDomainEvent } from '@/network/udp/events';
+import type { BgpDomainEvent } from '@/network/bgp/events';
+import type { NetworkOsAccountEventEnvelope } from '@/network/devices/router/aaa/NetworkOsAccount';
+import type { SshSessionRecord } from '@/network/devices/router/aaa/SshSessionRegistry';
+import type { EigrpDomainEvent } from '@/network/eigrp/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
@@ -257,6 +260,8 @@ export interface CableFrameLostPayload extends CableRef {
 // Discriminated union
 // ──────────────────────────────────────────────────────────────────────────
 
+type DistributeTopics<T extends string, P> = T extends unknown ? { topic: T; payload: P } : never;
+
 export type DomainEvent =
   // Cross-cutting
   | { topic: 'log'; payload: LogEventPayload }
@@ -337,7 +342,11 @@ export type DomainEvent =
   | TacacsDomainEvent
   | VxlanDomainEvent
   | TcpDomainEvent
-  | UdpDomainEvent
+  | BgpDomainEvent
+  | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
+  | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
+  | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }
+  | EigrpDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent

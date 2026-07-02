@@ -15,19 +15,25 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import { WindowsDnsCache } from './windows/WinDnsCache';
+import { RRType } from '../dns/wire/RRType';
+import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
+import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
+import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
+import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -42,6 +48,7 @@ import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
+import { HostClock } from './host/lifecycle/HostClock';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
@@ -136,6 +143,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
   /** Per-interface DNS configuration: portName → { servers, mode } */
   private dnsConfig: Map<string, { servers: string[]; mode: 'static' | 'dhcp' }> = new Map();
+  /** Per-interface DHCP class id (option 60 vendor class), set via `ipconfig /setclassid`. */
+  private dhcpClassIds: Map<string, string> = new Map();
+  /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
+  private dhcpClassIds6: Map<string, string> = new Map();
+  readonly dnsCache = new WindowsDnsCache();
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
@@ -148,6 +160,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly doskey: DoskeyTable = new DoskeyTable();
   /** Per-device PowerShell shim state (functions, aliases, vars). */
   readonly psShimState: PsShimState = createShimState();
+  /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
+  private psInterpreter: PSInterpreter | null = null;
+
+  getPowerShellInterpreter(): PSInterpreter {
+    if (!this.psInterpreter) {
+      this.psInterpreter = new PSInterpreter(createWindowsPSProviders(this, {
+        registry: this.registry,
+        eventLog: this.eventLog,
+        network: {
+          extraIPs: this.extraIPs,
+          extraRoutes: this.extraRoutes,
+          adapterOverrides: this.adapterOverrides,
+          dynamicFirewallRules: this.dynamicFirewallRules,
+          networkProfiles: this.networkProfiles,
+        },
+        vpn: { vpnConnections: this.vpnConnections },
+      }));
+    }
+    return this.psInterpreter;
+  }
   /** Reactive consumer: account/group/logon events → Security event log. */
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
@@ -198,6 +230,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Event-log store. */
   readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
 
+  private readonly clock = new HostClock();
+  private readonly wallEpoch = new Date(2026, 5, 20).getTime();
+
   constructor(type: DeviceType = 'windows-pc', name: string = 'WindowsPC', x: number = 0, y: number = 0) {
     super(type, name, x, y);
     // Windows (Vista+) uses the strong host model on IPv4: packets are only
@@ -235,11 +270,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
-    // Port-proxy rules announce on the bus; the projection keeps the
-    // socket table coherent so `netstat` reflects every active rule.
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
     this.portProxyTable.attachBus(bus, this.id);
+
+    this._processSocketReaperOff?.();
+    this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
+      const payload = e.payload as { pid: number; name: string };
+      const { pid, name } = payload;
+      const stack = this.getTcpStack();
+      const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
+      for (const sock of this.socketTable.getAll()) {
+        const matchesByPid = sock.pid === pid;
+        const matchesByName = name && sock.processName === name;
+        if (!matchesByPid && !matchesByName) continue;
+        toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
+      }
+      for (const s of toUnbind) {
+        this.socketTable.unbind(s.protocol, s.localAddress, s.localPort);
+        if (s.protocol === 'tcp' && s.state === 'LISTEN') {
+          stack.closeListener(s.localPort, s.localAddress);
+        }
+      }
+      stack.abortSocketsOwnedBy(pid);
+    });
   }
+
+  private _processSocketReaperOff: (() => void) | null = null;
 
   private initDefaultSockets(): void {
     // OpenSSH Server — SFTP transport
@@ -520,13 +576,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
-  /** `ssh user@host [command]` — outbound SSH client. */
   private cmdSsh(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
+    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     return runWindowsSshClient({
       args,
       sourceHostname: this.hostname,
-      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
+      sourceIp,
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localFs: {
@@ -537,7 +593,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return this.fs.createFile(p, c);
         },
       },
-    }).then(r => r.output);
+    }).then(r => {
+      const peerIp = this.resolveSshPeer(args);
+      if (peerIp && !/Permission denied|refused|timed out|Could not resolve|No route/i.test(r.output)) {
+        const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
+        this.socketTable.transition(entry.id, 'TIME_WAIT');
+      }
+      return r.output;
+    });
+  }
+
+  private resolveSshPeer(args: string[]): string | null {
+    for (const a of args) {
+      if (a.startsWith('-')) continue;
+      const at = a.includes('@') ? a.split('@')[1] : a;
+      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(at)) return at;
+    }
+    return null;
   }
 
   private cmdSftp(args: string[]): Promise<string> {
@@ -555,6 +627,41 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceHome: `C:\\Users\\${user}`,
       localFs: this.fs,
     }).then(r => r.output);
+  }
+
+  private cmdScp(args: string[]): Promise<string> {
+    const user = this.userMgr.currentUser;
+    return runWindowsScpClient({
+      args,
+      sourceHostname: this.hostname,
+      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
+      sourceUser: user,
+      sourceHome: `C:\\Users\\${user}`,
+      localFs: this.fs,
+      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../core/TcpConnection').TcpConnector>,
+    }).then(r => r.output);
+  }
+
+  private async cmdTelnet(args: string[]): Promise<string> {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    const host = positional[0];
+    if (!host) {
+      return `Microsoft Telnet> ?\nCommands may be abbreviated. Supported commands are:\n\nc\t- close\t\tclose current connection\nd\t- display\t\tdisplay operating parameters\no\t- open hostname [port]\tconnect to hostname (default port 23).\nq\t- quit\t\t\texit telnet`;
+    }
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      return `Invalid command: ${positional[1]}`;
+    }
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp) {
+      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`;
+    }
+    const sock = await this.tcpConnect(host, port);
+    if (!sock) {
+      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`;
+    }
+    sock.close();
+    return `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
   }
 
   private createPorts(): void {
@@ -626,24 +733,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.syncHostsFile(hostname);
   }
 
-  async pingStreamInSession(
-    targetStr: string,
-    opts: {
-      count: number;
-      timeoutMs?: number;
-      ttl?: number;
-      intervalMs?: number;
-      onResolved?: (ip: IPAddress) => void;
-      onResult: (result: PingResult) => void;
-      shouldStop: () => boolean;
-      sleep: (ms: number) => Promise<void>;
-    },
-  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
-    const ip = await this.resolveHostname(targetStr);
-    if (!ip) return { resolved: false, reason: 'name' };
-    opts.onResolved?.(ip);
-    const outcome = await this.executePingStream(ip, opts);
-    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  protected async resolveHostForCommand(targetStr: string): Promise<IPAddress | null> {
+    return this.resolveHostname(targetStr);
+  }
+
+  resolveHostnameSync(name: string): IPAddress | null {
+    try { return new IPAddress(name); } catch { /* not an IP */ }
+    const ip = this.readHostsFile().resolve(name, 4);
+    if (ip) {
+      try { return new IPAddress(ip); } catch { /* malformed entry */ }
+    }
+    const lower = name.toLowerCase();
+    const ownHostname = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
+    if (lower === 'localhost' || (ownHostname && lower === ownHostname)) {
+      return new IPAddress('127.0.0.1');
+    }
+    return null;
   }
 
   /**
@@ -663,7 +768,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
 
     // 3. The machine's own name always resolves to loopback.
-    if (name.toLowerCase() === this.hostname.toLowerCase()) {
+    const ownHostname = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
+    if (ownHostname && name.toLowerCase() === ownHostname) {
       return new IPAddress('127.0.0.1');
     }
 
@@ -673,8 +779,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         let serverIP: IPAddress;
         try { serverIP = new IPAddress(server); } catch { continue; }
         const response = await this.queryDnsServer(serverIP, name, 'A');
-        if (response && response.answers.length > 0) {
-          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(name, response!.answers);
+          return (aRecords[0].data as ARecordData).address;
         }
       }
     }
@@ -805,6 +913,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
+          runFullPs: (code) => this.getPowerShellInterpreter().execute(code),
         }, args);
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
@@ -877,6 +986,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nslookup': return this.cmdNslookup(args);
       case 'ssh':      return this.cmdSsh(args);
       case 'sftp':     return this.cmdSftp(args);
+      case 'scp':      return this.cmdScp(args);
+      case 'telnet':   return this.cmdTelnet(args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
@@ -1127,6 +1238,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       hostname: this.hostname,
       ports: this.ports,
       defaultGateway: this.defaultGateway?.toString() || null,
+      defaultGateway6: this.getDefaultGateway6()?.toString() || null,
       arpTable: this.arpTable,
 
       configureInterface: (ifName: string, ip: IPAddress, mask: SubnetMask) =>
@@ -1150,8 +1262,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
         this.executePingSequence(target, count, timeout, ttl),
-      executeTraceroute: (target: IPAddress, maxHops?: number) =>
-        this.executeTraceroute(target, maxHops) as Promise<TracerouteHop[]>,
+      executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
+        this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
+
+      reverseLookup: (ip: string): string | null => {
+        const entry = this.readHostsFile().reverse(ip);
+        return entry ? entry.canonicalName : null;
+      },
 
       resetStack: () => {
         for (const [name, port] of this.ports) {
@@ -1218,8 +1335,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
 
       // ARP table mutation
-      addStaticARP: (ip: string, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
-      deleteARP: (ip: string) => this.deleteARP(ip),
+      addStaticARP: (ip: IPAddress, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
+      deleteARP: (ip: IPAddress) => this.deleteARP(ip),
       clearARPTable: () => this.clearARPTable(),
 
       // Interface renaming
@@ -1233,8 +1350,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
         // Migrate DHCP state
         if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
+        // Migrate DHCP class ids
+        const cid = this.dhcpClassIds.get(oldName);
+        if (cid) { this.dhcpClassIds.delete(oldName); this.dhcpClassIds.set(newName, cid); }
+        const cid6 = this.dhcpClassIds6.get(oldName);
+        if (cid6) { this.dhcpClassIds6.delete(oldName); this.dhcpClassIds6.set(newName, cid6); }
         return true;
       },
+
+      getClassId: (ifName: string) => this.getClassId(ifName),
+      setClassId: (ifName: string, classId: string | null) => this.setClassId(ifName, classId),
+      getClassId6: (ifName: string) => this.getClassId6(ifName),
+      setClassId6: (ifName: string, classId: string | null) => this.setClassId6(ifName, classId),
+      sendRouterSolicitation: (ifName: string) => this.sendRouterSolicitation(ifName),
 
       // Hostname resolution
       resolveHostname: (name: string) => this.resolveHostname(name),
@@ -1245,10 +1373,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return svc ? svc.state === 'Running' : false;
       },
 
-      // Port-proxy rules (netsh interface portproxy)
       portProxy: this.portProxyTable,
-      // Event log provider — wevtutil queries against Security/System.
+      dynamicFirewallRules: this.dynamicFirewallRules,
       eventLog: this.eventLog,
+      dnsCache: this.dnsCache,
     };
   }
 
@@ -1356,7 +1484,35 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       currentUser: this.userMgr.currentUser,
       isServiceRunning: (name) => this.svcMgr.getService(name)?.state === 'Running',
       scheduledTasks: this.scheduledTasks,
+      now: () => this.simulatedDate(),
     };
+  }
+
+  private simulatedDate(): Date {
+    return new Date(this.wallEpoch + this.clock.now());
+  }
+
+  simulatedNow(): number {
+    return this.clock.now();
+  }
+
+  advanceTime(ms: number): void {
+    this.clock.advance(ms);
+    this.fireDueScheduledTasks();
+  }
+
+  private fireDueScheduledTasks(): void {
+    if (this.svcMgr.getService('Schedule')?.state !== 'Running') return;
+    const now = this.simulatedDate();
+    for (const task of this.scheduledTasks.values()) {
+      let guard = 0;
+      while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
+        WinSys.runScheduledProgram(task, this.procMgr, now);
+        task.runAt = task.intervalMs
+          ? new Date(task.runAt.getTime() + task.intervalMs)
+          : undefined;
+      }
+    }
   }
 
   private cmdSysteminfo(): string {
@@ -1377,6 +1533,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  getClassId(ifName: string): string | null { return this.dhcpClassIds.get(ifName) ?? null; }
+  setClassId(ifName: string, classId: string | null): void {
+    if (classId) this.dhcpClassIds.set(ifName, classId);
+    else this.dhcpClassIds.delete(ifName);
+  }
+  getClassId6(ifName: string): string | null { return this.dhcpClassIds6.get(ifName) ?? null; }
+  setClassId6(ifName: string, classId: string | null): void {
+    if (classId) this.dhcpClassIds6.set(ifName, classId);
+    else this.dhcpClassIds6.delete(ifName);
   }
 
   private cmdDoskey(args: string[]): string {
@@ -1443,8 +1610,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // answered locally, ahead of any DNS query — same order as the
     // resolveHostname() resolver.
     if (host && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      const ownHostName = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
       const hostsIp = this.readHostsFile().resolve(host, 4)
-        ?? (host.toLowerCase() === this.hostname.toLowerCase() ? '127.0.0.1' : null);
+        ?? (ownHostName && host.toLowerCase() === ownHostName ? '127.0.0.1' : null);
       if (hostsIp) {
         return 'Server:  UnKnown\nAddress:  127.0.0.1\n\n' +
                `Name:    ${host}\nAddress:  ${hostsIp}`;
@@ -1705,6 +1873,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.cwd = b.cwd;
     this.env = b.env;
     this._activeShellSession = null;
+  }
+
+  /**
+   * Public surface used by the topology-bypass SSH client: synthesize an
+   * inbound TCP SYN to (dstIp, dstPort) coming from `srcIp` and feed it
+   * through {@link firewallFilter}. The Windows Filtering Platform
+   * silently drops blocked packets (no RST, no ICMP) so the client times
+   * out — exactly like a real Windows host. The matching Security event
+   * `5152` is still emitted via the bus → WindowsEventLogProjection.
+   */
+  inboundSshFirewallVerdict(srcIp: string, dstPort: number): 'accept' | 'drop' {
+    const dstIp = this.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
+    const tcp: TCPPacket = {
+      type: 'tcp',
+      sourcePort: 49152, destinationPort: dstPort,
+      sequenceNumber: 0, acknowledgementNumber: 0,
+      flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+      windowSize: 65535, checksum: 0, payload: null,
+    };
+    const ipPkt = createIPv4Packet(
+      new IPAddress(srcIp), new IPAddress(dstIp),
+      IP_PROTO_TCP, 64, tcp, 20,
+    );
+    const verdict = this.firewallFilter(this.getPorts()[0]?.getName() ?? 'eth0', ipPkt, 'in');
+    return verdict === 'accept' ? 'accept' : 'drop';
   }
 
   protected override firewallFilter(

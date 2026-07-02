@@ -7,7 +7,7 @@
 import {
   type VrrpConfig, type VrrpGroupRuntime, type VrrpPacket, type VrrpState,
   defaultGroupRuntime, makeKey, vrrpVirtualMac,
-  compareCandidate, masterDownIntervalMs,
+  compareCandidate, masterDownIntervalMs, effectivePriority,
   IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
 } from './types';
 import {
@@ -47,6 +47,30 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     const g = this.ensureGroup(iface, vrid);
     g.advertiseSec = sec;
     this.restartTimers();
+  }
+
+  addTrack(iface: string, vrid: number, target: string, decrement: number): void {
+    const g = this.ensureGroup(iface, vrid);
+    const existing = g.tracks.find((t) => t.target === target);
+    if (existing) {
+      existing.decrement = decrement;
+    } else {
+      const port = this.host.getPort(target);
+      const down = !!port && (!port.getIsUp() || !port.isConnected());
+      g.tracks.push({ target, decrement, down });
+    }
+    this.recompute(g, 'priority');
+    this.advertiseIfDue(g);
+  }
+
+  removeTrack(iface: string, vrid: number, target: string): void {
+    const g = this.getGroup(iface, vrid);
+    if (!g) return;
+    const idx = g.tracks.findIndex((t) => t.target === target);
+    if (idx < 0) return;
+    g.tracks.splice(idx, 1);
+    this.recompute(g, 'priority');
+    this.advertiseIfDue(g);
   }
 
   // ── Receive path ─────────────────────────────────────────────────
@@ -95,7 +119,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     if (!srcIp) return;
     const payload: VrrpPacket = {
       type: 'vrrp', version: 2, vrid: g.vrid,
-      priority: g.priority, advertiseSec: g.advertiseSec,
+      priority: effectivePriority(g), advertiseSec: g.advertiseSec,
       vips: g.vip ? [g.vip] : [],
       senderIp: srcIp.toString(),
     };
@@ -127,8 +151,9 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     const { myIp, linkUp } = this.linkContext(g);
     const newState: VrrpState = (() => {
       if (!linkUp || !g.vip) return 'init';
+      const myPri = effectivePriority(g);
       if (!g.masterIp || g.masterIp === myIp) return 'master';
-      const me = { priority: g.priority, ip: myIp };
+      const me = { priority: myPri, ip: myIp };
       const master = { priority: g.masterPriority, ip: g.masterIp };
       if (compareCandidate(me, master) < 0) {
         if (g.preempt || g.priority === 255) return 'master';
@@ -139,7 +164,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     g.state = newState;
     if (newState === 'master' && (g.masterIp === null || g.masterIp !== myIp)) {
       g.masterIp = myIp;
-      g.masterPriority = g.priority;
+      g.masterPriority = effectivePriority(g);
     }
     if (oldState !== g.state) {
       g.lastTransitionMs = Date.now();
@@ -177,13 +202,45 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     return g.state === 'master';
   }
 
+  protected override onLinkUp(portName: string): void {
+    for (const g of this.config.groups.values()) {
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && t.down) { t.down = false; touched = true; }
+      }
+      if (g.iface === portName) {
+        this.recompute(g, 'config');
+        this.advertiseIfDue(g);
+      } else if (touched) {
+        this.recompute(g, 'priority');
+        this.advertiseIfDue(g);
+      }
+    }
+  }
+
+  protected override onLinkDown(portName: string): void {
+    for (const g of this.config.groups.values()) {
+      let touched = false;
+      for (const t of g.tracks) {
+        if (t.target === portName && !t.down) { t.down = true; touched = true; }
+      }
+      if (g.iface === portName) {
+        this.clearPeerState(g);
+        this.recompute(g, 'timeout');
+      } else if (touched) {
+        this.recompute(g, 'priority');
+        this.advertiseIfDue(g);
+      }
+    }
+  }
+
   // ── Master-down expiry (RFC 5798 §6.1) ───────────────────────────
   protected expireDue(): void {
     const now = Date.now();
     for (const g of this.config.groups.values()) {
       if (g.state !== 'backup') continue;
       if (!g.masterIp) continue;
-      const downMs = masterDownIntervalMs(g.advertiseSec, g.priority);
+      const downMs = masterDownIntervalMs(g.advertiseSec, effectivePriority(g));
       if (now - g.lastHeardMasterMs > downMs) {
         g.masterIp = null;
         g.masterPriority = 0;

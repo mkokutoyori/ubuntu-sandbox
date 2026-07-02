@@ -29,6 +29,7 @@ export interface SshSessionRegistryOptions {
   deviceId: string;
   bus: IEventBus;
   maxLines?: number;
+  capacity?: () => number;
   historyLimit?: number;
   now?: () => number;
 }
@@ -57,6 +58,7 @@ export class SshSessionRegistry {
   private readonly deviceId: string;
   private readonly bus: IEventBus;
   private readonly maxLines: number;
+  private readonly capacity: (() => number) | null;
   private readonly historyLimit: number;
   private readonly now: () => number;
   private readonly subs: Unsubscribe[] = [];
@@ -69,6 +71,7 @@ export class SshSessionRegistry {
     this.deviceId = opts.deviceId;
     this.bus = opts.bus;
     this.maxLines = opts.maxLines ?? 16;
+    this.capacity = opts.capacity ?? null;
     this.historyLimit = opts.historyLimit ?? 256;
     this.now = opts.now ?? Date.now;
     this.subs.push(this.bus.subscribe('router.aaa.account.login.success', this.onLoginSuccess));
@@ -109,10 +112,15 @@ export class SshSessionRegistry {
 
   private allocateLine(): { line: string; index: number } | null {
     const taken = new Set(Array.from(this.active.values()).map(s => s.lineIndex));
-    for (let i = 0; i < this.maxLines; i++) {
+    const limit = this.capacity ? this.capacity() : this.maxLines;
+    for (let i = 0; i < limit; i++) {
       if (!taken.has(i)) return { line: `vty ${i}`, index: i };
     }
     return null;
+  }
+
+  hasFreeLine(): boolean {
+    return this.allocateLine() !== null;
   }
 
   open(input: {

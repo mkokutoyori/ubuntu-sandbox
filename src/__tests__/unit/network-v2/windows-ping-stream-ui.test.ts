@@ -26,8 +26,8 @@ beforeEach(async () => {
   const linux = new LinuxPC('linux-pc', 'PC2', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 0, 0);
   win.powerOn(); linux.powerOn(); sw.powerOn();
-  new Cable('c1').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-  new Cable('c2').connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('c1').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('c2').connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   await win.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.1.10 255.255.255.0');
   await linux.executeCommand('ifconfig eth0 192.168.1.20');
   session = new WindowsTerminalSession('term-1', win);

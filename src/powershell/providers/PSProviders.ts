@@ -196,6 +196,36 @@ export interface IProcessProvider {
   startProcess?(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null;
 }
 
+export interface JobInfo {
+  id: number;
+  name: string;
+  state: string;
+  hasMoreData: boolean;
+  output: unknown[];
+}
+
+export interface IJobProvider {
+  beginRecording(): void;
+  recordSleep(ms: number): void;
+  endRecording(): number;
+  startJob(name: string | undefined, output: unknown[], durationMs: number): JobInfo;
+  listJobs(): JobInfo[];
+  getJob(idOrName: string | number): JobInfo | null;
+  receiveJob(idOrName: string | number): unknown[];
+  waitJob(idOrName: string | number): JobInfo | null;
+}
+
+
+export interface NeighborInfo {
+  ifIndex: number;
+  ifAlias: string;
+  ipAddress: string;
+  linkLayerAddress: string;
+  state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
+  addressFamily: 'IPv4' | 'IPv6';
+  policyStore: 'ActiveStore' | 'PersistentStore';
+}
+
 export interface INetworkProvider {
   getHostname(): string;
   getAdapters(): NetworkAdapterInfo[];
@@ -204,6 +234,10 @@ export interface INetworkProvider {
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void;
   removeIPAddress(ip: string, ifAlias?: string): void;
   getRoutes(ifAlias?: string): RouteInfo[];
+  getNeighbors(filter?: { ipAddress?: import('@/network/core/types').IPAddress; state?: string; ifIndex?: number }): NeighborInfo[];
+  addNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias: string): string;
+  removeNeighbor(ipAddress: import('@/network/core/types').IPAddress, ifAlias?: string): string;
+  setNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias?: string): string;
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
   /** Modify properties of an existing route — usually nextHop or metric. */
@@ -216,6 +250,20 @@ export interface INetworkProvider {
   isDHCPConfigured(ifAlias: string): boolean;
   /** Test-Connection (ping) */
   testConnection(target: string): boolean;
+  /**
+   * Synchronous reachability probe: send a real ICMP echo, capture the
+   * reply via the bus's synchronous publish, return the outcome. Returns
+   * null only when the target cannot be resolved to an IP.
+   */
+  testPingProbe(target: string): { success: boolean; rttMs: number; resolvedIp: string } | null;
+  /**
+   * Synchronous TCP probe: open the socket, observe whether the handshake
+   * settles to established inline. The simulator's bus is synchronous so
+   * the SYN/SYN-ACK/ACK exchange completes within the connect() call.
+   */
+  testTcpProbe(target: string, port: number): boolean;
+  /** Egress {sourceIp, interfaceAlias, nextHop} for a target IP, or null. */
+  egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
   /** Get-NetTCPConnection */
@@ -350,6 +398,7 @@ export interface PSProviders {
   readonly services:       IServiceProvider        | null;
   readonly network:        INetworkProvider        | null;
   readonly processes:      IProcessProvider        | null;
+  readonly jobs:           IJobProvider            | null;
   readonly users:          IUserProvider           | null;
   readonly eventLog:       IEventLogProvider       | null;
   readonly vpn:            IVpnProvider            | null;

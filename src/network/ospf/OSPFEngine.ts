@@ -131,10 +131,10 @@ export class OSPFEngine implements IProtocolEngine {
   setBatchConvergence(on: boolean): void { this.batchConvergence = on; }
 
   /** SPF throttle — configurable via setThrottleSPF() */
-  private spfThrottleInitial = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
-  private spfThrottleHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
-  private spfThrottleMax = OSPF_CONSTANTS.SPF_THROTTLE_MAX_MS;
-  private spfCurrentHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
+  private spfThrottleInitial: number = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
+  private spfThrottleHold: number = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
+  private spfThrottleMax: number = OSPF_CONSTANTS.SPF_THROTTLE_MAX_MS;
+  private spfCurrentHold: number = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
   private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
   /** SPF scheduling — TimerSet token. */
@@ -527,11 +527,11 @@ export class OSPFEngine implements IProtocolEngine {
   private incrementStat(packetType: number, direction: 'rx' | 'tx'): void {
     const key = direction === 'rx' ? 'rx' : 'tx';
     switch (packetType) {
-      case 1: (this.packetStats as Record<string, number>)[`${key}Hello`]++; break;
-      case 2: (this.packetStats as Record<string, number>)[`${key}DBD`]++; break;
-      case 3: (this.packetStats as Record<string, number>)[`${key}LSR`]++; break;
-      case 4: (this.packetStats as Record<string, number>)[`${key}LSU`]++; break;
-      case 5: (this.packetStats as Record<string, number>)[`${key}LSAck`]++; break;
+      case 1: (this.packetStats as unknown as Record<string, number>)[`${key}Hello`]++; break;
+      case 2: (this.packetStats as unknown as Record<string, number>)[`${key}DBD`]++; break;
+      case 3: (this.packetStats as unknown as Record<string, number>)[`${key}LSR`]++; break;
+      case 4: (this.packetStats as unknown as Record<string, number>)[`${key}LSU`]++; break;
+      case 5: (this.packetStats as unknown as Record<string, number>)[`${key}LSAck`]++; break;
     }
   }
 
@@ -1458,7 +1458,7 @@ export class OSPFEngine implements IProtocolEngine {
    */
   private startDDRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     // Only set timer if neighbor is still in ExStart (exchange may have already completed)
-    if (neighbor.state !== 'ExStart') return;
+    if ((neighbor.state as string) !== 'ExStart') return;
     this.cancelDDRetransmitTimer(neighbor);
     neighbor.ddRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.ddRetransmitTimer = null;
@@ -1732,7 +1732,7 @@ export class OSPFEngine implements IProtocolEngine {
       // Fire AdjOK — if adjacency should be formed, this transitions us to ExStart.
       this.neighborEvent(iface, neighbor, 'AdjOK');
       // If AdjOK transitioned us to ExStart, fall through to ExStart handling below.
-      if (neighbor.state !== 'ExStart') return;
+      if ((neighbor.state as string) !== 'ExStart') return;
     }
 
     if (neighbor.state === 'Full') {
@@ -1745,7 +1745,7 @@ export class OSPFEngine implements IProtocolEngine {
           iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
         this.neighborEvent(iface, neighbor, 'SeqNumberMismatch');
         // After SeqNumberMismatch we drop to ExStart — re-process this DD as ExStart
-        if (neighbor.state !== 'ExStart') return;
+        if ((neighbor.state as string) !== 'ExStart') return;
       } else {
         return;
       }
@@ -1764,7 +1764,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
         // After transitioning to Exchange, check if slave has no more headers
         // and master also sent !MORE — fire ExchangeDone if applicable
-        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+        if ((neighbor.state as string) === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
           // We (slave) have no more to send and master also done: exchange complete
           this.neighborEvent(iface, neighbor, 'ExchangeDone');
         }
@@ -1782,7 +1782,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
         // If Slave sent !MORE (all their headers in one shot) AND we (Master) have no more,
         // then exchange is complete from both sides
-        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+        if ((neighbor.state as string) === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
           this.neighborEvent(iface, neighbor, 'ExchangeDone');
         }
       }

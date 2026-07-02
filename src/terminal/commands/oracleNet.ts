@@ -105,7 +105,7 @@ function escapeRe(s: string): string {
 }
 
 /** First configured IPv4 of a device, as a dotted string, if any. */
-function primaryIpv4(dev: unknown): string | undefined {
+export function primaryIpv4(dev: unknown): string | undefined {
   const ports = (dev as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null }> }).getPorts?.();
   if (!ports) return undefined;
   for (const p of ports) {
@@ -195,7 +195,8 @@ export function resolveOracleConnectTarget(
   if (desc.port !== db.instance.listener.port) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
   }
-  const outcome = db.instance.listener.attemptConnect(desc.service);
+  const sourceIp = remote ? (primaryIpv4(localDevice) ?? '0.0.0.0') : '127.0.0.1';
+  const outcome = db.instance.listener.attemptConnect(desc.service, sourceIp);
   if (!outcome.ok) {
     return { ok: false, error: outcome.error };
   }

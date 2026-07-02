@@ -492,7 +492,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         deviceId: this.deviceId, neighborIp: ip,
         oldState: oldState ?? 'Idle', newState, remoteAs: remoteAs ?? null,
       },
-    } as never);
+    });
   }
 }
 

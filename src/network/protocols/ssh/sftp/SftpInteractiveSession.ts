@@ -92,7 +92,10 @@ export class SftpInteractiveSession {
     const data = this.local.readFile(absLocal);
     if (!data.ok) { this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `local ${absLocal}: open failed` }); return; }
     const w = this.remote.writeFile(absRemote, data.value);
-    if (!w.ok) { this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `remote ${absRemote}: write failed` }); return; }
+    if (!w.ok) {
+      this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `remote ${absRemote}: ${sshErrorMessage(w.error)}` });
+      return;
+    }
     this.lines.push(`Uploading ${absLocal} to ${absRemote}`);
   }
 

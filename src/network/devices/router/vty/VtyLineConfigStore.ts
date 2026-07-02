@@ -36,6 +36,28 @@ export class VtyLineConfigStore {
     this.byKey.clear();
   }
 
+  lineCapacity(defaultCount = 5): number {
+    let highest = -1;
+    for (const block of this.byKey.values()) {
+      if (block.last > highest) highest = block.last;
+    }
+    return highest >= 0 ? highest + 1 : defaultCount;
+  }
+
+  /**
+   * Verdict for an incoming VTY session (telnet/SSH). Rejected when a
+   * configured line mandates a line password (`login`) that has not been set —
+   * IOS then answers "Password required, but none set" and closes the session.
+   */
+  incomingVerdict(): { accept: boolean; reason: string } {
+    for (const line of this.byKey.values()) {
+      if (line.requiresPasswordButUnset()) {
+        return { accept: false, reason: 'Password required, but none set' };
+      }
+    }
+    return { accept: true, reason: '' };
+  }
+
   /** Used by show-config renderers: returns the lines for every block in order. */
   renderAllCisco(): string[] {
     const out: string[] = [];

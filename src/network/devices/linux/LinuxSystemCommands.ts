@@ -69,14 +69,98 @@ function formatBytesHuman(bytes: number): string {
   return formatKbHuman(Math.max(1, Math.round(bytes / 1024)));
 }
 
+interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; }
+
+function dfTable(ctx: ShellContext): DfEntry[] {
+  const rootUsedBytes = vfsDirectorySize(ctx, '/');
+  const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
+  const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
+  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / ROOT_FS_CAPACITY_KB) * 100));
+  return [
+    { fs: '/dev/sda1', type: 'ext4', sizeKb: ROOT_FS_CAPACITY_KB, usedKb: rootUsedKb, availKb: rootAvailKb, usePct: rootUsePct, mount: '/' },
+    { fs: 'tmpfs', type: 'tmpfs', sizeKb: 512000, usedKb: 0, availKb: 512000, usePct: 0, mount: '/dev/shm' },
+    { fs: 'tmpfs', type: 'tmpfs', sizeKb: 5120, usedKb: 4, availKb: 5116, usePct: 1, mount: '/run/lock' },
+    { fs: '/dev/sda2', type: 'ext4', sizeKb: 999424, usedKb: 148480, availKb: 782080, usePct: 16, mount: '/boot' },
+    { fs: '/dev/sdb1', type: 'ext4', sizeKb: 104857600, usedKb: 29360128, availKb: 71303168, usePct: 29, mount: '/u01' },
+  ];
+}
+
+function dfTableAll(ctx: ShellContext): DfEntry[] {
+  return [
+    ...dfTable(ctx),
+    { fs: 'proc', type: 'proc', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/proc' },
+    { fs: 'sysfs', type: 'sysfs', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys' },
+    { fs: 'devpts', type: 'devpts', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/dev/pts' },
+    { fs: 'cgroup', type: 'cgroup2', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys/fs/cgroup' },
+  ];
+}
+
 export function cmdDf(ctx: ShellContext, args: string[]): string {
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
+  let showType = args.includes('-T') || args.includes('--print-type');
+  const all = args.includes('-a') || args.includes('--all');
+
+  const includeTypes: string[] = [];
+  const excludeTypes: string[] = [];
+  const targets: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-t' || a === '--type') { includeTypes.push(args[++i] ?? ''); continue; }
+    if (a === '-x' || a === '--exclude-type') { excludeTypes.push(args[++i] ?? ''); continue; }
+    if (a.startsWith('-')) {
+      if (!['-h', '--human-readable', '-i', '-T', '--print-type', '-a', '--all', '-H', '-k', '-m', '-l', '--local', '-P', '--portability', '-B', '--block-size'].includes(a)) {
+        if (/^-h+$/.test(a) && a.length > 2) return `df: invalid option -- '${a.slice(1)}'`;
+        return `df: invalid option -- '${a.replace(/^-+/, '')}'`;
+      }
+      continue;
+    }
+    targets.push(a);
+  }
+
+  for (const t of targets) {
+    if (!ctx.vfs.exists(ctx.vfs.normalizePath(t, ctx.cwd))) {
+      return `df: ${t}: No such file or directory`;
+    }
+  }
+
+  if (includeTypes.length > 0) showType = true;
+  let rows = all ? dfTableAll(ctx) : dfTable(ctx);
+  if (includeTypes.length > 0) {
+    rows = rows.filter(r => includeTypes.includes(r.type));
+    if (rows.length === 0) return `df: no file systems processed`;
+  }
+  if (excludeTypes.length > 0) rows = rows.filter(r => !excludeTypes.includes(r.type));
+  if (!all) rows = rows.filter(r => !(r.fs === 'tmpfs' && r.usedKb === 0));
+  if (targets.length > 0) {
+    const annotated = targets.map(t => {
+      const tp = ctx.vfs.normalizePath(t, ctx.cwd);
+      let best: DfEntry | undefined;
+      for (const r of rows) {
+        if (tp === r.mount || tp.startsWith(r.mount === '/' ? '/' : r.mount + '/')) {
+          if (!best || r.mount.length > best.mount.length) best = r;
+        }
+      }
+      return best ? { ...best, mount: tp } : null;
+    }).filter((r): r is DfEntry => r !== null);
+    rows = annotated;
+  }
 
   const rootUsedBytes = vfsDirectorySize(ctx, '/');
   const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
   const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
   const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / ROOT_FS_CAPACITY_KB) * 100));
+
+  if (showType) {
+    const header = human
+      ? 'Filesystem     Type     Size  Used Avail Use% Mounted on'
+      : 'Filesystem     Type    1K-blocks     Used Available Use% Mounted on';
+    const lines = rows.map(r => {
+      if (human) return `${r.fs.padEnd(15)} ${r.type.padEnd(8)} ${formatKbHuman(r.sizeKb).padStart(4)} ${formatKbHuman(r.usedKb).padStart(5)} ${formatKbHuman(r.availKb).padStart(5)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+      return `${r.fs.padEnd(15)} ${r.type.padEnd(7)} ${String(r.sizeKb).padStart(9)} ${String(r.usedKb).padStart(8)} ${String(r.availKb).padStart(9)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+    });
+    return [header, ...lines].join('\n');
+  }
 
   if (inodes) {
     const rootInodes = vfsInodeCount(ctx, '/');
@@ -91,25 +175,14 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
     ].join('\n');
   }
 
-  if (human) {
-    return [
-      'Filesystem      Size  Used Avail Use% Mounted on',
-      `/dev/sda1        ${formatKbHuman(ROOT_FS_CAPACITY_KB).padStart(3)}  ${formatKbHuman(rootUsedKb).padStart(4)}  ${formatKbHuman(rootAvailKb).padStart(4)} ${String(rootUsePct).padStart(3)}% /`,
-      'tmpfs           500M     0  500M   0% /dev/shm',
-      'tmpfs           5.0M  4.0K  5.0M   1% /run/lock',
-      '/dev/sda2       976M  145M  764M  16% /boot',
-      '/dev/sdb1       100G   28G   68G  29% /u01',
-    ].join('\n');
-  }
-
-  return [
-    'Filesystem     1K-blocks     Used Available Use% Mounted on',
-    `/dev/sda1       ${String(ROOT_FS_CAPACITY_KB).padStart(8)} ${String(rootUsedKb).padStart(8)}  ${String(rootAvailKb).padStart(8)} ${String(rootUsePct).padStart(3)}% /`,
-    'tmpfs             512000        0    512000   0% /dev/shm',
-    'tmpfs               5120        4      5116   1% /run/lock',
-    '/dev/sda2         999424   148480    782080  16% /boot',
-    '/dev/sdb1      104857600 29360128  71303168  29% /u01',
-  ].join('\n');
+  const header = human
+    ? 'Filesystem      Size  Used Avail Use% Mounted on'
+    : 'Filesystem     1K-blocks     Used Available Use% Mounted on';
+  const lines = rows.map(r => {
+    if (human) return `${r.fs.padEnd(15)} ${formatKbHuman(r.sizeKb).padStart(4)} ${formatKbHuman(r.usedKb).padStart(5)} ${formatKbHuman(r.availKb).padStart(5)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+    return `${r.fs.padEnd(15)} ${String(r.sizeKb).padStart(9)} ${String(r.usedKb).padStart(8)} ${String(r.availKb).padStart(9)} ${String(r.usePct).padStart(3)}% ${r.mount}`;
+  });
+  return [header, ...lines].join('\n');
 }
 
 export function cmdDu(ctx: ShellContext, args: string[]): string {
@@ -184,6 +257,23 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
  * so it stays coherent with `/proc/meminfo` and the hardware inventory.
  */
 export function cmdFree(args: string[], memory: MemoryProfile): string {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-c' || a === '--count') {
+      const v = args[++i];
+      if (!v || !/^\d+$/.test(v) || parseInt(v, 10) < 1) {
+        return `free: invalid count value '${v ?? ''}'`;
+      }
+      continue;
+    }
+    if (a === '-s' || a === '--seconds') {
+      const v = args[++i];
+      if (!v || !/^\d+(?:\.\d+)?$/.test(v)) {
+        return `free: invalid seconds value '${v ?? ''}'`;
+      }
+      continue;
+    }
+  }
   const human = args.includes('-h') || args.includes('--human-readable');
   const wide = args.includes('-w') || args.includes('--wide');
   const total = args.includes('-t') || args.includes('--total');
@@ -192,39 +282,6 @@ export function cmdFree(args: string[], memory: MemoryProfile): string {
   else if (args.includes('-m') || args.includes('--mega') || args.includes('--mebi')) unit = 'm';
   else if (args.includes('-g') || args.includes('--giga') || args.includes('--gibi')) unit = 'g';
   return memory.toFree(human, wide, unit, total);
-}
-
-export function cmdMount(ctx: ShellContext, args: string[]): string {
-  // mount with no args: show mounted filesystems
-  if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
-    return [
-      '/dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)',
-      'tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)',
-      'tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)',
-      '/dev/sda2 on /boot type ext4 (rw,relatime)',
-      '/dev/sdb1 on /u01 type ext4 (rw,relatime)',
-      'proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)',
-      'sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)',
-    ].join('\n');
-  }
-
-  // mount -t type : filter
-  const tIdx = args.indexOf('-t');
-  if (tIdx >= 0) {
-    const fsType = args[tIdx + 1] || 'ext4';
-    const allMounts = [
-      { dev: '/dev/sda1', mp: '/', type: 'ext4', opts: 'rw,relatime,errors=remount-ro' },
-      { dev: '/dev/sda2', mp: '/boot', type: 'ext4', opts: 'rw,relatime' },
-      { dev: '/dev/sdb1', mp: '/u01', type: 'ext4', opts: 'rw,relatime' },
-      { dev: 'tmpfs', mp: '/dev/shm', type: 'tmpfs', opts: 'rw,nosuid,nodev' },
-    ];
-    return allMounts
-      .filter(m => m.type === fsType)
-      .map(m => `${m.dev} on ${m.mp} type ${m.type} (${m.opts})`)
-      .join('\n');
-  }
-
-  return 'mount: only root can do that';
 }
 
 export function cmdLsblk(args: string[]): string {

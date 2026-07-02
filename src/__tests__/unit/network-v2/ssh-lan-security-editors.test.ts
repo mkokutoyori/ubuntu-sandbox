@@ -186,7 +186,7 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
     );
     const local = await lan.pc2.executeCommand('iptables -L INPUT');
     expect(local).toContain('tcp');
-    expect(local).toMatch(/dpt:80|80/);
+    expect(local).toMatch(/dpt:http\b/);
   });
 
   // SE17

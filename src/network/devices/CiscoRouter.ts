@@ -54,8 +54,59 @@ import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
+import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 
 export class CiscoRouter extends Router {
+  installIkeCertAuth(config: {
+    localCert: import('../pki/X509Certificate').X509Certificate;
+    localKey: import('../pki/PkiKeyPair').PkiPrivateKey;
+    trustAnchors: readonly import('../pki/X509Certificate').X509Certificate[];
+    crls?: readonly import('../pki/CertificateRevocationList').CertificateRevocationList[];
+    revocationCheck?: 'none' | 'crl' | 'crl-strict' | 'ocsp';
+    clock?: () => number;
+    ocspResponder?: import('../pki/OcspResponder').IOcspResponder;
+  }): void {
+    const verifier = new CertificateVerifierImpl({
+      trustAnchors: config.trustAnchors,
+      crls: config.crls,
+      revocationCheck: config.revocationCheck ?? 'none',
+      clock: config.clock,
+      ocspResponder: config.ocspResponder,
+    });
+    this._getOrCreateIPSecEngine().setIkeCertAuth({
+      localCert: config.localCert,
+      localKey: config.localKey,
+      trustAnchors: config.trustAnchors,
+      crls: config.crls,
+      revocationCheck: config.revocationCheck,
+      clock: config.clock,
+      verifier,
+    });
+  }
+
+  clearIkeCertAuth(): void {
+    this._getIPSecEngineInternal()?.clearIkeCertAuth();
+  }
+
+  getInterfaceTcpAdjustMss(iface: string): number | null {
+    const port = this.getPort(iface);
+    if (!port) return null;
+    const v = (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
+    return typeof v === 'number' ? v : null;
+  }
+
+  applyTcpMssClamp(
+    seg: import('../ipsec/TcpMssClamper').TcpMssCarrier,
+    iface: string,
+  ): import('../ipsec/TcpMssClamper').TcpMssClampResult {
+    const clamp = this.getInterfaceTcpAdjustMss(iface);
+    if (clamp === null) {
+      return { modified: false, before: null, after: null, reason: 'no-config' };
+    }
+    return TcpMssClamperImpl.clamp(seg, clamp);
+  }
+
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
   private readonly hsrpAgent: HsrpAgent;

@@ -38,7 +38,7 @@ async function sshLogin(t: WindowsTerminalSession, line: string, pw: string): Pr
   t.setInput(line);
   t.handleKey(key('Enter'));
   await flush();
-  if (t.currentInputMode.type === 'password') {
+  if (t.foreground.currentInputMode.type === 'password') {
     t.setPasswordBuf(pw);
     t.handleKey(key('Enter'));
     await flush();
@@ -48,36 +48,36 @@ async function sshLogin(t: WindowsTerminalSession, line: string, pw: string): Pr
 describe('Shell special-key contract over SSH', () => {
   beforeEach(() => { reinstallDefaultShells(); });
 
-  test('Ctrl+L on a remote shell is classified as clear-screen', async () => {
+  test('Ctrl+L on a remote shell clears the screen', async () => {
     const { winA, linuxA: _l } = await buildPair();
     const term = new WindowsTerminalSession('t', winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    const active = (term as unknown as { activeSubShell: unknown }).activeSubShell as {
-      handleKey: (e: KeyEvent) => boolean;
-    };
-    const handled = active.handleKey(key('l', { ctrlKey: true }));
-    expect(handled).toBe(false);
+    term.handleKey(key('l', { ctrlKey: true }));
+    await flush();
+    expect(term.lines.length).toBe(0);
   });
 
-  test('Ctrl+D on the remote primary asks the adapter to pop (eof)', async () => {
+  test('Ctrl+D on the remote primary logs out and returns to the host', async () => {
     const { winA } = await buildPair();
     const term = new WindowsTerminalSession('t', winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    const active = (term as unknown as { activeSubShell: { handleKey: (e: KeyEvent) => boolean } }).activeSubShell;
-    expect(active.handleKey(key('d', { ctrlKey: true }))).toBe(true);
+    expect(term.foreground).not.toBe(term);
+    term.handleKey(key('d', { ctrlKey: true }));
+    await flush();
+    expect(term.foreground).toBe(term);
   });
 
-  test('getCompletions on the remote sub-shell delegates to the remote device', async () => {
+  test('Tab completion on the remote runs against the remote device', async () => {
     const { winA } = await buildPair();
     const term = new WindowsTerminalSession('t', winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    const active = (term as unknown as { activeSubShell: { getCompletions?: (s: string) => string[] } }).activeSubShell;
-    expect(typeof active.getCompletions).toBe('function');
-    const out = active.getCompletions?.('ec') ?? [];
-    expect(Array.isArray(out)).toBe(true);
+    term.setInput('ec');
+    term.handleKey(key('Tab'));
+    await flush();
+    expect(term.foreground.input).toMatch(/^echo/);
   });
 
   test('ShellFactory reset wipes the registry; reinstall restores all built-ins', () => {

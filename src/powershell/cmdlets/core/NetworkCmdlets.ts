@@ -11,6 +11,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
   NetworkAdapterInfo, IPAddressInfo, INetworkProvider,
 } from '@/powershell/providers/PSProviders';
@@ -92,7 +93,9 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
 
 export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
+  readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -104,18 +107,23 @@ export class TestConnectionCmdlet implements ICmdlet {
       ctx.emitError('Test-Connection requires -ComputerName or a positional target');
       return null;
     }
-    const reachable = net.testConnection(target);
+
+    const probe = net.testPingProbe?.(target) ?? null;
+    const reachable = probe?.success ?? false;
+    const rttMs = probe?.success ? Math.max(1, Math.round(probe.rttMs)) : 0;
+    const resolvedIp = probe?.resolvedIp ?? (target.includes(':') ? '' : target);
+    const sourceIp = probe ? (net.egressInfoFor?.(target)?.sourceIp ?? 'localhost') : 'localhost';
+
     if (ctx.named['quiet'] === true) return reachable;
-    // Mimic the column layout of real Test-Connection (subset). Status
-    // is the last column so a trailing-`Success` regex picks up each row.
+
     const out: PSValue[] = [];
     for (let i = 1; i <= count; i++) {
       out.push({
-        Source: 'localhost',
+        Source: sourceIp,
         Destination: target,
-        IPV4Address: target.includes(':') ? '' : (target === 'localhost' ? '127.0.0.1' : target),
+        IPV4Address: resolvedIp,
         Bytes: 32,
-        'Time(ms)': reachable ? 1 : 0,
+        'Time(ms)': rttMs,
         Status: reachable ? 'Success' : 'Failure',
       } as Record<string, PSValue>);
     }
@@ -216,6 +224,93 @@ export class GetNetRouteCmdlet implements ICmdlet {
       NextHop:           r.nextHop,
       RouteMetric:       r.routeMetric,
     } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class GetNetNeighborCmdlet implements ICmdlet {
+  readonly name = 'get-netneighbor';
+  readonly displayName = 'Get-NetNeighbor';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const filter: { ipAddress?: IPAddress; state?: string; ifIndex?: number } = {};
+    if (ctx.named['ipaddress']) {
+      try { filter.ipAddress = new IPAddress(psValueToString(ctx.named['ipaddress'])); }
+      catch (e) { throw new PSRuntimeError((e as Error).message); }
+    }
+    if (ctx.named['state']) filter.state = psValueToString(ctx.named['state']);
+    if (ctx.named['ifindex']) filter.ifIndex = Number.parseInt(psValueToString(ctx.named['ifindex']), 10);
+    const neighbors = requireNetwork(ctx).getNeighbors(filter);
+    return neighbors.map((n) => ({
+      ifIndex:          n.ifIndex,
+      InterfaceAlias:   n.ifAlias,
+      IPAddress:        n.ipAddress,
+      LinkLayerAddress: n.linkLayerAddress,
+      State:            n.state,
+      AddressFamily:    n.addressFamily,
+      PolicyStore:      n.policyStore,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+function parseNeighborIp(ctx: CmdletContext, displayName: string): IPAddress {
+  if (!ctx.named['ipaddress']) {
+    throw new PSRuntimeError(`${displayName} : Missing -IPAddress.`);
+  }
+  try { return new IPAddress(psValueToString(ctx.named['ipaddress'])); }
+  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
+}
+
+function parseNeighborMac(ctx: CmdletContext, displayName: string): MACAddress {
+  if (!ctx.named['linklayeraddress']) {
+    throw new PSRuntimeError(`${displayName} : Missing -LinkLayerAddress.`);
+  }
+  const raw = psValueToString(ctx.named['linklayeraddress']).replace(/-/g, ':').toLowerCase();
+  try { return new MACAddress(raw); }
+  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
+}
+
+export class NewNetNeighborCmdlet implements ICmdlet {
+  readonly name = 'new-netneighbor';
+  readonly displayName = 'New-NetNeighbor';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ip = parseNeighborIp(ctx, this.displayName);
+    const mac = parseNeighborMac(ctx, this.displayName);
+    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : 'Ethernet';
+    const err = requireNetwork(ctx).addNeighbor(ip, mac, ifAlias);
+    if (err) throw new PSRuntimeError(err);
+    return null;
+  }
+}
+
+export class RemoveNetNeighborCmdlet implements ICmdlet {
+  readonly name = 'remove-netneighbor';
+  readonly displayName = 'Remove-NetNeighbor';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ip = parseNeighborIp(ctx, this.displayName);
+    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
+    const err = requireNetwork(ctx).removeNeighbor(ip, ifAlias);
+    if (err) throw new PSRuntimeError(err);
+    return null;
+  }
+}
+
+export class SetNetNeighborCmdlet implements ICmdlet {
+  readonly name = 'set-netneighbor';
+  readonly displayName = 'Set-NetNeighbor';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ip = parseNeighborIp(ctx, this.displayName);
+    const mac = parseNeighborMac(ctx, this.displayName);
+    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
+    const err = requireNetwork(ctx).setNeighbor(ip, mac, ifAlias);
+    if (err) throw new PSRuntimeError(err);
+    return null;
   }
 }
 
@@ -386,11 +481,15 @@ export class RestartNetAdapterCmdlet implements ICmdlet {
   }
 }
 
-// ── Test-NetConnection (TCP-port-aware sibling of Test-Connection) ────────
+const COMMON_TCP_PORTS: Record<string, number> = {
+  http: 80, smb: 445, rdp: 3389, winrm: 5985, winrmhttp: 5985, winrmhttps: 5986,
+};
 
 export class TestNetConnectionCmdlet implements ICmdlet {
   readonly name = 'test-netconnection';
+  readonly displayName = 'Test-NetConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -398,20 +497,54 @@ export class TestNetConnectionCmdlet implements ICmdlet {
       ctx.named['computername'] ?? ctx.named['targetname'] ?? ctx.positional[0] ?? '',
     );
     if (!target) { ctx.emitError('Test-NetConnection requires -ComputerName'); return null; }
-    const port = ctx.named['port']
-      ? Number(ctx.named['port'])
-      : (ctx.named['commontcpport'] ? psValueToString(ctx.named['commontcpport']) : null);
-    const reachable = net.testConnection(target);
-    return {
+
+    let port: number | undefined;
+    if (ctx.named['port'] !== undefined) {
+      const n = Number(psValueToString(ctx.named['port']));
+      if (Number.isFinite(n) && n > 0) port = n;
+    } else if (ctx.named['commontcpport'] !== undefined) {
+      const name = psValueToString(ctx.named['commontcpport']).toLowerCase();
+      if (COMMON_TCP_PORTS[name] !== undefined) port = COMMON_TCP_PORTS[name];
+    }
+
+    const level = psValueToString(ctx.named['informationlevel'] ?? 'standard').toLowerCase();
+    const detailed = level === 'detailed';
+    const quiet = level === 'quiet';
+
+    const probe = net.testPingProbe?.(target) ?? null;
+    const remoteAddress = probe?.resolvedIp ?? target;
+    const pingSucceeded = probe?.success ?? false;
+    const rttMs = probe?.success ? Math.round(probe.rttMs) : 0;
+
+    const tcpTested = port !== undefined;
+    const tcpSucceeded = tcpTested && pingSucceeded
+      ? (net.testTcpProbe?.(target, port!) ?? false)
+      : false;
+
+    const egress = probe ? (net.egressInfoFor?.(target) ?? null) : null;
+    const sourceAddress = egress?.sourceIp ?? '0.0.0.0';
+    const interfaceAlias = egress?.interfaceAlias ?? 'Ethernet';
+    const nextHop = egress?.nextHop ?? '0.0.0.0';
+
+    if (quiet) return tcpTested ? tcpSucceeded : pingSucceeded;
+
+    const result: Record<string, PSValue> = {
       ComputerName:        target,
-      RemoteAddress:       target,
-      RemotePort:          port ?? 0,
-      InterfaceAlias:      'eth0',
-      SourceAddress:       net.getDefaultGateway() ?? '0.0.0.0',
-      PingSucceeded:       reachable,
-      PingReplyDetails:    { RoundtripTime: reachable ? 1 : 0 },
-      TcpTestSucceeded:    !!port && reachable,
-    } as Record<string, PSValue>;
+      RemoteAddress:       remoteAddress,
+      InterfaceAlias:      interfaceAlias,
+      SourceAddress:       sourceAddress,
+      PingSucceeded:       pingSucceeded,
+      PingReplyDetails:    rttMs,
+    };
+    if (tcpTested) {
+      result.RemotePort = port!;
+      result.TcpTestSucceeded = tcpSucceeded;
+    }
+    if (detailed) {
+      result.NameResolutionResults = probe ? [remoteAddress] : [];
+      result.NetRouteNextHop = nextHop;
+    }
+    return result;
   }
 }
 

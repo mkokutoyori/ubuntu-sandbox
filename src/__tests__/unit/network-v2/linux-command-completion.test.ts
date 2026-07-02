@@ -85,16 +85,16 @@ describe('LinuxCommand — argument completion', () => {
 
   describe('arp host completion', () => {
     it('completes arp -d <TAB> with ARP cache entries', () => {
-      pc.addStaticARP('192.168.1.50', new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP('192.168.1.51', new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.50'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.51'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
       const c = pc.getCompletions('arp -d ');
       expect(c).toContain('192.168.1.50');
       expect(c).toContain('192.168.1.51');
     });
 
     it('filters arp -d 192.168.1.5<TAB>', () => {
-      pc.addStaticARP('192.168.1.50', new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP('10.0.0.1', new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.50'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.1'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
       const c = pc.getCompletions('arp -d 192.168.1.5');
       expect(c).toContain('192.168.1.50');
       expect(c).not.toContain('10.0.0.1');

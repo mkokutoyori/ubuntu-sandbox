@@ -42,7 +42,7 @@ import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
   ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
-  InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
+  InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
@@ -65,7 +65,8 @@ import {
   GetLocalGroupMemberCmdlet, RenameLocalGroupCmdlet,
 } from './UserCmdlets';
 import {
-  GetNetAdapterCmdlet, GetNetIPAddressCmdlet,
+  GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetNeighborCmdlet,
+  NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
   GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
@@ -193,6 +194,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ImportModuleCmdlet());
   registry.register(new InvokeCommandCmdlet());
   registry.register(new StartJobCmdlet());
+  registry.register(new GetJobCmdlet());
   registry.register(new ReceiveJobCmdlet());
   registry.register(new WaitJobCmdlet());
   registry.register(new SetLocationCmdlet());
@@ -245,6 +247,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new GetNetNeighborCmdlet());
+  registry.register(new NewNetNeighborCmdlet());
+  registry.register(new RemoveNetNeighborCmdlet());
+  registry.register(new SetNetNeighborCmdlet());
   registry.register(new HostnameCmdlet());
   registry.register(new WhoamiCmdlet());
 

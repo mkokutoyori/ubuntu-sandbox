@@ -18,24 +18,36 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
-import { MACAddress } from '../../core/types';
+import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
+import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
 import { showSwitchVersion } from './cisco/CiscoCommonShow';
+import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
+import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
+import type { Router } from '../Router';
+import { vrrpVirtualMac } from '../../vrrp/types';
+import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
+import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
+import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
-  | 'config-mst' | 'config-line' | 'config-acl';
+  | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp';
 
-export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
+export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];
   private selectedVlan: number | null = null;
+  private hsrpVersionByIface = new Map<string, 1 | 2>();
+  private trackObjects = new TrackObjectRegistry();
 
   // ─── FSM (switch-specific mode hierarchy) ────────────────────────
   protected readonly fsm = new CLIStateMachine<CLIMode>('user', CISCO_SWITCH_MODES, 'user', 'privileged');
@@ -43,6 +55,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
   private configMstTrie = new CommandTrie();
+  private configDhcpTrie = new CommandTrie();
+  private selectedDhcpPool: string | null = null;
 
   // STP state (switch-only, L2)
   private stpMode = 'pvst';
@@ -52,7 +66,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private selectedAcl: string | null = null;
   private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
-  private debugFlags = new Set<string>();
 
   constructor() {
     super();
@@ -61,10 +74,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── ISwitchShell ────────────────────────────────────────────────
 
-  execute(sw: Switch, input: string): string {
-    const stpDebug = [...this.debugFlags].some(
-      (f) => f.toLowerCase().includes('spanning tree') || f.toLowerCase().includes('all '));
-    const before = stpDebug ? new Map(sw._getSTPStates()) : null;
+  execute(sw: CiscoSwitch, input: string): string {
+    const dbg = (sw as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void; isStpEnabled(): boolean } }).getDebugService?.();
+    this.attachDebugSource(dbg);
+    if (input.trim() === '') return this.drainDebugConsole();
+    const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
     let out = this.executeOnDevice(sw, input) as string;
     if (before) {
       const events = this.stpDebugEvents(sw, before);
@@ -73,7 +87,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return out;
   }
 
-  private stpDebugEvents(sw: Switch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
+  private stpDebugEvents(sw: CiscoSwitch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
     const stamp = new Date().toISOString().slice(11, 19);
     const lines: string[] = [];
     for (const [port, state] of sw._getSTPStates()) {
@@ -85,7 +99,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  getPrompt(sw: Switch): string {
+  getPrompt(sw: CiscoSwitch): string {
     return this.buildDevicePrompt(sw);
   }
 
@@ -112,6 +126,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       case 'config-mst':  return this.configMstTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-acl':  return this.configAclTrie;
+      case 'config-dhcp': return this.configDhcpTrie;
       default:            return this.userTrie;
     }
   }
@@ -122,6 +137,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
       if (f === 'selectedVlan') this.selectedVlan = null;
       if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
+      if (f === 'selectedDhcpPool') this.selectedDhcpPool = null;
     }
   }
 
@@ -159,6 +175,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       this.acls.set(n, l);
       return '';
     });
+    this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(id) || id < 1) return '% Invalid track id.';
+      if (args[1] === 'interface' && args[2]) {
+        const iface = this.resolveInterfaceName(args[2]) ?? args[2];
+        const kind = args[3] === 'ip' && args[4] === 'routing' ? 'ip-routing' : 'line-protocol';
+        this.trackObjects.set(id, iface, kind);
+        return '';
+      }
+      return '% Incomplete command.';
+    });
+    this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (Number.isFinite(id)) this.trackObjects.delete(id);
+      return '';
+    });
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       // ip access-list {standard|extended} <name>
       const name = args[1] ?? args[0] ?? 'ACL';
@@ -172,6 +204,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.registerVtpCommands();
     this.registerUdldCommands();
     this.registerIgmpSnoopingCommands();
+    this.registerMonitorSessionCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -190,14 +223,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     });
+    this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip interface brief', 'Display IP interface brief', () => {
-        // L2 switch: only SVIs/mgmt carry IPs (none by default here).
-        return [
-          'Interface              IP-Address      OK? Method Status                Protocol',
-          'Vlan1                  unassigned      YES unset  administratively down down',
-        ].join('\n');
-      });
+      t.register('show ip interface brief', 'Display IP interface brief', () =>
+        this.showIpInterfaceBrief());
       t.registerGreedy('show access-lists', 'Display ACLs', () => {
         if (this.acls.size === 0) return '';
         const out: string[] = [];
@@ -301,6 +330,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     // ── Interface ── trust + limit rate
+    this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(n) || n < 64 || n > 9216) return "% Invalid input detected at '^' marker.";
+      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const port = this.d().getPort(i);
+        if (port) (port as unknown as { setMTU?: (m: number) => void }).setMTU?.(n);
+      }
+      return '';
+    });
     this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
@@ -366,12 +405,6 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // ── clear / recovery ──
     this.privilegedTrie.register('clear ip arp inspection statistics',
       'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
-    this.privilegedTrie.registerGreedy('clear errdisable interface',
-      'Recover an err-disabled port', (args) => {
-        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
-        this.d()._clearArpInspectionErrDisable(portName);
-        return '';
-      });
     this.privilegedTrie.registerGreedy('clear spanning-tree detected-protocols',
       'Restart protocol migration', () => '');
     this.privilegedTrie.registerGreedy('clear spanning-tree counters',
@@ -523,6 +556,237 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           return '';
         }));
 
+    // ── SVI (management Vlan interface) L3 addressing ──
+    // L2-only switch: physical ports cannot hold an IP. A management SVI
+    // (interface Vlan N) may, mirroring a real Layer-2 switch.
+    this.configIfTrie.registerGreedy('ip address', 'Set the SVI IP address', (args) => {
+      const iface = this.selectedInterface ?? '';
+      const vlan = this.sviVlanId(iface);
+      if (vlan === null) {
+        return '% IP addresses may not be configured on L2 links.';
+      }
+      if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
+      return '';
+    });
+    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan !== null) this.d().clearSviIp(vlan);
+      return '';
+    });
+
+    // DHCP relay (`ip helper-address X`) — valid on SVI only. Each
+    // helper is appended; `no ip helper-address X` removes one.
+    this.configIfTrie.registerGreedy('ip helper-address',
+      'Set a DHCP relay target on this SVI', (args) => {
+        const vlan = this.sviVlanId(this.selectedInterface ?? '');
+        if (vlan === null) return '% Command rejected: not applicable on this interface.';
+        if (args.length < 1 || !IPAddress.isValid(args[0])) {
+          return "% Invalid input detected at '^' marker.";
+        }
+        this.d().addSviHelperAddress(vlan, args[0]);
+        return '';
+      });
+    this.configIfTrie.registerGreedy('no ip helper-address',
+      'Remove a DHCP relay target from this SVI', (args) => {
+        const vlan = this.sviVlanId(this.selectedInterface ?? '');
+        if (vlan === null) return '';
+        if (args.length >= 1) this.d().removeSviHelperAddress(vlan, args[0]);
+        return '';
+      });
+
+    // ── VRRP on SVI (first-hop redundancy) ──
+    // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
+    // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
+    // a Vlanif alias in `interface Vlan10` view means the group lives
+    // on that SVI's VLAN plane.
+    this.configIfTrie.registerGreedy('vrrp', 'VRRP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getVrrpAgent();
+      agent.ensureGroup(iface, group);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 1 || p > 254) return '% Invalid priority (1..254).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        case 'track': {
+          const raw = args[2] ?? '';
+          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
+          if (!target) return '% Missing tracked interface.';
+          const decrIdx = args.indexOf('decrement');
+          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+          agent.addTrack(iface, group, target, decr);
+          return '';
+        }
+        case 'timers': {
+          if (args[2] !== 'advertise') return '% Incomplete command.';
+          const sec = parseInt(args[3] ?? '', 10);
+          if (!Number.isFinite(sec) || sec < 1) return '% Invalid advertise interval.';
+          agent.setAdvertiseSec(iface, group, sec);
+          return '';
+        }
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no vrrp', 'Remove a VRRP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getVrrpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
+
+    this.configIfTrie.registerGreedy('standby', 'HSRP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getHsrpAgent();
+      if (args[0] === 'version') {
+        const v = parseInt(args[1] ?? '', 10);
+        if (v !== 1 && v !== 2) return '% Invalid version (1..2).';
+        this.hsrpVersionByIface.set(iface, v as 1 | 2);
+        agent.setVersion(iface, v as 1 | 2);
+        return '';
+      }
+      const version = this.hsrpVersionByIface.get(iface) ?? 1;
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group)) return '% Invalid HSRP group.';
+      const maxGrp = version === 2 ? 4095 : 255;
+      if (group < 0 || group > maxGrp) return '% Invalid HSRP group.';
+      agent.ensureGroup(iface, group, version);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 0 || p > 255) return '% Invalid priority (0..255).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        case 'track': {
+          const raw = args[2] ?? '';
+          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
+          if (!target) return '% Missing tracked interface.';
+          const decrIdx = args.indexOf('decrement');
+          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+          agent.addTrack(iface, group, target, decr);
+          return '';
+        }
+        case 'timers': {
+          const hello = parseInt(args[2] ?? '', 10);
+          const hold = parseInt(args[3] ?? '', 10);
+          if (!Number.isFinite(hello) || !Number.isFinite(hold) || hello < 1 || hold <= hello) {
+            return '% Invalid timers (hello >= 1, hold > hello).';
+          }
+          agent.setTimers(iface, group, hello, hold);
+          return '';
+        }
+        case 'authentication': {
+          if (args[2] === 'text' && args[3]) { agent.setAuth(iface, group, args[3]); return ''; }
+          if (args[2]) { agent.setAuth(iface, group, args[2]); return ''; }
+          return '% Missing authentication text.';
+        }
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no standby', 'Remove an HSRP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getHsrpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
+
+    this.configIfTrie.registerGreedy('glbp', 'GLBP group config', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
+      if (args.length < 2) return '% Incomplete command.';
+      const group = parseInt(args[0], 10);
+      if (Number.isNaN(group) || group < 0 || group > 1023) return '% Invalid GLBP group.';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getGlbpAgent();
+      agent.ensureGroup(iface, group);
+      switch (args[1]) {
+        case 'ip':
+          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2]) agent.setVip(iface, group, args[2]);
+          return '';
+        case 'priority': {
+          const p = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(p) || p < 1 || p > 255) return '% Invalid priority (1..255).';
+          agent.setPriority(iface, group, p);
+          return '';
+        }
+        case 'preempt':
+          agent.setPreempt(iface, group, true);
+          return '';
+        case 'weighting': {
+          if (args[2] === 'track') {
+            const raw = args[3] ?? '';
+            const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
+            if (!target) return '% Missing tracked interface.';
+            const decrIdx = args.indexOf('decrement');
+            const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
+            agent.addTrack(iface, group, target, decr);
+            return '';
+          }
+          const w = parseInt(args[2] ?? '', 10);
+          if (!Number.isFinite(w) || w < 1 || w > 254) return '% Invalid weighting (1..254).';
+          agent.setWeighting(iface, group, w);
+          return '';
+        }
+        case 'load-balancing': {
+          const mode = args[2];
+          if (mode === 'round-robin' || mode === 'weighted' || mode === 'host-dependent') {
+            agent.setLoadBalancing(iface, group, mode);
+          }
+          return '';
+        }
+        default: return '';
+      }
+    });
+    this.configIfTrie.registerGreedy('no glbp', 'Remove a GLBP group', (args) => {
+      const vlan = this.sviVlanId(this.selectedInterface ?? '');
+      if (vlan === null) return '';
+      const group = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(group)) return '';
+      const iface = `Vlanif${vlan}`;
+      const agent = this.d().getGlbpAgent();
+      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
+      agent.removeGroup(iface, group);
+      return '';
+    });
+
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
       'Auto-recover ports err-disabled by port-security', () => {
@@ -607,7 +871,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
   }
 
-  private showPortSecurityOverview(sw: Switch): string {
+  private showPortSecurityOverview(sw: CiscoSwitch): string {
     const lines = [
       'Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
       '             (Count)        (Count)      (Count)',
@@ -627,7 +891,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showPortSecurityInterface(sw: Switch, ifaceArg: string): string {
+  private showPortSecurityInterface(sw: CiscoSwitch, ifaceArg: string): string {
     const name = this.resolveInterfaceName(ifaceArg) ?? ifaceArg;
     const port = sw.getPort(name);
     if (!port) return `% Invalid interface "${ifaceArg}"`;
@@ -654,7 +918,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showPortSecurityAddress(sw: Switch): string {
+  private showPortSecurityAddress(sw: CiscoSwitch): string {
     const lines = [
       '          Secure Mac Address Table',
       '------------------------------------------------------------------------',
@@ -1130,38 +1394,52 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         if (isNaN(id)) return "% Invalid input detected at '^' marker.";
         return this.showMstInstances(id);
       });
-      t.register('show debugging', 'Display active debugging', () => {
-        if (this.debugFlags.size === 0) return 'No debugging is enabled';
-        return [...this.debugFlags].sort().join('\n');
-      });
-      t.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        this.debugFlags.add(`Spanning Tree ${what} debugging is on`);
-        this.switchDebug()?.enable(what);
-        return `Spanning Tree ${what} debugging is on`;
-      });
-      t.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        for (const f of [...this.debugFlags]) if (f.startsWith('Spanning Tree')) this.debugFlags.delete(f);
-        this.switchDebug()?.disable(what);
-        return `Spanning Tree ${what} debugging is off`;
-      });
-      t.registerGreedy('debug', 'Enable debugging', (a) => {
-        const what = a.join(' ') || 'all';
-        this.debugFlags.add(`${what} debugging is on`);
-        return `${what} debugging is on`;
-      });
-      t.registerGreedy('undebug', 'Disable debugging', () => {
-        this.debugFlags.clear();
-        this.switchDebug()?.disableAll();
-        return 'All possible debugging has been turned off';
-      });
-      t.register('no debug all', 'Disable debugging', () => {
-        this.debugFlags.clear();
-        this.switchDebug()?.disableAll();
-        return 'All possible debugging has been turned off';
-      });
     }
+    this.registerSwitchDebugCommands();
+  }
+
+  private registerSwitchDebugCommands(): void {
+    const p = this.privilegedTrie;
+    const svc = () => this.switchDebug();
+    const guard = (raw: string): boolean => /[A-Z]/.test((raw.trim().split(/\s+/)[0]) ?? '');
+
+    p.register('show debugging', 'Display active debugging', () =>
+      this.mode === 'user' ? "% Invalid input detected at '^' marker." : (svc()?.format() ?? 'No debugging is enabled'));
+
+    p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? 'All possible debugging is on');
+    p.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
+      const what = a.join(' ') || 'all';
+      svc()?.enable('spanning-tree ' + what);
+      return `Spanning Tree ${what} debugging is on`;
+    });
+    p.registerGreedy('debug mac address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
+    p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enable('mac') ?? '');
+    p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enable('link') ?? '');
+    p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
+      if (guard(raw ?? '')) return "% Invalid input detected at '^' marker.";
+      const arg = a.join(' ');
+      const service = svc();
+      if (!service || !service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      return service.enable(arg);
+    });
+
+    p.register('no debug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
+    p.register('undebug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
+    p.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
+      const what = a.join(' ') || 'all';
+      svc()?.disable('spanning-tree ' + what);
+      return `Spanning Tree ${what} debugging is off`;
+    });
+    p.registerGreedy('no debug mac address-table', 'Disable MAC table debugging', () => svc()?.disable('mac') ?? '');
+    p.registerGreedy('no debug link-state', 'Disable link-state debugging', () => svc()?.disable('link') ?? '');
+    const undebugScope = (arg: string): string => {
+      const service = svc();
+      if (!service) return '';
+      if (arg.trim() === '' || arg.trim() === 'all') return service.disableAll();
+      if (!service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      return service.disable(arg);
+    };
+    p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
   }
 
   private switchDebug(): import('../switch/SwitchDebugService').SwitchDebugService | undefined {
@@ -1253,20 +1531,44 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return this.showLogging(this.d());
     });
 
-    this.userTrie.registerGreedy('ping', 'Send echo messages', () => {
-      return `Type escape sequence to abort.\n% Ping not yet implemented on switch.`;
-    });
+    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+  }
+
+  /**
+   * Drive a management-plane ping from an SVI. Uses the shared async pipeline
+   * (`_pendingAsync`) and the shared IOS renderer, exactly like the router.
+   */
+  private handlePing(args: string[]): string {
+    const parsed = parsePingArgs(args);
+    if (parsed.error) return parsed.error;
+    const target = new IPAddress(parsed.target);
+    this._pendingAsync = this.d()
+      .executePingSequence(target, parsed.count, parsed.timeoutMs, parsed.sourceIP ?? undefined)
+      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    return '';
   }
 
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
+    this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+
     this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
       const full = this.showMACAddressTable(this.d());
-      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+      const a = args.map(x => x.toLowerCase());
+      let i = 0;
+      if (a[i] === 'dynamic' || a[i] === 'static' || a[i] === 'multicast') i++;
+      if (a[i] === 'vlan' && a[i + 1]) {
         const lines = full.split('\n');
-        return [lines[0] ?? '', ...lines.filter(l =>
-          new RegExp(`\\b${args[1]}\\b`).test(l))].join('\n');
+        return [lines[0] ?? '', ...lines.filter(l => new RegExp(`\\b${args[i + 1]}\\b`).test(l))].join('\n');
+      }
+      if (a[i] === 'interface' && a[i + 1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l => l.includes(args[i + 1]))].join('\n');
+      }
+      if (a[i] === 'address' && a[i + 1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l => l.includes(args[i + 1]))].join('\n');
       }
       return full;
     });
@@ -1365,7 +1667,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         }
         return this.showTrunkTable([name]);
       }
-      if (args.length === 1 && last === 'status') return this.showInterfacesStatus(this.d());
+      if (args.length === 1 && 'status'.startsWith(last) && last.length >= 3) return this.showInterfacesStatus(this.d());
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name);
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
@@ -1431,7 +1733,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.register('show startup-config', 'Display startup configuration', () => {
       const startup = this.d().getStartupConfig();
-      return startup ? `Startup config (serialized):\n${startup}` : 'startup-config is not present';
+      return startup ? startup : '% startup-config is not present';
     });
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
@@ -1508,6 +1810,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
       const virt = this.virtualInterfaceName(args.join(' '));
       if (virt) {
+        const vlan = this.sviVlanId(virt);
+        if (vlan !== null) {
+          if (vlan < 1 || vlan > 4094) return "% Invalid input detected at '^' marker.";
+          this.d().ensureSvi(vlan);
+        }
         this.selectedInterface = virt;
         this.selectedInterfaceRange = [virt];
         this.mode = 'config-if';
@@ -1533,6 +1840,41 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.configTrie.register('no shutdown', 'Enable interface', () => '');
+
+    // ── Management plane: SSH host keys, domain, default-gateway ──
+    this.configTrie.registerGreedy('crypto key generate rsa', 'Generate RSA host keys', () => {
+      if (!this.d().getDomainName()) {
+        return '% Please define a domain-name first.';
+      }
+      this.d()._generateRsaKeys();
+      const fqdn = `${this.d().getHostname()}.${this.d().getDomainName()}`;
+      return [
+        `The name for the keys will be: ${fqdn}`,
+        '% The key modulus size is 512 bits',
+        '% Generating 512 bit RSA keys, keys will be non-exportable...[OK]',
+        'RSA key pair generated',
+      ].join('\n');
+    });
+    this.configTrie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
+      return '% Keys to be removed are named ' + `${this.d().getHostname()}.${this.d().getDomainName()}` + '.';
+    });
+    this.configTrie.registerGreedy('ip ssh version', 'Set the SSH version', () => {
+      // SSH requires RSA host keys (`crypto key generate rsa`) first — IOS
+      // refuses to bring SSH up without them.
+      if (!this.d().hasRsaKeys()) {
+        return 'Please create RSA keys to enable SSH (and of at least 768 bits for SSH v2).';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('ip default-gateway', 'Set the management default gateway', (args) => {
+      if (!args[0] || !IPAddress.isValid(args[0])) return "% Invalid input detected at '^' marker.";
+      this.d()._setDefaultGateway(args[0]);
+      return '';
+    });
+    this.configTrie.register('no ip default-gateway', 'Remove the management default gateway', () => {
+      this.d()._setDefaultGateway('');
+      return '';
+    });
 
     this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
       this.d()._getDHCPSnoopingConfig().enabled = true;
@@ -1562,6 +1904,78 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
 
+  }
+
+  private registerMonitorSessionCommands(): void {
+    this.configTrie.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
+      this.handleMonitorSession(args, false));
+    this.configTrie.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
+      this.handleMonitorSession(args, true));
+
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show monitor', 'Display SPAN sessions', () => this.showMonitor(null));
+      t.registerGreedy('show monitor session', 'Display SPAN session(s)', (args) => {
+        if (args.length === 0 || args[0].toLowerCase() === 'all') return this.showMonitor(null);
+        const id = parseInt(args[0], 10);
+        if (Number.isNaN(id)) return '% Invalid session id.';
+        return this.showMonitor(id);
+      });
+    }
+  }
+
+  private handleMonitorSession(args: string[], negate: boolean): string {
+    if (args.length < 1) return '% Incomplete command.';
+    const id = parseInt(args[0], 10);
+    if (Number.isNaN(id) || id < 1 || id > 66) return '% Invalid session id.';
+    const dev = this.d();
+
+    if (negate && args.length === 1) {
+      return dev.removeMirrorSession(id) ? '' : `% Session ${id} does not exist.`;
+    }
+
+    const verb = (args[1] ?? '').toLowerCase();
+    if (verb === 'source') {
+      const ifaceArg = args[2] === 'interface' ? args[3] : null;
+      if (!ifaceArg) return '% Incomplete command.';
+      const portName = this.resolveInterfaceName(ifaceArg);
+      if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
+      if (dev.getPortMirror().isDestination(portName)) {
+        return `% Cannot add source — ${portName} is already a SPAN destination.`;
+      }
+      const dirTok = (args[4] ?? 'both').toLowerCase();
+      if (dirTok !== 'rx' && dirTok !== 'tx' && dirTok !== 'both') {
+        return '% Invalid direction (rx | tx | both).';
+      }
+      if (negate) return dev.removeMirrorSource(id, portName) ? '' : `% Source ${portName} not configured.`;
+      dev.configureMirrorSource(id, portName, dirTok);
+      return '';
+    }
+
+    if (verb === 'destination') {
+      const ifaceArg = args[2] === 'interface' ? args[3] : null;
+      if (!ifaceArg) return '% Incomplete command.';
+      const portName = this.resolveInterfaceName(ifaceArg);
+      if (!portName || !dev.getPort(portName)) return `% Invalid interface name "${ifaceArg}"`;
+      const session = dev.getMirrorSession(id);
+      if (session && [...session.sources.keys()].includes(portName)) {
+        return `% Cannot set destination — ${portName} is already a source for session ${id}.`;
+      }
+      if (negate) return dev.removeMirrorDestination(id) ? '' : `% Destination not configured.`;
+      dev.configureMirrorDestination(id, portName);
+      return '';
+    }
+
+    return "% Invalid input detected at '^' marker.";
+  }
+
+  private showMonitor(only: number | null): string {
+    const sessions = this.d().listMirrorSessions();
+    if (sessions.length === 0) return '';
+    if (only === null) {
+      return sessions.map((s) => this.d().getPortMirror().formatOne(s.id)).join('\n\n');
+    }
+    if (!sessions.find((s) => s.id === only)) return `% Session ${only} does not exist.`;
+    return this.d().getPortMirror().formatOne(only);
   }
 
   // ─── Config-if Commands ───────────────────────────────────────────
@@ -1706,14 +2120,29 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       return '';
     };
+    this.configIfTrie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
+      if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const t = (args[0] ?? '').toLowerCase();
+      if (t !== 'dot1q' && t !== 'negotiate') {
+        return `% ${args[0]} encapsulation is not supported on this platform`;
+      }
+      return recordIf(`switchport trunk encapsulation ${args.join(' ')}`.trim());
+    });
     for (const sub of [
-      'switchport trunk encapsulation',
       'switchport voice', 'switchport priority',
       'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
-      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
-        recordIf(`${sub} ${args.join(' ')}`.trim()));
+      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
+        // These are physical-port-only; an SVI is a virtual L3 interface and
+        // rejects them just like real IOS does.
+        if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+          return "% Invalid input detected at '^' marker.";
+        }
+        return recordIf(`${sub} ${args.join(' ')}`.trim());
+      });
     }
 
     const removeIf = (prefix: string) => {
@@ -1787,19 +2216,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.d().getPort(portName);
-        if (port) { port.setUp(false); return ''; }
-        return '% Error';
-      });
+      return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
     });
 
     this.configIfTrie.register('no shutdown', 'Enable interface', () => {
-      return this.applyToSelectedInterfaces(portName => {
-        const port = this.d().getPort(portName);
-        if (port) { port.setUp(true); return ''; }
-        return '% Error';
-      });
+      return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, true));
     });
 
     this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
@@ -1840,7 +2261,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Running Config Builder ───────────────────────────────────────
 
-  buildRunningConfig(sw: Switch): string {
+  buildRunningConfig(sw: CiscoSwitch): string {
     const lines = [
       'Building configuration...',
       '',
@@ -1855,6 +2276,25 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     const enablePassword = sw.getEnablePassword();
     if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false)}`);
     if (enableSecret || enablePassword) lines.push('!');
+
+    if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
+    if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
+
+    // Local AAA users (`username NAME privilege N secret …`).
+    const users = sw._listLocalUsers().filter(u => !u.factoryDefault);
+    if (users.length > 0) {
+      for (const u of users) {
+        const field = u.secretAlgo === 'type-7'
+          ? `password ${renderPasswordField(u.secret, 'type-7', false)}`
+          : `secret ${renderSecretField(u.secret, u.secretAlgo)}`;
+        lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
+      }
+      lines.push('!');
+    }
+
+    // VTY line configuration (transport input, login, password, …).
+    const vtyLines = sw._getVtyLineConfig().renderAllCisco();
+    if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
@@ -1961,15 +2401,93 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('!');
     }
 
+    // SVI (interface Vlan N) blocks — IP address, helper-address, admin
+    // state. Rendered after the physical interfaces so the running-config
+    // mirrors how real IOS prints it.
+    for (const o of this.trackObjects.list()) {
+      const kind = o.kind === 'ip-routing' ? 'ip routing' : 'line-protocol';
+      lines.push(`track ${o.id} interface ${o.target} ${kind}`);
+    }
+    if (this.trackObjects.list().length > 0) lines.push('!');
+
+    for (const svi of sw.getSvis()) {
+      lines.push(`interface Vlan${svi.vlan}`);
+      if (svi.ip && svi.mask) {
+        lines.push(` ip address ${svi.ip} ${svi.mask}`);
+      } else {
+        lines.push(' no ip address');
+      }
+      for (const helper of svi.helperAddresses) {
+        lines.push(` ip helper-address ${helper}`);
+      }
+      for (const l of this.renderSviFhrpLines(sw, svi.vlan)) lines.push(l);
+      if (!svi.adminUp) lines.push(' shutdown');
+      lines.push('!');
+    }
+
+    // Static routes (`ip route NET MASK GW`).
+    for (const r of sw.getL3RoutingTable()) {
+      if (r.proto !== 'static' || !r.nextHop) continue;
+      lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
+    }
+
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
+
+    const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
+    if (unhandled.length > 0) {
+      lines.push('!');
+      lines.push(...unhandled);
+    }
 
     lines.push('end');
     return lines.join('\n');
   }
 
+  private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
+    const iface = `Vlanif${vlan}`;
+    const out: string[] = [];
+
+    const vrrp = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
+    for (const g of vrrp) {
+      if (g.vip) out.push(` vrrp ${g.vrid} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` vrrp ${g.vrid} priority ${g.priority}`);
+      if (g.preempt) out.push(` vrrp ${g.vrid} preempt`);
+      if (g.advertiseSec !== 1) out.push(` vrrp ${g.vrid} timers advertise ${g.advertiseSec}`);
+      for (const t of g.tracks) {
+        out.push(` vrrp ${g.vrid} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+
+    const hsrpGroups = sw.getHsrpAgent().listGroups().filter((g) => g.iface === iface);
+    if (hsrpGroups.some((g) => g.version === 2)) out.push(' standby version 2');
+    for (const g of hsrpGroups) {
+      if (g.vip) out.push(` standby ${g.group} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` standby ${g.group} priority ${g.priority}`);
+      if (g.preempt) out.push(` standby ${g.group} preempt`);
+      if (g.helloSec !== 3 || g.holdSec !== 10) out.push(` standby ${g.group} timers ${g.helloSec} ${g.holdSec}`);
+      if (g.authText !== 'cisco') out.push(` standby ${g.group} authentication text ${g.authText}`);
+      for (const t of g.tracks) {
+        out.push(` standby ${g.group} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+
+    const glbp = sw.getGlbpAgent().listGroups().filter((g) => g.iface === iface);
+    for (const g of glbp) {
+      if (g.vip) out.push(` glbp ${g.group} ip ${g.vip}`);
+      if (g.priority !== 100) out.push(` glbp ${g.group} priority ${g.priority}`);
+      if (g.preempt) out.push(` glbp ${g.group} preempt`);
+      if (g.weighting !== 100) out.push(` glbp ${g.group} weighting ${g.weighting}`);
+      if (g.loadBalancing !== 'round-robin') out.push(` glbp ${g.group} load-balancing ${g.loadBalancing}`);
+      for (const t of g.tracks) {
+        out.push(` glbp ${g.group} weighting track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
+      }
+    }
+    return out;
+  }
+
   // ─── Show Command Implementations ────────────────────────────────
 
-  private showMACAddressTable(sw: Switch): string {
+  private showMACAddressTable(sw: CiscoSwitch): string {
     const entries = sw.getMACTable();
     if (entries.length === 0) return 'Mac Address Table\n-------------------------------------------\nNo entries.';
 
@@ -1994,7 +2512,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showVlanBrief(sw: Switch, filter?: { id?: number; name?: string }): string {
+  private showVlanBrief(sw: CiscoSwitch, filter?: { id?: number; name?: string }): string {
     const vlans = sw.getVLANs();
     const configs = sw._getSwitchportConfigs();
 
@@ -2124,7 +2642,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return rows.join('\n');
   }
 
-  private showInterfacesStatus(sw: Switch): string {
+  private showInterfacesStatus(sw: CiscoSwitch): string {
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
 
@@ -2149,7 +2667,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showSpanningTree(sw: Switch, vlanId = 1): string {
+  private showSpanningTree(sw: CiscoSwitch, vlanId = 1): string {
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
     const root = agent?.getRootBridgeForVlan(vlanId);
@@ -2202,11 +2720,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private stpAgentOf(sw: Switch) {
+  private stpAgentOf(sw: CiscoSwitch) {
     return (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
   }
 
-  private stpSummaryCounts(sw: Switch): string {
+  private stpSummaryCounts(sw: CiscoSwitch): string {
     let blk = 0, lis = 0, lrn = 0, fwd = 0;
     const ports = sw._getPortsInternal();
     for (const [name, state] of sw._getSTPStates()) {
@@ -2221,7 +2739,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return `${String(blk).padEnd(9)}${String(lis).padEnd(10)}${String(lrn).padEnd(9)}${String(fwd).padEnd(11)}${active}`;
   }
 
-  private showStpRoot(sw: Switch, vlanId = 1): string {
+  private showStpRoot(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const root = agent?.getRootBridgeForVlan(vlanId);
     const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
@@ -2241,7 +2759,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpBridge(sw: Switch, vlanId = 1): string {
+  private showStpBridge(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const own = agent?.ownBridgeId();
     const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
@@ -2258,7 +2776,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpBlockedPorts(sw: Switch, vlanId = 1): string {
+  private showStpBlockedPorts(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const blocked: string[] = [];
     for (const [portName] of sw._getSTPStates()) {
@@ -2279,7 +2797,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpDetail(sw: Switch, vlanId = 1): string {
+  private showStpDetail(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const root = agent?.getRootBridgeForVlan(vlanId);
@@ -2312,7 +2830,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── DHCP Snooping Display ───────────────────────────────────────
 
-  private showDHCPSnooping(sw: Switch): string {
+  private showDHCPSnooping(sw: CiscoSwitch): string {
     const cfg = sw._getDHCPSnoopingConfig();
     const lines: string[] = [];
 
@@ -2342,7 +2860,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showDHCPSnoopingBinding(sw: Switch): string {
+  private showDHCPSnoopingBinding(sw: CiscoSwitch): string {
     const bindings = sw._getSnoopingBindings();
     const lines: string[] = [];
 
@@ -2366,7 +2884,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showLogging(sw: Switch): string {
+  private showLogging(sw: CiscoSwitch): string {
     const logs = sw._getSnoopingLog();
     const lines: string[] = [];
 
@@ -2395,7 +2913,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── DAI Display ──────────────────────────────────────────────────
 
-  private showArpInspection(sw: Switch): string {
+  private showArpInspection(sw: CiscoSwitch): string {
     const cfg = sw._getArpInspectionConfig();
     const lines: string[] = [];
     const vlans = Array.from(cfg.vlans).sort((a, b) => a - b);
@@ -2416,7 +2934,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionVlan(sw: Switch, spec: string): string {
+  private showArpInspectionVlan(sw: CiscoSwitch, spec: string): string {
     const wanted = new Set<number>();
     for (const part of spec.split(',')) {
       const m = part.match(/^(\d+)-(\d+)$/);
@@ -2437,7 +2955,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionStats(sw: Switch): string {
+  private showArpInspectionStats(sw: CiscoSwitch): string {
     const stats = sw._getArpInspectionStats();
     const lines = [
       ' Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops',
@@ -2465,7 +2983,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionIfs(sw: Switch): string {
+  private showArpInspectionIfs(sw: CiscoSwitch): string {
     const cfg = sw._getArpInspectionConfig();
     const errd = sw._getArpErrDisabledPorts();
     const lines = [
@@ -2484,7 +3002,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpAcls(sw: Switch): string {
+  private showArpAcls(sw: CiscoSwitch): string {
     const map = sw._getArpAccessLists();
     if (map.size === 0) return '';
     const lines: string[] = [];
@@ -2528,8 +3046,467 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
    * L2-only switch (returns null → "% Invalid interface name").
    */
   private virtualInterfaceName(input: string): string | null {
-    const m = input.replace(/\s+/g, '').match(/^(?:po|port-?channel)(\d+)$/i);
-    return m ? `Port-channel${m[1]}` : null;
+    const compact = input.replace(/\s+/g, '');
+    const po = compact.match(/^(?:po|port-?channel)(\d+)$/i);
+    if (po) return `Port-channel${po[1]}`;
+    // SVI: `interface Vlan N` (the switch's L3 management interface).
+    const vl = compact.match(/^(?:vl|vlan)(\d+)$/i);
+    if (vl) return `Vlan${vl[1]}`;
+    return null;
+  }
+
+  /** Extract the VLAN id from an SVI interface name ("Vlan10" → 10). */
+  private sviVlanId(iface: string): number | null {
+    const m = /^vlan(\d+)$/i.exec(iface);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  /**
+   * Wire the IOS Layer-3 surface: `ip routing`, `ip route`, the
+   * `ip dhcp pool` sub-mode (reusing the shared DHCP pool builder),
+   * `ip dhcp excluded-address`, and the matching show / clear views.
+   * Every command targets the Switch's own DHCPServer / SVI routing
+   * table — the same machinery that lights up inter-VLAN routing.
+   */
+  private registerL3Commands(): void {
+    const cfg = this.configTrie;
+
+    // `ip routing` / `no ip routing` — global L3 enable (IOS requires
+    // it on some 2960 SKUs; we accept it as a no-op since the switch
+    // base already routes through its SVI plane).
+    cfg.register('ip routing', 'Enable Layer-3 routing', () => '');
+    cfg.register('no ip routing', 'Disable Layer-3 routing', () => '');
+
+    // ip route <net> <mask> <next-hop>
+    cfg.registerGreedy('ip route', 'Add a static route', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+      this.d().addStaticRoute(net, mask, gw);
+      return '';
+    });
+    cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      let net: IPAddress, mask: SubnetMask;
+      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+      this.d().removeStaticRoute(net, mask);
+      return '';
+    });
+
+    // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
+    cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const dhcp = this.d()._getDHCPServerInternal();
+      if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
+      dhcp.enable(); // IOS auto-enables the DHCP service when a pool is created
+      this.selectedDhcpPool = args[0];
+      this.mode = 'config-dhcp';
+      return '';
+    });
+    cfg.registerGreedy('no ip dhcp pool', 'Remove a DHCP pool', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d()._getDHCPServerInternal().deletePool(args[0]);
+      return '';
+    });
+    cfg.registerGreedy('ip dhcp excluded-address',
+      'Exclude IP range from DHCP allocation', (args) => {
+        if (args.length < 1) return '% Incomplete command.';
+        this.d()._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
+        return '';
+      });
+
+    // Pool sub-mode trie: reuse the shared Cisco builder. Only the
+    // handful of accessors the pool commands actually call need to be
+    // populated; the rest of CiscoShellContext is irrelevant on a
+    // switch (no IPSec / routing-proto state here).
+    const dhcpCtx = {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      getSelectedDHCPPool: () => this.selectedDhcpPool,
+      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
+    } as unknown as CiscoShellContext;
+    buildConfigDhcpCommands(this.configDhcpTrie, dhcpCtx);
+
+    // ── Show commands ──────────────────────────────────────────────
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show ip route', 'Display IP routing table', () =>
+        this.showIpRoute());
+      t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
+        this.showIpDhcpBinding());
+      t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', () =>
+        this.showIpDhcpPool());
+      t.register('show arp', 'Display ARP cache', () => this.showArp());
+      t.register('show ip arp', 'Display IP ARP cache', () => this.showArp());
+      t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
+        if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
+          return this.showIpInterfaceBrief();
+        }
+        return this.showIpInterfaceVerbose(args.join(' '));
+      });
+      t.registerGreedy('show track', 'Display tracked objects', (args) => {
+        const objs = this.trackObjects.list();
+        if (objs.length === 0) return '';
+        const filterId = parseInt(args[0] ?? '', 10);
+        const filtered = Number.isFinite(filterId) ? objs.filter((o) => o.id === filterId) : objs;
+        const lines: string[] = [];
+        for (const o of filtered) {
+          const state = this.trackObjects.stateOf(this.d(), o.id);
+          const kindStr = o.kind === 'ip-routing' ? 'ip routing' : 'line-protocol';
+          lines.push(`Track ${o.id}`);
+          lines.push(`  Interface ${o.target} ${kindStr}`);
+          lines.push(`  ${kindStr} is ${state}`);
+        }
+        return lines.join('\n');
+      });
+      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showVrrpBrief() : this.showVrrp());
+      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showStandbyBrief() : this.showStandby());
+      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) =>
+        args[0] === 'brief' ? this.showGlbpBrief() : this.showGlbp());
+    }
+  }
+
+  private showVrrp(): string {
+    const groups = this.d().getVrrpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
+      const effPrio = vrrpEffectivePriority(g);
+      lines.push(`${iface} - Group ${g.vrid}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Virtual MAC address is ${vrrpVirtualMac(g.vrid)}`);
+      if (effPrio === g.priority) {
+        lines.push(`  Priority is ${g.priority}`);
+      } else {
+        lines.push(`  Priority is ${effPrio} (configured ${g.priority})`);
+      }
+      lines.push(`  Preemption is ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showGlbp(): string {
+    const groups = this.d().getGlbpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr =
+        g.avgState === 'active' ? 'Active'
+        : g.avgState === 'standby' ? 'Standby'
+        : g.avgState === 'init' ? 'Init'
+        : 'Disabled';
+      const effWeight = glbpEffectiveWeighting(g);
+      lines.push(`${iface} - Group ${g.group}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Priority ${g.priority}`);
+      if (effWeight === g.weighting) {
+        lines.push(`  Weighting ${g.weighting}`);
+      } else {
+        lines.push(`  Weighting ${effWeight} (configured ${g.weighting})`);
+      }
+      lines.push(`  Load-balancing ${g.loadBalancing}`);
+      lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
+      const fwds = [...g.forwarders.values()];
+      if (fwds.length > 0) {
+        lines.push(`  ${fwds.length} forwarder(s):`);
+        for (const f of fwds) {
+          lines.push(`    Forwarder ${f.forwarderNumber} vmac ${f.vmac} state ${f.state}`);
+        }
+      }
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showStandby(): string {
+    const groups = this.d().getHsrpAgent().listGroups();
+    if (groups.length === 0) return '';
+    const lines: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const stateStr =
+        g.state === 'active' ? 'Active'
+        : g.state === 'standby' ? 'Standby'
+        : g.state === 'listen' ? 'Listen'
+        : g.state === 'speak' ? 'Speak'
+        : g.state === 'learn' ? 'Learn'
+        : 'Init';
+      const effPrio = hsrpEffectivePriority(g);
+      lines.push(`${iface} - Group ${g.group}`);
+      lines.push(`  State is ${stateStr}`);
+      lines.push(`  Virtual IP address is ${g.vip ?? 'unassigned'}`);
+      lines.push(`  Virtual MAC address is ${hsrpVirtualMac(g.group, g.version)} (v${g.version} default)`);
+      if (effPrio === g.priority) {
+        lines.push(`  Priority ${g.priority}`);
+      } else {
+        lines.push(`  Priority ${effPrio} (configured ${g.priority})`);
+      }
+      lines.push(`  Preemption ${g.preempt ? 'enabled' : 'disabled'}`);
+      if (g.tracks.length > 0) {
+        lines.push(`  Tracking ${g.tracks.length} object(s):`);
+        for (const t of g.tracks) {
+          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
+        }
+      }
+      lines.push('');
+    }
+    return lines.join('\n').replace(/\n$/, '');
+  }
+
+  private showVrrpBrief(): string {
+    const groups = this.d().getVrrpAgent().listGroups();
+    const header = 'Interface          Grp Pri Time    Own Pre State    Master addr     Group addr';
+    const rows = groups.map((g) => {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
+      return `${iface.padEnd(19)}${String(g.vrid).padEnd(4)}${String(vrrpEffectivePriority(g)).padEnd(4)}` +
+        `${String(3 * g.advertiseSec * 1000).padEnd(8)}${'N'.padEnd(4)}${(g.preempt ? 'Y' : 'N').padEnd(4)}` +
+        `${state.padEnd(9)}${(g.masterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+    });
+    return [header, ...rows].join('\n');
+  }
+
+  private showStandbyBrief(): string {
+    const groups = this.d().getHsrpAgent().listGroups();
+    const header = '                     P indicates configured to preempt.\n' +
+      '                     |\nInterface   Grp  Pri P State    Active          Standby         Virtual IP';
+    const rows = groups.map((g) => {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const state =
+        g.state === 'active' ? 'Active'
+        : g.state === 'standby' ? 'Standby'
+        : g.state === 'speak' ? 'Speak'
+        : g.state === 'listen' ? 'Listen'
+        : g.state === 'learn' ? 'Learn'
+        : 'Init';
+      return `${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(hsrpEffectivePriority(g)).padEnd(4)}` +
+        `${(g.preempt ? 'P' : ' ').padEnd(2)}${state.padEnd(9)}` +
+        `${(g.activeRouterIp ?? 'unknown').padEnd(16)}${(g.standbyRouterIp ?? 'unknown').padEnd(16)}${g.vip ?? 'unassigned'}`;
+    });
+    return [header, ...rows].join('\n');
+  }
+
+  private showGlbpBrief(): string {
+    const groups = this.d().getGlbpAgent().listGroups();
+    const header = 'Interface   Grp  Fwd Pri State    Address         Active router   Standby router';
+    const rows: string[] = [];
+    for (const g of groups) {
+      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const avgState =
+        g.avgState === 'active' ? 'Active'
+        : g.avgState === 'standby' ? 'Standby'
+        : g.avgState === 'init' ? 'Init'
+        : 'Disabled';
+      rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${'-'.padEnd(4)}` +
+        `${String(g.priority).padEnd(4)}${avgState.padEnd(9)}` +
+        `${(g.vip ?? 'unassigned').padEnd(16)}${(g.avgIp ?? 'local').padEnd(16)}unknown`);
+      for (const f of g.forwarders.values()) {
+        rows.push(`${iface.padEnd(12)}${String(g.group).padEnd(5)}${String(f.forwarderNumber).padEnd(4)}` +
+          `${String(f.priority).padEnd(4)}${f.state.padEnd(9)}${f.vmac.padEnd(16)}${(f.ownerIp ?? 'local').padEnd(16)}unknown`);
+      }
+    }
+    return [header, ...rows].join('\n');
+  }
+
+  /**
+   * IOS `show ip interface Vlan<N>` — the verbose per-SVI L3 view used
+   * for sanity checks: IP/mask, MTU, MAC, broadcast, line/protocol
+   * state, and the configured `ip helper-address` list. Falls back to a
+   * "% Invalid interface" for non-SVI names since L2 ports carry no IP.
+   */
+  private showIpInterfaceVerbose(iface: string): string {
+    const vlanIfMatch = iface.match(/^(?:vl|vlan)\s*(\d+)$/i);
+    if (!vlanIfMatch) {
+      return `% Invalid input detected at '^' marker.`;
+    }
+    const vlan = parseInt(vlanIfMatch[1], 10);
+    const svi = this.d().getSvi(vlan);
+    if (!svi) return `Vlan${vlan} is administratively down, line protocol is down (svi not configured)`;
+
+    const adminUp = svi.adminUp;
+    const lineUp = adminUp && this.d().isSviLineUp(svi);
+    const stateLine = `Vlan${vlan} is ${adminUp ? (lineUp ? 'up' : 'down') : 'administratively down'}, ` +
+      `line protocol is ${lineUp ? 'up' : 'down'}`;
+    const lines = [stateLine];
+    if (svi.ip && svi.mask) {
+      const network = svi.ip.networkAddress(svi.mask);
+      const bcast = `${network.toString().replace(/\.0$/, '')}.255`;
+      lines.push(`  Internet address is ${svi.ip}/${svi.mask.toCIDR()}`);
+      lines.push(`  Broadcast address is ${bcast}`);
+    } else {
+      lines.push('  Internet protocol processing disabled');
+    }
+    lines.push('  MTU is 1500 bytes');
+    lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac()}`);
+    if (svi.helperAddresses.length > 0) {
+      for (const h of svi.helperAddresses) {
+        lines.push(`  Helper address is ${h}`);
+      }
+    } else {
+      lines.push('  Helper address is not set');
+    }
+    lines.push('  Directed broadcast forwarding is disabled');
+    lines.push('  Outgoing access list is not set');
+    lines.push('  Inbound  access list is not set');
+    lines.push('  Proxy ARP is enabled');
+    lines.push('  Security level is default');
+    lines.push('  Split horizon is enabled');
+    lines.push('  ICMP redirects are always sent');
+    lines.push('  ICMP unreachables are always sent');
+    lines.push('  ICMP mask replies are never sent');
+    lines.push('  IP fast switching is enabled');
+    lines.push('  IP CEF switching is enabled');
+    return lines.join('\n');
+  }
+
+  /** IOS-style `show ip route` rendering from the Switch's L3 table. */
+  private showIpRoute(): string {
+    const rows = this.d().getL3RoutingTable();
+    const header = [
+      'Codes: C - connected, S - static, R - RIP, D - EIGRP, O - OSPF',
+      '       B - BGP, * - candidate default',
+      '',
+      'Gateway of last resort is not set',
+      '',
+    ];
+    const lines: string[] = [];
+    // SVI iface naming differs by vendor (Huawei `Vlanif10` vs Cisco
+    // `Vlan10`). The routing-table model lives on the shared Switch
+    // base, so rewrite to IOS-style here for display purposes only.
+    const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
+    for (const r of rows) {
+      const dest = `${r.network}/${r.mask.toCIDR()}`;
+      if (r.proto === 'connected') {
+        lines.push(`C    ${dest} is directly connected, ${cisco(r.iface)}`);
+      } else {
+        // Static (or default) route — IOS prefixes a `*` on the
+        // candidate default route entry.
+        const isDefault = r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0;
+        const code = isDefault ? 'S*' : 'S';
+        const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
+        lines.push(`${code}    ${dest} [1/0] via ${nh}`);
+      }
+    }
+    if (lines.length === 0) lines.push('% No routes installed');
+    return [...header, ...lines].join('\n');
+  }
+
+  /** IOS `show ip dhcp binding` table — leases currently held by the server. */
+  private showIpDhcpBinding(): string {
+    const dhcp = this.d()._getDHCPServerInternal();
+    const bindings = Array.from(dhcp.getBindings().values());
+    const lines: string[] = [
+      'Bindings from all pools not associated with VRF:',
+      'IP address          Client-ID/              Lease expiration        Type',
+      '                    Hardware address/',
+      '                    User name',
+    ];
+    for (const b of bindings) {
+      const expire = b.leaseExpiration
+        ? new Date(b.leaseExpiration).toUTCString().slice(5, 25)
+        : 'Infinite';
+      lines.push(`${b.ipAddress.padEnd(20)}01${b.clientId.replace(/:/g, '').toLowerCase().padEnd(22)}${expire.padEnd(24)}Automatic`);
+    }
+    if (bindings.length === 0) lines.push('% No bindings');
+    return lines.join('\n');
+  }
+
+  /** IOS `show ip dhcp pool` — render each configured pool's parameters. */
+  private showIpDhcpPool(): string {
+    const dhcp = this.d()._getDHCPServerInternal();
+    const pools = Array.from(dhcp.getAllPools().values());
+    if (pools.length === 0) return '% No DHCP pools configured';
+    const allBindings = Array.from(dhcp.getBindings().values());
+    const blocks: string[] = [];
+    for (const pool of pools) {
+      const leased = allBindings.filter(
+        b => pool.network && pool.mask && this.ipInSubnet(b.ipAddress, pool.network, pool.mask),
+      ).length;
+      blocks.push([
+        `Pool ${pool.name} :`,
+        ` Utilization mark (high/low)    : 100 / 0`,
+        ` Subnet size (first/next)       : 0 / 0`,
+        ` Total addresses                : 254`,
+        ` Leased addresses               : ${leased}`,
+        ` Pending event                  : none`,
+        ` 1 subnet is currently in the pool :`,
+        ` Current index        IP address range                    Leased addresses`,
+        ` ${(pool.network ?? '?').padEnd(20)} ${(pool.network ?? '?')} - ${pool.network ?? '?'}                ${leased}`,
+      ].join('\n'));
+    }
+    return blocks.join('\n');
+  }
+
+  private ipInSubnet(ip: string, network: string, mask: string): boolean {
+    try {
+      const ipN = new IPAddress(ip);
+      const netN = new IPAddress(network);
+      const m = new SubnetMask(mask);
+      return ipN.isInSameSubnet(netN, m);
+    } catch { return false; }
+  }
+
+  /** IOS `show arp` — the switch's shared mgmt ARP cache. */
+  private showArp(): string {
+    const arp = this.d()._getArpTableInternal();
+    const lines: string[] = ['Protocol  Address          Age (min)  Hardware Addr   Type   Interface'];
+    for (const [ip, e] of arp.entries()) {
+      const age = e.type === 'static' ? '-' : '0';
+      lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(11)}${e.mac.toString().padEnd(16)}ARPA   ${e.iface}`);
+    }
+    return lines.join('\n');
+  }
+
+  /** `show ip interface brief` — the switch carries IPs only on SVIs. */
+  private showIpInterfaceBrief(): string {
+    const header = 'Interface              IP-Address      OK? Method Status                Protocol';
+    const svis = this.d().getSvis();
+    const rows = svis.map(svi => {
+      const name = `Vlan${svi.vlan}`;
+      const ip = svi.ip ? svi.ip.toString() : 'unassigned';
+      const method = svi.ip ? 'manual' : 'unset';
+      const status = svi.adminUp ? 'up' : 'administratively down';
+      const proto = svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down';
+      return `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
+    });
+    if (rows.length === 0) {
+      rows.push(`Vlan1                  unassigned      YES unset  administratively down down`);
+    }
+    return [header, ...rows].join('\n');
+  }
+
+  /** `[no] shutdown` for either a physical port or a management SVI. */
+  private setIfAdminState(iface: string, up: boolean): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan !== null) { this.d().setSviAdminUp(vlan, up); return ''; }
+    const port = this.d().getPort(iface);
+    if (port) { port.setUp(up); return ''; }
+    return '% Error';
   }
 
   private resolveInterfaceName(input: string): string | null {

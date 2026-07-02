@@ -43,6 +43,8 @@ export interface CommandNode {
   action?: CommandAction;
   /** If true, this node accepts remaining args as-is */
   greedy?: boolean;
+  hintSuggestions?: Array<{ keyword: string; description: string }>;
+  _hintOnly?: boolean;
 }
 
 export type CommandAction = (args: string[], rawLine: string) => string;
@@ -68,6 +70,16 @@ export interface MatchResult {
 export class CommandTrie {
   private root: CommandNode;
   private canonicalDescriptions = new Map<string, string>();
+
+  /**
+   * Optional diagnostic observer, fired whenever a registration overwrites a
+   * path that already had an action on the same trie. Off by default (zero
+   * production cost); tests enable it to assert the command tree is free of
+   * accidental duplicate registrations (a duplicate silently shadows the
+   * earlier handler, which is almost always a bug). Set back to `null` to
+   * disable.
+   */
+  static overwriteObserver: ((info: { path: string; kind: 'register' | 'registerGreedy' }) => void) | null = null;
 
   constructor() {
     this.root = this.createNode('', 'Root');
@@ -146,14 +158,33 @@ export class CommandTrie {
         child = this.createNode(kw, i === keywords.length - 1 ? description : kw);
         node.children.set(kw, child);
       }
+      child._hintOnly = false;
       if (i === keywords.length - 1) {
         child.description = description;
       }
       node = child;
     }
 
+    if (node.action && CommandTrie.overwriteObserver) {
+      CommandTrie.overwriteObserver({ path, kind: 'register' });
+    }
     node.action = action;
     if (params) node.params = params;
+  }
+
+  registerSuggestions(path: string, suggestions: Array<{ keyword: string; description: string }>): void {
+    const keywords = path.split(/\s+/).map(k => k.toLowerCase());
+    let node: CommandNode = this.root;
+    for (const kw of keywords) {
+      let child = node.children.get(kw);
+      if (!child) {
+        child = this.createNode(kw, kw);
+        child._hintOnly = true;
+        node.children.set(kw, child);
+      }
+      node = child;
+    }
+    node.hintSuggestions = [...suggestions];
   }
 
   /**
@@ -171,12 +202,16 @@ export class CommandTrie {
         child = this.createNode(kw, i === keywords.length - 1 ? description : kw);
         node.children.set(kw, child);
       }
+      child._hintOnly = false;
       if (i === keywords.length - 1) {
         child.description = description;
       }
       node = child;
     }
 
+    if (node.action && CommandTrie.overwriteObserver) {
+      CommandTrie.overwriteObserver({ path, kind: 'registerGreedy' });
+    }
     node.action = action;
     node.greedy = true;
   }
@@ -203,7 +238,8 @@ export class CommandTrie {
       const tokenLower = token.toLowerCase();
 
       // Try exact match first, then prefix match
-      const exactChild = node.children.get(tokenLower);
+      const exactChildRaw = node.children.get(tokenLower);
+      const exactChild = exactChildRaw && !exactChildRaw._hintOnly ? exactChildRaw : undefined;
       if (exactChild) {
         node = exactChild;
         matchedKeywords.push(node.keyword);
@@ -246,15 +282,15 @@ export class CommandTrie {
       }
 
       if (matches.length > 1) {
-        // Try disambiguation: if there are more tokens, check which matches
-        // can continue to the next token (lookahead disambiguation)
         if (i < tokens.length - 1) {
           const nextToken = tokens[i + 1].toLowerCase();
           const viable = matches.filter(m => {
             const exactNext = m.children.get(nextToken);
             if (exactNext) return true;
             const prefixNext = this.prefixMatch(m, nextToken);
-            return prefixNext.length > 0;
+            if (prefixNext.length > 0) return true;
+            if (m.greedy && m.children.size === 0) return true;
+            return false;
           });
           if (viable.length === 1) {
             node = viable[0];
@@ -371,10 +407,9 @@ export class CommandTrie {
         return matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
       }
 
-      // Complete token (followed by space or more tokens) → navigate
-      const exact = node.children.get(token);
-      if (exact) {
-        node = exact;
+      const exactRawHelp = node.children.get(token);
+      if (exactRawHelp) {
+        node = exactRawHelp;
         continue;
       }
 
@@ -384,7 +419,6 @@ export class CommandTrie {
         continue;
       }
 
-      // Disambiguate with lookahead if possible
       if (matches.length > 1 && i < tokens.length - 1) {
         const nextToken = tokens[i + 1].toLowerCase();
         const viable = matches.filter(m => {
@@ -397,7 +431,6 @@ export class CommandTrie {
         }
       }
 
-      // Can't navigate further
       return [];
     }
 
@@ -426,18 +459,25 @@ export class CommandTrie {
       const isLast = i === tokens.length - 1;
 
       if (isLast && !input.endsWith(' ')) {
-        // Partial token → try to complete
         const matches = this.prefixMatch(node, token);
         if (matches.length === 1) {
           completed.push(matches[0].keyword);
           return completed.join(' ') + ' ';
         }
-        // Ambiguous or no match → no completion
+        if (matches.length === 0 && node.hintSuggestions) {
+          const hintMatches = node.hintSuggestions.filter(h =>
+            h.keyword.toLowerCase().startsWith(token));
+          if (hintMatches.length === 1) {
+            completed.push(hintMatches[0].keyword);
+            return completed.join(' ') + ' ';
+          }
+        }
         return null;
       }
 
       // Full token → navigate
-      const exact = node.children.get(token);
+      const exactRaw = node.children.get(token);
+      const exact = exactRaw && !exactRaw._hintOnly ? exactRaw : undefined;
       if (exact) {
         completed.push(exact.keyword);
         node = exact;
@@ -476,6 +516,7 @@ export class CommandTrie {
   private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
     const results: CommandNode[] = [];
     for (const [keyword, child] of node.children) {
+      if (child._hintOnly) continue;
       if (keyword.startsWith(prefix)) {
         results.push(child);
       }
@@ -490,7 +531,6 @@ export class CommandTrie {
   private nodeCompletions(node: CommandNode): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
-    // Keyword children
     for (const [, child] of node.children) {
       results.push({ keyword: child.keyword, description: this.resolveDescription(child) });
     }
@@ -500,7 +540,16 @@ export class CommandTrie {
       results.push({ keyword: `<${param.name}>`, description: param.description });
     }
 
-    // If node is a greedy command, indicate it accepts arguments
+    if (node.hintSuggestions && node.hintSuggestions.length > 0) {
+      const seen = new Set(results.map(r => r.keyword.toLowerCase()));
+      for (const hint of node.hintSuggestions) {
+        if (!seen.has(hint.keyword.toLowerCase())) {
+          results.push(hint);
+          seen.add(hint.keyword.toLowerCase());
+        }
+      }
+    }
+
     if (node.greedy && results.length === 0) {
       results.push({ keyword: 'WORD', description: node.description });
     }

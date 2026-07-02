@@ -17,6 +17,8 @@ import { MemoryProfile } from './MemoryProfile';
 import { StorageDevice, DiskPartition } from './StorageDevice';
 import { NetworkAdapter } from './NetworkAdapter';
 import { Firmware, Mainboard } from './SystemBoard';
+import { PciBus } from './PciBus';
+import { UsbBus } from './UsbBus';
 
 /** SMBIOS chassis type — what `dmidecode -t chassis` reports. */
 export type ChassisType =
@@ -42,6 +44,8 @@ export interface HardwareProfileInit {
   adapters?: NetworkAdapter[];
   firmware?: Firmware;
   mainboard?: Mainboard;
+  pciBus?: PciBus;
+  usbBus?: UsbBus;
 }
 
 const GIB = 1024 ** 3;
@@ -59,6 +63,8 @@ export class HardwareProfile {
   adapters: NetworkAdapter[];
   firmware: Firmware;
   mainboard: Mainboard;
+  pciBus: PciBus;
+  usbBus: UsbBus;
 
   constructor(init: HardwareProfileInit = {}) {
     this.manufacturer = init.manufacturer ?? 'QEMU';
@@ -72,6 +78,8 @@ export class HardwareProfile {
     this.adapters = init.adapters ?? [];
     this.firmware = init.firmware ?? new Firmware();
     this.mainboard = init.mainboard ?? new Mainboard();
+    this.pciBus = init.pciBus ?? PciBus.defaultInventory();
+    this.usbBus = init.usbBus ?? UsbBus.defaultInventory();
   }
 
   // ─── Factory presets ───────────────────────────────────────────────────

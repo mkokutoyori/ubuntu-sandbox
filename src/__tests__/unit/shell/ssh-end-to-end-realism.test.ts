@@ -785,7 +785,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await typeSub(t, 'pwd');
     t.handleKey(key('ArrowUp'));
     await flush();
-    expect((t as unknown as { _inputBuf: string })._inputBuf).toBe('pwd');
+    expect(t.foreground.input).toBe('pwd');
   });
 
   test('§67 — Windows→Linux: Ctrl+L is classified as clear-screen by inner shell', async () => {
@@ -793,8 +793,10 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     const t = new WindowsTerminalSession('j67', lan.winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    const active = (t as unknown as { activeSubShell: { handleKey?: (e: KeyEvent) => boolean } }).activeSubShell;
-    expect(active.handleKey?.(key('l', { ctrlKey: true }))).toBe(false);
+    t.addLine('scrollback');
+    t.handleKey(key('l', { ctrlKey: true }));
+    await flush();
+    expect(t.lines.length).toBe(0);
   });
 
   test('§68 — Windows→Linux: completion candidates include common bins', async () => {
@@ -802,9 +804,10 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     const t = new WindowsTerminalSession('j68', lan.winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    const active = (t as unknown as { activeSubShell: { getCompletions?: (s: string) => string[] } }).activeSubShell;
-    const candidates = active.getCompletions?.('ls') ?? [];
-    expect(Array.isArray(candidates)).toBe(true);
+    t.setInput('ech');
+    t.handleKey(key('Tab'));
+    await flush();
+    expect(t.foreground.input).toMatch(/^echo/);
   });
 
   // ─── §K — sqlplus / rman over SSH chains ───────────────────────────
@@ -1044,7 +1047,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expectAnyLine(t, /(?:GE|GigabitEthernet)0\/0\/0/);
   });
 
-  test('§93 — Linux→Cisco IOS: shows the IOS prompt via CrossVendorRemoteShell', async () => {
+  test('§93 — Linux→Cisco IOS: shows the IOS prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p93', lan.linuxA);
     await t.init();
@@ -1052,7 +1055,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expect(t.getPrompt()).toMatch(/cisco/);
   });
 
-  test('§94 — Linux→Huawei VRP: shows the VRP prompt via CrossVendorRemoteShell', async () => {
+  test('§94 — Linux→Huawei VRP: shows the VRP prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p94', lan.linuxA);
     await t.init();

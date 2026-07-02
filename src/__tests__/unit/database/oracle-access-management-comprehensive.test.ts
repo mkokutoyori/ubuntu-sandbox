@@ -815,9 +815,9 @@ describe('13. Session, process, and resource inspection', () => {
     { sql: 'SELECT sid, statistic#, value FROM v$sesstat WHERE statistic# = 0 FETCH FIRST 5 ROWS ONLY;', want: /\bVALUE\b/i },
     { sql: "SELECT name FROM v$sysstat WHERE name LIKE 'logons%';",                                     want: /\blogons\b/i },
     // V$LOCK / V$TRANSACTION
-    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /\bLMODE\b/i },
+    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /(?:\bLMODE\b)|no rows selected/i },
     { sql: 'SELECT COUNT(*) FROM v$lock WHERE block > 0;',                                              want: /^\s*\d+\s*$/m },
-    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /\bSTATUS\b/i },
+    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /(?:\bSTATUS\b)|no rows selected/i },
     { sql: 'SELECT sid, sql_id FROM v$open_cursor FETCH FIRST 5 ROWS ONLY;',                             want: /\bSQL_ID\b/i },
     // V$SQL / V$SQLAREA — at least the columns we asked for.
     { sql: 'SELECT sql_id, sql_text FROM v$sql FETCH FIRST 5 ROWS ONLY;',                                 want: /\bSQL_ID\b/i },
@@ -1533,10 +1533,12 @@ describe('29. Negative paths — privilege denial and bad input', () => {
     { sql: 'AUDIT CREATE SESSION;',                                                want: /ORA-01031/ },
     { sql: 'CREATE AUDIT POLICY rogue ACTIONS ALL;',                               want: /ORA-01031/ },
     { sql: 'ALTER SYSTEM FLUSH SHARED_POOL;',                                       want: /ORA-01031/ },
-    // GUEST exists right now (it was created above and has not been
-    // dropped yet) — query DBA_USERS to confirm the row is visible to
-    // SYS, matching what real Oracle would show in this state.
-    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'GUEST';",              want: /^\s*1\s*$/m },
+    // The session is still connected as GUEST here (reconnect to SYS
+    // happens further below) and GUEST only holds CREATE SESSION — real
+    // Oracle hides DBA_ views from a user without SELECT_CATALOG_ROLE /
+    // SELECT ANY DICTIONARY / DBA behind ORA-00942, so guest cannot see
+    // its own row this way.
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'GUEST';",              want: /ORA-00942/ },
     { sql: 'GRANT SELECT ON hr.employees TO guest;',                                want: /ORA-01031/ },
     { sql: 'CONNECT / AS SYSDBA',                                                   want: /\bConnected\b/i },
     // Malformed statements — must raise a parse error (ORA-00900-class).

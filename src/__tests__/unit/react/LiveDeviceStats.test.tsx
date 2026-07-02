@@ -13,7 +13,7 @@ import { render, act, screen } from '@testing-library/react';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { MACAddress } from '@/network/core/types';
+import { IPAddress, MACAddress } from '@/network/core/types';
 import { LiveDeviceStats } from '@/components/network/devtools/LiveDeviceStats';
 
 describe('LiveDeviceStats', () => {
@@ -47,8 +47,8 @@ describe('LiveDeviceStats', () => {
     expect(screen.getByText((c) => c.includes('ARP cache: 0'))).toBeTruthy();
 
     act(() => {
-      pc.addStaticARP('10.0.0.1', MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP('10.0.0.2', MACAddress.parse('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.1'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.2'), MACAddress.parse('aa:bb:cc:dd:ee:02'), 'eth0');
     });
 
     expect(screen.getByText((c) => c.includes('ARP cache: 2'))).toBeTruthy();

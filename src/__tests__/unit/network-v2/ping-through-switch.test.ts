@@ -28,11 +28,11 @@ describe('Ping through Switch (equipment-driven communication)', () => {
 
     // Connect PC1.eth0 ↔ Switch.GigabitEthernet0/0
     const cable1 = new Cable('cable-1');
-    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
 
     // Connect PC2.eth0 ↔ Switch.GigabitEthernet0/1
     const cable2 = new Cable('cable-2');
-    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     return { pc1, pc2, sw, cable1, cable2 };
   }
@@ -134,7 +134,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
 
     // Reconnect
     const newCable = new Cable('cable-3');
-    newCable.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    newCable.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
 
     const reconnected = await pc1.executeCommand('ping -c 1 192.168.1.20');
     expect(reconnected).toContain('1 received');
@@ -253,10 +253,10 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     const sw = new CiscoSwitch('switch-cisco', 'Sw1', 8);
 
     const cable1 = new Cable('cable-1');
-    cable1.connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
 
     const cable2 = new Cable('cable-2');
-    cable2.connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await linux.executeCommand('ifconfig eth0 192.168.1.10');
     await win.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.1.20 255.255.255.0');
@@ -274,9 +274,9 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     const pc3 = new LinuxPC('PC3');
     const sw = new CiscoSwitch('switch-cisco', 'Sw1', 24);
 
-    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
-    new Cable('c3').connect(pc3.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('c3').connect(pc3.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
 
     await pc1.executeCommand('ifconfig eth0 192.168.1.1');
     await pc2.executeCommand('ifconfig eth0 192.168.1.2');
@@ -320,9 +320,9 @@ describe('Ping through Switch (equipment-driven communication)', () => {
     await pc1.executeCommand('ping -c 1 192.168.1.20');
 
     const onPort1 = () => sw.getMACTable().filter(
-      e => e.port === 'FastEthernet0/0' && e.type === 'dynamic');
-    const onPort2 = () => sw.getMACTable().filter(
       e => e.port === 'FastEthernet0/1' && e.type === 'dynamic');
+    const onPort2 = () => sw.getMACTable().filter(
+      e => e.port === 'FastEthernet0/2' && e.type === 'dynamic');
     expect(onPort1().length).toBeGreaterThanOrEqual(1);
     expect(onPort2().length).toBeGreaterThanOrEqual(1);
 

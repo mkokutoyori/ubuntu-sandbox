@@ -117,9 +117,9 @@ describe('OSPFv2 – Basic Single Area', () => {
     // (If Switch not available, we can connect them in a star but the simulation must support broadcast.
     // For test, we'll rely on framework ability to simulate broadcast domain.)
 
-    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
-    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/4')!);
 
     // Wait for convergence
 
@@ -262,9 +262,9 @@ describe('OSPFv2 – Basic Single Area', () => {
     await r3.executeCommand('router ospf 1'); await r3.executeCommand('router-id 3.3.3.3'); await r3.executeCommand('network 192.168.1.0 0.0.0.255 area 0'); await r3.executeCommand('end');
 
     const sw = new Switch('switch-cisco', 'SW1');
-    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
-    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/4')!);
 
     // Check interface state on R1
     const intOut = await r1.executeCommand('show ip ospf interface GigabitEthernet0/0');
@@ -927,9 +927,9 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
     // Connect to switch
     const sw = new Switch('switch-cisco', 'SW1');
-    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
-    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
+    const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/4')!);
 
     // R3 has highest router-id (3.3.3.3) → DR; R2 (2.2.2.2) → BDR
     // On Cisco IOS, DR/BDR are shown with their link-local addresses

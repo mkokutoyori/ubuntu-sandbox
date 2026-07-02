@@ -246,6 +246,14 @@ export class OracleCatalog extends BaseCatalog {
   private instance: OracleInstance;
   /** Schema → password (for authentication) */
   private passwords: Map<string, string> = new Map();
+  /**
+   * External password-file membership ($ORACLE_HOME/dbs/orapw<SID>):
+   * user → set of administrative privileges (SYSDBA/SYSOPER/…). These are
+   * deliberately kept OUT of the ordinary system-privilege registry
+   * (DBA_SYS_PRIVS) and surface only through V$PWFILE_USERS, exactly like
+   * a real instance. SYS is always a member (seeded below).
+   */
+  private adminPrivileges: Map<string, Set<string>> = new Map();
   /** Auto-incrementing user ID counter */
   private nextUserId = 0;
   /** Auto-incrementing session ID */
@@ -389,6 +397,11 @@ export class OracleCatalog extends BaseCatalog {
       this.grantSystemPrivilege('SYS', priv, true);
       this.grantSystemPrivilege('SYSTEM', priv, true);
     }
+    // SYS is the sole default member of the password file (SYSDBA +
+    // SYSOPER) — V$PWFILE_USERS shows it on a fresh instance, SYSTEM is
+    // NOT a member and therefore cannot connect remotely AS SYSDBA.
+    this.grantAdminPrivilege('SYS', 'SYSDBA');
+    this.grantAdminPrivilege('SYS', 'SYSOPER');
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
     this.grantRole('SYS', 'SELECT_CATALOG_ROLE', true);
@@ -415,6 +428,38 @@ export class OracleCatalog extends BaseCatalog {
     const stored = this.passwords.get(upper);
     if (stored === undefined) return false;
     return stored === password;
+  }
+
+  // ── Password file (administrative privileges) ────────────────────
+
+  /** Add an administrative privilege to the external password file. */
+  grantAdminPrivilege(grantee: string, privilege: string): void {
+    const g = grantee.toUpperCase();
+    const p = privilege.toUpperCase();
+    const set = this.adminPrivileges.get(g) ?? new Set<string>();
+    set.add(p);
+    this.adminPrivileges.set(g, set);
+  }
+
+  /** Remove an administrative privilege; drop the user when none remain. */
+  revokeAdminPrivilege(grantee: string, privilege: string): void {
+    const g = grantee.toUpperCase();
+    const set = this.adminPrivileges.get(g);
+    if (!set) return;
+    set.delete(privilege.toUpperCase());
+    if (set.size === 0) this.adminPrivileges.delete(g);
+  }
+
+  /** True when the user holds the given administrative privilege in the
+   *  password file — the gate for a remote `AS SYSDBA`/`AS SYSOPER`. */
+  isPasswordFileMember(username: string, privilege: string): boolean {
+    return this.adminPrivileges.get(username.toUpperCase())?.has(privilege.toUpperCase()) ?? false;
+  }
+
+  /** Password-file roster for V$PWFILE_USERS. */
+  getPasswordFileMembers(): { username: string; privileges: ReadonlySet<string> }[] {
+    return Array.from(this.adminPrivileges.entries())
+      .map(([username, privileges]) => ({ username, privileges }));
   }
 
   private storedVerifiers: Map<string, OracleStoredVerifiers> = new Map();
@@ -732,6 +777,11 @@ export class OracleCatalog extends BaseCatalog {
     if (!actions) return;
     actions.delete(action.toUpperCase());
     if (actions.size === 0) this.objAuditOpts.delete(key);
+  }
+
+  /** Audit mode configured for one object/action pair, if any. */
+  getObjectAuditOption(schema: string, object: string, action: string): ObjectAuditMode | undefined {
+    return this.objAuditOpts.get(`${schema.toUpperCase()}.${object.toUpperCase()}`)?.get(action.toUpperCase());
   }
 
   /** Flattened, read-only snapshot of every object audit option. */
@@ -1411,16 +1461,25 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── DBA_ views ───────────────────────────────────────────────────
 
-  private queryDBA(viewName: string, _currentUser: string): ResultSet | null {
-    // Every DBA_ dictionary view is self-registered under views/*.ts.
+  private queryDBA(viewName: string, currentUser: string): ResultSet | null {
+    if (!this.canAccessDbaViews(currentUser)) return null;
     const fromRegistry = queryView(viewName, {
       instance: this.instance,
       storage: this.storage,
       runtime: this.instance.getRuntimeState(),
       catalog: this,
-      currentUser: _currentUser,
+      currentUser,
     });
     return fromRegistry ?? null; // Unknown view — fall through to table lookup
+  }
+
+  private canAccessDbaViews(user: string): boolean {
+    if (user === 'SYS') return true;
+    const engine = this.getSecurityEngine();
+    if (!engine) return true;
+    if (engine.privileges.isDba(user)) return true;
+    if (engine.privileges.hasSystemPrivilege(user, 'SELECT ANY DICTIONARY')) return true;
+    return engine.privileges.getGrantedRoles(user).includes('SELECT_CATALOG_ROLE');
   }
 
 

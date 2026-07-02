@@ -12,7 +12,21 @@ import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServ
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs } from './ps/PsCommand';
 import { memPercent, kbToMiB } from './system/ProcFormat';
+
+function topCpuTime(ms: number): string {
+  const min = Math.floor(ms / 60_000);
+  const sec = Math.floor((ms % 60_000) / 1000);
+  const cs = Math.floor((ms % 1000) / 10);
+  return `${min}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+function loadAverage(running: number): string {
+  const v = running.toFixed(2);
+  return `${v}, ${v}, ${v}`;
+}
 import { LinuxService } from './service/LinuxService';
+import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
+import { renderDependencyTree } from './systemd/DependencyTree';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -69,18 +83,23 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const upClause = upDays > 0
     ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
     : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
-  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: 0.08, 0.03, 0.01`);
+  const runnable = procs.filter(p => p.state === 'R' || p.state === 'D').length;
+  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${loadAverage(runnable)}`);
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );
-  lines.push('%Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st');
+  const busyPct = Math.min(100, running * 100);
+  const us = (busyPct * 0.6).toFixed(1);
+  const sy = (busyPct * 0.4).toFixed(1);
+  const id = (100 - busyPct).toFixed(1);
+  lines.push(`%Cpu(s):  ${us} us,  ${sy} sy,  0.0 ni,${id.padStart(5)} id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st`);
   lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
   lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
   lines.push('');
   lines.push('    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND');
 
   for (const p of procs) {
-    const cpu = '0.0';
+    const pcpu = upSec > 0 ? ((p.cpuTime / 1000) / upSec) * 100 : 0;
     const mem = memPercent(p.rss);
     lines.push(
       [
@@ -92,9 +111,9 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
         `${kbToMiB(p.rss)}M`.padStart(6),
         '4M'.padStart(6),
         p.state,
-        cpu.padStart(5),
+        pcpu.toFixed(1).padStart(5),
         mem.padStart(5),
-        '0:00.10'.padStart(9),
+        topCpuTime(p.cpuTime).padStart(9),
         p.comm,
       ].join(' '),
     );
@@ -332,23 +351,79 @@ export interface SysCtlResult {
   exitCode: number;
 }
 
+function unitFailedResult(u: ServiceUnit): string {
+  if (u.failedReason === 'start-limit-hit') return 'start-limit-hit';
+  if (u.lastExit?.signal !== undefined) return 'signal';
+  if (u.lastExit?.code !== undefined && u.lastExit.code !== 0) return 'exit-code';
+  return 'exit-code';
+}
+
+const ACTIVE_SUBSTATE: Record<ReturnType<typeof unitSuffix>, string> = {
+  service: 'running',
+  target: 'active',
+  socket: 'listening',
+  timer: 'waiting',
+};
+
+function unitActiveLine(u: ServiceUnit): string {
+  switch (u.state) {
+    case 'active':
+      return `active (${ACTIVE_SUBSTATE[unitSuffix(u.name)]}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
+    case 'activating':
+      return u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)';
+    case 'deactivating':
+      return 'deactivating (stop)';
+    case 'failed':
+      return `failed (Result: ${unitFailedResult(u)})`;
+    default:
+      return 'inactive (dead)';
+  }
+}
+
+function unitProcessLine(u: ServiceUnit): string | null {
+  const exit = u.lastExit;
+  if (!exit) return null;
+  const cause = exit.signal !== undefined
+    ? `code=killed, signal=${exit.signal.replace(/^SIG/, '')}`
+    : `code=exited, status=${exit.code ?? 0}/${(exit.code ?? 0) === 0 ? 'SUCCESS' : 'FAILURE'}`;
+  return `    Process: ExecStart=${u.execStart} (${cause})`;
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatTimerDate(d: Date | null): string {
+  if (!d) return 'n/a';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+}
+
+function formatTimerDelta(later: Date | null, earlier: Date | null): string {
+  if (!later || !earlier) return 'n/a';
+  const seconds = Math.round((later.getTime() - earlier.getTime()) / 1000);
+  if (seconds < 0) return 'n/a';
+  if (seconds < 120) return `${seconds}s`;
+  if (seconds < 7200) return `${Math.round(seconds / 60)}min`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)} days`;
+}
+
 /** Render the multi-line `systemctl status NAME` block for one unit. */
 function renderUnitStatus(u: ServiceUnit): string {
   const dot = u.state === 'active' ? '●' : u.state === 'failed' ? '×' : '○';
-  const sub = u.state === 'active' ? 'running' : 'dead';
   const loadedLine = `     Loaded: loaded (${u.loadedFrom}; ${u.enabled}; vendor preset: enabled)`;
-  const activeStr =
-    u.state === 'active'
-      ? `active (${sub}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`
-      : `inactive (dead)`;
   const lines = [
-    `${dot} ${u.name}.service - ${u.description}`,
+    `${dot} ${fullUnitName(u.name)} - ${u.description}`,
     loadedLine,
-    `     Active: ${activeStr}`,
+    `     Active: ${unitActiveLine(u)}`,
   ];
-  if (u.mainPid !== undefined) {
+  const processLine = u.state !== 'active' ? unitProcessLine(u) : null;
+  if (processLine) lines.push(processLine);
+  if (u.state === 'active' && u.mainPid !== undefined) {
     lines.push(`   Main PID: ${u.mainPid} (${u.name})`);
     lines.push(`      Tasks: 1`);
+    lines.push(`     Memory: ${(2 + (u.mainPid % 40) / 10).toFixed(1)}M`);
+    lines.push(`        CPU: ${10 + (u.mainPid % 500)}ms`);
     lines.push(`     CGroup: /system.slice/${u.name}.service`);
     lines.push(`             └─${u.mainPid} ${u.execStart}`);
   }
@@ -414,7 +489,7 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
         };
       }
       const u = sm.status(unit);
-      if (!u) return { output: `Unit ${unit}.service could not be found.`, exitCode: 4 };
+      if (!u) return { output: `Unit ${fullUnitName(unit)} could not be found.`, exitCode: 4 };
       return { output: renderUnitStatus(u), exitCode: u.state === 'active' ? 0 : 3 };
     }
 
@@ -427,7 +502,19 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       const result = fn.call(sm, unit);
       if (!result.ok) {
         return {
-          output: `Failed to ${sub} ${unit}.service: ${result.error ?? 'unknown error'}`,
+          output: `Failed to ${sub} ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
+          exitCode: 1,
+        };
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    case 'isolate': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const result = sm.isolate(unit);
+      if (!result.ok) {
+        return {
+          output: `Failed to isolate ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
           exitCode: 1,
         };
       }
@@ -463,7 +550,7 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
     case 'is-enabled': {
       const u = sm.status(unit);
       const en = u?.enabled ?? 'disabled';
-      return { output: en, exitCode: en === 'enabled' ? 0 : 1 };
+      return { output: en, exitCode: en === 'enabled' || en === 'static' ? 0 : 1 };
     }
 
     case 'list-units':
@@ -473,15 +560,18 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       const stateFilter = args.includes('--failed')
         ? 'failed'
         : stateArg?.slice('--state='.length);
-      const allUnits = stateFilter
+      const typeArg = args.find((a) => a.startsWith('--type='))?.slice('--type='.length)
+        ?? (args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined);
+      const matchesType = (name: string): boolean => !typeArg || unitSuffix(name) === typeArg;
+      const allUnits = (stateFilter
         ? sm.list({ state: stateFilter as ServiceState })
-        : sm.list();
+        : sm.list()).filter((u) => matchesType(u.name));
       const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
       for (const u of allUnits) {
         const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';
-        const sub2 = u.state === 'active' ? 'running' : 'dead';
+        const sub2 = u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)];
         lines.push(
-          `  ${(u.name + '.service').padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
+          `  ${fullUnitName(u.name).padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
         );
       }
       lines.push('');
@@ -586,18 +676,42 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       return { output: '', exitCode: 0 };
     }
 
-    case 'list-timers':
-      return { output: 'NEXT LEFT LAST PASSED UNIT ACTIVATES\n\n0 timers listed.', exitCode: 0 };
+    case 'list-timers': {
+      const now = new Date();
+      const timers = sm.timerEntries();
+      const lines = ['NEXT                          LEFT      LAST                          PASSED    UNIT                ACTIVATES'];
+      for (const t of timers) {
+        lines.push([
+          formatTimerDate(t.next).padEnd(30),
+          formatTimerDelta(t.next, now).padEnd(10),
+          formatTimerDate(t.last).padEnd(30),
+          formatTimerDelta(now, t.last).padEnd(10),
+          t.unit.padEnd(20),
+          fullUnitName(t.activates),
+        ].join(''));
+      }
+      lines.push('');
+      lines.push(`${timers.length} timers listed.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
 
-    case 'list-sockets':
-      return { output: 'LISTEN UNIT ACTIVATES\n\n0 sockets listed.', exitCode: 0 };
+    case 'list-sockets': {
+      const sockets = sm.socketEntries();
+      const lines = ['LISTEN                UNIT                ACTIVATES'];
+      for (const s of sockets) {
+        lines.push(`${`0.0.0.0:${s.port}`.padEnd(22)}${s.unit.padEnd(20)}${fullUnitName(s.service)}`);
+      }
+      lines.push('');
+      lines.push(`${sockets.length} sockets listed.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
 
     case 'list-dependencies': {
-      const u = unit ? sm.status(unit) : null;
-      if (unit && !u) return { output: `Failed to get dependencies: Unit ${unit}.service not found.`, exitCode: 1 };
-      const head = unit ? `${unit}.service` : sm.defaultTarget();
-      const deps = u ? u.after : [];
-      return { output: [head, ...deps.map(d => `● └─${d}`)].join('\n'), exitCode: 0 };
+      const root = unit || sm.defaultTarget();
+      if (!sm.status(root)) {
+        return { output: `Failed to get dependencies: Unit ${fullUnitName(root)} not found.`, exitCode: 1 };
+      }
+      return { output: renderDependencyTree(root, sm.dependencyGraph()), exitCode: 0 };
     }
 
     case 'cat': {
@@ -648,7 +762,9 @@ export function cmdService(args: string[], sm: LinuxServiceManager): SysCtlResul
   switch (action) {
     case 'status':
       return {
-        output: ` * ${u.name} ${u.state === 'active' ? 'is running' : 'is not running'}`,
+        output: u.state === 'active'
+          ? ` * ${u.name} is running\n   Active: active (running)`
+          : ` * ${u.name} is not running\n   Active: inactive (dead)`,
         exitCode: u.state === 'active' ? 0 : 3,
       };
     case 'start': {

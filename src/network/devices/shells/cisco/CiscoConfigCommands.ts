@@ -13,14 +13,15 @@ import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
-import { registerArpConfigCommands } from './CiscoArpCommands';
+import { classfulMask as classfulMaskString } from '@/network/core/ip';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
 export type CiscoShellMode =
-  | 'user' | 'privileged' | 'config' | 'config-if'
+  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-subif'
   | 'config-dhcp' | 'config-router' | 'config-router-ospf' | 'config-router-ospfv3'
   | 'config-track' | 'config-ipsla' | 'config-route-map' | 'config-line'
+  | 'config-vrf' | 'config-vlan'
   | 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl'
   | 'config-dhcp-pool-class'
   // IPSec modes
@@ -100,11 +101,15 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial|virtual-template|port-channel|vlan|nve)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|lo|tunnel|tu|serial|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
       if (vMatch) {
         const typeMap: Record<string, string> = {
-          'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial',
-          'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel', 'vlan': 'Vlan',
+          'loopback': 'Loopback', 'lo': 'Loopback',
+          'tunnel': 'Tunnel', 'tu': 'Tunnel',
+          'serial': 'Serial',
+          'virtual-template': 'Virtual-Template',
+          'port-channel': 'Port-channel', 'po': 'Port-channel',
+          'vlan': 'Vlan',
           'nve': 'Nve',
         };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
@@ -122,10 +127,10 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           }
         }
       }
-      if (!ifName) return `% Invalid interface "${raw}"`;
+      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
     }
     ctx.setSelectedInterface(ifName);
-    ctx.setMode('config-if');
+    ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
     return '';
   });
 
@@ -257,8 +262,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
-  // ARP config commands (shared with switch via CiscoArpCommands)
-  registerArpConfigCommands(trie, () => ctx.r());
+  // ARP config commands are registered once for both vendors by the shared
+  // CiscoShellBase (registerArpConfigCommands on the config trie); no need to
+  // register them again here.
 
   // IPv6 static routes
   trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {
@@ -282,6 +288,44 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     }
     return '';
   });
+
+  trie.registerSuggestions('interface', [
+    { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z' },
+    { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u' },
+    { keyword: 'Ethernet',         description: 'IEEE 802.3' },
+    { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
+    { keyword: 'Loopback',         description: 'Loopback interface' },
+    { keyword: 'Serial',           description: 'Serial' },
+    { keyword: 'Tunnel',           description: 'Tunnel interface' },
+    { keyword: 'Vlan',             description: 'Catalyst VLANs' },
+    { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces' },
+    { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface' },
+  ]);
+  trie.registerSuggestions('line', [
+    { keyword: 'console', description: 'Primary terminal line' },
+    { keyword: 'vty',     description: 'Virtual terminal' },
+    { keyword: 'aux',     description: 'Auxiliary line' },
+    { keyword: 'tty',     description: 'Terminal controller' },
+  ]);
+  trie.registerSuggestions('no', [
+    { keyword: 'hostname',  description: 'Reset system hostname' },
+    { keyword: 'interface', description: 'Remove an interface' },
+    { keyword: 'ip',        description: 'Negate ip subcommand' },
+    { keyword: 'router',    description: 'Disable a routing process' },
+    { keyword: 'access-list', description: 'Remove an access list' },
+    { keyword: 'vlan',      description: 'Remove a VLAN' },
+    { keyword: 'line',      description: 'Remove line configuration' },
+    { keyword: 'banner',    description: 'Remove banner' },
+  ]);
+  trie.registerSuggestions('no ip', [
+    { keyword: 'route',     description: 'Remove a static route' },
+    { keyword: 'routing',   description: 'Disable IP routing' },
+    { keyword: 'access-list', description: 'Remove an IP access list' },
+    { keyword: 'nat',       description: 'Remove NAT configuration' },
+    { keyword: 'dhcp',      description: 'Remove DHCP configuration' },
+    { keyword: 'host',      description: 'Remove a host name alias' },
+    { keyword: 'domain-name', description: 'Remove the default domain name' },
+  ]);
 }
 
 // ─── Interface Config Mode Commands ──────────────────────────────────
@@ -319,7 +363,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
           }
         }
       }
-      if (!ifName) return `% Invalid interface "${raw}"`;
+      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
     }
     ctx.setSelectedInterface(ifName);
     ctx.setMode('config-if');
@@ -476,7 +520,25 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as unknown as { ipMtu?: number }).ipMtu = n;
+    if (port && !isNaN(n)) {
+      (port as unknown as { ipMtu?: number }).ipMtu = n;
+      try { port.setMTU(n); } catch { /* ignore */ }
+    }
+    return '';
+  });
+  trie.registerGreedy('ip tcp adjust-mss', 'Clamp TCP MSS on outgoing SYN', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && Number.isFinite(n) && n > 0) {
+      (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss = n;
+    }
+    return '';
+  });
+  trie.register('no ip tcp adjust-mss', 'Remove TCP MSS clamp', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) delete (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
     return '';
   });
   trie.registerGreedy('ipv6 mtu', 'Set IPv6 MTU', (args) => {
@@ -703,10 +765,15 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (!port) return '';
+    const type = args[0]?.toLowerCase() ?? '';
+    if (!type) return '% Incomplete command.';
+    let vlan: number | undefined;
+    if (args[1] !== undefined) {
+      if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
+      vlan = parseInt(args[1], 10);
+    }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
-      type: args[0]?.toLowerCase() ?? '',
-      vlan: args[1] ? parseInt(args[1], 10) : undefined,
-      native: args.includes('native'),
+      type, vlan, native: args.includes('native'),
     };
     return '';
   });
@@ -803,6 +870,9 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   }
   const network = new IPAddress(netStr);
   const mask = new SubnetMask(maskStr);
+  if (!(netStr === '0.0.0.0' && maskStr === '0.0.0.0') && !network.networkAddress(mask).equals(network)) {
+    return '%Inconsistent address and mask';
+  }
   const remaining = args.slice(cursor + 2);
   let outIface: string | null = null;
   let nextHopStr: string | null = null;
@@ -886,8 +956,5 @@ export function resolveInterfaceName(router: Router, input: string): string | nu
 // ─── Classful Mask (for RIP) ────────────────────────────────────────
 
 export function classfulMask(ip: IPAddress): SubnetMask {
-  const firstOctet = ip.getOctets()[0];
-  if (firstOctet < 128) return new SubnetMask('255.0.0.0');
-  if (firstOctet < 192) return new SubnetMask('255.255.0.0');
-  return new SubnetMask('255.255.255.0');
+  return new SubnetMask(classfulMaskString(ip.toString()));
 }

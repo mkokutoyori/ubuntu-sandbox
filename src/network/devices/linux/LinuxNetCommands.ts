@@ -6,9 +6,143 @@
  */
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
-import type { SocketTable, SocketEntry } from '../../core/SocketTable';
+import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
-import { broadcastAddress } from '../../core/ip';
+import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
+
+export type ServiceResolver = (port: number, proto: string) => string | null;
+
+const SS_TCP_STATE: Record<SocketState, string> = {
+  LISTEN: 'LISTEN', ESTABLISHED: 'ESTAB', SYN_SENT: 'SYN-SENT', SYN_RECEIVED: 'SYN-RECV',
+  FIN_WAIT_1: 'FIN-WAIT-1', FIN_WAIT_2: 'FIN-WAIT-2', CLOSE_WAIT: 'CLOSE-WAIT',
+  CLOSING: 'CLOSING', LAST_ACK: 'LAST-ACK', TIME_WAIT: 'TIME-WAIT', CLOSED: 'UNCONN',
+};
+
+function ssStateLabel(sock: SocketEntry): string {
+  if (sock.protocol === 'udp') return sock.state === 'ESTABLISHED' ? 'ESTAB' : 'UNCONN';
+  return SS_TCP_STATE[sock.state] ?? sock.state;
+}
+
+function socketVisible(state: SocketState, wantAll: boolean, wantListening: boolean): boolean {
+  if (wantListening) return state === 'LISTEN';
+  if (wantAll) return true;
+  return state !== 'LISTEN';
+}
+
+function formatEndpoint(
+  addr: string, port: number, proto: string,
+  numeric: boolean, resolveService?: ServiceResolver, bracketV6 = false,
+): string {
+  const host = bracketV6 && addr.includes(':') ? `[${addr}]` : addr;
+  if (!numeric && resolveService && port > 0) {
+    const name = resolveService(port, proto);
+    if (name) return `${host}:${name}`;
+  }
+  return `${host}:${port}`;
+}
+
+export type PortResolver = (name: string) => number | null;
+
+type PortCompare = (a: number, b: number) => boolean;
+const SS_FILTER_OPS: Record<string, PortCompare> = {
+  '=': (a, b) => a === b, '==': (a, b) => a === b, eq: (a, b) => a === b,
+  '!=': (a, b) => a !== b, ne: (a, b) => a !== b,
+  '>': (a, b) => a > b, gt: (a, b) => a > b,
+  '<': (a, b) => a < b, lt: (a, b) => a < b,
+  '>=': (a, b) => a >= b, ge: (a, b) => a >= b,
+  '<=': (a, b) => a <= b, le: (a, b) => a <= b,
+};
+
+interface PortPredicate { side: 'sport' | 'dport'; cmp: PortCompare; port: number; }
+
+function parsePortValue(token: string, resolvePort?: PortResolver): number | null {
+  let v = token.startsWith(':') ? token.slice(1) : token;
+  if (v.includes(':')) v = v.slice(v.lastIndexOf(':') + 1);
+  if (v === '' || v === '*') return null;
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  return resolvePort?.(v) ?? null;
+}
+
+function parsePortFilters(args: string[], resolvePort?: PortResolver): PortPredicate[] {
+  const out: PortPredicate[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const side = args[i];
+    if (side !== 'sport' && side !== 'dport') continue;
+    let op = '=';
+    let valueToken = args[i + 1];
+    if (valueToken && SS_FILTER_OPS[valueToken]) { op = valueToken; valueToken = args[i + 2]; i += 2; }
+    else { i += 1; }
+    if (!valueToken) continue;
+    const port = parsePortValue(valueToken, resolvePort);
+    if (port === null) continue;
+    out.push({ side, cmp: SS_FILTER_OPS[op], port });
+  }
+  return out;
+}
+
+function matchesPortFilters(sock: SocketEntry, filters: PortPredicate[]): boolean {
+  for (const f of filters) {
+    const p = f.side === 'sport' ? sock.localPort : sock.remotePort;
+    if (!f.cmp(p, f.port)) return false;
+  }
+  return true;
+}
+
+interface CidrRange { network: number; mask: number }
+interface AddrSpec { addr: string | null; port: number | null; cidr?: CidrRange }
+interface AddrPredicate extends AddrSpec { side: 'src' | 'dst' }
+
+function parseAddrSpec(token: string, resolvePort?: PortResolver): AddrSpec {
+  const slash = token.indexOf('/');
+  if (slash !== -1) {
+    const net = tryIpToUint32(token.slice(0, slash));
+    const prefix = parseInt(token.slice(slash + 1), 10);
+    if (net !== null && Number.isFinite(prefix) && prefix >= 0 && prefix <= 32) {
+      const mask = prefixLengthToMaskUint32(prefix);
+      return { addr: null, port: null, cidr: { network: net & mask, mask } };
+    }
+  }
+  let m = /^\[(.+)\]:(.+)$/.exec(token);
+  if (m) return { addr: m[1], port: parsePortValue(m[2], resolvePort) };
+  if (token.startsWith(':')) return { addr: null, port: parsePortValue(token, resolvePort) };
+  m = /^(\d{1,3}(?:\.\d{1,3}){3}):(.+)$/.exec(token);
+  if (m) return { addr: m[1], port: parsePortValue(m[2], resolvePort) };
+  return { addr: token === '*' ? null : token, port: null };
+}
+
+function parseAddrFilters(args: string[], resolvePort?: PortResolver): AddrPredicate[] {
+  const out: AddrPredicate[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const side = args[i];
+    if (side !== 'src' && side !== 'dst') continue;
+    let valueToken = args[i + 1];
+    if (valueToken === '=' || (valueToken && SS_FILTER_OPS[valueToken])) { valueToken = args[i + 2]; i += 2; }
+    else { i += 1; }
+    if (!valueToken) continue;
+    out.push({ side, ...parseAddrSpec(valueToken, resolvePort) });
+  }
+  return out;
+}
+
+function matchesAddrFilters(sock: SocketEntry, filters: AddrPredicate[]): boolean {
+  for (const f of filters) {
+    const addr = f.side === 'src' ? sock.localAddress : sock.remoteAddress;
+    const port = f.side === 'src' ? sock.localPort : sock.remotePort;
+    if (f.cidr) {
+      const a = tryIpToUint32(addr);
+      if (a === null || (a & f.cidr.mask) >>> 0 !== (f.cidr.network >>> 0)) return false;
+    } else if (f.addr !== null && addr !== f.addr) {
+      return false;
+    }
+    if (f.port !== null && port !== f.port) return false;
+  }
+  return true;
+}
+
+function familyVisible(addr: string, want4: boolean, want6: boolean): boolean {
+  if (want4 === want6) return true;
+  return addr.includes(':') ? want6 : want4;
+}
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -110,6 +244,7 @@ export function cmdNetstat(
   ctx: IpNetworkContext | null,
   isServer: boolean,
   socketTable?: SocketTable | null,
+  resolveService?: ServiceResolver,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -178,9 +313,19 @@ export function cmdNetstat(
   const showAll = !wantTcp && !wantUdp;
 
   const showProcesses = hasFlag('p');
+  const numeric = hasFlag('n');
+  const wantAll = hasFlag('a') || args.includes('--all');
+  const wantListening = hasFlag('l') || args.includes('--listening');
+  const want4 = hasFlag('4') || args.includes('--ipv4');
+  const want6 = hasFlag('6') || args.includes('--ipv6');
 
+  const banner = wantListening
+    ? 'Active Internet connections (only servers)'
+    : wantAll
+      ? 'Active Internet connections (servers and established)'
+      : 'Active Internet connections (w/o servers)';
   const lines = [
-    'Active Internet connections (only servers)',
+    banner,
     'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name',
   ];
 
@@ -190,13 +335,18 @@ export function cmdNetstat(
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
+      if (!familyVisible(sock.localAddress, want4, want6)) continue;
+      if (!socketVisible(sock.state, wantAll, wantListening)) continue;
 
-      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
-      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
+      const v6 = sock.localAddress.includes(':');
+      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService);
+      const remoteAddr = sock.state === 'LISTEN'
+        ? (v6 ? ':::*' : '0.0.0.0:*')
+        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
       const stateCol   = isTcp ? sock.state : '';
       const pidCol     = showProcesses && sock.pid ? `${sock.pid}/${sock.processName}` : '';
 
-      lines.push(formatNetstatLine(sock.protocol, localAddr, remoteAddr, stateCol, pidCol));
+      lines.push(formatNetstatLine(`${sock.protocol}${v6 ? '6' : ''}`, localAddr, remoteAddr, stateCol, pidCol));
     }
   } else {
     // Fallback when no socket table is wired (e.g. in test environments that
@@ -276,7 +426,11 @@ function formatNetstatLine(
 
 // ─── ss ─────────────────────────────────────────────────────────────
 
-export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTable | null): string {
+export function cmdSs(
+  args: string[], isServer: boolean,
+  socketTable?: SocketTable | null, resolveService?: ServiceResolver,
+  resolvePort?: PortResolver,
+): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
     args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
@@ -292,6 +446,10 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   const wantUdp       = hasFlag('u') || args.includes('--udp');
   const showProcesses = hasFlag('p') || args.includes('--processes');
   const summary       = args.includes('-s') || args.includes('--summary');
+  const numeric       = hasFlag('n') || args.includes('--numeric');
+  const wantAll       = hasFlag('a') || args.includes('--all');
+  const want4         = hasFlag('4') || args.includes('--ipv4');
+  const want6         = hasFlag('6') || args.includes('--ipv6');
   const showAll       = !wantTcp && !wantUdp; // no proto filter → show both
 
   if (summary) {
@@ -337,19 +495,30 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   const lines: string[] = [];
   lines.push('State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process');
 
+  const portFilters = parsePortFilters(args, resolvePort);
+  const addrFilters = parseAddrFilters(args, resolvePort);
+
   if (socketTable) {
     for (const sock of socketTable.getAll()) {
       const isTcp = sock.protocol === 'tcp';
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
-      if (wantListening && sock.state !== 'LISTEN') continue;
-      if ((stateFilter === 'established' || stateFilter === 'connected')
-          && sock.state !== 'ESTABLISHED') continue;
+      if (!familyVisible(sock.localAddress, want4, want6)) continue;
+      if (stateFilter === 'established' || stateFilter === 'connected') {
+        if (sock.state !== 'ESTABLISHED') continue;
+      } else if (!socketVisible(sock.state, wantAll, wantListening)) {
+        continue;
+      }
+      if (!matchesPortFilters(sock, portFilters)) continue;
+      if (!matchesAddrFilters(sock, addrFilters)) continue;
 
-      const localAddr  = `${sock.localAddress}:${sock.localPort}`;
-      const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
-      const stateCol   = sock.state;
+      const v6 = sock.localAddress.includes(':');
+      const localAddr  = formatEndpoint(sock.localAddress, sock.localPort, sock.protocol, numeric, resolveService, true);
+      const remoteAddr = sock.state === 'LISTEN'
+        ? (v6 ? '[::]:*' : '0.0.0.0:*')
+        : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService, true);
+      const stateCol   = ssStateLabel(sock);
       const procCol    = showProcesses && sock.pid
         ? ` users:(("${sock.processName}",pid=${sock.pid},fd=3))`
         : '';
@@ -385,16 +554,33 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
  *   -c <count>   stop after `count` packets
  *   port <n>     Berkeley-packet-filter expression on the port
  */
-export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string {
+export interface TcpdumpOptions {
+  iface: string;
+  count: number;
+  portFilter: number | null;
+  asciiDump: boolean;
+  hexDump: boolean;
+  writeFile: string | null;
+  readFile: string | null;
+}
+
+export function parseTcpdumpArgs(args: string[]): TcpdumpOptions {
   let iface = 'eth0';
   let count = Infinity;
   let portFilter: number | null = null;
+  let asciiDump = false;
+  let hexDump = false;
+  let writeFile: string | null = null;
+  let readFile: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === 'port') { portFilter = Number.parseInt(args[++i], 10) || null; continue; }
     if (!a.startsWith('-')) continue;
-    // Expand a bundle of short flags: `-ni` → -n -i, `-c` takes a value.
+    if (a === '-A') { asciiDump = true; continue; }
+    if (a === '-X' || a === '-XX') { hexDump = true; asciiDump = true; continue; }
+    if (a === '-w' || a === '--write') { writeFile = args[++i] ?? null; continue; }
+    if (a === '-r' || a === '--read') { readFile = args[++i] ?? null; continue; }
     const chars = a.slice(1);
     for (let c = 0; c < chars.length; c++) {
       const ch = chars[c];
@@ -405,32 +591,118 @@ export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string
         else count = Number.parseInt(value, 10) || Infinity;
         break;
       }
-      // -n / -nn / -v / -e / -x … — no-ops for the simulator.
     }
   }
+  return { iface, count, portFilter, asciiDump, hexDump, writeFile, readFile };
+}
 
-  const header = [
+export function tcpdumpHeader(iface: string): string[] {
+  return [
     'tcpdump: verbose output suppressed, use -v[v]... for full protocol decode',
     `listening on ${iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes`,
   ];
+}
 
-  const captured = log ? log.all() : [];
-  const matching = (portFilter !== null
-    ? captured.filter(p => p.srcPort === portFilter || p.dstPort === portFilter)
-    : [...captured]
-  ).slice(0, count === Infinity ? undefined : count);
-
-  const body = matching.map(formatTcpdumpPacket);
-  const footer = [
-    `${matching.length} packet${matching.length === 1 ? '' : 's'} captured`,
-    `${matching.length} packet${matching.length === 1 ? '' : 's'} received by filter`,
+export function tcpdumpFooter(count: number): string[] {
+  return [
+    `${count} packet${count === 1 ? '' : 's'} captured`,
+    `${count} packet${count === 1 ? '' : 's'} received by filter`,
     '0 packets dropped by kernel',
   ];
-  return [...header, ...body, ...footer].join('\n');
+}
+
+export function packetMatchesPort(p: CapturedPacket, portFilter: number | null): boolean {
+  return portFilter === null || p.srcPort === portFilter || p.dstPort === portFilter;
+}
+
+export interface TcpdumpFs {
+  read: (path: string) => string | null;
+  write: (path: string, content: string) => void;
+}
+
+export function cmdTcpdump(args: string[], log: PacketCaptureLog | null, fs?: TcpdumpFs): string {
+  const opts = parseTcpdumpArgs(args);
+
+  if (opts.readFile) {
+    const raw = fs?.read(opts.readFile);
+    let packets: CapturedPacket[];
+    if (raw != null) {
+      packets = deserializeCapture(raw);
+      if (packets.length === 0 && log) packets = [...log.all()];
+    } else if (log) {
+      packets = [...log.all()];
+    } else {
+      return `tcpdump: error: ${opts.readFile}: No such file or directory`;
+    }
+    const matching = packets
+      .filter((p) => packetMatchesPort(p, opts.portFilter))
+      .slice(0, opts.count === Infinity ? undefined : opts.count);
+    return [`reading from file ${opts.readFile}, link-type EN10MB (Ethernet)`,
+      ...matching.flatMap(p => formatPacket(p, opts.asciiDump, opts.hexDump))].join('\n');
+  }
+
+  const captured = log ? log.all() : [];
+  const matching = captured
+    .filter((p) => packetMatchesPort(p, opts.portFilter))
+    .slice(0, opts.count === Infinity ? undefined : opts.count);
+
+  if (opts.writeFile && fs) {
+    fs.write(opts.writeFile, serializeCapture(matching));
+    return `tcpdump: listening on ${opts.iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n${matching.length} packets captured`;
+  }
+
+  const body = matching.flatMap(p => formatPacket(p, opts.asciiDump, opts.hexDump));
+  return [...tcpdumpHeader(opts.iface), ...body, ...tcpdumpFooter(matching.length)].join('\n');
+}
+
+function formatPacket(p: CapturedPacket, ascii: boolean, hex: boolean): string[] {
+  const out: string[] = [formatTcpdumpPacket(p)];
+  if ((ascii || hex) && p.payload && p.payload.length > 0) {
+    if (hex) out.push(formatHexDump(p.payload));
+    if (ascii) out.push(formatAsciiDump(p.payload));
+  }
+  return out;
+}
+
+function formatAsciiDump(bytes: Uint8Array): string {
+  let s = '';
+  for (const b of bytes) s += (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.';
+  return s;
+}
+
+function formatHexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const hexBytes = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    lines.push(`\t0x${i.toString(16).padStart(4, '0')}: ${hexBytes.padEnd(48)} ${formatAsciiDump(chunk)}`);
+  }
+  return lines.join('\n');
+}
+
+function serializeCapture(packets: readonly CapturedPacket[]): string {
+  return JSON.stringify(packets.map(p => ({
+    at: p.at.toISOString(),
+    srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
+    flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
+    payload: p.payload ? Array.from(p.payload) : undefined,
+  })));
+}
+
+function deserializeCapture(raw: string): CapturedPacket[] {
+  try {
+    const arr = JSON.parse(raw) as Array<{ at: string; srcIp: string; srcPort: number; dstIp: string; dstPort: number; flags: string; seq: number; ack: number; length: number; payload?: number[] }>;
+    return arr.map(p => ({
+      at: new Date(p.at),
+      srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
+      flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
+      payload: p.payload ? new Uint8Array(p.payload) : undefined,
+    }));
+  } catch { return []; }
 }
 
 /** Render one captured segment in tcpdump's default one-line form. */
-function formatTcpdumpPacket(p: CapturedPacket): string {
+export function formatTcpdumpPacket(p: CapturedPacket): string {
   const ts = p.at.toTimeString().slice(0, 8) +
     '.' + String(p.at.getMilliseconds()).padStart(3, '0') + '000';
   const win = p.flags === 'S' ? 64240 : p.flags === 'S.' ? 65160 : 502;
@@ -448,7 +720,12 @@ function formatTcpdumpPacket(p: CapturedPacket): string {
  * unreachable / powered-off target faithfully reports zero responses. The
  * `Sent N probes (N broadcast(s))` summary line matches real `arping`.
  */
-export function cmdArping(args: string[]): string {
+export interface ArpingResult {
+  output: string;
+  exitCode: number;
+}
+
+export function cmdArping(args: string[], ctx?: { mac?: (ip: string) => string | null }): ArpingResult {
   let count = 0;
   let target = '';
   for (let i = 0; i < args.length; i++) {
@@ -458,14 +735,25 @@ export function cmdArping(args: string[]): string {
     if (!a.startsWith('-')) target = a;
   }
   if (!target) {
-    return 'Usage: arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination';
+    return {
+      output: 'Usage: arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination',
+      exitCode: 2,
+    };
   }
   const probes = count > 0 ? count : 1;
-  return [
-    `ARPING ${target}`,
-    `Sent ${probes} probes (${probes} broadcast(s))`,
-    `Received 0 response(s)`,
-  ].join('\n');
+  const mac = ctx?.mac?.(target) ?? null;
+  const lines = [`ARPING ${target}`];
+  if (mac) {
+    for (let i = 0; i < probes; i++) {
+      lines.push(`Unicast reply from ${target} [${mac}]  0.${String(500 + i).padStart(3, '0')}ms`);
+    }
+    lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);
+    lines.push(`Received ${probes} response(s)`);
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+  lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);
+  lines.push(`Received 0 response(s)`);
+  return { output: lines.join('\n'), exitCode: 1 };
 }
 
 // ─── curl ───────────────────────────────────────────────────────────

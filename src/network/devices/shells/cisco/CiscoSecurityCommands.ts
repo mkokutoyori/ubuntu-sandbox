@@ -8,6 +8,8 @@ import {
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import { encryptType7, md5Hex } from '@/crypto';
+import { pad2 } from '@/lib/format';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -163,8 +165,17 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
-    const r = ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+    const r = ctx.r() as unknown as {
+      _setServiceFlag?: (n: string, on: boolean) => void;
+      getEnablePassword?: () => { value: string; algo: 'plain' | 'type-7' } | null;
+      _setEnablePassword?: (v: string, algo: 'plain' | 'type-7') => void;
+    };
     r._setServiceFlag?.('password-encryption', true);
+    const ep = r.getEnablePassword?.();
+    if (ep && ep.algo === 'plain') {
+      const salt = parseInt(md5Hex(`cisco-type7:${ep.value}`).slice(0, 1), 16);
+      r._setEnablePassword?.(encryptType7(ep.value, salt), 'type-7');
+    }
     return '';
   });
 
@@ -441,7 +452,6 @@ export function buildSecuritySubmodeCommands(
   pmapClassTrie.registerGreedy('priority', 'Reserve bandwidth for priority', (args) => { addAction(ctx, 'priority', args); return ''; });
   pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
   pmapClassTrie.register('fair-queue', 'Enable WFQ', () => { addAction(ctx, 'fair-queue', []); return ''; });
-  pmapClassTrie.register('random-detect', 'Enable WRED', () => { addAction(ctx, 'random-detect', []); return ''; });
   pmapClassTrie.registerGreedy('random-detect', 'WRED configuration', (args) => { addAction(ctx, 'random-detect', args); return ''; });
   pmapClassTrie.registerGreedy('shape', 'Traffic shape', (args) => { addAction(ctx, 'shape', args); return ''; });
   pmapClassTrie.registerGreedy('service-policy', 'Nested service-policy', (args) => { addAction(ctx, 'service-policy', args); return ''; });
@@ -994,8 +1004,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return lines.join('\n');
   });
 }
-
-function pad2(n: number): string { return n < 10 ? '0' + n : '' + n; }
 
 function secondsSince(ms: number): number {
   return Math.max(0, Math.floor((Date.now() - ms) / 1000));

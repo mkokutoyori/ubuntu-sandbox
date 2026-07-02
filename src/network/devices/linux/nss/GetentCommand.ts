@@ -71,10 +71,24 @@ const USAGE = [
  * Parse the argument list. Returns `{ ok, options, args }` or
  * `{ ok: false, message }` on malformed input.
  */
+interface ParsedServiceOverride {
+  global: string | null;
+  perDb: Map<string, string>;
+}
+
+function applyServiceConfig(config: string, into: ParsedServiceOverride): void {
+  const colon = config.indexOf(':');
+  if (colon === -1) {
+    into.global = config.toLowerCase();
+  } else {
+    into.perDb.set(config.slice(0, colon).toLowerCase(), config.slice(colon + 1).toLowerCase());
+  }
+}
+
 function parseArgs(argv: string[]):
-  | { ok: true; serviceOverride: string | null; database: string; keys: string[] }
+  | { ok: true; service: ParsedServiceOverride; database: string; keys: string[] }
   | { ok: false; output: string; exitCode: number } {
-  let serviceOverride: string | null = null;
+  const service: ParsedServiceOverride = { global: null, perDb: new Map() };
   let i = 0;
   while (i < argv.length) {
     const a = argv[i];
@@ -92,12 +106,12 @@ function parseArgs(argv: string[]):
       if (i + 1 >= argv.length) {
         return { ok: false, output: USAGE, exitCode: 1 };
       }
-      serviceOverride = argv[i + 1];
+      applyServiceConfig(argv[i + 1], service);
       i += 2;
       continue;
     }
     if (a.startsWith('--service=')) {
-      serviceOverride = a.slice('--service='.length);
+      applyServiceConfig(a.slice('--service='.length), service);
       i++;
       continue;
     }
@@ -112,7 +126,7 @@ function parseArgs(argv: string[]):
   }
   const database = argv[i].toLowerCase();
   const keys = argv.slice(i + 1);
-  return { ok: true, serviceOverride, database, keys };
+  return { ok: true, service, database, keys };
 }
 
 /**
@@ -127,20 +141,18 @@ export function runGetent(
   const parsed = parseArgs(argv);
   if (!parsed.ok) return { output: parsed.output, exitCode: parsed.exitCode };
 
-  // `-s files` overrides the nsswitch.conf-declared chain: we narrow the
-  // resolver scope to just that source.
+  const overrideFor = (database: string): string | null =>
+    parsed.service.perDb.get(database) ?? parsed.service.global;
   const resolveSingle = <T>(database: string, fn: (s: INssSource) => NssResult<T> | undefined): NssResult<T> => {
-    if (parsed.serviceOverride === 'files') {
-      const r = fn(fallbackFilesSource);
-      return r ?? { status: 'UNAVAIL' };
-    }
+    const ov = overrideFor(database);
+    if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL' };
+    if (ov) return nss.lookupVia<T>(ov, fn);
     return nss.lookup<T>(database, fn);
   };
   const resolveEnum = <T>(database: string, fn: (s: INssSource) => NssEnumResult<T> | undefined): NssEnumResult<T> => {
-    if (parsed.serviceOverride === 'files') {
-      const r = fn(fallbackFilesSource);
-      return r ?? { status: 'UNAVAIL', entries: [] };
-    }
+    const ov = overrideFor(database);
+    if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL', entries: [] };
+    if (ov) return nss.enumerateVia<T>(ov, fn);
     return nss.enumerate<T>(database, fn);
   };
 
@@ -165,7 +177,7 @@ export function runGetent(
       // simulator has no mail subsystem, return UNAVAIL → empty.
       return { output: '', exitCode: 2 };
     default:
-      return { output: `Unknown database: ${parsed.database}`, exitCode: 2 };
+      return { output: `Unknown database: ${parsed.database}`, exitCode: 1 };
   }
 }
 
@@ -264,43 +276,40 @@ function handleHosts(single: SingleFn, enumerate: EnumFn, keys: string[]): Geten
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
 }
 
-/** ahosts — one line per family per address. */
-function handleAhosts(single: SingleFn, _enumerate: EnumFn, keys: string[]): GetentResult {
-  if (keys.length === 0) return { output: '', exitCode: 1 };
+function handleAhosts(single: SingleFn, enumerate: EnumFn, keys: string[]): GetentResult {
+  if (keys.length === 0) {
+    const r = enumerate<NssHostEntry>('ahosts', s => s.enumHosts?.());
+    const out = r.entries.flatMap(GetentFormatter.ahosts);
+    return { output: out.join('\n'), exitCode: out.length ? 0 : 1 };
+  }
   const out: string[] = [];
   let allOk = true;
   for (const k of keys) {
     const r = single<NssHostEntry[]>('ahosts', s => s.gethostbyname?.(k));
     if (r.status === 'SUCCESS' && r.entry) {
-      for (const h of r.entry) {
-        const fam = h.addressFamily === 10 ? 'INET6' : 'INET';
-        out.push(`${h.address.padEnd(40)}STREAM ${h.canonicalName}`);
-        out.push(`${h.address.padEnd(40)}DGRAM `);
-        out.push(`${h.address.padEnd(40)}RAW   `);
-        void fam;
-      }
+      for (const h of r.entry) out.push(...GetentFormatter.ahosts(h));
     } else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
 }
 
 function handleAhostsFamily(
-  single: SingleFn, _enumerate: EnumFn, keys: string[], family: 2 | 10,
+  single: SingleFn, enumerate: EnumFn, keys: string[], family: 2 | 10,
 ): GetentResult {
-  if (keys.length === 0) return { output: '', exitCode: 1 };
+  const database = family === 2 ? 'ahostsv4' : 'ahostsv6';
+  if (keys.length === 0) {
+    const r = enumerate<NssHostEntry>(database, s => s.enumHosts?.());
+    const out = r.entries
+      .filter(h => h.addressFamily === family)
+      .flatMap(GetentFormatter.ahosts);
+    return { output: out.join('\n'), exitCode: out.length ? 0 : 1 };
+  }
   const out: string[] = [];
   let allOk = true;
   for (const k of keys) {
-    const r = single<NssHostEntry[]>(
-      family === 2 ? 'ahostsv4' : 'ahostsv6',
-      s => s.gethostbyname?.(k, family),
-    );
+    const r = single<NssHostEntry[]>(database, s => s.gethostbyname?.(k, family));
     if (r.status === 'SUCCESS' && r.entry) {
-      for (const h of r.entry) {
-        out.push(`${h.address.padEnd(40)}STREAM ${h.canonicalName}`);
-        out.push(`${h.address.padEnd(40)}DGRAM `);
-        out.push(`${h.address.padEnd(40)}RAW   `);
-      }
+      for (const h of r.entry) out.push(...GetentFormatter.ahosts(h));
     } else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };

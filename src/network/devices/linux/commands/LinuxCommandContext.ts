@@ -17,6 +17,7 @@
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
+import type { Bind9Service } from '../bind9/Bind9Service';
 import type { IpXfrmContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
@@ -30,6 +31,9 @@ export interface LinuxCommandContext {
 
   /** DNS daemon co-located with this machine (dnsmasq). */
   readonly dnsService: DnsService;
+
+  /** BIND 9 daemon co-located with this machine (named). */
+  readonly bind9: Bind9Service;
 
   /** XFRM SAD/SPD context for `ip xfrm` commands. */
   readonly xfrm: IpXfrmContext;

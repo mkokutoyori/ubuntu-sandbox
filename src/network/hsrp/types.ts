@@ -1,4 +1,5 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
 export const UDP_PORT_HSRP = 1985;
 export const HSRP_MULTICAST_V1 = '224.0.0.2';
 export const HSRP_MULTICAST_V2 = '224.0.0.102';
@@ -21,11 +22,7 @@ export interface HsrpPacket extends NetworkPdu {
   senderIp: string;
 }
 
-export interface HsrpTrackEntry {
-  target: string;
-  decrement: number;
-  down: boolean;
-}
+export type HsrpTrackEntry = FhrpTrackEntry;
 
 export interface HsrpGroupRuntime {
   iface: string;
@@ -60,12 +57,10 @@ export interface HsrpConfig {
   groups: Map<string, HsrpGroupRuntime>;
 }
 
-export function makeKey(iface: string, group: number): string {
-  return `${iface}|${group}`;
-}
+export { makeFhrpKey as makeKey } from '../fhrp/types';
 
 export function createDefaultHsrpConfig(): HsrpConfig {
-  return { enabled: true, groups: new Map() };
+  return createDefaultFhrpConfig<HsrpGroupRuntime>();
 }
 
 export function defaultGroupRuntime(iface: string, group: number, version: 1 | 2 = 1): HsrpGroupRuntime {
@@ -82,11 +77,7 @@ export function defaultGroupRuntime(iface: string, group: number, version: 1 | 2
 }
 
 export function effectivePriority(g: HsrpGroupRuntime): number {
-  let p = g.priority;
-  for (const t of g.tracks) if (t.down) p -= t.decrement;
-  if (p < 0) p = 0;
-  if (p > 255) p = 255;
-  return p;
+  return trackedPriority(g.priority, g.tracks, 0, 255);
 }
 
 /** HSRPv1 carries the group in one octet (RFC 2281: 00-00-0C-07-AC-XX). */

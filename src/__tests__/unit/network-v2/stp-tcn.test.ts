@@ -53,9 +53,9 @@ async function buildChain() {
   for (const topic of ['stp.tcn.sent', 'stp.tcn.received', 'stp.topology-change.detected']) {
     bus.subscribe(topic, (e) => events.push({ topic, deviceId: (e.payload as { deviceId: string }).deviceId }));
   }
-  new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+  new Cable('a').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
   const leaf = new Cable('b');
-  leaf.connect(sw2.getPort('FastEthernet0/1')!, sw3.getPort('FastEthernet0/0')!);
+  leaf.connect(sw2.getPort('FastEthernet0/2')!, sw3.getPort('FastEthernet0/1')!);
   expect(root.getStpAgent().isRoot()).toBe(true);
   expect(sw2.getStpAgent().isRoot()).toBe(false);
   events.length = 0; // ignore bring-up noise
@@ -106,7 +106,7 @@ describe('STP topology change notification', () => {
     const { sw2, sw3, leaf } = await buildChain();
 
     // Learn a dynamic MAC on SW2 by sending a real frame from SW3.
-    sw3.getPort('FastEthernet0/0')!.sendFrame({
+    sw3.getPort('FastEthernet0/1')!.sendFrame({
       srcMAC: new MACAddress('aa:aa:aa:aa:aa:01'),
       dstMAC: MACAddress.broadcast(),
       etherType: 0x0806,
@@ -137,10 +137,10 @@ describe('STP topology change notification', () => {
     const pc = new LinuxPC('linux-pc', 'H1');
     root.setEventBus(bus); sw2.setEventBus(bus);
     await makeRoot(root);
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw2.getStpAgent().setPortFast('FastEthernet0/2', true);
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw2.getStpAgent().setPortFast('FastEthernet0/3', true);
     const edge = new Cable('e');
-    edge.connect(sw2.getPort('FastEthernet0/2')!, pc.getPort('eth0')!);
+    edge.connect(sw2.getPort('FastEthernet0/3')!, pc.getPort('eth0')!);
 
     const tcns: string[] = [];
     bus.subscribe('stp.tcn.sent', (e) => tcns.push((e.payload as { deviceId: string }).deviceId));
@@ -158,9 +158,9 @@ describe('STP topology change notification', () => {
     const pc = new LinuxPC('linux-pc', 'H1');
     root.setEventBus(bus); sw2.setEventBus(bus);
     await makeRoot(root);
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
     const edge = new Cable('e');
-    edge.connect(sw2.getPort('FastEthernet0/2')!, pc.getPort('eth0')!);
+    edge.connect(sw2.getPort('FastEthernet0/3')!, pc.getPort('eth0')!);
 
     const tcns: string[] = [];
     bus.subscribe('stp.tcn.sent', (e) => tcns.push((e.payload as { deviceId: string }).deviceId));
@@ -189,9 +189,9 @@ describe('STP — BPDU info aging (802.1D §8.6.4 max age)', () => {
     const root = new CiscoSwitch('switch-cisco', 'ROOT', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     await makeRoot(root);
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
-    const states = () => ['FastEthernet0/0', 'FastEthernet0/1']
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/2')!, sw2.getPort('FastEthernet0/2')!);
+    const states = () => ['FastEthernet0/1', 'FastEthernet0/2']
       .map(p => sw2.getStpAgent().getForwardState(p));
     expect(states()).toContain('blocking');
 
@@ -221,31 +221,31 @@ describe('STP — PortFast operational status loss on BPDU receipt', () => {
     const rogue = new CiscoSwitch('switch-cisco', 'ROGUE', 4);
     sw2.setEventBus(bus); rogue.setEventBus(bus);
     await makeRoot(rogue);
-    sw2.getStpAgent().setPortFast('FastEthernet0/2', true);
-    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/2')).toBe(true);
+    sw2.getStpAgent().setPortFast('FastEthernet0/3', true);
+    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/3')).toBe(true);
 
     const lost: string[] = [];
     bus.subscribe('stp.portfast.lost', (e) => lost.push((e.payload as { port: string }).port));
 
-    new Cable('r').connect(sw2.getPort('FastEthernet0/2')!, rogue.getPort('FastEthernet0/0')!);
+    new Cable('r').connect(sw2.getPort('FastEthernet0/3')!, rogue.getPort('FastEthernet0/1')!);
 
-    expect(lost).toContain('FastEthernet0/2');
-    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/2')).toBe(false);
-    expect(sw2.getStpAgent().getPortGuards('FastEthernet0/2').portFast).toBe(true);
+    expect(lost).toContain('FastEthernet0/3');
+    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/3')).toBe(false);
+    expect(sw2.getStpAgent().getPortGuards('FastEthernet0/3').portFast).toBe(true);
   });
 
   it('edge status returns after the port link cycles', async () => {
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     const rogue = new CiscoSwitch('switch-cisco', 'ROGUE', 4);
     await makeRoot(rogue);
-    sw2.getStpAgent().setPortFast('FastEthernet0/2', true);
+    sw2.getStpAgent().setPortFast('FastEthernet0/3', true);
     const r = new Cable('r');
-    r.connect(sw2.getPort('FastEthernet0/2')!, rogue.getPort('FastEthernet0/0')!);
-    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/2')).toBe(false);
+    r.connect(sw2.getPort('FastEthernet0/3')!, rogue.getPort('FastEthernet0/1')!);
+    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/3')).toBe(false);
 
     r.disconnect();
 
-    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/2')).toBe(true);
+    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/3')).toBe(true);
   });
 
   it('a demoted port reports topology changes like a normal port', async () => {
@@ -254,10 +254,10 @@ describe('STP — PortFast operational status loss on BPDU receipt', () => {
     const rogue = new CiscoSwitch('switch-cisco', 'ROGUE', 4);
     sw2.setEventBus(bus); rogue.setEventBus(bus);
     await makeRoot(rogue);
-    sw2.getStpAgent().setPortFast('FastEthernet0/2', true);
+    sw2.getStpAgent().setPortFast('FastEthernet0/3', true);
     const r = new Cable('r');
-    r.connect(sw2.getPort('FastEthernet0/2')!, rogue.getPort('FastEthernet0/0')!);
-    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/2')).toBe(false);
+    r.connect(sw2.getPort('FastEthernet0/3')!, rogue.getPort('FastEthernet0/1')!);
+    expect(sw2.getStpAgent().isPortFastOperational('FastEthernet0/3')).toBe(false);
 
     const detected: string[] = [];
     bus.subscribe('stp.topology-change.detected', (e) => detected.push((e.payload as { deviceId: string }).deviceId));

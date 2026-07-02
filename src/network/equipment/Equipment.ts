@@ -33,8 +33,8 @@ export abstract class Equipment {
   static getAllEquipment(): Equipment[] { return EquipmentRegistry.getInstance().getAll(); }
   static clearRegistry(): void { EquipmentRegistry.getInstance().clear(); }
 
-  protected readonly id: string;
-  protected name: string;
+  readonly id: string;
+  name: string;
   protected hostname: string;
   protected readonly deviceType: DeviceType;
   protected x: number;
@@ -48,12 +48,12 @@ export abstract class Equipment {
 
   getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
   _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
-    this._enableSecret = { value, algo };
+    this._enableSecret = value === '' ? null : { value, algo };
   }
 
   getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
   _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
-    this._enablePassword = { value, algo };
+    this._enablePassword = value === '' ? null : { value, algo };
   }
 
   getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
@@ -65,8 +65,8 @@ export abstract class Equipment {
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
-    this.name = name;
-    this.hostname = name;
+    this.name = typeof name === 'string' ? name : String(name);
+    this.hostname = this.name;
     this.x = x;
     this.y = y;
     EquipmentRegistry.getInstance().register(this);
@@ -227,7 +227,7 @@ export abstract class Equipment {
   /**
    * Send a frame out of a specific port
    */
-  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+  sendFrame(portName: string, frame: EthernetFrame): boolean {
     if (!this.isPoweredOn) {
       Logger.warn(this.id, 'equipment:send-blocked', `${this.name}: powered off, cannot send`);
       return false;

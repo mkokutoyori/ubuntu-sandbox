@@ -50,6 +50,26 @@ function executeCommandStep(command: string): InteractiveStep {
   };
 }
 
+/** Like {@link executeCommandStep} but pipes the validated su password to
+ *  su(1) on stdin, so the command-layer authentication succeeds. */
+function suExecuteStep(command: string): InteractiveStep {
+  return {
+    type: 'execute',
+    action: async (ctx: FlowContext) => {
+      const pwd = (ctx.values.get('su_password') ?? '').replace(/'/g, "'\\''");
+      const exec = ctx.executeCommand ?? (async (cmd: string) => ctx.device.executeCommand(cmd));
+      const result = await exec(`printf '%s\\n' '${pwd}' | ${command}`);
+      if (result) {
+        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
+          ctx.onClearScreen?.();
+        } else {
+          ctx.onOutput?.(result);
+        }
+      }
+    },
+  };
+}
+
 // ─── Reusable step fragments ────────────────────────────────────────
 
 /** Build a sudo password verification step */
@@ -377,7 +397,9 @@ export class LinuxFlowBuilder {
 
     return [
       suPasswordStep(targetUser),
-      executeCommandStep(parts.join(' ')),
+      // Forward the already-validated password to su(1) on stdin so the
+      // command layer performs the same authentication a real su would.
+      suExecuteStep(parts.join(' ')),
     ];
   }
 

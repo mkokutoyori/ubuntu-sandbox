@@ -8,11 +8,18 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  IP_PROTO_TCP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  MACAddress, IPAddress, IPv6Address,
+  type EthernetFrame, type IPv4Packet, type IPv6Packet,
+  IP_PROTO_TCP, ETHERTYPE_IPV4, ETHERTYPE_IPV6, nextIPv4Id, computeIPv4Checksum,
+  createIPv6Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+
+export type IpFamily = 'ipv4' | 'ipv6';
+
+export function ipFamilyOf(ip: string): IpFamily {
+  return ip.includes(':') ? 'ipv6' : 'ipv4';
+}
 
 export interface TcpHost {
   readonly id: string;
@@ -22,6 +29,10 @@ export interface TcpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   resolveMac?(nextHopIp: string): MACAddress | null;
+  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  resolveMac6?(nextHopIp: string): MACAddress | null;
+  resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  localAddress6?(iface: string, remoteIp: string): string | null;
 }
 
 export interface TcpAcceptHandler {
@@ -53,6 +64,7 @@ export interface TcpListenOptions {
 export class TcpSocket {
   readonly localIp: string;
   readonly remoteIp: string;
+  readonly family: IpFamily;
   localPort: number;
   remotePort: number;
   state: TcpState = 'closed';
@@ -63,11 +75,18 @@ export class TcpSocket {
   mss = TCP_DEFAULT_MSS;
   passive = false;
   closed = false;
+  connectRefused = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
   recvBuffer = '';
   /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
   timeWaitTimer: symbol | null = null;
+  /**
+   * PID of the userspace process that owns this socket. Set by the
+   * listener via `stack.setSocketOwner(...)` so `abortSocketsOwnedBy(pid)`
+   * can slam-close everything when the process dies.
+   */
+  ownerPid: number | null = null;
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -82,6 +101,7 @@ export class TcpSocket {
     this.localPort = localPort;
     this.remoteIp = remoteIp;
     this.remotePort = remotePort;
+    this.family = ipFamilyOf(remoteIp);
   }
 
   send(data: unknown): void { this.stack._sendData(this, data); }
@@ -152,7 +172,22 @@ export class TcpStack {
   private enabled = true;
   private running = false;
   private nextEphemeralPort = 49152;
+  private ephemeralMin = 49152;
+  private ephemeralMax = 65535;
   private startedAtMs = Date.now();
+
+  setEphemeralRange(min: number, max: number): void {
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max > 65535 || min > max) {
+      throw new Error(`Invalid ephemeral range: [${min}, ${max}]`);
+    }
+    this.ephemeralMin = min;
+    this.ephemeralMax = max;
+    this.nextEphemeralPort = min;
+  }
+
+  getEphemeralRange(): { min: number; max: number } {
+    return { min: this.ephemeralMin, max: this.ephemeralMax };
+  }
 
   private readonly timers = new TimerSet(() => this.getScheduler());
 
@@ -216,14 +251,30 @@ export class TcpStack {
     return Array.from(this.sockets.values()).sort((a, b) => a.key().localeCompare(b.key()));
   }
 
+  abortSocketsOwnedBy(pid: number): number {
+    let count = 0;
+    for (const sock of Array.from(this.sockets.values())) {
+      if (sock.ownerPid !== pid) continue;
+      this._teardown(sock, 'shutdown');
+      count++;
+    }
+    return count;
+  }
+
+  setSocketOwner(socket: TcpSocket, pid: number): void {
+    socket.ownerPid = pid;
+  }
+
   connect(remoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
-    const localIpAddr = egress.port.getIPAddress();
-    if (!localIpAddr) { this.dropped(remoteIp, remotePort, 'no-source-ip'); return null; }
-    const localIp = localIpAddr.toString();
-    const localPort = this.nextEphemeral();
+    const localIp = egress.srcIp;
+    const localPort = this.nextEphemeral(localIp);
+    if (localPort === -1) {
+      this.dropped(remoteIp, remotePort, 'no-ephemeral');
+      return null;
+    }
     const socket = new TcpSocket(this, localIp, localPort, remoteIp, remotePort);
     if (opts.onOpen) socket.onOpen(opts.onOpen);
     if (opts.onData) socket.onData(opts.onData);
@@ -238,6 +289,49 @@ export class TcpStack {
     socket.sendNext = (socket.sendNext + 1) >>> 0;
     this.transmit(socket, flags, synSeq, 0, undefined);
     return socket;
+  }
+
+  /**
+   * Synchronous connect probe whose result is derived entirely from the
+   * wire: 'open' on an established handshake, 'refused' when the peer
+   * answers with a RST or an ICMP unreachable (host firewall REJECT / no
+   * listener), 'timeout' when nothing comes back (silent DROP / no route).
+   */
+  connectOutcome(remoteIp: string, remotePort: number): 'open' | 'refused' | 'timeout' {
+    const socket = this.connect(remoteIp, remotePort);
+    if (!socket) return 'timeout';
+    if (socket.state === 'established') {
+      socket.close();
+      return 'open';
+    }
+    return socket.connectRefused ? 'refused' : 'timeout';
+  }
+
+  /**
+   * An ICMP destination-unreachable carrying one of our outbound TCP
+   * segments: fail the matching half-open connection as refused (RFC 1122
+   * §4.2.3.9 — a hard error on a SYN aborts the connection attempt).
+   */
+  onIcmpUnreachable(origSourcePort: number, origDestPort: number, origDestIp: string): void {
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort !== origSourcePort) continue;
+      if (socket.remotePort !== origDestPort) continue;
+      if (socket.remoteIp !== origDestIp) continue;
+      if (socket.state !== 'syn-sent' && socket.state !== 'syn-received') continue;
+      socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+  }
+
+  /**
+   * Actively refuse an inbound segment the host firewall rejected: reply
+   * with a RST as a real host does for `-j REJECT --reject-with tcp-reset`,
+   * so the peer's connect settles as 'refused' rather than timing out.
+   */
+  sendResetForSegment(localIp: string, senderIp: string, seg: TcpSegment): void {
+    if (seg.flags.rst) return;
+    this.sendRst(localIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
   }
 
   private externalPortClaim: ((port: number) => boolean) | null = null;
@@ -265,9 +359,18 @@ export class TcpStack {
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
-    const senderIp = srcIp.toString();
-    const dstIp = ipPkt.destinationIP.toString();
+    return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg);
+  }
 
+  handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {
+    if (!this.enabled) return false;
+    if (ipv6.nextHeader !== IP_PROTO_TCP) return false;
+    const seg = ipv6.payload as TcpSegment | undefined;
+    if (!seg || seg.type !== 'tcp') return false;
+    return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg);
+  }
+
+  private handleSegment(senderIp: string, dstIp: string, seg: TcpSegment): boolean {
     // RFC 9293 §3.1 — a corrupted segment is discarded silently.
     if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
       this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
@@ -393,6 +496,9 @@ export class TcpStack {
 
   private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
     if (seg.flags.rst) {
+      if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
+        socket.connectRefused = true;
+      }
       this._teardown(socket, 'rst');
       return;
     }
@@ -532,6 +638,13 @@ export class TcpStack {
     const flags = noFlags(); flags.ack = true;
     this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
     this._transition(socket, 'close-wait');
+    // Reciprocate the peer's FIN: most simulator-side applications (SSH
+    // accept loop, simple echo-style listeners) have no further data to
+    // send once the peer half-closes, so the kernel proceeds through
+    // LAST-ACK → CLOSED autonomously. Real OpenSSH does the same on
+    // SIGPIPE/EOF; without this, the server-side socket would linger in
+    // CLOSE-WAIT and appear in `ss -tan` as an orphan after every session.
+    this._initiateClose(socket);
   }
 
   private emitOpened(socket: TcpSocket): void {
@@ -585,8 +698,6 @@ export class TcpStack {
   private sendRst(localIp: string, localPort: number, remoteIp: string, remotePort: number, ackForSeq: number): void {
     const egress = this.resolveEgress(remoteIp);
     if (!egress) return;
-    const srcIpAddr = egress.port.getIPAddress();
-    if (!srcIpAddr) return;
     const flags = noFlags(); flags.rst = true; flags.ack = true;
     const seg: TcpSegment = {
       type: 'tcp',
@@ -595,16 +706,14 @@ export class TcpStack {
       dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
       options: [], payload: undefined,
     };
-    seg.checksum = computeTcpChecksum(seg, srcIpAddr.toString(), remoteIp);
-    this.shipSegment(egress, srcIpAddr, new IPAddress(remoteIp), seg);
+    seg.checksum = computeTcpChecksum(seg, egress.srcIp, remoteIp);
+    this.shipSegment(egress, egress.srcIp, remoteIp, seg);
     void localIp;
   }
 
   private transmit(socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown): void {
     const egress = this.resolveEgress(socket.remoteIp);
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return; }
-    const srcIpAddr = egress.port.getIPAddress();
-    if (!srcIpAddr) { this.dropped(socket.remoteIp, socket.remotePort, 'no-source-ip'); return; }
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
@@ -613,33 +722,32 @@ export class TcpStack {
       window: socket.windowSize, checksum: 0, urgentPointer: 0,
       options: [], payload,
     };
-    seg.checksum = computeTcpChecksum(
-      seg, srcIpAddr.toString(), socket.remoteIp);
-    this.shipSegment(egress, srcIpAddr, new IPAddress(socket.remoteIp), seg);
+    seg.checksum = computeTcpChecksum(seg, egress.srcIp, socket.remoteIp);
+    this.shipSegment(egress, egress.srcIp, socket.remoteIp, seg);
   }
 
-  private shipSegment(egress: { name: string; port: import('../hardware/Port').Port },
-                      srcIp: IPAddress, dstIp: IPAddress, seg: TcpSegment): void {
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + 20 + (seg.payload === undefined ? 0 : 32),
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_TCP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload: seg,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const resolvedMac = this.host.resolveMac?.(dstIp.toString()) ?? null;
+  private shipSegment(
+    egress: { name: string; port: import('../hardware/Port').Port },
+    srcIp: string, dstIp: string, seg: TcpSegment,
+  ): void {
+    const family = ipFamilyOf(dstIp);
+    const l3Packet = family === 'ipv6'
+      ? this.buildIpv6Segment(srcIp, dstIp, seg)
+      : this.buildIpv4Segment(srcIp, dstIp, seg);
+    const resolvedMac = family === 'ipv6'
+      ? (this.host.resolveMac6?.(dstIp) ?? null)
+      : (this.host.resolveMac?.(dstIp) ?? null);
     const eth: EthernetFrame = {
       srcMAC: egress.port.getMAC(),
       dstMAC: resolvedMac ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
+      payload: l3Packet,
     };
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        sourceIp: srcIp.toString(), destinationIp: dstIp.toString(),
+        sourceIp: srcIp, destinationIp: dstIp,
         sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
@@ -649,20 +757,69 @@ export class TcpStack {
     this.host.sendFrame(egress.name, eth);
   }
 
+  private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0,
+      totalLength: 20 + 20 + (seg.payload === undefined ? 0 : 32),
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 64, protocol: IP_PROTO_TCP, headerChecksum: 0,
+      sourceIP: new IPAddress(srcIp), destinationIP: new IPAddress(dstIp),
+      payload: seg,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    return ipPkt;
+  }
+
+  private buildIpv6Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv6Packet {
+    const payloadLength = 20 + (seg.payload === undefined ? 0 : 32);
+    return createIPv6Packet(
+      new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, 64, seg, payloadLength,
+    );
+  }
+
   private findListener(dstIp: string, port: number): import('./TcpStack').TcpListener | undefined {
     const specific = this.listeners.get(makeListenerKey(dstIp, port));
     if (specific) return specific;
-    return this.listeners.get(makeListenerKey('0.0.0.0', port));
+    const wildcard = ipFamilyOf(dstIp) === 'ipv6' ? '::' : '0.0.0.0';
+    return this.listeners.get(makeListenerKey(wildcard, port))
+      ?? this.listeners.get(makeListenerKey('0.0.0.0', port));
   }
 
-  private nextEphemeral(): number {
-    const port = this.nextEphemeralPort;
-    this.nextEphemeralPort++;
-    if (this.nextEphemeralPort > 65535) this.nextEphemeralPort = 49152;
-    return port;
+  private nextEphemeral(localIp?: string): number {
+    const size = this.ephemeralMax - this.ephemeralMin + 1;
+    const inUse = new Set<number>();
+    for (const s of this.sockets.values()) {
+      if (localIp && s.localIp !== localIp) continue;
+      inUse.add(s.localPort);
+    }
+    for (const l of this.listeners.values()) inUse.add(l.localPort);
+    let start = this.nextEphemeralPort;
+    if (start < this.ephemeralMin || start > this.ephemeralMax) start = this.ephemeralMin;
+    for (let i = 0; i < size; i++) {
+      const port = this.ephemeralMin + ((start - this.ephemeralMin + i) % size);
+      if (!inUse.has(port)) {
+        this.nextEphemeralPort = port + 1;
+        if (this.nextEphemeralPort > this.ephemeralMax) this.nextEphemeralPort = this.ephemeralMin;
+        return port;
+      }
+    }
+    return -1;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum'): void {
+  hasFreeEphemeralPort(localIp?: string): boolean {
+    const inUse = new Set<number>();
+    for (const s of this.sockets.values()) {
+      if (localIp && s.localIp !== localIp) continue;
+      if (s.localPort >= this.ephemeralMin && s.localPort <= this.ephemeralMax) inUse.add(s.localPort);
+    }
+    for (const l of this.listeners.values()) {
+      if (l.localPort >= this.ephemeralMin && l.localPort <= this.ephemeralMax) inUse.add(l.localPort);
+    }
+    const size = this.ephemeralMax - this.ephemeralMin + 1;
+    return inUse.size < size;
+  }
+
+  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral'): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {
@@ -675,25 +832,53 @@ export class TcpStack {
     void this.startedAtMs;
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
+  private resolveEgress(
+    targetIp: string,
+  ): { name: string; port: import('../hardware/Port').Port; srcIp: string } | null {
+    if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
+
+    if (this.host.resolveRoute) {
+      const route = this.host.resolveRoute(targetIp);
+      if (route) {
+        const port = this.host.getPort(route.iface);
+        const src = port?.getIPAddress();
+        if (port && src && port.getIsUp()) {
+          return { name: port.getName(), port, srcIp: src.toString() };
+        }
+      }
+    }
     const target = targetIp.split('.').map(Number);
     for (const port of this.host.getPorts()) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
+      if (!ip || !mask || !port.getIsUp()) continue;
       const local = ip.toString().split('.').map(Number);
       const maskBits = mask.toString().split('.').map(Number);
       let same = true;
       for (let i = 0; i < 4; i++) {
         if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
       }
-      if (same) return { name: port.getName(), port };
+      if (same) return { name: port.getName(), port, srcIp: ip.toString() };
     }
     for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp() && port.isConnected()) {
+        return { name: port.getName(), port, srcIp: ip.toString() };
       }
     }
     return null;
+  }
+
+  private resolveEgress6(
+    targetIp: string,
+  ): { name: string; port: import('../hardware/Port').Port; srcIp: string } | null {
+    if (!this.host.resolveRoute6 || !this.host.localAddress6) return null;
+    const route = this.host.resolveRoute6(targetIp);
+    if (!route) return null;
+    const port = this.host.getPort(route.iface);
+    if (!port || !port.getIsUp()) return null;
+    const srcIp = this.host.localAddress6(route.iface, targetIp);
+    if (!srcIp) return null;
+    return { name: port.getName(), port, srcIp };
   }
 }

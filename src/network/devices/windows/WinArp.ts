@@ -10,7 +10,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
-import { MACAddress } from '../../core/types';
+import { IPAddress, MACAddress } from '../../core/types';
 
 const ARP_HELP = `
 Displays and modifies the IP-to-Physical address translation tables used by
@@ -194,7 +194,10 @@ function handleDelete(ctx: WinCommandContext, flags: WinArpFlags): string {
     return '';
   }
 
-  ctx.deleteARP(flags.filterIP);
+  let ip: IPAddress;
+  try { ip = new IPAddress(flags.filterIP); }
+  catch { return ARP_HELP; }
+  ctx.deleteARP(ip);
   // Windows silently accepts even if entry didn't exist
   return '';
 }
@@ -223,6 +226,9 @@ function handleAdd(ctx: WinCommandContext, flags: WinArpFlags): string {
     iface = ctx.ports.keys().next().value!;
   }
 
-  ctx.addStaticARP(flags.filterIP, mac, iface);
+  let ip: IPAddress;
+  try { ip = new IPAddress(flags.filterIP); }
+  catch { return ARP_HELP; }
+  ctx.addStaticARP(ip, mac, iface);
   return '';
 }

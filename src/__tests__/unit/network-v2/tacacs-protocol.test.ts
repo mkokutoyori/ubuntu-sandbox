@@ -51,8 +51,8 @@ function setupNasAndAaa(): { bus: EventBus; nas: CiscoRouter; aaa: CiscoRouter; 
   const aaa = new CiscoRouter('AAA');
   const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
   nas.setEventBus(bus); aaa.setEventBus(bus); sw.setEventBus(bus);
-  new Cable('a').connect(nas.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-  new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('a').connect(nas.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
   nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
   aaa.getTacacsServer().setEnabled(true);
@@ -178,8 +178,8 @@ describe('TACACS+ — wire format', () => {
         }
       }
     });
-    cable.connect(nas.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cable.connect(nas.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -203,8 +203,8 @@ describe('TACACS+ — Cisco↔Huawei interop', () => {
     const aaa = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     nas.setEventBus(bus); aaa.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(nas.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(nas.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     nas.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

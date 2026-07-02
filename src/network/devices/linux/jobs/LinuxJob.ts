@@ -82,6 +82,9 @@ export class LinuxJob {
   cpuTimeMs = 0;
   wallTimeMs = 0;
 
+  durationMs?: number;
+  completesAt?: number;
+
   constructor(init: LinuxJobInit) {
     this.id = init.id;
     this.pid = init.pid;

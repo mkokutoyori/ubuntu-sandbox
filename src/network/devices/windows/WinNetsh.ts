@@ -27,22 +27,18 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 
-// ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
+// ─── Per-device IPv6 route state (WeakMap keyed by ctx.ports for test isolation) ──
+// IPv6 addresses live on the real Port (port.configureIPv6/getIPv6Addresses),
+// not here — so ipconfig, ping -6 and the data plane all see the same state.
 
-interface IPv6InterfaceEntry { address: string; prefixLen: number; }
 interface IPv6RouteEntry { prefix: string; prefixLen: number; iface: string; nexthop: string; metric: number; published: boolean; }
 
-const ipv6AddrStore = new WeakMap<Map<string, any>, Map<string, IPv6InterfaceEntry[]>>();
 const ipv6RouteStore = new WeakMap<Map<string, any>, IPv6RouteEntry[]>();
 
-function getIPv6Addrs(ctx: WinCommandContext): Map<string, IPv6InterfaceEntry[]> {
-  if (!ipv6AddrStore.has(ctx.ports)) ipv6AddrStore.set(ctx.ports, new Map());
-  return ipv6AddrStore.get(ctx.ports)!;
-}
 function getIPv6Routes(ctx: WinCommandContext): IPv6RouteEntry[] {
   if (!ipv6RouteStore.has(ctx.ports)) ipv6RouteStore.set(ctx.ports, []);
   return ipv6RouteStore.get(ctx.ports)!;
@@ -182,7 +178,10 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     return NETSH_USAGE;
   }
 
-  // netsh show ...
+  if (args[0].toLowerCase() === 'routing') {
+    return 'The following helper is not installed: routing. Invalid context. Routing And Remote Access service is required.';
+  }
+
   if (args[0].toLowerCase() === 'show') {
     return handleNetshShow(args.slice(1));
   }
@@ -246,7 +245,7 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
   if (args[0].toLowerCase() === 'advfirewall') {
     const gate = requireWindowsService(ctx, 'mpssvc');
     if (!gate.ok) return gate.error;
-    return handleNetshAdvfirewall(args.slice(1));
+    return handleNetshAdvfirewall(ctx, args.slice(1));
   }
 
   // netsh namespace ...
@@ -418,15 +417,14 @@ function handleNetshInterfaceSet(ctx: WinCommandContext, args: string[]): string
     return 'Ok.';
   }
 
-  // Try admin=enable/disable: everything before "admin=" is the interface name
-  const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|disable)$/i);
+  const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|enabled|disable|disabled)$/i);
 
   if (!match) {
     return 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
   }
 
   const ifName = match[1].replace(/^["']|["']$/g, '').trim();
-  const enable = match[2].toLowerCase() === 'enable';
+  const enable = match[2].toLowerCase().startsWith('enable');
 
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);
@@ -648,11 +646,27 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
     return handleShowNeighbors(ctx);
   }
 
+  if (sub === 'dynamicport') {
+    const proto = (args[1] ?? 'tcp').toLowerCase();
+    return renderDynamicPort(proto);
+  }
+
   if (sub === '?') {
     return NETSH_IP_SHOW_HELP;
   }
 
   return `The subcommand "${args[0]}" was not found in this context.\nType "netsh interface ipv4 show ?" for more information.`;
+}
+
+function renderDynamicPort(proto: string): string {
+  const label = proto === 'udp' ? 'udp' : 'tcp';
+  return [
+    `Protocol ${label} Dynamic Port Range`,
+    '---------------------------------',
+    'Start Port      : 49152',
+    'Number of Ports : 16384',
+    '',
+  ].join('\n');
 }
 
 function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
@@ -674,6 +688,10 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     if (ip) {
       lines.push(`    IP Address:                           ${ip}`);
       lines.push(`    Subnet Prefix:                        ${ip}/${mask?.toCIDR() || 24} (mask ${mask || '255.255.255.0'})`);
+      for (const sec of port.getSecondaryIPs()) {
+        lines.push(`    IP Address:                           ${sec.ip}`);
+        lines.push(`    Subnet Prefix:                        ${sec.ip}/${sec.mask.toCIDR()} (mask ${sec.mask})`);
+      }
     }
     // Only show gateway on interfaces that have an IP configured
     if (ip && ctx.defaultGateway) {
@@ -781,13 +799,24 @@ function handleInterfaceIpSet(ctx: WinCommandContext, joined: string): string {
   }
 
   if (lower.startsWith('address')) {
-    if (lower.match(/address\s+.*\s+dhcp/)) {
+    if (/(?:^|\s)(?:source\s*=\s*)?dhcp\b/.test(lower)) {
       return handleSetAddressDhcp(ctx, joined);
+    }
+    if (/(?:^|\s)(?:source\s*=\s*)?static\b/.test(lower)) {
+      return handleSetAddressStatic(ctx, joined);
+    }
+    const mode = joined.trim().split(/\s+/)[2];
+    if (mode && !/^[\d.]+$/.test(mode) && !/^(?:name|address|addr|mask|gateway)=/i.test(mode)) {
+      return 'The syntax supplied for this command is not valid. Check help for the correct syntax.';
     }
     return handleSetAddressStatic(ctx, joined);
   }
 
   return 'Usage: set address|dns [name=]<string> [source=]dhcp|static ...';
+}
+
+function unquote(name: string): string {
+  return name.trim().replace(/^["']|["']$/g, '').trim();
 }
 
 function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string {
@@ -801,37 +830,37 @@ function handleSetAddressStatic(ctx: WinCommandContext, joined: string): string 
     return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
   }
 
-  const ifName = match[1].trim();
+  const ifName = unquote(match[1]);
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);
-  if (!port) return `The interface "${ifName}" was not found.`;
+  if (!port) return `Error: The interface "${ifName}" was not found.`;
 
   try {
     ctx.configureInterface(portName, new IPAddress(match[2]), new SubnetMask(match[3]));
     if (match[4]) {
       ctx.setDefaultGateway(new IPAddress(match[4]));
     }
-    return 'Ok.';
+    return '';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
 }
 
 function handleSetAddressDhcp(ctx: WinCommandContext, joined: string): string {
-  const match = joined.match(/address\s+"([^"]+)"\s+dhcp/i)
-    || joined.match(/address\s+(?:name=)?(.+?)\s+dhcp/i);
+  const match = joined.match(/address\s+"([^"]+)"\s+(?:source=)?dhcp/i)
+    || joined.match(/address\s+(?:name=)?(.+?)\s+(?:source=)?dhcp/i);
 
   if (!match) {
-    return 'Usage: netsh interface ip set address "name" dhcp';
+    return 'Usage: netsh interface ip set address "name" source=dhcp';
   }
 
-  const ifName = match[1].trim();
+  const ifName = unquote(match[1]);
   const portName = resolveAdapterName(ifName, ctx.ports);
   const port = ctx.ports.get(portName);
-  if (!port) return `The interface "${ifName}" was not found.`;
+  if (!port) return `Error: The interface "${ifName}" was not found.`;
 
   ctx.setAddressDhcp(portName);
-  return 'Ok.';
+  return '';
 }
 
 function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
@@ -936,16 +965,19 @@ function handleAddAddress(ctx: WinCommandContext, joined: string): string {
   if (!port) return `The interface "${ifName}" was not found.`;
 
   const existingIp = port.getIPAddress();
-  if (existingIp && existingIp.toString() === ip) {
+  if ((existingIp && existingIp.toString() === ip)
+    || port.getSecondaryIPs().some(e => e.ip.toString() === ip)) {
     return `The object already exists.`;
   }
 
   try {
-    ctx.configureInterface(portName, new IPAddress(ip), new SubnetMask(mask));
-    if (gateway) {
-      ctx.setDefaultGateway(new IPAddress(gateway));
+    if (existingIp) {
+      port.addSecondaryIP(new IPAddress(ip), new SubnetMask(mask));
+    } else {
+      ctx.configureInterface(portName, new IPAddress(ip), new SubnetMask(mask));
+      if (gateway) ctx.setDefaultGateway(new IPAddress(gateway));
     }
-    return 'Ok.';
+    return '';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
@@ -1014,7 +1046,10 @@ function handleAddNeighbors(ctx: WinCommandContext, joined: string): string {
   const portName = resolveAdapterName(ifName, ctx.ports);
   if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
 
-  ctx.addStaticARP(ip, mac, portName);
+  let ipObj: IPAddress;
+  try { ipObj = new IPAddress(ip); }
+  catch { return `Invalid IPv4 address: "${ip}".`; }
+  ctx.addStaticARP(ipObj, mac, portName);
   return 'Ok.';
 }
 
@@ -1149,11 +1184,19 @@ function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   }
 
   const ifName = match[1].trim();
+  const ipStr = match[2];
   const portName = resolveAdapterName(ifName, ctx.ports);
-  if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+  const port = ctx.ports.get(portName);
+  if (!port) return `The interface "${ifName}" was not found.`;
 
-  ctx.clearInterfaceIP(portName);
-  return 'Ok.';
+  if (ipStr) {
+    const addr = new IPAddress(ipStr);
+    if (port.getIPAddress()?.equals(addr)) ctx.clearInterfaceIP(portName);
+    else port.removeSecondaryIP(addr);
+  } else {
+    ctx.clearInterfaceIP(portName);
+  }
+  return '';
 }
 
 // ─── netsh interface ipv6 ───────────────────────────────────────────
@@ -1187,12 +1230,14 @@ To view help for a command, type the command, followed by a space, and then
       const addrRaw = rest[2] || '';
       if (!ifName || !addrRaw) return `Usage: netsh interface ipv6 add address [interface=]<string> [address=]<IPv6 address>[/<prefix>]`;
       const portName = resolveAdapterName(ifName, ctx.ports);
-      if (!ctx.ports.has(portName)) return `The interface "${ifName}" was not found.`;
+      const port = ctx.ports.get(portName);
+      if (!port) return `The interface "${ifName}" was not found.`;
       const [addr, pfxStr] = addrRaw.split('/');
       const prefixLen = pfxStr ? parseInt(pfxStr, 10) : 64;
-      const store = getIPv6Addrs(ctx);
-      if (!store.has(portName)) store.set(portName, []);
-      store.get(portName)!.push({ address: addr, prefixLen });
+      let parsed: IPv6Address;
+      try { parsed = new IPv6Address(addr); }
+      catch { return `The value for the IP address is invalid.`; }
+      port.configureIPv6(parsed, prefixLen);
       return 'Ok.';
     }
 
@@ -1225,17 +1270,18 @@ To view help for a command, type the command, followed by a space, and then
     const ifFilter = rest[1] || '';
 
     if (obj === 'addresses') {
-      const store = getIPv6Addrs(ctx);
       const lines: string[] = [''];
-      for (const [portName, entries] of store) {
+      for (const [portName, port] of ctx.ports) {
         if (ifFilter) {
           const resolved = resolveAdapterName(ifFilter, ctx.ports);
           if (portName !== resolved) continue;
         }
+        const entries = port.getIPv6Addresses();
+        if (entries.length === 0) continue;
         const displayName = portName.replace(/^eth/, 'Ethernet ');
         lines.push(`Interface ${displayName} Parameters`);
         for (const e of entries) {
-          lines.push(`  Address ${e.address}/${e.prefixLen}`);
+          lines.push(`  Address ${e.address.toString()}/${e.prefixLength}`);
           lines.push(`    Type:          Unicast`);
           lines.push(`    DAD State:     Preferred`);
           lines.push('');
@@ -1272,6 +1318,22 @@ To view help for a command, type the command, followed by a space, and then
         return `Usage: netsh interface ipv6 delete route [prefix=]<string> [interface=]<string>`;
       }
       return 'Ok.';
+    }
+    if (obj === 'address') {
+      // netsh interface ipv6 delete address <iface> <addr>
+      const ifName = rest[1] || '';
+      const addrRaw = rest[2] || '';
+      if (!ifName || !addrRaw || addrRaw === '?') {
+        return `Usage: netsh interface ipv6 delete address [interface=]<string> [address=]<IPv6 address>`;
+      }
+      const portName = resolveAdapterName(ifName, ctx.ports);
+      const port = ctx.ports.get(portName);
+      if (!port) return `The interface "${ifName}" was not found.`;
+      let parsed: IPv6Address;
+      try { parsed = new IPv6Address(addrRaw); }
+      catch { return `The value for the IP address is invalid.`; }
+      const removed = port.removeIPv6Address(parsed);
+      return removed ? 'Ok.' : `The specified value does not exist.`;
     }
     if (obj === '?') return `Usage: netsh interface ipv6 delete route|address ...`;
     return `Usage: netsh interface ipv6 delete route|address ...`;
@@ -2578,13 +2640,14 @@ function handleNetshBridge(ctx: WinCommandContext, args: string[]): string {
 // ─── netsh advfirewall ───────────────────────────────────────────────
 
 /**
- * Shared firewall rule store: both cmd's `netsh advfirewall firewall add` and
- * PowerShell's `New-NetFirewallRule` write here so the two surfaces stay
- * coherent (a rule added from cmd is visible from `Get-NetFirewallRule`, and
- * vice versa). Module-level singleton — accumulates across tests by design.
+ * Legacy type kept for backward-compat. The real rule store now lives
+ * per-device on WinCommandContext.dynamicFirewallRules so a netsh-added
+ * rule is honoured by the WindowsPC.firewallFilter() data path and is
+ * visible through PowerShell `Get-NetFirewallRule`. The `fwRules`
+ * module-level singleton was a fixture that leaked across hosts —
+ * removed.
  */
 export interface FwRule { name: string; dir: string; action: string; protocol: string; localport: string; program: string; profile: string; }
-export const fwRules: FwRule[] = [];
 
 const NETSH_ADVFW_HELP = `The following commands are available:
 
@@ -2633,19 +2696,35 @@ const NETSH_ADVFW_FIREWALL_ADD_RULE_HELP = `Usage: add rule name=<string>
        [profile=domain|private|public|any]
        [enable=yes|no]`;
 
-function handleNetshAdvfirewall(args: string[]): string {
+function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
     return NETSH_ADVFW_HELP;
   }
   const sub = args[0].toLowerCase();
-  if (sub === 'firewall') return handleAdvfwFirewall(args.slice(1));
-  if (sub === 'reset')    return 'Ok.';
+  if (sub === 'firewall') return handleAdvfwFirewall(ctx, args.slice(1));
+  if (sub === 'reset')    { ctx.dynamicFirewallRules.clear(); return 'Ok.'; }
   if (sub === 'show')     return 'Ok.';
   if (sub === 'set')      return 'Ok.';
   return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
 }
 
-function handleAdvfwFirewall(args: string[]): string {
+function nameToKey(name: string): string { return name.trim().toLowerCase(); }
+
+function normalizeDirection(dir: string): 'Inbound' | 'Outbound' {
+  return dir.toLowerCase() === 'out' ? 'Outbound' : 'Inbound';
+}
+function normalizeAction(action: string): 'Allow' | 'Block' {
+  return action.toLowerCase() === 'block' ? 'Block' : 'Allow';
+}
+function normalizeProtocol(proto: string): string {
+  const p = proto.toUpperCase();
+  if (p === 'TCP') return 'TCP';
+  if (p === 'UDP') return 'UDP';
+  if (p === 'ICMPV4' || p === 'ICMP') return 'ICMPv4';
+  return 'Any';
+}
+
+function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
   if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') {
     return NETSH_ADVFW_FIREWALL_HELP;
   }
@@ -2658,15 +2737,18 @@ function handleAdvfwFirewall(args: string[]): string {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
       if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
-      if (fwRules.find(r => r.name === name)) return `The rule "${name}" already exists.`;
-      fwRules.push({
+      const key = nameToKey(name);
+      if (ctx.dynamicFirewallRules.has(key)) return `The rule "${name}" already exists.`;
+      ctx.dynamicFirewallRules.set(key, {
         name,
-        dir:       params['dir']       || 'in',
-        action:    params['action']    || 'allow',
-        protocol:  params['protocol'] || 'Any',
-        localport: params['localport'] || 'Any',
-        program:   params['program']  || '',
-        profile:   params['profile']  || 'any',
+        displayName: name,
+        enabled: (params['enable'] ?? 'yes').toLowerCase() !== 'no',
+        action:    normalizeAction(params['action'] ?? 'allow'),
+        direction: normalizeDirection(params['dir'] ?? 'in'),
+        protocol:  normalizeProtocol(params['protocol'] ?? 'Any'),
+        localPort: params['localport'] ?? '',
+        remotePort: params['remoteport'] ?? '',
+        description: '',
       });
       return 'Ok.';
     }
@@ -2678,19 +2760,20 @@ function handleAdvfwFirewall(args: string[]): string {
     if (obj === 'rule') {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
-      const matches = name ? fwRules.filter(r => r.name === name) : fwRules;
+      const matches = name
+        ? Array.from(ctx.dynamicFirewallRules.values()).filter(r => r.name === name)
+        : Array.from(ctx.dynamicFirewallRules.values());
       if (matches.length === 0) return `No rules match the specified criteria.`;
       const lines: string[] = [''];
       for (const r of matches) {
         lines.push(`Rule Name:                            ${r.name}`);
         lines.push(`----------------------------------------------------------------------`);
-        lines.push(`Enabled:                              Yes`);
-        lines.push(`Direction:                            ${r.dir}`);
-        lines.push(`Profiles:                             ${r.profile}`);
-        lines.push(`Action:                               ${r.action.charAt(0).toUpperCase() + r.action.slice(1)}`);
+        lines.push(`Enabled:                              ${r.enabled ? 'Yes' : 'No'}`);
+        lines.push(`Direction:                            ${r.direction.toLowerCase().startsWith('out') ? 'out' : 'in'}`);
+        lines.push(`Profiles:                             Any`);
+        lines.push(`Action:                               ${r.action}`);
         lines.push(`Protocol:                             ${r.protocol}`);
-        lines.push(`LocalPort:                            ${r.localport}`);
-        if (r.program) lines.push(`Program:                              ${r.program}`);
+        lines.push(`LocalPort:                            ${r.localPort || 'Any'}`);
         lines.push('');
       }
       return lines.join('\n');
@@ -2703,10 +2786,14 @@ function handleAdvfwFirewall(args: string[]): string {
     if (obj === 'rule') {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
-      const before = fwRules.length;
-      const toRemove = fwRules.filter(r => !name || r.name === name);
-      toRemove.forEach(r => { const i = fwRules.indexOf(r); if (i >= 0) fwRules.splice(i, 1); });
-      return fwRules.length < before ? 'Ok.' : `No rules match the specified criteria.`;
+      let removed = 0;
+      for (const [key, rule] of Array.from(ctx.dynamicFirewallRules.entries())) {
+        if (!name || rule.name === name) {
+          ctx.dynamicFirewallRules.delete(key);
+          removed++;
+        }
+      }
+      return removed > 0 ? 'Ok.' : `No rules match the specified criteria.`;
     }
     return NETSH_ADVFW_FIREWALL_HELP;
   }

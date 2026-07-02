@@ -54,6 +54,9 @@ export class PlsqlInterpreter {
   private execBlock(block: Block, parent: Scope): void {
     const scope = parent.child();
     for (const d of block.declarations) this.declare(d, scope);
+    const autonomous = block.declarations.some(
+      d => d.kind === 'pragma' && d.name.toUpperCase() === 'AUTONOMOUS_TRANSACTION');
+    if (autonomous) this.host.beginAutonomousScope?.();
     try {
       this.execStmts(block.body, scope);
     } catch (e) {
@@ -71,6 +74,8 @@ export class PlsqlInterpreter {
         this.sqlcode = prevCode;
         this.sqlerrm = prevErr;
       }
+    } finally {
+      if (autonomous) this.host.endAutonomousScope?.();
     }
   }
 

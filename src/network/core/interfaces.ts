@@ -96,25 +96,6 @@ export interface IIPv6Route extends IRouteEntry<IPv6Address> {
   type: 'connected' | 'static' | 'default' | 'ra' | 'ospfv3';
 }
 
-// ─── 1.6 — Routing Table Interface ──────────────────────────────────
-
-/**
- * Generic routing table with Longest Prefix Match (LPM).
- * Parameterized by address type to share logic between IPv4 and IPv6.
- */
-export interface IRoutingTable<TAddress, TRoute extends IRouteEntry<TAddress>> {
-  /** Add a route to the table */
-  addRoute(route: TRoute): void;
-  /** Remove routes matching the given criteria */
-  removeRoute(network: TAddress, iface?: string, type?: string): boolean;
-  /** Perform Longest Prefix Match lookup */
-  lookup(destination: TAddress): TRoute | null;
-  /** Get all routes */
-  getRoutes(): TRoute[];
-  /** Clear all routes of a given type */
-  clearByType(type: string): void;
-}
-
 // ─── 1.6 — Neighbor Resolution Abstraction ──────────────────────────
 
 /**

@@ -29,7 +29,19 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { SwitchSvi, type SviInterface } from './SwitchSvi';
+import { DHCPServer } from '../dhcp/DHCPServer';
+import { VrrpAgent } from '../vrrp/VrrpAgent';
+import { IP_PROTO_VRRP } from '../vrrp/types';
+import { HsrpAgent } from '../hsrp/HsrpAgent';
+import { UDP_PORT_HSRP } from '../hsrp/types';
+import { GlbpAgent } from '../glbp/GlbpAgent';
+import { UDP_PORT_GLBP } from '../glbp/types';
+import { IP_PROTO_UDP } from '../core/types';
+import type { UDPPacket } from '../core/types';
+import { makeSwitchVrrpHost } from './switch/SwitchVrrpAdapter';
+import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -49,6 +61,11 @@ import {
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
+import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
+import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -153,6 +170,21 @@ export abstract class Switch extends Equipment {
   // ─── Port VLAN State (active/suspended) ────────────────────────
   protected portVlanStates: Map<string, 'active' | 'suspended'> = new Map();
 
+  private readonly portMirror = new PortMirror();
+  private mirrorReentrant = false;
+
+  getPortMirror(): PortMirror { return this.portMirror; }
+
+  private readonly _unhandledConfigLines: string[] = [];
+  getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
+  _recordUnhandledConfigLine(line: string): void {
+    if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
+  }
+  _removeUnhandledConfigLine(needle: string): void {
+    const idx = this._unhandledConfigLines.findIndex(l => l === needle || l.startsWith(needle));
+    if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
+  }
+
   // ─── Config Persistence ─────────────────────────────────────────
   private startupConfig: string | null = null;
   protected readonly initialHostname: string;
@@ -188,6 +220,30 @@ export abstract class Switch extends Equipment {
   private psecAgingTimer: TimerHandle | null = null;
   private psecAgingScheduler: IScheduler | null = null;
   private psecUnsubscribers: Array<() => void> = [];
+
+  // ─── L3 Management Plane (SVIs) ────────────────────────────────
+  private readonly svi: SwitchSvi = new SwitchSvi({
+    deviceId: this.id,
+    getHostname: () => this.getHostname(),
+    getBridgeMac: () => this.getBridgeMac(),
+    egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
+    vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+    lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
+    forgetArp: (ip: string) => {
+      const existing = this.arpTable.get(ip);
+      if (existing && existing.type !== 'static') this.arpTable.delete(ip);
+    },
+    learnArp: (ip, mac, iface) => {
+      const existing = this.arpTable.get(ip);
+      if (existing && existing.type === 'static') return;
+      this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'dynamic' });
+    },
+    fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
+      this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
+      ?? null,
+  });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
@@ -688,6 +744,9 @@ export abstract class Switch extends Equipment {
       if (vlan) vlan.ports.add(portName);
     }
 
+    const dtp = (this as unknown as { getDtpAgent?: () => { setAdminMode(p: string, m: string): void } }).getDtpAgent?.();
+    dtp?.setAdminMode(portName, mode === 'trunk' ? 'trunk' : 'access');
+
     Logger.info(this.id, 'switch:switchport-mode', `${this.name}: ${portName} set to ${mode}`);
     return true;
   }
@@ -950,6 +1009,9 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
+    // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
+    this.mirrorIngress(portName, frame);
+
     const taggedFrame = frame as TaggedEthernetFrame;
 
     // ─── Step 1: Determine ingress VLAN ─────────────────────────
@@ -1028,6 +1090,39 @@ export abstract class Switch extends Equipment {
           topic: 'switch.mac.moved',
           payload: { deviceId: this.id, hostname: this.getHostname(), mac: srcMAC.toString(), vlan: ingressVlan, port: portName, fromPort: existing.port },
         });
+      }
+    }
+
+    // ─── Step 2.5: Management plane (SVI) intercept ─────────────
+    // A frame addressed to one of our SVIs is consumed here (the box is the
+    // destination, not a transit bridge). Broadcast ARP for an SVI is answered
+    // but still allowed to flood, so `intercept` returns false for it.
+    if (this.svi.intercept(ingressVlan, portName, frame)) {
+      return;
+    }
+    // ─── Step 2.6: VRRP advertisement snoop (RFC 5798) ─────────
+    // Multicast VRRP packets on 224.0.0.18 must reach the local
+    // agent whichever Vlanif they arrived on, so the RFC state
+    // machine on both switches sees the peer and one of them
+    // stays Master while the other becomes Backup. The frame keeps
+    // flooding the VLAN normally afterwards.
+    if ((this._vrrpAgent || this._hsrpAgent || this._glbpAgent) && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip && ip.type === 'ipv4') {
+        if (ip.protocol === IP_PROTO_VRRP && this._vrrpAgent) {
+          this._vrrpAgent.handleIp(`Vlanif${ingressVlan}`, ip.sourceIP, ip);
+        }
+        if (ip.protocol === IP_PROTO_UDP) {
+          const udp = ip.payload as UDPPacket | undefined;
+          if (udp && udp.type === 'udp') {
+            if (udp.destinationPort === UDP_PORT_HSRP && this._hsrpAgent) {
+              this._hsrpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+            }
+            if (udp.destinationPort === UDP_PORT_GLBP && this._glbpAgent) {
+              this._glbpAgent.handleUdp(`Vlanif${ingressVlan}`, ip.sourceIP, udp);
+            }
+          }
+        }
       }
     }
 
@@ -1164,6 +1259,156 @@ export abstract class Switch extends Equipment {
     }
   }
 
+  protected override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (!this.mirrorReentrant) this.mirrorEgress(portName, frame);
+    return super.sendFrame(portName, frame);
+  }
+
+  private mirrorIngress(srcPort: string, frame: EthernetFrame): void {
+    if (!this.portMirror.hasAny()) return;
+    this.emitMirror(this.portMirror.destinationsFor(srcPort, 'rx'), frame);
+  }
+
+  private mirrorEgress(srcPort: string, frame: EthernetFrame): void {
+    if (!this.portMirror.hasAny()) return;
+    this.emitMirror(this.portMirror.destinationsFor(srcPort, 'tx'), frame);
+  }
+
+  private emitMirror(dests: readonly string[], frame: EthernetFrame): void {
+    if (dests.length === 0) return;
+    this.mirrorReentrant = true;
+    try {
+      for (const dest of dests) {
+        const p = this.getPort(dest);
+        if (!p || !p.getIsUp() || !p.isConnected()) continue;
+        super.sendFrame(dest, frame);
+      }
+    } finally {
+      this.mirrorReentrant = false;
+    }
+  }
+
+  configureMirrorSource(id: number, portName: string, dir: MirrorDirection): boolean {
+    if (!this.getPort(portName)) return false;
+    this.portMirror.addSource(id, portName, dir);
+    return true;
+  }
+  configureMirrorDestination(id: number, portName: string): boolean {
+    if (!this.getPort(portName)) return false;
+    this.portMirror.setDestination(id, portName);
+    return true;
+  }
+  removeMirrorSource(id: number, portName: string): boolean {
+    return this.portMirror.removeSource(id, portName);
+  }
+  removeMirrorDestination(id: number): boolean {
+    return this.portMirror.clearDestination(id);
+  }
+  removeMirrorSession(id: number): boolean {
+    return this.portMirror.removeSession(id);
+  }
+  listMirrorSessions(): MirrorSession[] { return this.portMirror.list(); }
+  getMirrorSession(id: number): MirrorSession | undefined { return this.portMirror.get(id); }
+
+  // ─── L3 Management Plane (SVI) plumbing ───────────────────────────
+
+  /** Bridge base MAC — shared by every SVI, like real Catalyst hardware. */
+  getBridgeMac(): MACAddress {
+    const first = this.getPorts()[0];
+    return first ? first.getMAC() : MACAddress.broadcast();
+  }
+
+  /** True when `vlan` has at least one up, cabled member port. */
+  private vlanHasActivePort(vlan: number): boolean {
+    for (const [portName, cfg] of this.switchportConfigs) {
+      const port = this.getPort(portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      if (cfg.mode === 'access' ? cfg.accessVlan === vlan : cfg.trunkAllowedVlans.has(vlan)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Source a frame from the management plane onto `vlan`: reuse the very same
+   * unknown-unicast/flood vs known-unicast decision the data plane makes for
+   * transit frames, so an SVI packet leaves exactly like a host's would.
+   */
+  private egressOnVlan(vlan: number, frame: EthernetFrame): void {
+    const dstMAC = frame.dstMAC.toString().toLowerCase();
+    const dstOctets = frame.dstMAC.getOctets();
+    const isGroup = frame.dstMAC.isBroadcast() || (dstOctets[0] & 0x01) === 0x01;
+    const entry = isGroup ? undefined : this.macTable.get(`${vlan}:${dstMAC}`);
+    if (entry) {
+      this.forwardToPort(entry.port, frame, vlan);
+    } else {
+      this.floodFrame('', frame, vlan);
+    }
+  }
+
+  // ─── SVI configuration API (used by the vendor shell) ─────────────
+
+  /** `interface Vlan N` — materialise the SVI (admin-down, no IP) if new. */
+  ensureSvi(vlan: number): void { this.svi.ensure(vlan); }
+  configureSviIp(vlan: number, ip: IPAddress, mask: SubnetMask): void {
+    this.svi.configure(vlan, ip, mask);
+  }
+  clearSviIp(vlan: number): void { this.svi.clearIp(vlan); }
+  setSviAdminUp(vlan: number, up: boolean): void {
+    this.svi.setAdminUp(vlan, up);
+    // Feed the FHRP link-state signal so any VRRP group on this
+    // Vlanif recomputes (Init→Master when the SVI comes up, or the
+    // reverse on shutdown). The FhrpAgentBase already subscribes to
+    // port.link.up/down filtered on our deviceId.
+    const portName = `Vlanif${vlan}`;
+    this.getBus().publish({
+      topic: up ? 'port.link.up' : 'port.link.down',
+      payload: { deviceId: this.id, portName },
+    });
+  }
+  hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
+  getSvis(): SviInterface[] { return this.svi.list(); }
+  getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
+  isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }
+
+  /** Append a DHCP relay target on `vlan`'s SVI. */
+  addSviHelperAddress(vlan: number, ip: string): void {
+    this.svi.addHelperAddress(vlan, ip);
+  }
+  /** Remove a DHCP relay target from `vlan`'s SVI. */
+  removeSviHelperAddress(vlan: number, ip: string): boolean {
+    return this.svi.removeHelperAddress(vlan, ip);
+  }
+
+  /**
+   * Helpers configured for the SVI the given physical port belongs to.
+   * Lets a downstream DHCP client follow `ip helper-address` to find
+   * its upstream server even when no direct cable path exists.
+   */
+  getDhcpHelpersForIngressPort(portName: string): string[] {
+    const cfg = this._getSwitchportConfigs().get(portName);
+    if (!cfg) return [];
+    const vlan = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
+    return this.svi.getSvi(vlan)?.helperAddresses ?? [];
+  }
+
+  executePingSequence(
+    target: IPAddress, count = 5, timeoutMs = 2000, sourceIPStr?: string,
+  ): Promise<CiscoPingRow[]> {
+    return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
+  }
+
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
+    this.svi.addStaticRoute(network, mask, nextHop);
+  }
+  removeStaticRoute(network: IPAddress, mask: SubnetMask): boolean {
+    return this.svi.removeStaticRoute(network, mask);
+  }
+  getL3RoutingTable() {
+    return this.svi.getRoutingTable();
+  }
+
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────
 
   private addTag(frame: EthernetFrame, vlan: number): TaggedEthernetFrame {
@@ -1247,7 +1492,10 @@ export abstract class Switch extends Equipment {
   }
 
   writeMemory(): string {
-    this.startupConfig = this.serializeConfig();
+    // NVRAM holds the rendered running-config TEXT — the same representation
+    // `show startup-config` displays and `reload` re-applies. Real IOS stores
+    // and re-parses config text; we do the same instead of a private blob.
+    this.startupConfig = this.getRunningConfig();
     return '[OK]';
   }
 
@@ -1255,69 +1503,90 @@ export abstract class Switch extends Equipment {
     return this.startupConfig;
   }
 
-  private serializeConfig(): string {
-    const config: any = {
-      hostname: this.hostname,
-      vlans: [] as any[],
-      ports: [] as any[],
-      macAgingTime: this.macAgingTime,
-    };
-
-    for (const [id, vlan] of this.vlans) {
-      if (id !== 1) {
-        config.vlans.push({ id, name: vlan.name });
-      }
-    }
-
-    for (const [portName, cfg] of this.switchportConfigs) {
-      const port = this.getPort(portName);
-      config.ports.push({
-        name: portName,
-        mode: cfg.mode,
-        accessVlan: cfg.accessVlan,
-        trunkNativeVlan: cfg.trunkNativeVlan,
-        trunkAllowedVlans: Array.from(cfg.trunkAllowedVlans),
-        isUp: port ? port.getIsUp() : true,
-      });
-    }
-
-    return JSON.stringify(config);
+  /** @internal Erase NVRAM (`erase startup-config` / `write erase`). */
+  _eraseStartupConfig(): void {
+    this.startupConfig = null;
   }
 
+  /** @internal Re-apply NVRAM onto the live config (`copy startup-config
+   *  running-config`). Returns false when NVRAM is empty. */
+  _restoreStartupConfig(): boolean {
+    if (!this.startupConfig) return false;
+    this.applyConfigText(this.startupConfig);
+    return true;
+  }
+
+  /** @internal Re-apply an arbitrary saved config text (`copy flash:X
+   *  running-config`). */
+  _applyConfigText(text: string): void { this.applyConfigText(text); }
+
+  // ── Simulated flash file system (config backups) ──────────────────
+  private flashFiles = new Map<string, string>();
+  /** @internal `copy running-config flash:X` — store a named config file. */
+  _writeFlashFile(name: string, content: string): void { this.flashFiles.set(name, content); }
+  /** @internal `copy flash:X running-config` — read it back (null if absent). */
+  _readFlashFile(name: string): string | null { return this.flashFiles.get(name) ?? null; }
+
   private restoreFromStartupConfig(): void {
-    if (!this.startupConfig) return;
-    try {
-      const config = JSON.parse(this.startupConfig);
-      this.hostname = config.hostname || this.hostname;
-      this.macAgingTime = config.macAgingTime || 300;
+    if (this.startupConfig) this.applyConfigText(this.startupConfig);
+  }
 
-      // Restore VLANs
-      for (const v of config.vlans || []) {
-        this.createVLAN(v.id, v.name);
-      }
-
-      // Restore port configs
-      for (const p of config.ports || []) {
-        const cfg = this.switchportConfigs.get(p.name);
-        if (cfg) {
-          cfg.mode = p.mode;
-          cfg.accessVlan = p.accessVlan;
-          cfg.trunkNativeVlan = p.trunkNativeVlan;
-          cfg.trunkAllowedVlans = new Set(p.trunkAllowedVlans);
+  /**
+   * Re-apply a saved running-config (text) to live switch state. Parses the
+   * canonical lines emitted by the vendor shell's `buildRunningConfig` —
+   * hostname, VLAN database and per-interface switchport settings — which is
+   * exactly the state the previous JSON snapshot restored, but from the single
+   * text representation now shared with `show startup-config`.
+   */
+  private applyConfigText(text: string): void {
+    let curVlan: number | null = null;
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '!' ||
+          line.startsWith('Building config') || line.startsWith('Current configuration')) continue;
+      let g: RegExpMatchArray | null;
+      if ((g = line.match(/^hostname\s+(\S+)/))) {
+        this.hostname = g[1]; this.name = g[1]; curVlan = null; curIface = null;
+      } else if ((g = line.match(/^username\s+(\S+)(.*)$/))) {
+        curVlan = null; curIface = null;
+        const rest = g[2];
+        const pm = rest.match(/privilege\s+(\d+)/);
+        const sm = rest.match(/\b(secret|password)\s+(?:(\d)\s+)?(\S+)/);
+        let secret: string | undefined;
+        let secretAlgo: PasswordHashAlgorithm | undefined;
+        if (sm) {
+          secret = sm[3];
+          const d = sm[2];
+          secretAlgo = d === '7' ? 'type-7' : d === '8' ? 'sha256' : d === '9' ? 'scrypt'
+            : d === '0' ? 'plain' : (sm[1] === 'secret' ? 'md5' : 'plain');
         }
-        const port = this.getPort(p.name);
-        if (port) port.setUp(p.isUp);
+        this._upsertCiscoUsername(g[1], {
+          privilege: pm ? parseInt(pm[1], 10) : undefined, secret, secretAlgo,
+        });
+      } else if ((g = line.match(/^vlan\s+(\d+)$/))) {
+        curVlan = parseInt(g[1], 10); curIface = null;
+        if (!this.vlans.has(curVlan)) this.createVLAN(curVlan);
+      } else if (curVlan !== null && (g = line.match(/^name\s+(.+)/))) {
+        this.renameVLAN(curVlan, g[1]);
+      } else if ((g = line.match(/^interface\s+(\S+)/))) {
+        curIface = g[1]; curVlan = null;
+      } else if (curIface) {
+        const cfg = this.switchportConfigs.get(curIface);
+        if (!cfg) continue;
+        if (/^switchport mode trunk/.test(line)) cfg.mode = 'trunk';
+        else if (/^switchport mode access/.test(line)) cfg.mode = 'access';
+        else if ((g = line.match(/^switchport access vlan\s+(\d+)/))) cfg.accessVlan = parseInt(g[1], 10);
+        else if ((g = line.match(/^switchport trunk native vlan\s+(\d+)/))) cfg.trunkNativeVlan = parseInt(g[1], 10);
+        else if (/^shutdown$/.test(line)) { const p = this.getPort(curIface); if (p) p.setUp(false); }
       }
-
-      // Rebuild VLAN port assignments
-      for (const [portName, cfg] of this.switchportConfigs) {
-        if (cfg.mode === 'access') {
-          const vlan = this.vlans.get(cfg.accessVlan);
-          if (vlan) vlan.ports.add(portName);
-        }
+    }
+    // Rebuild access-VLAN port membership from the restored switchport config.
+    for (const [portName, cfg] of this.switchportConfigs) {
+      if (cfg.mode === 'access') {
+        const vlan = this.vlans.get(cfg.accessVlan);
+        if (vlan) vlan.ports.add(portName);
       }
-    } catch {
-      Logger.error(this.id, 'switch:restore-error', `${this.name}: failed to restore startup config`);
     }
   }
 
@@ -1337,6 +1606,55 @@ export abstract class Switch extends Equipment {
   _getSnoopingLog(): string[] { return this.snoopingLog; }
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
+
+  // ─── Management plane: domain / SSH host keys / default-gateway ────
+  private _domainName = '';
+  private _hasRsaKeys = false;
+  private _ipDefaultGateway = '';
+  /** @internal `ip domain-name` (device fallback for the shared handler). */
+  _setDomainName(name: string): void { this._domainName = name; }
+  getDomainName(): string { return this._domainName; }
+  /** @internal `crypto key generate rsa`. */
+  _generateRsaKeys(): void { this._hasRsaKeys = true; }
+  hasRsaKeys(): boolean { return this._hasRsaKeys; }
+  /** @internal `ip default-gateway` (L2 switch management route). */
+  _setDefaultGateway(ip: string): void { this._ipDefaultGateway = ip; }
+  getDefaultGateway(): string { return this._ipDefaultGateway; }
+
+  // ─── Local user database (`username …`) ───────────────────────────
+  private _credentialStore: NetworkOsCredentialStore | null = null;
+  getCredentialStore(): NetworkOsCredentialStore {
+    if (!this._credentialStore) {
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    }
+    return this._credentialStore;
+  }
+  /** @internal `username NAME [privilege N] [secret|password …]`. */
+  _upsertCiscoUsername(name: string, kv: {
+    privilege?: number; secret?: string; secretAlgo?: PasswordHashAlgorithm;
+    nopassword?: boolean; description?: string;
+  }): void {
+    const store = this.getCredentialStore();
+    let account = store.get(name) ?? NetworkOsAccount.create({ name });
+    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+    if (kv.nopassword) account = account.withSecret('', 'plain');
+    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+    if (kv.description) account = account.withDescription(kv.description);
+    if (account.factoryDefault) account = account.asOperatorOwned();
+    store.upsert(account);
+  }
+  _removeLocalUser(name: string): void { this.getCredentialStore().remove(name); }
+
+  // ─── VTY line configuration (`line vty …`) ────────────────────────
+  private readonly _vtyLineConfig = new VtyLineConfigStore();
+  /** @internal Used by the shared config-line handlers. */
+  _getVtyLineConfig(): VtyLineConfigStore { return this._vtyLineConfig; }
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
+    return this.getCredentialStore().list().map(a => ({
+      name: a.name, privilege: a.privilege, secret: a.secret,
+      secretAlgo: a.passwordHashAlgorithm, factoryDefault: a.factoryDefault,
+    }));
+  }
 
   // ─── ARP Snoop-learn into management table ──────────────────────
 
@@ -1376,16 +1694,63 @@ export abstract class Switch extends Equipment {
     });
   }
 
+  // ─── DHCP server on an L3 switch ────────────────────────────────
+  //
+  // A Layer-3 switch can serve DHCP to its directly attached VLANs the
+  // same way a router does. The server is created lazily, kept disabled
+  // until `dhcp enable`, and is what EndHost.autoDiscoverDHCPServers
+  // finds when it duck-types `getDHCPServer` on any reachable Equipment.
+  private readonly dhcpServer: DHCPServer = new DHCPServer();
+  _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+  getDHCPServer(): DHCPServer { return this.dhcpServer; }
+
+  // ─── VRRP on SVI (first-hop redundancy for L3 switches) ─────────
+  // The FHRP agent runs against the SVI plane through a per-switch
+  // adapter that presents each Vlanif as a synthetic "port". Elections
+  // still use the same VRRP state machine as on routers — the only
+  // change is where the interface lives (Vlanif vs GigabitEthernet0/0).
+  private _vrrpAgent: VrrpAgent | null = null;
+  private _hsrpAgent: HsrpAgent | null = null;
+  private fhrpHost() {
+    return makeSwitchVrrpHost(this, {
+      egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
+      vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+      getBridgeMac: () => this.getBridgeMac(),
+    });
+  }
+  private ensureVrrpAgent(): VrrpAgent {
+    if (this._vrrpAgent) return this._vrrpAgent;
+    this._vrrpAgent = new VrrpAgent(this.fhrpHost(), () => this.getBus());
+    this._vrrpAgent.start();
+    return this._vrrpAgent;
+  }
+  private ensureHsrpAgent(): HsrpAgent {
+    if (this._hsrpAgent) return this._hsrpAgent;
+    this._hsrpAgent = new HsrpAgent(this.fhrpHost(), () => this.getBus());
+    this._hsrpAgent.start();
+    return this._hsrpAgent;
+  }
+  private _glbpAgent: GlbpAgent | null = null;
+  private ensureGlbpAgent(): GlbpAgent {
+    if (this._glbpAgent) return this._glbpAgent;
+    this._glbpAgent = new GlbpAgent(this.fhrpHost(), () => this.getBus());
+    this._glbpAgent.start();
+    return this._glbpAgent;
+  }
+  getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
+  getHsrpAgent(): HsrpAgent { return this.ensureHsrpAgent(); }
+  getGlbpAgent(): GlbpAgent { return this.ensureGlbpAgent(); }
+
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 
   _getArpTableInternal() { return this.arpTable; }
 
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
   }
 
-  _deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  _deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   _clearARPCache(): void {

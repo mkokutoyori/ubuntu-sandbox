@@ -22,6 +22,7 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import { IPAddress } from '../../core/types';
+import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -171,6 +172,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configDhcpTrie = new CommandTrie();
   private configDhcpPoolClassTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
+  private configVrfTrie = new CommandTrie();
+  private configVlanTrie = new CommandTrie();
+  private selectedVRF: string | null = null;
+  private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
@@ -275,6 +280,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getOSType(): string { return 'cisco-ios'; }
 
   execute(router: Router, rawInput: string): string | Promise<string> {
+    this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
+    if (rawInput.trim() === '') return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);
   }
 
@@ -295,6 +302,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getSelectedDHCPPool(): string | null { return this.selectedDHCPPool; }
   setSelectedDHCPPool(pool: string | null): void { this.selectedDHCPPool = pool; }
+  setSelectedVRF(name: string | null): void { this.selectedVRF = name; }
+  setSelectedVLAN(id: number | null): void { this.selectedVLAN = id; }
 
   resolveInterfaceName(input: string): string | null {
     return resolveInterfaceName(this.r(), input);
@@ -370,6 +379,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedIKEv2Profile: this.selectedIKEv2Profile,
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
+      terminalMonitor: this.terminalMonitor,
       privilegeLevel: this.mode === 'user' ? 1 : 15,
       historySize: 10,
       cmdHistory: this.cmdHistory,
@@ -400,6 +410,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.selectedIKEv2Profile = s.selectedIKEv2Profile;
     this.terminalLength = s.terminalLength;
     this.terminalWidth = s.terminalWidth;
+    this.terminalMonitor = s.terminalMonitor;
     this.cmdHistory = s.cmdHistory;
   }
 
@@ -413,16 +424,22 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   /** Real saved configuration (null until first `write memory`). */
   private startupConfig: string | null = null;
+  private startupAliases: ReturnType<typeof this.aliases.snapshot> | null = null;
 
   protected onSave(): string {
-    // Snapshot the REAL running-config so `show startup-config`
-    // reflects exactly what was saved (no fabricated content).
     this.startupConfig = Show.showRunningConfig(this.d());
+    this.startupAliases = this.aliases.snapshot();
     return 'Building configuration...\n[OK]';
   }
 
+  protected override performImmediateReload(): string {
+    const out = super.performImmediateReload();
+    if (this.startupAliases) this.aliases.restore(this.startupAliases);
+    return out;
+  }
+
   protected override cmdExit(): string {
-    // Router: exit at user mode returns '' (no "Connection closed." like switch)
+    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
@@ -436,10 +453,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'privileged': return this.privilegedTrie;
       case 'config': return this.configTrie;
       case 'config-if': return this.configIfTrie;
+      case 'config-subif': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
+      case 'config-vrf': return this.configVrfTrie;
+      case 'config-vlan': return this.configVlanTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
@@ -571,6 +591,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
+    this.configIfTrie.registerGreedy('ip vrf forwarding', 'Bind interface to a VRF', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vrfName = args[0];
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      if (!router._vrfs?.has(vrfName)) return `% VRF ${vrfName} not configured`;
+      router._vrfs.get(vrfName)!.interfaces.add(ifName);
+      (router._ifaceVrf ??= new Map()).set(ifName, vrfName);
+      for (const [name, vrf] of router._vrfs) {
+        if (name !== vrfName) vrf.interfaces.delete(ifName);
+      }
+      return '';
+    });
+    this.configIfTrie.registerGreedy('no ip vrf forwarding', 'Unbind interface from VRF', (args) => {
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      const bound = router._ifaceVrf?.get(ifName);
+      if (bound) {
+        router._vrfs?.get(bound)?.interfaces.delete(ifName);
+        router._ifaceVrf?.delete(ifName);
+      }
+      void args;
+      return '';
+    });
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
@@ -590,6 +636,48 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
+
+    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(id) || id < 1 || id > 4094) return "% Invalid input detected at '^' marker.";
+      this.selectedVLAN = id;
+      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
+      const vlans = r._vlans ??= new Map();
+      if (!vlans.has(id)) vlans.set(id, { id });
+      this.mode = 'config-vlan';
+      return '';
+    });
+    this.configVlanTrie.registerGreedy('name', 'VLAN name', (args) => {
+      const r = this.d() as unknown as { _vlans?: Map<number, { id: number; name?: string }> };
+      const name = args.join(' ');
+      if (!name) return '% Incomplete command.';
+      const bareName = name.replace(/^"|"$/g, '');
+      if (bareName.length > 32) return "% Invalid input detected at '^' marker.";
+      if (this.selectedVLAN != null) {
+        const v = r._vlans?.get(this.selectedVLAN);
+        if (v) v.name = bareName;
+      }
+      return '';
+    });
+
+    this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
+      const rd = args.join(' ').trim();
+      const m = /^(\d+):(\d+)$/.exec(rd);
+      if (!m) return "% Invalid input detected at '^' marker.";
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
+      if (this.selectedVRF != null) {
+        const v = r._vrfs?.get(this.selectedVRF);
+        if (v) v.rd = rd;
+      }
+      return '';
+    });
+    this.configVrfTrie.registerGreedy('route-target', 'Route target', () => '');
+    this.configVrfTrie.registerGreedy('description', 'Description', () => '');
     // IPSec
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);
@@ -670,22 +758,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ].join('\n\n');
     });
 
-    trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show bfd summary', 'Display BFD summary', () => ' No BFD sessions configured.');
     trie.register('show table-map', 'Display table-maps', () => ' No table-maps configured.');
     trie.registerGreedy('show mls qos', 'Display MLS QoS', () => ' MLS QoS is disabled.');
     trie.register('show ip nbar protocol-discovery', 'Display NBAR discovery', () => ' NBAR protocol discovery is not enabled.');
     trie.registerGreedy('show queueing interface', 'Display interface queueing', () => ' Interface uses FIFO queueing.');
-    trie.registerGreedy('show interfaces', 'Display interface info', (args, raw) => {
-      const tail = args[args.length - 1]?.toLowerCase();
-      const router = getRouter();
-      if (tail === 'rate-limit') return ' Rate limiting is not configured on this interface.';
-      const ifName = Show.resolveInterfaceName?.(router, args.join(' ')) ?? args.join(' ');
-      const sub = args[args.length - 1]?.toLowerCase();
-      if (sub === 'accounting') return `${args.slice(0, -1).join(' ')}\n  No accounting protocols configured.`;
-      if (sub === 'switchport') return Show.showInterfaceSwitchport(router, ifName);
-      return Show.showInterface(router, ifName);
-    });
     trie.registerGreedy('show traffic-shape', 'Display traffic shaping', (args) => {
       if (args[0]?.toLowerCase() === 'statistics') return ' No traffic shaping statistics.';
       return ' No traffic shaping configured.';
@@ -715,12 +792,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.register('show configuration', 'Display saved configuration', () =>
       this.startupConfig ?? '% startup-config is not present');
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
-    trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they
     // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
-    trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
 
     // DHCP show commands
@@ -793,63 +868,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Ping Command ────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
-    if (args.length === 0) {
-      return '% Ping requires a target IP address.';
-    }
+    const parsed = parsePingArgs(args);
+    if (parsed.error) return parsed.error;
 
-    let target = '';
-    let count = 5;
-    let timeoutMs = 2000;
-    let sourceIP: string | null = null;
-
-    let i = 0;
-    target = args[i++]?.trim() || '';
-
-    while (i < args.length) {
-      const kw = args[i]?.toLowerCase();
-      if (kw === 'source' && args[i + 1]) {
-        sourceIP = args[i + 1];
-        i += 2;
-      } else if (kw === 'repeat' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) count = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'size' && args[i + 1]) {
-        i += 2;
-      } else {
-        i++;
-      }
-    }
-
-    if (!target) {
-      return '% Ping requires a target IP address.';
-    }
-
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-
+    const router = this.d();
+    let sourceIP = parsed.sourceIP;
     if (sourceIP) {
-      const router = this.d();
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
     }
 
-    const targetIP = new IPAddress(target);
-    const router = this.d();
-
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
-      return this._formatCiscoPing(target, count, timeoutMs, results);
-    });
+    const targetIP = new IPAddress(parsed.target);
+    this._pendingAsync = router
+      .executePingSequence(targetIP, parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
 
     return '';
   }
@@ -966,37 +998,5 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       }
     }
     return null;
-  }
-
-  private _formatCiscoPing(
-    target: string,
-    count: number,
-    timeoutMs: number,
-    results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>,
-  ): string {
-    const lines: string[] = [];
-    lines.push(`Type escape sequence to abort.`);
-    lines.push(`Sending ${count}, 100-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
-
-    const chars = results.map(r => r.success ? '!' : '.');
-    if (results.length === 0) {
-      for (let i = 0; i < count; i++) chars.push('.');
-    }
-    lines.push(chars.join(''));
-
-    const successes = results.filter(r => r.success).length;
-    const total = results.length || count;
-    const pct = Math.round((successes / total) * 100);
-    lines.push(`Success rate is ${pct} percent (${successes}/${total})`);
-
-    if (successes > 0) {
-      const rtts = results.filter(r => r.success).map(r => r.rttMs);
-      const min = Math.min(...rtts);
-      const max = Math.max(...rtts);
-      const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-      lines[lines.length - 1] += `, round-trip min/avg/max = ${min.toFixed(0)}/${avg.toFixed(0)}/${max.toFixed(0)} ms`;
-    }
-
-    return lines.join('\n');
   }
 }

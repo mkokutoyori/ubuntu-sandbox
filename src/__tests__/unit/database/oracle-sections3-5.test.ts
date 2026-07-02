@@ -134,6 +134,7 @@ describe('SQL*Plus Commands', () => {
     test('/ re-executes the last SQL statement', () => {
       exec(`CREATE TABLE test_slash (id NUMBER)`);
       exec(`INSERT INTO test_slash VALUES (1)`);
+      exec(`COMMIT`);
       session.processLine('SELECT * FROM test_slash;');
       const result = session.processLine('/');
       expect(result.output.some(l => l.includes('1'))).toBe(true);

@@ -330,7 +330,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
           localK: { ...this.config.kValues },
           peerK: { ...hello.kValues },
         },
-      } as never);
+      });
       Logger.warn(this.deviceId, 'eigrp:k-mismatch',
         `EIGRP-IPv4 ${this.config.asn}: Neighbor ${srcIp} (${iface}) is down: K-value mismatch`);
       const stale = this.wireNeighbors.get(`${srcIp}%${iface}`);
@@ -472,7 +472,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         oldState: 'Up', newState: 'Down',
         asn: this.config.asn,
       },
-    } as never);
+    });
   }
 
   // ── Template-method hooks (driven by wire state, not peer objects) ──
@@ -502,7 +502,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
             oldState: 'Down', newState: 'Up',
             asn: this.config.asn,
           },
-        } as never);
+        });
       }
     }
     this.neighbors.retainOnly(keep);

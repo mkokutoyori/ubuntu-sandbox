@@ -54,9 +54,14 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.notify();
   }
 
-  getPrompt(): string { return this.prompt; }
+  getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
+    return this.prompt;
+  }
 
   protected abstract getDefaultPrompt(): string;
+
+  protected abstract isTopLevelExit(line: string): boolean;
 
   /** The vendor-specific "go to top-level" command (Cisco: 'end', Huawei: 'return') */
   protected abstract getCtrlZCommand(): string;
@@ -73,6 +78,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Input mode ─────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.isFlowActive) {
       return this.inputMode; // set by advanceFlow()
     }
@@ -210,8 +216,9 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Command execution ───────────────────────────────────────────
 
   protected onEnter(): void {
-    const cmd = this.input;
+    const cmd = this.input || this._inputBuf;
     this.input = '';
+    this._inputBuf = '';
     this.recordEvent('input', cmd);
     this.executeCommand(cmd);
     this.notify();
@@ -225,17 +232,21 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
-    // Check if this command needs an interactive flow before executing
     const steps = this.buildInteractiveFlow(trimmed);
     if (steps) {
       this.startFlowFromSteps(steps, trimmed);
       return;
     }
 
+    if (this.tryInterceptAsyncCommand(trimmed)) return;
+
+    const exitBeforeExec = this.isRemoteChild && this.isTopLevelExit(trimmed);
+
     try {
       const result = await this.executeOnDevice(trimmed);
 
-      if (result === CONNECTION_CLOSED) {
+      if (result === CONNECTION_CLOSED || exitBeforeExec) {
+        if (this.endRemoteSession()) return;
         this._onRequestClose?.();
         return;
       }
@@ -278,6 +289,13 @@ export abstract class CLITerminalSession extends TerminalSession {
    */
   protected afterCommandExecuted(_command: string): void {}
 
+  /**
+   * Hook fired before a command is dispatched to the device. A subclass returns
+   * true to claim the command and drive it as a foreground/background async job
+   * (streaming ping, live debug, …) instead of the one-shot block path.
+   */
+  protected tryInterceptAsyncCommand(_command: string): boolean { return false; }
+
   // ── Flow completion hook ────────────────────────────────────────
 
   protected override onFlowComplete(): void {
@@ -287,7 +305,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
-    const completed = this.cliDevice.cliTabComplete(this.input);
+    const completed = this.resolveCliTabComplete(this.input);
     if (completed) {
       this.input = completed;
       this.notify();
@@ -299,10 +317,18 @@ export abstract class CLITerminalSession extends TerminalSession {
   private showInlineHelp(currentInput: string): void {
     this.addLine(`${this.prompt}${currentInput}?`);
 
-    const helpText = this.cliDevice.cliHelp(currentInput);
+    const helpText = this.resolveCliHelp(currentInput);
 
     if (helpText) this.addLine(helpText);
     // Input is NOT cleared — user continues typing
+  }
+
+  protected resolveCliHelp(currentInput: string): string {
+    return this.cliDevice.cliHelp(currentInput);
+  }
+
+  protected resolveCliTabComplete(input: string): string | null {
+    return this.cliDevice.cliTabComplete(input);
   }
 
   // ── Pager ───────────────────────────────────────────────────────

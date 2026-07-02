@@ -16,15 +16,15 @@
  */
 
 import type { ARPEntry } from '../EndHost';
-import { MACAddress } from '../../core/types';
+import { IPAddress, MACAddress } from '../../core/types';
 
 export interface LinuxArpContext {
   /** ARP table: IP string → ARPEntry */
   arpTable: Map<string, ARPEntry>;
   /** Add a static ARP entry */
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   /** Delete an ARP entry by IP. Returns true if deleted. */
-  deleteARP(ip: string): boolean;
+  deleteARP(ip: IPAddress): boolean;
   /** Default interface name (first port) */
   defaultIface: string;
 }
@@ -196,7 +196,10 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
     if (!flags.filterIP) {
       return HELP_TEXT;
     }
-    const deleted = ctx.deleteARP(flags.filterIP);
+    let ip: IPAddress;
+    try { ip = new IPAddress(flags.filterIP); }
+    catch { return `arp: invalid IP address: ${flags.filterIP}`; }
+    const deleted = ctx.deleteARP(ip);
     if (!deleted) {
       return `SIOCDARP(dontpub): No ARP entry for ${flags.filterIP}`;
     }
@@ -209,18 +212,22 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
       return HELP_TEXT;
     }
     let mac: MACAddress;
+    let ip: IPAddress;
+    try { ip = new IPAddress(flags.filterIP); }
+    catch { return `arp: invalid IP address: ${flags.filterIP}`; }
     try {
       mac = new MACAddress(flags.staticMAC);
     } catch {
       return `arp: invalid hardware address: ${flags.staticMAC}`;
     }
     const iface = flags.filterIface || ctx.defaultIface;
-    ctx.addStaticARP(flags.filterIP, mac, iface);
+    ctx.addStaticARP(ip, mac, iface);
     return '';
   }
 
   // ─── Display mode (default) ──────────────────────────────────
-  let entries = Array.from(ctx.arpTable.entries());
+  let entries = Array.from(ctx.arpTable.entries())
+    .filter(([, e]) => e.type !== 'failed');
 
   // Filter by IP
   if (flags.filterIP) {

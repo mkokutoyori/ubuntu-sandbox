@@ -27,6 +27,22 @@ export class LinuxService extends OSService implements ServiceUnit {
   declare state: ServiceState;
   declare enabled: EnabledState;
   declare restart: RestartPolicy;
+  dynamicUser: boolean;
+  allowIsolate?: boolean;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
+  lastExit?: { code?: number; signal?: string };
+  failedReason?: string;
+  startLimitHit?: boolean;
+  autoRestartPending?: boolean;
+  restartEpochs?: number[];
 
   constructor(init: ServiceUnit) {
     super({
@@ -39,8 +55,13 @@ export class LinuxService extends OSService implements ServiceUnit {
       user: init.user,
       group: init.group,
       wantedBy: init.wantedBy,
+      wants: init.wants,
       after: init.after,
+      before: init.before,
       requires: init.requires,
+      bindsTo: init.bindsTo,
+      partOf: init.partOf,
+      conflicts: init.conflicts,
       restart: init.restart as RestartPolicy,
       loadedFrom: init.loadedFrom,
       state: init.state as ServiceState,
@@ -49,6 +70,21 @@ export class LinuxService extends OSService implements ServiceUnit {
     });
     if (init.mainPid !== undefined) this.mainPid = init.mainPid;
     if (init.activeSince !== undefined) this.activeSince = init.activeSince;
+    this.dynamicUser = init.dynamicUser ?? false;
+    this.allowIsolate = init.allowIsolate;
+    this.restartSec = init.restartSec;
+    this.startLimitBurst = init.startLimitBurst;
+    this.startLimitIntervalSec = init.startLimitIntervalSec;
+    this.lastExit = init.lastExit;
+    this.failedReason = init.failedReason;
+    this.startLimitHit = init.startLimitHit;
+    this.restartEpochs = init.restartEpochs;
+    this.listenStream = init.listenStream;
+    this.onActiveSec = init.onActiveSec;
+    this.onBootSec = init.onBootSec;
+    this.onUnitActiveSec = init.onUnitActiveSec;
+    this.onCalendar = init.onCalendar;
+    this.activates = init.activates;
   }
 
   /** Linux supervisor only resurrects these three restart policies. */

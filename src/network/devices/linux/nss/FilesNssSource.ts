@@ -31,10 +31,7 @@ import type {
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
 
-const SUCCESS = <T>(entry: T): NssResult<T> => ({ status: 'SUCCESS', entry });
-const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
-const ENUM_OK = <T>(entries: T[]): NssEnumResult<T> => ({ status: 'SUCCESS', entries });
-const ENUM_EMPTY = <T>(): NssEnumResult<T> => ({ status: 'NOTFOUND', entries: [] });
+import { nssOk as SUCCESS, nssNotFound as NOTFOUND, nssEnumOk as ENUM_OK, nssEnumEmpty as ENUM_EMPTY } from './nssResult';
 
 /**
  * Read a colon/whitespace-separated file as a list of trimmed lines,

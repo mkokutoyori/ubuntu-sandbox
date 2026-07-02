@@ -36,6 +36,8 @@ export interface ConstraintMeta {
   refColumns?: string[];
   checkExpression?: string;
   onDelete?: 'CASCADE' | 'SET_NULL';
+  deferrable?: boolean;
+  initiallyDeferred?: boolean;
 }
 
 export interface IndexMeta {

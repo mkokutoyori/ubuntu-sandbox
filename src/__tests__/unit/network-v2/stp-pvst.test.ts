@@ -42,12 +42,12 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     sw1.setEventBus(bus);
     sw2.setEventBus(bus);
 
-    await provision(sw1, 'FastEthernet0/0');
-    await provision(sw2, 'FastEthernet0/0');
+    await provision(sw1, 'FastEthernet0/1');
+    await provision(sw2, 'FastEthernet0/1');
 
     new Cable('trunk').connect(
-      sw1.getPort('FastEthernet0/0')!,
-      sw2.getPort('FastEthernet0/0')!,
+      sw1.getPort('FastEthernet0/1')!,
+      sw2.getPort('FastEthernet0/1')!,
     );
 
     await setVlanPriority(sw1, 10, 4096);
@@ -62,12 +62,12 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     expect(a.isRootForVlan(10)).toBe(true);
     expect(b.isRootForVlan(10)).toBe(false);
     expect(b.getRootBridgeForVlan(10).priority).toBe(4096);
-    expect(b.getRootPortForVlan(10)).toBe('FastEthernet0/0');
+    expect(b.getRootPortForVlan(10)).toBe('FastEthernet0/1');
 
     expect(b.isRootForVlan(20)).toBe(true);
     expect(a.isRootForVlan(20)).toBe(false);
     expect(a.getRootBridgeForVlan(20).priority).toBe(4096);
-    expect(a.getRootPortForVlan(20)).toBe('FastEthernet0/0');
+    expect(a.getRootPortForVlan(20)).toBe('FastEthernet0/1');
   });
 
   it('breaks a redundant loop independently per VLAN and blocks in the data plane', async () => {
@@ -78,24 +78,24 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     sw2.setEventBus(bus);
 
     for (const sw of [sw1, sw2]) {
-      for (const port of ['FastEthernet0/0', 'FastEthernet0/1']) {
+      for (const port of ['FastEthernet0/1', 'FastEthernet0/2']) {
         await provision(sw, port);
       }
     }
     await setVlanPriority(sw1, 1, 4096);
     await setVlanPriority(sw1, 10, 4096);
 
-    new Cable('a').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(sw1.getPort('FastEthernet0/2')!, sw2.getPort('FastEthernet0/2')!);
 
     const b = sw2.getStpAgent();
     for (const vlan of [1, 10]) {
-      const roles = ['FastEthernet0/0', 'FastEthernet0/1'].map((p) => b.getPortRoleForVlan(vlan, p));
+      const roles = ['FastEthernet0/1', 'FastEthernet0/2'].map((p) => b.getPortRoleForVlan(vlan, p));
       const blocked = roles.filter((r) => r === 'alternate' || r === 'backup');
       const rootPorts = roles.filter((r) => r === 'root');
       expect(blocked.length).toBe(1);
       expect(rootPorts.length).toBe(1);
-      const blockedPort = ['FastEthernet0/0', 'FastEthernet0/1']
+      const blockedPort = ['FastEthernet0/1', 'FastEthernet0/2']
         .find((p) => b.getPortRoleForVlan(vlan, p) === 'alternate' || b.getPortRoleForVlan(vlan, p) === 'backup')!;
       expect(sw2.getStpVlanState(blockedPort, vlan)).toBe('blocking');
     }
@@ -107,11 +107,11 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus);
     sw2.setEventBus(bus);
-    await provision(sw1, 'FastEthernet0/0');
-    await provision(sw2, 'FastEthernet0/0');
+    await provision(sw1, 'FastEthernet0/1');
+    await provision(sw2, 'FastEthernet0/1');
     new Cable('trunk').connect(
-      sw1.getPort('FastEthernet0/0')!,
-      sw2.getPort('FastEthernet0/0')!,
+      sw1.getPort('FastEthernet0/1')!,
+      sw2.getPort('FastEthernet0/1')!,
     );
     await setVlanPriority(sw1, 10, 4096);
     await setVlanPriority(sw2, 20, 4096);
@@ -122,7 +122,7 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
 
     expect(sw1Vlan10).toContain('This bridge is the root');
     expect(sw1Vlan20).not.toContain('This bridge is the root');
-    expect(sw1Vlan20).toContain('Fa0/0');
+    expect(sw1Vlan20).toContain('Fa0/1');
   });
 
   it('VLAN-tagged BPDUs reach the neighbour over the wire', async () => {
@@ -131,8 +131,8 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus);
     sw2.setEventBus(bus);
-    await provision(sw1, 'FastEthernet0/0');
-    await provision(sw2, 'FastEthernet0/0');
+    await provision(sw1, 'FastEthernet0/1');
+    await provision(sw2, 'FastEthernet0/1');
 
     const received = new Set<number>();
     bus.subscribe('stp.bpdu.received', (e) => {
@@ -141,8 +141,8 @@ describe('PVST+ — per-VLAN root election across a cabled trunk', () => {
     });
 
     new Cable('trunk').connect(
-      sw1.getPort('FastEthernet0/0')!,
-      sw2.getPort('FastEthernet0/0')!,
+      sw1.getPort('FastEthernet0/1')!,
+      sw2.getPort('FastEthernet0/1')!,
     );
     await setVlanPriority(sw1, 1, 4096);
     await setVlanPriority(sw1, 10, 4096);

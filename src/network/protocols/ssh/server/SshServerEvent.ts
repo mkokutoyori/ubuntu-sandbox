@@ -24,7 +24,10 @@ export type DisconnectReason =
   | 'host_key_rejected'
   | 'protocol_error'
   | 'admin_disconnect'
-  | 'throttled';
+  | 'throttled'
+  | 'client-alive-timeout'
+  | 'reset'
+  | 'closed';
 
 /**
  * Specific reason an auth attempt failed. Used by both the syslogger
@@ -67,6 +70,29 @@ export type SshServerEvent =
       kind: 'auth_invalid_user';
       user: string;
       ip: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
+      // Emitted when StrictModes refuses ~/.ssh or ~/.ssh/authorized_keys
+      // before even looking at the offered key. Real sshd writes this as
+      // `Authentication refused: bad ownership or modes for file <path>`.
+      kind: 'auth_strict_modes_refused';
+      user: string;
+      ip: string;
+      path: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
+      // Emitted when sshdAcceptsLogin rejects on policy grounds before
+      // any auth method runs. `reason` carries the human-readable
+      // motive: `PermitRootLogin no`, `not in AllowUsers`, `DenyUsers
+      // match`, etc.
+      kind: 'auth_policy_refused';
+      user: string;
+      ip: string;
+      reason: string;
       port?: number;
       timestamp?: number;
     }

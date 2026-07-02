@@ -27,6 +27,7 @@ export function tryIpToUint32(ip: string): number | null {
   let value = 0;
   for (const part of p) {
     if (!/^\d{1,3}$/.test(part)) return null;
+    if (part.length > 1 && part.startsWith('0')) return null;
     const n = Number(part);
     if (n > 255) return null;
     value = ((value << 8) | n) >>> 0;
@@ -138,4 +139,11 @@ export function isValidIPv6(s: string): boolean {
 
   // '::' must stand for at least one zero group.
   return doubleColons === 1 ? count <= 7 : count === 8;
+}
+
+export function classfulMask(ip: string): string {
+  const first = parseInt(ip.split('.')[0], 10);
+  if (first < 128) return '255.0.0.0';
+  if (first < 192) return '255.255.0.0';
+  return '255.255.255.0';
 }

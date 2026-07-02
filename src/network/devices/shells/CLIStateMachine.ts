@@ -106,9 +106,12 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'privileged':                { parent: 'user' },
   'config':                    { parent: 'privileged' },
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
+  'config-subif':              { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
   'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },
+  'config-vrf':                { parent: 'config', clearOnExit: ['selectedVRF'] },
+  'config-vlan':               { parent: 'config', clearOnExit: ['selectedVLAN'] },
   'config-track':              { parent: 'config', clearOnExit: ['selectedTrack'] },
   'config-ipsla':              { parent: 'config', clearOnExit: ['selectedIpSla'] },
   'config-route-map':          { parent: 'config', clearOnExit: ['selectedRouteMap'] },
@@ -162,6 +165,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-mst':  { parent: 'config' },
   'config-line': { parent: 'config' },
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
+  'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
 };
 
 // ─── Huawei VRP Mode Hierarchy ────────────────────────────────────

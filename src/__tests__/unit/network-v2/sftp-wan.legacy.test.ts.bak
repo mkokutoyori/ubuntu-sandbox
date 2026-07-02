@@ -75,9 +75,9 @@ function buildWanTopology() {
 
   // ── Cables — Site A ────────────────────────────────────────────────────────
   new Cable('c-clientA-swA').connect(
-    linuxClient.getPort('eth0')!,  swA.getPort('FastEthernet0/1')!);
+    linuxClient.getPort('eth0')!,  swA.getPort('FastEthernet0/2')!);
   new Cable('c-clientA2-swA').connect(
-    linuxClient2.getPort('eth0')!, swA.getPort('FastEthernet0/2')!);
+    linuxClient2.getPort('eth0')!, swA.getPort('FastEthernet0/3')!);
   new Cable('c-routerA-swA').connect(
     routerA.getPort('GigabitEthernet0/0')!, swA.getPort('GigabitEthernet0/0')!);
 
@@ -88,9 +88,9 @@ function buildWanTopology() {
 
   // ── Cables — Site B ────────────────────────────────────────────────────────
   new Cable('c-linuxSrv-swB').connect(
-    linuxServer.getPort('eth0')!,  swB.getPort('FastEthernet0/1')!);
+    linuxServer.getPort('eth0')!,  swB.getPort('FastEthernet0/2')!);
   new Cable('c-winSrv-swB').connect(
-    winServer.getPort('eth0')!,    swB.getPort('FastEthernet0/2')!);
+    winServer.getPort('eth0')!,    swB.getPort('FastEthernet0/3')!);
   new Cable('c-routerB-swB').connect(
     routerB.getPort('GigabitEthernet0/0')!, swB.getPort('GigabitEthernet0/0')!);
 

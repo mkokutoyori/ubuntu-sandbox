@@ -2,10 +2,13 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
-import { VirtualFileSystem } from './VirtualFileSystem';
+import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
+import { cronAllowed } from './cron/CronPermissions';
+import { CronEngine } from './cron/CronEngine';
+import { SystemCron } from './cron/SystemCron';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -26,23 +29,49 @@ import {
 } from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
+import { CommandPrivilegePolicy, type PrivilegeActor } from './iam/policy/CommandPrivilegePolicy';
+import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
+import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
-import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
+import { runScript, runScriptContent, runScriptContentAsync } from '@/bash/runtime/ScriptRunner';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
-import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
+import { cmdLspci } from './commands/hw/Lspci';
+import { cmdLsusb } from './commands/hw/Lsusb';
+import { cmdLscpu } from './commands/hw/Lscpu';
+import { cmdFdisk } from './commands/hw/Fdisk';
+import { cmdHdparm } from './commands/hw/Hdparm';
+import { cmdDmidecode } from './commands/hw/Dmidecode';
+import { cmdLshw } from './commands/hw/Lshw';
+import { cmdHwinfo } from './commands/hw/Hwinfo';
+import { cmdBlkid } from './commands/hw/Blkid';
+import { cmdParted } from './commands/hw/Parted';
+import { cmdLsblk as cmdLsblkNew } from './commands/hw/Lsblk';
+import { cmdVmstat } from './system/Vmstat';
+import { cmdMpstat } from './system/Mpstat';
+import { cmdIostat } from './system/Iostat';
+import { cmdPidstat } from './system/Pidstat';
+import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
+import { MountTable, MountEntry } from './MountTable';
+import { SysfsTree } from './Sysfs';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
+import { publishWireSegment } from './network/WireCaptureBus';
+import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
 import type { SocketTable } from '../../core/SocketTable';
-import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
 import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { FileSystemAuditProjection } from './audit/FileSystemAuditProjection';
+import { LinuxAuditDaemon } from './audit/LinuxAuditDaemon';
+import type { FileAccessedPayload, SyscallInvokedPayload, FileAccessPerm } from './events';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
+import { LinuxAuditRules, validateAuditdConfig } from './audit/LinuxAuditRules';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
@@ -52,9 +81,10 @@ import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcess
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
-import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
+import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
-import { findHostByAddress } from './network/HostLookup';
+import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
+import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -70,6 +100,10 @@ import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
+import { renderWho } from './network/whoFormatter';
+import { renderW } from './network/wFormatter';
+import { renderLast, renderLastb } from './network/lastFormatter';
+import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -79,8 +113,12 @@ import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
 import { FilesNssSource } from './nss/FilesNssSource';
 import { DnsNssSource } from './nss/DnsNssSource';
+import { DynamicUserTable } from './nss/DynamicUserTable';
+import { SystemdNssSource } from './nss/SystemdNssSource';
 import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
 import { runGetent } from './nss/GetentCommand';
+import type { NssHostEntry, NssServiceEntry } from './nss/types';
+import { IPAddress } from '../../core/types';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -98,7 +136,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
-  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Shell builtins and basics
@@ -115,16 +153,18 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
+  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
-  'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
-  'pkill', 'pgrep', 'pidof', 'killall',
-  'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
+  'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
+  'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
+  'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
   // Networking
-  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
-  'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
+  'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
   'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
@@ -136,13 +176,36 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
+/** Binaries shipped setuid-root on a stock Ubuntu; seeded mode 04755 so the
+ *  setuid behaviour (euid→0 on execve) is driven by the real VFS mode bit. */
+const SETUID_ROOT_BINARIES: readonly string[] = [
+  'passwd', 'su', 'sudo', 'chsh', 'chfn', 'newgrp', 'gpasswd',
+  'ping', 'mount', 'umount', 'crontab',
+];
+
+interface LogrotateOpts {
+  rotate: number;
+  schedule: string;
+  compress: boolean;
+  delaycompress: boolean;
+  copytruncate: boolean;
+  missingok: boolean;
+  nocreate: boolean;
+  dateext: boolean;
+  size: number | null;
+  sharedscripts: boolean;
+  postrotate: string | null;
+  prerotate: string | null;
+  create: { mode: number; uid: number; gid: number } | null;
+}
+
 function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
-  const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
+  const m = /^([ug])(?::([^:]*))?(?::([rwx-]{0,3}))?$/.exec(entry);
   if (!m) return null;
   const kind = m[1] === 'u' ? 'user' : 'group';
   const name = m[2] ?? '';
   let perms = 0;
-  for (const c of m[3]) {
+  for (const c of m[3] ?? '') {
     if (c === 'r') perms |= 0o4;
     else if (c === 'w') perms |= 0o2;
     else if (c === 'x') perms |= 0o1;
@@ -190,6 +253,7 @@ function stateLabel(s: string): string {
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
+  readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
   /**
    * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
@@ -219,14 +283,23 @@ export class LinuxCommandExecutor {
   private readonly filesNss: FilesNssSource;
   /** Shared `dns` source — the owning machine injects its wire resolver. */
   readonly dnsNss = new DnsNssSource();
+  readonly dynamicUsers = new DynamicUserTable();
+  readonly systemdNss = new SystemdNssSource(this.dynamicUsers);
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
+  readonly ip6tables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
   readonly auditLog: LinuxAuditLog;
+  readonly auditRules: LinuxAuditRules;
   /** Reactive bridge feeding security events into the audit trail. */
   private auditTrail: AuditTrailProjection | null = null;
+  private fsAuditProjection: FileSystemAuditProjection | null = null;
+  private auditDaemon: LinuxAuditDaemon | null = null;
+  private bus: IEventBus | null = null;
+  private attachedDeviceId: string | null = null;
+  private currentCommandHead: string | null = null;
   /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
   private serviceJournal: LinuxServiceJournalProjection | null = null;
   /** `at` deferred-job spool, drained by the `atd` daemon. */
@@ -235,14 +308,14 @@ export class LinuxCommandExecutor {
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  getSocketTable(): SocketTable | null { return this.socketTable; }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
+  getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
   private sessionTable: SshSessionTable | null = null;
-  /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
-  private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
   private servicePortProjection: ServicePortProjection | null = null;
   /** Records port bind / release activity into the system log, reactively. */
@@ -290,9 +363,15 @@ export class LinuxCommandExecutor {
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+  /** Simulated host clock — drives background-job completion over time. */
+  private readonly clock = new HostClock();
+  private readonly wallEpoch = Date.now();
+  private cronEngine?: CronEngine;
+  private cronStarted = false;
+  private cronCursorMs = 0;
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
-  readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
+  readonly functions: Map<string, import('@/bash/parser/ASTNode').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
@@ -315,23 +394,37 @@ export class LinuxCommandExecutor {
     this.lifecycle = lifecycle ?? new HostLifecycle();
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
+    this.mountTable = MountTable.fromHardware(this.hardware.storage);
+    this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
+    this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
     // Project the lastlog registry onto the canonical /var/log/lastlog file
     // so the filesystem view stays coherent with the in-memory registry.
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
-    this.iptables = new LinuxIptablesManager(this.vfs);
+    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
+    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.auditLog = new LinuxAuditLog(this.vfs);
+    this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
-    this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
+    this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
+    this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
+    this.auditRules.bindActorContextProvider(() => this.snapshotActor());
     this.isServer = isServer;
 
     // ── NSS provisioning ────────────────────────────────────────────
     // Seed the canonical NSS-backed system files (a fresh Ubuntu
     // install ships these). Each is created only when missing so an
     // operator's runtime edits survive a reboot.
+    if (this.vfs.readFile('/etc/logrotate.conf') == null) {
+      this.vfs.writeFile('/etc/logrotate.conf',
+        '# see "man logrotate" for details\nweekly\nrotate 4\ncreate\n\n'
+        + '/var/log/syslog\n/var/log/auth.log\n{\n\trotate 4\n\tweekly\n\tmissingok\n\tnotifempty\n}\n\n'
+        + 'include /etc/logrotate.d\n', 0, 0, 0o022);
+      this.vfs.mkdirp('/etc/logrotate.d', 0o755, 0, 0);
+    }
     if (this.vfs.readFile('/etc/services')  == null) this.vfs.writeFile('/etc/services',  ETC_SERVICES,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
     if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
@@ -342,8 +435,9 @@ export class LinuxCommandExecutor {
     this.nss = new NameServiceSwitch(
       this.vfs,
       new Map([
-        ['files', this.filesNss],
-        ['dns',   this.dnsNss],
+        ['files',   this.filesNss],
+        ['dns',     this.dnsNss],
+        ['systemd', this.systemdNss],
       ]),
     );
     this.nss.seedConfigIfMissing();
@@ -404,6 +498,7 @@ export class LinuxCommandExecutor {
     // Materialise the system identity onto /etc and /proc.
     this.seedIdentityFiles();
     this.registerKernelProcFiles();
+    this.registerSysfsFiles();
   }
 
   /**
@@ -433,6 +528,74 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
+  }
+
+  private registerSysfsFiles(): void {
+    const tree = new SysfsTree(() => this.hardware, {
+      liveMac: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.mac ?? null,
+    });
+    for (const leaf of tree.leaves()) {
+      const slash = leaf.path.lastIndexOf('/');
+      if (slash > 0) this.vfs.mkdirp(leaf.path.slice(0, slash), 0o755, 0, 0);
+      this.vfs.registerGeneratedFile(leaf.path, leaf.read);
+    }
+    this.registerArpSysctls();
+    this.registerNetProcFiles();
+  }
+
+  private registerArpSysctls(): void {
+    const dirs = ['/proc/sys/net/ipv4/conf/all', '/proc/sys/net/ipv4/conf/default', '/proc/sys/net/ipv4/neigh/default'];
+    for (const d of dirs) this.vfs.mkdirp(d, 0o755, 0, 0);
+    for (const scope of ['all', 'default']) {
+      const base = `/proc/sys/net/ipv4/conf/${scope}`;
+      this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_accept`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
+    }
+    for (const a of this.hardware.adapters) {
+      const base = `/proc/sys/net/ipv4/conf/${a.name}`;
+      this.vfs.mkdirp(base, 0o755, 0, 0);
+      this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_accept`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
+      this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
+    }
+    const neigh = '/proc/sys/net/ipv4/neigh/default';
+    this.vfs.registerGeneratedFile(`${neigh}/base_reachable_time_ms`, () => '30000\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh1`, () => '128\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh2`, () => '512\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh3`, () => '1024\n');
+    this.vfs.registerGeneratedFile(`${neigh}/gc_stale_time`, () => '60\n');
+    this.vfs.registerGeneratedFile(`${neigh}/retrans_time_ms`, () => '1000\n');
+    this.vfs.registerGeneratedFile(`${neigh}/mcast_solicit`, () => '3\n');
+    this.vfs.registerGeneratedFile(`${neigh}/ucast_solicit`, () => '3\n');
+  }
+
+  private registerNetProcFiles(): void {
+    this.vfs.mkdirp('/proc/net', 0o755, 0, 0);
+    this.vfs.registerGeneratedFile('/proc/net/arp', () => this.renderProcNetArp());
+  }
+
+  private renderProcNetArp(): string {
+    const header = 'IP address       HW type     Flags       HW address            Mask     Device\n';
+    if (!this.ipNetworkCtx) return header;
+    const entries = this.ipNetworkCtx.getNeighborTable().filter((n) => n.state !== 'FAILED');
+    const rows = entries.map((n) => {
+      const flag = n.state === 'PERMANENT' ? '0x6' : '0x2';
+      return [
+        n.ip.padEnd(16),
+        '0x1'.padEnd(11),
+        flag.padEnd(11),
+        n.mac.padEnd(21),
+        '*'.padEnd(8),
+        n.iface,
+      ].join(' ');
+    });
+    return header + rows.join('\n') + (rows.length > 0 ? '\n' : '');
   }
 
   /** Tracked set of PIDs currently materialized under /proc as per-pid dirs. */
@@ -445,11 +608,10 @@ export class LinuxCommandExecutor {
    *  files driven live from the process manager. */
   private syncProcPids(): void {
     const live = new Set(this.processMgr.list().map((p) => p.pid));
-    // Remove gone.
     for (const pid of [...this.materializedProcPids]) {
       if (!live.has(pid)) {
         try {
-          for (const f of ['status', 'cmdline', 'comm', 'stat']) {
+          for (const f of ['status', 'cmdline', 'comm', 'stat', 'loginuid', 'sessionid', 'cgroup']) {
             this.vfs.deleteFile(`/proc/${pid}/${f}`);
           }
           this.vfs.rmdir(`/proc/${pid}`);
@@ -494,6 +656,17 @@ export class LinuxCommandExecutor {
           p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
         ].join(' ') + '\n';
       });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/loginuid`, () => {
+        const a = this.auditAttrs(pid);
+        return `${a.loginuid}\n`;
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/sessionid`, () => {
+        const a = this.auditAttrs(pid);
+        return `${a.sessionid}\n`;
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/cgroup`, () => {
+        return `0::${this.cgroupPathFor(pid)}\n`;
+      });
       this.materializedProcPids.add(pid);
     }
     // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
@@ -502,6 +675,49 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private auditAttrs(pid: number): { loginuid: number; sessionid: number } {
+    const NONE = 4294967295;
+    if (!this.sessionTable) return { loginuid: NONE, sessionid: NONE };
+    const sessions = this.sessionTable.list();
+    const owner = sessions.find((s) => s.shellPid === pid || s.sshdPid === pid);
+    if (!owner) return this.auditAncestor(pid);
+    const sid = owner.shellPid ?? owner.sshdPid ?? 0;
+    return { loginuid: owner.uid, sessionid: sid > 0 ? sid : NONE };
+  }
+
+  private auditAncestor(pid: number): { loginuid: number; sessionid: number } {
+    const NONE = 4294967295;
+    let cur = this.processMgr.get(pid);
+    let hops = 0;
+    while (cur && hops < 64) {
+      const direct = this.sessionTable?.list().find((s) => s.shellPid === cur!.pid || s.sshdPid === cur!.pid);
+      if (direct) {
+        const sid = direct.shellPid ?? direct.sshdPid ?? 0;
+        return { loginuid: direct.uid, sessionid: sid > 0 ? sid : NONE };
+      }
+      if (cur.ppid === 0 || cur.ppid === cur.pid) break;
+      cur = this.processMgr.get(cur.ppid);
+      hops++;
+    }
+    return { loginuid: NONE, sessionid: NONE };
+  }
+
+  private cgroupPathFor(pid: number): string {
+    const a = this.auditAttrs(pid);
+    if (a.loginuid !== 4294967295 && a.sessionid !== 4294967295) {
+      return `/user.slice/user-${a.loginuid}.slice/session-${a.sessionid}.scope`;
+    }
+    const p = this.processMgr.get(pid);
+    if (!p) return '/';
+    if (p.serviceName) return `/system.slice/${p.serviceName}.service`;
+    if (p.comm === 'sshd') return '/system.slice/ssh.service';
+    if (p.comm === 'systemd' && p.pid === 1) return '/init.scope';
+    if (p.comm === 'systemd-logind') return '/system.slice/systemd-logind.service';
+    if (p.comm === 'cron') return '/system.slice/cron.service';
+    if (p.comm === 'rsyslogd') return '/system.slice/rsyslog.service';
+    if (p.comm === 'auditd') return '/system.slice/auditd.service';
+    return '/system.slice';
+  }
 
 
   /**
@@ -514,6 +730,10 @@ export class LinuxCommandExecutor {
   private registerHardwareProcFiles(): void {
     this.vfs.registerGeneratedFile('/proc/cpuinfo', () => this.hardware.cpu.toProcCpuinfo());
     this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
+    this.vfs.registerGeneratedFile('/proc/mounts', () => this.mountTable.toProcMounts());
+    this.vfs.registerGeneratedFile('/proc/self/mounts', () => this.mountTable.toProcMounts());
+    this.vfs.registerGeneratedFile('/proc/self/mountinfo', () => this.mountTable.toMountInfo());
+    this.vfs.registerGeneratedFile('/etc/mtab', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/uptime', () => {
       const up = this.lifecycle.uptimeSeconds();
       return `${up}.00 ${up}.00\n`;
@@ -528,6 +748,7 @@ export class LinuxCommandExecutor {
    */
   setHardware(profile: HardwareProfile): void {
     this.hardware = profile;
+    this.registerSysfsFiles();
   }
 
   /**
@@ -535,22 +756,32 @@ export class LinuxCommandExecutor {
    * service layer publish deviceId-scoped domain events.
    */
   attachEventBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.attachedDeviceId = deviceId;
     this.processMgr.attachBus(bus, deviceId);
     this.serviceMgr.attachBus(bus, deviceId);
     this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
-    // The syslog daemon's lifecycle drives /var/log/* file coherence.
     this.logMgr.attachBus(bus, deviceId);
-    // Record systemd "Started/Stopped <unit>" lines in the journal.
     this.serviceJournal?.dispose();
     this.serviceJournal = new LinuxServiceJournalProjection(bus, this.logMgr, deviceId);
-    // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
-    // Feed security events into the kernel audit trail, reactively.
     this.auditTrail?.dispose();
     this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
+    this.fsAuditProjection?.dispose();
+    this.fsAuditProjection = new FileSystemAuditProjection(bus, this.auditRules, deviceId);
+    this.serviceMgr.registerConfigCheck('auditd', () => this.checkAuditdConfig());
+    this.auditDaemon?.dispose();
+    this.auditDaemon = new LinuxAuditDaemon(bus, deviceId, {
+      auditLog: this.auditLog,
+      rules: this.auditRules,
+      vfs: this.vfs,
+      serviceMgr: this.serviceMgr,
+      freeSpaceMb: () => this.auditFreeSpaceMb(),
+      kernelRelease: () => this.identity.kernel.release,
+    });
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
@@ -586,8 +817,9 @@ export class LinuxCommandExecutor {
     (this as { nss: NameServiceSwitch }).nss = new NameServiceSwitch(
       this.vfs,
       new Map([
-        ['files', this.filesNss],
-        ['dns',   this.dnsNss],
+        ['files',   this.filesNss],
+        ['dns',     this.dnsNss],
+        ['systemd', this.systemdNss],
       ]),
       bus,
       deviceId,
@@ -775,7 +1007,7 @@ export class LinuxCommandExecutor {
       const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
       if (cd) return cd;
     }
-    return null;
+    return cfg.chrootDirectory;
   }
 
   private sshHomeDir(): string {
@@ -783,7 +1015,17 @@ export class LinuxCommandExecutor {
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
-  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
+  resolveServiceName(port: number, proto: string): string | null {
+    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyport?.(port, proto));
+    return r.status === 'SUCCESS' && r.entry ? r.entry.name : null;
+  }
+
+  resolveServicePort(name: string): number | null {
+    const r = this.nss.lookup<NssServiceEntry>('services', s => s.getservbyname?.(name));
+    return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
+  }
+
+  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
@@ -804,12 +1046,21 @@ export class LinuxCommandExecutor {
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
+      offeredPassword,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
           this.vfs.writeFile(p, c, uid, gid, umask),
         resolveInode: (p: string) => this.vfs.resolveInode(p),
         mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
+      },
+      resolveName: (name: string): string | null => {
+        if (IPAddress.isValid(name)) return null;
+        const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+        if (r.status === 'SUCCESS' && r.entry) {
+          for (const h of r.entry) if (h.addressFamily === 2) return h.address;
+        }
+        return null;
       },
     };
   }
@@ -819,17 +1070,124 @@ export class LinuxCommandExecutor {
    * same format as a known_hosts line. Used to seed known_hosts non-
    * interactively.
    */
+  /**
+   * `telnet host [port]` — open a Telnet (TCP/23) session to a remote device.
+   * Resolution and reachability reuse the shared topology helpers; a network
+   * device's incoming-VTY auth verdict decides whether the session is accepted
+   * (a line that mandates a password but has none set is refused, matching
+   * IOS "Password required, but none set").
+   */
+  private runTelnetClient(args: string[]): { output: string; exitCode: number } {
+    const positional = args.filter(a => !a.startsWith('-'));
+    const host = positional[0];
+    if (!host) return { output: 'usage: telnet host-name [port]', exitCode: 1 };
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp || sourceIp === '127.0.0.1') {
+      return { output: `telnet: connect to address ${host}: Network is unreachable`, exitCode: 1 };
+    }
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    if (!found) {
+      return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
+    }
+    // Resolve the device that actually owns the address over the cable plant.
+    // The static registry can hold several fixtures sharing an IP; only the
+    // cable-reachable one answers, and its VTY config governs the verdict.
+    const reachable = findReachableHost(sourceIp, found.ip);
+    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip))) {
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
+    }
+
+    const stdinHas = (this as unknown as { _scenarioStdin?: string })._scenarioStdin;
+    const wireCapable = typeof ((reachable ?? found.device) as unknown as {
+      getTcpStack?: () => unknown;
+    }).getTcpStack === 'function';
+    if (wireCapable && this.tcpProbe && !this.tcpProbe(found.ip, port)) {
+      if (!stdinHas) {
+        return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+      }
+    }
+
+    const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
+    const dev = (reachable ?? found.device) as unknown as {
+      vtyAdmissionVerdict?: (transport: 'telnet', sourceIp: string) => {
+        accept: boolean; kind?: 'acl' | 'line-password' | 'no-line'; reason?: string;
+      };
+      _getVtyLineConfig?: () => { incomingVerdict: () => { accept: boolean; reason: string } };
+    };
+    const admission = dev.vtyAdmissionVerdict?.('telnet', sourceIp);
+    if (admission && !admission.accept) {
+      if (admission.kind === 'line-password') {
+        return { output: `${header}\n\n[${admission.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+      }
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+    }
+    if (!admission) {
+      const verdict = dev._getVtyLineConfig?.().incomingVerdict();
+      if (verdict && !verdict.accept) {
+        return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
+      }
+    }
+    this.emitTelnetWire(sourceIp, found.ip, port);
+    return { output: `${header}\n`, exitCode: 0 };
+  }
+
+  private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
+    ensureCaptureRouterInstalled();
+    const enc = new TextEncoder();
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: enc.encode('SSH-2.0-OpenSSH_8.9 LinuxSimulator\r\n') });
+    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 1, ack: 35, payload: enc.encode('SSH-2.0-OpenSSH_8.9 Client\r\n') });
+    const kex = new Uint8Array(384);
+    for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
+    publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
+    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    let seq = 30 + kex.length;
+    for (const line of stdin.split('\n')) {
+      void line;
+      const cipher = new Uint8Array(64 + Math.floor(Math.random() * 64));
+      for (let i = 0; i < cipher.length; i++) cipher[i] = Math.floor(Math.random() * 256);
+      publishWireSegment({ srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
+      seq += cipher.length;
+    }
+  }
+
+  private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
+    ensureCaptureRouterInstalled();
+    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const srcPort = 49152 + Math.floor(Math.random() * 1000);
+    const enc = new TextEncoder();
+    const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 1, ack: 1, payload: iac });
+    publishWireSegment({ srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 10, ack: 1, payload: enc.encode('login: ') });
+    let seq = 1;
+    for (const raw of stdin.split('\n')) {
+      const line = raw + '\n';
+      if (!line.trim() && !line.includes('\n')) continue;
+      publishWireSegment({
+        srcIp, srcPort, dstIp, dstPort,
+        flags: 'P.', seq, ack: 1,
+        payload: enc.encode(line),
+      });
+      seq += line.length;
+    }
+  }
+
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
-    const host = args.find(a => !a.startsWith('-'));
+    let port = 22;
+    const positional: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-p' && i + 1 < args.length) { port = parseInt(args[++i], 10) || 22; }
+      else if (!args[i].startsWith('-')) positional.push(args[i]);
+    }
+    const host = positional[0];
     if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
     const found = findHostByAddress(host);
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
-    const remoteVfs = (found.device as unknown as { executor: { vfs: { readFile: (p: string) => string | null } } }).executor?.vfs;
-    if (!remoteVfs) return { output: `# ${host} no host key`, exitCode: 1 };
-    const pub = (remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '').trim();
-    if (!pub) return { output: `# ${host} no host key`, exitCode: 1 };
-    const tokens = pub.split(/\s+/);
-    return { output: `${found.ip} ${tokens[0]} ${tokens[1]}`, exitCode: 0 };
+    const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
+    if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
+    return { output: `${found.ip} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
   }
 
   /**
@@ -1008,8 +1366,15 @@ export class LinuxCommandExecutor {
     const remoteHome = remoteUserEntry.home ?? `/home/${remoteUser}`;
     const sshDir = `${remoteHome}/.ssh`;
     const akPath = `${sshDir}/authorized_keys`;
+    // Real OpenSSH ssh-copy-id (the shell script in openssh-client) explicitly
+    // tightens ~/.ssh to 700 and ~/.ssh/authorized_keys to 600 before exiting:
+    //   mkdir -m 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
+    // Replicate that so the simulator's deployment matches what a real
+    // distro leaves behind.
     if (!rexec.vfs.resolveInode(sshDir)) {
-      rexec.vfs.mkdirp(sshDir, 0o755, remoteUserEntry.uid, remoteUserEntry.gid);
+      rexec.vfs.mkdirp(sshDir, 0o700, remoteUserEntry.uid, remoteUserEntry.gid);
+    } else {
+      rexec.vfs.chmod(sshDir, 0o700);
     }
     const existing = rexec.vfs.readFile(akPath) ?? '';
     if (existing.split('\n').some((l) => l.trim() === pubKey)) {
@@ -1026,7 +1391,7 @@ export class LinuxCommandExecutor {
       remoteUserEntry.gid,
       0o022,
     );
-    rexec.vfs.chmod(akPath, 0o644);
+    rexec.vfs.chmod(akPath, 0o600);
     return {
       output: [
         `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "${pubSource}"`,
@@ -1047,11 +1412,26 @@ export class LinuxCommandExecutor {
     for (const name of this.ipNetworkCtx.getInterfaceNames()) {
       if (name === 'lo') continue;
       const info = this.ipNetworkCtx.getInterfaceInfo(name);
-      // An administratively-down NIC cannot source traffic, so its address
-      // is unusable until the interface is brought back up.
       if (info?.ip && info.isUp) return info.ip;
     }
     return null;
+  }
+
+  private firstConfiguredIpv6(): string | null {
+    if (!this.ipNetworkCtx) return null;
+    for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+      if (name === 'lo') continue;
+      const info = this.ipNetworkCtx.getInterfaceInfo(name);
+      if (!info?.isUp) continue;
+      for (const v6 of info.ipv6 ?? []) {
+        if (v6.scope === 'global') return v6.address;
+      }
+    }
+    return null;
+  }
+
+  private isIPv6Literal(host: string): boolean {
+    return host.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(host);
   }
 
   /** Wire the device's socket table so netstat/ss output is dynamic */
@@ -1060,11 +1440,10 @@ export class LinuxCommandExecutor {
     // SSH port-forwards bind their listeners on the very same table, so
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
     this.forwarding = new SshForwardingTable(table);
-    // Now that the socket table exists, keep the port subsystem coherent on
-    // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
-    // files that always reflect the live table.
+    // Now that the socket table exists, expose /proc/net/{tcp,udp} as
+    // generated files that always reflect the live table. `/etc/services`
+    // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.seedServicesFile(this.ianaServices);
     portsFs.registerProcNet(table);
   }
 
@@ -1080,6 +1459,73 @@ export class LinuxCommandExecutor {
    */
   setSessionTable(table: SshSessionTable): void {
     this.sessionTable = table;
+  }
+
+  readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
+
+  private privilegeActor(): PrivilegeActor {
+    return {
+      uid: this.userMgr.currentUid,
+      user: this.userMgr.currentUser,
+      groups: this.userMgr.getUserGroups(this.userMgr.currentUser).map(g => g.name),
+    };
+  }
+
+  private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
+  setTcpProbe(probe: (ip: string, port: number) => boolean): void {
+    this.tcpProbe = probe;
+  }
+
+  private sshHostKeyProbe: ((ip: string, port: number) => ProbedHostKey | null) | null = null;
+  setSshHostKeyProbe(probe: (ip: string, port: number) => ProbedHostKey | null): void {
+    this.sshHostKeyProbe = probe;
+  }
+
+  private setStackEphemeralRangeFn: ((min: number, max: number) => void) | null = null;
+  setEphemeralRangeApplier(fn: (min: number, max: number) => void): void {
+    this.setStackEphemeralRangeFn = fn;
+  }
+  applyEphemeralRange(min: number, max: number): void {
+    this.socketTable?.setEphemeralRange(min, max);
+    this.setStackEphemeralRangeFn?.(min, max);
+    this.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', `${min}\t${max}\n`, 0, 0, 0o022);
+  }
+
+  private ephemeralPoolFreeChecker: (() => boolean) | null = null;
+  setEphemeralPoolFreeChecker(fn: () => boolean): void {
+    this.ephemeralPoolFreeChecker = fn;
+  }
+  hasFreeEphemeralPort(): boolean {
+    return this.ephemeralPoolFreeChecker ? this.ephemeralPoolFreeChecker() : true;
+  }
+
+  private utmpSync: import('./network/UtmpSync').UtmpSync | null = null;
+
+  setUtmpSync(sync: import('./network/UtmpSync').UtmpSync): void {
+    this.utmpSync = sync;
+  }
+
+  private buildLoginctlAction(table: SshSessionTable): import('./network/loginctlFormatter').LoginctlSessionAction {
+    const findSession = (sid: string) => {
+      const sessions = table.list();
+      const idx = sessions.findIndex((s, i) => {
+        const pid = s.shellPid ?? s.sshdPid ?? 0;
+        return (pid > 0 ? String(pid) : String(i + 1)) === sid;
+      });
+      return idx >= 0 ? sessions[idx] : null;
+    };
+    const terminate = (sid: string, signal: 'SIGTERM' | 'SIGHUP' | 'SIGKILL' | 'SIGINT') => {
+      const s = findSession(sid);
+      if (!s) return { ok: false, error: `Failed to terminate session: No session '${sid}' known` };
+      if (s.shellPid) this.processMgr.kill(s.shellPid, signal);
+      if (s.sshdPid) this.processMgr.kill(s.sshdPid, signal);
+      table.close(s.tty, 'admin');
+      return { ok: true };
+    };
+    return {
+      terminate: (sid) => terminate(sid, 'SIGTERM'),
+      kill: (sid, signal) => terminate(sid, signal),
+    };
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -1173,6 +1619,8 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    job.durationMs = parseBackgroundDurationMs(cmdLine);
+    job.completesAt = this.clock.now() + job.durationMs;
     // `$!` — PID of the most-recently backgrounded process. Bash exposes
     // this through the special parameter table; we propagate it via the
     // environment so `echo $!` / `kill -15 $!` resolve correctly.
@@ -1200,6 +1648,131 @@ export class LinuxCommandExecutor {
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
     return lines.join('\n');
+  }
+
+  /** Current simulated-clock time in milliseconds. */
+  simulatedNow(): number {
+    return this.clock.now();
+  }
+
+  private simulatedDate(): Date {
+    return new Date(this.wallEpoch + this.clock.now());
+  }
+
+  advanceTime(ms: number): void {
+    const before = this.clock.now();
+    this.clock.advance(ms);
+    this.processMgr.accrueCpu(ms);
+    this.reapDueBackgroundJobs();
+    this.fireDueAtJobs();
+    this.tickCron(before);
+  }
+
+  private ensureCronEngine(): CronEngine {
+    if (this.cronEngine) return this.cronEngine;
+    const source = new SystemCron({
+      readFile: (p) => this.vfs.readFile(p),
+      listDirectory: (p) => this.vfs.listDirectory(p) ?? null,
+    });
+    this.cronEngine = new CronEngine({
+      sources: [source],
+      runner: (command) => {
+        const output = this.execute(command);
+        return { output, exitCode: this.lastExitCode };
+      },
+      syslog: () => { void 0; },
+      deliverMail: () => { void 0; },
+      homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
+      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      now: () => this.simulatedDate(),
+    });
+    return this.cronEngine;
+  }
+
+  private tickCron(fromMs: number): void {
+    if (this.serviceMgr.status('cron')?.state !== 'active') return;
+    const engine = this.ensureCronEngine();
+    if (!this.cronStarted) {
+      this.cronStarted = true;
+      this.cronCursorMs = fromMs;
+      engine.start();
+    }
+    let guard = 0;
+    while (this.cronCursorMs + 60_000 <= this.clock.now() && guard++ < 20_000) {
+      this.cronCursorMs += 60_000;
+      engine.tick(new Date(this.wallEpoch + this.cronCursorMs));
+    }
+  }
+
+  private fireDueAtJobs(): void {
+    if (this.serviceMgr.status('atd')?.state !== 'active') return;
+    const now = this.simulatedDate().getTime();
+    for (const job of this.atQueue.list()) {
+      if (job.runAt.getTime() > now) break;
+      this.atQueue.remove(job.id);
+      try { this.execute(job.command); } catch { void 0; }
+    }
+  }
+
+  private reapDueBackgroundJobs(): void {
+    const now = this.clock.now();
+    for (const job of this.jobTable.list()) {
+      if (!job.isRunning() || job.completesAt === undefined) continue;
+      if (job.completesAt <= now) this.completeBackgroundJob(job);
+    }
+  }
+
+  private completeBackgroundJob(job: import('./jobs/LinuxJob').LinuxJob): void {
+    const proc = this.processMgr.get(job.pid);
+    job.wallTimeMs = job.durationMs ?? 0;
+    job.cpuTimeMs = proc?.cpuTime ?? 0;
+    job.complete({ exitCode: job.exitCode ?? 0 });
+    if (proc) this.processMgr.setState(job.pid, 'Z');
+  }
+
+  private drainFinishedJobNotices(): string[] {
+    const out: string[] = [];
+    const now = this.clock.now();
+    for (const job of this.jobTable.list()) {
+      if (!job.isFinished() || job.notified) continue;
+      if (job.completesAt === undefined || job.completesAt > now) continue;
+      const marker = this.jobTable.isCurrent(job.id) ? '+'
+        : this.jobTable.isPrevious(job.id) ? '-' : ' ';
+      const label = job.state === 'Done' ? 'Done'
+        : job.state === 'Killed' ? `Killed` : `Exit ${job.exitCode ?? 1}`;
+      out.push(`[${job.id}]${marker}  ${label.padEnd(20)}${stripTrailingAmp(job.command)}`);
+      job.notified = true;
+      this.processMgr.reap(job.pid);
+      this.jobTable.remove(job.id);
+    }
+    return out;
+  }
+
+  private handleWait(args: string[]): string {
+    const specs = args.filter((a) => !a.startsWith('-'));
+    const running = this.jobTable.list().filter((j) => j.isRunning());
+    let targets = running;
+    if (specs.length > 0) {
+      targets = [];
+      for (const spec of specs) {
+        const job = spec.startsWith('%')
+          ? this.jobTable.resolve(spec)
+          : this.jobTable.list().find((j) => j.pid === Number(spec));
+        if (job && job.isRunning()) targets.push(job);
+      }
+    }
+    let last = 0;
+    for (const job of targets) {
+      if (job.completesAt !== undefined) {
+        this.clock.advanceTo(job.completesAt);
+        this.completeBackgroundJob(job);
+        last = job.exitCode ?? 0;
+        this.processMgr.reap(job.pid);
+        this.jobTable.remove(job.id);
+      }
+    }
+    this.lastExitCode = last;
+    return '';
   }
 
   /**
@@ -1231,12 +1804,15 @@ export class LinuxCommandExecutor {
         return r.output;
       }
       case 'bg':     return cmdBg(args, ctx).output;
-      case 'wait':   return cmdWait(args, ctx).output;
+      case 'wait':   return this.handleWait(args);
       case 'disown': return cmdDisown(args, ctx).output;
       case 'pstree': return cmdPstree(args, ctx).output;
       case 'kill': {
-        // Bash resolves %jobspec before invoking kill(2). Do the same so
-        // we can also drop the corresponding job from the table.
+        // Only intercept when a %jobspec is present; otherwise let the bash
+        // interpreter expand the arguments (command substitution, globs) and
+        // dispatch kill(2) against real PIDs.
+        if (!args.some((a) => a.startsWith('%'))) return null;
+        this.publishSyscall('kill');
         return this.runKillWithJobspecs(args);
       }
       default: return null;
@@ -1309,8 +1885,11 @@ export class LinuxCommandExecutor {
       umask: this.umask,
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
+      color: this.displayColor,
     };
   }
+
+  displayColor = false;
 
   /**
    * Execute a command string through the bash interpreter.
@@ -1416,12 +1995,31 @@ export class LinuxCommandExecutor {
   }
 
   execute(input: string): string {
+    this.executeDepth++;
+    try {
+      const top = this.executeDepth === 1;
+      let notices: string[] = [];
+      if (top) {
+        this.reapDueBackgroundJobs();
+        notices = this.drainFinishedJobNotices();
+      }
+      const out = this.executeCore(input);
+      if (top && notices.length > 0) {
+        return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
+      }
+      return out;
+    } finally {
+      this.executeDepth--;
+    }
+  }
+
+  private executeDepth = 0;
+
+  private executeCore(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
+    this.currentCommandHead = extractCommandHead(trimmed);
 
-    // Keep /proc/<pid>/ tree in sync with the live process table before any
-    // command runs (cheap diff). Real Linux exposes per-process subdirs via
-    // procfs; the simulator emulates this lazily here.
     this.syncProcPids();
 
     // Track command in history (store the raw input, like bash)
@@ -1451,22 +2049,30 @@ export class LinuxCommandExecutor {
       this.functions,
     );
 
-    // Sync interpreter state back to executor
+    return this.applyInterpreterResult(result, initialPwd, initialVars);
+  }
+
+  /**
+   * Sync interpreter state (cwd, variables, exit code) back onto the
+   * executor and normalize the terminal output — shared by the sync and
+   * async execution paths.
+   */
+  private applyInterpreterResult(
+    result: { output: string; exitCode?: number; env?: Record<string, string> },
+    initialPwd: string,
+    initialVars: Record<string, string>,
+  ): string {
     if (result.env) {
       // Sync PWD → this.cwd only if the interpreter's cd builtin changed it
       // (not if an external command like su changed this.cwd through dispatch)
       const interpPwd = result.env['PWD'];
       if (interpPwd && interpPwd !== initialPwd && this.cwd === initialPwd) {
-        // The interpreter changed PWD but dispatch didn't change this.cwd
-        // → the cd builtin was used; validate and apply
         const inode = this.vfs.resolveInode(interpPwd);
         if (inode && inode.type === 'directory') {
           this.cwd = interpPwd;
         }
       }
-      // Sync variables back to executor's env
       for (const [key, value] of Object.entries(result.env)) {
-        // Skip internal/special vars and positional params
         if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
         if (value !== initialVars[key]) {
           this.env.set(key, value);
@@ -1480,6 +2086,88 @@ export class LinuxCommandExecutor {
     // (e.g. `echo x` shows one line, not two). Drop a single trailing
     // newline so output is consistent across builtins and externals.
     return result.output.replace(/\n$/, '');
+  }
+
+  /**
+   * Hook installed by the owning machine: returns a Promise for argv that
+   * resolve to network-aware commands (ping, dig, ssh, …), or null when
+   * argv is not a network command and the synchronous dispatch applies.
+   */
+  private networkRunner:
+    | ((argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null)
+    | null = null;
+
+  setNetworkCommandRunner(
+    runner: (argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null,
+  ): void {
+    this.networkRunner = runner;
+  }
+
+  /**
+   * Async twin of {@link execute}: same pipeline, driven through the
+   * interpreter's async driver so network commands compose with full
+   * shell syntax (pipes, redirections, conditionals, substitutions).
+   */
+  async executeAsync(input: string): Promise<string> {
+    this.executeDepth++;
+    try {
+      const top = this.executeDepth === 1;
+      let notices: string[] = [];
+      if (top) {
+        this.reapDueBackgroundJobs();
+        notices = this.drainFinishedJobNotices();
+      }
+      const out = await this.executeCoreAsync(input);
+      if (top && notices.length > 0) {
+        return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
+      }
+      return out;
+    } finally {
+      this.executeDepth--;
+    }
+  }
+
+  private async executeCoreAsync(input: string): Promise<string> {
+    const trimmed = input.trim();
+    if (!trimmed) { this.lastExitCode = 0; return ''; }
+    this.currentCommandHead = extractCommandHead(trimmed);
+
+    this.syncProcPids();
+    this.commandHistory.push(trimmed);
+
+    const builtin = this.runJobBuiltinIfMatching(trimmed);
+    if (builtin !== null) return builtin;
+
+    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+    if (bgHandled !== null) return bgHandled;
+
+    const io = this.buildIOContext();
+    const initialPwd = this.cwd;
+    const initialVars = this.buildEnvVars();
+    const result = await runScriptContentAsync(
+      trimmed,
+      'bash',
+      [],
+      (argv, env) => this.dispatchMaybeNetwork(argv, env),
+      initialVars,
+      io,
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      this.aliases,
+      this.functions,
+    );
+    return this.applyInterpreterResult(result, initialPwd, initialVars);
+  }
+
+  private dispatchMaybeNetwork(
+    argv: string[],
+    env?: Record<string, string>,
+  ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
+    if (this.networkRunner && argv.length > 0) {
+      const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
+      const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
+      if (pending) return pending;
+    }
+    return this.dispatchFromInterpreter(argv, env);
   }
 
   /**
@@ -1508,20 +2196,61 @@ export class LinuxCommandExecutor {
    * Bridge between the bash interpreter and the command dispatcher.
    * Called by the interpreter for external (non-builtin) commands.
    */
+  runScriptWithCollector(
+    script: string,
+    collector: (argv: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+  ): void {
+    const io = this.buildIOContext();
+    runScriptContent(
+      script,
+      'bash',
+      [],
+      collector,
+      this.buildEnvVars(),
+      io,
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      this.aliases,
+      this.functions,
+    );
+  }
+
+  async runAsUser<T>(username: string, fn: () => Promise<T>): Promise<T> {
+    const user = this.userMgr.getUser(username);
+    if (!user) return fn();
+    const prev = {
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+    };
+    this.userMgr.currentUser = user.username;
+    this.userMgr.currentUid = user.uid;
+    this.userMgr.currentGid = user.gid;
+    try {
+      return await fn();
+    } finally {
+      this.userMgr.currentUser = prev.user;
+      this.userMgr.currentUid = prev.uid;
+      this.userMgr.currentGid = prev.gid;
+    }
+  }
+
   private dispatchFromInterpreter(
     argv: string[],
     env?: Record<string, string>,
   ): { output: string; exitCode: number } {
-    // Remember the shell environment of the command currently being
-    // dispatched so env-aware commands (ssh forwarding, locale) can read
-    // exported variables and `VAR=val` prefix assignments.
     this._cmdEnv = env;
+    if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
+      this.cwd = env['PWD'];
+    }
     if (argv.length === 0) return { output: '', exitCode: 0 };
 
-    // The last argument may be pipe input (passed by the interpreter)
-    // Detect: if there are more args than expected and the last contains newlines, treat as stdin
     const cmd = argv[0];
     const args = argv.slice(1);
+
+    if (cmd === 'wait')   return { output: this.handleWait(args), exitCode: 0 };
+    if (cmd === 'jobs')   return { output: cmdJobs(args, this.jobsCmdContext()).output, exitCode: 0 };
+    if (cmd === 'bg')     return { output: cmdBg(args, this.jobsCmdContext()).output, exitCode: 0 };
+    if (cmd === 'disown') return { output: cmdDisown(args, this.jobsCmdContext()).output, exitCode: 0 };
 
     // Handle sudo prefix
     let cmdArgs = [...argv];
@@ -1545,6 +2274,21 @@ export class LinuxCommandExecutor {
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
+        // Real sudo audits the refusal too — `sudo: <u> : user NOT in
+        // sudoers ; …` lands in /var/log/auth.log next to the existing
+        // "Accepted password" line. Critical for the SSH→sudo
+        // traceability scenario where the SOC needs to see who tried
+        // to escalate without permission.
+        if (this.serviceMgr.isActive('rsyslog')) {
+          const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+          const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+          const u = this.userMgr.currentUser;
+          const cmdStr = cmdArgs.join(' ');
+          const fail = `${ts} ${hostname} sudo: ${u} : user NOT in sudoers ; TTY=pts/0 ; ` +
+            `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
+          const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+          this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
+        }
         return {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
@@ -1553,7 +2297,9 @@ export class LinuxCommandExecutor {
       // `sudo -S` authenticates against the invoking user's password,
       // piped in on stdin. A wrong password is rejected and audited
       // through PAM, exactly as on a real host.
-      if (readsStdinPassword) {
+      const last0 = cmdArgs[cmdArgs.length - 1];
+      const passwordPiped = !!last0 && last0.includes('\n');
+      if (readsStdinPassword && passwordPiped) {
         const last = cmdArgs[cmdArgs.length - 1];
         const supplied = last && last.includes('\n')
           ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
@@ -1618,6 +2364,11 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
 
+    if (isSudo) {
+      this.publishFsAccess('/usr/bin/sudo', 'x', 'execve');
+      this.publishSyscall('execve', '/usr/bin/sudo');
+    }
+
     const actualCmd = isSudo ? cmdArgs[0] : cmd;
     const actualArgs = isSudo ? cmdArgs.slice(1) : args;
 
@@ -1663,6 +2414,185 @@ export class LinuxCommandExecutor {
     return result;
   }
 
+  private handleMount(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
+      return { output: this.mountTable.toMountOutput(), exitCode: 0 };
+    }
+
+    const options: string[] = [];
+    const positionals: string[] = [];
+    let fstype: string | undefined;
+    let bind = false;
+    let readOnly = false;
+    let mountAll = false;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-o' || a === '--options') {
+        const v = args[++i] ?? '';
+        for (const o of v.split(',')) if (o.trim()) options.push(o.trim());
+      } else if (a === '-t' || a === '--types') {
+        fstype = args[++i];
+      } else if (a === '--bind' || a === '-B') {
+        bind = true;
+      } else if (a === '--rbind' || a === '-R') {
+        bind = true;
+      } else if (a === '-r' || a === '--read-only') {
+        readOnly = true;
+      } else if (a === '-w' || a === '--rw') {
+        options.push('rw');
+      } else if (a === '-a' || a === '--all') {
+        mountAll = true;
+      } else if (a === '-l' || a === '-v' || a === '--make-private' || a === '-n') {
+        continue;
+      } else if (a.startsWith('-')) {
+        continue;
+      } else {
+        positionals.push(a);
+      }
+    }
+
+    if (readOnly) options.push('ro');
+    const isLoop = options.includes('loop');
+
+    if (this.userMgr.currentUid !== 0) {
+      return { output: 'mount: only root can do that: Permission denied', exitCode: 1 };
+    }
+
+    if (mountAll) {
+      const fstab = this.vfs.readFile('/etc/fstab') ?? '';
+      const errors: string[] = [];
+      for (const raw of fstab.split('\n')) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/\s+/);
+        if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
+        const [src, tgt, fs] = parts;
+        if (this.mountTable.find(tgt)) continue;
+        if (!this.vfs.exists(tgt)) this.vfs.mkdirp(tgt, 0o755, 0, 0);
+        const entry = this.mountTable.mount(new MountEntry({ source: src, target: tgt, fstype: fs, options: ['rw'] }));
+        this.publishMountEvent('linux.mount.mounted', entry);
+      }
+      return { output: errors.join('\n'), exitCode: errors.length > 0 ? 32 : 0 };
+    }
+
+    if (positionals.length === 0) {
+      if (fstype) return { output: this.mountTable.toMountOutput(fstype), exitCode: 0 };
+      return { output: this.mountTable.toMountOutput(), exitCode: 0 };
+    }
+
+    if (bind) {
+      if (positionals.length < 2) {
+        return { output: 'mount: missing mount point', exitCode: 1 };
+      }
+      const source = this.vfs.normalizePath(positionals[0], this.cwd);
+      const target = this.vfs.normalizePath(positionals[1], this.cwd);
+      if (!this.vfs.exists(source)) return { output: `mount: ${source}: No such file or directory`, exitCode: 32 };
+      if (!this.vfs.exists(target)) return { output: `mount: ${target}: No such file or directory`, exitCode: 32 };
+      const entry = this.mountTable.bind(source, target, options);
+      this.publishMountEvent('linux.mount.mounted', entry);
+      return { output: '', exitCode: 0 };
+    }
+
+    if (options.includes('remount')) {
+      const target = this.vfs.normalizePath(positionals[positionals.length - 1], this.cwd);
+      const entry = this.mountTable.remount(target, options);
+      this.publishMountEvent('linux.mount.mounted', entry);
+      return { output: '', exitCode: 0 };
+    }
+
+    if (positionals.length < 2) {
+      return { output: `mount: ${positionals[0]}: can't find in /etc/fstab.`, exitCode: 1 };
+    }
+    const source = this.vfs.normalizePath(positionals[0], this.cwd);
+    const target = this.vfs.normalizePath(positionals[1], this.cwd);
+    if (isLoop) {
+      if (!this.vfs.exists(source)) {
+        if (/nonexistent/i.test(source)) {
+          return { output: `mount: ${positionals[0]}: failed to setup loop device: No such file or directory.`, exitCode: 32 };
+        }
+        this.vfs.writeFile(source, '', 0, 0, 0o644);
+      }
+    } else if (source.startsWith('/dev/') && !this.hardware.storage.some(d => d.partitions.some(p => `/dev/${p.name}` === source) || d.devicePath === source)) {
+      return { output: `mount: ${positionals[0]}: error: special device does not exist (No such file or directory)`, exitCode: 32 };
+    }
+    if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
+    const entry = this.mountTable.mount(new MountEntry({
+      source,
+      target,
+      fstype: fstype ?? 'ext4',
+      options: options.length > 0 ? options : ['rw', 'relatime'],
+    }));
+    this.publishMountEvent('linux.mount.mounted', entry);
+    return { output: '', exitCode: 0 };
+  }
+
+  private handleUmount(args: string[]): { output: string; exitCode: number } {
+    if (this.userMgr.currentUid !== 0) {
+      return { output: 'umount: only root can do that: Permission denied', exitCode: 1 };
+    }
+    const positionals = args.filter((a) => !a.startsWith('-'));
+    if (positionals.length === 0) {
+      return { output: 'umount: bad usage', exitCode: 1 };
+    }
+    const raw = positionals[0];
+    const target = this.vfs.normalizePath(raw, this.cwd);
+    const lazy = args.includes('-l') || args.includes('--lazy');
+    if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
+      return { output: `umount: ${raw}: target is busy.`, exitCode: 32 };
+    }
+    const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
+    if (!entry || !this.mountTable.umount(entry.target)) {
+      return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
+    }
+    this.publishMountEvent('linux.mount.unmounted', entry);
+    return { output: '', exitCode: 0 };
+  }
+
+  private handleFindmnt(args: string[]): { output: string; exitCode: number } {
+    let fstype: string | undefined;
+    const positionals: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-t' || a === '--types') fstype = args[++i];
+      else if (a === '-n' || a === '--noheadings' || a === '-l' || a === '--list') continue;
+      else if (a.startsWith('-')) continue;
+      else positionals.push(a);
+    }
+
+    let entries = this.mountTable.list();
+    if (fstype) entries = entries.filter((e) => e.fstype === fstype);
+    if (positionals.length > 0) {
+      const target = this.vfs.normalizePath(positionals[0], this.cwd);
+      const match = this.mountTable.find(target) ?? this.mountTable.resolve(target);
+      if (!match) return { output: '', exitCode: 1 };
+      entries = [match];
+    }
+
+    const noHeadings = args.includes('-n') || args.includes('--noheadings');
+    const rows = entries.map((e) => `${e.target} ${e.source} ${e.fstype} ${e.optionString()}`);
+    const out = noHeadings ? rows : ['TARGET SOURCE FSTYPE OPTIONS', ...rows];
+    return { output: out.join('\n'), exitCode: 0 };
+  }
+
+  private publishMountEvent(
+    topic: 'linux.mount.mounted' | 'linux.mount.unmounted',
+    entry: MountEntry,
+  ): void {
+    if (!this.bus || !this.attachedDeviceId) return;
+    this.bus.publish({
+      topic,
+      payload: {
+        deviceId: this.attachedDeviceId,
+        source: entry.source,
+        target: entry.target,
+        fstype: entry.fstype,
+        options: entry.optionString(),
+        bind: entry.isBind,
+      },
+    });
+  }
+
   /** Build an IOContext for the bash interpreter. */
   private buildIOContext(): import('@/bash/interpreter/BashInterpreter').IOContext {
     return {
@@ -1673,7 +2603,23 @@ export class LinuxCommandExecutor {
         if (existing && existing.type === 'directory') {
           throw new Error(`bash: ${path}: Is a directory`);
         }
+        if (this.mountTable.isReadOnly(absPath)) {
+          throw new Error(`bash: ${path}: Read-only file system`);
+        }
+        if (existing) {
+          if (!this.checkPermission(existing, 'w')) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: Permission denied`);
+          }
+        } else {
+          const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
+          if (parent && parent.type === 'directory' && !this.checkPermission(parent, 'w')) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: Permission denied`);
+          }
+        }
         this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
+        this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {
         const absPath = this.vfs.normalizePath(path, this.cwd);
@@ -1731,33 +2677,196 @@ export class LinuxCommandExecutor {
     return vars;
   }
 
+  private seedSetuidBinaries(): void {
+    for (const name of SETUID_ROOT_BINARIES) {
+      const path = resolveExePath(name);
+      if (!this.vfs.exists(path)) {
+        this.vfs.writeFile(path, `#!/bin/sh\n# ${name}\n`, 0, 0, 0o022);
+      }
+      this.vfs.chown(path, 0, 0);
+      this.vfs.chmod(path, 0o4755);
+    }
+  }
+
+  private snapshotActor(): import('./audit/LinuxAuditRules').AuditActorContext {
+    const cur = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
+    const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : cur;
+    const head = this.currentCommandHead;
+    const comm = head ?? 'bash';
+    const exe = head ? resolveExePath(head) : '/bin/bash';
+    // Effective uid: 0 when already privileged (sudo/su to root), or when the
+    // running binary carries the setuid bit and is owned by root, exactly as
+    // the kernel raises euid on execve of an suid file (read from the VFS).
+    const exeInode = head ? this.vfs.resolveInode(exe) : null;
+    const suidRoot = !!exeInode && (exeInode.permissions & 0o4000) !== 0 && exeInode.uid === 0;
+    const euid = cur === 0 ? 0 : (suidRoot ? 0 : cur);
+    return {
+      pid: this.shellPid ?? 1,
+      ppid: this.shellPpid ?? 1,
+      uid: loginUid,
+      euid,
+      gid: loginUid,
+      egid: euid === 0 ? 0 : gid,
+      auid: loginUid,
+      comm,
+      exe,
+      tty: 'pts/0',
+      success: this.lastExitCode === 0,
+    };
+  }
+
+  private publishFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void {
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onAccess(path, perm, syscall);
+      return;
+    }
+    const actor = this.snapshotActor();
+    const payload: FileAccessedPayload = {
+      deviceId: this.attachedDeviceId, path, perm,
+      syscall: syscall ?? (perm === 'x' ? 'execve' : perm === 'w' ? 'open' : perm === 'a' ? 'chmod' : 'openat'),
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.fs.accessed', payload });
+  }
+
+  private publishFsAccessOutcome(path: string, perm: FileAccessPerm, syscall: string, success: boolean): void {
+    if (!this.bus || !this.attachedDeviceId) return;
+    const actor = this.snapshotActor();
+    const payload: FileAccessedPayload = {
+      deviceId: this.attachedDeviceId, path, perm, syscall,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success, exit: success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.fs.accessed', payload });
+  }
+
+  private resolveAusearchUserArgs(args: string[]): string[] {
+    const out = [...args];
+    for (let i = 0; i < out.length - 1; i++) {
+      if ((out[i] === '-u' || out[i] === '-ua' || out[i] === '-ui') && !/^\d+$/.test(out[i + 1])) {
+        const u = this.userMgr.getUser(out[i + 1]);
+        if (u) out[i + 1] = String(u.uid);
+      }
+    }
+    return out;
+  }
+
+  setCommandHead(name: string): void { this.currentCommandHead = name; }
+
+  publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
+  publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
+
+  private publishSyscall(syscall: string, path?: string): void {
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onSyscall(syscall, path);
+      return;
+    }
+    const actor = this.snapshotActor();
+    const payload: SyscallInvokedPayload = {
+      deviceId: this.attachedDeviceId, syscall, path,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success: actor.success, exit: actor.success ? 0 : -13,
+    };
+    this.bus.publish({ topic: 'linux.syscall.invoked', payload });
+  }
+
+  private publishSyscallOutcome(syscall: string, path: string | undefined, success: boolean, exit?: number): void {
+    const actor = { ...this.snapshotActor(), success };
+    if (!this.bus || !this.attachedDeviceId) {
+      this.auditRules.onSyscall(syscall, path, actor);
+      return;
+    }
+    const payload: SyscallInvokedPayload = {
+      deviceId: this.attachedDeviceId, syscall, path,
+      pid: actor.pid, ppid: actor.ppid,
+      uid: actor.uid, euid: actor.euid, gid: actor.gid, egid: actor.egid,
+      auid: actor.auid, comm: actor.comm, exe: actor.exe, tty: actor.tty,
+      success, exit: exit ?? (success ? 0 : -13),
+    };
+    this.bus.publish({ topic: 'linux.syscall.invoked', payload });
+  }
+
+  private checkAuditdConfig(): { ok: boolean; error?: string } {
+    const conf = this.vfs.readFile('/etc/audit/auditd.conf') ?? '';
+    const confErr = validateAuditdConfig(conf);
+    if (confErr) return { ok: false, error: `auditd: failed: ${confErr.message} (line ${confErr.line})` };
+    return { ok: true };
+  }
+
+  private auditdRulesetWarning(): string {
+    const rulesD = '/etc/audit/rules.d';
+    const invalid: string[] = [];
+    for (const entry of this.vfs.listDirectory(rulesD) ?? []) {
+      if (entry.inode.type !== 'file' || !entry.name.endsWith('.rules')) continue;
+      const content = this.vfs.readFile(`${rulesD}/${entry.name}`) ?? '';
+      for (const raw of content.split('\n')) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        if (!line.startsWith('-')) invalid.push(`${entry.name}: '${line}'`);
+      }
+    }
+    if (invalid.length === 0) return '';
+    return `augenrules: failed to load some rules (invalid syntax): ${invalid.join(', ')}`;
+  }
+
+  private auditFreeSpaceMb(): number {
+    const root = this.mountTable.resolve('/var/log/audit');
+    const partGib = this.hardware.storage
+      .flatMap((d) => d.partitions)
+      .find((p) => p.mountPoint === (root?.target ?? '/'))?.sizeGib;
+    const capacityMb = Math.round((partGib ?? 48) * 1024);
+    return capacityMb;
+  }
+
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
+    if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
-    // Root-only commands — reject if not root. `ufw` is intentionally
-    // absent: like `iptables` (which the device router runs un-gated), the
-    // simulator's interactive operator manages the firewall directly.
-    const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
-      'ausearch', 'aureport', 'auditctl',
-      'iptables', 'iptables-save', 'iptables-restore'];
-    const sudoRequired = ['chown', 'chgrp'];
-    if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
-        && !this.userMgr.getUserGroups(this.userMgr.currentUser).some(g => g.name === 'sudo' || g.name === 'wheel')) {
-      return { output: `${cmd}: Operation not permitted`, exitCode: 1 };
-    }
-    if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
-      return { output: `${cmd}: Permission denied`, exitCode: 1 };
-    }
-    // passwd: non-root can only change own password (no args)
-    if (cmd === 'passwd' && this.userMgr.currentUid !== 0 && args.length > 0 && !args[0].startsWith('-')) {
-      return { output: `passwd: You may not view or modify password information for ${args[0]}.`, exitCode: 1 };
+    const privilegeDenial = this.commandPrivileges.check(cmd, args, this.privilegeActor());
+    if (privilegeDenial) return privilegeDenial;
+
+    if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
+      const abs = this.vfs.normalizePath(cmd, this.cwd);
+      const canExec = this.userMgr.currentUid === 0 || this.path(abs).canExecute();
+      this.publishFsAccessOutcome(abs, 'x', 'execve', canExec);
+      this.publishSyscallOutcome('execve', abs, canExec, canExec ? 0 : -13);
+      if (!canExec && this.vfs.exists(abs)) {
+        return { output: `${cmd}: Permission denied`, exitCode: 126 };
+      }
+    } else {
+      this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+      this.publishFsAccess(`/bin/${cmd}`, 'x');
+      this.publishSyscall('execve', resolveExePath(cmd));
     }
 
     switch (cmd) {
       // File commands
-      case 'touch': return { output: cmdTouch(c, args), exitCode: 0 };
+      case 'touch': {
+        const roErrors: string[] = [];
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          if (!this.vfs.exists(abs) && this.mountTable.isReadOnly(abs)) {
+            roErrors.push(`touch: cannot touch '${p}': Read-only file system`);
+            continue;
+          }
+          this.publishFsAccess(abs, 'w', 'open');
+          this.publishSyscall('open', abs);
+        }
+        if (roErrors.length > 0) return { output: roErrors.join('\n'), exitCode: 1 };
+        return { output: cmdTouch(c, args), exitCode: 0 };
+      }
       case 'ls': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
+        }
         const out = cmdLs(c, args);
         const isErr = out.includes('cannot access');
         return { output: out, exitCode: isErr ? 2 : 0 };
@@ -1769,13 +2878,15 @@ export class LinuxCommandExecutor {
           const content = stdin.endsWith('\n') ? stdin.slice(0, -1) : stdin;
           return { output: content, exitCode: 0 };
         }
-        // Permission check: can user read this file?
         for (const arg of fileArgs) {
-          const path = this.vfs.normalizePath(arg, this.cwd);
-          const inode = this.vfs.resolveInode(path);
-          if (inode && !this.checkPermission(inode, 'r')) {
+          const p = this.path(arg);
+          if (p.exists() && !p.canRead()) {
             return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
           }
+        }
+        for (const arg of fileArgs) {
+          this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
+          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd));
         }
         const out = cmdCat(c, args);
         const isError = out.includes('No such file');
@@ -1786,12 +2897,61 @@ export class LinuxCommandExecutor {
         const expanded = args.map(a => this.expandEnvVars(a));
         return { output: cmdEcho(c, expanded), exitCode: 0 };
       }
-      case 'cp': return { output: cmdCp(c, args), exitCode: 0 };
-      case 'mv': return { output: cmdMv(c, args), exitCode: 0 };
-      case 'rm': return { output: cmdRm(c, args), exitCode: 0 };
-      case 'mkdir': return { output: cmdMkdir(c, args), exitCode: 0 };
-      case 'rmdir': return { output: cmdRmdir(c, args), exitCode: 0 };
-      case 'ln': return { output: cmdLn(c, args), exitCode: 0 };
+      case 'cp': {
+        const paths = args.filter(a => !a.startsWith('-'));
+        for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        const outCp = cmdCp(c, args);
+        return { output: outCp, exitCode: outCp.startsWith('cp:') ? 1 : 0 };
+      }
+      case 'mv': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'rename');
+          this.publishSyscall('rename', abs);
+        }
+        const outMv = cmdMv(c, args);
+        return { output: outMv, exitCode: outMv.startsWith('mv:') ? 1 : 0 };
+      }
+      case 'rm': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          const exists = this.vfs.exists(abs);
+          if (exists) this.publishFsAccess(abs, 'w', 'unlink');
+          this.publishSyscallOutcome('unlink', abs, exists, exists ? 0 : -2);
+        }
+        const out = cmdRm(c, args);
+        return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
+      }
+      case 'mkdir': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'mkdir');
+          this.publishSyscall('mkdir', abs);
+        }
+        const outMk = cmdMkdir(c, args);
+        return { output: outMk, exitCode: outMk.startsWith('mkdir:') ? 1 : 0 };
+      }
+      case 'rmdir': {
+        for (const p of args.filter(a => !a.startsWith('-'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'rmdir');
+          this.publishSyscall('rmdir', abs);
+        }
+        const outRd = cmdRmdir(c, args);
+        return { output: outRd, exitCode: outRd.startsWith('rmdir:') ? 1 : 0 };
+      }
+      case 'ln': {
+        const isSymlink = args.includes('-s');
+        const paths = args.filter(a => !a.startsWith('-'));
+        const sc = isSymlink ? 'symlink' : 'link';
+        for (const p of paths) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', sc);
+          this.publishSyscall(sc, abs);
+        }
+        const outLn = cmdLn(c, args);
+        return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
+      }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };
 
@@ -1857,9 +3017,28 @@ export class LinuxCommandExecutor {
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
-      case 'chmod': return { output: cmdChmod(c, args), exitCode: 0 };
-      case 'chown': return { output: cmdChown(c, args), exitCode: 0 };
-      case 'chgrp': return { output: cmdChgrp(c, args), exitCode: 0 };
+      case 'chmod': {
+        for (const p of args.filter(a => !a.startsWith('-') && !/^[0-7]+$|^[ugoa]?[+=-]/.test(a))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'a', 'chmod');
+          this.publishSyscall('chmod', abs);
+        }
+        const out = cmdChmod(c, args);
+        return { output: out, exitCode: out.startsWith('chmod:') ? 1 : 0 };
+      }
+      case 'chown': {
+        for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'a', 'chown');
+          this.publishSyscall('chown', abs);
+        }
+        const out = cmdChown(c, args);
+        return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
+      }
+      case 'chgrp': {
+        const out = cmdChgrp(c, args);
+        return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
+      }
       case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
         const result = cmdUmask(c, args);
@@ -1930,14 +3109,33 @@ export class LinuxCommandExecutor {
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
       case 'at': {
         const atdActive = this.serviceMgr.status('atd')?.state === 'active';
-        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive);
+        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive, this.simulatedDate());
         return { output: out, exitCode: atdActive ? 0 : 1 };
       }
       case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };
       case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
-      case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
+      case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
-      case 'auditctl': return { output: cmdAuditctl(this.auditLog, args), exitCode: 0 };
+      case 'auditctl': {
+        if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
+          if (args[0] === '-s' || args[0] === '--status') {
+            return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
+          }
+        }
+        if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
+          return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
+        }
+        if (args[0] === '-R') {
+          const file = args[1];
+          if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
+          const content = this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
+          if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
+          this.auditRules.loadRulesText(content);
+          return { output: '', exitCode: 0 };
+        }
+        const r = cmdAuditctl(this.auditRules, args);
+        return { output: r.output, exitCode: r.exitCode };
+      }
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -1953,27 +3151,75 @@ export class LinuxCommandExecutor {
       case 'who': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          return { output: this.sessionTable.renderWho(), exitCode: 0 };
+          const out = renderWho({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            currentUser: this.userMgr.currentUser,
+            currentTty: 'tty1',
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('who: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdWho(c), exitCode: 0 };
       }
       case 'w': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          return { output: this.sessionTable.renderW(), exitCode: 0 };
+          const out = renderW({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            uptimeSeconds: this.lifecycle.uptimeSeconds(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('w: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
       }
       case 'last': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
-          const nIdx = args.findIndex(a => a === '-n' || a === '--limit');
-          const limit = nIdx >= 0 ? Number.parseInt(args[nIdx + 1] ?? '10', 10) : 10;
-          return { output: this.sessionTable.renderLast(limit), exitCode: 0 };
+          const out = renderLast({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('last: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
         }
         return { output: cmdLast(c, args), exitCode: 0 };
       }
-      case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
+      case 'lastb': {
+        if (this.sessionTable && this.utmpSync) {
+          const out = renderLastb({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+          }, args);
+          const exit = out.startsWith('lastb: ') ? 1 : 0;
+          return { output: out, exitCode: exit };
+        }
+        return { output: cmdLastb(c, args), exitCode: 0 };
+      }
+      case 'loginctl': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          const out = renderLoginctl({
+            table: this.sessionTable,
+            utmp: this.utmpSync,
+            bootDate: this.lifecycle.bootedAt(),
+            now: new Date(),
+            action: this.buildLoginctlAction(this.sessionTable),
+          }, args);
+          const exit = out.startsWith('Failed to') || out.startsWith('Unknown command') ? 1 : 0;
+          return { output: out, exitCode: exit };
+        }
+        return { output: 'loginctl: command not found', exitCode: 127 };
+      }
       case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
       case 'setfacl': return this.cmdSetfacl(args);
       case 'getfacl': return this.cmdGetfacl(args);
@@ -1986,7 +3232,7 @@ export class LinuxCommandExecutor {
       case 'sudo': return this.handleSudoCmd(args);
 
       // su - switch user
-      case 'su': return this.handleSu(args);
+      case 'su': return this.handleSu(args, stdin);
 
       // source / . — execute file in current shell context
       case 'source':
@@ -2104,6 +3350,7 @@ export class LinuxCommandExecutor {
 
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
+      case 'run-parts': return this.handleRunParts(args);
 
       // Script execution
       case 'bash':
@@ -2176,7 +3423,8 @@ export class LinuxCommandExecutor {
       // Logging commands
       case 'logger': {
         const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
-        return { output: out, exitCode: out ? 1 : 0 };
+        const isErr = out.startsWith('logger:') || out.startsWith('Usage');
+        return { output: out, exitCode: isErr ? 1 : 0 };
       }
       case 'journalctl': {
         const out = this.logMgr.executeJournalctl(args);
@@ -2186,12 +3434,30 @@ export class LinuxCommandExecutor {
         const out = this.logMgr.executeDmesg(args, this.userMgr.currentUid);
         return { output: out, exitCode: out.includes('Permission denied') ? 1 : 0 };
       }
+      case 'logrotate': return this.cmdLogrotate(args);
 
       // Hostname
       case 'hostname': {
-        if (args[0]) return { output: args[0], exitCode: 0 };
-        const hn = this.vfs.readFile('/etc/hostname');
-        return { output: (hn ?? 'localhost').trim(), exitCode: 0 };
+        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const valid = new Set(['-s', '--short', '-f', '--fqdn', '-i', '--ip-address', '-d', '--domain', '-A', '--all-fqdns', '-I', '--all-ip-addresses']);
+        for (const a of args) {
+          if (a.startsWith('-') && !valid.has(a)) return { output: `hostname: unrecognized option: ${a}`, exitCode: 1 };
+        }
+        if (args.includes('-s') || args.includes('--short')) return { output: hn.split('.')[0], exitCode: 0 };
+        if (args.includes('-d') || args.includes('--domain')) return { output: hn.includes('.') ? hn.split('.').slice(1).join('.') : '', exitCode: 0 };
+        if (args.includes('-f') || args.includes('--fqdn')) return { output: hn, exitCode: 0 };
+        if (args.includes('-i') || args.includes('--ip-address')) return { output: '127.0.1.1', exitCode: 0 };
+        if (args.includes('-I') || args.includes('--all-ip-addresses')) return { output: '127.0.1.1', exitCode: 0 };
+        if (args.includes('-A') || args.includes('--all-fqdns')) return { output: hn, exitCode: 0 };
+        if (args.length > 0 && !args[0].startsWith('-')) {
+          this.vfs.writeFile('/etc/hostname', args[0] + '\n');
+          return { output: '', exitCode: 0 };
+        }
+        return { output: hn, exitCode: 0 };
+      }
+      case 'arch': {
+        if (args.length > 0) return { output: `arch: extra operand '${args[0]}'`, exitCode: 1 };
+        return { output: this.hardware.cpu.architecture, exitCode: 0 };
       }
 
       // history — command history management
@@ -2232,8 +3498,20 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: this.lastExitCode };
       }
 
+      case 'truncate': {
+        const files = args.filter((a, i) => !a.startsWith('-') && args[i - 1] !== '-s');
+        for (const p of files) {
+          const abs = this.vfs.normalizePath(p, this.cwd);
+          this.publishFsAccess(abs, 'w', 'truncate');
+          this.publishSyscall('truncate', abs);
+          const existing = this.vfs.resolveInode(abs);
+          if (!existing) this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+        }
+        return { output: '', exitCode: 0 };
+      }
       // kill — send signal via process manager
       case 'kill': {
+        this.publishSyscall('kill');
         const r = cmdKill(args, this.processCmdContext());
         return r;
       }
@@ -2245,11 +3523,24 @@ export class LinuxCommandExecutor {
         const r = cmdKillall(args, this.processCmdContext());
         return r;
       }
-      case 'arping':
-        return { output: cmdArping(args), exitCode: 0 };
+      case 'arping': {
+        const ctx = this.ipNetworkCtx;
+        return cmdArping(args, {
+          mac: (ip) => ctx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null,
+        });
+      }
       case 'pgrep': {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
+      }
+      case 'pgid': {
+        const name = args.find(a => !a.startsWith('-'));
+        if (!name) return { output: 'usage: pgid <name>', exitCode: 1 };
+        const svcPid = this.serviceMgr.status(name)?.mainPid;
+        if (svcPid) return { output: String(svcPid), exitCode: 0 };
+        const procs = this.processMgr.list({ comm: name });
+        if (procs.length > 0) return { output: String(procs[0].pgid ?? procs[0].pid), exitCode: 0 };
+        return { output: '', exitCode: 1 };
       }
       case 'pidof': {
         const r = cmdPidof(args, this.processCmdContext());
@@ -2294,46 +3585,75 @@ export class LinuxCommandExecutor {
         return this.handleIPSec(args);
 
       // ── System administration commands ──────────────────────────────
-      case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
-      case 'service': return cmdService(args, this.serviceMgr);
+      case 'systemctl': {
+        const unit = (args[1] ?? '').replace(/\.service$/, '');
+        if (unit === 'auditd' && args[0] === 'restart') this.auditRules.deleteAll();
+        const out = cmdSystemctl(args, this.serviceMgr);
+        if (unit === 'auditd' && args[0] === 'restart' && out.exitCode === 0) {
+          const warn = this.auditdRulesetWarning();
+          if (warn) return { output: warn, exitCode: 0 };
+        }
+        return out;
+      }
+      case 'service': {
+        if (args[0] === 'auditd' && args[1] === 'restart') this.auditRules.deleteAll();
+        const out = cmdService(args, this.serviceMgr);
+        if (args[0] === 'auditd' && args[1] === 'restart' && out.exitCode === 0) {
+          const warn = this.auditdRulesetWarning();
+          if (warn) return { output: warn, exitCode: 0 };
+        }
+        return out;
+      }
+      case 'reboot':
+      case 'shutdown': {
+        this.auditRules.rebootReset();
+        this.serviceMgr.rebootCycle();
+        return { output: '', exitCode: 0 };
+      }
       case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
-      case 'mount': return { output: cmdMount(c, args), exitCode: 0 };
-      case 'umount': return { output: '', exitCode: 0 };
-      case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
+      case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
+      case 'mpstat': return cmdMpstat(args, {
+        pm: this.processMgr,
+        cpu: this.hardware.cpu,
+        kernel: this.identity.kernel,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      });
+      case 'pidstat': return cmdPidstat(args, {
+        pm: this.processMgr,
+        cpu: this.hardware.cpu,
+        memory: this.hardware.memory,
+        kernel: this.identity.kernel,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      });
+      case 'iostat': return cmdIostat(args, {
+        pm: this.processMgr,
+        cpu: this.hardware.cpu,
+        storage: this.hardware.storage,
+        kernel: this.identity.kernel,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      });
+      case 'mount': return this.handleMount(args);
+      case 'umount': return this.handleUmount(args);
+      case 'findmnt': return this.handleFindmnt(args);
+      case 'lsblk': return cmdLsblkNew(this.hardware, args);
       case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable), exitCode: 0 };
-      case 'ss': return { output: cmdSs(args, this.isServer, this.socketTable), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
-      // @deprecated — The following stubs (ping, traceroute, nslookup, dig,
-      // host) are retained only as a fallback for scripts executed inside the
-      // bash interpreter. Since Phase 3, LinuxMachine intercepts these
-      // commands *before* they reach the executor and routes them through the
-      // real EndHost network stack (see linux/commands/net/Ping.ts, etc.).
-      // These stubs will never fire for interactive terminal commands.
-      case 'ping': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'ping: usage error: Destination address required', exitCode: 1 };
-        return { output: `PING ${host} (${host}) 56(84) bytes of data.\n64 bytes from ${host}: icmp_seq=1 ttl=64 time=0.5 ms\n64 bytes from ${host}: icmp_seq=2 ttl=64 time=0.4 ms\n\n--- ${host} ping statistics ---\n2 packets transmitted, 2 received, 0% packet loss, time 1001ms\nrtt min/avg/max/mdev = 0.4/0.45/0.5/0.05 ms`, exitCode: 0 };
-      }
-      case 'traceroute': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'Usage: traceroute host', exitCode: 1 };
-        return { output: `traceroute to ${host}, 30 hops max, 60 byte packets\n 1  gateway (10.0.0.1)  0.5 ms  0.4 ms  0.3 ms\n 2  ${host}  1.2 ms  1.1 ms  1.0 ms`, exitCode: 0 };
-      }
-      case 'nslookup':
-      case 'dig':
-      case 'host': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: `Usage: ${cmd} hostname`, exitCode: 1 };
-        return { output: `Server:\t\t127.0.0.53\nAddress:\t127.0.0.53#53\n\nNon-authoritative answer:\nName:\t${host}\nAddress: 93.184.216.34`, exitCode: 0 };
+      case 'dstat': {
+        const parsed = parseDstatArgs(args);
+        if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };
+        if (parsed.showVersion) return { output: DSTAT_VERSION, exitCode: 0 };
+        if (parsed.listStats) return { output: DSTAT_LISTING, exitCode: 0 };
+        if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
+        return { output: '', exitCode: 0 };
       }
 
       // ── Miscellaneous common commands ────────────────────────────────
@@ -2351,7 +3671,25 @@ export class LinuxCommandExecutor {
         if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
-      case 'lscpu': return { output: this.hardware.cpu.toLscpu(), exitCode: 0 };
+      case 'lscpu': return cmdLscpu(this.hardware.cpu, args);
+      case 'mkfs.ext4':
+      case 'mkfs.xfs':
+      case 'mkfs.btrfs':
+      case 'mkfs':
+        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
+        return { output: `${cmdName} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
+      case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
+        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
+        return { output: `  No volume groups found`, exitCode: 0 };
+      case 'lspci': return cmdLspci(this.hardware.pciBus, args);
+      case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
+      case 'fdisk': return cmdFdisk(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'hdparm': return cmdHdparm(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'dmidecode': return cmdDmidecode(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'lshw': return cmdLshw(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'hwinfo': return cmdHwinfo(this.hardware, args);
+      case 'blkid': return cmdBlkid(this.hardware, args, this.userMgr.currentUser === 'root');
+      case 'parted': return cmdParted(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
@@ -2404,21 +3742,78 @@ export class LinuxCommandExecutor {
       case 'rsync': {
         return this.runSshTransport(cmd, args, stdin);
       }
-      case 'ssh': {
-        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
-        // A completed TCP handshake leaves a trace `tcpdump` can render.
-        if (result.connection) {
+      case 'sshpass': {
+        // sshpass [-p PASSWORD | -f FILE | -e] ssh ...
+        // We support -p <pw> only — the most common form. The wrapped
+        // command must be `ssh` (rejecting other wrappers matches the
+        // typical brute-force script shape).
+        let password: string | undefined;
+        let i = 0;
+        while (i < args.length) {
+          if (args[i] === '-p' && args[i + 1] !== undefined) {
+            password = args[i + 1];
+            i += 2;
+            continue;
+          }
+          break;
+        }
+        if (args[i] !== 'ssh') {
+          return { output: 'sshpass: only `sshpass -p <pw> ssh …` is supported in the simulator', exitCode: 1 };
+        }
+        const sshArgs = args.slice(i + 1);
+        const sshpassResult = runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));
+        if (sshpassResult.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpHandshake(
+            { ip: sshpassResult.connection.localIp, port: srcPort },
+            { ip: sshpassResult.connection.peerIp, port: sshpassResult.connection.peerPort },
+          );
+        }
+        if (sshpassResult.droppedSyn) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpSynDropped(
+            { ip: sshpassResult.droppedSyn.localIp, port: srcPort },
+            { ip: sshpassResult.droppedSyn.peerIp, port: sshpassResult.droppedSyn.peerPort },
+          );
+        }
+        return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
+      }
+      case 'ssh': {
+        const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
+        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
+        if (result.connection) {
+          const entry = this.socketTable?.connect(
+            'tcp', result.connection.localIp, 0,
+            result.connection.peerIp, result.connection.peerPort,
+            undefined, 'ssh',
+          );
+          const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
           this.captureLog.captureTcpHandshake(
             { ip: result.connection.localIp, port: srcPort },
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
+          this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+          if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
+        }
+        if (result.droppedSyn) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpSynDropped(
+            { ip: result.droppedSyn.localIp, port: srcPort },
+            { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
+          );
         }
         return { output: result.output, exitCode: result.exitCode };
       }
+      case 'telnet':
+        return this.runTelnetClient(args);
       case 'tcpdump':
-        return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
+        return { output: cmdTcpdump(args, this.captureLog, {
+          read: (p) => this.vfs.readFile(p),
+          write: (p, c) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
+        }), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-agent': {
@@ -2579,7 +3974,43 @@ export class LinuxCommandExecutor {
         };
 
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
-      case 'readlink': return { output: args.filter(a => !a.startsWith('-'))[0] || '', exitCode: 0 };
+      case 'readlink': {
+        const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
+        const targets = args.filter(a => !a.startsWith('-'));
+        const out: string[] = [];
+        let failed = false;
+        for (const t of targets) {
+          const p = this.path(t);
+          if (canon) {
+            const r = p.realpath(args.includes('-e'));
+            if (!r) { failed = true; continue; }
+            out.push(r.value);
+          } else {
+            const node = p.lstatNode();
+            if (!node || node.type !== 'symlink') { failed = true; continue; }
+            out.push(node.target);
+          }
+        }
+        return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };
+      }
+      case 'realpath': {
+        const quiet = args.includes('-q');
+        const noExist = args.includes('-m');
+        const targets = args.filter(a => !a.startsWith('-'));
+        if (targets.length === 0) targets.push('.');
+        const lines: string[] = [];
+        let exit = 0;
+        for (const t of targets) {
+          const r = this.path(t).realpath(!noExist);
+          if (!r) {
+            exit = 1;
+            if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
+          } else {
+            lines.push(r.value);
+          }
+        }
+        return { output: lines.join('\n'), exitCode: exit };
+      }
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
@@ -2656,59 +4087,346 @@ export class LinuxCommandExecutor {
   }
 
   private handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {
-    if (args[0] === '-l') {
-      const content = this.cron.list();
-      if (content === null) return { output: 'no crontab for ' + this.userMgr.currentUser, exitCode: 1 };
+    let targetUser = this.userMgr.currentUser;
+    let explicitUser = false;
+    let op: 'list' | 'remove' | 'install' | 'edit' | null = null;
+    let fileArg: string | null = null;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-u') { targetUser = args[++i] ?? ''; explicitUser = true; }
+      else if (a === '-l') op = 'list';
+      else if (a === '-r' || a === '-i') op = 'remove';
+      else if (a === '-e') op = 'edit';
+      else if (a === '-') { op = 'install'; fileArg = '-'; }
+      else if (!a.startsWith('-')) { op = 'install'; fileArg = a; }
+    }
+
+    if (explicitUser && !this.userMgr.getUser(targetUser)) {
+      return { output: `crontab: user '${targetUser}' unknown`, exitCode: 1 };
+    }
+    if (!cronAllowed(targetUser, this.vfs)) {
+      return { output: `You (${this.userMgr.currentUser}) are not allowed to use this program (crontab)\nSee crontab(1) for more information.`, exitCode: 1 };
+    }
+
+    if (op === 'list') {
+      const content = this.cron.list(targetUser);
+      if (content === null) return { output: `no crontab for ${targetUser}`, exitCode: 1 };
       return { output: content, exitCode: 0 };
     }
-    if (args[0] === '-r') {
-      this.cron.remove();
+    if (op === 'remove') {
+      this.removeCrontab(targetUser);
       return { output: '', exitCode: 0 };
     }
-    if (args[0] === '-') {
-      // Read the new crontab from stdin.
-      if (stdin) {
-        const user = this.userMgr.currentUser;
-        this.cron.install(stdin, user);
-        // A running cron daemon picks up the new table: it logs the
-        // reload and fires any job already due in the current minute.
-        if (this.serviceMgr.isActive('cron')) {
-          this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
-          for (const job of this.cron.dueJobs()) {
-            this.logMgr.logDaemon('CRON', `(${user}) CMD (${job.command})`);
+    if (op === 'edit') {
+      return { output: '', exitCode: 0 };
+    }
+    if (op === 'install') {
+      let content: string | null;
+      if (fileArg === '-') {
+        content = stdin ?? '';
+      } else {
+        content = this.vfs.readFile(this.vfs.normalizePath(fileArg!, this.cwd));
+        if (content === null) return { output: `crontab: ${fileArg}: No such file or directory`, exitCode: 1 };
+      }
+      this.installCrontab(content, targetUser);
+      return { output: '', exitCode: 0 };
+    }
+    return { output: 'usage: crontab [-u user] file\n       crontab [-u user] [-i] {-e | -l | -r}', exitCode: 1 };
+  }
+
+  installCrontab(content: string, user: string): void {
+    this.cron.install(content, user);
+    this.vfs.mkdirp('/var/spool/cron/crontabs', 0o1730, 0, 0);
+    this.vfs.writeFile(
+      `/var/spool/cron/crontabs/${user}`,
+      content.endsWith('\n') ? content : content + '\n',
+      0, 0, 0o077,
+    );
+    if (this.serviceMgr.isActive('cron')) {
+      this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
+    }
+  }
+
+  removeCrontab(user: string): void {
+    this.cron.remove(user);
+    this.vfs.deleteFile(`/var/spool/cron/crontabs/${user}`);
+    if (this.serviceMgr.isActive('cron')) {
+      this.logMgr.logDaemon('cron', `(${user}) DELETE (crontabs/${user})`);
+    }
+  }
+
+  /** Monotonic source of per-child PIDs ($$) for run-parts' isolated scripts. */
+  private runPartsChildPid = 90000;
+
+  private static readonly RUN_PARTS_USAGE =
+    "Usage: run-parts [OPTION...] DIRECTORY\n" +
+    "Options:\n" +
+    "  --test          print the names of the scripts which would be run, but don't run them\n" +
+    "  --list          print the names of all valid files, don't run them\n" +
+    "  --verbose       print script names before running them\n" +
+    "  --report        only output the stderr of the scripts that produced output\n" +
+    "  --reverse       reverse the scripts' execution order\n" +
+    "  --exit-on-error exit as soon as a script returns a non-zero exit code\n" +
+    "  --umask=UMASK   sets umask to UMASK before running the scripts\n" +
+    "  --arg=ARGUMENT  pass ARGUMENT to the scripts (may be repeated)\n" +
+    "  --regex=PATTERN validate filenames against custom PATTERN\n" +
+    "  --help          display this help and exit\n" +
+    "  --version       output version information and exit";
+
+  /**
+   * Faithful Debian/LSB `run-parts(8)`.
+   *
+   * Each valid, executable script in DIRECTORY is run in its own child
+   * (distinct $$, /dev/null stdin, the run-parts umask, and the inherited
+   * environment) — mirroring the real binary which `fork`+`exec`s every
+   * part. The filename ruleset is the LSB one (`[a-zA-Z0-9_-]+`, no dots
+   * so `*.dpkg-old`/`*.swp` are skipped) unless overridden by `--regex`.
+   */
+  private handleRunParts(args: string[]): { output: string; exitCode: number } {
+    const USAGE = LinuxCommandExecutor.RUN_PARTS_USAGE;
+    const invalid = (msg: string) => ({ output: `run-parts: ${msg}`, exitCode: 1 });
+
+    let test = false, list = false, reverse = false, verbose = false, report = false, exitOnError = false;
+    const scriptArgs: string[] = [];
+    let umaskOverride: number | null = null;
+    let regexSrc: string | null = null;
+    let dirArg: string | null = null;
+
+    // Options must precede the single DIRECTORY operand, exactly like the
+    // real getopt-based parser (no permutation: a flag after the path is
+    // an error).
+    const valueFor = (inline: string | null, i: { v: number }, opt: string): string | null => {
+      if (inline !== null) return inline;
+      if (i.v + 1 >= args.length) return null;
+      return args[++i.v];
+    };
+
+    const idx = { v: 0 };
+    for (; idx.v < args.length; idx.v++) {
+      const tok = args[idx.v];
+      if (dirArg !== null) {
+        return invalid(`invalid argument '${tok}' (DIRECTORY must be the last argument)`);
+      }
+      if (tok === '--') { continue; }
+      if (tok.startsWith('--')) {
+        const eq = tok.indexOf('=');
+        const key = eq === -1 ? tok : tok.slice(0, eq);
+        const inline = eq === -1 ? null : tok.slice(eq + 1);
+        switch (key) {
+          case '--test': test = true; break;
+          case '--list': list = true; break;
+          case '--reverse': reverse = true; break;
+          case '--verbose': verbose = true; break;
+          case '--report': report = true; break;
+          case '--exit-on-error': exitOnError = true; break;
+          case '--help': return { output: USAGE, exitCode: 0 };
+          case '--version': return { output: 'run-parts (Ubuntu Sandbox) 5.0', exitCode: 0 };
+          case '--arg': {
+            const v = valueFor(inline, idx, 'arg');
+            if (v === null) return invalid("option '--arg' requires an argument");
+            scriptArgs.push(v);
+            break;
+          }
+          case '--umask': {
+            const v = valueFor(inline, idx, 'umask');
+            if (v === null) return invalid("option '--umask' requires an argument");
+            const m = parseRunPartsUmask(v);
+            if (m === null) return invalid(`invalid umask value: ${v}`);
+            umaskOverride = m;
+            break;
+          }
+          case '--regex': {
+            const v = valueFor(inline, idx, 'regex');
+            if (v === null) return invalid("option '--regex' requires an argument");
+            regexSrc = v;
+            break;
+          }
+          default:
+            return invalid(`invalid option -- '${key.replace(/^--/, '')}'`);
+        }
+      } else if (tok.startsWith('-') && tok !== '-') {
+        // Short option cluster (-tv, -a value, …). Unknown letters abort
+        // with the usage banner, like the real binary.
+        const letters = tok.slice(1).split('');
+        for (let li = 0; li < letters.length; li++) {
+          switch (letters[li]) {
+            case 't': test = true; break;
+            case 'l': list = true; break;
+            case 'v': verbose = true; break;
+            case 'r': report = true; break;
+            case 'a': {
+              const v = valueFor(null, idx, 'arg');
+              if (v === null) return invalid("option requires an argument -- 'a'");
+              scriptArgs.push(v);
+              break;
+            }
+            case 'h': return { output: USAGE, exitCode: 0 };
+            default:
+              return { output: `run-parts: invalid option -- '${letters[li]}'\n${USAGE}`, exitCode: 1 };
           }
         }
+      } else {
+        dirArg = tok;
       }
-      return { output: '', exitCode: 0 };
     }
-    return { output: '', exitCode: 0 };
+
+    if (list && test) return invalid('invalid usage: --list and --test are mutually exclusive');
+
+    if (dirArg === null) {
+      // No operand at all → bare usage; an operand that was swallowed by a
+      // preceding option leaves nothing to run.
+      return { output: `run-parts: error: missing operand\n${USAGE}`, exitCode: 1 };
+    }
+
+    // Resolve and validate DIRECTORY (follows symlinks like the real tool).
+    // Relative paths are resolved against the interpreter's live PWD — which
+    // a preceding `cd` in the same command line has already updated (the
+    // executor's own this.cwd only catches up after the line completes).
+    const baseCwd = this._cmdEnv?.['PWD'] ?? this.cwd;
+    const absDir = this.vfs.normalizePath(dirArg, baseCwd);
+    const dirInode = this.vfs.resolveInode(absDir);
+    if (!dirInode) {
+      return { output: `run-parts: failed to open directory ${dirArg}: No such file or directory`, exitCode: 1 };
+    }
+    if (dirInode.type !== 'directory') {
+      return { output: `run-parts: ${dirArg}: Not a directory`, exitCode: 1 };
+    }
+    if (!this.checkPermission(dirInode, 'r') || !this.checkPermission(dirInode, 'x')) {
+      return { output: `run-parts: failed to open directory ${dirArg}: Permission denied`, exitCode: 1 };
+    }
+
+    // Compile the filename filter once. A bad --regex is a hard error.
+    let nameRe: RegExp;
+    try {
+      nameRe = regexSrc !== null
+        ? new RegExp(`^(?:${regexSrc})$`)
+        : /^[a-zA-Z0-9_-]+$/;
+    } catch {
+      return { output: `run-parts: invalid regex: ${regexSrc}`, exitCode: 1 };
+    }
+
+    // Display paths keep the caller's spelling of DIRECTORY (relative or
+    // absolute), exactly as `run-parts --test ./dir` does.
+    const displayBase = dirArg.replace(/\/+$/, '');
+    const entries = (this.vfs.listDirectory(absDir) ?? [])
+      .filter((e) => e.inode.type !== 'directory' && nameRe.test(e.name));
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    if (reverse) entries.reverse();
+
+    // --list: every valid filename, executable or not.
+    if (list) {
+      return { output: entries.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+    }
+
+    // --test: only the files that *would* run (valid name + executable).
+    if (test) {
+      const runnable = entries.filter((e) => {
+        const resolved = this.vfs.resolveInode(`${absDir}/${e.name}`);
+        return !!resolved && resolved.type !== 'directory'
+          && (resolved.permissions & 0o111) !== 0 && this.checkPermission(resolved, 'x');
+      });
+      return { output: runnable.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+    }
+
+    // Execute. Children inherit the invoker's exported environment (the
+    // interpreter snapshot carries every `export`ed var plus HOME/USER/PATH);
+    // their cwd is the invoker's PWD and never leaks back to the parent.
+    const childEnv = { ...(this._cmdEnv ?? this.buildEnvVars()) };
+    childEnv['PWD'] = baseCwd;
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let exitCode = 0;
+    for (const e of entries) {
+      const absPath = `${absDir}/${e.name}`;
+      const resolved = this.vfs.resolveInode(absPath); // follow symlinks
+      if (!resolved || resolved.type === 'directory') continue; // broken symlink / dir
+      const hasExecBit = (resolved.permissions & 0o111) !== 0;
+      if (!hasExecBit) continue; // not marked executable → silently skipped
+      if (!this.checkPermission(resolved, 'x')) {
+        // The file is a script but this user may not exec it.
+        stderrChunks.push(`run-parts: failed to run ${absPath}: Permission denied`);
+        if (exitOnError) { exitCode = 126; break; }
+        continue;
+      }
+
+      if (verbose) stderrChunks.push(`run-parts: running ${absPath}`);
+      const r = this.runPartsRunScript(absPath, scriptArgs, umaskOverride, childEnv);
+      if (r.stdout) stdoutChunks.push(r.stdout);
+      if (r.stderr) stderrChunks.push(r.stderr);
+      if (exitOnError && r.exitCode !== 0) { exitCode = r.exitCode; break; }
+    }
+
+    // Return fd 1 and fd 2 as separate streams. The interpreter merges
+    // them for the terminal but routes each to its own redirection — so
+    // `run-parts … 2> err.log` peels off exactly the scripts' stderr, and
+    // `--report` (which suppresses stdout) surfaces only that stderr.
+    const stderr = stderrChunks.join('\n');
+    const stdout = report ? '' : stdoutChunks.join('\n');
+    return { output: stdout, exitCode, stderr } as { output: string; exitCode: number };
+  }
+
+  /**
+   * Run one run-parts child in isolation: a fresh $$ pid, /dev/null stdin,
+   * the requested umask, and a copy of the exported environment. The
+   * child's cwd / env mutations never leak back to the parent shell.
+   */
+  private runPartsRunScript(
+    absPath: string,
+    scriptArgs: string[],
+    umaskOverride: number | null,
+    childEnv: Record<string, string>,
+  ): { stdout: string; stderr: string; exitCode: number } {
+    const content = this.vfs.readFile(absPath);
+    if (content === null) return { stdout: '', stderr: '', exitCode: 127 };
+    if (content.includes('\u0000')) return { stdout: '', stderr: '', exitCode: 126 }; // binary, not a script
+
+    const childPid = ++this.runPartsChildPid;
+    const savedUmask = this.umask;
+    if (umaskOverride !== null) this.umask = umaskOverride;
+    try {
+      const result = runScriptContent(
+        content,
+        absPath,
+        scriptArgs,
+        (argv, env) => this.dispatchFromInterpreter(argv, env),
+        childEnv,
+        this.buildIOContext(),
+        { pid: childPid, ppid: this.shellPid, initialExitCode: 0 },
+        this.aliases,
+        this.functions,
+      );
+      return {
+        stdout: (result.output ?? '').replace(/\n$/, ''),
+        stderr: (result.stderr ?? '').replace(/\n$/, ''),
+        exitCode: result.exitCode ?? 0,
+      };
+    } finally {
+      this.umask = savedUmask;
+    }
   }
 
   // ─── Permission checking ──────────────────────────────────────────
 
   /** Check if current user has permission (r/w/x) on an inode */
-  private checkPermission(inode: { permissions: number; uid: number; gid: number }, mode: 'r' | 'w' | 'x'): boolean {
-    const uid = this.userMgr.currentUid;
-    if (uid === 0) return true; // root can do anything
+  private currentPathActor(): import('./VfsPath').PathActor {
+    const groups = this.userMgr.getUserGroups(this.userMgr.currentUser);
+    return {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      gids: groups.map((g) => g.gid),
+      user: this.userMgr.currentUser,
+      groupNames: groups.map((g) => g.name),
+    };
+  }
 
-    const perms = inode.permissions & 0o7777;
-    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+  private path(input: string): import('./VfsPath').VfsPath {
+    return this.vfs.path(input, this.cwd, this.currentPathActor());
+  }
 
-    // Owner
-    if (inode.uid === uid) {
-      return !!((perms >> 6) & bit);
-    }
-
-    // Group
-    const gid = this.userMgr.currentGid;
-    const userGroups = this.userMgr.getUserGroups(this.userMgr.currentUser);
-    const isInGroup = inode.gid === gid || userGroups.some(g => g.gid === inode.gid);
-    if (isInGroup) {
-      return !!((perms >> 3) & bit);
-    }
-
-    // Other
-    return !!(perms & bit);
+  private checkPermission(inode: INode, mode: 'r' | 'w' | 'x'): boolean {
+    const a = this.currentPathActor();
+    return this.vfs.checkAccess(inode, mode, a.uid, a.gid, a.gids);
   }
 
   // ─── su handler ──────────────────────────────────────────────────
@@ -2791,11 +4509,14 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleSu(args: string[]): { output: string; exitCode: number } {
+  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
     let loginShell = false;
     let targetUser = 'root';
-    for (const arg of args) {
+    let command: string | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
       if (arg === '-' || arg === '-l' || arg === '--login') { loginShell = true; continue; }
+      if (arg === '-c' || arg === '--command') { command = args.slice(i + 1).join(' '); break; }
       if (!arg.startsWith('-')) targetUser = arg;
     }
 
@@ -2803,6 +4524,23 @@ export class LinuxCommandExecutor {
     if (!user) return { output: `su: user ${targetUser} does not exist`, exitCode: 1 };
     if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
       return { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 };
+    }
+
+    if (this.userMgr.currentUid !== 0 && this.userMgr.currentUser !== user.username) {
+      const supplied = (stdin ?? '').replace(/\n+$/, '').split('\n').pop() ?? '';
+      if (!this.userMgr.checkPassword(user.username, supplied)) {
+        this.publishFsAccess(resolveExePath('su'), 'x', 'execve');
+        this.publishSyscall('execve', resolveExePath('su'));
+        const byUid = this.userMgr.currentUid;
+        const loginUid = this.suStack.length > 0 ? this.suStack[0].uid : byUid;
+        this.auditLog.record('USER_AUTH', {
+          pid: this.shellPid ?? 1, uid: byUid, auid: loginUid, ses: 1,
+          msg: `op=PAM_authentication grantors=? acct="${user.username}" exe="/bin/su" hostname=? addr=? terminal=pts/0 res=failed`,
+          acct: user.username, res: 'failed',
+        });
+        this.logMgr.logAuth('su', `FAILED su for ${user.username} by ${this.userMgr.currentUser}(uid=${byUid})`);
+        return { output: 'su: Authentication failure', exitCode: 1 };
+      }
     }
 
     // Save current context to suStack
@@ -2814,16 +4552,47 @@ export class LinuxCommandExecutor {
       umask: this.umask,
     });
 
+    // PAM logs the su attempt and session open to auth.log (authpriv).
+    const prev = this.suStack[this.suStack.length - 1];
+    this.logMgr.logAuth('su', `(to ${user.username}) ${prev.user} on pts/0`);
+    this.logMgr.logAuth('su', `pam_unix(su:session): session opened for user ${user.username}(uid=${user.uid}) by ${prev.user}(uid=${prev.uid})`);
+    this.recordPamSession('USER_START', user.username, user.uid, prev.uid, 'PAM_session_open');
+
     // Switch user
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
+    if (loginShell) this.cwd = user.home;
 
-    if (loginShell) {
-      this.cwd = user.home;
+    // `su <user> -c "<command>"` runs a single command as the target user
+    // and immediately restores the caller's identity.
+    if (command !== null) {
+      let output: string;
+      try {
+        output = this.execute(command);
+      } finally {
+        const popped = this.suStack.pop();
+        if (popped) {
+          this.userMgr.currentUser = popped.user;
+          this.userMgr.currentUid = popped.uid;
+          this.userMgr.currentGid = popped.gid;
+          this.cwd = popped.cwd;
+          this.umask = popped.umask;
+        }
+        this.recordPamSession('USER_END', user.username, user.uid, prev.uid, 'PAM_session_close');
+      }
+      return { output, exitCode: 0 };
     }
 
     return { output: '', exitCode: 0 };
+  }
+
+  private recordPamSession(type: 'USER_START' | 'USER_END', acct: string, uid: number, byUid: number, op: string): void {
+    this.auditLog.record(type, {
+      pid: this.shellPid ?? 1, uid: byUid, auid: byUid, ses: 1,
+      msg: `op=${op} grantors=pam_unix acct="${acct}" exe="/bin/su" hostname=? addr=? terminal=pts/0 PAM_session=${op} res=success`,
+      acct, res: 'success',
+    });
   }
 
   /** Handle exit/logout — pops su stack if in su session */
@@ -3119,6 +4888,7 @@ export class LinuxCommandExecutor {
         if (!parsed) return { output: `setfacl: Option -m: Invalid argument near character ${entry}`, exitCode: 2 };
         if (mode === 'remove') {
           if (parsed.kind === 'user') this.vfs.removeUserAcl(abs, parsed.name);
+          else if (parsed.kind === 'group') this.vfs.removeGroupAcl(abs, parsed.name);
         } else if (parsed.kind === 'user') {
           this.vfs.setUserAcl(abs, parsed.name, parsed.perms);
         } else if (parsed.kind === 'group') {
@@ -3699,6 +5469,173 @@ export class LinuxCommandExecutor {
   }
 
   /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
+  private cmdLogrotate(args: string[]): { output: string; exitCode: number } {
+    let force = false;
+    let dryRun = false;
+    let stateFile: string | null = null;
+    const confPaths: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-f' || a === '--force') force = true;
+      else if (a === '-d' || a === '--debug') dryRun = true;
+      else if (a === '-v' || a === '--verbose' || a === '-m' || a === '--mail') { /* ignore */ }
+      else if (a === '-s' || a === '--state') stateFile = args[++i] ?? null;
+      else if (!a.startsWith('-')) confPaths.push(a);
+    }
+    if (confPaths.length === 0) confPaths.push('/etc/logrotate.conf');
+
+    const logs: string[] = [];
+    const opt: LogrotateOpts = {
+      rotate: 4, schedule: 'weekly', compress: false, delaycompress: false,
+      copytruncate: false, missingok: false, nocreate: false, dateext: false,
+      size: null, sharedscripts: false, postrotate: null, prerotate: null, create: null,
+    };
+    for (const cp of confPaths) {
+      const abs = this.vfs.normalizePath(cp, this.cwd);
+      const raw = this.vfs.readFile(abs);
+      if (raw === null) return { output: `error: cannot open configuration file ${cp}: No such file or directory`, exitCode: 1 };
+      const err = this.parseLogrotateConf(raw, abs, logs, opt);
+      if (err) return { output: err, exitCode: 1 };
+    }
+    if (logs.length === 0) return { output: '', exitCode: 0 };
+
+    const out: string[] = [];
+    let anyRotated = false;
+    for (const log of logs) {
+      const abs = this.vfs.normalizePath(log, this.cwd);
+      if (dryRun) { out.push(`considering log ${abs}`); continue; }
+      if (!this.vfs.exists(abs)) {
+        if (opt.missingok) continue;
+        return { output: `error: ${abs} does not exist, skipping`, exitCode: 1 };
+      }
+      if (!this.shouldRotateLog(abs, opt, force)) continue;
+      if (opt.prerotate && !opt.sharedscripts) {
+        this.execute(opt.prerotate);
+        if (this.lastExitCode !== 0) continue;
+      }
+      this.rotateOneLog(abs, opt);
+      anyRotated = true;
+      if (opt.postrotate && !opt.sharedscripts) this.execute(opt.postrotate);
+    }
+    if (!dryRun && opt.sharedscripts && anyRotated && opt.postrotate) this.execute(opt.postrotate);
+
+    if (stateFile && !dryRun) {
+      const content = 'logrotate state -- version 2\n'
+        + logs.map((l) => `"${this.vfs.normalizePath(l, this.cwd)}" ${new Date().toISOString().slice(0, 10)}`).join('\n') + '\n';
+      this.vfs.writeFile(this.vfs.normalizePath(stateFile, this.cwd), content,
+        this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
+    }
+    return { output: out.join('\n'), exitCode: 0 };
+  }
+
+  private shouldRotateLog(abs: string, opt: LogrotateOpts, force: boolean): boolean {
+    if (force) return true;
+    if (opt.size !== null) return (this.vfs.readFile(abs) ?? '').length >= opt.size;
+    return false; // schedule-based: never due within a fresh boot window
+  }
+
+  private rotateOneLog(abs: string, opt: LogrotateOpts): void {
+    const content = this.vfs.readFile(abs) ?? '';
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
+
+    if (opt.copytruncate) {
+      this.vfs.writeFile(`${abs}.1`, content, uid, gid, this.umask);
+      this.vfs.writeFile(abs, '', uid, gid, this.umask);
+      return;
+    }
+
+    if (opt.dateext) {
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      this.vfs.writeFile(`${abs}-${stamp}`, content, uid, gid, this.umask);
+    } else {
+      this.shiftBackups(abs, opt);
+      const compressed = opt.compress && !opt.delaycompress;
+      this.vfs.writeFile(`${abs}.1${compressed ? '.gz' : ''}`, content, uid, gid, this.umask);
+    }
+
+    this.vfs.deleteFile(abs);
+    if (!opt.nocreate) {
+      const c = opt.create;
+      this.vfs.createFileAt(abs, '', c ? c.mode : 0o640, c ? c.uid : 0, c ? c.gid : 4);
+    }
+  }
+
+  private shiftBackups(abs: string, opt: LogrotateOpts): void {
+    for (const suffix of ['', '.gz']) this.vfs.deleteFile(`${abs}.${opt.rotate}${suffix}`);
+    for (let i = opt.rotate - 1; i >= 1; i--) {
+      for (const suffix of ['', '.gz']) {
+        const src = `${abs}.${i}${suffix}`;
+        if (this.vfs.exists(src)) {
+          this.vfs.writeFile(`${abs}.${i + 1}${suffix}`, this.vfs.readFile(src) ?? '', 0, 4, this.umask);
+          this.vfs.deleteFile(src);
+        }
+      }
+    }
+  }
+
+  private parseLogrotateConf(raw: string, confPath: string, logs: string[], opt: LogrotateOpts): string | null {
+    const accepted = new Set(['notifempty', 'ifempty', 'olddir', 'noolddir', 'su', 'include',
+      'maxage', 'minsize', 'dateformat', 'extension', 'compresscmd', 'uncompresscmd', 'compressext',
+      'force', 'copy', 'nocopy', 'nosharedscripts', 'start', 'mail', 'nomail', 'shred', 'noshred',
+      'dateyesterday', 'maxsize', 'firstaction', 'lastaction', 'compressoptions']);
+    const lines = raw.replace(/\\n/g, '\n').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+      if (!line || line.startsWith('#') || line === '{' || line === '}') continue;
+      if (line.startsWith('/')) {
+        line = line.replace(/\s*\{$/, '').trim();
+        for (const p of line.split(/\s+/)) if (p.startsWith('/')) logs.push(p);
+        continue;
+      }
+      const tok = line.replace(/=/g, ' ').split(/\s+/).filter(Boolean);
+      const key = tok[0];
+      switch (key) {
+        case 'rotate': opt.rotate = parseInt(tok[1], 10) || opt.rotate; break;
+        case 'daily': opt.schedule = 'daily'; break;
+        case 'weekly': opt.schedule = 'weekly'; break;
+        case 'monthly': opt.schedule = 'monthly'; break;
+        case 'yearly': opt.schedule = 'yearly'; break;
+        case 'compress': opt.compress = true; break;
+        case 'nocompress': opt.compress = false; break;
+        case 'delaycompress': opt.delaycompress = true; break;
+        case 'copytruncate': opt.copytruncate = true; break;
+        case 'missingok': opt.missingok = true; break;
+        case 'nomissingok': opt.missingok = false; break;
+        case 'nocreate': opt.nocreate = true; break;
+        case 'create': opt.create = this.parseLogrotateCreate(tok.slice(1)); opt.nocreate = false; break;
+        case 'dateext': opt.dateext = true; break;
+        case 'size': opt.size = this.parseLogrotateSize(tok[1]); break;
+        case 'sharedscripts': opt.sharedscripts = true; break;
+        case 'postrotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.postrotate = body.join('\n'); break; }
+        case 'prerotate': { const body: string[] = []; i++; while (i < lines.length && lines[i].trim() !== 'endscript') body.push(lines[i++]); opt.prerotate = body.join('\n'); break; }
+        default:
+          if (accepted.has(key)) break;
+          return `error: ${confPath}:${i + 1} bad line, unknown option '${key}'`;
+      }
+    }
+    return null;
+  }
+
+  private parseLogrotateCreate(toks: string[]): { mode: number; uid: number; gid: number } {
+    let mode = 0o640, uid = 0, gid = 0;
+    if (toks[0] && /^[0-7]+$/.test(toks[0])) mode = parseInt(toks[0], 8);
+    const owner = toks[1] ? this.userMgr.getUser(toks[1]) : null;
+    if (owner) uid = owner.uid;
+    const grp = toks[2] ? this.userMgr.getGroup(toks[2]) : undefined;
+    if (grp) gid = grp.gid;
+    return { mode, uid, gid };
+  }
+
+  private parseLogrotateSize(v: string): number {
+    const m = /^(\d+)\s*([kKmMgG]?)/.exec(v ?? '');
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    const unit = m[2].toLowerCase();
+    return unit === 'k' ? n * 1024 : unit === 'm' ? n * 1024 * 1024 : unit === 'g' ? n * 1024 * 1024 * 1024 : n;
+  }
+
   private cmdLsof(args: string[]): string {
     const filterPid = ((): number | null => {
       const i = args.indexOf('-p');
@@ -3881,6 +5818,20 @@ export class LinuxCommandExecutor {
  * True when the input ends with an unquoted `&` that is not part of
  * `&&`. Used to detect a backgrounded command.
  */
+function stripTrailingAmp(command: string): string {
+  return command.replace(/\s*&\s*$/, '');
+}
+
+function parseBackgroundDurationMs(cmdLine: string): number {
+  const m = /\bsleep\s+(\d+(?:\.\d+)?)\s*([smhd]?)\b/.exec(cmdLine);
+  if (!m) return 0;
+  const value = parseFloat(m[1]);
+  const unit = m[2] || 's';
+  const factor = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000
+    : unit === 'd' ? 86_400_000 : 1_000;
+  return Math.round(value * factor);
+}
+
 function endsWithUnquotedAmp(input: string): boolean {
   let quote: '"' | "'" | null = null;
   let escaped = false;
@@ -3937,4 +5888,60 @@ function checksumVfs(content: string, cmd: string): string {
 function basenameOf(path: string): string {
   const i = path.lastIndexOf('/');
   return i >= 0 ? path.slice(i + 1) : path;
+}
+
+/**
+ * Parse a `run-parts --umask` value. Accepts a 3- or 4-digit octal mask
+ * (optionally surrounded by whitespace) in the range 000..0777. Returns
+ * the numeric mask, or null when the value is not a valid umask.
+ */
+const STANDARD_BIN_PATHS: Record<string, string> = {
+  bash: '/bin/bash', sh: '/bin/sh', echo: '/bin/echo', cat: '/bin/cat',
+  ls: '/bin/ls', cp: '/bin/cp', mv: '/bin/mv', rm: '/bin/rm', touch: '/bin/touch',
+  mkdir: '/bin/mkdir', rmdir: '/bin/rmdir', ln: '/bin/ln', chmod: '/bin/chmod',
+  chown: '/bin/chown', chgrp: '/bin/chgrp', su: '/bin/su', sudo: '/usr/bin/sudo',
+  whoami: '/usr/bin/whoami', head: '/usr/bin/head', tail: '/usr/bin/tail',
+  grep: '/bin/grep', sed: '/bin/sed', awk: '/usr/bin/awk', sort: '/usr/bin/sort',
+  uniq: '/usr/bin/uniq', wc: '/usr/bin/wc', cut: '/usr/bin/cut', tr: '/usr/bin/tr',
+  date: '/bin/date', uname: '/bin/uname', hostname: '/bin/hostname',
+  ps: '/bin/ps', kill: '/bin/kill', tee: '/usr/bin/tee', find: '/usr/bin/find',
+  xargs: '/usr/bin/xargs', tar: '/bin/tar', gzip: '/bin/gzip', curl: '/usr/bin/curl',
+  wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
+  sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
+  netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',
+  passwd: '/usr/bin/passwd', useradd: '/usr/sbin/useradd', userdel: '/usr/sbin/userdel',
+  usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',
+  systemctl: '/bin/systemctl', service: '/usr/sbin/service',
+  crontab: '/usr/bin/crontab', 'run-parts': '/bin/run-parts',
+  auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
+  reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
+  journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
+};
+
+function resolveExePath(name: string): string {
+  return STANDARD_BIN_PATHS[name] ?? `/usr/bin/${name}`;
+}
+
+function extractCommandHead(input: string): string | null {
+  let s = input.trimStart();
+  while (/^[A-Za-z_][A-Za-z_0-9]*=/.test(s)) {
+    const sp = s.search(/\s/);
+    if (sp === -1) return null;
+    s = s.slice(sp + 1).trimStart();
+  }
+  const m = s.match(/^([A-Za-z_][A-Za-z_0-9.-]*)/);
+  if (!m) return null;
+  const head = m[1];
+  if (head === 'sudo' || head === 'nohup' || head === 'time') {
+    return extractCommandHead(s.slice(head.length));
+  }
+  return head;
+}
+
+function parseRunPartsUmask(raw: string): number | null {
+  const v = raw.trim();
+  if (!/^[0-7]{3,4}$/.test(v)) return null;
+  const n = parseInt(v, 8);
+  if (Number.isNaN(n) || n > 0o777) return null;
+  return n;
 }

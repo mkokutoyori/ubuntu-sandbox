@@ -22,6 +22,7 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
+import type { ColumnDataType } from '../engine/catalog/DataType';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
@@ -34,6 +35,7 @@ import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
+import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -88,6 +90,8 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
 ]);
 
 export class OracleExecutor extends BaseExecutor {
+  declare protected catalog: OracleCatalog;
+  declare protected storage: OracleStorage;
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
    *  The host closures keep the executor's helpers private. */
@@ -116,6 +120,9 @@ export class OracleExecutor extends BaseExecutor {
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
+  private readOnlyTransaction = false;
+  private constraintMode: 'DEFAULT' | 'IMMEDIATE' | 'DEFERRED' = 'DEFAULT';
+  private autonomousReadOnlyStack: boolean[] = [];
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
   private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
@@ -147,7 +154,7 @@ export class OracleExecutor extends BaseExecutor {
         this.emitTxnCommitted(txId, durationMs);
       },
       onRollback: txId => this.emitTxnRolledBack(txId),
-    });
+    }, storage.getTransactionCoordinator());
     this.userAdmin = new UserAdminExecutor({
       storage, catalog, instance, context,
       privileges: this.privileges,
@@ -256,7 +263,16 @@ export class OracleExecutor extends BaseExecutor {
   execute(statement: Statement): ResultSet {
     const parseStart = performance.now();
     this.emitSqlParsed(statement);
-    const result = this.executeStatement(statement);
+    let result: ResultSet;
+    try {
+      result = this.executeStatement(statement);
+    } catch (e: unknown) {
+      const code = e instanceof OracleError ? parseInt(e.code.replace('ORA-', ''), 10) : 600;
+      const message = e instanceof Error ? e.message : String(e);
+      this.recordAuditForStatement(statement, code);
+      this.emitError(code, message);
+      throw e;
+    }
     const elapsed = performance.now() - parseStart;
     this.emitSqlExecuted(statement, result, elapsed);
     this.recordAuditForStatement(statement, 0);
@@ -328,22 +344,6 @@ export class OracleExecutor extends BaseExecutor {
     return s.sourceText ?? stmt.type;
   }
 
-  /** Try to execute, recording errors in audit trail */
-  executeWithAudit(statement: Statement): ResultSet {
-    try {
-      const result = this.executeStatement(statement);
-      this.recordAuditForStatement(statement, 0);
-      this.emitForStatement(statement, result);
-      return result;
-    } catch (e: unknown) {
-      const code = e instanceof OracleError ? e.code : 600;
-      const message = e instanceof Error ? e.message : String(e);
-      this.recordAuditForStatement(statement, code);
-      this.emitError(code, message);
-      throw e;
-    }
-  }
-
   /** Post-dispatch reactive emissions (DML rows, DDL kind/name). */
   private emitForStatement(statement: Statement, result: ResultSet): void {
     const t = statement.type;
@@ -374,8 +374,15 @@ export class OracleExecutor extends BaseExecutor {
       DeleteStatement: 'DELETE',
     };
     const dmlAction = dmlMap[stmtType];
+    const objInfo = this.getObjInfo(statement);
+    // AUDIT SELECT ON schema.table BY ACCESS — object-level audit options,
+    // consulted per DML action against the accessed object.
+    const objectAuditMode = dmlAction && objInfo.owner && objInfo.name
+      ? catalog.getObjectAuditOption(objInfo.owner, objInfo.name, dmlAction)
+      : undefined;
     const audited = dmlAction
-      ? catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
+      ? (objectAuditMode !== undefined && objectAuditMode.success !== '-')
+        || catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
       : !!actionName;
     if (!audited) {
       // Even when not audited at the statement level, fine-grained
@@ -384,11 +391,15 @@ export class OracleExecutor extends BaseExecutor {
       return;
     }
 
-    const objInfo = this.getObjInfo(statement);
     const effectiveAction = actionName ?? dmlAction!;
     const fullSqlText = this._lastSqlText || this.statementText(statement);
     const sqlText = fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText;
     const sessionIdNum = parseInt(this._sessionId, 10) || 0;
+    const session = this.context.session as { osUser?: string; machine?: string; terminal?: string } | undefined;
+    const osUsername = session?.osUser ?? 'oracle';
+    const userhost = session?.machine ?? 'localhost';
+    const terminal = session?.terminal ?? 'pts/0';
+    const timestamp = new Date();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -399,6 +410,10 @@ export class OracleExecutor extends BaseExecutor {
       privUsed: null,
       sqlText,
       statementType: effectiveAction,
+      osUsername,
+      userhost,
+      terminal,
+      timestamp,
     });
     this.bus.publish({
       topic: 'oracle.audit.recorded',
@@ -412,10 +427,10 @@ export class OracleExecutor extends BaseExecutor {
         objOwner: objInfo.owner ?? null,
         returncode,
         sqlText,
-        timestamp: new Date(),
-        osUsername: 'oracle',
-        userhost: 'localhost',
-        terminal: 'pts/0',
+        timestamp,
+        osUsername,
+        userhost,
+        terminal,
       },
     });
     if (dmlAction) {
@@ -485,7 +500,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private getObjInfo(stmt: Statement): { name: string | null; owner: string | null } {
-    const s = stmt as Record<string, unknown>;
+    const s = stmt as unknown as Record<string, unknown>;
     let name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
       ?? s['username'] ?? s['roleName'] ?? s['triggerName'] ?? s['synonymName']
       ?? s['objectName'] ?? s['profileName'] ?? s['name'] ?? null) as string | null;
@@ -587,9 +602,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
       case 'SetTransactionStatement':
-        // The simulator does not differentiate transaction isolation
-        // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
-        return emptyResult('Transaction set.');
+        return this.executeSetTransaction(statement);
+      case 'SetConstraintsStatement':
+        return this.executeSetConstraints(statement);
       case 'StartupStatement': return this.instanceAdmin.executeStartup(statement);
       case 'ShutdownStatement': return this.instanceAdmin.executeShutdown(statement);
       case 'AlterSystemStatement': return this.instanceAdmin.executeAlterSystem(statement);
@@ -632,7 +647,7 @@ export class OracleExecutor extends BaseExecutor {
             this.storage.deleteRows(owner, name, () => true);
             for (const row of past) this.storage.insertRow(owner, name, row);
           }
-          this.instance.logAlert(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
+          this.instance.logAlertEvent(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
           return emptyResult('Flashback complete.');
         }
         if (s.target === 'TABLE' && (s.toKind === 'BEFORE_DROP' || /BEFORE\s+DROP/i.test(s.to))) {
@@ -651,7 +666,7 @@ export class OracleExecutor extends BaseExecutor {
           this.storage.insertRows(owner, name, payload.rows);
           catalog.recyclebinRemove(entry.objectName);
         }
-        this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
+        this.instance.logAlertEvent(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
         return emptyResult(`Flashback complete.`);
       }
       case 'PurgeStatement': {
@@ -723,6 +738,91 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Commit complete.');
   }
 
+  private executeSetTransaction(
+    stmt: import('../engine/parser/ASTNode').SetTransactionStatement,
+  ): ResultSet {
+    if (this.txn.isActive) {
+      throw new OracleError(1453, 'SET TRANSACTION must be first statement of transaction');
+    }
+    if (stmt.readOnly === true) {
+      this.readOnlyTransaction = true;
+      this.txn.begin();
+    } else {
+      this.readOnlyTransaction = false;
+    }
+    return emptyResult('Transaction set.');
+  }
+
+  private requireWritableTransaction(): void {
+    if (this.readOnlyTransaction) {
+      throw new OracleError(1456, 'may not perform insert/delete/update operation inside a READ ONLY transaction');
+    }
+  }
+
+  beginAutonomousScope(): void {
+    this.autonomousReadOnlyStack.push(this.readOnlyTransaction);
+    this.readOnlyTransaction = false;
+    this.txn.enterAutonomous();
+  }
+
+  endAutonomousScope(): void {
+    this.txn.exitAutonomous();
+    this.readOnlyTransaction = this.autonomousReadOnlyStack.pop() ?? false;
+  }
+
+  commitOnLogoff(): void {
+    if (!this.txn.isActive) return;
+    try {
+      this.commitActiveTransaction();
+    } catch {
+      this.txn.rollback();
+    }
+  }
+
+  get hasActiveTransaction(): boolean { return this.txn.isActive; }
+
+  /**
+   * Abrupt termination path: unlike `commitOnLogoff` (a clean client
+   * exit, which commits), a session whose underlying connection has
+   * simply vanished — network cut, dead-connection detection — must
+   * never commit work the client never asked to keep. Mirrors real
+   * Oracle PMON cleanup of an aborted session.
+   */
+  rollbackOnDeadConnection(): boolean {
+    if (!this.txn.isActive) return false;
+    this.txn.rollback();
+    return true;
+  }
+
+  private isConstraintDeferred(c: import('../engine/storage/BaseStorage').ConstraintMeta): boolean {
+    if (!c.deferrable) return false;
+    if (this.constraintMode === 'IMMEDIATE') return false;
+    if (this.constraintMode === 'DEFERRED') return true;
+    return c.initiallyDeferred === true;
+  }
+
+  private readonly deferredConstraintPredicate = (
+    c: import('../engine/storage/BaseStorage').ConstraintMeta,
+  ): boolean => this.isConstraintDeferred(c);
+
+  private executeSetConstraints(
+    stmt: import('../engine/parser/ASTNode').SetConstraintsStatement,
+  ): ResultSet {
+    if (stmt.mode === 'IMMEDIATE') {
+      const violated = this.constraints.findDeferredForeignKeyViolation(
+        this.context.currentSchema,
+        c => (stmt.all || (c.name && stmt.names?.includes(c.name))) === true,
+      );
+      if (violated) {
+        throw new OracleError(2291, `integrity constraint (${violated}) violated - parent key not found`);
+      }
+      this.constraintMode = 'IMMEDIATE';
+    } else {
+      this.constraintMode = 'DEFERRED';
+    }
+    return emptyResult('Constraint set.');
+  }
+
   private executeRemoteDml(
     stmt: import('../engine/parser/ASTNode').InsertStatement
       | import('../engine/parser/ASTNode').UpdateStatement
@@ -758,7 +858,19 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private commitActiveTransaction(): void {
+    const violated = this.constraints.findDeferredForeignKeyViolation(
+      this.context.currentSchema, c => c.deferrable === true);
+    if (violated) {
+      this.flashbackCaptured.clear();
+      this.readOnlyTransaction = false;
+      this.constraintMode = 'DEFAULT';
+      this.txn.rollback();
+      throw new OracleError(2091,
+        `transaction rolled back\nORA-02291: integrity constraint (${violated}) violated - parent key not found`);
+    }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('COMMIT');
     this.txn.commit();
     for (const mv of this.catalog.getMaterializedViews()) {
@@ -774,6 +886,8 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Rollback complete.');
     }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
@@ -953,7 +1067,7 @@ export class OracleExecutor extends BaseExecutor {
 
         // Patch CTE inner query to reference already-materialized CTEs
         const patchedQuery = cteNames.length > 0
-          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as SelectStatement, cteNames, cteSchema)
+          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as unknown as SelectStatement, cteNames, cteSchema)
           : cte.query;
 
         // Execute the CTE query
@@ -1094,7 +1208,7 @@ export class OracleExecutor extends BaseExecutor {
     // Check for window functions
     const windowColIndices: number[] = [];
     for (let i = 0; i < stmt.columns.length; i++) {
-      if (stmt.columns[i].expr.type === 'FunctionCall' && stmt.columns[i].expr.over) {
+      if (stmt.columns[i].expr.type === 'FunctionCall' && (stmt.columns[i].expr as Expression & { over?: unknown }).over) {
         windowColIndices.push(i);
       }
     }
@@ -1172,11 +1286,11 @@ export class OracleExecutor extends BaseExecutor {
     // Handle additional FROM references (comma-separated → implicit CROSS JOIN)
     for (let i = 1; i < stmt.from!.length; i++) {
       const right = this.loadTableReference(stmt.from![i]);
-      const crossJoin: import('../engine/parser/ASTNode').JoinClause = {
+      const crossJoin = {
         joinType: 'CROSS',
         table: stmt.from![i],
       };
-      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin);
+      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin as unknown as import('../engine/parser/ASTNode').JoinClause);
       rows = result.rows;
       columns = result.columns;
     }
@@ -1304,7 +1418,7 @@ export class OracleExecutor extends BaseExecutor {
       dataType: c.dataType || 'VARCHAR2',
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${alias}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
     const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
     return { rows, columns };
   }
@@ -1325,7 +1439,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
     }
 
@@ -1354,7 +1468,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       const rows: StorageRow[] = catalogResult.rows.map(r => [...r] as StorageRow);
       return { rows, columns };
     }
@@ -1362,7 +1476,7 @@ export class OracleExecutor extends BaseExecutor {
     const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
-    let storageRows = this.storage.getRows(schema, tableName);
+    let storageRows = this.txn.visibleRows(schema, tableName) ?? this.storage.getRows(schema, tableName);
     if (ref.asOf) {
       storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
     }
@@ -1375,7 +1489,7 @@ export class OracleExecutor extends BaseExecutor {
       name: c.name,
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
 
     return { rows, columns };
   }
@@ -2130,6 +2244,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── MERGE ──────────────────────────────────────────────────────────
 
   private executeMerge(stmt: MergeStatement): ResultSet {
+    this.requireWritableTransaction();
     const targetSchema = this.resolveSchema(stmt.target.schema);
     const targetName = stmt.target.name.toUpperCase();
 
@@ -2206,7 +2321,7 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(stmt.whenNotMatched.values[i], combinedRow, combinedCols);
           }
         }
-        this.storage.insertRow(targetSchema, targetName, newRow);
+        this.insertRowChecked(targetSchema, targetName, targetMeta, newRow);
         insertedCount++;
       }
     }
@@ -2266,13 +2381,13 @@ export class OracleExecutor extends BaseExecutor {
               throw new OracleError(904, `"${colName}": invalid identifier`);
             }
             colIndices.push(-1);
-            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } });
+            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } as unknown as ColumnDataType });
           }
         } else {
           // Expression (function call, etc.) — evaluate at runtime
           colIndices.push(-2);
-          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as IdentifierExpr).name.toUpperCase() : 'EXPR');
-          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
+          const alias = selCol.alias?.toUpperCase() || ((selCol.expr.type as string) === 'Identifier' ? (selCol.expr as unknown as IdentifierExpr).name.toUpperCase() : 'EXPR');
+          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } as unknown as ColumnDataType });
         }
       }
       rows = rows.map(row => colIndices.map((idx, i) => {
@@ -2325,6 +2440,16 @@ export class OracleExecutor extends BaseExecutor {
     return meta;
   }
 
+  private insertRowChecked(schema: string, tableName: string, tableMeta: TableMeta, row: StorageRow): void {
+    const tsName = tableMeta.tablespace ?? 'USERS';
+    const capacity = this.storage.reserveTablespaceSpace(tsName, ROW_FOOTPRINT_BYTES);
+    if (!capacity.ok) {
+      throw new OracleError(1653,
+        `unable to extend table ${schema}.${tableName} by ${Math.ceil(capacity.shortfallBytes / 8192)} in tablespace ${tsName}`);
+    }
+    this.storage.insertRow(schema, tableName, row);
+  }
+
   /** Resolve a column name to its ordinal or raise ORA-00904. */
   private requireColumnIndex(tableMeta: TableMeta, colName: string): number {
     const idx = this.findColumnIndex(tableMeta, colName);
@@ -2341,6 +2466,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2352,9 +2478,9 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     } else if (stmt.query) {
@@ -2383,9 +2509,9 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Columns the SELECT did not supply fall back to their DEFAULT.
         this.applyColumnDefaults(tableMeta, row, provided);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     }
@@ -2444,6 +2570,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2468,7 +2595,7 @@ export class OracleExecutor extends BaseExecutor {
         // Pass the pre-update row so uniqueness checks can exclude it
         // from the existing-row set (otherwise an UPDATE that leaves
         // the PK column unchanged would self-conflict).
-        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
@@ -2480,6 +2607,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── DELETE ────────────────────────────────────────────────────────
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2800,7 +2928,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (cc.constraintType === 'UNIQUE') {
           constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
         } else if (cc.constraintType === 'REFERENCES') {
-          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete, deferrable: cc.deferrable, initiallyDeferred: cc.initiallyDeferred });
         }
       }
     }
@@ -2816,6 +2944,8 @@ export class OracleExecutor extends BaseExecutor {
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
         checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
+        deferrable: tc.deferrable,
+        initiallyDeferred: tc.initiallyDeferred,
       });
     }
 
@@ -2973,8 +3103,7 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'MODIFY_COLUMN') {
         const col = action.column;
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
         if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
         // Update data type (a typeless MODIFY — `(col NOT NULL)` — leaves it).
@@ -3005,9 +3134,9 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {
-        // Validate that the column exists, then record TDE metadata.
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const wallet = (this.catalog as OracleCatalog).getTdeWallet();
+        if (!wallet || wallet.status !== 'OPEN') throw new OracleError(28365, 'wallet is not open');
+        const meta = this.requireTableMeta(schema, tableName);
         const col = meta.columns.find(c => c.name === action.columnName.toUpperCase());
         if (!col) throw new OracleError(904, `"${action.columnName.toUpperCase()}": invalid identifier`);
         (this.catalog as OracleCatalog).setColumnEncryption(
@@ -3021,8 +3150,7 @@ export class OracleExecutor extends BaseExecutor {
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
       } else if (action.action === 'RENAME_COLUMN') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const oldUpper = action.oldName.toUpperCase();
         const newUpper = action.newName.toUpperCase();
         const target = meta.columns.find(c => c.name === oldUpper);
@@ -3034,37 +3162,33 @@ export class OracleExecutor extends BaseExecutor {
         // Migrate stored row keys when rows are dict-keyed.
         const rows = this.storage.getRows?.(schema, tableName) ?? [];
         for (const row of rows) {
-          if (row && Object.prototype.hasOwnProperty.call(row, oldUpper)) {
-            (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
-            delete (row as Record<string, unknown>)[oldUpper];
+          if (row && Object.prototype.hasOwnProperty.call(row as unknown as Record<string, unknown>, oldUpper)) {
+            (row as unknown as Record<string, unknown>)[newUpper] = (row as unknown as Record<string, unknown>)[oldUpper];
+            delete (row as unknown as Record<string, unknown>)[oldUpper];
           }
         }
       } else if (action.action === 'RENAME_TABLE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const newUpper = action.newName.toUpperCase();
         if (this.storage.getTableMeta(schema, newUpper)) {
           throw new OracleError(955, 'name is already used by an existing object');
         }
         meta.name = newUpper;
       } else if (action.action === 'MOVE_TABLESPACE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const target = action.tablespace.toUpperCase();
         if (target && !(this.storage as OracleStorage).tablespaceExists(target)) {
           throw new OracleError(959, `tablespace '${target}' does not exist`);
         }
         if (target) meta.tablespace = target;
       } else if (action.action === 'MOVE_COMPRESS') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (meta) {
-          const level = action.compressionLevel?.trim().toUpperCase();
-          // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
-          const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
-          meta.compression = off
-            ? { enabled: false }
-            : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
-        }
+        const meta = this.requireTableMeta(schema, tableName);
+        const level = action.compressionLevel?.trim().toUpperCase();
+        // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
+        const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
+        meta.compression = off
+          ? { enabled: false }
+          : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
@@ -3288,9 +3412,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private serializeExpr(expr: Expression): string {
     switch (expr.type) {
-      case 'Identifier': return (expr as IdentifierExpr).qualifier
-        ? `${(expr as IdentifierExpr).qualifier}.${(expr as IdentifierExpr).name}`
-        : (expr as IdentifierExpr).name;
+      case 'Identifier': {
+        const ident = expr as IdentifierExpr & { qualifier?: string };
+        return ident.qualifier ? `${ident.qualifier}.${ident.name}` : ident.name;
+      }
       case 'Literal': {
         const lit = expr as LiteralExpr;
         return typeof lit.value === 'string' ? `'${lit.value}'` : String(lit.value ?? 'NULL');
@@ -3331,14 +3456,14 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
     const innerStmt = stmt.statement;
-    const columns: ColumnMeta[] = [
+    const columns = [
       { name: 'ID', dataType: 'NUMBER' },
       { name: 'OPERATION', dataType: 'VARCHAR2' },
       { name: 'NAME', dataType: 'VARCHAR2' },
       { name: 'ROWS', dataType: 'NUMBER' },
       { name: 'BYTES', dataType: 'NUMBER' },
       { name: 'COST', dataType: 'NUMBER' },
-    ];
+    ] as unknown as ColumnMeta[];
 
     const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
     if (db) {
@@ -3351,7 +3476,7 @@ export class OracleExecutor extends BaseExecutor {
         n.bytes,
         n.cost,
       ]);
-      return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+      return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
     }
 
     const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
@@ -3397,7 +3522,7 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
-    return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+    return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
   }
 
   // ── Triggers ─────────────────────────────────────────────────────

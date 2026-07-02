@@ -19,6 +19,7 @@ import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
   runSshExec,
+  wireProbeFor,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -207,6 +208,7 @@ export class LinuxBashShell extends AbstractShell {
       knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIp(this.device),
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+      wireProbe: wireProbeFor(this.device),
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'

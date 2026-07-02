@@ -8,7 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   TcpStream as TcpConnection,
   TcpConnector,
@@ -44,7 +44,7 @@ import {
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
-  readonly vfs: VirtualFileSystem;
+  readonly vfs: ISshLocalFs;
   readonly localUser: string;
   readonly localUid: number;
   readonly localGid: number;
@@ -55,6 +55,7 @@ export interface SshSessionDeps {
 interface ServerBanner {
   readonly hostKey: { algorithm: string; publicKey: string };
   readonly serverVersion: string;
+  readonly preAuthBanner?: string;
 }
 
 export class SshSession implements ISshSession {
@@ -103,6 +104,9 @@ export class SshSession implements ISshSession {
       this.conn = null;
       return propagateErr(banner);
     }
+    if (banner.value.preAuthBanner) {
+      this.deps.interactionHandler.showInfo(banner.value.preAuthBanner);
+    }
     const hostKey = SshHostKey.fromFiles(
       banner.value.hostKey.publicKey,
       '',
@@ -128,6 +132,15 @@ export class SshSession implements ISshSession {
 
     const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
+
+    conn.onData((data) => {
+      try {
+        const msg = JSON.parse(data) as { op?: string };
+        if (msg.op === 'keepalive') {
+          conn.write(JSON.stringify({ op: 'keepalive_ack' }));
+        }
+      } catch { /* not JSON or not keepalive — channel layers handle it */ }
+    });
 
     const info: SshConnectionInfo = {
       host: opts.host,

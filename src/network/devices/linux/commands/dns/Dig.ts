@@ -9,7 +9,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { executeDig } from '../../LinuxDnsService';
+import { executeDig } from './DigRunner';
 import { readResolverIP } from './resolverIP';
 
 export const digCommand: LinuxCommand = {
@@ -27,6 +27,10 @@ export const digCommand: LinuxCommand = {
     '  type          The query type (A, AAAA, MX, NS, etc.).',
 
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return executeDig(args, (s, n, t, ms) => ctx.net.queryDns(s, n, t, ms), readResolverIP(ctx.executor));
+    return executeDig(
+      args,
+      (s, n, t, ms, opts) => ctx.net.queryDns(s, n, t, ms, opts),
+      readResolverIP(ctx.executor),
+    );
   },
 };

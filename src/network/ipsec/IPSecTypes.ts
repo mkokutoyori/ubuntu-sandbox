@@ -179,6 +179,8 @@ export interface IKE_SA {
   dpdAwaitingAck?: boolean;
   /** IKE exchange mode: main (default) or aggressive */
   exchangeMode?: 'main' | 'aggressive';
+  failureReason?: string;
+  failedPhase?: 1 | 2;
 }
 
 /** DPD notify carried over UDP 500 — the ACK must echo the probe's seq (RFC 3706). */
@@ -217,6 +219,11 @@ export interface IkeV2Chosen {
   propName: string;
 }
 
+export interface X509CertPayload {
+  readonly cert: unknown;
+  readonly authSignature: string;
+}
+
 export interface IkeOfferMessage {
   type: 'ike';
   step: 'offer';
@@ -229,11 +236,13 @@ export interface IkeOfferMessage {
   policies: IkePolicyProposal[];
   ikev2Proposals?: IkeV2ProposalWire[];
   transforms: IkeTransformProposal[];
-  pfsGroup?: number;
+  pfsGroup?: string;
   lifetimeSec: number;
   lifetimeKB: number;
   ipsecSpiIn: number;
   natTHint: boolean;
+  authMode?: 'psk' | 'x509';
+  certPayload?: X509CertPayload;
 }
 
 export interface IkeAcceptMessage {
@@ -241,6 +250,7 @@ export interface IkeAcceptMessage {
   step: 'accept';
   responderSpi: string;
   pskProof: string;
+  certPayload?: X509CertPayload;
   chosenPolicy?: IkePolicyProposal;
   chosenIkev2?: IkeV2Chosen;
   chosenTransform: IkeTransformProposal;

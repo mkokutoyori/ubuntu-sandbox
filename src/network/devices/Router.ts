@@ -39,6 +39,7 @@ import { Equipment } from '../equipment/Equipment';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
@@ -78,6 +79,7 @@ import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
+import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/CiscoSecurityConfig';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
 export type { RIPConfig } from './router/RouterRIPEngine';
@@ -227,7 +229,30 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private ipv6Engine!: IPv6DataPlane;
 
   // ── ACL (Access Control Lists) — delegated to ACLEngine ────
-  private aclEngine = new ACLEngine();
+  private aclEngine = (() => {
+    const e = new ACLEngine();
+    // Wire the Cisco time-range resolver — ACL entries tagged
+    // `time-range NAME` consult getSecurityConfig().timeRanges to know
+    // whether they are currently active. Done lazily so the security
+    // config is created on demand by the security-CLI handlers.
+    e.setTimeRangeResolver((name, now) => {
+      const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+        Symbol.for('CiscoSecurityConfig')
+      ];
+      const tr = sec?.timeRanges.get(name);
+      if (!tr) return false;
+      return isTimeRangeActive(tr, now);
+    });
+    return e;
+  })();
+
+  protected isIcmpUnreachablesEnabled(ifName: string): boolean {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    if (!sec) return true;
+    return !sec.ifaceFlags(ifName).noUnreachables;
+  }
 
   // ── Interface Descriptions ──────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
@@ -315,8 +340,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getTcpStack: () => this.tcpv2,
     });
     this.shell = this.createShell();
-    this.natEngine.setACLMatchFn((aclId, srcIP) => {
-      const pkt = { type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any;
+    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
+      const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) !== 'deny';
     });
     this.natEngine.setInterfaceIPFn((iface) => {
@@ -372,12 +397,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private mountSshDaemon(): void {
     if (this._sshHandlerMounted) return;
     this._sshHandlerMounted = true;
+    this.bindSshListener();
+    this.bindTelnetListener();
+  }
+
+  private bindSshListener(): void {
     this.tcpv2.listen(22, {
       onAccept: (socket) => {
         const handler = this.buildRouterSshServerHandler();
         handler.register(socket, socket.remoteIp);
       },
     });
+  }
+
+  private bindTelnetListener(): void {
+    this.tcpv2.listen(23, { onAccept: () => {} });
+  }
+
+  private telnetAllowedByTransport(): boolean {
+    return this.vtyTransportInput === 'all' || this.vtyTransportInput === 'telnet';
+  }
+
+  private syncSshListener(): void {
+    const sshBound = this.tcpv2.listListeners().some(l => l.localPort === 22);
+    if (this.sshServerEnabled && !sshBound) this.bindSshListener();
+    if (!this.sshServerEnabled && sshBound) this.tcpv2.closeListener(22);
+    const telnetWanted = this.telnetAllowedByTransport();
+    const telnetBound = this.tcpv2.listListeners().some(l => l.localPort === 23);
+    if (telnetWanted && !telnetBound) this.bindTelnetListener();
+    if (!telnetWanted && telnetBound) this.tcpv2.closeListener(23);
   }
 
   private _sshHostKeyCache: SshHostKey | null = null;
@@ -1144,6 +1192,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-in',
           `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+        if (this.isIcmpUnreachablesEnabled(inPort)) {
+          this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
+        }
         return;
       }
     }
@@ -1352,6 +1403,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
+  /** @internal RFC 3948 §4 single-byte 0xFF NAT-T keepalive on UDP 4500. */
+  _sendNatTKeepalive(destIp: string): boolean {
+    const dst = new IPAddress(destIp);
+    const route = this.lookupRoute(dst);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    const srcIp = egress?.getIPAddress();
+    if (!egress || !srcIp) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 4500, destinationPort: 4500,
+      length: 8 + 1, checksum: 0,
+      payload: { type: 'nat-t-keepalive', bytes: new Uint8Array([0xff]) },
+    };
+    const ipPkt = createIPv4Packet(srcIp, dst, IP_PROTO_UDP, 64, udp, 20 + 8 + 1);
+    const arpHit = this.arpTable.get(
+      (route.nextHop ?? dst).toString(),
+    ) ?? this.arpTable.get(dst.toString());
+    this.sendFrame(route.iface, {
+      srcMAC: egress.getMAC(),
+      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+    return true;
+  }
+
   // ─── Data Plane: Phase D+E — Forwarding Engine ────────────────
 
   protected recordNetflowSample(_input: NetFlowRecordInput): void {}
@@ -1426,24 +1503,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     };
     fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
 
-    // Phase E.1: MTU check
-    if (fwdPkt.totalLength > this.interfaceMTU) {
-      // Check Don't Fragment flag (bit 1 of flags field, 0b010 = DF set)
-      const dfSet = (fwdPkt.flags & 0b010) !== 0;
-      if (dfSet) {
-        // ICMP Type 3, Code 4: Fragmentation Needed and DF Set
-        Logger.info(this.id, 'router:mtu-exceeded',
-          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${this.interfaceMTU}, DF=1`);
-        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 4);
-        return;
-      }
-      // If DF=0, we would fragment — not implemented in this simulator
-    }
-
-    // Phase E.2: Determine next-hop IP
-    const nextHopIP = route.nextHop || ipPkt.destinationIP;
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
+    const effectiveMtu = outPort.getMTU();
+
+    if (fwdPkt.totalLength > effectiveMtu) {
+      const dfSet = (fwdPkt.flags & 0b010) !== 0;
+      if (dfSet) {
+        Logger.info(this.id, 'router:mtu-exceeded',
+          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 4, effectiveMtu);
+        return;
+      }
+    }
+
+    const nextHopIP = route.nextHop || ipPkt.destinationIP;
 
     // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
     // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
@@ -1463,6 +1537,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
+        if (this.isIcmpUnreachablesEnabled(inPort)) {
+          this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
+        }
         return;
       }
     }
@@ -1558,6 +1635,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * use the routing table to find the egress interface and next-hop,
    * rather than blindly sending on the ingress port.
    */
+  private icmpTypeSuppressedByLocalAcl(icmpType: ICMPErrorType): boolean {
+    for (const acl of this.aclEngine.getAccessLists()) {
+      for (const entry of acl.entries) {
+        if (entry.action === 'deny' && entry.protocol === 'icmp' && entry.icmpType === icmpType) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private sendICMPError(
     inPort: string,
     offendingPkt: IPv4Packet,
@@ -1574,22 +1662,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = inPortObj.getIPAddress();
     if (!myIP) return;
 
+    if (this.icmpTypeSuppressedByLocalAcl(icmpType)) return;
+
     const errorIP = buildICMPError(
       myIP, offendingPkt, icmpType, code, this.defaultTTL,
       { nextHopMTU: nextHopMTU ?? this.interfaceMTU },
     );
 
-    // Update counters
     this.counters.icmpOutMsgs++;
     if (icmpType === 'time-exceeded') this.counters.icmpOutTimeExcds++;
     if (icmpType === 'destination-unreachable') this.counters.icmpOutDestUnreachs++;
 
-    // Route the ICMP error through the routing table (RFC 1812 §4.3.2.7)
     const route = this.lookupRoute(offendingPkt.sourceIP);
-    if (!route) {
-      // No route back to source — silently drop
-      return;
-    }
+    if (!route) return;
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
@@ -1799,6 +1884,29 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return promise;
   }
 
+  cliHelpForVty(input: string, session: CliShellSession): string {
+    return this.withSwappedVtyState(session, () => this.cliHelp(input)) ?? this.cliHelp(input);
+  }
+
+  cliTabCompleteForVty(input: string, session: CliShellSession): string | null {
+    return this.withSwappedVtyState(session, () => this.cliTabComplete(input));
+  }
+
+  private withSwappedVtyState<T>(session: CliShellSession, fn: () => T): T | null {
+    const shell = this.shell as unknown as {
+      snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
+      applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
+    };
+    if (!shell.snapshotVtyState || !shell.applyVtyState) return null;
+    const baseline = shell.snapshotVtyState();
+    shell.applyVtyState(session.state);
+    try {
+      return fn();
+    } finally {
+      shell.applyVtyState(baseline);
+    }
+  }
+
   /** Read the per-vty prompt without disturbing the shared shell state. */
   getPromptForVty(session: CliShellSession): string {
     const shell = this.shell as unknown as {
@@ -1821,16 +1929,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;
+    if (type === 'incoming') return this.incomingBannerText;
     return '';
   }
 
   protected motdBannerText: string = '';
   protected loginBannerText: string = '';
   protected execBannerText: string = '';
+  protected incomingBannerText: string = '';
 
   _setMotdBanner(text: string): void { this.motdBannerText = text; }
   _setLoginBanner(text: string): void { this.loginBannerText = text; }
   _setExecBanner(text: string): void { this.execBannerText = text; }
+  _setIncomingBanner(text: string): void { this.incomingBannerText = text; }
 
   // ── Public accessors used by CLI shells ──────────────────────
 
@@ -1840,13 +1951,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getArpTableInternal(): Map<string, ARPEntry> { return this.arpTable; }
 
   /** Add a static ARP entry */
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'static' });
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
   }
 
   /** Delete an ARP entry by IP */
-  _deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  _deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   /** Clear all dynamic ARP entries (preserves static) */
@@ -1903,6 +2014,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private relayDhcpToHelpers(inPort: string, pkt: DHCPPacket, helpers: string[]): void {
     const inIp = this.ports.get(inPort)?.getIPAddress();
     if (!inIp) return;
+    if (pkt.hops >= 16) {
+      this.getBus().publish({
+        topic: 'dhcp.relay.dropped',
+        payload: {
+          deviceId: this.id, hostname: this.getHostname(),
+          iface: inPort, reason: 'hops-exceeded', hops: pkt.hops,
+          clientMac: pkt.chaddr,
+        },
+      });
+      return;
+    }
+    pkt.hops++;
     if (pkt.giaddr === '0.0.0.0') pkt.giaddr = inIp.toString();
     let option82: { circuitId: string; remoteId: string } | null = null;
     if (this.dhcpServer.isRelayInformationOptionEnabled()) {
@@ -1931,7 +2054,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       payload: {
         deviceId: this.id, hostname: this.getHostname(),
         iface: inPort, giaddr: pkt.giaddr, helpers: [...helpers],
-        clientMac: pkt.chaddr,
+        clientMac: pkt.chaddr, hops: pkt.hops,
         circuitId: option82?.circuitId ?? null,
         remoteId: option82?.remoteId ?? null,
       },
@@ -2089,6 +2212,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   readonly vtyLineConfig = new VtyLineConfigStore();
   _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
+  private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
+  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
+    if (!this._vtyIncomingPolicy) {
+      this._vtyIncomingPolicy = new VtyIncomingPolicy({
+        lines: () => this.vtyLineConfig,
+        evaluateAcl: (name, packet) => this.aclEngine.evaluateACLByName(name, packet),
+        localIp: () => this.getPorts()
+          .map(p => p.getIPAddress()?.toString())
+          .find((ip): ip is string => !!ip) ?? null,
+        hasFreeLine: () => this.getSshSessionRegistry().hasFreeLine(),
+      });
+    }
+    return this._vtyIncomingPolicy.admit(transport, sourceIp);
+  }
   /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
   readonly hostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.hostsTable; }
@@ -2120,13 +2257,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
   _setServiceFlag(name: string, on: boolean): void {
-    if (on) this._serviceFlags.set(name, true);
-    else this._serviceFlags.delete(name);
+    this._serviceFlags.set(name, on);
   }
 
   getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
   _recordUnhandledConfigLine(line: string): void {
     if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
+  }
+  _removeUnhandledConfigLine(needle: string): void {
+    const idx = this._unhandledConfigLines.findIndex(l => l === needle || l.startsWith(needle));
+    if (idx >= 0) this._unhandledConfigLines.splice(idx, 1);
   }
 
   _setSystemClock(epochMs: number): void {
@@ -2156,6 +2296,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this._debugService) this._debugService = new RouterDebugService();
     this._debugService.attachToBus(this.getBus(), this.id);
     return this._debugService;
+  }
+
+  getLoggingConfig(): import('./inspection/config/LoggingConfig').LoggingConfig | null {
+    const cfg = this.shell.getLoggingConfig?.();
+    if (!cfg) return null;
+    this.shell.attachLoggingToBus?.(this.getBus(), this.id);
+    return cfg;
   }
 
   private _nhrpService: NhrpService | null = null;
@@ -2283,7 +2430,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
-      this._sshSessionRegistry = new SshSessionRegistry({ deviceId: this.id, bus: this.getBus() });
+      this._sshSessionRegistry = new SshSessionRegistry({
+        deviceId: this.id,
+        bus: this.getBus(),
+        capacity: () => this.vtyLineConfig.lineCapacity(),
+      });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
@@ -2362,11 +2513,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _setSshServerEnabled(enabled: boolean): void {
     this.sshServerEnabled = enabled;
     if (this._sshHost) this._sshHost.setSshActive(enabled);
+    this.syncSshListener();
   }
   _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
     this.vtyTransportInput = t;
     this.sshServerEnabled = (t === 'all' || t === 'ssh');
     if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
+    this.syncSshListener();
   }
 
   /**
@@ -2474,6 +2627,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     count: number = 5,
     timeoutMs: number = 2000,
     sourceIPStr?: string,
+    hooks?: {
+      onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void;
+      shouldStop?: () => boolean;
+    },
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     // Self-ping: check all interface IPs
     for (const [, port] of this.ports) {
@@ -2481,7 +2638,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (myIP && myIP.equals(targetIP)) {
         const results = [];
         for (let seq = 1; seq <= count; seq++) {
-          results.push({ success: true, rttMs: 0.01, ttl: this.defaultTTL, seq, fromIP: targetIP.toString() });
+          if (hooks?.shouldStop?.()) break;
+          const row = { success: true, rttMs: 0.01, ttl: this.defaultTTL, seq, fromIP: targetIP.toString() };
+          results.push(row);
+          hooks?.onResult?.(row);
         }
         return results;
       }
@@ -2522,12 +2682,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Send pings
     const results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }> = [];
     for (let seq = 1; seq <= count; seq++) {
+      if (hooks?.shouldStop?.()) break;
+      let row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string };
       try {
-        const result = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
-        results.push(result);
+        row = await this._sendPing(route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs);
       } catch {
-        results.push({ success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' });
+        row = { success: false, rttMs: 0, ttl: 0, seq, fromIP: '', error: 'timeout' };
       }
+      results.push(row);
+      hooks?.onResult?.(row);
     }
     return results;
   }

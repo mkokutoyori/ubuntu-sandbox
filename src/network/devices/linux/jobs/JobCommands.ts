@@ -132,29 +132,6 @@ export function cmdDisown(args: string[], ctx: JobCmdContext): JobResult {
 
 // ─── wait ─────────────────────────────────────────────────────────────
 
-/**
- * `wait` would block on background jobs. The simulator has no async
- * runtime — every job already "ran" synchronously when announced — so
- * `wait` is a no-op that returns 0. We still validate jobspecs for
- * realism.
- */
-export function cmdWait(args: string[], ctx: JobCmdContext): JobResult {
-  for (const a of args) {
-    if (a.startsWith('%')) {
-      const j = ctx.jobs.resolve(a);
-      if (!j) return { output: `bash: wait: ${a}: no such job`, exitCode: 127 };
-    } else if (/^\d+$/.test(a)) {
-      const pid = parseInt(a, 10);
-      if (!ctx.pm.get(pid)) {
-        return { output: `bash: wait: pid ${pid} is not a child of this shell`, exitCode: 127 };
-      }
-    } else {
-      return { output: `bash: wait: \`${a}': not a pid or valid job spec`, exitCode: 2 };
-    }
-  }
-  return { output: '', exitCode: 0 };
-}
-
 // ─── pstree ───────────────────────────────────────────────────────────
 
 interface PstreeOpts {

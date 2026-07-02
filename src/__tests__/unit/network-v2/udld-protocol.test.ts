@@ -19,8 +19,8 @@ beforeEach(() => {
 describe('UDLD — port mode toggling', () => {
   it('setPortMode normal moves an unconfigured port to unknown then ready', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
-    sw.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    const rt = sw.getUdldAgent().getPortRuntime('FastEthernet0/0');
+    sw.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    const rt = sw.getUdldAgent().getPortRuntime('FastEthernet0/1');
     expect(rt).toBeDefined();
     expect(rt!.mode).toBe('normal');
     expect(['unknown', 'bidirectional']).toContain(rt!.state);
@@ -28,9 +28,9 @@ describe('UDLD — port mode toggling', () => {
 
   it('setPortMode disabled drives the runtime to shutdown', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
-    sw.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw.getUdldAgent().setPortMode('FastEthernet0/0', 'disabled');
-    expect(sw.getUdldAgent().getPortRuntime('FastEthernet0/0')?.state).toBe('shutdown');
+    sw.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw.getUdldAgent().setPortMode('FastEthernet0/1', 'disabled');
+    expect(sw.getUdldAgent().getPortRuntime('FastEthernet0/1')?.state).toBe('shutdown');
   });
 });
 
@@ -57,8 +57,8 @@ describe('UDLD — wire format', () => {
         }
       }
     });
-    cable.connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
+    cable.connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
 
     expect(seen).not.toBeNull();
     expect(seen!.etherType).toBe(ETHERTYPE_UDLD);
@@ -73,12 +73,12 @@ describe('UDLD — bidirectional confirmation', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw2.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/0')?.state).toBe('bidirectional');
-    expect(sw2.getUdldAgent().getPortRuntime('FastEthernet0/0')?.state).toBe('bidirectional');
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw2.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/1')?.state).toBe('bidirectional');
+    expect(sw2.getUdldAgent().getPortRuntime('FastEthernet0/1')?.state).toBe('bidirectional');
   });
 
   it('publishes udld.state.changed when transitioning to bidirectional', () => {
@@ -86,12 +86,12 @@ describe('UDLD — bidirectional confirmation', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
     const transitions: Array<{ deviceId: string; newState: string }> = [];
     bus.subscribe('udld.state.changed', (e) => transitions.push(e.payload));
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw2.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw2.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
     expect(transitions.some(t => t.deviceId === sw1.id && t.newState === 'bidirectional')).toBe(true);
     expect(transitions.some(t => t.deviceId === sw2.id && t.newState === 'bidirectional')).toBe(true);
   });
@@ -103,13 +103,13 @@ describe('UDLD — neighbor learning', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw2.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    const sw1Neighbors = sw1.getUdldAgent().getNeighborsFor('FastEthernet0/0');
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw2.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    const sw1Neighbors = sw1.getUdldAgent().getNeighborsFor('FastEthernet0/1');
     expect(sw1Neighbors.length).toBe(1);
     expect(sw1Neighbors[0].remoteDeviceId).toBe(sw2.id);
-    expect(sw1Neighbors[0].remotePortId).toBe('FastEthernet0/0');
+    expect(sw1Neighbors[0].remotePortId).toBe('FastEthernet0/1');
   });
 });
 
@@ -119,15 +119,15 @@ describe('UDLD — link down flushes neighbours', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw2.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/0')?.state).toBe('bidirectional');
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw2.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/1')?.state).toBe('bidirectional');
 
-    sw1.getPort('FastEthernet0/0')!.setUp(false);
-    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/0').length).toBe(0);
-    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/0')?.state).toBe('unknown');
+    sw1.getPort('FastEthernet0/1')!.setUp(false);
+    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/1').length).toBe(0);
+    expect(sw1.getUdldAgent().getPortRuntime('FastEthernet0/1')?.state).toBe('unknown');
   });
 
   it('disabling UDLD on a port flushes its neighbour table', () => {
@@ -135,13 +135,13 @@ describe('UDLD — link down flushes neighbours', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw2.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'normal');
-    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/0').length).toBe(1);
-    sw1.getUdldAgent().setPortMode('FastEthernet0/0', 'disabled');
-    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/0').length).toBe(0);
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw2.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'normal');
+    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/1').length).toBe(1);
+    sw1.getUdldAgent().setPortMode('FastEthernet0/1', 'disabled');
+    expect(sw1.getUdldAgent().getNeighborsFor('FastEthernet0/1').length).toBe(0);
   });
 });
 
@@ -151,24 +151,24 @@ describe('UDLD — show udld', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
     await sw1.executeCommand('enable');
     await sw1.executeCommand('configure terminal');
-    await sw1.executeCommand('interface FastEthernet0/0');
+    await sw1.executeCommand('interface FastEthernet0/1');
     await sw1.executeCommand('udld port');
     await sw1.executeCommand('end');
     await sw2.executeCommand('enable');
     await sw2.executeCommand('configure terminal');
-    await sw2.executeCommand('interface FastEthernet0/0');
+    await sw2.executeCommand('interface FastEthernet0/1');
     await sw2.executeCommand('udld port');
     await sw2.executeCommand('end');
     await sw1.executeCommand('configure terminal');
-    await sw1.executeCommand('interface FastEthernet0/0');
+    await sw1.executeCommand('interface FastEthernet0/1');
     await sw1.executeCommand('udld port');
     await sw1.executeCommand('end');
 
-    const out = await sw1.executeCommand('show udld FastEthernet0/0');
-    expect(out).toMatch(/Interface FastEthernet0\/0/);
+    const out = await sw1.executeCommand('show udld FastEthernet0/1');
+    expect(out).toMatch(/Interface FastEthernet0\/1/);
     expect(out).toMatch(/Bidirectional|bidirectional/);
     expect(out).toMatch(new RegExp(`Device ID: ${sw2.id}`));
   });

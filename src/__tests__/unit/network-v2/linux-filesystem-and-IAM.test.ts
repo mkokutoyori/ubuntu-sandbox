@@ -1339,7 +1339,9 @@ describe('Group 6: Authentification et Fichiers Utilisateur', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
 
       await pc.executeCommand('sudo useradd -m -s /bin/bash alice');
-      await pc.executeCommand('su - alice');
+      pc.setUserPassword('alice', 'alicepw');
+      // su from a non-root user must authenticate as the target account.
+      await pc.executeCommand('echo alicepw | su - alice');
 
       const whoami = await pc.executeCommand('whoami');
       expect(whoami.trim()).toBe('alice');
@@ -1584,8 +1586,8 @@ describe('Group 7: adduser/useradd Réaliste', () => {
       const groups = await pc.executeCommand('groups admin2');
       expect(groups).toContain('sudo');
 
-      // Switch to that user
-      await pc.executeCommand('su - admin2');
+      // Switch to that user (non-root su authenticates as the target).
+      await pc.executeCommand('echo admin2pass | su - admin2');
       const whoami = await pc.executeCommand('whoami');
       expect(whoami.trim()).toBe('admin2');
 
@@ -1610,7 +1612,8 @@ describe('Group 7: adduser/useradd Réaliste', () => {
       await server.executeCommand('su - user1');
       expect((await server.executeCommand('whoami')).trim()).toBe('user1');
 
-      await server.executeCommand('su - user2');
+      // user1 → user2 is a non-root switch, so it must authenticate.
+      await server.executeCommand('echo pass2 | su - user2');
       expect((await server.executeCommand('whoami')).trim()).toBe('user2');
       expect((await server.executeCommand('pwd')).trim()).toBe('/home/user2');
 

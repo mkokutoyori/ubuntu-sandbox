@@ -13,10 +13,11 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
+import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
-import { resolveOracleConnectTarget, parseConnectIdentifier } from './oracleNet';
+import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
@@ -27,6 +28,8 @@ const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
 const oracleAuditSyslogSyncs: Map<string, OracleAuditSyslogSync> = new Map();
+/** Per-device listener↔TcpStack binder — keeps TCP 1521 a genuinely connectable socket. */
+const oracleListenerTcpSyncs: Map<string, OracleListenerTcpSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -48,25 +51,41 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
-    // Device VFS reader for CREATE PFILE/SPFILE FROM … — injected here so
-    // the database layer never imports network/Equipment directly.
+    // Device VFS reader for server-side reads (UTL_FILE, external tables,
+    // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
+    // under host DAC, falling back to the editor path on devices that do
+    // not model the oracle identity. Injected here so the database layer
+    // never imports network/Equipment directly.
     db.instance.setDeviceFileReader((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
-      return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        readFileAsOracle?: (p: string) => string | null;
+        readFileForEditor?: (p: string) => string | null;
+      } | null;
+      if (typeof dev?.readFileAsOracle === 'function') return dev.readFileAsOracle(path) ?? null;
+      return typeof dev?.readFileForEditor === 'function' ? dev.readFileForEditor(path) ?? null : null;
     });
-    // Writer / remover for UTL_FILE: server-side PL/SQL file I/O lands on
-    // the same host VFS the OS shell reads, so a file written by
-    // UTL_FILE.PUT_LINE is immediately visible to `cat` and vice versa.
+    // Writer / remover for UTL_FILE, external tables, BFILE, Data Pump:
+    // server-side file I/O runs as the `oracle` OS user and is subject to
+    // host DAC (`*AsOracle`), so a file written by UTL_FILE.PUT_LINE lands
+    // on the same VFS the OS shell reads — owned oracle:oinstall — and a
+    // read the oracle user is not permitted to perform is denied exactly
+    // as on a real server. Falls back to the editor path on devices that
+    // do not model the oracle OS identity.
     db.instance.setDeviceFileWriter((path, content) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const write = (dev as unknown as { writeFileFromEditor?: (p: string, c: string) => boolean } | null)?.writeFileFromEditor;
-      return typeof write === 'function' ? !!write.call(dev, path, content) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        writeFileAsOracle?: (p: string, c: string) => boolean;
+        writeFileFromEditor?: (p: string, c: string) => boolean;
+      } | null;
+      if (typeof dev?.writeFileAsOracle === 'function') return !!dev.writeFileAsOracle(path, content);
+      return typeof dev?.writeFileFromEditor === 'function' ? !!dev.writeFileFromEditor(path, content) : false;
     });
     db.instance.setDeviceFileRemover((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
-      return typeof rm === 'function' ? !!rm.call(dev, path) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        removeFileAsOracle?: (p: string) => boolean;
+        deleteFileFromEditor?: (p: string) => boolean;
+      } | null;
+      if (typeof dev?.removeFileAsOracle === 'function') return !!dev.removeFileAsOracle(path);
+      return typeof dev?.deleteFileFromEditor === 'function' ? !!dev.deleteFileFromEditor(path) : false;
     });
     db.instance.setOsCommandRunner((cmd) => {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);
@@ -117,6 +136,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     auditSyslog.start();
     oracleAuditSyslogSyncs.set(deviceId, auditSyslog);
 
+    const listenerTcp = new OracleListenerTcpSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    listenerTcp.start();
+    oracleListenerTcpSyncs.set(deviceId, listenerTcp);
+
     db.instance.startup('OPEN');
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
@@ -129,6 +155,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // materialised so it never recreates a file the user later deletes.
     sync.primeDatafiles(deviceId);
     sync.primeSgaMemory(deviceId);
+    listenerTcp.primeListener(deviceId);
   }
   return db;
 }
@@ -180,7 +207,13 @@ export function createSQLPlusSession(
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit
   // trail records the real OSUSER/MACHINE instead of a hardcoded default.
-  if (osCtx) session.setOsContext(osCtx);
+  // TCP sessions also carry the client's real IPv4 — needed by the
+  // server-side Dead Connection Detection (DCD) sweep to probe whether
+  // the peer is still reachable.
+  if (osCtx) {
+    const clientIp = viaOracleNet && localDevice ? primaryIpv4(localDevice) : undefined;
+    session.setOsContext(clientIp ? { ...osCtx, clientIp } : osCtx);
+  }
   // In-session CONNECT user/pass@X resolves through the same client.
   if (localDevice) {
     session.setTnsResolver((id) =>
@@ -218,7 +251,10 @@ export function createSQLPlusSession(
     // exactly what a real client prints (ERROR: ORA-12541: …).
     loginOutput = ['ERROR:', netError];
   } else if (asSysdba || (connArg === '/' && asSysdba)) {
-    loginOutput = session.login('SYS', '', true);
+    // For `sqlplus sys/pw@host as sysdba` the credentials drive
+    // password-file authentication; `sqlplus / as sysdba` is a local
+    // bequeath connection (username/password empty → OS authentication).
+    loginOutput = session.login(username || 'SYS', password, true);
   } else if (username) {
     loginOutput = session.login(username, password);
   } else {
@@ -278,6 +314,8 @@ export function resetAllOracleInstances(): void {
   oracleSystemdSyncs.clear();
   for (const sync of oracleAuditSyslogSyncs.values()) sync.stop();
   oracleAuditSyslogSyncs.clear();
+  for (const sync of oracleListenerTcpSyncs.values()) sync.stop();
+  oracleListenerTcpSyncs.clear();
   for (const db of oracleInstances.values()) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }

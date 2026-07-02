@@ -38,25 +38,33 @@ export class ScpSession {
     if (!parsed) {
       return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
     }
-    const source = this.bind(parsed.source);
-    const dest   = this.bind(parsed.destination);
-    if (!source) return { output: `scp: ${parsed.source.host}: no route to host`, exitCode: 1 };
-    if (!dest)   return { output: `scp: ${parsed.destination.host}: no route to host`, exitCode: 1 };
+    const dest = this.bind(parsed.destination);
+    if (!dest) return { output: `scp: ${parsed.destination.host}: no route to host`, exitCode: 1 };
 
-    const transferOpts: ScpTransferOptions = {
-      recursive: parsed.recursive,
-      preserve: this.opts.args.includes('-p'),
-      localCwd:  source.endpoint.remote ? dest.cwd   : source.cwd,
-      remoteCwd: source.endpoint.remote ? source.cwd : dest.cwd,
-    };
-    const transfer = new ScpTransfer(
-      { local: source.endpoint.remote ? dest.fs   : source.fs,
-        remote: source.endpoint.remote ? source.fs : dest.fs },
-      parsed.source, parsed.destination, transferOpts,
-    );
-    const result = transfer.run();
-    if (!result.ok) return { output: `scp: ${result.error ?? 'transfer failed'}`, exitCode: 1 };
-    return { output: result.summary, exitCode: 0 };
+    const lines: string[] = [];
+    for (const sourceEp of parsed.sources) {
+      const source = this.bind(sourceEp);
+      if (!source) {
+        return { output: `scp: ${sourceEp.host}: no route to host`, exitCode: 1 };
+      }
+      const transferOpts: ScpTransferOptions = {
+        recursive: parsed.recursive,
+        preserve: parsed.preserve,
+        quiet: parsed.quiet,
+        verbose: parsed.verbose,
+        localCwd:  source.endpoint.remote ? dest.cwd   : source.cwd,
+        remoteCwd: source.endpoint.remote ? source.cwd : dest.cwd,
+      };
+      const transfer = new ScpTransfer(
+        { local: source.endpoint.remote ? dest.fs   : source.fs,
+          remote: source.endpoint.remote ? source.fs : dest.fs },
+        sourceEp, parsed.destination, transferOpts,
+      );
+      const result = transfer.run();
+      if (!result.ok) return { output: `scp: ${result.error ?? 'transfer failed'}`, exitCode: 1 };
+      if (!parsed.quiet && result.summary) lines.push(result.summary);
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   private bind(ep: ScpEndpoint): ScpEndpointBinding | null {

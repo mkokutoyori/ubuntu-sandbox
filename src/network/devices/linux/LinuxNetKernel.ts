@@ -20,7 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
 import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
-import type { DnsWireResponse } from '../../dns/DnsWire';
+import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -68,15 +68,20 @@ export interface LinuxNetKernel {
   getRoutingTable(): HostRouteEntry[];
   getIPv6RoutingTable(): HostIPv6RouteEntry[];
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
-  removeRoute(network: IPAddress, mask: SubnetMask): boolean;
+  addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
+  removeRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): boolean;
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
 
   // ─── ARP ─────────────────────────────────────────────────────────
   getArpTable(): ReadonlyMap<string, ARPEntry>;
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void;
-  deleteARP(ip: string): boolean;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
 
   // ─── L3 probes ───────────────────────────────────────────────────
@@ -94,7 +99,18 @@ export interface LinuxNetKernel {
     timeoutMs?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+
+  /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
+  sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean;
+
+  /**
+   * Synchronous TCP handshake probe used by nc / nmap-style service
+   * discovery. Accepts an IPv4 dotted string OR an IPv6 literal.
+   */
+  tcpProbe(target: string, port: number): boolean;
+
+  tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
@@ -122,11 +138,7 @@ export interface LinuxNetKernel {
    */
   resolveHostname(name: string): Promise<IPAddress | null>;
 
-  /**
-   * Send a raw DNS query to a server over UDP/53 through the simulated
-   * network. Used by dig/nslookup/host. Resolves to null on timeout.
-   */
-  queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number): Promise<DnsWireResponse | null>;
+  queryDns: DnsQueryFn;
 
   /** Read a file from the virtual filesystem (returns null if not found). */
   readFile(path: string): string | null;

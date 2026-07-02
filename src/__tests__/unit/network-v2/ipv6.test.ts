@@ -387,9 +387,9 @@ describe('IPv6 Implementation (RFC 8200)', () => {
 
       // Connect: PC1 -- SW -- PC2
       const c1 = new Cable('c1');
-      c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+      c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
       const c2 = new Cable('c2');
-      c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+      c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
       // Power on
       pc1.powerOn();

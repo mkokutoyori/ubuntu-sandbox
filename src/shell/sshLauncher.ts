@@ -14,6 +14,7 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { IPAddress } from '@/network/core/types';
 import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
@@ -73,9 +74,12 @@ function parseSshLine(line: string): ParsedSshLine | null {
   return { flags, user, host, command: remainder.length > 0 ? remainder : null };
 }
 
+export type TcpWireOutcome = 'open' | 'refused' | 'timeout';
+
 export interface SshLaunchOptions {
   /** Default user when the ssh line omits `user@`. */
   readonly defaultUser: string;
+  readonly wireProbe?: (host: string, port: number) => TcpWireOutcome;
   /**
    * Track which (user, host) pairs already wrote a known_hosts entry in
    * this session. The first connection prints the "Warning: Permanently
@@ -169,20 +173,49 @@ export async function tryInterpretSshLaunch(
     };
   }
 
-  // Reachability — powered off device shows the realistic error.
-  const isOn = (target as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
-  if (!isOn) {
-    return {
-      kind: 'error',
-      result: {
-        output: [`ssh: connect to host ${parsed.host} port ${port}: No route to host`],
-      },
-    };
+  if (opts.wireProbe) {
+    const probeHost = IPAddress.isValid(parsed.host)
+      ? parsed.host
+      : firstConfiguredIp(target);
+    const outcome: TcpWireOutcome = probeHost
+      ? opts.wireProbe(probeHost, port)
+      : 'timeout';
+    if (outcome !== 'open') {
+      const reason = outcome === 'refused' ? 'Connection refused' : 'Connection timed out';
+      return {
+        kind: 'error',
+        result: {
+          output: [`ssh: connect to host ${parsed.host} port ${port}: ${reason}`],
+        },
+      };
+    }
+  } else {
+    const isOn = (target as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
+    if (!isOn) {
+      return {
+        kind: 'error',
+        result: {
+          output: [`ssh: connect to host ${parsed.host} port ${port}: No route to host`],
+        },
+      };
+    }
   }
 
   // SSH server explicitly disabled on the target.
   const sshOn = (target as unknown as { isSshActive?: () => boolean }).isSshActive?.();
   if (sshOn === false) {
+    return {
+      kind: 'error',
+      result: {
+        output: [`ssh: connect to host ${parsed.host} port ${port}: Connection refused`],
+      },
+    };
+  }
+
+  const admission = (target as unknown as {
+    vtyAdmissionVerdict?: (transport: 'ssh', sourceIp: string) => { accept: boolean };
+  }).vtyAdmissionVerdict?.('ssh', opts.sourceIp ?? '');
+  if (admission && !admission.accept) {
     return {
       kind: 'error',
       result: {
@@ -271,6 +304,18 @@ export function finalisePendingAuth(
   const clientPort = 50_000 + (auth.user.length * 7 % 10_000);
   const sshConnection = `${clientIp} ${clientPort} ${serverIp} ${auth.port}`;
   const sshClient = `${clientIp} ${clientPort} ${auth.port}`;
+  const registry = (auth.target as unknown as {
+    getSshSessionRegistry?: () => {
+      open: (input: { user: string; fromIp: string; fromHost?: string; peerPort?: number }) => { id: string } | null;
+      close: (id: string, reason?: string) => unknown;
+    };
+  }).getSshSessionRegistry?.();
+  const session = registry?.open({
+    user: auth.user,
+    fromIp: clientIp,
+    fromHost: auth.sourceHostname,
+    peerPort: clientPort,
+  }) ?? null;
   const shell = new CrossVendorRemoteShell({
     device: auth.target,
     user: auth.user,
@@ -278,6 +323,7 @@ export function finalisePendingAuth(
     primaryKind: auth.primaryKind,
     sshConnection,
     sshClient,
+    onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { shell, banner };
 }
@@ -380,4 +426,16 @@ export async function runSshExec(
 
 function pickPrimaryShellKind(dev: Equipment): string {
   return primaryShellKindFor(dev);
+}
+
+export function wireProbeFor(device: unknown): SshLaunchOptions['wireProbe'] {
+  const source = device as {
+    tcpConnectOutcome?: (ip: IPAddress, port: number) => TcpWireOutcome;
+  };
+  if (typeof source.tcpConnectOutcome !== 'function') return undefined;
+  return (host, port) => {
+    const ip = IPAddress.tryParse(host);
+    if (!ip) return 'timeout';
+    return source.tcpConnectOutcome!(ip, port);
+  };
 }

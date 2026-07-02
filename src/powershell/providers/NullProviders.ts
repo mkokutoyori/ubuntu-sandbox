@@ -9,6 +9,7 @@
 
 import type { PSProviders } from './PSProviders';
 import { SimulatedFileSystem } from './SimulatedFileSystem';
+import { JobProvider } from './JobProvider';
 
 export const NULL_PROVIDERS: PSProviders = {
   filesystem:     new SimulatedFileSystem(),
@@ -16,6 +17,7 @@ export const NULL_PROVIDERS: PSProviders = {
   services:       null,
   network:        null,
   processes:      null,
+  jobs:           new JobProvider(),
   users:          null,
   eventLog:       null,
   vpn:            null,

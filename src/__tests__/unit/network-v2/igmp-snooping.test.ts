@@ -73,14 +73,14 @@ describe('IGMP Snooping — Report learning', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const host1 = new CiscoSwitch('switch-cisco', 'H1', 4);
     sw.setEventBus(bus); host1.setEventBus(bus);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, host1.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, host1.getPort('FastEthernet0/1')!);
 
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.1.2.3');
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.1.2.3');
     const groups = sw.getIgmpSnoopingAgent().listGroups();
     expect(groups.length).toBe(1);
     expect(groups[0].vlan).toBe(1);
     expect(groups[0].group.groupAddress).toBe('239.1.2.3');
-    expect(Array.from(groups[0].group.members.keys())).toContain('FastEthernet0/1');
+    expect(Array.from(groups[0].group.members.keys())).toContain('FastEthernet0/2');
   });
 
   it('publishes igmp.snooping.member.joined the first time a port reports', () => {
@@ -88,22 +88,22 @@ describe('IGMP Snooping — Report learning', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const host1 = new CiscoSwitch('switch-cisco', 'H1', 4);
     sw.setEventBus(bus); host1.setEventBus(bus);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, host1.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, host1.getPort('FastEthernet0/1')!);
 
     const joins: Array<{ groupAddress: string; port: string }> = [];
     bus.subscribe('igmp.snooping.member.joined', (e) => joins.push(e.payload));
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.7.7.7');
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.7.7.7');
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.7.7.7');
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.7.7.7');
     expect(joins.length).toBe(1);
     expect(joins[0].groupAddress).toBe('239.7.7.7');
-    expect(joins[0].port).toBe('FastEthernet0/1');
+    expect(joins[0].port).toBe('FastEthernet0/2');
   });
 
   it('reserved 224.0.0.x groups are never tracked', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const host1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, host1.getPort('FastEthernet0/0')!);
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '224.0.0.5');
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, host1.getPort('FastEthernet0/1')!);
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '224.0.0.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(0);
   });
 });
@@ -114,12 +114,12 @@ describe('IGMP Snooping — Router port detection', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const r = new CiscoRouter('R');
     sw.setEventBus(bus); r.setEventBus(bus);
-    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, r.getPort('GigabitEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, r.getPort('GigabitEthernet0/0')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
 
     const v1 = sw.getIgmpSnoopingAgent().getVlanState(1);
-    expect(v1?.routerPorts.has('FastEthernet0/0')).toBe(true);
+    expect(v1?.routerPorts.has('FastEthernet0/1')).toBe(true);
     expect(v1?.querierIp).toBe('10.0.0.1');
   });
 
@@ -128,12 +128,12 @@ describe('IGMP Snooping — Router port detection', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const r = new CiscoRouter('R');
     sw.setEventBus(bus); r.setEventBus(bus);
-    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, r.getPort('GigabitEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, r.getPort('GigabitEthernet0/0')!);
     const adds: Array<{ port: string; added: boolean }> = [];
     bus.subscribe('igmp.snooping.router-port.changed', (e) => adds.push(e.payload));
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
-    expect(adds.some(a => a.port === 'FastEthernet0/0' && a.added)).toBe(true);
+    expect(adds.some(a => a.port === 'FastEthernet0/1' && a.added)).toBe(true);
   });
 });
 
@@ -143,21 +143,21 @@ describe('IGMP Snooping — Leave processing', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const host1 = new CiscoSwitch('switch-cisco', 'H1', 4);
     sw.setEventBus(bus); host1.setEventBus(bus);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, host1.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, host1.getPort('FastEthernet0/1')!);
 
     sw.getIgmpSnoopingAgent().setImmediateLeave(1, true);
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
-    sendLeave(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    sendLeave(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(0);
   });
 
   it('non-immediate Leave keeps the member until the membership timeout elapses', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const host1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, host1.getPort('FastEthernet0/0')!);
-    sendReport(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
-    sendLeave(host1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, host1.getPort('FastEthernet0/1')!);
+    sendReport(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
+    sendLeave(host1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
   });
 });
@@ -169,27 +169,27 @@ describe('IGMP Snooping — Egress port resolution', () => {
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
     const h2 = new CiscoSwitch('switch-cisco', 'H2', 4);
     const h3 = new CiscoSwitch('switch-cisco', 'H3', 4);
-    new Cable('a').connect(sw.getPort('FastEthernet0/0')!, r.getPort('GigabitEthernet0/0')!);
-    new Cable('b').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
-    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, h2.getPort('FastEthernet0/0')!);
-    new Cable('d').connect(sw.getPort('FastEthernet0/3')!, h3.getPort('FastEthernet0/0')!);
+    new Cable('a').connect(sw.getPort('FastEthernet0/1')!, r.getPort('GigabitEthernet0/0')!);
+    new Cable('b').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/3')!, h2.getPort('FastEthernet0/1')!);
+    new Cable('d').connect(sw.getPort('FastEthernet0/4')!, h3.getPort('FastEthernet0/1')!);
 
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.11', '239.9.9.9');
-    sendReport(h3.getPort('FastEthernet0/0')!, '10.0.0.13', '239.9.9.9');
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.11', '239.9.9.9');
+    sendReport(h3.getPort('FastEthernet0/1')!, '10.0.0.13', '239.9.9.9');
 
-    const egress = sw.getIgmpSnoopingAgent().computeEgressPorts('FastEthernet0/0', '239.9.9.9');
-    expect(egress.sort()).toEqual(['FastEthernet0/1', 'FastEthernet0/3']);
+    const egress = sw.getIgmpSnoopingAgent().computeEgressPorts('FastEthernet0/1', '239.9.9.9');
+    expect(egress.sort()).toEqual(['FastEthernet0/2', 'FastEthernet0/4']);
   });
 
   it('returns empty list when snooping is globally disabled', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     sw.getIgmpSnoopingAgent().setEnabled(false);
-    expect(sw.getIgmpSnoopingAgent().computeEgressPorts('FastEthernet0/0', '239.5.5.5')).toEqual([]);
+    expect(sw.getIgmpSnoopingAgent().computeEgressPorts('FastEthernet0/1', '239.5.5.5')).toEqual([]);
   });
 });
 
@@ -198,17 +198,17 @@ describe('IGMP Snooping — Link-down housekeeping', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const r = new CiscoRouter('R');
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('a').connect(sw.getPort('FastEthernet0/0')!, r.getPort('GigabitEthernet0/0')!);
-    new Cable('b').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
+    new Cable('a').connect(sw.getPort('FastEthernet0/1')!, r.getPort('GigabitEthernet0/0')!);
+    new Cable('b').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.11', '239.1.1.1');
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.11', '239.1.1.1');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
-    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/0')).toBe(true);
-    sw.getPort('FastEthernet0/0')!.setUp(false);
+    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/1')).toBe(true);
     sw.getPort('FastEthernet0/1')!.setUp(false);
+    sw.getPort('FastEthernet0/2')!.setUp(false);
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(0);
-    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/0')).toBe(false);
+    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/1')).toBe(false);
   });
 });
 
@@ -216,12 +216,12 @@ describe('IGMP Snooping — Per-VLAN disable', () => {
   it('disabling snooping on a VLAN tears down its members and stops tracking new ones', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
     sw.getIgmpSnoopingAgent().setVlanEnabled(1, false);
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(0);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.5.5.5');
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.5.5.5');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(0);
   });
 });
@@ -230,21 +230,21 @@ describe('IGMP Snooping — show ip igmp snooping', () => {
   it('show ip igmp snooping groups renders the active membership table', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.2.2.2');
+    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.2.2.2');
     const out = await sw.executeCommand('show ip igmp snooping groups');
     expect(out).toMatch(/239\.2\.2\.2/);
-    expect(out).toMatch(/FastEthernet0\/1/);
+    expect(out).toMatch(/FastEthernet0\/2/);
   });
 
   it('show ip igmp snooping mrouter lists the router ports', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const r = new CiscoRouter('R');
-    new Cable('c').connect(sw.getPort('FastEthernet0/0')!, r.getPort('GigabitEthernet0/0')!);
+    new Cable('c').connect(sw.getPort('FastEthernet0/1')!, r.getPort('GigabitEthernet0/0')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     const out = await sw.executeCommand('show ip igmp snooping mrouter');
-    expect(out).toMatch(/FastEthernet0\/0/);
+    expect(out).toMatch(/FastEthernet0\/1/);
   });
 });
 
@@ -252,9 +252,9 @@ describe('IGMP Snooping — Direct query injection from host port', () => {
   it('treats received Query as router-port even without a real router agent', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     const h1 = new CiscoSwitch('switch-cisco', 'H1', 4);
-    new Cable('c').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/0')!);
-    sendQuery(h1.getPort('FastEthernet0/0')!, '10.0.0.99');
-    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/2')).toBe(true);
+    new Cable('c').connect(sw.getPort('FastEthernet0/3')!, h1.getPort('FastEthernet0/1')!);
+    sendQuery(h1.getPort('FastEthernet0/1')!, '10.0.0.99');
+    expect(sw.getIgmpSnoopingAgent().getVlanState(1)?.routerPorts.has('FastEthernet0/3')).toBe(true);
   });
 });
 
@@ -285,13 +285,13 @@ describe('IGMP Snooping — constrained data-path forwarding (RFC 4541 §2.1.2)'
     const h2 = new CiscoSwitch('switch-cisco', 'H2', 4);
     const h3 = new CiscoSwitch('switch-cisco', 'H3', 4);
     for (const d of [sw, h1, h2, h3]) d.setEventBus(bus);
-    new Cable('c1').connect(sw.getPort('FastEthernet0/1')!, h1.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(sw.getPort('FastEthernet0/2')!, h2.getPort('FastEthernet0/0')!);
-    new Cable('c3').connect(sw.getPort('FastEthernet0/3')!, h3.getPort('FastEthernet0/0')!);
+    new Cable('c1').connect(sw.getPort('FastEthernet0/2')!, h1.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(sw.getPort('FastEthernet0/3')!, h2.getPort('FastEthernet0/1')!);
+    new Cable('c3').connect(sw.getPort('FastEthernet0/4')!, h3.getPort('FastEthernet0/1')!);
     const nameById = new Map<string, string>([
-      [h1.getPort('FastEthernet0/0')!.getEquipmentId(), 'H1'],
-      [h2.getPort('FastEthernet0/0')!.getEquipmentId(), 'H2'],
-      [h3.getPort('FastEthernet0/0')!.getEquipmentId(), 'H3'],
+      [h1.getPort('FastEthernet0/1')!.getEquipmentId(), 'H1'],
+      [h2.getPort('FastEthernet0/1')!.getEquipmentId(), 'H2'],
+      [h3.getPort('FastEthernet0/1')!.getEquipmentId(), 'H3'],
     ]);
     const received: string[] = [];
     bus.subscribe('port.frame.received', (e) => {
@@ -307,12 +307,12 @@ describe('IGMP Snooping — constrained data-path forwarding (RFC 4541 §2.1.2)'
 
   it('a registered group egresses ONLY member ports (01:00:5e MAC is snooped, not flooded)', () => {
     const { sw, h1, h3, received } = threeHostSetup();
-    // H1 joins 239.1.2.3 — snooping learns (vlan 1, group, Fa0/1).
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.1.2.3');
+    // H1 joins 239.1.2.3 — snooping learns (vlan 1, group, Fa0/2).
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.1.2.3');
     expect(sw.getIgmpSnoopingAgent().listGroups().length).toBe(1);
 
     // H3 sends multicast data to the group.
-    h3.getPort('FastEthernet0/0')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/0')!, '239.1.2.3'));
+    h3.getPort('FastEthernet0/1')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/1')!, '239.1.2.3'));
 
     expect(received).toContain('H1');       // member
     expect(received).not.toContain('H2');    // non-member
@@ -320,9 +320,9 @@ describe('IGMP Snooping — constrained data-path forwarding (RFC 4541 §2.1.2)'
 
   it('an unregistered group still floods within the VLAN', () => {
     const { h1, h3, received } = threeHostSetup();
-    sendReport(h1.getPort('FastEthernet0/0')!, '10.0.0.10', '239.1.2.3');
+    sendReport(h1.getPort('FastEthernet0/1')!, '10.0.0.10', '239.1.2.3');
 
-    h3.getPort('FastEthernet0/0')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/0')!, '239.9.9.9'));
+    h3.getPort('FastEthernet0/1')!.sendFrame(dataFrame(h3.getPort('FastEthernet0/1')!, '239.9.9.9'));
 
     expect(received).toContain('H1');
     expect(received).toContain('H2'); // unknown group ⇒ classic flood

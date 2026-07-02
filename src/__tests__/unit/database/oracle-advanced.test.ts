@@ -12,10 +12,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 
 let db: OracleDatabase;
+let sysExecutor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'] | null = null;
 
 function exec(sql: string) {
-  const { executor } = db.connectAsSysdba();
-  return db.executeSql(executor, sql);
+  if (!sysExecutor) sysExecutor = db.connectAsSysdba().executor;
+  return db.executeSql(sysExecutor, sql);
 }
 
 // ── Shared fixtures ─────────────────────────────────────────────────
@@ -52,6 +53,7 @@ function setupEmployeesAndDepartments() {
 beforeEach(() => {
   db = new OracleDatabase();
   db.instance.startup('OPEN');
+  sysExecutor = null;
 });
 
 // ═══════════════════════════════════════════════════════════════════

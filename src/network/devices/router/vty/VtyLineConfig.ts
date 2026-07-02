@@ -13,8 +13,25 @@
  * schema change.
  */
 
-export type VtyLoginMode = 'none' | 'local' | 'aaa';
+export type VtyLoginMode = 'none' | 'local' | 'aaa' | 'password';
 export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
+
+/**
+ * VtyLineRange — value object for the `<first> <last>` line span of a
+ * `line vty` / `user-interface vty` block. Encapsulates the range
+ * arithmetic (membership, overlap, size) that shells and the store would
+ * otherwise reimplement ad hoc.
+ */
+export class VtyLineRange {
+  constructor(public readonly first: number, public readonly last: number) {
+    if (last < first) throw new Error(`Invalid vty range: ${first} ${last}`);
+  }
+  equals(other: VtyLineRange): boolean { return this.first === other.first && this.last === other.last; }
+  contains(idx: number): boolean { return idx >= this.first && idx <= this.last; }
+  size(): number { return this.last - this.first + 1; }
+  overlaps(other: VtyLineRange): boolean { return !(this.last < other.first || other.last < this.first); }
+  toString(): string { return `${this.first} ${this.last}`; }
+}
 
 export interface VtyLineConfigInit {
   readonly first: number;
@@ -29,6 +46,8 @@ export interface VtyLineConfigInit {
   readonly aclOutbound?: string;
   readonly transportInput?: VtyTransport;
   readonly login?: VtyLoginMode;
+  /** `password …` configured on the line (line-local auth secret). */
+  readonly linePassword?: string;
   readonly privilege?: number;
   readonly authenticationMode?: 'password' | 'aaa' | 'none';
   readonly screenLengthLines?: number;
@@ -48,6 +67,7 @@ export class VtyLineConfig {
   readonly aclOutbound: string | null;
   readonly transportInput: VtyTransport | null;
   readonly login: VtyLoginMode | null;
+  readonly linePassword: string | null;
   readonly privilege: number | null;
   readonly authenticationMode: 'password' | 'aaa' | 'none' | null;
   readonly screenLengthLines: number | null;
@@ -66,11 +86,22 @@ export class VtyLineConfig {
     this.aclOutbound        = init.aclOutbound ?? null;
     this.transportInput     = init.transportInput ?? null;
     this.login              = init.login ?? null;
+    this.linePassword       = init.linePassword ?? null;
     this.privilege          = init.privilege ?? null;
     this.authenticationMode = init.authenticationMode ?? null;
     this.screenLengthLines  = init.screenLengthLines ?? null;
     this.historyCommandSize = init.historyCommandSize ?? null;
     Object.freeze(this);
+  }
+
+  /** Convenience factory from a {@link VtyLineRange} value object. */
+  static forRange(range: VtyLineRange, init: Omit<VtyLineConfigInit, 'first' | 'last'> = {}): VtyLineConfig {
+    return new VtyLineConfig({ ...init, first: range.first, last: range.last });
+  }
+
+  /** The line span as a value object (membership / overlap / size helpers). */
+  get range(): VtyLineRange {
+    return new VtyLineRange(this.first, this.last);
   }
 
   withFields(patch: Partial<VtyLineConfigInit>): VtyLineConfig {
@@ -86,6 +117,7 @@ export class VtyLineConfig {
       aclOutbound:        patch.aclOutbound        ?? this.aclOutbound        ?? undefined,
       transportInput:     patch.transportInput     ?? this.transportInput     ?? undefined,
       login:              patch.login              ?? this.login              ?? undefined,
+      linePassword:       patch.linePassword       ?? this.linePassword       ?? undefined,
       privilege:          patch.privilege          ?? this.privilege          ?? undefined,
       authenticationMode: patch.authenticationMode ?? this.authenticationMode ?? undefined,
       screenLengthLines:  patch.screenLengthLines  ?? this.screenLengthLines  ?? undefined,
@@ -101,14 +133,25 @@ export class VtyLineConfig {
     }
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
+    if (this.linePassword) lines.push(` password ${this.linePassword}`);
     if (this.login !== null) {
       if (this.login === 'local') lines.push(' login local');
       else if (this.login === 'aaa') lines.push(' login authentication default');
+      else if (this.login === 'password') lines.push(' login');
       else lines.push(' no login');
     }
     if (this.privilege !== null) lines.push(` privilege level ${this.privilege}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
     return lines;
+  }
+
+  /**
+   * True when the line authenticates with a line password (`login`) but none
+   * has been configured — IOS then refuses incoming sessions on that line
+   * ("Password required, but none set"). Drives the incoming-VTY verdict.
+   */
+  requiresPasswordButUnset(): boolean {
+    return this.login === 'password' && !this.linePassword;
   }
 
   /** Huawei VRP `display current-configuration` block for the user-interface. */

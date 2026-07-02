@@ -58,7 +58,7 @@ describe('PortSecurity — base semantics', () => {
   let port: Port;
   beforeEach(() => {
     sw = setupSwitch();
-    port = sw.getPort('FastEthernet0/0')!;
+    port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
   });
 
@@ -109,7 +109,7 @@ describe('PortSecurity — sticky learning', () => {
   it('captures learned MACs as sticky and emits sticky-saved on the bus', () => {
     const bus = new EventBus();
     const sw = setupSwitch(bus);
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().enableSticky();
 
@@ -125,7 +125,7 @@ describe('PortSecurity — sticky learning', () => {
 
   it('disableSticky downgrades sticky entries back to dynamic', () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const sec = port.getPortSecurity();
     sec.enable();
     sec.enableSticky();
@@ -140,7 +140,7 @@ describe('PortSecurity — sticky learning', () => {
 describe('PortSecurity — aging', () => {
   it('absolute aging removes entries older than the window', () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const sec = port.getPortSecurity();
     sec.enable();
     sec.setAgingTimeMin(1); // 1 min window
@@ -156,7 +156,7 @@ describe('PortSecurity — aging', () => {
 
   it('inactivity aging spares an entry whose lastSeen is recent', () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const sec = port.getPortSecurity();
     sec.enable();
     sec.setAgingTimeMin(1);
@@ -171,7 +171,7 @@ describe('PortSecurity — aging', () => {
 
   it('static entries are exempt unless agingStatic is on', () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const sec = port.getPortSecurity();
     sec.enable();
     sec.setAgingTimeMin(1);
@@ -190,7 +190,7 @@ describe('PortSecurity — switch reactive integration', () => {
   it('Switch absorbs the violation into its snooping log', () => {
     const bus = new EventBus();
     const sw = setupSwitch(bus);
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().setMaxMACAddresses(1);
 
@@ -200,13 +200,13 @@ describe('PortSecurity — switch reactive integration', () => {
     const log = sw._getSnoopingLog().join('\n');
     expect(log).toMatch(/%PORT_SECURITY-2-PSECURE_VIOLATION/);
     expect(log).toMatch(MAC_B);
-    expect(sw._getPsecErrDisabledPorts().has('FastEthernet0/0')).toBe(true);
+    expect(sw._getPsecErrDisabledPorts().has('FastEthernet0/1')).toBe(true);
   });
 
   it('errdisable cleared manually brings the port back up', () => {
     const bus = new EventBus();
     const sw = setupSwitch(bus);
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().setMaxMACAddresses(1);
 
@@ -216,7 +216,7 @@ describe('PortSecurity — switch reactive integration', () => {
 
     const recovered: Array<{ portName: string }> = [];
     bus.subscribe('port.security.errdisable.cleared', (e) => recovered.push(e.payload));
-    expect(sw._clearPsecErrDisable('FastEthernet0/0')).toBe(true);
+    expect(sw._clearPsecErrDisable('FastEthernet0/1')).toBe(true);
     expect(recovered.length).toBe(1);
     expect(port.getIsUp()).toBe(true);
     expect(port.getPortSecurity().getViolationCount()).toBe(0);
@@ -225,7 +225,7 @@ describe('PortSecurity — switch reactive integration', () => {
   it('sticky-saved event fires for newly learned sticky MACs', () => {
     const bus = new EventBus();
     const sw = setupSwitch(bus);
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().enableSticky();
 
@@ -235,7 +235,7 @@ describe('PortSecurity — switch reactive integration', () => {
     deliver(port, MAC_A);
 
     expect(events.length).toBe(1);
-    expect(events[0].portName).toBe('FastEthernet0/0');
+    expect(events[0].portName).toBe('FastEthernet0/1');
   });
 });
 
@@ -246,7 +246,7 @@ describe('PortSecurity — Cisco CLI', () => {
     const sw = setupSwitch();
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport port-security');
     await sw.executeCommand('switchport port-security maximum 3');
     await sw.executeCommand('switchport port-security violation restrict');
@@ -257,7 +257,7 @@ describe('PortSecurity — Cisco CLI', () => {
     await sw.executeCommand('errdisable recovery cause psecure-violation' as never).catch(() => '');
     await sw.executeCommand('end');
 
-    const sec = sw.getPort('FastEthernet0/0')!.getPortSecurity();
+    const sec = sw.getPort('FastEthernet0/1')!.getPortSecurity();
     expect(sec.isEnabled()).toBe(true);
     expect(sec.getMaxMACAddresses()).toBe(3);
     expect(sec.getViolationMode()).toBe('restrict');
@@ -278,13 +278,13 @@ describe('PortSecurity — Cisco CLI', () => {
 
   it('show port-security interface reads live state', async () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().setMaxMACAddresses(2);
     port.getPortSecurity().setViolationMode('restrict');
     deliver(port, MAC_A);
 
-    const out = await sw.executeCommand('show port-security interface FastEthernet0/0');
+    const out = await sw.executeCommand('show port-security interface FastEthernet0/1');
     expect(out).toMatch(/Port Security\s+:\s+Enabled/);
     expect(out).toMatch(/Violation Mode\s+:\s+Restrict/);
     expect(out).toMatch(/Maximum MAC Addresses\s+:\s+2/);
@@ -293,7 +293,7 @@ describe('PortSecurity — Cisco CLI', () => {
 
   it('show port-security address lists all secured MACs', async () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.getPortSecurity().enable();
     port.getPortSecurity().enableSticky();
     deliver(port, MAC_A);
@@ -308,7 +308,7 @@ describe('PortSecurity — Cisco CLI', () => {
 
   it('clear port-security dynamic flushes dynamic entries but keeps sticky/static', async () => {
     const sw = setupSwitch();
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     const sec = port.getPortSecurity();
     sec.enable();
     sec.addStaticMAC(new MACAddress(MAC_A));
@@ -317,7 +317,7 @@ describe('PortSecurity — Cisco CLI', () => {
     deliver(port, MAC_C); // dynamic
 
     await sw.executeCommand('enable');
-    await sw.executeCommand('clear port-security dynamic interface FastEthernet0/0');
+    await sw.executeCommand('clear port-security dynamic interface FastEthernet0/1');
 
     const types = sec.getEntries().map(e => e.type).sort();
     expect(types).toEqual(['static', 'sticky']);
@@ -329,7 +329,7 @@ describe('PortSecurity — Cisco CLI', () => {
 describe('PortSecurity — end-to-end via cable', () => {
   it('shuts the port down when the second MAC arrives across a cable', () => {
     const sw = setupSwitch();
-    const portA = sw.getPort('FastEthernet0/0')!;
+    const portA = sw.getPort('FastEthernet0/1')!;
     const portB = new Port('peer', 'ethernet');
     portB.setUp(true);
     portA.getPortSecurity().enable();

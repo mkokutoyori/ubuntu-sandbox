@@ -18,27 +18,37 @@ import {
   withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
-import type { PingResult } from '@/network/devices/EndHost';
+import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
+import {
+  parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
+  newRateState, GET_COUNTER_HELP,
+} from '@/network/devices/windows/GetCounter';
+import {
+  parseWinPathpingArgs,
+  formatPathpingHeader,
+  formatPathpingDiscoveryHop,
+  formatPathpingComputing,
+  formatPathpingTableHeader,
+  formatPathpingTable,
+  formatPathpingTrailer,
+  pathpingDurationSeconds,
+  type PathpingStatsRow,
+} from '@/network/devices/windows/WinPathping';
+import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
+import type { IPAddress } from '@/network/core/types';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
-import {
-  RemoteDeviceSubShell,
-  LinuxPromptStrategy,
-  CiscoPromptStrategy, strategyForShellKind,
-  HuaweiPromptStrategy,
-  WindowsPromptStrategy,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
@@ -140,6 +150,17 @@ export class WindowsTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return;
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
+  }
+
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? super.getFlowUser();
+  }
+
   /**
    * Current shell mode — derived from the active sub-shell type.
    * Used by UI components (TerminalModal, TerminalView) for display.
@@ -161,6 +182,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) {
       return this.activeSubShell.getPrompt();
     }
@@ -181,6 +203,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -194,6 +217,10 @@ export class WindowsTerminalSession extends TerminalSession {
         : { type: 'interactive-text', promptText: p.promptText };
     }
     if (this.activeSubShell) {
+      // A foreground async stream owns the tty — hide the sub-shell prompt
+      // input so the host renders the opacity-0 capture input instead and
+      // Ctrl+C reaches the runtime's interrupt path.
+      if (this.hasForegroundAsyncJob) return { type: 'normal' };
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
     return this.inputMode;
@@ -214,6 +241,8 @@ export class WindowsTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -319,11 +348,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -360,7 +387,7 @@ export class WindowsTerminalSession extends TerminalSession {
           ttl: parsed.ttl,
           timeoutMs: 2000,
           intervalMs: 1000,
-          onResolved: (ip) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size)); },
+          onResolved: (ip, hostname) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size, hostname)); },
           onResult: (r) => { results.push(r); ctx.sink.line(formatWinPingReplyLine(r, parsed.size)); },
           shouldStop: () => ctx.cancelled(),
           sleep: (ms) => ctx.delay(ms),
@@ -375,6 +402,356 @@ export class WindowsTerminalSession extends TerminalSession {
         emitStats(ctx);
       },
       onInterrupt: (ctx) => emitStats(ctx),
+    });
+    return job !== null;
+  }
+
+  private tryStartWinTracertStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'tracert') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    if (toks.includes('/?') || toks.includes('/help')) return false;
+
+    let targetStr = '';
+    let maxHops = 30;
+    const rest = toks.slice(1);
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i].toLowerCase();
+      if (a === '-h' && rest[i + 1]) { maxHops = parseInt(rest[i + 1], 10) || 30; i++; }
+      else if ((a === '-w' || a === '-j' || a === '-s') && rest[i + 1]) { i++; }
+      else if (!a.startsWith('-') && !a.startsWith('/')) { targetStr = rest[i]; }
+    }
+    if (!targetStr) return false;
+
+    let hopCount = 0;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const outcome = await dev.tracerouteStreamInSession(targetStr, {
+          maxHops,
+          timeoutMs: 2000,
+          onResolved: (ip, hostname) => {
+            for (const line of formatWinTracertHeader(ip, maxHops, hostname)) ctx.sink.line(line);
+          },
+          onHop: (hop) => { hopCount++; for (const l of formatWinTracertHop(hop).split('\n')) ctx.sink.line(l); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved || hopCount === 0) {
+          ctx.sink.error(`Unable to resolve target system name ${targetStr}.`);
+          return;
+        }
+        ctx.sink.line('');
+        ctx.sink.line('Trace complete.');
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartWinNetstatStream(commandLine: string): boolean {
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'netstat') return false;
+    const last = toks[toks.length - 1];
+    if (toks.length < 2 || !/^[1-9]\d*$/.test(last)) return false;
+    const intervalMs = parseInt(last, 10) * 1000;
+    const rendered = ['netstat', ...toks.slice(1, -1)].join(' ');
+    const shell = this.shell;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs,
+      frame: () => dev.executeCommandInSession(rendered, shell),
+    });
+  }
+
+  private tryStartWinPathpingStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'pathping') return false;
+    const parsed = parseWinPathpingArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const discovered: TracerouteHopResult[] = [];
+        let resolvedTarget: IPAddress | null = null;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          timeoutMs: parsed.timeoutMs,
+          onResolved: (ip, hostname) => {
+            resolvedTarget = ip;
+            for (const line of formatPathpingHeader(ip, parsed.maxHops, hostname)) ctx.sink.line(line);
+          },
+          onHop: (hop) => { discovered.push(hop); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved || !resolvedTarget) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const sourceIp = dev.getEgressIPFor(resolvedTarget)?.toString();
+        const hopRows: PathpingStatsRow[] = [{
+          hop: 0,
+          ip: sourceIp ?? '0.0.0.0',
+          hostname: parsed.noResolve ? undefined : dev.getHostname(),
+          rttMs: undefined,
+          sourceLost: 0,
+          sourceSent: 0,
+          nodeLost: 0,
+          linkLost: 0,
+        }];
+        let hopNum = 0;
+        for (const hop of discovered) {
+          hopNum++;
+          if (!hop.ip) continue;
+          ctx.sink.line(formatPathpingDiscoveryHop(hopNum, hop.ip));
+          hopRows.push({
+            hop: hopNum,
+            ip: hop.ip,
+            hostname: undefined,
+            rttMs: undefined,
+            sourceLost: 0,
+            sourceSent: 0,
+            nodeLost: 0,
+            linkLost: 0,
+          });
+        }
+        if (hopRows.length <= 1) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const durationSec = pathpingDurationSeconds(parsed, hopRows.length - 1);
+        for (const line of formatPathpingComputing(durationSec)) ctx.sink.line(line);
+
+        for (let i = 1; i < hopRows.length; i++) {
+          if (ctx.cancelled()) return;
+          const row = hopRows[i];
+          const rtts: number[] = [];
+          const results: PingResult[] = [];
+          await dev.pingStreamInSession(row.ip, {
+            count: parsed.queriesPerHop,
+            timeoutMs: parsed.timeoutMs,
+            intervalMs: parsed.periodMs,
+            onResult: (r) => { results.push(r); if (r.success) rtts.push(r.rttMs); },
+            shouldStop: () => ctx.cancelled(),
+            sleep: (ms) => ctx.delay(ms),
+          });
+          row.sourceSent = results.length;
+          row.sourceLost = results.filter((r) => !r.success).length;
+          if (rtts.length > 0) row.rttMs = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+        }
+        if (ctx.cancelled()) return;
+
+        for (let i = 1; i < hopRows.length; i++) {
+          const prev = hopRows[i - 1];
+          const cur = hopRows[i];
+          const prevLossRate = prev.sourceSent > 0 ? prev.sourceLost / prev.sourceSent : 0;
+          const curLossRate = cur.sourceSent > 0 ? cur.sourceLost / cur.sourceSent : 0;
+          cur.linkLost = Math.round(Math.max(0, curLossRate - prevLossRate) * cur.sourceSent);
+        }
+
+        ctx.sink.line('');
+        for (const line of formatPathpingTableHeader()) ctx.sink.line(line);
+        for (const line of formatPathpingTable(hopRows, parsed.queriesPerHop)) ctx.sink.line(line);
+        ctx.sink.line('');
+        ctx.sink.line(formatPathpingTrailer());
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartTestConnectionContinuous(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'test-connection') return false;
+
+    let target = '';
+    let continuous = false;
+    let delaySec = 1;
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-continuous') continuous = true;
+      else if (al === '-count' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (v === 0) continuous = true;
+      } else if (al === '-delay' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v > 0) delaySec = v;
+      } else if ((al === '-computername' || al === '-targetname') && toks[i + 1]) {
+        target = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !target) {
+        target = stripQuotes(a);
+      }
+    }
+    if (!continuous || !target) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        ctx.sink.line('');
+        ctx.sink.line('Source        Destination     IPV4Address      Bytes    Time(ms)');
+        ctx.sink.line('------        -----------     -----------      -----    --------');
+        while (!ctx.cancelled()) {
+          const ip = dev.resolveHostnameSync(target);
+          if (!ip) {
+            ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ''.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+          } else {
+            const ipStr = ip.toString();
+            const ping = dev.sendPingProbeSync(ip);
+            if (ping.success) {
+              const egress = dev.getEgressFor(ip);
+              const src = egress?.sourceIp.toString() ?? 'localhost';
+              ctx.sink.line(src.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + String(Math.max(1, Math.round(ping.rttMs))).padStart(8));
+            } else {
+              ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+            }
+          }
+          await ctx.delay(Math.max(100, delaySec * 1000));
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartGetContentWait(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0) return false;
+    const head = toks[0].toLowerCase();
+    if (head !== 'get-content' && head !== 'gc' && head !== 'cat' && head !== 'type') return false;
+
+    let wait = false;
+    let tail: number | null = null;
+    let rawPath = '';
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-wait') wait = true;
+      else if (al === '-tail' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v >= 0) tail = v;
+      } else if ((al === '-path' || al === '-literalpath') && toks[i + 1]) {
+        rawPath = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !rawPath) {
+        rawPath = stripQuotes(a);
+      }
+    }
+    if (!wait || !rawPath) return false;
+
+    const fs = dev.getFileSystem();
+    const shell = this.shell;
+    const absPath = fs.normalizePath(rawPath, shell.cwd);
+    let lastLength = 0;
+    let primed = false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const r = fs.readFile(absPath);
+          if (r.ok && typeof r.content === 'string') {
+            const full = r.content;
+            if (!primed) {
+              primed = true;
+              const initial = tail !== null && tail >= 0
+                ? sliceTail(full, tail)
+                : full;
+              for (const ln of splitLines(initial)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length > lastLength) {
+              const fresh = full.slice(lastLength);
+              for (const ln of splitLines(fresh)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length < lastLength) {
+              lastLength = 0;
+              primed = false;
+            }
+          }
+          await ctx.delay(1000);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartGetCounter(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'get-counter') return false;
+
+    const parsed = parseGetCounterArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(GET_COUNTER_HELP); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+
+    if (parsed.listSet) {
+      this.addLine(formatCounterSet(parsed.listSet));
+      this.notify();
+      return true;
+    }
+
+    const totalSamples = parsed.continuous ? -1 : Math.max(1, parsed.maxSamples);
+    const intervalMs = Math.max(100, parsed.sampleInterval * 1000);
+
+    if (totalSamples === 1) {
+      const snap = sampleCounterSet(parsed.counters, dev, newRateState());
+      for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) this.addLine(l);
+      this.notify();
+      return true;
+    }
+
+    const rate = newRateState();
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        let count = 0;
+        while (!ctx.cancelled() && (totalSamples < 0 || count < totalSamples)) {
+          const snap = sampleCounterSet(parsed.counters, dev, rate);
+          for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) ctx.sink.line(l);
+          ctx.sink.line('');
+          count++;
+          if (totalSamples >= 0 && count >= totalSamples) break;
+          await ctx.delay(intervalMs);
+        }
+      },
     });
     return job !== null;
   }
@@ -408,8 +785,8 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (!trimmed) return;
 
-    // Handle exit at root level → close terminal
     if (trimmed.toLowerCase() === 'exit') {
+      if (this.endRemoteSession()) return;
       this._onRequestClose?.();
       return;
     }
@@ -423,15 +800,16 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // cls
     if (lower === 'cls') {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return;
     }
 
     if (this.tryStartWinPingStream(trimmed)) return;
+    if (this.tryStartWinTracertStream(trimmed)) return;
+    if (this.tryStartWinNetstatStream(trimmed)) return;
+    if (this.tryStartWinPathpingStream(trimmed)) return;
 
     // SSH client info / unsupported forms — handled by the shared
     // launcher first so the OpenSSH usage / version line is uniform
@@ -469,7 +847,7 @@ export class WindowsTerminalSession extends TerminalSession {
     try {
       const result = await this.executeOnDevice(trimmed);
       if (result !== undefined && result !== null && result !== '') {
-        this.addMultiLine(result);
+        this.emitWindowsOutput(result);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
@@ -731,54 +1109,18 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    remote.recordSshLogin?.(
-      pending.user, pending.sourceIp, pending.sourceHostname, true,
-    );
-    if (!pending.quiet) {
-      const banner = remote.sshBanner?.() ?? '';
-      for (const line of banner.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-      const remoteMotd = (pending.device as unknown as { getSshMotd?: () => string });
-      const motd = remoteMotd.getSshMotd?.() ?? '';
-      for (const line of motd.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-    }
     this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
-    installDefaultShells();
-    const primaryKind = this.pickPrimaryShellKind(pending.device);
-    let activeShell: ISubShell;
-    if (ShellFactory.has(primaryKind)) {
-      // Compute the OpenSSH env strings so a remote `echo $SSH_CONNECTION`
-      // returns "<client_ip> <client_port> <server_ip> <server_port>"
-      // just like a real ssh login.
+    const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
+    if (child) {
       const clientIp = this.firstLocalIp() ?? '0.0.0.0';
       const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
       const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
-      const xshell = new CrossVendorRemoteShell({
-        device: pending.device,
-        user: pending.user,
-        remoteHost: pending.host,
-        primaryKind,
-        sshConnection: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
-        sshClient: `${clientIp} ${clientPort} ${pending.port}`,
-      });
-      activeShell = new ShellSubShellAdapter(xshell);
-    } else {
-      // Vendor without a new-layer Shell yet — fall back to the legacy
-      // RemoteDeviceSubShell with the vendor prompt strategy.
-      const strategy = this.pickRemoteStrategy(pending.device);
-      activeShell = new RemoteDeviceSubShell(
-        pending.device, pending.user, pending.host, strategy,
-      );
+      this.adoptRemoteChild(child, pending.user, pending.host, {
+        SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+        SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
+      }, { quiet: pending.quiet });
     }
-
-    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
-    this.activeSubShell = activeShell;
-    this.subShellHistory = [];
-    this.subShellHistoryIndex = -1;
     this.pendingSshPush = null;
     this.sshPasswordAttempts = 0;
     this.inputMode = { type: 'normal' };
@@ -893,7 +1235,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
 
     for (const line of shell.getActivationBanner()) {
-      this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
+      this.addLine(line, 'ps-header');
     }
     shell.activate();
     this._onShellModeChange?.('powershell');
@@ -936,11 +1278,11 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
     const result = await this.activeSubShell.handleInput(value);
-    if (result.clearScreen) { this.lines = []; this.bannerCleared = true; }
+    if (result.clearScreen) { this.clear(); this.bannerCleared = true; }
     if (result.styledOutput && result.styledOutput.length > 0) {
       for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
-    } else {
-      for (const line of result.output) this.addLine(line);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
     }
     if (result.exit) { this.exitSubShell(); return; }
     if (result.childShell) { this.pushChildShell(result.childShell); return; }
@@ -1010,11 +1352,24 @@ export class WindowsTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
+      if (this.tryStartTestConnectionContinuous(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartGetContentWait(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartGetCounter(line)) {
+        this.notify();
+        return true;
+      }
+
       const maybePromise = this.activeSubShell.processLine(line);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {
-          this.lines = [];
+          this.clear();
           this.bannerCleared = true;
         }
 
@@ -1025,8 +1380,8 @@ export class WindowsTerminalSession extends TerminalSession {
           for (const styled of result.styledOutput) {
             this.addStyledLine(styled.segments, styled.lineType);
           }
-        } else {
-          for (const outputLine of result.output) this.addLine(outputLine);
+        } else if (result.output.length > 0) {
+          this.emitWindowsOutput(result.output.join('\n'));
         }
 
         if (result.exit) {
@@ -1114,8 +1469,10 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+C → cancel current input
+    // Ctrl+C → interrupt a running foreground async job first; otherwise
+    // cancel the current input buffer (PowerShell prompt semantics).
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.asyncRuntime.interruptForeground()) return true;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
@@ -1123,11 +1480,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L → clear screen
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -1222,11 +1577,37 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Helpers ─────────────────────────────────────────────────────
 
-  private addMultiLine(text: string, type: string = 'normal'): void {
-    const lines = text.split('\n');
-    for (const line of lines) {
-      this.lines.push({ id: nextLineId(), text: line, type });
-    }
-    this.notify();
+  private isLocalWinShellOutput(): boolean {
+    const sub = this.activeSubShell;
+    if (!sub) return true;
+    return sub instanceof ShellSubShellAdapter
+      && (sub.inner.kind === 'powershell' || sub.inner.kind === 'cmd');
   }
+
+  private emitWindowsOutput(text: string): void {
+    const rows = this.isLocalWinShellOutput()
+      ? classifyWindowsLines(text)
+      : text.split('\n').map(t => ({ text: t, type: 'output' as const }));
+    for (const r of rows) this.addLine(r.text, r.type);
+  }
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function splitLines(content: string): string[] {
+  if (content.length === 0) return [];
+  const out = content.split(/\r?\n/);
+  if (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out;
+}
+
+function sliceTail(content: string, tail: number): string {
+  const lines = splitLines(content);
+  if (lines.length <= tail) return content;
+  return lines.slice(lines.length - tail).join('\n') + (content.endsWith('\n') ? '\n' : '');
 }

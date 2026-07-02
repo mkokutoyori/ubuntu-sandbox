@@ -33,8 +33,10 @@ import {
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshdServerConfig } from './SshdServerConfig';
 import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
+import { Fail2banAgent } from '../security/Fail2banAgent';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -126,8 +128,11 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly sshdConfig: SshdConfig;
   readonly events: ISshServerEventBus;
   private readonly throttler: SshAuthThrottler | null;
+  readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
   private readonly utmpProjection: LinuxUtmpProjection | null;
+  readonly rawConfig: string;
+  private cachedEffective: SshdServerConfig | null = null;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -176,12 +181,29 @@ export class LinuxSshServerContext implements ISshServerContext {
         })
       : null;
 
+    // Fail2ban jail (sshd) — adds/removes the iptables REJECT rule and
+    // writes /var/log/fail2ban.log in response to `auth_throttled` events.
+    this.fail2ban = this.executor
+      ? new Fail2banAgent(
+          this.events,
+          { execute: (args) => ({ exitCode: this.executor!.iptables.execute(args).exitCode }) },
+          {
+            appendLog: (line) => {
+              const prev = this.vfs.readFile('/var/log/fail2ban.log') ?? '';
+              this.vfs.writeFile('/var/log/fail2ban.log', prev + line + '\n', 0, 0, 0o022);
+            },
+          },
+        )
+      : null;
+
     // utmp / btmp are owned by recordLogin / recordAuthFailure on
     // this same context — the projection exists for tests that drive
     // SshServerEventBus directly without instantiating a full
     // LinuxSshServerContext, so we deliberately do NOT subscribe a
     // second writer here (it would double every row).
     this.utmpProjection = null;
+
+    this.rawConfig = this.vfs.readFile('/etc/ssh/sshd_config') ?? '';
   }
 
   /** Tell SshServerHandler whether the source IP is currently rate-limited. */
@@ -213,6 +235,18 @@ export class LinuxSshServerContext implements ISshServerContext {
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
     return new LinuxSshServerContext(this.vfs, this.userManager, this.hostname);
+  }
+
+  /**
+   * Modern (Match-block aware) view of sshd_config, captured at the
+   * moment this context was constructed. Callers SHOULD use this rather
+   * than re-parsing /etc/ssh/sshd_config every login, so changes to the
+   * on-disk file are only honoured after `systemctl reload ssh` (the
+   * real sshd behaviour). The text snapshot lives in {@link rawConfig}.
+   */
+  effectiveSshdServerConfig(): SshdServerConfig {
+    if (!this.cachedEffective) this.cachedEffective = SshdServerConfig.parse(this.rawConfig);
+    return this.cachedEffective;
   }
 
   /** Banner text shown before authentication (SSH-07-R8). */

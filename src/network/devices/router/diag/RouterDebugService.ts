@@ -35,7 +35,9 @@ export type DebugCategory =
   | 'radius'
   | 'tacacs'
   | 'ntp.events'
-  | 'ntp.packets';
+  | 'ntp.packets'
+  | 'lldp.packets'
+  | 'cdp.packets';
 
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -115,6 +117,55 @@ export class RouterDebugService implements TerminalDebugSource {
       const p = e.payload;
       this.emit('ip.ospf.packet', `OSPF: snd packet to ${p.destIp} on ${p.iface}`);
     }));
+
+    const decodeIp = (frame: unknown): { src: string; dst: string; proto: number; icmpType?: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; protocol?: number; sourceIP?: { toString(): string }; destinationIP?: { toString(): string }; payload?: { type?: string; icmpType?: string } } };
+      if (f?.etherType !== 0x0800 || f.payload?.type !== 'ipv4') return null;
+      const ip = f.payload;
+      return {
+        src: ip.sourceIP?.toString?.() ?? '?',
+        dst: ip.destinationIP?.toString?.() ?? '?',
+        proto: ip.protocol ?? 0,
+        icmpType: ip.payload?.type === 'icmp' ? ip.payload.icmpType : undefined,
+      };
+    };
+    const decodeArp = (frame: unknown): { op: 'request' | 'reply'; senderIp: string; senderMac: string; targetIp: string; targetMac: string } | null => {
+      const f = frame as { etherType?: number; payload?: { type?: string; operation?: 'request' | 'reply'; senderIP?: { toString(): string }; senderMAC?: { toString(): string }; targetIP?: { toString(): string }; targetMAC?: { toString(): string } } };
+      if (f?.etherType !== 0x0806 || f.payload?.type !== 'arp') return null;
+      const a = f.payload;
+      return {
+        op: a.operation === 'reply' ? 'reply' : 'request',
+        senderIp: a.senderIP?.toString?.() ?? '?',
+        senderMac: a.senderMAC?.toString?.() ?? '?',
+        targetIp: a.targetIP?.toString?.() ?? '?',
+        targetMac: a.targetMAC?.toString?.() ?? '?',
+      };
+    };
+    const onFrame = (frame: unknown, dir: 'rcvd' | 'sent', iface: string) => {
+      const arp = decodeArp(frame);
+      if (arp) {
+        const op = arp.op === 'reply' ? 'rep' : 'req';
+        this.emit('ip.arp', `IP ARP: ${dir} ${op} src ${arp.senderIp} ${arp.senderMac}, dst ${arp.targetIp} ${arp.targetMac} ${iface}`);
+        return;
+      }
+      const ip = decodeIp(frame);
+      if (!ip) return;
+      this.emit('ip.packet', `IP: s=${ip.src}, d=${ip.dst}, len, ${dir} (proto ${ip.proto})`);
+      if (ip.proto === 1) {
+        const kind = ip.icmpType === 'echo-reply' ? 'echo reply' : ip.icmpType === 'echo-request' ? 'echo request' : (ip.icmpType ?? 'message');
+        this.emit('ip.icmp', `ICMP: ${kind} ${dir}, src ${ip.src}, dst ${ip.dst}`);
+      }
+    };
+    this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as { frame: unknown; portName?: string };
+      onFrame(p.frame, 'rcvd', p.portName ?? '?');
+    }));
+    this.broadcast.track(bus.subscribe('port.frame.tx-requested', (e) => {
+      if (!mine(e.payload)) return;
+      const p = e.payload as { frame: unknown; portName?: string };
+      onFrame(p.frame, 'sent', p.portName ?? '?');
+    }));
   }
 
   detachFromBus(): void {
@@ -160,6 +211,8 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'tacacs': return 'TACACS+';
       case 'ntp.events': return 'NTP events';
       case 'ntp.packets': return 'NTP packets';
+      case 'lldp.packets': return 'LLDP packets';
+      case 'cdp.packets': return 'CDP packets';
     }
   }
 

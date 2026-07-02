@@ -230,7 +230,12 @@ export class SQLPlusSession {
     try {
       let result;
       if (asSysdba) {
-        result = this.db.connectAsSysdba(this.osCtx);
+        // Remote (Oracle Net) SYSDBA authenticates against the password
+        // file with the supplied credentials; a local bequeath
+        // connection uses the OS dba group instead.
+        result = this.db.connectAsSysdba(this.osCtx, {
+          username: username || 'SYS', password, transport: this.transport,
+        });
         this.asSysdba = true;
       } else {
         result = this.db.connect(username, password, this.osCtx, this.transport);
@@ -1215,7 +1220,11 @@ export class SQLPlusSession {
 
     const connStr = args.replace(/\s+AS\s+SYSDBA/i, '').trim();
     if (connStr === '/' || connStr === '') {
-      // OS authentication or SYSDBA
+      // A bare `/` is always a LOCAL bequeath connection; reset any 'tcp'
+      // transport left over from a prior `user/pass@identifier` CONNECT so
+      // SYSDBA authenticates against the OS dba group, not the password
+      // file.
+      this.transport = 'beq';
       if (sysdba) {
         const loginOutput = this.login('SYS', '', true);
         return { output: loginOutput, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
@@ -1265,6 +1274,9 @@ export class SQLPlusSession {
         }
         this.transport = 'tcp';
       }
+    } else {
+      // No connect identifier → local bequeath; clear any stale 'tcp'.
+      this.transport = 'beq';
     }
 
     const loginOutput = this.login(username, password, sysdba);

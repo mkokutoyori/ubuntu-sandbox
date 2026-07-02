@@ -783,7 +783,7 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return { type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete };
+      return this.applyDeferrable({ type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete });
     }
 
     // If we consumed CONSTRAINT name but no recognized constraint follows, backtrack
@@ -804,13 +804,13 @@ export abstract class BaseParser {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns };
+      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns });
     }
     if (this.matchKeyword('UNIQUE')) {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns };
+      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns });
     }
     if (this.matchKeyword('FOREIGN')) {
       this.expectKeyword('KEY');
@@ -832,16 +832,41 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete };
+      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete });
     }
     if (this.matchKeyword('CHECK')) {
       this.expect(TokenType.LPAREN);
       const checkExpr = this.parseExpression();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr };
+      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr });
     }
 
     throw this.error('Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)');
+  }
+
+  protected parseDeferrableClause(): { deferrable?: boolean; initiallyDeferred?: boolean } {
+    let deferrable: boolean | undefined;
+    let initiallyDeferred: boolean | undefined;
+    if (this.checkKeyword('DEFERRABLE')) {
+      this.advance();
+      deferrable = true;
+    } else if (this.checkKeyword('NOT') && this.peekNext()?.value?.toUpperCase() === 'DEFERRABLE') {
+      this.advance(); this.advance();
+      deferrable = false;
+    }
+    if (this.checkKeyword('INITIALLY')) {
+      this.advance();
+      if (this.matchKeyword('DEFERRED')) initiallyDeferred = true;
+      else { this.matchKeyword('IMMEDIATE'); initiallyDeferred = false; }
+    }
+    return { deferrable, initiallyDeferred };
+  }
+
+  protected applyDeferrable<T extends { deferrable?: boolean; initiallyDeferred?: boolean }>(c: T): T {
+    const d = this.parseDeferrableClause();
+    if (d.deferrable !== undefined) c.deferrable = d.deferrable;
+    if (d.initiallyDeferred !== undefined) c.initiallyDeferred = d.initiallyDeferred;
+    return c;
   }
 
   protected parseCreateView(pos: import('../lexer/Token').SourcePosition, orReplace: boolean): import('./ASTNode').CreateViewStatement {
@@ -1544,18 +1569,41 @@ export abstract class BaseParser {
     return { action: 'ADD_SUPPLEMENTAL_LOG_GROUP', logGroupName, columns, always };
   }
 
-  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement {
+  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement | import('./ASTNode').SetConstraintsStatement {
     const pos = this.current().position;
     this.expectKeyword('SET');
     // SET TRANSACTION [READ ONLY|READ WRITE] [ISOLATION LEVEL …] [NAME 'x']
     // SET ROLE r [, r2…] | SET ROLE NONE | SET ROLE ALL [EXCEPT …]
     // SET CONSTRAINT[S] {ALL | name [,…]} {DEFERRED | IMMEDIATE}
-    if (this.matchKeyword('TRANSACTION')
-        || this.matchKeyword('ROLE')
-        || this.matchKeyword('CONSTRAINTS')
-        || this.matchKeyword('CONSTRAINT')) {
-      // The simulator doesn't track transaction isolation / role state
-      // changes — accept and no-op.
+    if (this.matchKeyword('TRANSACTION')) {
+      let readOnly: boolean | undefined;
+      let isolationLevel: 'READ_COMMITTED' | 'SERIALIZABLE' | undefined;
+      if (this.matchKeyword('READ')) {
+        if (this.matchKeyword('ONLY')) readOnly = true;
+        else { this.matchKeyword('WRITE'); readOnly = false; }
+      } else if (this.matchKeyword('ISOLATION')) {
+        this.matchKeyword('LEVEL');
+        if (this.matchKeyword('SERIALIZABLE')) isolationLevel = 'SERIALIZABLE';
+        else { this.matchKeyword('READ'); this.matchKeyword('COMMITTED'); isolationLevel = 'READ_COMMITTED'; }
+      }
+      this.consumeRestOfStatement();
+      return { type: 'SetTransactionStatement', position: pos, readOnly, isolationLevel };
+    }
+    if (this.matchKeyword('CONSTRAINTS') || this.matchKeyword('CONSTRAINT')) {
+      let all = false;
+      const names: string[] = [];
+      if (this.matchKeyword('ALL')) {
+        all = true;
+      } else {
+        do { names.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
+      }
+      let mode: 'DEFERRED' | 'IMMEDIATE' = 'IMMEDIATE';
+      if (this.matchKeyword('DEFERRED')) mode = 'DEFERRED';
+      else this.matchKeyword('IMMEDIATE');
+      this.consumeRestOfStatement();
+      return { type: 'SetConstraintsStatement', position: pos, all, names: all ? undefined : names, mode };
+    }
+    if (this.matchKeyword('ROLE')) {
       this.consumeRestOfStatement();
       return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
     }

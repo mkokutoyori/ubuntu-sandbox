@@ -4,6 +4,7 @@ import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
+import { NATEngine } from './router/NATEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
@@ -23,6 +24,8 @@ export class HuaweiSwitch extends Switch {
   private readonly lacpAgent: LacpAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
   private readonly dot1xAgent: Dot1xAgent;
+  private readonly natEngine = new NATEngine();
+  _getNATEngine(): NATEngine { return this.natEngine; }
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);

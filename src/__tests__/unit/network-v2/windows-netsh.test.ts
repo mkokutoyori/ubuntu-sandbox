@@ -33,7 +33,7 @@ describe('Group 1: netsh interface ip set address', () => {
       const result = await pc.executeCommand(
         'netsh interface ip set address "Ethernet 0" static 192.168.1.10 255.255.255.0'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       expect(ipconfig).toContain('192.168.1.10');
@@ -64,7 +64,7 @@ describe('Group 1: netsh interface ip set address', () => {
       const result = await pc.executeCommand(
         'netsh interface ip set address "Ethernet 0" dhcp'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig /all');
       expect(ipconfig).toContain('DHCP Enabled');
@@ -229,7 +229,7 @@ describe('Group 4: netsh interface ip delete address', () => {
       const result = await pc.executeCommand(
         'netsh interface ip delete address "Ethernet 0" addr=192.168.1.10'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       // After removing IP, the interface should show no IP
@@ -437,7 +437,7 @@ describe('Group 7: netsh interface set interface — Rename', () => {
       const pc = new WindowsPC('windows-pc', 'PC1');
       await pc.executeCommand('netsh interface set interface "Ethernet 0" newname="WAN"');
       const result = await pc.executeCommand('netsh interface ip set address "WAN" static 172.16.0.1 255.255.0.0');
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       expect(ipconfig).toContain('172.16.0.1');
@@ -468,7 +468,7 @@ describe('Group 8: netsh name= prefix syntax', () => {
       const result = await pc.executeCommand(
         'netsh interface ipv4 set address name="Ethernet 0" static 192.168.2.10 255.255.255.0 192.168.2.1'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       expect(ipconfig).toContain('192.168.2.10');
@@ -482,7 +482,7 @@ describe('Group 8: netsh name= prefix syntax', () => {
       const result = await pc.executeCommand(
         'netsh interface ip set address name="Ethernet 0" static 10.0.0.50 255.255.255.0'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
 
       const ipconfig = await pc.executeCommand('ipconfig');
       expect(ipconfig).toContain('10.0.0.50');
@@ -496,7 +496,7 @@ describe('Group 8: netsh name= prefix syntax', () => {
       const result = await pc.executeCommand(
         'netsh interface ip set address name="Ethernet 0" dhcp'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
     });
   });
 
@@ -530,7 +530,7 @@ describe('Group 8: netsh name= prefix syntax', () => {
       const result = await pc.executeCommand(
         'netsh interface ipv4 set address "Ethernet 0" static 172.16.0.1 255.255.0.0'
       );
-      expect(result).toContain('Ok');
+      expect(result.trim()).toBe('');
       const ipconfig = await pc.executeCommand('ipconfig');
       expect(ipconfig).toContain('172.16.0.1');
     });

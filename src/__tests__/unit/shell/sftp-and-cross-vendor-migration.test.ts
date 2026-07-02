@@ -8,17 +8,15 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
-import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
-import {
-  CiscoPromptStrategy,
-  HuaweiPromptStrategy,
-  WindowsPromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
+import { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
+import { HuaweiTerminalSession } from '@/terminal/sessions/HuaweiTerminalSession';
+import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
+import { createSessionForDevice } from '@/terminal/sessions/sessionFactory';
 
-describe('Phase 1B Linux pushRemoteDeviceWithStrategy uses CrossVendorRemoteShell', () => {
+describe('Linux ssh push lands on the remote real session for every vendor', () => {
   beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 
-  test('Cisco target push wraps the new CrossVendorRemoteShell via adapter', async () => {
+  test('Cisco target push lands on a real CiscoTerminalSession', async () => {
     const linuxA = new LinuxPC('linux-pc', 'linuxA', 0, 0);
     const ciscoR = new CiscoRouter('ciscoR', 0, 0);
     const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
@@ -29,35 +27,39 @@ describe('Phase 1B Linux pushRemoteDeviceWithStrategy uses CrossVendorRemoteShel
 
     const term = new LinuxTerminalSession('t', linuxA);
     await term.init();
-    term.pushRemoteDeviceWithStrategy(ciscoR, 'admin', '10.0.0.5', CiscoPromptStrategy);
+    const child = createSessionForDevice(ciscoR, 'c')!;
+    term.adoptRemoteChild(child, 'admin', '10.0.0.5');
 
-    const active = (term as unknown as { activeSubShell: unknown }).activeSubShell;
-    expect(active).toBeInstanceOf(ShellSubShellAdapter);
-    expect((active as ShellSubShellAdapter).inner.kind).toBe('ssh-remote');
-    expect(term.getPrompt()).toMatch(/ciscoR[#>]/);
+    expect(term.foreground).toBeInstanceOf(CiscoTerminalSession);
+    expect(term.foreground.isRemoteChild).toBe(true);
+    expect(term.foreground.getPrompt()).toMatch(/ciscoR[#>]/);
   });
 
-  test('Huawei target push lands on `<HW1>` prompt via the new layer', async () => {
+  test('Huawei target push lands on a real HuaweiTerminalSession', async () => {
     const linuxA = new LinuxPC('linux-pc', 'linuxA', 0, 0);
     const hwR = new HuaweiRouter('HW1', 0, 0);
 
     const term = new LinuxTerminalSession('t', linuxA);
     await term.init();
-    term.pushRemoteDeviceWithStrategy(hwR, 'admin', '10.0.0.6', HuaweiPromptStrategy);
+    const child = createSessionForDevice(hwR, 'c')!;
+    term.adoptRemoteChild(child, 'admin', '10.0.0.6');
 
-    const active = (term as unknown as { activeSubShell: unknown }).activeSubShell;
-    expect(active).toBeInstanceOf(ShellSubShellAdapter);
-    expect(term.getPrompt()).toMatch(/<HW1>/);
+    expect(term.foreground).toBeInstanceOf(HuaweiTerminalSession);
+    expect(term.foreground.isRemoteChild).toBe(true);
+    expect(term.foreground.getPrompt()).toMatch(/<HW1>/);
   });
 
-  test('Windows target push lands on the cmd prompt via the new layer', async () => {
+  test('Windows target push lands on a real WindowsTerminalSession with the right user prompt', async () => {
     const linuxA = new LinuxPC('linux-pc', 'linuxA', 0, 0);
     const winB = new WindowsPC('windows-pc', 'winB', 0, 0);
 
     const term = new LinuxTerminalSession('t', linuxA);
     await term.init();
-    term.pushRemoteDeviceWithStrategy(winB, 'User', '10.0.0.4', WindowsPromptStrategy);
+    const child = createSessionForDevice(winB, 'c')!;
+    term.adoptRemoteChild(child, 'User', '10.0.0.4');
 
-    expect(term.getPrompt()).toMatch(/C:\\Users\\User>/);
+    expect(term.foreground).toBeInstanceOf(WindowsTerminalSession);
+    expect(term.foreground.isRemoteChild).toBe(true);
+    expect(term.foreground.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 });

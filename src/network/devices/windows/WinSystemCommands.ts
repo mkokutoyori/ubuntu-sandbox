@@ -25,6 +25,11 @@ export interface WinScheduledTask {
   taskName: string;
   taskPath: string;
   state: string;
+  command?: string;
+  runAt?: Date;
+  intervalMs?: number;
+  lastRunTime?: Date;
+  lastResult?: string;
 }
 
 export interface WinSystemContext {
@@ -53,6 +58,7 @@ export interface WinSystemContext {
   readonly currentUser: string;
   isServiceRunning(name: string): boolean;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
+  now(): Date;
 }
 
 // ─── systeminfo ──────────────────────────────────────────────────────
@@ -227,7 +233,8 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   }
   const action = args[0]?.toLowerCase();
   const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
-  const tn = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();
+  const flagVal = (name: string) => { const i = flagIdx(name); return i >= 0 ? args[i + 1] : undefined; };
+  const tn = flagVal('/tn');
 
   if (action === '/query') {
     const filtered = tn
@@ -239,13 +246,28 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
       '======================================== ====================== ===============',
     ];
     for (const t of filtered) {
-      lines.push(`${t.taskName.padEnd(40)} N/A                    ${t.state}`);
+      const next = t.runAt ? fmtSchtasksDate(t.runAt) : 'N/A';
+      lines.push(`${t.taskName.padEnd(40)} ${next.padEnd(22)} ${t.state}`);
     }
     return lines.join('\n');
   }
   if (action === '/create') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
-    ctx.scheduledTasks.set(tn.toLowerCase(), { taskName: tn, taskPath: '\\', state: 'Ready' });
+    const sc = flagVal('/sc')?.toUpperCase();
+    const st = flagVal('/st');
+    const mo = Number(flagVal('/mo')) || 1;
+    const base = ctx.now();
+    const task: WinScheduledTask = {
+      taskName: tn, taskPath: '\\', state: 'Ready', command: flagVal('/tr'),
+    };
+    const recurUnit = sc === 'MINUTE' ? 60_000 : sc === 'HOURLY' ? 3_600_000 : sc === 'DAILY' ? 86_400_000 : 0;
+    if (recurUnit > 0) {
+      task.intervalMs = mo * recurUnit;
+      task.runAt = st ? parseSchtasksTime(st, base) : new Date(base.getTime() + task.intervalMs);
+    } else if (st && (!sc || sc === 'ONCE')) {
+      task.runAt = parseSchtasksTime(st, base);
+    }
+    ctx.scheduledTasks.set(tn.toLowerCase(), task);
     return `SUCCESS: The scheduled task "${tn}" has successfully been created.`;
   }
   if (action === '/delete') {
@@ -255,10 +277,49 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
       ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
       : `ERROR: The system cannot find the file specified.`;
   }
-  if (action === '/run' || action === '/end' || action === '/change') {
+  if (action === '/run') {
+    if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+    const task = ctx.scheduledTasks.get(tn.toLowerCase());
+    if (!task) return 'ERROR: The system cannot find the file specified.';
+    runScheduledProgram(task, ctx.processManager, ctx.now());
+    return `SUCCESS: Attempted to run the scheduled task "${tn}".`;
+  }
+  if (action === '/end' || action === '/change') {
     return 'SUCCESS: The scheduled task was created/modified successfully.';
   }
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
+}
+
+export function runScheduledProgram(
+  task: WinScheduledTask,
+  pm: WinSystemProcessManager,
+  now: Date,
+): void {
+  task.lastRunTime = now;
+  task.lastResult = '0x0';
+  task.state = 'Ready';
+  if (!task.command) return;
+  const target = task.command.replace(/^["']|["']$/g, '');
+  const leaf = target.split(/[\\/]/).pop() ?? target;
+  const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
+  const parent = pm.getAllProcesses().find(p => p.name.toLowerCase() === 'svchost.exe');
+  pm.spawnProcess(imageName, parent?.pid ?? 1, 'NT AUTHORITY\\SYSTEM', {
+    session: 'Services', sessionId: 0,
+  });
+}
+
+function parseSchtasksTime(st: string, base: Date): Date {
+  const m = st.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return new Date(base);
+  const d = new Date(base);
+  d.setHours(Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0, 0);
+  if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function fmtSchtasksDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 // ─── nbtstat / wmic ──────────────────────────────────────────────────

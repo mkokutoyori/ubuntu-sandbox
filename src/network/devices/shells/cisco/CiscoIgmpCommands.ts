@@ -2,6 +2,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
+import { hms } from '@/lib/format';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -16,14 +17,6 @@ function agent(router: Router): IgmpAgent | undefined {
   return (router as unknown as { getIgmpAgent?: () => IgmpAgent }).getIgmpAgent?.();
 }
 
-function hms(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
 function expiresIn(rt: IgmpInterfaceRuntime | undefined, g: IgmpGroupRecord): string {
   if (!rt) return '00:00:00';
   const intervalMs = (rt.robustness * rt.queryIntervalSec + Math.ceil(rt.queryResponseIntervalDs / 10)) * 1000;
@@ -36,6 +29,7 @@ export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void 
     const a = agent(ctx.r());
     if (!a) return '';
     const v = parseInt(args[0], 10);
+    if (v === 3) return '% IGMPv3 is not supported in this simulator (RFC 3376 INCLUDE/EXCLUDE source filtering — out of scope, v1/v2 only)';
     if (v !== 1 && v !== 2) return '% Invalid IGMP version';
     for (const port of ctx.selectedPorts()) a.enableInterface(port, v);
     return '';
@@ -139,6 +133,10 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
       lines.push('');
     }
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length > 0) {
+      lines.push('');
+      lines.push('Note: IGMPv3 (RFC 3376 source filtering) is not supported in this simulator.');
+    }
     return lines.join('\n');
   });
 }

@@ -18,6 +18,14 @@ import type { SshPortForward } from './SshPortForward';
 export class SshForwardingTable {
   /** Forwards currently live on this machine, in insertion order. */
   private readonly active: SshPortForward[] = [];
+  /**
+   * For each listen port, the IP of the SSH server that terminates the
+   * tunnel. Lets non-SSH clients (e.g. `nc`) that hit the local listener
+   * be re-sourced from that server's vantage point — modelling the fact
+   * that the tunnel's outbound connection to `(destHost, destPort)` is
+   * actually opened by the sshd process, NOT by the local kernel.
+   */
+  private readonly origins = new Map<number, string>();
 
   constructor(private readonly sockets: SocketTable) {}
 
@@ -59,6 +67,7 @@ export class SshForwardingTable {
     // Only release the socket once the last forward on that port is gone.
     if (!this.active.some((f) => f.listenPort === listenPort)) {
       this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
+      this.origins.delete(listenPort);
     }
     return true;
   }
@@ -79,5 +88,20 @@ export class SshForwardingTable {
       this.sockets.unbind('tcp', fwd.bindAddress, fwd.listenPort);
     }
     this.active.length = 0;
+    this.origins.clear();
+  }
+
+  /**
+   * Tag an active client-side forward with the IP of the SSH server that
+   * carries it. The forward must already be {@link open}ed.
+   */
+  setOrigin(listenPort: number, sshHostIp: string): void {
+    if (!this.has(listenPort)) return;
+    this.origins.set(listenPort, sshHostIp);
+  }
+
+  /** The IP of the SSH server tunnelling traffic for `listenPort`, if any. */
+  getOrigin(listenPort: number): string | null {
+    return this.origins.get(listenPort) ?? null;
   }
 }

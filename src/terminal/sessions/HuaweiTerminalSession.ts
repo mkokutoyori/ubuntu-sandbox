@@ -13,6 +13,9 @@ import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import type { AsyncJobHandle } from '@/terminal/async';
+import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -46,6 +49,14 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
+
+  protected override prepareAsRemoteUser(_user: string): void {
+    if (this.vty) {
+      this.vty.state.privilegeLevel = 15;
+    }
+    this.isBooting = false;
+    this.updatePrompt();
+  }
 
   protected override async executeOnDevice(
     command: string,
@@ -84,6 +95,14 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'return'; }
   protected getPagerIndicator(): string { return '  ---- More ----'; }
+
+  protected isTopLevelExit(line: string): boolean {
+    const w = line.trim().toLowerCase();
+    if (w === 'logout') return true;
+    if (w !== 'quit') return false;
+    const mode = this.vty?.state.mode;
+    return mode === 'user' || mode === 'user-view';
+  }
 
   getInfoBarContent() {
     const deviceType = this.device.getType();
@@ -133,5 +152,75 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     }
 
     return null;
+  }
+
+  private debugJob: AsyncJobHandle | null = null;
+  private debugUnsubscribe: (() => void) | null = null;
+  private monitorJob: AsyncJobHandle | null = null;
+  private monitorUnsubscribe: (() => void) | null = null;
+
+  protected override afterCommandExecuted(_command: string): void {
+    this.reconcileDebugSubscription();
+    this.reconcileTerminalMonitor();
+  }
+
+  private reconcileTerminalMonitor(): void {
+    const on = this.vty?.state.terminalMonitor ?? false;
+    if (!on && !this.monitorJob) return;
+    const src = (this.device as unknown as { getLoggingConfig?: () => LoggingMonitorSource | null }).getLoggingConfig?.();
+    if (on && src && !this.monitorJob) {
+      this.startMonitorSubscription(src);
+    } else if ((!on || !src) && this.monitorJob) {
+      this.monitorJob.cancel();
+      this.monitorJob = null;
+    }
+  }
+
+  private startMonitorSubscription(src: LoggingMonitorSource): void {
+    this.monitorJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal monitor',
+      label: 'syslog monitor',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.monitorUnsubscribe = src.subscribeMonitor((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.monitorUnsubscribe?.();
+          this.monitorUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
+  }
+
+  private reconcileDebugSubscription(): void {
+    const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
+    if (!svc) return;
+    const wantSubscription = svc.hasAnyFlag() && (this.vty?.state.terminalDebugging ?? false);
+    if (wantSubscription && !this.debugJob) {
+      this.startDebugSubscription(svc);
+    } else if (!wantSubscription && this.debugJob) {
+      this.debugJob.cancel();
+      this.debugJob = null;
+    }
+  }
+
+  private startDebugSubscription(svc: TerminalDebugSource): void {
+    this.debugJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal debugging',
+      label: 'VRP debug output',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.debugUnsubscribe?.();
+          this.debugUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 }

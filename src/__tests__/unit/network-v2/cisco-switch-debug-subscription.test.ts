@@ -49,7 +49,7 @@ describe('Cisco switch debug spanning-tree — event subscription on the async p
       payload: {
         deviceId: sw.id,
         hostname: 'SW1',
-        port: 'FastEthernet0/1',
+        port: 'FastEthernet0/2',
         oldState: 'blocking',
         newState: 'forwarding',
       },

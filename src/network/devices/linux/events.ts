@@ -51,6 +51,8 @@ export interface ProcessSpawnedPayload extends ProcessRef {
 export interface ProcessExitedPayload extends ProcessRef {
   /** Signal that terminated it, when the exit was signal-driven. */
   signal?: string;
+  /** Exit status, when the process terminated by itself. */
+  exitCode?: number;
   /** Children reparented to init as a result of this exit. */
   reparented: number;
 }
@@ -94,6 +96,18 @@ export interface ServiceFailedPayload extends ServiceRef {
   reason: string;
 }
 
+export interface ServiceMainExitedPayload extends ServiceRef {
+  exitCode?: number;
+  signal?: string;
+}
+
+export interface ServiceRestartScheduledPayload extends ServiceRef {
+  counter: number;
+  delayMs: number;
+}
+
+export type ServiceStartLimitedPayload = ServiceRef;
+
 // ── Port / socket lifecycle ─────────────────────────────────────────────
 
 /** Identifies a listening transport endpoint on a device. */
@@ -119,6 +133,51 @@ export interface PortBoundPayload extends PortRef {
 /** A listening socket was closed — a service stopped accepting connections. */
 export type PortReleasedPayload = PortBoundPayload;
 
+export type FileAccessPerm = 'r' | 'w' | 'x' | 'a';
+
+export interface FileAccessedPayload extends LinuxDeviceRef {
+  path: string;
+  perm: FileAccessPerm;
+  syscall: string;
+  pid: number;
+  ppid: number;
+  uid: number;
+  euid: number;
+  gid: number;
+  egid: number;
+  auid: number;
+  comm: string;
+  exe: string;
+  tty: string;
+  success: boolean;
+  exit: number;
+}
+
+export interface SyscallInvokedPayload extends LinuxDeviceRef {
+  syscall: string;
+  path?: string;
+  pid: number;
+  ppid: number;
+  uid: number;
+  euid: number;
+  gid: number;
+  egid: number;
+  auid: number;
+  comm: string;
+  exe: string;
+  tty: string;
+  success: boolean;
+  exit: number;
+}
+
+export interface MountChangedPayload extends LinuxDeviceRef {
+  source: string;
+  target: string;
+  fstype: string;
+  options: string;
+  bind: boolean;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type LinuxProcessServiceDomainEvent =
@@ -138,5 +197,12 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.service.masked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.unmasked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.failed'; payload: ServiceFailedPayload }
+  | { topic: 'linux.service.main-exited'; payload: ServiceMainExitedPayload }
+  | { topic: 'linux.service.restart-scheduled'; payload: ServiceRestartScheduledPayload }
+  | { topic: 'linux.service.start-limited'; payload: ServiceStartLimitedPayload }
   | { topic: 'linux.port.bound'; payload: PortBoundPayload }
-  | { topic: 'linux.port.released'; payload: PortReleasedPayload };
+  | { topic: 'linux.port.released'; payload: PortReleasedPayload }
+  | { topic: 'linux.fs.accessed'; payload: FileAccessedPayload }
+  | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload }
+  | { topic: 'linux.mount.mounted'; payload: MountChangedPayload }
+  | { topic: 'linux.mount.unmounted'; payload: MountChangedPayload };

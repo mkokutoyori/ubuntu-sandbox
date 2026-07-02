@@ -44,6 +44,7 @@ import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepos
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
+import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -71,19 +72,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private reloadTimer: TimerHandle | null = null;
   private scheduledReloadAtMs: number | null = null;
 
-  private reloadScheduler(): IScheduler {
-    const dev = this.d() as unknown as { getScheduler?: () => IScheduler };
+  private schedulerFor(device: TDevice): IScheduler {
+    const dev = device as unknown as { getScheduler?: () => IScheduler };
     return dev.getScheduler?.() ?? getDefaultScheduler();
   }
 
   private armReloadTimer(ms: number): void {
-    const scheduler = this.reloadScheduler();
+    const device = this.d();
+    const scheduler = this.schedulerFor(device);
     if (this.reloadTimer !== null) scheduler.clear(this.reloadTimer);
     this.scheduledReloadAtMs = Date.now() + ms;
     this.reloadTimer = scheduler.setTimeout(() => {
       this.reloadTimer = null;
       this.scheduledReloadAtMs = null;
-      this.performScheduledReload();
+      this.performScheduledReload(device);
     }, ms);
   }
 
@@ -95,13 +97,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.d().powerOff();
     this.d().powerOn();
     this.mode = 'user';
+    this.terminalMonitor = false;
+    this.cmdHistory = [];
+    this.aliases.reset();
+    this.debugConsole.length = 0;
+    (this.d() as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
     return 'Proceed with reload? [confirm]\nReload requested.\nSystem restarting...';
   }
 
-  protected performScheduledReload(): void {
-    this.d().powerOff();
-    this.d().powerOn();
+  protected performScheduledReload(device: TDevice): void {
+    device.powerOff();
+    device.powerOn();
     this.mode = 'user';
+    this.terminalMonitor = false;
+    this.cmdHistory = [];
+    this.debugConsole.length = 0;
+    (device as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
   }
 
   protected attachLoggingToDevice(device: TDevice): void {
@@ -110,6 +121,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
+  }
+
+  getLoggingConfig(): LoggingConfig {
+    return this.logging;
   }
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
@@ -128,6 +143,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
   protected terminalHistorySize: number = 20;
+  protected terminalHistoryEnabled: boolean = true;
+
+  protected selectedConsoleLine: number | null = null;
+  protected consoleLinePassword: string | null = null;
+  protected consoleLinePasswordEncrypted: boolean = false;
+  protected consoleLineLogin: 'password' | 'local' | 'none' | null = null;
+  protected consoleLinePrivilegeLevel: number | null = null;
+  protected consoleLineExecTimeoutMin: number | null = null;
+  protected consoleLineExecTimeoutSec: number = 0;
+
+  _getAliasRunningConfigLines(): string[] {
+    return this.aliases.toRunningConfig();
+  }
+
+  _getConsoleLineConfig(): {
+    line: number;
+    password: string | null;
+    passwordEncrypted: boolean;
+    login: 'password' | 'local' | 'none' | null;
+    privilegeLevel: number | null;
+    execTimeoutMin: number | null;
+    execTimeoutSec: number;
+  } | null {
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null) return null;
+    return {
+      line: this.selectedConsoleLine ?? 0,
+      password: this.consoleLinePassword,
+      passwordEncrypted: this.consoleLinePasswordEncrypted,
+      login: this.consoleLineLogin,
+      privilegeLevel: this.consoleLinePrivilegeLevel,
+      execTimeoutMin: this.consoleLineExecTimeoutMin,
+      execTimeoutSec: this.consoleLineExecTimeoutSec,
+    };
+  }
+  protected terminalMonitor = false;
+  protected readonly debugConsole: string[] = [];
+  private debugSourceAttached = false;
+
+  protected attachDebugSource(src?: { subscribe(listener: (line: string) => void): () => void } | null): void {
+    if (this.debugSourceAttached || !src) return;
+    this.debugSourceAttached = true;
+    src.subscribe((line) => {
+      if (!this.terminalMonitor) return;
+      this.debugConsole.push(line);
+      if (this.debugConsole.length > 500) this.debugConsole.shift();
+    });
+  }
+
+  protected drainDebugConsole(): string {
+    if (this.debugConsole.length === 0) return '';
+    const out = this.debugConsole.join('\n');
+    this.debugConsole.length = 0;
+    return out;
+  }
 
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
@@ -215,7 +284,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected syncSnmpAgent(): void {
     const dev = this.d() as unknown as {
       getSnmpAgent?: () => import('@/network/snmp/SnmpAgent').SnmpAgent;
-      getSnmpService?: () => import('./router/management/SnmpService').SnmpService;
+      getSnmpService?: () => import('../router/management/SnmpService').SnmpService;
     };
     const agent = dev.getSnmpAgent?.();
     const svc = dev.getSnmpService?.();
@@ -235,6 +304,63 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!desiredIps.has(h.ip)) agent.removeTrapHost(h.ip);
     }
     for (const h of desiredHosts) agent.addTrapHost(h.host, h.community, h.udpPort);
+  }
+
+  syncNetflowAgent(): void {
+    const dev = this.d() as unknown as {
+      getNetflowService?: () => import('../router/netflow/NetflowService').NetflowService;
+      getNetFlowAgent?: () => import('@/network/netflow/NetFlowAgent').NetFlowAgent | null;
+    };
+    const svc = dev.getNetflowService?.();
+    const agent = dev.getNetFlowAgent?.();
+    if (!svc || !agent) return;
+
+    const exporters = new Map<string, import('../router/netflow/NetflowService').FlowExporter>();
+    for (const e of svc.getExporters()) exporters.set(e.name, e);
+
+    const attachedMonitors = new Set<string>();
+    for (const a of svc.getInterfaceAttachments()) attachedMonitors.add(a.monitorName);
+
+    const desiredCollectors = new Map<string, number>();
+    for (const m of svc.getMonitors()) {
+      if (!attachedMonitors.has(m.name)) continue;
+      for (const en of m.exporterNames) {
+        const e = exporters.get(en);
+        if (!e?.destination) continue;
+        const port = e.transportPort ?? 2055;
+        desiredCollectors.set(e.destination, port);
+      }
+    }
+    const legacy = svc.getLegacy();
+    const hasLegacyIface = [...legacy.ifaceModes.values()].some((m) => m.ingress || m.egress);
+    if (hasLegacyIface || legacy.destinations.length > 0) {
+      for (const d of legacy.destinations) desiredCollectors.set(d.ip, d.port);
+    }
+
+    let activeSec: number | undefined;
+    let inactiveSec: number | undefined;
+    for (const m of svc.getMonitors()) {
+      if (!attachedMonitors.has(m.name)) continue;
+      if (activeSec === undefined && m.cacheTimeoutActiveSec !== undefined) activeSec = m.cacheTimeoutActiveSec;
+      if (inactiveSec === undefined && m.cacheTimeoutInactiveSec !== undefined) inactiveSec = m.cacheTimeoutInactiveSec;
+    }
+    if (activeSec === undefined && legacy.cacheTimeoutActiveMin !== undefined) activeSec = legacy.cacheTimeoutActiveMin * 60;
+    if (inactiveSec === undefined && legacy.cacheTimeoutInactiveSec !== undefined) inactiveSec = legacy.cacheTimeoutInactiveSec;
+    if (activeSec !== undefined) agent.setActiveTimeoutSec(activeSec);
+    if (inactiveSec !== undefined) agent.setInactiveTimeoutSec(inactiveSec);
+
+    if (legacy.source) agent.setSourceInterface(legacy.source);
+
+    const existing = new Set(agent.listCollectors().map((c) => c.ip));
+    for (const ip of existing) {
+      if (!desiredCollectors.has(ip)) agent.removeCollector(ip);
+    }
+    for (const [ip, port] of desiredCollectors) agent.addCollector(ip, port);
+
+    const shouldRun = desiredCollectors.size > 0;
+    agent.setEnabled(shouldRun);
+    if (shouldRun) agent.start();
+    else agent.stop();
   }
 
   protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
@@ -326,10 +452,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Handles: empty input, pipe filtering, ?, exit/end, do prefix,
    * show shortcut, trie matching, async support, error formatting.
    */
+  private applyLineEditing(input: string): string {
+    let left: string[] = [];
+    let right: string[] = [];
+    for (const ch of input) {
+      if (ch === '\b' || ch === '\x7f') { left.pop(); continue; }
+      if (ch === '\x01') { right = left.concat(right); left = []; continue; }
+      if (ch === '\x05') { left = left.concat(right); right = []; continue; }
+      if (ch === '\x0b') { right = []; continue; }
+      if (ch === '\x17') {
+        while (left.length && left[left.length - 1] === ' ') left.pop();
+        while (left.length && left[left.length - 1] !== ' ') left.pop();
+        continue;
+      }
+      left.push(ch);
+    }
+    return left.concat(right).join('');
+  }
+
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
+    rawInput = this.applyLineEditing(rawInput);
+    if (rawInput.endsWith('\t')) {
+      const stem = rawInput.replace(/\s+$/, '');
+      const completed = this.tabComplete(stem);
+      return (completed ?? stem).trimEnd();
+    }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
-    if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
+    if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
+    if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
+        && this.terminalHistorySize > 0
+        && trimmed.toLowerCase() !== 'show history'
+        && trimmed.toLowerCase() !== 'clear history') {
+      this.cmdHistory.push(trimmed);
+      if (this.cmdHistory.length > this.terminalHistorySize) {
+        this.cmdHistory = this.cmdHistory.slice(-this.terminalHistorySize);
+      }
+    } else if (this.terminalHistorySize === 0) {
+      this.cmdHistory = [];
+    }
 
     const parsed = parsePipeFilter(trimmed);
     let cmdPart = parsed.cmd;
@@ -354,8 +515,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
+    const firstWord = cmdPart.split(/\s+/)[0];
+    if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
     if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
-    if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
+    if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') return this.cmdEnd();
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
@@ -407,6 +572,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Trie Matching ──────────────────────────────────────────────
 
+  /**
+   * Major mode-entering verbs that real IOS accepts from *any* config
+   * sub-mode: typing `line vty 0 4` while in `config-if` implicitly leaves
+   * the interface sub-mode and enters line configuration. Used as a
+   * fallback when the active sub-mode trie does not recognise the command.
+   */
+  private static readonly GLOBAL_NAV_BY_MODE: Record<string, string[]> = {
+    'config-if': ['interface', 'line'],
+    'config-subif': ['interface', 'vlan'],
+    'config-line': ['line', 'router'],
+    'config-router': ['interface', 'router'],
+    'config-router-ospf': ['interface', 'router'],
+    'config-router-ospfv3': ['interface', 'router'],
+    'config-vlan': ['interface', 'vlan', 'ip'],
+    'config-vrf': ['*'],
+    'config-route-map': ['interface', 'vlan'],
+  };
+
+  /**
+   * Reproduce IOS's "global commands work from a sub-config mode" behaviour:
+   * when a sub-config mode (config-if, config-line, config-vlan, …) cannot
+   * resolve a command but it is a global navigation verb, dispatch it
+   * against the global config trie — whose action switches `this.mode`.
+   * Returns null when no fallback applies.
+   */
+  protected tryGlobalConfigNavigation(cmdPart: string): string | null {
+    if (!this.isConfigMode() || this.mode === 'config') return null;
+    const heads = CiscoShellBase.GLOBAL_NAV_BY_MODE[this.mode];
+    if (!heads) return null;
+    const head = cmdPart.trim().split(/\s+/)[0]?.toLowerCase();
+    if (!head) return null;
+    if (!heads.includes('*') && !heads.some(k => k.startsWith(head))) return null;
+    const result = this.configTrie.match(cmdPart);
+    if (result.status === 'ok' && result.node?.action) {
+      return result.node.action(result.args, cmdPart);
+    }
+    return null;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
@@ -418,17 +622,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return result.error || CISCO_ERRORS.AMBIGUOUS(cmdPart);
       case 'incomplete':
         return result.error || CISCO_ERRORS.INCOMPLETE;
-      case 'invalid':
-        return result.error || CISCO_ERRORS.INVALID_INPUT;
-      default:
-        return CISCO_ERRORS.UNRECOGNIZED(cmdPart);
+      case 'invalid': {
+        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        return nav !== null ? nav : (result.error || CISCO_ERRORS.INVALID_INPUT);
+      }
+      default: {
+        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        return nav !== null ? nav : CISCO_ERRORS.INVALID_INPUT;
+      }
     }
   }
 
   // ─── FSM Transitions ───────────────────────────────────────────
 
   protected cmdExit(): string {
-    if (this.mode === 'user') return 'Connection closed.';
+    if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
+    if (this.mode === 'privileged') this.terminalMonitor = false;
     this.fsm.mode = this.mode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
@@ -493,7 +702,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getHelp(input: string): string {
     const trie = this.getActiveTrie();
     const completions = trie.getCompletions(input);
-    if (completions.length === 0) return CISCO_ERRORS.UNRECOGNIZED_HELP;
+    if (completions.length === 0) {
+      const trimmed = input.trim();
+      const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
+      return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+    }
     const maxKw = Math.max(...completions.map(c => c.keyword.length));
     return completions
       .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
@@ -544,6 +757,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
+    trie.register('show processes', 'Display active processes', () =>
+      showProcessesCpu());
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
     trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>
@@ -562,7 +777,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
-    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.registerGreedy('show flash:', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
@@ -580,7 +794,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     trie.register('show diag', 'Display chassis diagnostics', () => 'Slot 0:  Built-in PID (real)\n  Power: OK\n  Temperature: nominal');
     trie.register('show idprom backplane', 'Display IDPROM backplane', () => 'IDPROM for backplane: serial number, PID match show inventory');
-    trie.register('show mac address-table', 'Display MAC address table', () => {
+    trie.registerGreedy('show mac address-table', 'Display MAC address table', () => {
       const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
       const table = dev.getMacTable?.();
       if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
@@ -596,17 +810,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
     trie.register('show history', 'Display command history', () =>
-      this.cmdHistory.slice(-20).join('\n'));
+      this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
+    trie.register('clear history', 'Clear command history buffer', () => {
+      this.cmdHistory = [];
+      return '';
+    });
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args));
 
-    trie.registerGreedy('copy', 'Copy file/configuration', (args) => {
-      const src = args[0];
-      const dst = args[1];
-      if (!src) return '% Incomplete command.';
-      if (dst) return `${src} → ${dst}: copy complete`;
-      return `Destination filename [${src}]?\n${src} copied`;
-    });
+    // NOTE: `copy` is a privileged-EXEC command — it is registered once, with
+    // full file-system semantics, in registerPrivilegedExtras (the rich
+    // handler). Registering a simple stub here too (this method runs for both
+    // the user and privileged tries) used to shadow it AND leak `copy` into
+    // user EXEC; that has been removed.
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
@@ -617,7 +833,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
       showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
-    trie.register('show snmp', 'Display SNMP status', () => showSnmp(this.cs()));
     trie.register('show snmp community', 'Display SNMP communities', () => showSnmpCommunity(this.cs()));
     trie.register('show snmp host', 'Display SNMP hosts', () => showSnmpHost(this.cs()));
     trie.register('show snmp group', 'Display SNMP groups', () => showSnmpGroup(this.cs()));
@@ -639,8 +854,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
-    trie.register('show ip vrf', 'Display VRFs', () => showVrf());
-    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf());
+    trie.register('show ip vrf', 'Display VRFs', () => showVrf(this.d()));
+    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf(this.d()));
     trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
     trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
       showRedundancy());
@@ -649,7 +864,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show calendar', 'Display hardware calendar', () =>
       showCalendar());
     trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
-      showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize));
+      `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
+      + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`);
     trie.register('show processes memory', 'Display per-process memory', () =>
       showProcessesMemory());
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
@@ -715,7 +931,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (head === 'width') {
       if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const n = parseInt(rest[0], 10);
-      if (!Number.isFinite(n) || n < 0 || n > 512) {
+      if (!Number.isFinite(n) || n < 40 || n > 512) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
       this.terminalWidth = n;
@@ -725,24 +941,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
-      if (sub === 'monitor') return '';
+      if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
+      if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (head === 'monitor') return '';
+    if (head === 'monitor' || (head.length >= 3 && 'monitor'.startsWith(head))) { this.terminalMonitor = true; return ''; }
     if (head === 'exec') return '';
     if (head === 'history') {
       if ((rest[0] ?? '').toLowerCase() === 'size') {
         const n = parseInt(rest[1] ?? '', 10);
         if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
         this.terminalHistorySize = n;
+        this.terminalHistoryEnabled = true;
         return '';
       }
-      if (rest.length === 0) { this.terminalHistorySize = 20; return ''; }
-      return '';
-    }
-    if (head === 'monitor') {
-      // `terminal monitor` — redirect logging to this vty. Acknowledged
-      // silently; the simulator does not gate logs by line.
+      if (rest.length === 0) { this.terminalHistoryEnabled = true; return ''; }
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;
@@ -754,7 +967,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getTerminalWidth(): number { return this.terminalWidth; }
 
   private registerCommonUserCommands(): void {
-    this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
+    this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
+      const lvl = args[0] ? parseInt(args[0], 10) : 15;
+      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+        return "% Invalid input detected at '^' marker.";
+      }
       this.mode = 'privileged';
       return '';
     });
@@ -777,41 +994,124 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.privilegedTrie.register('copy running-config startup-config', 'Save configuration', () => {
-      return this.onSave();
-    });
+    const saveRunningToStartup = () =>
+      `Destination filename [startup-config]?\n${this.onSave()}`;
 
-    this.privilegedTrie.register('write memory', 'Save configuration', () => {
-      return this.onSave();
-    });
-    this.privilegedTrie.register('write erase', 'Erase saved configuration', () => {
-      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
-      dev._eraseStartupConfig?.();
-      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
-    });
-    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', () => {
-      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
-      dev._eraseStartupConfig?.();
-      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
-    });
+    this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+
+    const eraseNvram = () => {
+      (this.d() as unknown as { _eraseStartupConfig?: () => void })._eraseStartupConfig?.();
+      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]\nErase of nvram: complete';
+    };
+    this.privilegedTrie.register('write erase', 'Erase saved configuration', eraseNvram);
+    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', eraseNvram);
+    this.privilegedTrie.register('erase nvram:', 'Erase NVRAM', eraseNvram);
+
+    // Single greedy `copy` handler so any source/destination pair is consumed
+    // as arguments (an exact `copy running-config startup-config` registration
+    // would create an intermediate node that hides other destinations from the
+    // greedy match). IOS keyword abbreviations (`copy run start`) are expanded.
+    const norm = (a: string): string => {
+      const t = a.toLowerCase();
+      if (t && 'running-config'.startsWith(t)) return 'running-config';
+      if (t && 'startup-config'.startsWith(t)) return 'startup-config';
+      return t;
+    };
+    this.privilegedTrie.registerSuggestions('copy', [
+      { keyword: 'running-config', description: 'Current running configuration' },
+      { keyword: 'startup-config', description: 'Saved startup configuration' },
+      { keyword: 'tftp:',          description: 'Trivial File Transfer Protocol' },
+      { keyword: 'flash:',         description: 'Local flash filesystem' },
+      { keyword: 'scp:',           description: 'Secure Copy' },
+    ]);
+    this.privilegedTrie.registerSuggestions('copy running-config', [
+      { keyword: 'startup-config', description: 'Save to NVRAM startup-config' },
+      { keyword: 'tftp:',          description: 'Upload to TFTP server' },
+      { keyword: 'scp:',           description: 'Upload over SCP' },
+      { keyword: 'flash:',         description: 'Save to flash filesystem' },
+    ]);
+    this.privilegedTrie.registerSuggestions('debug', [
+      { keyword: 'all',      description: 'Enable all debugging' },
+      { keyword: 'ip',       description: 'Debug IP subsystem' },
+      { keyword: 'ipv6',     description: 'Debug IPv6 subsystem' },
+      { keyword: 'crypto',   description: 'Debug crypto subsystem' },
+      { keyword: 'dhcp',     description: 'Debug DHCP' },
+    ]);
+    this.privilegedTrie.registerSuggestions('debug ip', [
+      { keyword: 'icmp',     description: 'Debug ICMP packets' },
+      { keyword: 'packet',   description: 'Debug all IP packets' },
+      { keyword: 'ospf',     description: 'Debug OSPF' },
+      { keyword: 'routing',  description: 'Debug routing table changes' },
+      { keyword: 'nat',      description: 'Debug NAT' },
+      { keyword: 'dhcp',     description: 'Debug DHCP' },
+    ]);
+    this.privilegedTrie.registerSuggestions('write', [
+      { keyword: 'memory',   description: 'Write to NVRAM' },
+      { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
+      { keyword: 'erase',    description: 'Erase NVRAM' },
+    ]);
+    this.privilegedTrie.registerSuggestions('clear', [
+      { keyword: 'arp-cache', description: 'Clear ARP cache' },
+      { keyword: 'counters',  description: 'Clear interface counters' },
+      { keyword: 'ip',        description: 'Clear an IP subsystem' },
+      { keyword: 'mac',       description: 'Clear MAC address tables' },
+      { keyword: 'logging',   description: 'Clear logging buffer' },
+    ]);
+    const showIpRouteHints = [
+      { keyword: 'static',    description: 'Static routes' },
+      { keyword: 'connected', description: 'Directly connected networks' },
+      { keyword: 'ospf',      description: 'OSPF-learned routes' },
+      { keyword: 'rip',       description: 'RIP-learned routes' },
+      { keyword: 'eigrp',     description: 'EIGRP-learned routes' },
+      { keyword: 'bgp',       description: 'BGP-learned routes' },
+    ];
+    this.privilegedTrie.registerSuggestions('show ip route', showIpRouteHints);
+    this.userTrie.registerSuggestions('show ip route', showIpRouteHints);
     this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
-      const src = args[0]?.toLowerCase();
-      const dst = args[1]?.toLowerCase();
-      if (!src || !dst) return '% Incomplete command.';
-      if (src === 'running-config' && dst === 'startup-config') return this.onSave();
-      if ((src === 'startup-config' || src.startsWith('flash:')) && dst === 'running-config') {
-        const dev = this.d() as unknown as { _restoreStartupConfig?: () => boolean };
-        dev._restoreStartupConfig?.();
+      if (!args[0] || !args[1]) return '% Incomplete command.';
+      const src = norm(args[0]);
+      const dst = norm(args[1]);
+      const dev = this.d() as unknown as {
+        _restoreStartupConfig?: () => boolean;
+        _readFlashFile?: (name: string) => string | null;
+        _writeFlashFile?: (name: string, content: string) => void;
+        _applyConfigText?: (text: string) => void;
+        getRunningConfig?: () => string;
+      };
+
+      if (src === 'running-config' && dst === 'startup-config') return saveRunningToStartup();
+
+      if (dst === 'running-config' && (src === 'startup-config' || src === 'nvram:')) {
+        // Devices that model NVRAM (the switch) report an empty NVRAM; the
+        // router keeps its shell-level snapshot, so preserve the OK path.
+        if (typeof dev._restoreStartupConfig === 'function' && !dev._restoreStartupConfig()) {
+          return '%% Non-volatile configuration memory is not present';
+        }
         return 'Destination filename [running-config]?\n[OK]';
       }
-      if (src === 'running-config' && (dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:'))) {
-        return `Destination filename [${dst}]?\nWriting ${dst} ... [OK]`;
+
+      const fileSrc = src.startsWith('flash:') || src.startsWith('tftp:') || src.startsWith('ftp:');
+      const fileDst = dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:') || dst.startsWith('nvram:');
+
+      if (dst === 'running-config' && fileSrc) {
+        if (typeof dev._readFlashFile === 'function') {
+          const content = dev._readFlashFile(args[0]);
+          if (content == null) return `%Error opening ${args[0]} (No such file or directory)`;
+          dev._applyConfigText?.(content);
+        }
+        return 'Destination filename [running-config]?\n[OK]';
       }
+
+      if (src === 'running-config' && fileDst) {
+        dev._writeFlashFile?.(args[1], dev.getRunningConfig?.() ?? '');
+        return `Destination filename [${args[1]}]?\nWriting ${args[1]} ... [OK]`;
+      }
+
       return `[OK]`;
     });
     this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
       if (args[0]?.toLowerCase() === 'cancel') {
-        if (this.reloadTimer !== null) { this.reloadScheduler().clear(this.reloadTimer); this.reloadTimer = null; }
+        if (this.reloadTimer !== null) { this.schedulerFor(this.d()).clear(this.reloadTimer); this.reloadTimer = null; }
         this.scheduledReloadAtMs = null;
         return 'Reload cancelled.';
       }
@@ -829,7 +1129,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return this.performImmediateReload();
     });
     this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
-      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
+      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string, scope?: string) => string } }).getDebugService?.();
       return svc ? svc.enable('ip.arp') : 'ARP packet debugging is on';
     });
     this.privilegedTrie.register('no debug arp', 'Disable ARP debug', () => {
@@ -888,6 +1188,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       debugSvc()?.disable('standby') ?? '');
     this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
       debugSvc()?.disable('ip.eigrp') ?? '');
+    const genericDebug = () => (this.d() as unknown as { getDebugService?: () => { enable(c: string): string; disable(c: string): string } }).getDebugService?.();
+    this.privilegedTrie.registerGreedy('debug lldp', 'Debug LLDP', () => genericDebug()?.enable('lldp.packets') ?? 'LLDP packets debugging is on');
+    this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
+    this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
+    this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());
@@ -903,7 +1208,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         (port as unknown as { resetCounters?: () => void }).resetCounters?.();
         count++;
       }
-      return count === 0 ? '% No matching interface' : '';
+      if (count === 0) return '% No matching interface';
+      const scope = target ? `interface ${target}` : 'all interfaces';
+      return `Clear "show interface" counters on ${scope} [confirm]`;
     });
     this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
       const dev = this.d() as unknown as { _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown> };
@@ -919,6 +1226,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._clearDynamicRoutes?.();
       return '';
     });
+    this.privilegedTrie.registerGreedy('clear line', 'Terminate a vty session', (args) => {
+      const dev = this.d() as unknown as {
+        getSshSessionRegistry?: () => {
+          closeWhere: (p: (s: { lineIndex: number }) => boolean, reason?: string) => number;
+        };
+      };
+      const registry = dev.getSshSessionRegistry?.();
+      if (!registry) return '% Invalid input detected';
+      const index = args[0]?.toLowerCase() === 'vty'
+        ? Number.parseInt(args[1] ?? '', 10)
+        : Number.parseInt(args[0] ?? '', 10);
+      if (!Number.isInteger(index) || index < 0) return '% Incomplete command.';
+      const closed = registry.closeWhere(s => s.lineIndex === index, 'admin');
+      return closed > 0 ? '[confirm]\n [OK]' : '% Not allowed to clear that line';
+    });
     this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
@@ -931,9 +1253,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
-      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      const dev = this.d() as unknown as {
+        getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent;
+        _recordUnhandledConfigLine?: (line: string) => void;
+      };
+      const agent = dev.getNtpAgent?.();
+      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
+    });
+    this.configTrie.registerGreedy('sntp unicast', 'SNTP unicast client', (_args) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
+      dev._recordUnhandledConfigLine?.('sntp unicast client');
+      return '';
+    });
+    this.configTrie.registerGreedy('no sntp server', 'Remove SNTP server', (args) => {
+      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void; getNtpAgent?: () => { removeServer?: (ip: string) => void } };
+      const agent = dev.getNtpAgent?.();
+      if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
+      dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
+      return '';
+    });
+    this.privilegedTrie.register('show sntp', 'Show SNTP', () => {
+      const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[]; getNtpAgent?: () => { getConfig?: () => { associations?: Map<string, unknown> } } };
+      const agent = dev.getNtpAgent?.();
+      if (agent?.getConfig) {
+        const cfg = agent.getConfig();
+        if (cfg.associations && cfg.associations.size > 0) {
+          return ['SNTP server   Stratum   Version   Last Receive', ...[...cfg.associations.keys()].map(k => `${k.padEnd(14)}1         4         00:00:01`)].join('\n');
+        }
+      }
+      const lines = dev.getUnhandledConfigLines?.() ?? [];
+      const sntpLines = lines.filter(l => l.startsWith('sntp server'));
+      if (sntpLines.length === 0) return 'No SNTP servers configured';
+      return ['SNTP server   Stratum   Version   Last Receive', ...sntpLines.map(l => `${l.split(/\s+/)[2]?.padEnd(14) ?? ''}1         4         00:00:01`)].join('\n');
     });
 
     this.registerCommonShowCommands(this.privilegedTrie);
@@ -974,7 +1327,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const ip = p.getIPAddress();
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
-    if (!sourceIp) return `Trying ${display} ...\n% No usable interface for outbound Telnet`;
+    if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
     const remote = findHostByAddress(host);
     if (!remote || remote.poweredOff || remote.interfaceDown) {
@@ -1092,7 +1445,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.register('no hostname', 'Reset hostname', () => {
-      this.d()._setHostnameInternal('Router');
+      const dev = this.d();
+      const ctor = dev.constructor.name;
+      const defaultName = ctor === 'CiscoSwitch' || ctor === 'GenericSwitch' ? 'Switch' : 'Router';
+      dev._setHostnameInternal(defaultName);
       return '';
     });
 
@@ -1100,6 +1456,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
       if (args.length < 3) return '% Incomplete command.';
       const [modeTok, name, ...rest] = args;
+      if (name.length > 31) return '% Alias name exceeds 31 characters.';
       this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
       return '';
     });
@@ -1231,7 +1588,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     flag('ip http server', 'ip http server', 'HTTP server');
     flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
     flag('ip source-route', 'ip source-route', 'IP source-route');
-    flag('ip domain-lookup', 'ip domain-lookup', 'DNS lookup');
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
@@ -1247,13 +1603,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
       if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
       return '';
     });
     this.configTrie.registerGreedy('no ip name-server', 'Clear DNS name servers', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) {
         if (args.length === 0) mgmt.nameServers.length = 0;
@@ -1265,13 +1621,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.register('ip domain-lookup', 'Enable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) mgmt.ipDomainLookupEnabled = true;
       return '';
     });
     this.configTrie.register('no ip domain-lookup', 'Disable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) mgmt.ipDomainLookupEnabled = false;
       return '';
@@ -1307,8 +1663,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
-      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
+      const dev = this.d() as unknown as {
+        _setSshBanner?: (b: string) => void;
+        _setMotdBanner?: (b: string) => void;
+      };
       dev._setSshBanner?.('');
+      dev._setMotdBanner?.('');
       return '';
     });
     this.configTrie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
@@ -1342,35 +1702,69 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      const mode = args[0]?.toLowerCase();
+      if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      const lvl = parseInt(args[2] ?? '', 10);
+      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      const router = this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> };
+      const key = `${mode} ${args.slice(3).join(' ')}`;
+      (router._ciscoPrivilegeRules ??= new Map()).set(key, lvl);
+      const recorder = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      recorder._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
+      const mode = args[0]?.toLowerCase();
+      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      const router = this.d() as unknown as {
+        _ciscoPrivilegeRules?: Map<string, number>;
+        _removeUnhandledConfigLine?: (pattern: string) => void;
+      };
+      const key = `${mode} ${args.slice(3).join(' ')}`;
+      router._ciscoPrivilegeRules?.delete(key);
+      router._removeUnhandledConfigLine?.(`privilege ${args.join(' ')}`);
       return '';
     });
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
+        _setDomainName?: (name: string) => void;
+      };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      else dev._setDomainName?.(args[0]);
       return '';
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
       if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
       return '';
     });
     this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
+        _setDomainName?: (name: string) => void;
+      };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
+      else dev._setDomainName?.('');
       return '';
     });
     // `ip host <name> <ip>` — static hostname → IP mapping consulted by
     // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
     this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return '% Incomplete command.';
+      if (!isValidIPv4(args[1])) return `% Invalid IP address ${args[1]}.`;
       const dev = this.d() as unknown as { _getHostsTable?: () => { upsert: (n: string, ip: string) => void } };
       dev._getHostsTable?.().upsert(args[0], args[1]);
       return '';
@@ -1387,17 +1781,43 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _setMotdBanner?: (b: string) => void;
         _setLoginBanner?: (b: string) => void;
         _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
       };
       const which = args[0]?.toLowerCase();
-      const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
-      if (which === 'motd') {
-        dev._setMotdBanner?.(rest);
-        dev._setSshBanner?.(rest);
-      } else if (which === 'login') {
-        dev._setLoginBanner?.(rest);
-      } else if (which === 'exec') {
-        dev._setExecBanner?.(rest);
+      if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
+        return "% Invalid input detected at '^' marker.";
       }
+      const body = args.slice(1).join(' ').trim();
+      if (body.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const delim = body[0];
+      const lastIdx = body.lastIndexOf(delim);
+      if (lastIdx <= 0) return "% Invalid input detected at '^' marker.";
+      const text = body.slice(1, lastIdx);
+      if (which === 'motd') {
+        dev._setMotdBanner?.(text);
+        dev._setSshBanner?.(text);
+      } else if (which === 'login') {
+        dev._setLoginBanner?.(text);
+      } else if (which === 'exec') {
+        dev._setExecBanner?.(text);
+      } else if (which === 'incoming') {
+        dev._setIncomingBanner?.(text);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no banner', 'Remove a banner', (args) => {
+      const which = args[0]?.toLowerCase();
+      const dev = this.d() as unknown as {
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
+        _setSshBanner?: (b: string) => void;
+      };
+      if (which === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
+      else if (which === 'login') dev._setLoginBanner?.('');
+      else if (which === 'exec') dev._setExecBanner?.('');
+      else if (which === 'incoming') dev._setIncomingBanner?.('');
       return '';
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
@@ -1462,7 +1882,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
-      const dev = this.d() as unknown as { getSnmpService?: () => import('./router/management/SnmpService').SnmpService };
+      const dev = this.d() as unknown as { getSnmpService?: () => import('../router/management/SnmpService').SnmpService };
       const svc = dev.getSnmpService?.();
       if (!svc) return '';
       svc.configure(args);
@@ -1471,7 +1891,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt && args[0] && args[1]) {
         const offsetHrs = parseInt(args[1], 10);
@@ -1483,7 +1903,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('clock summer-time', 'Configure daylight saving time', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt && args[0]) {
         const cfg = mgmt.getClock();
@@ -1510,7 +1930,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
     this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
       return '';
@@ -1532,14 +1952,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
-      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void };
+      const dev = this.d() as unknown as {
+        _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void;
+        getServiceFlags?: () => ReadonlyMap<string, boolean>;
+      };
       let algo: 'plain' | 'type-7' = 'plain';
       let password = '';
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
       else { password = args.join(' '); }
       if (password === '') return '% Incomplete command.';
-      dev._setEnablePassword?.(password, algo);
+      if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
+        const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
+        dev._setEnablePassword?.(_encryptType7(password, salt), 'type-7');
+      } else {
+        dev._setEnablePassword?.(password, algo);
+      }
+      return '';
+    });
+    this.configTrie.register('no enable secret', 'Remove enable secret', () => {
+      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain') => void };
+      dev._setEnableSecret?.('', 'plain');
+      return '';
+    });
+    this.configTrie.register('no enable password', 'Remove enable password', () => {
+      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain') => void };
+      dev._setEnablePassword?.('', 'plain');
       return '';
     });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
@@ -1626,7 +2064,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
       const dev = this.d() as unknown as {
-        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
         _recordUnhandledConfigLine?: (l: string) => void;
       };
       const mgmt = dev.getManagementService?.();
@@ -1651,14 +2089,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // right VtyLineConfig block.
     this.configTrie.registerGreedy('line', 'Enter line configuration', (args) => {
       this.mode = 'config-line';
-      if (args[0]?.toLowerCase() === 'vty') {
+      const kind = args[0]?.toLowerCase();
+      if (kind === 'vty') {
         const first = Number.parseInt(args[1] ?? '0', 10);
         const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
         this.selectedVtyRange = { first, last };
+        this.selectedConsoleLine = null;
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
         dev._getVtyLineConfig?.().upsert({ first, last });
+      } else if (kind === 'console' || kind === 'con') {
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
       } else {
         this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
       }
       return '';
     });
@@ -1668,14 +2112,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
-        if (!range) return '';
+        if (!range) {
+          if (this.selectedConsoleLine == null) return '';
+          if (kw === 'password') {
+            if (!args[0]) return '% Incomplete command.';
+            let pwArgs = [...args];
+            this.consoleLinePasswordEncrypted = false;
+            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
+            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
+            this.consoleLinePassword = pwArgs.join(' ');
+            return '';
+          }
+          if (kw === 'login') {
+            const sub = args[0]?.toLowerCase();
+            this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            return '';
+          }
+          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+            const lvl = parseInt(args[1], 10);
+            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+              return "% Invalid input detected at '^' marker.";
+            }
+            this.consoleLinePrivilegeLevel = lvl;
+            return '';
+          }
+          if (kw === 'no') {
+            const sub = args[0]?.toLowerCase();
+            if (sub === 'login') {
+              if (args[1]?.toLowerCase() === 'local') {
+                this.consoleLineLogin = null;
+              } else {
+                this.consoleLineLogin = 'none';
+              }
+              return '';
+            }
+            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
+            if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+          }
+          return '';
+        }
         if (kw === 'password' && !args[0]) return '% Incomplete command.';
-        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+        const dev = this.d() as unknown as {
+          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
+        };
         const update: Record<string, unknown> = { first: range.first, last: range.last };
         if (kw === 'login') {
-          update.loginMethod = args[0] === 'authentication' && args[1] ? `authentication ${args[1]}` : args[0] ?? 'local';
+          // bare `login` → authenticate with the line password; `login local`
+          // → local user DB; `login authentication …` → AAA.
+          const sub = args[0]?.toLowerCase();
+          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
         } else if (kw === 'password') {
-          update.password = args.slice(1).join(' ') || args[0];
+          update.linePassword = args.slice(1).join(' ') || args[0];
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
@@ -1705,20 +2192,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } else if (kw === 'rotary' && args[0]) {
           update.rotaryGroup = parseInt(args[0], 10);
         } else if (kw === 'no' && args.length > 0) {
+          const sub = args[0]?.toLowerCase();
+          // `no password` clears the line secret (empty string → explicitly
+          // unset, distinct from "never configured"); `no login` disables auth.
+          if (sub === 'password') update.linePassword = '';
+          else if (sub === 'login') update.login = 'none';
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
-        dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        // Bare `login` with no line password configured is inert on real IOS —
+        // the line refuses incoming sessions until a password is set. Echo the
+        // warning so operators (and the simulated incoming-VTY verdict) agree.
+        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
+          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
+        }
         return '';
       });
     }
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
-      const range = this.selectedVtyRange;
-      if (!range) return '';
       if (args.length === 0) return '% Incomplete command.';
       if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
         return "% Invalid input detected at '^' marker.";
+      }
+      const range = this.selectedVtyRange;
+      if (!range) {
+        if (this.selectedConsoleLine != null) {
+          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
+          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
+        }
+        return '';
       }
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       dev._getVtyLineConfig?.().upsert({

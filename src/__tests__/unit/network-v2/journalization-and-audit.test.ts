@@ -16,6 +16,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxAuditLog, LinuxAuditRecord } from '@/network/devices/linux/audit/LinuxAuditLog';
 import { AuditTrailProjection } from '@/network/devices/linux/audit/AuditTrailProjection';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from '@/network/devices/linux/audit/AuditCommands';
+import { LinuxAuditRules } from '@/network/devices/linux/audit/LinuxAuditRules';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
@@ -166,12 +167,12 @@ describe('ausearch / aureport / auditctl', () => {
   it('aureport summarises the audit trail', () => {
     const out = cmdAureport(seeded(), []);
     expect(out).toContain('Summary Report');
-    expect(out).toContain('Number of audit events: 2');
+    expect(out).toContain('Number of events: 2');
     expect(out).toContain('ADD_USER');
   });
 
   it('auditctl -s shows the subsystem status', () => {
-    expect(cmdAuditctl(seeded(), ['-s'])).toContain('enabled 1');
+    expect(cmdAuditctl(new LinuxAuditRules(seeded(), new VirtualFileSystem()), ['-s']).output).toContain('enabled 1');
   });
 });
 

@@ -8,15 +8,17 @@ import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { installHRSchema, installSCOTTSchema } from '@/database/oracle/demo/DemoSchemas';
 
 let db: OracleDatabase;
+let sysExecutor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'] | null = null;
 
 beforeEach(() => {
   db = new OracleDatabase();
   db.instance.startup('OPEN');
+  sysExecutor = null;
 });
 
 function exec(sql: string) {
-  const { executor } = db.connectAsSysdba();
-  return db.executeSql(executor, sql);
+  if (!sysExecutor) sysExecutor = db.connectAsSysdba().executor;
+  return db.executeSql(sysExecutor, sql);
 }
 
 describe('OracleDatabase — Instance management', () => {

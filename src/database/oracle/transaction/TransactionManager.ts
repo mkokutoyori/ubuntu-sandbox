@@ -18,6 +18,7 @@
 
 import type { StorageRow } from '../../engine/storage/BaseStorage';
 import { OracleError } from '../../engine/types/DatabaseError';
+import type { TransactionCoordinator, CommittedImageProvider } from './TransactionCoordinator';
 
 /** The slice of the storage layer needed to capture/restore row snapshots. */
 export interface SnapshotableStorage {
@@ -34,6 +35,17 @@ interface TransactionSnapshot {
   tables: Map<string, Map<string, StorageRow[]>>;
 }
 
+function rowsEqual(a: StorageRow[], b: StorageRow[] | undefined): boolean {
+  if (!b) return a.length === 0;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ra = a[i], rb = b[i];
+    if (ra.length !== rb.length) return false;
+    for (let j = 0; j < ra.length; j++) if (ra[j] !== rb[j]) return false;
+  }
+  return true;
+}
+
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
 export interface TransactionObserver {
   onBegin(txId: number): void;
@@ -41,7 +53,7 @@ export interface TransactionObserver {
   onRollback(txId: number): void;
 }
 
-export class TransactionManager {
+export class TransactionManager implements CommittedImageProvider {
   private snapshot: TransactionSnapshot | null = null;
   private savepoints: Map<string, TransactionSnapshot> = new Map();
   private active = false;
@@ -53,12 +65,23 @@ export class TransactionManager {
   constructor(
     private readonly storage: SnapshotableStorage,
     private readonly observer: TransactionObserver,
+    private readonly coordinator?: TransactionCoordinator,
   ) {}
 
   get isActive(): boolean { return this.active; }
 
   /** Valid while `isActive`; keeps the last id afterwards (matches event payloads). */
   get activeTxId(): number { return this.txId; }
+
+  committedImage(schema: string, tableName: string): StorageRow[] | null {
+    if (!this.active || !this.snapshot) return null;
+    const rows = this.snapshot.tables.get(schema)?.get(tableName);
+    return rows ? rows.map(r => [...r]) : null;
+  }
+
+  visibleRows(schema: string, tableName: string): StorageRow[] | null {
+    return this.coordinator?.committedImageFor(this, schema, tableName) ?? null;
+  }
 
   /** Begin an implicit transaction on first DML; no-op when already active. */
   begin(): void {
@@ -67,6 +90,7 @@ export class TransactionManager {
     this.active = true;
     this.txId = ++this.txIdCounter;
     this.startedAt = performance.now();
+    this.coordinator?.registerWriter(this);
     this.observer.onBegin(this.txId);
   }
 
@@ -77,6 +101,7 @@ export class TransactionManager {
     this.snapshot = null;
     this.savepoints.clear();
     this.active = false;
+    this.coordinator?.unregisterWriter(this);
     if (wasActive) this.observer.onCommit(this.txId, performance.now() - startedAt);
     return wasActive;
   }
@@ -88,6 +113,7 @@ export class TransactionManager {
     this.snapshot = null;
     this.savepoints.clear();
     this.active = false;
+    this.coordinator?.unregisterWriter(this);
     if (wasActive) this.observer.onRollback(this.txId);
     return wasActive;
   }
@@ -119,6 +145,56 @@ export class TransactionManager {
     const key = name.toUpperCase();
     this.savepoints.delete(key);
     this.savepoints.set(key, this.captureSnapshot());
+  }
+
+  private autonomousStack: {
+    snapshot: TransactionSnapshot | null;
+    savepoints: Map<string, TransactionSnapshot>;
+    active: boolean;
+    txId: number;
+    startedAt: number;
+    entry: TransactionSnapshot;
+  }[] = [];
+
+  enterAutonomous(): void {
+    this.autonomousStack.push({
+      snapshot: this.snapshot,
+      savepoints: this.savepoints,
+      active: this.active,
+      txId: this.txId,
+      startedAt: this.startedAt,
+      entry: this.captureSnapshot(),
+    });
+    this.snapshot = null;
+    this.savepoints = new Map();
+    this.active = false;
+  }
+
+  exitAutonomous(): void {
+    const saved = this.autonomousStack.pop();
+    if (!saved) return;
+    if (this.active) this.rollback();
+    if (saved.snapshot) this.rebaseSnapshot(saved.snapshot, saved.entry);
+    for (const sp of saved.savepoints.values()) this.rebaseSnapshot(sp, saved.entry);
+    this.snapshot = saved.snapshot;
+    this.savepoints = saved.savepoints;
+    this.active = saved.active;
+    this.txId = saved.txId;
+    this.startedAt = saved.startedAt;
+    if (this.active) this.coordinator?.registerWriter(this);
+  }
+
+  private rebaseSnapshot(target: TransactionSnapshot, entry: TransactionSnapshot): void {
+    for (const schema of this.storage.getSchemas()) {
+      for (const tableName of this.storage.getTableNames(schema)) {
+        const current = this.storage.getRows(schema, tableName);
+        const before = entry.tables.get(schema)?.get(tableName);
+        if (rowsEqual(current, before)) continue;
+        let tableMap = target.tables.get(schema);
+        if (!tableMap) { tableMap = new Map(); target.tables.set(schema, tableMap); }
+        tableMap.set(tableName, current.map(r => [...r]));
+      }
+    }
   }
 
   /** Deep-copy current row state of all tables for undo. */

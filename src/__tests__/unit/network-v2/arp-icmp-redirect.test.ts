@@ -273,16 +273,14 @@ describe('ip neigh flush', () => {
     expect(neigh).not.toContain('192.168.1.1');
   });
 
-  it('8.06b – ip neigh flush dev removes only entries on that interface', async () => {
+  it('8.06b – ip neigh flush dev removes dynamic entries but spares PERMANENT', async () => {
     const { pc1 } = await buildTwoRouterTopology();
 
-    // Add a static entry on a different interface name (simulated)
     await pc1.executeCommand('sudo ip neigh add 192.168.1.100 lladdr 11:22:33:44:55:66 dev eth0');
-
-    // Flush eth0 only
     await pc1.executeCommand('sudo ip neigh flush dev eth0');
 
     const neigh = await pc1.executeCommand('ip neigh show');
-    expect(neigh).not.toContain('192.168.1.100');
+    expect(neigh).toContain('192.168.1.100');
+    expect(neigh).toContain('PERMANENT');
   });
 });

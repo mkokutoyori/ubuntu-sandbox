@@ -12,9 +12,12 @@ import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './T
 import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
+import { IPAddress } from '@/network/core/types';
+import { parsePingArgs, formatCiscoPingSummary, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
 
 const CISCO_THEME: TerminalTheme = {
   sessionType: 'cisco',
@@ -55,6 +58,15 @@ export class CiscoTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'cisco'; }
   getTheme(): TerminalTheme { return CISCO_THEME; }
 
+  protected override prepareAsRemoteUser(_user: string): void {
+    if (this.vty) {
+      this.vty.state.mode = 'privileged';
+      this.vty.state.privilegeLevel = 15;
+    }
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   /**
    * Run commands through the per-vty queue so the shared shell is swapped
    * into this session's state for the duration of the call. Concurrent
@@ -83,6 +95,22 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return this.vty?.state.terminalLength ?? 24;
   }
 
+  protected override resolveCliHelp(currentInput: string): string {
+    const dev = this.device;
+    if (this.vty && dev instanceof Router) {
+      return dev.cliHelpForVty(currentInput, this.vty);
+    }
+    return super.resolveCliHelp(currentInput);
+  }
+
+  protected override resolveCliTabComplete(input: string): string | null {
+    const dev = this.device;
+    if (this.vty && dev instanceof Router) {
+      return dev.cliTabCompleteForVty(input, this.vty);
+    }
+    return super.resolveCliTabComplete(input);
+  }
+
   /**
    * Override updatePrompt to read the prompt from the vty's swapped-in
    * shell state, not from the device's shared default state.
@@ -103,6 +131,14 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'end'; }
   protected getPagerIndicator(): string { return ' --More-- '; }
+
+  protected isTopLevelExit(line: string): boolean {
+    const w = line.trim().toLowerCase();
+    if (w === 'logout') return true;
+    if (w !== 'exit' && w !== 'quit') return false;
+    const mode = this.vty?.state.mode;
+    return mode === 'user' || mode === 'privileged';
+  }
 
   getInfoBarContent() {
     const deviceType = this.device.getType();
@@ -143,8 +179,71 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private debugJob: AsyncJobHandle | null = null;
   private debugUnsubscribe: (() => void) | null = null;
+  private monitorJob: AsyncJobHandle | null = null;
+  private monitorUnsubscribe: (() => void) | null = null;
 
   protected override afterCommandExecuted(_command: string): void {
+    this.reconcileDebugSubscription();
+    this.reconcileTerminalMonitor();
+  }
+
+  protected override tryInterceptAsyncCommand(command: string): boolean {
+    return this.tryStartCiscoPing(command);
+  }
+
+  private tryStartCiscoPing(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof Router)) return false;
+    const mode = this.vty?.state.mode;
+    if (mode !== 'user' && mode !== 'privileged') return false;
+
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'ping') return false;
+    const parsed = parsePingArgs(toks.slice(1));
+    if (parsed.error || parsed.sourceIP) return false;
+
+    const targetIP = new IPAddress(parsed.target);
+    const results: CiscoPingRow[] = [];
+    let marksBase = this.lines.length;
+
+    const repaintMarks = () => {
+      this.lines = this.lines.slice(0, marksBase);
+      this.addLine(results.map((r) => (r.success ? '!' : '.')).join(''));
+      this.notify();
+    };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      label: `ping ${parsed.target}`,
+      run: async (ctx) => {
+        ctx.sink.line('Type escape sequence to abort.');
+        ctx.sink.line(`Sending ${parsed.count}, ${parsed.sizeBytes}-byte ICMP Echos to ${parsed.target}, timeout is ${parsed.timeoutMs / 1000} seconds:`);
+        marksBase = this.lines.length;
+        this.addLine('');
+        this.notify();
+
+        await dev.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, undefined, {
+          onResult: (row) => { if (ctx.cancelled()) return; results.push(row); repaintMarks(); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+
+        if (results.length === 0) {
+          this.lines = this.lines.slice(0, marksBase);
+          this.addLine('.'.repeat(parsed.count));
+          this.notify();
+        }
+        ctx.sink.line(formatCiscoPingSummary(results, parsed.count));
+      },
+      onInterrupt: (ctx) => { ctx.sink.line(formatCiscoPingSummary(results, parsed.count)); },
+    });
+    return job !== null;
+  }
+
+  private reconcileDebugSubscription(): void {
     const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
     if (!svc) return;
     if (svc.hasAnyFlag() && !this.debugJob) {
@@ -153,6 +252,36 @@ export class CiscoTerminalSession extends CLITerminalSession {
       this.debugJob.cancel();
       this.debugJob = null;
     }
+  }
+
+  private reconcileTerminalMonitor(): void {
+    const on = this.vty?.state.terminalMonitor ?? false;
+    if (!on && !this.monitorJob) return;
+    const src = (this.device as unknown as { getLoggingConfig?: () => LoggingMonitorSource | null }).getLoggingConfig?.();
+    if (on && src && !this.monitorJob) {
+      this.startMonitorSubscription(src);
+    } else if ((!on || !src) && this.monitorJob) {
+      this.monitorJob.cancel();
+      this.monitorJob = null;
+    }
+  }
+
+  private startMonitorSubscription(src: LoggingMonitorSource): void {
+    this.monitorJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal monitor',
+      label: 'syslog monitor',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.monitorUnsubscribe = src.subscribeMonitor((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.monitorUnsubscribe?.();
+          this.monitorUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 
   private startDebugSubscription(svc: TerminalDebugSource): void {

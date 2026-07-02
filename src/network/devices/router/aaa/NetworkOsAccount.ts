@@ -84,6 +84,7 @@ export class NetworkOsAccount {
   readonly description: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly factoryDefault: boolean;
 
   private constructor(s: NetworkOsAccountSnapshot) {
     this.name = s.name;

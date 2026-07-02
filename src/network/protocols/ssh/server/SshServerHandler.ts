@@ -8,6 +8,8 @@
  */
 
 import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler } from '@/events/Scheduler';
 import type { ChannelType } from '../channels/ISshChannel';
 import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
@@ -31,6 +33,14 @@ interface OpenChannelInfo {
   readonly openedAt: number;
 }
 
+const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
+
+function preauthSlot(ctx: object): { value: number } {
+  let s = PREAUTH_COUNT.get(ctx);
+  if (!s) { s = { value: 0 }; PREAUTH_COUNT.set(ctx, s); }
+  return s;
+}
+
 export class SshServerHandler {
   private readonly dispatcher = SftpCommandDispatcher.defaults();
 
@@ -51,6 +61,28 @@ export class SshServerHandler {
   }
 
   register(conn: TcpConnection, clientIp: string): void {
+    const ms = this.ctx.config.maxStartups;
+    if (ms && ms.start > 0) {
+      const slot = preauthSlot(this.ctx);
+      const n = slot.value;
+      let refuse = false;
+      if (n >= ms.full) refuse = true;
+      else if (n >= ms.start) {
+        const p = ms.rate / 100;
+        refuse = Math.random() < p;
+      }
+      if (refuse) {
+        conn.write(JSON.stringify({ op: 'disconnect', reason: 'max_startups' }));
+        conn.close();
+        this.eventBus.emit({
+          kind: 'client_disconnected',
+          user: '', ip: clientIp,
+          reason: 'too_many_failures',
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    }
     this.eventBus.emit({
       kind: 'client_connected',
       ip: clientIp,
@@ -79,8 +111,55 @@ export class SshServerHandler {
   private handleConnection(conn: TcpConnection, clientIp: string): void {
     const channels = new Map<number, OpenChannelInfo>();
     let userCtx: SshUserContext | null = null;
+    let authFailures = 0;
+    const preauth = preauthSlot(this.ctx);
+    preauth.value += 1;
+    let preauthDecremented = false;
+    const decPreauth = () => { if (!preauthDecremented) { preauth.value = Math.max(0, preauth.value - 1); preauthDecremented = true; } };
+
+    const timers = new TimerSet(() => getDefaultScheduler());
+    let keepaliveTimer: symbol | null = null;
+    let graceTimer: symbol | null = null;
+    let missedAcks = 0;
+    const intervalSec = this.ctx.config.clientAliveInterval ?? 0;
+    const maxMissed = this.ctx.config.clientAliveCountMax ?? 0;
+    const graceSec = this.ctx.config.loginGraceTime ?? 0;
+    if (graceSec > 0) {
+      graceTimer = timers.setTimeout(() => {
+        if (userCtx) return;
+        this.eventBus.emit({
+          kind: 'client_disconnected',
+          user: '',
+          ip: clientIp,
+          reason: 'auth_grace_timeout',
+          timestamp: Date.now(),
+        });
+        conn.close();
+      }, graceSec * 1000);
+    }
+    if (intervalSec > 0 && maxMissed > 0) {
+      keepaliveTimer = timers.setInterval(() => {
+        missedAcks += 1;
+        if (missedAcks > maxMissed) {
+          this.eventBus.emit({
+            kind: 'client_disconnected',
+            user: userCtx?.username ?? '',
+            ip: clientIp,
+            reason: 'client-alive-timeout',
+            timestamp: Date.now(),
+          });
+          conn.close();
+          return;
+        }
+        try { conn.write(JSON.stringify({ op: 'keepalive', seq: missedAcks })); }
+        catch { /* socket closed mid-tick */ }
+      }, intervalSec * 1000);
+    }
 
     conn.onClose?.((reason) => {
+      timers.clearAll();
+      keepaliveTimer = null;
+      decPreauth();
       channels.clear();
       this.eventBus.emit({
         kind: 'client_disconnected',
@@ -101,10 +180,12 @@ export class SshServerHandler {
       }
       const op = parsed.op as string | undefined;
       if (!op) return;
+      if (op === 'keepalive_ack') { missedAcks = 0; return; }
 
       switch (op) {
         case 'hello': {
           const protocolInfo = this.negotiateProtocol(parsed);
+          const preAuthBanner = this.ctx.getBanner?.() ?? null;
           conn.write(
             JSON.stringify({
               hostKey: {
@@ -113,17 +194,46 @@ export class SshServerHandler {
               },
               serverVersion: 'SSH-2.0-Sandbox-Server',
               clientVersion: protocolInfo.clientVersion,
+              ...(preAuthBanner ? { preAuthBanner } : {}),
             }),
           );
           break;
         }
 
         case 'auth': {
+          const cap = this.ctx.config.maxAuthTries;
+          if (authFailures >= cap) {
+            conn.write(JSON.stringify({ ok: false, error: 'too many authentication failures' }));
+            this.eventBus.emit({
+              kind: 'auth_failure',
+              user: (parsed.user as string | undefined) ?? '',
+              reason: 'max_auth_tries',
+              ip: clientIp,
+              method: parsed.method as string | undefined,
+            });
+            conn.close();
+            return;
+          }
           void this.handleAuth(parsed, clientIp).then((result) => {
             conn.write(JSON.stringify({ ok: result.ok }));
             if (result.ok) {
               userCtx = result.userCtx;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
+              timers.clear(graceTimer);
+              graceTimer = null;
+              decPreauth();
+              return;
+            }
+            authFailures += 1;
+            if (authFailures >= cap) {
+              this.eventBus.emit({
+                kind: 'auth_failure',
+                user: (parsed.user as string | undefined) ?? '',
+                reason: 'max_auth_tries',
+                ip: clientIp,
+                method: parsed.method as string | undefined,
+              });
+              conn.close();
             }
           });
           break;
@@ -132,6 +242,17 @@ export class SshServerHandler {
         case 'open_channel': {
           if (!userCtx) {
             conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
+            return;
+          }
+          if (channels.size >= this.ctx.config.maxSessions) {
+            conn.write(JSON.stringify({ ok: false, error: 'open failed: administratively prohibited: too many open sessions' }));
+            this.eventBus.emit({
+              kind: 'auth_failure',
+              user: userCtx.username,
+              reason: 'max_sessions',
+              ip: clientIp,
+              method: 'open_channel',
+            });
             return;
           }
           const channelType = parsed.channelType as ChannelType;

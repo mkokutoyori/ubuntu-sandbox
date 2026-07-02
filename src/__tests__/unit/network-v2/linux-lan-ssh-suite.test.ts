@@ -49,9 +49,9 @@ function buildLan(): Lan {
   const pc4 = new LinuxPC('linux-pc', 'pc4', 0, 0);
   const srv1 = new LinuxServer('linux-server', 'srv1', 0, 0);
   const srv2 = new LinuxServer('linux-server', 'srv2', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const sw = new GenericSwitch('switch', 'core-sw', 8, 0, 0);
   const all: (LinuxPC | LinuxServer)[] = [pc1, pc2, pc3, pc4, srv1, srv2];
-  all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
+  all.forEach((d, i) => { new Cable(`c${i}`).connect(d.getPorts()[0], sw.getPorts()[i]); });
 
   const mask = new SubnetMask('255.255.255.0');
   pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
@@ -113,6 +113,10 @@ interface Row {
   contains?: (string | RegExp)[];
   /** Substrings the output must NOT contain (none of them). */
   excludes?: (string | RegExp)[];
+}
+
+function waitForRestartSec(ms = 250): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function runRow(lan: Lan, row: Row): Promise<string> {
@@ -427,6 +431,7 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
         const ps = await l.pc2.executeCommand('pgrep sshd');
         const pid = ps.trim().split(/\s+/)[0];
         await l.pc2.executeCommand(`kill -9 ${pid}`);
+        await waitForRestartSec();
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -435,7 +440,10 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
     },
     {
       name: 'pkill -f sshd — same supervisor-driven recovery',
-      setup: (l) => { void l.pc2.executeCommand('pkill -f sshd'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('pkill -f sshd');
+        await waitForRestartSec();
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -443,7 +451,10 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
     },
     {
       name: 'after pkill, systemctl status reports active (running) again',
-      setup: (l) => { void l.pc2.executeCommand('pkill -9 sshd'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('pkill -9 sshd');
+        await waitForRestartSec();
+      },
       on: l => l.pc2,
       cmd: 'systemctl status ssh',
       contains: [/Active:\s+active \(running\)/],
@@ -550,7 +561,10 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin yes → root accepted',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -558,7 +572,10 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin prohibit-password also blocks password root',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin prohibit-password"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin prohibit-password"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: [/Permission denied/],
@@ -602,14 +619,20 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
   const rows: Row[] = [
     {
       name: 'AllowUsers alice → alice succeeds',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'AllowUsers alice → bob is rejected',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
@@ -617,22 +640,29 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
     },
     {
       name: 'AllowUsers with glob "a*" lets alice and admin in',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers a*\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers a*\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh admin@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'DenyUsers bob → bob refused even when AllowUsers absent',
-      setup: (l) => { void l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
     },
     {
       name: 'DenyUsers takes precedence over AllowUsers',
-      setup: (l) => {
-        void l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
@@ -759,7 +789,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       name: 'auth.log records port and protocol info per OpenSSH',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
       on: l => l.pc2,
-      cmd: 'tail -1 /var/log/auth.log',
+      cmd: 'tail -3 /var/log/auth.log',
       contains: [/port \d+ ssh2/],
     },
     {
@@ -1022,7 +1052,7 @@ describe('§15 — service ↔ process table reactive coherence', () => {
         // ssh ships with Restart=on-failure; force a crash via SIGKILL
         const pid = (await l.pc1.executeCommand('pgrep sshd')).trim();
         await l.pc1.executeCommand(`kill -9 ${pid}`);
-        // a future-style implementation auto-restarts; allow either outcome
+        await waitForRestartSec();
       },
       on: l => l.pc1,
       cmd: 'systemctl status ssh',
@@ -1622,7 +1652,7 @@ describe('§25 — full end-to-end audit story', () => {
       name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
       on: l => l.srv1,
-      cmd: 'sh -c "tail -1 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
+      cmd: 'sh -c "tail -3 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
       contains: [/Accepted password for alice/, /sshd.*alice/],
     },
     {
@@ -1709,13 +1739,16 @@ describe('§26 — SSH public-key authentication', () => {
       contains: [/-rw-------.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
     },
     {
+      // ssh-copy-id pose authorized_keys en 0600 (réservé à alice) ;
+      // `sudo cat` permet à l'opérateur courant (pc2 = 'user') de lire
+      // le fichier au nom de root.
       name: 'ssh-copy-id installs the public key on the remote',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
       },
       on: l => l.pc2,
-      cmd: 'cat /home/alice/.ssh/authorized_keys',
+      cmd: 'sudo cat /home/alice/.ssh/authorized_keys',
       contains: [/^ssh-ed25519 /m],
     },
     {
@@ -1726,7 +1759,7 @@ describe('§26 — SSH public-key authentication', () => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
       on: l => l.pc2,
-      cmd: 'tail -1 /var/log/auth.log',
+      cmd: 'tail -3 /var/log/auth.log',
       contains: [/Accepted publickey for alice/],
     },
     {

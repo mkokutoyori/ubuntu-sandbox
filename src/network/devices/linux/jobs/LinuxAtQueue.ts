@@ -88,6 +88,7 @@ export function cmdAt(
   stdin: string,
   user: string,
   atdRunning: boolean,
+  now: Date = new Date(),
 ): string {
   if (!atdRunning) return ATD_DOWN;
 
@@ -95,7 +96,7 @@ export function cmdAt(
   if (!command) return 'at: no command to schedule';
 
   const timeSpec = args.filter((a) => !a.startsWith('-')).join(' ') || 'now';
-  const runAt = parseAtTime(timeSpec);
+  const runAt = parseAtTime(timeSpec, now);
   const job = queue.enqueue(command, user, runAt);
   return `job ${job.id} at ${fmtAtqDate(runAt)}`;
 }

@@ -1,27 +1,14 @@
-/**
- * DnsNssSource — the `dns` NSS source for hosts/ahosts lookups.
- *
- * With a wire resolver injected (the host's UDP/53 stub) and nameservers
- * configured in /etc/resolv.conf, lookups travel the cable plant like a
- * real stub resolver: NXDOMAIN is authoritative, all-servers-timeout
- * yields TRYAGAIN (EAI_AGAIN).
- *
- * Without nameservers (or without the injected resolver), falls back to
- * the legacy topology scan — the historic "the LAN graph is the DNS"
- * convenience kept for unconfigured boxes.
- */
-
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import type { DnsWireResponse } from '../../../dns/DnsWire';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { RRType } from '@/network/dns/wire/RRType';
+import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { INssSource } from './INssSource';
+import { nssNotFound as NOTFOUND } from './nssResult';
 import type { NssEnumResult, NssHostEntry, NssResult } from './types';
 
-const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
-
 export interface DnsWireStubResolver {
-  /** Usable `nameserver` entries from /etc/resolv.conf (loopback stubs excluded). */
   nameservers(): string[];
-  query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsWireResponse | null;
+  query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsMessage | null;
 }
 
 export class DnsNssSource implements INssSource {
@@ -49,20 +36,13 @@ export class DnsNssSource implements INssSource {
     return this.legacyScanByAddr(addr);
   }
 
-  /**
-   * `dns` has no enumeration semantics on real Linux (you cannot dump
-   * the entire DNS world). Returning UNAVAIL lets the resolver fall
-   * through to the next source for `getent hosts` with no key.
-   */
   enumHosts(): NssEnumResult<NssHostEntry> {
     return { status: 'UNAVAIL', entries: [] };
   }
 
-  // ─── Wire path ────────────────────────────────────────────────────
-
   private queryAny(
     servers: string[], name: string, qtype: 'A' | 'AAAA' | 'PTR',
-  ): DnsWireResponse | null {
+  ): DnsMessage | null {
     for (const server of servers) {
       const resp = this.wire!.query(server, name, qtype);
       if (resp) return resp;
@@ -73,23 +53,26 @@ export class DnsNssSource implements INssSource {
   private wireLookup(
     servers: string[], name: string, family?: 2 | 10,
   ): NssResult<NssHostEntry[]> {
-    const qtypes: Array<'A' | 'AAAA'> =
-      family === 10 ? ['AAAA'] : family === 2 ? ['A'] : ['A', 'AAAA'];
+    const lookups: Array<{ qtype: 'A' | 'AAAA'; rrType: number; af: 2 | 10 }> =
+      family === 10 ? [{ qtype: 'AAAA', rrType: RRType.AAAA, af: 10 }]
+      : family === 2 ? [{ qtype: 'A', rrType: RRType.A, af: 2 }]
+      : [{ qtype: 'A', rrType: RRType.A, af: 2 }, { qtype: 'AAAA', rrType: RRType.AAAA, af: 10 }];
     const matches: NssHostEntry[] = [];
     let answered = false;
 
-    for (const qtype of qtypes) {
+    for (const { qtype, rrType, af } of lookups) {
       const resp = this.queryAny(servers, name, qtype);
       if (!resp) continue;
       answered = true;
-      if (resp.rcode === 'NXDOMAIN') return NOTFOUND();
-      if (resp.rcode !== 'NOERROR') return { status: 'TRYAGAIN' };
+      if (resp.flags.rcode === DnsRcode.NXDOMAIN) return NOTFOUND();
+      if (resp.flags.rcode !== DnsRcode.NOERROR) return { status: 'TRYAGAIN' };
+      const canonicalName = (resp.questions[0]?.qname ?? name).toLowerCase();
       for (const answer of resp.answers) {
-        if (answer.type !== qtype) continue;
+        if (answer.data.type !== rrType) continue;
         matches.push({
-          canonicalName: resp.name.toLowerCase(),
-          addressFamily: qtype === 'AAAA' ? 10 : 2,
-          address: answer.value,
+          canonicalName,
+          addressFamily: af,
+          address: (answer.data as { address: { toString(): string } }).address.toString(),
           aliases: [],
         });
       }
@@ -103,21 +86,19 @@ export class DnsNssSource implements INssSource {
   private wirePtrLookup(servers: string[], addr: string): NssResult<NssHostEntry> {
     const resp = this.queryAny(servers, addr, 'PTR');
     if (!resp) return { status: 'TRYAGAIN' };
-    if (resp.rcode !== 'NOERROR' || resp.answers.length === 0) return NOTFOUND();
-    const ptr = resp.answers.find(a => a.type === 'PTR');
+    if (resp.flags.rcode !== DnsRcode.NOERROR || resp.answers.length === 0) return NOTFOUND();
+    const ptr = resp.answers.find(a => a.data.type === RRType.PTR);
     if (!ptr) return NOTFOUND();
     return {
       status: 'SUCCESS',
       entry: {
-        canonicalName: ptr.value,
+        canonicalName: (ptr.data as { ptrdname: string }).ptrdname,
         addressFamily: addr.includes(':') ? 10 : 2,
         address: addr,
         aliases: [],
       },
     };
   }
-
-  // ─── Legacy topology scan (no nameserver configured) ─────────────
 
   private legacyScanByName(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const needle = name.toLowerCase();
@@ -126,8 +107,9 @@ export class DnsNssSource implements INssSource {
 
     for (const dev of EquipmentRegistry.getInstance().getAll()) {
       if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.()?.toLowerCase();
-      if (!hostname) continue;
+      const rawHostname = dev.getHostname?.();
+      if (typeof rawHostname !== 'string' || !rawHostname) continue;
+      const hostname = rawHostname.toLowerCase();
       if (hostname !== needle && hostname !== short) continue;
 
       for (const port of dev.getPorts()) {
@@ -152,8 +134,9 @@ export class DnsNssSource implements INssSource {
   private legacyScanByAddr(addr: string): NssResult<NssHostEntry> {
     for (const dev of EquipmentRegistry.getInstance().getAll()) {
       if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.();
-      if (!hostname) continue;
+      const rawHostname = dev.getHostname?.();
+      if (typeof rawHostname !== 'string' || !rawHostname) continue;
+      const hostname = rawHostname;
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (!ip) continue;

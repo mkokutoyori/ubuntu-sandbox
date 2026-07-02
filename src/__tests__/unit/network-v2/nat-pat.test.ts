@@ -196,6 +196,7 @@ describe('Group 3: Cisco IOS — PAT / dynamic NAT CLI', () => {
 
   it('3.1 ip nat inside source list … overload adds PAT rule', async () => {
     await cfg(r, ['enable', 'configure terminal',
+      'access-list 1 permit 10.0.0.0 0.0.0.255',
       'ip nat inside source list 1 interface GigabitEthernet0/1 overload']);
     const rules = r._getNATEngine().getDynamicRules();
     expect(rules).toHaveLength(1);
@@ -205,6 +206,7 @@ describe('Group 3: Cisco IOS — PAT / dynamic NAT CLI', () => {
 
   it('3.2 ip nat inside source list … pool adds pool rule', async () => {
     await cfg(r, ['enable', 'configure terminal',
+      'access-list 1 permit 10.0.0.0 0.0.0.255',
       'ip nat pool MYPOOL 203.0.113.10 203.0.113.20 netmask 255.255.255.0',
       'ip nat inside source list 1 pool MYPOOL']);
     const rules = r._getNATEngine().getDynamicRules();
@@ -283,6 +285,12 @@ describe('Group 4: Cisco IOS — show ip nat translations', () => {
     const out = await r.executeCommand('show ip nat statistics');
     expect(out).toContain('GigabitEthernet0/0');
     expect(out).toContain('GigabitEthernet0/1');
+  });
+
+  it('4.3b show ip nat statistics discloses ALG/NAT64 limitation', async () => {
+    const out = await r.executeCommand('show ip nat statistics');
+    expect(out).toMatch(/Application Layer Gateways:\s+none\b/);
+    expect(out).toContain('FTP/SIP ALG and NAT64 not supported');
   });
 
   it('4.4 show running-config includes ip nat inside/outside on interface', async () => {

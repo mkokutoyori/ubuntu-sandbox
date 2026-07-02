@@ -119,16 +119,16 @@ export async function buildWanVpnTopology(opts: WanVpnOptions = {}): Promise<Wan
   // ═════════════════════════════════════════════════════════════════════
 
   // HQ LAN: R-HQ Gi0/0 ↔ SW-HQ ↔ SRV-HQ
-  wire('lan-hq-sw', rHQ.getPort('GigabitEthernet0/0')!, swHQ.getPort('FastEthernet0/0')!);
-  wire('lan-hq-srv', server.getPort('eth0')!, swHQ.getPort('FastEthernet0/1')!);
+  wire('lan-hq-sw', rHQ.getPort('GigabitEthernet0/0')!, swHQ.getPort('FastEthernet0/1')!);
+  wire('lan-hq-srv', server.getPort('eth0')!, swHQ.getPort('FastEthernet0/2')!);
 
   // Branch1 LAN: R-BR1 GE0/0/0 ↔ SW-BR1 ↔ WinPC1
   wire('lan-br1-sw', rBR1.getPort('GE0/0/0')!, swBR1.getPort('GigabitEthernet0/0/0')!);
   wire('lan-br1-win', winPC1.getPort('eth0')!, swBR1.getPort('GigabitEthernet0/0/1')!);
 
   // Branch2 LAN: R-BR2 Gi0/0 ↔ SW-BR2 ↔ LinuxPC2
-  wire('lan-br2-sw', rBR2.getPort('GigabitEthernet0/0')!, swBR2.getPort('FastEthernet0/0')!);
-  wire('lan-br2-pc', linuxPC2.getPort('eth0')!, swBR2.getPort('FastEthernet0/1')!);
+  wire('lan-br2-sw', rBR2.getPort('GigabitEthernet0/0')!, swBR2.getPort('FastEthernet0/1')!);
+  wire('lan-br2-pc', linuxPC2.getPort('eth0')!, swBR2.getPort('FastEthernet0/2')!);
 
   // Branch3 LAN: R-BR3 GE0/0/0 ↔ LinuxPC3 (direct, no switch)
   wire('lan-br3-pc', rBR3.getPort('GE0/0/0')!, linuxPC3.getPort('eth0')!);

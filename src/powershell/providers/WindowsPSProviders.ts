@@ -16,14 +16,15 @@
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
-import { fwRules, resolveAdapterName } from '@/network/devices/windows/WinNetsh';
-import { IPAddress, SubnetMask } from '@/network/core/types';
+import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
+import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 
 type FwRow = {
   name: string; displayName: string; enabled: boolean;
   action: string; direction: string; protocol: string;
   localPort: string; remotePort: string; description: string;
 };
+import { JobProvider } from '@/powershell/providers/JobProvider';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -657,8 +658,88 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return m.getDefaultGateway ? m.getDefaultGateway() : null;
   }
   isDHCPConfigured(): boolean { return false; }
-  testConnection(): boolean   { return true; }
+  testConnection(target: string): boolean {
+    const probe = this.testPingProbe(target);
+    return probe?.success ?? false;
+  }
   resolveDns(): string[]      { return []; }
+  testPingProbe(target: string) {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return null;
+    const r = this.pc.sendPingProbeSync(ip);
+    return { success: r.success, rttMs: r.rttMs, resolvedIp: ip.toString() };
+  }
+  testTcpProbe(target: string, port: number): boolean {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return false;
+    return this.pc.tcpProbeSync(ip, port);
+  }
+  egressInfoFor(target: string) {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return null;
+    const eg = this.pc.getEgressFor(ip);
+    if (!eg) return null;
+    return {
+      sourceIp: eg.sourceIp.toString(),
+      interfaceAlias: eg.interfaceName,
+      nextHop: eg.nextHopIP.toString(),
+    };
+  }
+  private resolveTargetSync(target: string): IPAddress | null {
+    return this.pc.resolveHostnameSync(target);
+  }
+  getNeighbors(filter?: { ipAddress?: IPAddress; state?: string; ifIndex?: number }) {
+    const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
+    const portIndex = new Map(ports.map((p, i) => [p.name, i + 1]));
+    const stateMap: Record<string, 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete'> = {
+      static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
+    };
+    const rows = [] as Array<{
+      ifIndex: number; ifAlias: string; ipAddress: string;
+      linkLayerAddress: string;
+      state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
+      addressFamily: 'IPv4'; policyStore: 'ActiveStore' | 'PersistentStore';
+    }>;
+    const filterIpKey = filter?.ipAddress?.toString();
+    for (const [ip, entry] of arp) {
+      const state = stateMap[entry.type] ?? 'Reachable';
+      const ifIndex = portIndex.get(entry.iface) ?? 1;
+      if (filterIpKey && ip !== filterIpKey) continue;
+      if (filter?.state && state !== filter.state) continue;
+      if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
+      rows.push({
+        ifIndex,
+        ifAlias: portToDisplayName(entry.iface),
+        ipAddress: ip,
+        linkLayerAddress: entry.mac.toString().toUpperCase().replace(/:/g, '-'),
+        state,
+        addressFamily: 'IPv4',
+        policyStore: entry.type === 'static' ? 'PersistentStore' : 'ActiveStore',
+      });
+    }
+    return rows;
+  }
+
+  addNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias: string): string {
+    const iface = displayNameToPort(ifAlias);
+    (this.pc as unknown as { addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void })
+      .addStaticARP(ipAddress, linkLayerAddress, iface);
+    return '';
+  }
+
+  removeNeighbor(ipAddress: IPAddress, _ifAlias?: string): string {
+    const ok = (this.pc as unknown as { deleteARP: (ip: IPAddress) => boolean }).deleteARP(ipAddress);
+    return ok ? '' : `Remove-NetNeighbor : No matching neighbor cache entry found.`;
+  }
+
+  setNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias?: string): string {
+    const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
+    const existing = arp.get(ipAddress.toString());
+    const iface = ifAlias ? displayNameToPort(ifAlias) : (existing?.iface ?? 'eth0');
+    return this.addNeighbor(ipAddress, linkLayerAddress, portToDisplayName(iface));
+  }
+
   getTcpConnections() {
     const table = (this.pc as unknown as { getSocketTable?: () => { getAll: () => Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }> } }).getSocketTable?.();
     if (!table) return [];
@@ -688,28 +769,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
       { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
       { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
     ];
-    // Coherent view: dynamic rules added via PowerShell live in
-    // `state.dynamicFirewallRules`; cmd's `netsh advfirewall firewall add`
-    // pushes into the shared module-level `fwRules` array. We merge both
-    // sources by displayName so callers see a single coherent list.
+    // Single per-device store: both PowerShell `New-NetFirewallRule`
+    // and cmd's `netsh advfirewall firewall add rule` write to the same
+    // `state.dynamicFirewallRules` map. No more cross-host leakage.
     const dynamicMap = new Map<string, FwRow>();
     for (const r of this.state.dynamicFirewallRules.values()) {
       dynamicMap.set((r.displayName ?? r.name).toLowerCase(), { ...r });
-    }
-    for (const r of fwRules) {
-      const key = r.name.toLowerCase();
-      if (dynamicMap.has(key)) continue;
-      dynamicMap.set(key, {
-        name: r.name,
-        displayName: r.name,
-        enabled: true,
-        action: r.action.charAt(0).toUpperCase() + r.action.slice(1),
-        direction: r.dir === 'out' ? 'Outbound' : 'Inbound',
-        protocol: r.protocol,
-        localPort: r.localport,
-        remotePort: 'Any',
-        description: '',
-      });
     }
     return [...builtins, ...dynamicMap.values()];
   }
@@ -727,19 +792,6 @@ class WindowsNetworkAdapter implements INetworkProvider {
       remotePort: rule.remotePort ?? 'Any',
       description: rule.description ?? '',
     });
-    // Mirror into the cmd-visible store so `netsh advfirewall firewall show
-    // rule name="<n>"` can find the same rule.
-    if (!fwRules.some(r => r.name.toLowerCase() === rule.name.toLowerCase())) {
-      fwRules.push({
-        name:      rule.name,
-        dir:       rule.direction === 'Outbound' ? 'out' : 'in',
-        action:    rule.action.toLowerCase(),
-        protocol:  rule.protocol ?? 'TCP',
-        localport: rule.localPort ?? 'Any',
-        program:   '',
-        profile:   'any',
-      });
-    }
   }
   setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
     const key = name.toLowerCase();
@@ -752,9 +804,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   removeFirewallRule(name: string): string {
     const key = name.toLowerCase();
     const removed = this.state.dynamicFirewallRules.delete(key);
-    const i = fwRules.findIndex(r => r.name.toLowerCase() === name.toLowerCase());
-    if (i >= 0) fwRules.splice(i, 1);
-    return (removed || i >= 0) ? '' : `No firewall rule named '${name}'.`;
+    return removed ? '' : `No firewall rule named '${name}'.`;
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────
@@ -814,6 +864,14 @@ function portToDisplayName(portName: string): string {
   if (!m) return portName;
   const idx = parseInt(m[1], 10);
   return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
+}
+
+// Inverse: PS display name → port name (`Ethernet` → `eth0`, `Ethernet 2` → `eth1`).
+function displayNameToPort(alias: string): string {
+  if (alias.toLowerCase() === 'ethernet') return 'eth0';
+  const m = alias.match(/^Ethernet\s+(\d+)$/i);
+  if (m) return `eth${parseInt(m[1], 10) - 1}`;
+  return alias;
 }
 
 // 255.255.255.0 → 24.
@@ -1024,6 +1082,10 @@ export function createWindowsPSProviders(
     filesystem:     new WindowsFileSystemAdapter(pc),
     services:       new WindowsServiceAdapter(pc),
     processes:      new WindowsProcessAdapter(pc),
+    jobs:           new JobProvider({
+      now: () => (pc as unknown as { simulatedNow: () => number }).simulatedNow(),
+      advance: (ms) => (pc as unknown as { advanceTime: (ms: number) => void }).advanceTime(ms),
+    }),
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg),
     eventLog:       new WindowsEventLogAdapter(log),

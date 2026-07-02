@@ -37,6 +37,7 @@ import {
   aesCbcEncrypt, aesCbcDecrypt,
 } from '@/crypto';
 import { encodePacket, decodePacket } from './packetCodec';
+import { computeOuterTos } from './DscpTunnelMarker';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -62,6 +63,9 @@ import {
   type IPSecObservables,
 } from './observables';
 import { IPSecSignalRefreshActor } from './actors';
+import { PkiKeyPair } from '../pki/PkiKeyPair';
+import { verificationToIkeReason } from './IkeCertAuthConfig';
+import type { X509Certificate } from '../pki/X509Certificate';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -472,6 +476,7 @@ export class IPSecEngine implements IProtocolEngine {
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
   }>();
   private natKeepaliveInterval: number = 0;
+  private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
   private dpdConfig: DPDConfig | null = null;
   private globalSALifetimeSeconds: number = 3600;
   private globalSALifetimeKB: number = 4608000; // 4608000 KB default
@@ -497,6 +502,7 @@ export class IPSecEngine implements IProtocolEngine {
   // ── SA Database ──────────────────────────────────────────────────
   /** peerIP → IKE_SA */
   private ikeSADB: Map<string, IKE_SA> = new Map();
+  private ikeCertAuth: import('./IkeCertAuthConfig').IkeCertAuthConfig | null = null;
   /** peerIP → IKEv2_SA */
   private ikev2SADB: Map<string, IKEv2_SA> = new Map();
   /** peerIP → IPSec_SA[] */
@@ -558,6 +564,14 @@ export class IPSecEngine implements IProtocolEngine {
   readonly outboundChain: FilterChain<IPSecOutboundContext>;
 
   /** Test-only / multi-topology bus injection. */
+  setIkeCertAuth(config: import('./IkeCertAuthConfig').IkeCertAuthConfig): void {
+    this.ikeCertAuth = config;
+  }
+
+  clearIkeCertAuth(): void {
+    this.ikeCertAuth = null;
+  }
+
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
     this.attachActors();
@@ -888,6 +902,36 @@ export class IPSecEngine implements IProtocolEngine {
 
   setNATKeepalive(interval: number): void {
     this.natKeepaliveInterval = interval;
+    for (const [peerIP, sa] of this.ikeSADB) {
+      if (sa.natT) this.rearmNatTKeepalive(peerIP);
+    }
+  }
+
+  private rearmNatTKeepalive(peerIP: string): void {
+    const existing = this.natKeepaliveTimers.get(peerIP);
+    if (existing) {
+      this.timers.clear(existing);
+      this.natKeepaliveTimers.delete(peerIP);
+    }
+    if (this.natKeepaliveInterval <= 0) return;
+    const periodMs = this.natKeepaliveInterval * 1000;
+    const token = this.timers.setInterval(() => {
+      const sa = this.ikeSADB.get(peerIP);
+      if (!sa || !sa.natT) {
+        this.cancelNatTKeepalive(peerIP);
+        return;
+      }
+      this.router._sendNatTKeepalive(peerIP);
+    }, periodMs);
+    this.natKeepaliveTimers.set(peerIP, token);
+  }
+
+  private cancelNatTKeepalive(peerIP: string): void {
+    const token = this.natKeepaliveTimers.get(peerIP);
+    if (token) {
+      this.timers.clear(token);
+      this.natKeepaliveTimers.delete(peerIP);
+    }
   }
 
   getNATKeepalive(): number {
@@ -1393,6 +1437,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   clearSAsForPeer(peerIP: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' = 'manual'): void {
+    this.cancelNatTKeepalive(peerIP);
     const ikeSA = this.ikeSADB.get(peerIP);
     if (ikeSA) {
       ikeSA.status = 'MM_NO_STATE';
@@ -1446,15 +1491,6 @@ export class IPSecEngine implements IProtocolEngine {
         }
       }
     }
-  }
-
-  clearAllSAs(): void {
-    this.ikeSADB.clear();
-    this.ikev2SADB.clear();
-    this.ipsecSADB.clear();
-    this.spiToSA.clear();
-    this.multicastSADB.clear();
-    this.multicastGroupIndex.clear();
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -1876,6 +1912,27 @@ export class IPSecEngine implements IProtocolEngine {
     return null;
   }
 
+  findAllMatchingCryptoEntries(pkt: IPv4Packet, egressIface: string): CryptoMapEntry[] {
+    if (pkt.protocol === IP_PROTO_ESP || pkt.protocol === IP_PROTO_AH) return [];
+    const mapName = this.ifaceCryptoMap.get(egressIface);
+    if (!mapName) return [];
+    const cmap = this.cryptoMaps.get(mapName);
+    if (!cmap) return [];
+    const out: CryptoMapEntry[] = [];
+    const seqs = [...cmap.staticEntries.keys()].sort((a, b) => a - b);
+    for (const seq of seqs) {
+      const entry = cmap.staticEntries.get(seq)!;
+      if (entry.aclName && this.matchACL(entry.aclName, pkt)) out.push(entry);
+    }
+    if (out.length > 1) {
+      Logger.warn(this.router.id, 'ipsec:overlap',
+        `Multiple crypto map entries match ${pkt.destinationIP.toString()} on ${egressIface}: `
+        + `${out.map(e => `seq ${e.seq} (peer=${e.peers[0]}, acl=${e.aclName})`).join(', ')}. `
+        + `Entry seq ${out[0].seq} wins (lowest sequence).`);
+    }
+    return out;
+  }
+
   private buildTunnelProtectionEntry(ifName: string, tp: TunnelProtection): CryptoMapEntry | null {
     const profile = this.ipsecProfiles.get(tp.profileName);
     if (!profile) return null;
@@ -1977,21 +2034,22 @@ export class IPSecEngine implements IProtocolEngine {
 
   private determinePeer(entry: CryptoMapEntry, egressIface: string, pkt: IPv4Packet): string | null {
     if (entry.peers.length > 0 && entry.peers[0] !== '0.0.0.0') {
-      // Try primary peer first, then backup peers — check reachability
+      // Try primary peer first, then backup peers (RFC-style failover).
+      // Reachability is determined solely by the local routing table — exactly
+      // like real IOS, which never introspects a global device registry to
+      // decide whether a configured peer "exists". If the FIB has a route to
+      // the peer we select it; IKE then travels on the wire (`_sendIkeUdp`) and
+      // fails gracefully if no peer actually answers.
       for (const peerIP of entry.peers) {
-        const peerRouter = IPSecEngine.findRouterByIP(peerIP);
-        if (!peerRouter) continue;
-        // Verify we can actually reach this peer (route via connected interface)
         try {
-          const peerAddr = new IPAddress(peerIP);
-          const route = (this.router as any).lookupRoute?.(peerAddr);
+          const route = (this.router as any).lookupRoute?.(new IPAddress(peerIP));
           if (route) return peerIP;
         } catch {
-          // lookupRoute throws or no route — peer unreachable, try next
+          // lookupRoute throws or no route — peer unreachable, try next backup
           continue;
         }
       }
-      // If none reachable, return first peer (will fail gracefully)
+      // None has a route — return the primary peer (IKE will fail gracefully)
       return entry.peers[0];
     }
     // Tunnel protection: peer is the tunnel destination (from config)
@@ -2134,7 +2192,7 @@ export class IPSecEngine implements IProtocolEngine {
     const outerFlags = this.computeOuterFlags(innerPkt, sa);
 
     /** Helper: create outer IP packet with SA-derived TOS and flags. */
-    const makeOuterPkt = (proto: number, payload: ESPPacket | AHPacket, size: number): IPv4Packet => {
+    const makeOuterPkt = (proto: number, payload: ESPPacket | AHPacket | UDPPacket, size: number): IPv4Packet => {
       const pkt = createIPv4Packet(localIP!, new IPAddress(sa.peerIP), proto, 64, payload, size);
       pkt.tos = outerTos;
       pkt.flags = outerFlags;
@@ -2209,28 +2267,26 @@ export class IPSecEngine implements IProtocolEngine {
    *   - ECN  (bits 1-0): per RFC 6040
    */
   private computeOuterTos(innerPkt: IPv4Packet, sa: IPSec_SA): number {
-    const innerDscp = (innerPkt.tos >> 2) & 0x3f; // bits 7-2
-    const innerEcn  = innerPkt.tos & 0x03;         // bits 1-0
+    return computeOuterTos(innerPkt.tos, sa.dscpEcnConfig);
+  }
 
-    let outerDscp: number;
-    switch (sa.dscpEcnConfig.dscpMode) {
-      case 'copy':
-        outerDscp = innerDscp;
-        break;
-      case 'set':
-        outerDscp = sa.dscpEcnConfig.dscpValue & 0x3f;
-        break;
-      case 'map':
-        outerDscp = sa.dscpEcnConfig.dscpMap.get(innerDscp) ?? innerDscp;
-        break;
-      default:
-        outerDscp = innerDscp;
-    }
+  computeOuterTosForPeer(peerIP: string, innerTos: number): number | null {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return null;
+    return computeOuterTos(innerTos, sas[0].dscpEcnConfig);
+  }
 
-    // RFC 6040: copy ECN if enabled, otherwise clear
-    const outerEcn = sa.dscpEcnConfig.ecnEnabled ? innerEcn : 0;
+  getSADscpConfigForPeer(peerIP: string): import('./IPSecTypes').SADscpEcnConfig | null {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return null;
+    return sas[0].dscpEcnConfig;
+  }
 
-    return (outerDscp << 2) | outerEcn;
+  setSADscpConfigForPeer(peerIP: string, cfg: import('./IPSecTypes').SADscpEcnConfig): boolean {
+    const sas = this.ipsecSADB.get(peerIP);
+    if (!sas || sas.length === 0) return false;
+    for (const sa of sas) sa.dscpEcnConfig = cfg;
+    return true;
   }
 
   /**
@@ -2445,8 +2501,8 @@ export class IPSecEngine implements IProtocolEngine {
       spi: esp.spi,
       seqNum: esp.sequenceNumber,
       payloadLen: outerPkt.totalLength ?? 0,
-      fromIp: typeof outerPkt.srcIP === 'string' ? outerPkt.srcIP : String(outerPkt.srcIP ?? ''),
-      toIp: typeof outerPkt.dstIP === 'string' ? outerPkt.dstIP : String(outerPkt.dstIP ?? ''),
+      fromIp: outerPkt.sourceIP?.toString() ?? '',
+      toIp: outerPkt.destinationIP?.toString() ?? '',
       mode: 'tunnel',
     });
 
@@ -2461,6 +2517,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (!this.checkAntiReplay(sa, esp.sequenceNumber)) {
       sa.pktsReplay++;
       sa.recvErrors++;
+      Logger.warn(this.router.id, 'ipsec:anti-replay',
+        `${this.router.name}: %CRYPTO-4-PKT_REPLAY_ERR replay check failed, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}, peer=${sa.peerIP}`);
       if (this.debugIpsec) {
         Logger.info(this.router.id, 'debug:ipsec',
           `IPSEC(i): anti-replay check FAILED, spi=${spiHex(esp.spi)}, seq=${esp.sequenceNumber}`);
@@ -2521,6 +2579,8 @@ export class IPSecEngine implements IProtocolEngine {
     if (!this.checkAntiReplay(sa, ah.sequenceNumber)) {
       sa.pktsReplay++;
       sa.recvErrors++;
+      Logger.warn(this.router.id, 'ipsec:anti-replay',
+        `${this.router.name}: %CRYPTO-4-PKT_REPLAY_ERR replay check failed (AH), spi=${spiHex(ah.spi)}, seq=${ah.sequenceNumber}, peer=${sa.peerIP}`);
       return null;
     }
 
@@ -2737,8 +2797,8 @@ export class IPSecEngine implements IProtocolEngine {
   private buildIpsecSAStruct(p: {
     peerIP: string; localIP: string; spiIn: number; spiOut: number;
     cryptoKeys: SACryptoKeys; lifetime: number; lifetimeKB: number;
-    mode: 'Tunnel' | 'Transport'; trafficSelectors: SATrafficSelector[];
-    transforms: string[]; aclName: string; pfsGroup?: number; natT: boolean;
+    mode: 'Tunnel' | 'Transport'; trafficSelectors: SATrafficSelector;
+    transforms: string[]; aclName: string; pfsGroup?: string; natT: boolean;
     outIface: string; hasESP: boolean; hasAH: boolean;
   }): IPSec_SA {
     const now = Date.now();
@@ -2779,8 +2839,8 @@ export class IPSecEngine implements IProtocolEngine {
         peerIp: peerKey, spiInbound: sa.spiIn, spiOutbound: sa.spiOut,
         protocol: sa.hasESP ? 'esp' : 'ah',
         mode: sa.mode === 'Tunnel' ? 'tunnel' : 'transport',
-        encryption: String(sa.encryption ?? ''),
-        integrity: String(sa.authentication ?? ''),
+        encryption: String((sa as IPSec_SA & { encryption?: string }).encryption ?? ''),
+        integrity: String((sa as IPSec_SA & { authentication?: string }).authentication ?? ''),
         lifetimeSec: sa.lifetime, lifetimeKB: sa.lifetimeKB,
       },
     });
@@ -2825,6 +2885,14 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiInitIn,
       natTHint: apparentSrcIP !== localIP,
     };
+    if (this.ikeCertAuth) {
+      
+      offer.authMode = 'x509';
+      offer.certPayload = {
+        cert: this.ikeCertAuth.localCert,
+        authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${apparentSrcIP}|${peerIP}|${spiInitIn}`),
+      };
+    }
     this.pendingIke.set(peerIP, { entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer });
     this.router._sendIkeUdp(peerIP, offer);
     this.pendingIke.delete(peerIP);
@@ -2890,10 +2958,43 @@ export class IPSecEngine implements IProtocolEngine {
       if (!chosenPolicy) { this.rejectIke(srcIp, 'No matching policy'); this.createFailedIKESA(srcIp, '', 'No matching policy'); return; }
     }
 
-    const myPSK = isV2
-      ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
-      : (this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || '');
-    if (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof) {
+    const usingCert = offer.authMode === 'x509' || !!this.ikeCertAuth;
+    if (usingCert) {
+      
+      
+      if (!this.ikeCertAuth || !offer.certPayload) {
+        this.rejectIke(srcIp, 'Certificate unknown');
+        this.createFailedIKESA(srcIp, '', 'Certificate unknown');
+        return;
+      }
+      const peerCert = offer.certPayload.cert as X509Certificate;
+      const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
+      if (!peerVerdict.ok) {
+        const reason = verificationToIkeReason(peerVerdict);
+        this.rejectIke(srcIp, reason);
+        this.createFailedIKESA(srcIp, '', reason);
+        return;
+      }
+      const authInput = `${offer.identity}|${dstIp}|${offer.ipsecSpiIn}`;
+      if (!PkiKeyPair.verify(peerCert.publicKey, authInput, offer.certPayload.authSignature)) {
+        this.rejectIke(srcIp, 'Certificate signature invalid');
+        this.createFailedIKESA(srcIp, '', 'Certificate signature invalid');
+        return;
+      }
+      const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);
+      if (!localVerdict.ok) {
+        const reason = verificationToIkeReason(localVerdict);
+        this.rejectIke(srcIp, reason);
+        this.createFailedIKESA(srcIp, '', reason);
+        return;
+      }
+    }
+    const myPSK = usingCert
+      ? 'cert-auth-key'
+      : (isV2
+        ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
+        : (this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || ''));
+    if (!usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
       return;
@@ -2959,6 +3060,7 @@ export class IPSecEngine implements IProtocolEngine {
         lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
       }));
     }
+    if (natT) this.rearmNatTKeepalive(srcIp);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: isV2 ? 2 : 1, lifetimeSec: ikeLifetime },
@@ -2972,6 +3074,13 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
       lifetimeSec, lifetimeKB, natT,
     };
+    if (this.ikeCertAuth) {
+      
+      accept.certPayload = {
+        cert: this.ikeCertAuth.localCert,
+        authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${responderSpi}|${srcIp}`),
+      };
+    }
     this.router._sendIkeUdp(srcIp, accept);
   }
 
@@ -2979,12 +3088,34 @@ export class IPSecEngine implements IProtocolEngine {
     const pending = this.pendingIke.get(srcIp);
     if (!pending) return;
     const isV2 = pending.offer.version === 2;
-    const myPSK = isV2
-      ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
-      : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '');
-    if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
-      this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
+    if (this.ikeCertAuth) {
+      
+      if (!accept.certPayload) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'Certificate unknown');
+        return;
+      }
+      const peerCert = accept.certPayload.cert as X509Certificate;
+      const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
+      if (!peerVerdict.ok) {
+        this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(peerVerdict));
+        return;
+      }
+      const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);
+      if (!localVerdict.ok) {
+        this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(localVerdict));
+        return;
+      }
+    } else {
+      const myPSK = isV2
+        ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
+        : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '');
+      if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
+      }
     }
+    const myPSK = isV2
+      ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
+      : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
     const transforms = accept.chosenTransform.transforms;
     const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);
@@ -3019,6 +3150,7 @@ export class IPSecEngine implements IProtocolEngine {
         exchangeMode: pending.offer.exchangeMode,
       }));
     }
+    if (accept.natT) this.rearmNatTKeepalive(srcIp);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: pending.localIP, version: isV2 ? 2 : 1, lifetimeSec: accept.ikeLifetimeSec },
@@ -3119,8 +3251,25 @@ export class IPSecEngine implements IProtocolEngine {
     return null;
   }
 
-  private createFailedIKESA(peerIP: string, _iface: string, _reason: string): void {
-    if (this.ikeSADB.has(peerIP)) return;
+  private createFailedIKESA(peerIP: string, _iface: string, reason: string): void {
+    const phase: 1 | 2 = /No matching (transform|IPSec)|Child SA|Phase 2/i.test(reason) ? 2 : 1;
+    const isSpecific = (r: string): boolean => /No matching|PSK mismatch|Interface down|No local policy|Certificate|CRL/i.test(r);
+    if (/Certificate revoked/i.test(reason)) {
+      Logger.warn(this.router.id, 'ipsec:cert-revoked',
+        `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="Certificate revoked"`);
+    } else if (/Certificate/i.test(reason) || /CRL/i.test(reason)) {
+      Logger.warn(this.router.id, 'ipsec:cert-verify-failed',
+        `${this.router.name}: %CRYPTO-4-IKE_QUICK_MODE_BAD_CERT peer=${peerIP} reason="${reason}"`);
+    }
+    const existing = this.ikeSADB.get(peerIP);
+    if (existing) {
+      const currentSpecific = existing.failureReason ? isSpecific(existing.failureReason) : false;
+      if (!existing.failureReason || (isSpecific(reason) && !currentSpecific) || (!isSpecific(reason) && !currentSpecific)) {
+        existing.failureReason = reason;
+        existing.failedPhase = phase;
+      }
+      return;
+    }
     this.ikeSADB.set(peerIP, {
       peerIP, localIP: '',
       status: 'MM_NO_STATE',
@@ -3130,6 +3279,8 @@ export class IPSecEngine implements IProtocolEngine {
       role: 'initiator',
       natT: false,
       dpdEnabled: false,
+      failureReason: reason,
+      failedPhase: phase,
     });
   }
 
@@ -3169,7 +3320,7 @@ export class IPSecEngine implements IProtocolEngine {
       const ports = (equip as any)._getPortsInternal?.();
       if (!ports) continue;
       for (const [, port] of ports) {
-        if (port.getIPAddress?.()?.toString() === ip) return equip as Router;
+        if (port.getIPAddress?.()?.toString() === ip) return equip as unknown as Router;
       }
     }
     return null;
@@ -3263,6 +3414,9 @@ export class IPSecEngine implements IProtocolEngine {
       extra.push('');
       extra.push(`Crypto ISAKMP SA towards ${sa.peerIP}`);
       extra.push(`   Status: ${sa.status}, role: ${sa.role}`);
+      if (sa.failureReason) {
+        extra.push(`   Last negotiation failure: ${sa.failureReason} (phase ${sa.failedPhase ?? 1})`);
+      }
       extra.push(`   Exchange mode: ${sa.exchangeMode || 'main'}`);
       extra.push(`   Encryption: ${sa.encryption}, Hash: ${sa.hash}, DH Group: ${sa.group}`);
       extra.push(`   Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
@@ -3362,7 +3516,8 @@ export class IPSecEngine implements IProtocolEngine {
         lines.push(`   #pkts compressed: 0, #pkts decompressed: 0`);
         lines.push(`   #pkts not compressed: 0, #pkts compr. failed: 0`);
         lines.push(`   #pkts not decompressed: 0, #pkts decompress failed: 0`);
-        lines.push(`   #pkts replay: ${sa.pktsReplay}`);
+        lines.push(`   #pkts replay rollover (send): 0, #pkts replay rollover (rcv) 0`);
+        lines.push(`   #pkts replay failed (rcv): ${sa.pktsReplay}`);
         lines.push(`   #send errors ${sa.sendErrors}, #recv errors ${sa.recvErrors}`);
         lines.push('');
         lines.push(`    local crypto endpt.: ${sa.localIP} remote crypto endpt.: ${peerIP}`);
@@ -3953,37 +4108,58 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   clearISAKMPSAs(peer?: string): number {
-    if (!peer) {
-      const n = this.ikeSADB.size;
-      this.ikeSADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ikeSADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      if (!this.ikeSADB.has(p)) continue;
+      this.cancelNatTKeepalive(p);
+      this.ikeSADB.delete(p);
+      removed++;
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: p, reason: 'manual' },
+      });
     }
-    const had = this.ikeSADB.delete(peer);
-    return had ? 1 : 0;
+    return removed;
   }
 
   clearIKEv2SAs(peer?: string): number {
-    if (!peer) {
-      const n = this.ikev2SADB.size;
-      this.ikev2SADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ikev2SADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      if (!this.ikev2SADB.has(p)) continue;
+      this.ikev2SADB.delete(p);
+      removed++;
+      this.getBus().publish({
+        topic: 'ipsec.ike.sa-deleted',
+        payload: { ...this.deviceRef(), peerIp: p, reason: 'manual' },
+      });
     }
-    const had = this.ikev2SADB.delete(peer);
-    return had ? 1 : 0;
+    return removed;
   }
 
   clearIPSecSAs(peer?: string): number {
-    if (!peer) {
-      let n = 0;
-      for (const arr of this.ipsecSADB.values()) n += arr.length;
-      this.ipsecSADB.clear();
-      return n;
+    const peers = peer ? [peer] : [...this.ipsecSADB.keys()];
+    let removed = 0;
+    for (const p of peers) {
+      const arr = this.ipsecSADB.get(p);
+      if (!arr) continue;
+      for (const sa of arr) {
+        this.spiToSA.delete(sa.spiIn);
+        this.getBus().publish({
+          topic: 'ipsec.sa.deleted',
+          payload: {
+            ...this.deviceRef(),
+            peerIp: p,
+            spiInbound: sa.spiIn,
+            reason: 'manual',
+          },
+        });
+      }
+      removed += arr.length;
+      this.ipsecSADB.delete(p);
     }
-    const arr = this.ipsecSADB.get(peer);
-    if (!arr) return 0;
-    const count = arr.length;
-    this.ipsecSADB.delete(peer);
-    return count;
+    return removed;
   }
 
   clearAllSAs(): { ikeSAs: number; ikev2SAs: number; ipsecSAs: number } {
@@ -4013,7 +4189,7 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`crypto isakmp key ${key} address ${peer}`);
     }
     if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${this.dpdConfig?.retryInterval ?? 3}`);
+      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${(this.dpdConfig as DPDConfig & { retryInterval?: number } | null)?.retryInterval ?? 3}`);
     }
     for (const [, ts] of this.transformSets) {
       lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);

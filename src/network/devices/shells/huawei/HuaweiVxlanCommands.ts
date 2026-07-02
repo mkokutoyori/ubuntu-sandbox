@@ -1,6 +1,7 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { VxlanAgent } from '../../../vxlan/VxlanAgent';
+import { hms } from '@/lib/format';
 
 interface IfCtx {
   getSelectedInterface(): string | null;
@@ -13,14 +14,6 @@ interface ShowCtx {
 
 function agent(router: Router): VxlanAgent | undefined {
   return (router as unknown as { getVxlanAgent?: () => VxlanAgent }).getVxlanAgent?.();
-}
-
-function hms(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export function buildHuaweiVxlanInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {

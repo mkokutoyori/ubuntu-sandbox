@@ -38,6 +38,12 @@ export interface LinuxFormatHelpers {
    */
   formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops?: number, hostname?: string): string;
 
+  /** Render the `traceroute` banner line on its own (for streaming output). */
+  formatTracerouteHeader(target: IPAddress, maxHops?: number, hostname?: string): string;
+
+  /** Render a single `traceroute` hop line (for streaming, one hop at a time). */
+  formatTracerouteHopLine(hop: TracerouteHop): string;
+
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
   formatInterface(port: Port): string;
 
@@ -150,55 +156,64 @@ function renderPingBody(header: string, targetStr: string, count: number, result
 function icmpCodeAnnotation(code: number | undefined): string {
   if (code === undefined) return '';
   switch (code) {
-    case 0: return ' !N';
-    case 1: return ' !H';
-    case 2: return ' !P';
-    case 3: return ' !P';
-    case 13: return ' !A';
-    default: return ` !${code}`;
+    case 0: return ' !N (Net unreachable)';
+    case 1: return ' !H (Host unreachable)';
+    case 2: return ' !P (Protocol unreachable)';
+    case 3: return ' !P (Port unreachable)';
+    case 13: return ' !A (Admin prohibited)';
+    default: return ` !${code} (unreachable)`;
   }
 }
 
-function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30, hostname?: string): string {
+export function formatTracerouteHeader(target: IPAddress, maxHops: number = 30, hostname?: string): string {
   const displayName = hostname ?? target.toString();
-  if (hops.length === 0) {
-    return `traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets\n * * * Network is unreachable`;
+  return `traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets`;
+}
+
+export function formatTracerouteHopLine(hop: TracerouteHop): string {
+  const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
+
+  if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
+    return ` ${hop.hop}  * * *`;
   }
-  const lines = [`traceroute to ${displayName} (${target}), ${maxHops} hops max, 60 byte packets`];
-  for (const hop of hops) {
-    const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
 
-    if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
-      lines.push(` ${hop.hop}  * * *`);
-      continue;
-    }
-
-    if (probes && probes.length > 0) {
-      const ip = hop.ip ?? '*';
-      let line = ` ${hop.hop}  ${ip} (${ip})`;
-      let lastIp = ip;
-      for (const probe of probes) {
-        if (!probe.responded) {
-          line += '  *';
-        } else {
-          const probeIp = probe.ip ?? ip;
-          if (probeIp !== lastIp) {
-            line += `  ${probeIp} (${probeIp})`;
-            lastIp = probeIp;
-          }
-          const annotation = icmpCodeAnnotation(probe.icmpCode);
-          line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms${annotation}`;
+  if (probes && probes.length > 0) {
+    const ip = hop.ip ?? '*';
+    let line = ` ${hop.hop}  ${ip} (${ip})`;
+    let lastIp = ip;
+    for (const probe of probes) {
+      if (!probe.responded) {
+        line += '  *';
+      } else {
+        const probeIp = probe.ip ?? ip;
+        if (probeIp !== lastIp) {
+          line += `  ${probeIp} (${probeIp})`;
+          lastIp = probeIp;
         }
+        const annotation = icmpCodeAnnotation(probe.icmpCode);
+        line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms${annotation}`;
       }
-      lines.push(line);
-    } else if (hop.unreachable) {
-      const annotation = icmpCodeAnnotation(hop.icmpCode);
-      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms${annotation}`);
-    } else {
-      lines.push(` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms`);
     }
+    return line;
   }
-  return lines.join('\n');
+
+  if (hop.unreachable) {
+    const annotation = icmpCodeAnnotation(hop.icmpCode);
+    return ` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms${annotation}`;
+  }
+  return ` ${hop.hop}  ${hop.ip} (${hop.ip})  ${(hop.rttMs ?? 0).toFixed(3)} ms`;
+}
+
+function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHops: number = 30, hostname?: string): string {
+  const header = formatTracerouteHeader(target, maxHops, hostname);
+  if (hops.length === 0) {
+    const lines: string[] = [header];
+    for (let i = 1; i <= Math.min(3, maxHops); i++) {
+      lines.push(` ${i}  * * *`);
+    }
+    return lines.join('\n');
+  }
+  return [header, ...hops.map(formatTracerouteHopLine)].join('\n');
 }
 
 /** Default singleton — no state, safe to share across machines. */
@@ -206,6 +221,8 @@ export const defaultLinuxFormatHelpers: LinuxFormatHelpers = {
   formatPingOutput,
   formatPing6Output,
   formatTracerouteOutput,
+  formatTracerouteHeader,
+  formatTracerouteHopLine,
   formatInterface,
   formatBytes,
 };

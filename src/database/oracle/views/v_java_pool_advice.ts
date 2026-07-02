@@ -5,14 +5,7 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
-
-function bytes(spec: string): number {
-  const m = spec.match(/^(\d+)([KMG])?$/i);
-  if (!m) return 0;
-  const n = Number(m[1]);
-  const unit = (m[2] ?? '').toUpperCase();
-  return unit === 'G' ? n * 1024 * 1024 * 1024 : unit === 'M' ? n * 1024 * 1024 : unit === 'K' ? n * 1024 : n;
-}
+import { parseSize as bytes } from './_fileSize';
 
 registerView({
   name: 'V$JAVA_POOL_ADVICE',

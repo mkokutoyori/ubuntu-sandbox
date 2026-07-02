@@ -41,6 +41,7 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.process.spawned', (e) => this.onProcessSpawned(e.payload)),
       bus.subscribe('linux.process.exited', (e) => this.onProcessExited(e.payload)),
       bus.subscribe('arp.violation', (e) => this.onArpViolation(e.payload)),
+      bus.subscribe('host.arp.ip-conflict', (e) => this.onArpIpConflict(e.payload)),
       bus.subscribe('linux.service.failed', (e) => this.onServiceFailed(e.payload)),
       bus.subscribe('linux.service.enabled', (e) => this.onServiceEnabled(e.payload)),
       bus.subscribe('linux.service.disabled', (e) => this.onServiceDisabled(e.payload)),
@@ -281,6 +282,7 @@ export class PortActivityLogProjection {
     if (p.deviceId !== this.deviceId) return;
     if (p.serviceName) return;
     if (p.user === 'root' && p.comm !== 'sudo') return;
+    if (p.comm === '-bash' || p.comm === 'bash') return;
     this.logManager.logDaemon(p.comm,
       `[${p.pid}] ${p.user}: ${p.command}`);
   }
@@ -302,6 +304,14 @@ export class PortActivityLogProjection {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
       `arp-inspection: ${p.iface ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+  }
+
+  private onArpIpConflict(p: {
+    deviceId: string; iface: string; ip: string; foreignMac: string; localMac: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `IPv4: ${p.ip} duplicate arp reply received from ${p.foreignMac} on ${p.iface} (local ${p.localMac})`);
   }
 
   private onLinkUp(p: { deviceId: string; portName: string }): void {

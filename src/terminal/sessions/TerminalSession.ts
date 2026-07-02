@@ -27,7 +27,7 @@
 import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
-import type { AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
+import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -176,6 +176,18 @@ export function withTimeout<T>(
   });
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function formatLoginDate(d: Date): string {
+  const dow = DAYS[d.getDay()];
+  const mon = MONTHS[d.getMonth()];
+  const day = d.getDate().toString().padStart(2, ' ');
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  const ss = d.getSeconds().toString().padStart(2, '0');
+  return `${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
+}
+
 // ─── Device availability guard ───────────────────────────────────
 
 export class DeviceOfflineError extends Error {
@@ -200,7 +212,12 @@ export abstract class TerminalSession {
   lines: OutputLine[] = [];
   history: string[] = [];
   historyIndex: number = -1;
-  input: string = '';
+  private _input: string = '';
+  get input(): string { return this._children.length > 0 ? this.foreground.input : this._input; }
+  set input(v: string) {
+    if (this._children.length > 0) { this.foreground.input = v; return; }
+    this._input = v;
+  }
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
 
@@ -229,6 +246,11 @@ export abstract class TerminalSession {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
+  // ── Nested-session (SSH transparent transport) ──
+  private _outputHost: TerminalSession | null = null;
+  private _parent: TerminalSession | null = null;
+  private _children: TerminalSession[] = [];
+
   constructor(id: string, device: Equipment) {
     this.id = id;
     this.device = device;
@@ -254,11 +276,74 @@ export abstract class TerminalSession {
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
 
   listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
+    if (this._children.length > 0) return this.foreground.listAttachedStreams();
     return this.inputHostImpl.listStreams();
   }
 
   startAsyncCommand(spec: AsyncJobSpec): AsyncJobHandle | null {
     return this.asyncRuntime.start(spec);
+  }
+
+  protected startScrollingMonitor(opts: {
+    commandLine: string;
+    intervalMs: number;
+    frame: () => Promise<string> | string;
+    header?: () => string;
+    trailer?: () => string;
+    maxFrames?: number;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    let trailerEmitted = false;
+    const emitTrailer = (ctx: AsyncJobContext) => {
+      if (trailerEmitted || !opts.trailer) return;
+      trailerEmitted = true;
+      const t = opts.trailer();
+      if (t) for (const line of t.split('\n')) ctx.sink.line(line);
+    };
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: opts.commandLine,
+      run: async (ctx) => {
+        if (opts.header) {
+          const h = opts.header();
+          if (h) for (const line of h.split('\n')) ctx.sink.line(line);
+        }
+        let emitted = 0;
+        while (!ctx.cancelled() && (opts.maxFrames === undefined || emitted < opts.maxFrames)) {
+          const frame = await opts.frame();
+          for (const line of frame.split('\n')) ctx.sink.line(line);
+          emitted++;
+          if (opts.maxFrames !== undefined && emitted >= opts.maxFrames) break;
+          await ctx.delay(opts.intervalMs);
+        }
+        emitTrailer(ctx);
+      },
+      onInterrupt: opts.trailer ? (ctx) => emitTrailer(ctx) : undefined,
+    });
+    return job !== null;
+  }
+
+  protected startFollowStream(opts: {
+    commandLine: string;
+    kind?: 'streaming' | 'subscription';
+    prepare?: (ctx: AsyncJobContext) => boolean | string;
+    subscribe: (lineSink: (line: string) => void) => () => void;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: opts.kind ?? 'streaming',
+      command: opts.commandLine,
+      prepare: opts.prepare,
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = opts.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
+    });
+    return job !== null;
   }
 
   listAsyncJobs(): AsyncJobHandle[] {
@@ -288,13 +373,133 @@ export abstract class TerminalSession {
 
   /** Bump version and notify all subscribers. */
   protected notify(): void {
+    if (this._outputHost) { this._outputHost.notify(); return; }
     this._version++;
     for (const l of this._listeners) l();
+  }
+
+  // ── Nested-session API (SSH = transparent transport) ─────────────
+
+  attachAsChildOf(parent: TerminalSession): void {
+    this._parent = parent;
+    this._outputHost = parent._outputHost ?? parent;
+    parent._children.push(this);
+    this._outputHost.notify();
+  }
+
+  detachFromHost(): void {
+    const parent = this._parent;
+    if (!parent) return;
+    const idx = parent._children.indexOf(this);
+    if (idx >= 0) parent._children.splice(idx, 1);
+    const root = this._outputHost;
+    this._parent = null;
+    this._outputHost = null;
+    root?.notify();
+  }
+
+  get foreground(): TerminalSession {
+    let s: TerminalSession = this;
+    while (s._children.length > 0) s = s._children[s._children.length - 1];
+    return s;
+  }
+
+  get hasActiveChild(): boolean { return this._children.length > 0; }
+
+  editorSave(content: string, filePath: string): void {
+    if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }
+  }
+
+  editorExit(saved: boolean = true): void {
+    if (this._children.length > 0) { this.foreground.editorExit(saved); return; }
+  }
+
+  protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
+
+  protected firstLocalIp(): string | null {
+    const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
+    if (!ports) return null;
+    for (const port of ports) {
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp()) return ip.toString();
+    }
+    return null;
+  }
+
+  private _remoteLabel: string | null = null;
+
+  get isRemoteChild(): boolean { return this._parent !== null; }
+
+  protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
+
+  protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
+
+  adoptRemoteChild(
+    child: TerminalSession,
+    user: string,
+    hostLabel: string,
+    env?: Record<string, string>,
+    opts?: { quiet?: boolean },
+  ): void {
+    child.prepareAsRemoteUser(user);
+    if (env) child.applyRemoteEnv(env);
+    child._remoteLabel = hostLabel;
+    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
+    const sourceHost = this.device.getHostname?.() ?? '';
+    const banner = opts?.quiet
+      ? this.composeLoginBanner(child.device, user, sourceIp, sourceHost, true)
+      : this.composeLoginBanner(child.device, user, sourceIp, sourceHost, false);
+    child.attachAsChildOf(this);
+    for (const line of banner) child.addLine(line);
+  }
+
+  private composeLoginBanner(
+    device: unknown,
+    user: string,
+    sourceIp: string,
+    sourceHost: string,
+    quiet = false,
+  ): string[] {
+    const dev = device as {
+      sshBanner?: () => string;
+      getSshMotd?: () => string;
+      getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null;
+      recordSshLogin?: (u: string, ip: string, host: string, ok: boolean, m?: 'password' | 'publickey') => void;
+    };
+    const lines: string[] = [];
+    if (!quiet) {
+      const issueNet = dev.sshBanner?.() ?? '';
+      for (const ln of issueNet.replace(/\n+$/, '').split('\n')) {
+        if (ln.length > 0) lines.push(ln);
+      }
+      const motd = dev.getSshMotd?.() ?? '';
+      for (const ln of motd.replace(/\n+$/, '').split('\n')) {
+        if (ln.length > 0) lines.push(ln);
+      }
+      const last = dev.getLastSshLoginFor?.(user) ?? null;
+      if (last) {
+        if (lines.length > 0) lines.push('');
+        lines.push(`Last login: ${formatLoginDate(last.at)} from ${last.from}`);
+      }
+    }
+    dev.recordSshLogin?.(user, sourceIp, sourceHost, true, 'password');
+    return lines;
+  }
+
+  endRemoteSession(): boolean {
+    if (this._parent === null) return false;
+    const label = this._remoteLabel ?? 'remote';
+    this.addLine('logout');
+    this.addLine(`Connection to ${label} closed.`);
+    this.detachFromHost();
+    this.dispose();
+    return true;
   }
 
   // ── Public API ──────────────────────────────────────────────────
 
   setInput(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInput(value); return; }
     this.input = sanitiseInput(value);
     this.notify();
   }
@@ -304,26 +509,44 @@ export abstract class TerminalSession {
   /** Current effective input mode. Override in subclasses for flow-aware modes. */
   get currentInputMode(): InputMode { return this.inputMode; }
 
-  getPasswordBuf(): string { return this._passwordBuf; }
+  getPasswordBuf(): string {
+    return this._children.length > 0 ? this.foreground.getPasswordBuf() : this._passwordBuf;
+  }
   setPasswordBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setPasswordBuf(value); return; }
     this._passwordBuf = value;
     this.notify();
   }
 
-  getInputBuf(): string { return this._inputBuf; }
+  getInputBuf(): string {
+    return this._children.length > 0 ? this.foreground.getInputBuf() : this._inputBuf;
+  }
   setInputBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInputBuf(value); return; }
     this._inputBuf = value;
     this.notify();
   }
 
-  addLine(text: string, type: string = 'normal'): void {
-    this.lines.push({ id: nextLineId(), text, type });
-    this.enforceScrollbackLimit();
-    // Record output events (skip prompts — those are recorded as 'input')
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+  private pushLine(line: OutputLine, record: RecordedEventType | null, silent = false): void {
+    const host = this._outputHost;
+    if (host) {
+      if (line.segments && host.getSessionType() !== this.getSessionType()) {
+        line = { id: line.id, text: line.text, type: line.type, promptText: line.promptText };
+      }
+      host.pushLine(line, record, silent);
+      return;
     }
-    this.notify();
+    this.lines.push(line);
+    this.enforceScrollbackLimit();
+    if (record) this.recordEvent(record, line.text);
+    if (!silent) this.notify();
+  }
+
+  addLine(text: string, type: string = 'normal'): void {
+    this.pushLine(
+      { id: nextLineId(), text, type },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   /**
@@ -335,11 +558,7 @@ export abstract class TerminalSession {
    * for the transcript.
    */
   addEchoLine(promptText: string, command: string, type: string = 'prompt'): void {
-    this.lines.push({ id: nextLineId(), text: command, type, promptText });
-    this.enforceScrollbackLimit();
-    // Echo lines represent USER input; record as such (not as output).
-    this.recordEvent('input', command);
-    this.notify();
+    this.pushLine({ id: nextLineId(), text: command, type, promptText }, 'input');
   }
 
   /**
@@ -350,28 +569,24 @@ export abstract class TerminalSession {
    */
   addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
     const text = segments.map((s) => s.text).join('');
-    this.lines.push({ id: nextLineId(), text, type, segments });
-    this.enforceScrollbackLimit();
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
-    }
-    this.notify();
+    this.pushLine(
+      { id: nextLineId(), text, type, segments },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   addLines(texts: string[], type: string = 'normal'): void {
+    const record = type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null;
     for (const text of texts) {
-      this.lines.push({ id: nextLineId(), text, type });
-      if (type !== 'prompt') {
-        this.recordEvent(type === 'error' ? 'error' : 'output', text);
-      }
+      this.pushLine({ id: nextLineId(), text, type }, record, true);
     }
-    this.enforceScrollbackLimit();
-    this.notify();
+    this.outputRoot.notify();
   }
 
   clear(): void {
-    this.lines = [];
-    this.notify();
+    const root = this.outputRoot;
+    root.lines = [];
+    root.notify();
   }
 
   dispose(): void {
@@ -700,10 +915,7 @@ export abstract class TerminalSession {
       const value = isPassword ? this._passwordBuf : this._inputBuf;
       const promptText = (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')
         ? this.inputMode.promptText : '';
-      // Echo as a prompt+value pair: the prompt lands in `promptText`
-      // (composed visually by the renderer), the value in `text` —
-      // masked for passwords, in the clear otherwise.
-      this.addEchoLine(promptText, isPassword ? '*'.repeat(value.length) : value);
+      this.addEchoLine(promptText, isPassword ? '' : value);
       this._passwordBuf = '';
       this._inputBuf = '';
       this.inputHostImpl.submitPending(value);
@@ -868,6 +1080,10 @@ export abstract class TerminalSession {
     }
   }
 
+  protected getFlowUser(): string {
+    return this.device.getCurrentUser?.() ?? 'user';
+  }
+
   // ── Interactive flow engine (shared by Linux + CLI sessions) ─────
 
   /**
@@ -895,7 +1111,7 @@ export abstract class TerminalSession {
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
-      currentUser: this.device.getCurrentUser?.() ?? 'user',
+      currentUser: this.getFlowUser(),
       currentUid: this.device.getCurrentUid?.() ?? 0,
       metadata: new Map<string, unknown>([
         ['original_command', command],

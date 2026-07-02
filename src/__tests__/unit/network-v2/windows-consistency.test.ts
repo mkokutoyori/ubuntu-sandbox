@@ -33,7 +33,7 @@ function buildLAN(
   for (let i = 0; i < count; i++) {
     const pc = new WindowsPC('windows-pc', `PC${i + 1}`, 0, 0);
     const cable = new Cable(`cable-${i}`);
-    cable.connect(pc.getPort('eth0')!, sw.getPort(`FastEthernet0/${i}`)!);
+    cable.connect(pc.getPort('eth0')!, sw.getPort(`FastEthernet0/${i + 1}`)!);
     pcs.push(pc);
     cables.push(cable);
   }

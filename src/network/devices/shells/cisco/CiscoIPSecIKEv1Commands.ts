@@ -68,22 +68,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  trie.registerGreedy('crypto isakmp keepalive', 'Configure IKE keepalive (DPD)', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const interval = parseInt(args[0], 10);
-    const retries  = parseInt(args[1] ?? '3', 10);
-    const modeStr  = (args[2] ?? 'periodic').toLowerCase();
-    const mode     = modeStr === 'on-demand' ? 'on-demand' : 'periodic';
-    if (!isNaN(interval)) eng(ctx).setDPD(interval, isNaN(retries) ? 3 : retries, mode);
-    return '';
-  });
-
-  // ── no crypto isakmp keepalive ────────────────────────────────────
-  trie.register('no crypto isakmp keepalive', 'Disable DPD', () => {
-    eng(ctx).setDPD(0, 0, 'periodic');
-    return '';
-  });
-
   // ── no crypto isakmp policy N ────────────────────────────────────
   trie.registerGreedy('no crypto isakmp policy', 'Remove an IKE policy', (args) => {
     if (args.length < 1) return '% Incomplete command.';

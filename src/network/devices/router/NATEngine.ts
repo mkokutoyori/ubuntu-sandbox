@@ -14,6 +14,7 @@
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
+import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import {
   NATSignalStore,
@@ -32,6 +33,15 @@ export interface NatStaticEntry {
   protocol?: 'tcp' | 'udp';
   localPort?: number;
   globalPort?: number;
+  vrf?: string;
+  isNetwork?: boolean;
+  prefixLen?: number;
+  rawConfig?: string;
+}
+
+export interface NatOutsideStatic {
+  outsideGlobal: string;
+  outsideLocal: string;
 }
 
 export interface NatPool {
@@ -113,7 +123,7 @@ export class NATEngine {
   private reverseSessions = new Map<string, NatSession>();
 
   // Callbacks injected by Router
-  private matchACLFn?: (aclId: string | number, srcIP: string) => boolean;
+  private matchACLFn?: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean;
   private getIfaceIPFn?: (iface: string) => string | null;
   // Lookup callback: given an inside IP, return the outside interface it came from
   private getInsideIfaceForIPFn?: (ip: string) => string | null;
@@ -134,6 +144,9 @@ export class NATEngine {
   private hitCount = 0;
   private missCount = 0;
   private expiredCount = 0;
+  private maxEntries: number | null = null;
+  setMaxEntries(n: number | null): void { this.maxEntries = n; }
+  getMaxEntries(): number | null { return this.maxEntries; }
   // Direction counters (Phase 4b2-NAT)
   private inboundTranslations = 0;
   private outboundTranslations = 0;
@@ -198,14 +211,29 @@ export class NATEngine {
   isInsideInterface(iface: string): boolean  { return this.insideIfaces.has(iface); }
   isOutsideInterface(iface: string): boolean { return this.outsideIfaces.has(iface); }
 
-  addStaticEntry(entry: NatStaticEntry): void {
-    // Prevent duplicates
-    const key = `${entry.localIP}:${entry.localPort}:${entry.globalIP}:${entry.globalPort}`;
+  addStaticEntry(entry: NatStaticEntry): { ok: true } | { ok: false; reason: string } {
     const exists = this.staticEntries.some(e =>
       e.localIP === entry.localIP && e.globalIP === entry.globalIP &&
-      e.localPort === entry.localPort && e.globalPort === entry.globalPort
+      e.localPort === entry.localPort && e.globalPort === entry.globalPort &&
+      e.protocol === entry.protocol
     );
-    if (!exists) this.staticEntries.push(entry);
+    if (exists) return { ok: false, reason: 'duplicate' };
+    if (!entry.protocol) {
+      const localClash = this.staticEntries.some(e => !e.protocol && e.localIP === entry.localIP && e.globalIP !== entry.globalIP);
+      if (localClash) return { ok: false, reason: 'local-already-mapped' };
+      const globalClash = this.staticEntries.some(e => !e.protocol && e.globalIP === entry.globalIP && e.localIP !== entry.localIP);
+      if (globalClash) return { ok: false, reason: 'global-already-mapped' };
+    } else {
+      const globalPortClash = this.staticEntries.some(e =>
+        e.protocol === entry.protocol &&
+        e.globalIP === entry.globalIP &&
+        e.globalPort === entry.globalPort &&
+        (e.localIP !== entry.localIP || e.localPort !== entry.localPort)
+      );
+      if (globalPortClash) return { ok: false, reason: 'global-port-already-mapped' };
+    }
+    this.staticEntries.push(entry);
+    return { ok: true };
   }
 
   removeStaticEntry(localIP: string, globalIP: string): void {
@@ -213,6 +241,21 @@ export class NATEngine {
       e => !(e.localIP === localIP && e.globalIP === globalIP)
     );
   }
+
+  removeAllStaticEntries(): void { this.staticEntries = []; }
+
+  private outsideStaticEntries: NatOutsideStatic[] = [];
+  addOutsideStatic(o: NatOutsideStatic): void {
+    if (!this.outsideStaticEntries.some(e => e.outsideGlobal === o.outsideGlobal && e.outsideLocal === o.outsideLocal)) {
+      this.outsideStaticEntries.push(o);
+    }
+  }
+  removeOutsideStatic(outsideGlobal: string, outsideLocal: string): void {
+    this.outsideStaticEntries = this.outsideStaticEntries.filter(
+      e => !(e.outsideGlobal === outsideGlobal && e.outsideLocal === outsideLocal)
+    );
+  }
+  getOutsideStaticEntries(): readonly NatOutsideStatic[] { return this.outsideStaticEntries; }
 
   addPool(pool: NatPool): void { this.pools.set(pool.name, pool); }
   removePool(name: string): void { this.pools.delete(name); }
@@ -225,7 +268,7 @@ export class NATEngine {
   }
 
   /** Provide ACL matching function (injected by Router) */
-  setACLMatchFn(fn: (aclId: string | number, srcIP: string) => boolean): void {
+  setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean): void {
     this.matchACLFn = fn;
   }
 
@@ -359,9 +402,27 @@ export class NATEngine {
       }
     }
 
-    // 1. Static NAT: inside local → inside global (IP only)
     for (const entry of this.staticEntries) {
-      if (entry.localIP === srcIP && !entry.protocol) {
+      if (entry.protocol) continue;
+      if (entry.isNetwork) {
+        const translated = translateNetworkOffset(srcIP, entry);
+        if (translated) {
+          this.hitCount++;
+          const key = makeKey(proto, srcIP, srcPort);
+          if (!this.sessions.has(key)) {
+            const session: NatSession = {
+              protocol: proto,
+              localIP: srcIP, localPort: srcPort,
+              globalIP: translated, globalPort: srcPort,
+              outsideIP: dstIP, outsidePort: dstPort,
+              timestamp: Date.now(),
+            };
+            this.sessions.set(key, session);
+            this.reverseSessions.set(makeKey(proto, translated, srcPort), session);
+          }
+          return rewriteSrcIP(pkt, translated);
+        }
+      } else if (entry.localIP === srcIP) {
         this.hitCount++;
         return rewriteSrcIP(pkt, entry.globalIP);
       }
@@ -369,7 +430,7 @@ export class NATEngine {
 
     // 2. Dynamic rules
     for (const rule of this.dynamicRules) {
-      if (!this.matchACL(rule.aclId, srcIP)) continue;
+      if (!this.matchACL(rule.aclId, srcIP, pkt)) continue;
 
       if (rule.type === 'overload') {
         const globalIP = this.getIfaceIPFn?.(outIface) ?? null;
@@ -380,6 +441,7 @@ export class NATEngine {
         let session = this.sessions.get(sessionKey);
 
         if (!session) {
+          if (this.maxEntries !== null && this.sessions.size >= this.maxEntries) continue;
           const globalPort = this.allocatePort(proto, globalIP);
           if (globalPort === null) continue; // ephemeral range exhausted
           session = {
@@ -433,15 +495,20 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
+          const poolIP = this.allocatePoolAddress(pool, srcIP);
+          if (poolIP === null) {
+            this.missCount++;
+            continue;
+          }
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
-            globalIP: pool.startIP, globalPort: srcPort,
+            globalIP: poolIP, globalPort: srcPort,
             outsideIP: dstIP, outsidePort: dstPort,
             timestamp: Date.now(),
           };
           this.sessions.set(sessionKey, session);
-          const revKey = makeKey(proto, pool.startIP, srcPort);
+          const revKey = makeKey(proto, poolIP, srcPort);
           this.reverseSessions.set(revKey, session);
           this.missCount++;
           this.getBus().publish({
@@ -495,15 +562,17 @@ export class NATEngine {
       }
     }
 
-    // Dynamic/PAT sessions
     for (const session of this.sessions.values()) {
       const protoName = protoToName(session.protocol);
+      const outside = session.outsideIP
+        ? `${session.outsideIP}:${session.outsidePort}`
+        : '---';
       entries.push({
         proto: protoName,
         insideLocal:  `${session.localIP}:${session.localPort}`,
         insideGlobal: `${session.globalIP}:${session.globalPort}`,
-        outsideLocal: '---',
-        outsideGlobal: '---',
+        outsideLocal: outside,
+        outsideGlobal: outside,
       });
     }
 
@@ -620,9 +689,8 @@ export class NATEngine {
 
   // ─── Private Helpers ─────────────────────────────────────────────
 
-  private matchACL(aclId: string | number, srcIP: string): boolean {
-    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP);
-    // Fallback: no ACL engine → permit all
+  private matchACL(aclId: string | number, srcIP: string, pkt?: IPv4Packet): boolean {
+    if (this.matchACLFn) return this.matchACLFn(aclId, srcIP, pkt);
     return true;
   }
 
@@ -633,6 +701,34 @@ export class NATEngine {
    * traffic of the older session was then delivered to the newer host.
    * Returns null when the whole ephemeral range is in use.
    */
+  /**
+   * Allocate the next free pool address for an inside source, sticky per
+   * inside IP (RFC 6888 REQ-2 — destination-independent mapping). Returns
+   * null when the pool is exhausted (no more unique addresses available).
+   */
+  private allocatePoolAddress(pool: NatPool, insideIP: string): string | null {
+    for (const s of this.sessions.values()) {
+      if (s.localIP === insideIP) {
+        const sN = tryIpToUint32(s.globalIP);
+        const start = tryIpToUint32(pool.startIP);
+        const end = tryIpToUint32(pool.endIP);
+        if (sN != null && start != null && end != null && sN >= start && sN <= end) {
+          return s.globalIP;
+        }
+      }
+    }
+    const startN = tryIpToUint32(pool.startIP);
+    const endN = tryIpToUint32(pool.endIP);
+    if (startN == null || endN == null) return null;
+    const taken = new Set<string>();
+    for (const s of this.sessions.values()) taken.add(s.globalIP);
+    for (let n = startN; n <= endN; n++) {
+      const ip = uint32ToIp(n);
+      if (!taken.has(ip)) return ip;
+    }
+    return null;
+  }
+
   private allocatePort(proto: number, globalIP: string): number | null {
     const span = this.maxPort - NAT_EPHEMERAL_MIN + 1;
     for (let i = 0; i < span; i++) {
@@ -652,6 +748,19 @@ export class NATEngine {
 }
 
 // ─── Packet Rewrite Helpers ──────────────────────────────────────────────────
+
+function translateNetworkOffset(srcIP: string, entry: NatStaticEntry): string | null {
+  const prefix = entry.prefixLen ?? 24;
+  if (prefix > 32 || prefix < 0) return null;
+  const srcNum = tryIpToUint32(srcIP);
+  const localNum = tryIpToUint32(entry.localIP);
+  const globalNum = tryIpToUint32(entry.globalIP);
+  if (srcNum === null || localNum === null || globalNum === null) return null;
+  const mask = prefixLengthToMaskUint32(prefix);
+  if ((srcNum & mask) !== (localNum & mask)) return null;
+  const offset = srcNum - (localNum & mask);
+  return uint32ToIp(((globalNum & mask) + offset) >>> 0);
+}
 
 function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv4Packet {
   const result: IPv4Packet = { ...pkt, sourceIP: new IPAddress(newSrc), headerChecksum: 0 };

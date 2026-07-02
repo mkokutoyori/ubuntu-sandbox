@@ -111,6 +111,8 @@ export interface OsSecurityContext {
   hostname: string;
   terminal: string;
   program: string;
+  /** Client's real IPv4, set only for TCP (Oracle Net) connections — used by DCD. */
+  clientIp?: string;
 }
 
 export const DEFAULT_OS_CONTEXT: OsSecurityContext = {

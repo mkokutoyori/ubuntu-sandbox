@@ -248,6 +248,7 @@ export interface ColumnConstraint extends ASTNode {
   onDelete?: 'CASCADE' | 'SET_NULL';
   enable?: boolean;
   deferrable?: boolean;
+  initiallyDeferred?: boolean;
 }
 
 export interface TableConstraint extends ASTNode {
@@ -259,6 +260,8 @@ export interface TableConstraint extends ASTNode {
   refTable?: string;
   refColumns?: string[];
   onDelete?: 'CASCADE' | 'SET_NULL';
+  deferrable?: boolean;
+  initiallyDeferred?: boolean;
 }
 
 // ── Column Definition ───────────────────────────────────────────────
@@ -611,6 +614,13 @@ export interface SetTransactionStatement extends ASTNode {
   readOnly?: boolean;
 }
 
+export interface SetConstraintsStatement extends ASTNode {
+  type: 'SetConstraintsStatement';
+  all: boolean;
+  names?: string[];
+  mode: 'DEFERRED' | 'IMMEDIATE';
+}
+
 // ── Oracle Instance Commands ────────────────────────────────────────
 
 export interface StartupStatement extends ASTNode {
@@ -667,7 +677,7 @@ export interface DropTablespaceStatement extends ASTNode {
 }
 
 export type AlterTablespaceAction =
-  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean }
+  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean; maxSize?: string }
   | { kind: 'ONLINE' }
   | { kind: 'OFFLINE'; mode?: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' }
   | { kind: 'READ_ONLY' }
@@ -683,7 +693,8 @@ export type AlterTablespaceAction =
   | { kind: 'FLASHBACK_OFF' }
   | { kind: 'SHRINK_SPACE' }
   | { kind: 'COALESCE' }
-  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string };
+  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string }
+  | { kind: 'ENCRYPT' };
 
 export interface AlterTablespaceStatement extends ASTNode {
   type: 'AlterTablespaceStatement';
@@ -861,7 +872,7 @@ export interface AlterIndexStatement extends ASTNode {
   type: 'AlterIndexStatement';
   schema?: string;
   name: string;
-  action: 'REBUILD' | 'RENAME';
+  action: 'REBUILD' | 'RENAME' | 'MONITORING_USAGE' | 'NOMONITORING_USAGE';
   newName?: string;
 }
 
@@ -1151,7 +1162,7 @@ export type Statement =
   | CreateUserStatement | AlterUserStatement | DropUserStatement
   | CreateRoleStatement | DropRoleStatement
   // Transaction
-  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
+  | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement | SetConstraintsStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement

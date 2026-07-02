@@ -56,7 +56,7 @@ export class LinuxAuditRecord {
   render(): string {
     const epoch = (this.timestampMs / 1000).toFixed(3);
     const body = Object.entries(this.fields)
-      .map(([k, v]) => `${k}=${formatValue(v)}`)
+      .map(([k, v]) => formatField(k, v))
       .join(' ');
     return `type=${this.type} msg=audit(${epoch}:${this.serial}): ${body}`.trimEnd();
   }
@@ -79,6 +79,9 @@ export class LinuxAuditLog {
 
   constructor(private readonly vfs: VirtualFileSystem) {
     this.vfs.mkdirp(AUDIT_PATHS.dir, 0o750, 0, 0);
+    // Materialise an empty audit.log so its root-only perms apply even before
+    // the first record (unprivileged reads are denied).
+    this.materialize();
   }
 
   /**
@@ -90,6 +93,20 @@ export class LinuxAuditLog {
     this.records.push(entry);
     this.materialize();
     return entry;
+  }
+
+  recordEvent(parts: Array<{ type: string; fields?: Record<string, string | number> }>): LinuxAuditRecord[] {
+    if (parts.length === 0) return [];
+    const serial = ++this.serialCounter;
+    const ts = Date.now();
+    const out: LinuxAuditRecord[] = [];
+    for (const p of parts) {
+      const entry = new LinuxAuditRecord(p.type, serial, p.fields ?? {}, ts);
+      this.records.push(entry);
+      out.push(entry);
+    }
+    this.materialize();
+    return out;
   }
 
   /** Every record, in chronological order. */
@@ -126,12 +143,21 @@ export class LinuxAuditLog {
   }
 
   private materialize(): void {
-    this.vfs.writeFile(AUDIT_PATHS.log, this.renderAuditLog(), 0, 0, 0o037);
+    this.vfs.writeFile(AUDIT_PATHS.log, this.renderAuditLog(), 0, 0, 0o177);
   }
 }
 
 /** Quote an audit field value when it contains whitespace. */
-function formatValue(value: string | number): string {
+const ALWAYS_QUOTED: ReadonlySet<string> = new Set([
+  'key', 'name', 'exe', 'comm', 'dir', 'path', 'file',
+  'subj', 'subj_user', 'subj_role', 'subj_type',
+  'obj_user', 'obj_role', 'obj_type', 'tty', 'cwd',
+  'cmdline', 'proctitle',
+]);
+
+function formatField(key: string, value: string | number): string {
   const text = String(value);
-  return /\s/.test(text) ? `"${text}"` : text;
+  if (ALWAYS_QUOTED.has(key)) return `${key}="${text}"`;
+  if (/\s/.test(text)) return `${key}="${text}"`;
+  return `${key}=${text}`;
 }

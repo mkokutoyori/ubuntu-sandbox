@@ -76,3 +76,31 @@ export function compareFhrpCandidates(
   for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
   return 0;
 }
+
+export interface FhrpTrackEntry {
+  target: string;
+  decrement: number;
+  down: boolean;
+}
+
+export function makeFhrpKey(iface: string, group: number): string {
+  return `${iface}|${group}`;
+}
+
+export function createDefaultFhrpConfig<G extends FhrpGroupBase>(): FhrpConfigBase<G> {
+  return { enabled: true, groups: new Map() };
+}
+
+/**
+ * Priority after applying object-tracking decrements, clamped to the
+ * protocol's legal range (HSRP 0-255, VRRP owner-reserved 1-254).
+ */
+export function trackedPriority(
+  base: number, tracks: readonly FhrpTrackEntry[], min: number, max: number,
+): number {
+  let p = base;
+  for (const t of tracks) if (t.down) p -= t.decrement;
+  if (p < min) p = min;
+  if (p > max) p = max;
+  return p;
+}
