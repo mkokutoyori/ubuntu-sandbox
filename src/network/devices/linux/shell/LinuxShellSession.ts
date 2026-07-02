@@ -21,13 +21,9 @@
 
 import { LinuxJobTable } from '../jobs/LinuxJobTable';
 
-export interface SuFrame {
-  user: string;
-  uid: number;
-  gid: number;
-  cwd: string;
-  umask: number;
-}
+import type { SuFrame } from '@/shell/ShellContext';
+
+export type { SuFrame };
 
 let nextSessionSeq = 1;
 
