@@ -306,6 +306,14 @@ export class BashInterpreter {
   }
 
   private *subcommandG(cmd: string): Effects<string> {
+    const fileOnly = cmd.trim().match(/^<\s*(\S+)$/);
+    if (fileOnly && this.io) {
+      const path = this.io.resolvePath(fileOnly[1]);
+      const content = this.io.readFile(path);
+      if (content !== null) return content;
+      this.env.lastExitCode = 1;
+      return '';
+    }
     try {
       const lexer = new BashLexer();
       const parser = new BashParser();

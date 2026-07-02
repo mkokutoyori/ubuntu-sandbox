@@ -133,7 +133,7 @@ export function expandWords(
         continue;
       }
     }
-    if (shouldWordSplit(w) && expanded.includes(' ')) {
+    if (shouldWordSplit(w) && /[ \t\n]/.test(expanded)) {
       // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
       const parts = expanded.split(/\s+/).filter(Boolean);
       for (const part of parts) result.push(...maybeGlob(part, w, glob));
@@ -392,8 +392,16 @@ function expandVariable(
     return v ?? '';
   }
 
-  // ${#name} — length
-  if (modifier === '#') return String((env.get(name) ?? '').length);
+  // ${#name} — length; ${#name[@]} / ${#name[*]} — array element count
+  if (modifier === '#') {
+    const arrayLen = name.match(/^(\w+)\[[@*]\]$/);
+    if (arrayLen) {
+      const arr = env.getArray(arrayLen[1]);
+      if (arr !== undefined) return String(arr.length);
+      return env.get(arrayLen[1]) !== undefined ? '1' : '0';
+    }
+    return String((env.get(name) ?? '').length);
+  }
 
   const val = env.get(name);
   const raw = val ?? '';
