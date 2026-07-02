@@ -48,8 +48,13 @@ export interface ServiceUnit {
   group: string;
   dynamicUser?: boolean;
   wantedBy: string[];
+  wants: string[];
   after: string[];
+  before: string[];
   requires: string[];
+  bindsTo: string[];
+  partOf: string[];
+  conflicts: string[];
   restart: RestartPolicy;
   /** Source file the unit was loaded from. */
   loadedFrom: string;
@@ -749,8 +754,13 @@ export class LinuxServiceManager {
         group: parsed.group ?? (parsed.dynamicUser ? name : 'root'),
         dynamicUser: parsed.dynamicUser ?? false,
         wantedBy: parsed.wantedBy ?? [],
+        wants: parsed.wants ?? [],
         after: parsed.after ?? [],
+        before: parsed.before ?? [],
         requires: parsed.requires ?? [],
+        bindsTo: parsed.bindsTo ?? [],
+        partOf: parsed.partOf ?? [],
+        conflicts: parsed.conflicts ?? [],
         restart: parsed.restart ?? 'no',
         loadedFrom: src.path,
         // Preserve previous runtime state if the unit already existed.
@@ -979,8 +989,13 @@ interface ParsedUnit {
   group?: string;
   dynamicUser?: boolean;
   wantedBy?: string[];
+  wants?: string[];
   after?: string[];
+  before?: string[];
   requires?: string[];
+  bindsTo?: string[];
+  partOf?: string[];
+  conflicts?: string[];
   restart?: RestartPolicy;
 }
 
@@ -1003,7 +1018,12 @@ export function parseUnitFile(content: string): ParsedUnit {
     if (section === 'Unit') {
       if (key === 'Description') out.description = val;
       else if (key === 'After') out.after = val.split(/\s+/);
+      else if (key === 'Before') out.before = val.split(/\s+/);
       else if (key === 'Requires') out.requires = val.split(/\s+/);
+      else if (key === 'Wants') out.wants = val.split(/\s+/);
+      else if (key === 'BindsTo') out.bindsTo = val.split(/\s+/);
+      else if (key === 'PartOf') out.partOf = val.split(/\s+/);
+      else if (key === 'Conflicts') out.conflicts = val.split(/\s+/);
     } else if (section === 'Service') {
       if (key === 'Type') out.type = val as ServiceType;
       else if (key === 'ExecStart') out.execStart = val;
