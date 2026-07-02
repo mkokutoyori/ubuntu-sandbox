@@ -265,7 +265,14 @@ export abstract class LinuxMachine extends EndHost
     this.dnsService.onStart(() => this.bindDnsServerPort());
     this.dnsService.onStop(() => this.udpClose(DNS_PORT));
 
-    this.bind9 = new Bind9Service(this, (path) => this.executor.vfs.readFile(path));
+    this.bind9 = new Bind9Service(this, {
+      read: (path) => this.executor.vfs.readFile(path),
+      append: (path, content) => {
+        const dir = path.slice(0, path.lastIndexOf('/')) || '/';
+        if (!this.executor.vfs.exists(dir)) this.executor.vfs.mkdirp(dir, 0o755, 0, 0);
+        this.executor.vfs.writeFile(path, content, 0, 0, 0o022, true);
+      },
+    });
     this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'named') return;
@@ -1030,6 +1037,7 @@ export abstract class LinuxMachine extends EndHost
       executor: this.executor,
       net: this.net,
       dnsService: this.dnsService,
+      bind9: this.bind9,
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,

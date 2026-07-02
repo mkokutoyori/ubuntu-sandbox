@@ -73,4 +73,9 @@ export class DnsCache {
 
     return { kind: 'miss' };
   }
+
+  flush(): void {
+    this.positive.clear();
+    this.negative.clear();
+  }
 }

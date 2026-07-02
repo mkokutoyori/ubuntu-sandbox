@@ -16,11 +16,21 @@ import { parseNamedConf } from './NamedConfParser';
 import { NamedConfSyntaxError } from './NamedConfLexer';
 import { buildNamedConfig } from './NamedConfig';
 import { NamedConfigError } from './NamedConfigError';
+import { Bind9Logging } from './Bind9Logging';
 import type { NamedConfig, NamedZone } from './NamedConfig';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { OperationResult } from '../LinuxServiceManager';
+
+export interface Bind9Files {
+  read(path: string): string | null;
+  append(path: string, content: string): void;
+}
+
+export interface ZoneReloadResult extends OperationResult {
+  changed?: boolean;
+}
 
 type ConfigLoadResult =
   | { ok: true; config: NamedConfig }
@@ -32,19 +42,27 @@ const LOOPBACK = '127.0.0.1';
 
 export class Bind9Service {
   private config: NamedConfig | null = null;
+  private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolver: RecursiveResolver | null = null;
   private readonly cache = new DnsCache();
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
+  private readonly frozenZones = new Set<string>();
+  private readonly logging: Bind9Logging;
+  private readonly readFile: (path: string) => string | null;
+  private queryLogEnabled = false;
   private running = false;
   private activePort = DNS_PORT;
 
   constructor(
     private readonly host: EndHost,
-    private readonly readFile: (path: string) => string | null,
+    private readonly files: Bind9Files,
     private readonly configPath: string = NAMED_CONF_PATH,
-  ) {}
+  ) {
+    this.readFile = (path) => this.files.read(path);
+    this.logging = new Bind9Logging((path, content) => this.files.append(path, content));
+  }
 
   isRunning(): boolean {
     return this.running;
@@ -52,6 +70,70 @@ export class Bind9Service {
 
   zoneSerial(name: string): number | undefined {
     return this.loadedZones.get(normalizeDnsName(name));
+  }
+
+  zoneCount(): number {
+    return this.loadedZones.size;
+  }
+
+  isQueryLogEnabled(): boolean {
+    return this.queryLogEnabled;
+  }
+
+  setQueryLog(enabled: boolean): void {
+    this.queryLogEnabled = enabled;
+  }
+
+  flushCache(): void {
+    this.cache.flush();
+  }
+
+  freezeZone(name: string): OperationResult {
+    const zone = this.primaryZone(name);
+    if (!zone) return { ok: false, error: 'not found' };
+    this.frozenZones.add(zone.name);
+    return { ok: true };
+  }
+
+  thawZone(name: string): ZoneReloadResult {
+    const zone = this.primaryZone(name);
+    if (!zone) return { ok: false, error: 'not found' };
+    this.frozenZones.delete(zone.name);
+    return this.reloadZone(name);
+  }
+
+  reloadZone(name: string): ZoneReloadResult {
+    const zone = this.primaryZone(name);
+    if (!zone) return { ok: false, error: 'not found' };
+    if (this.frozenZones.has(zone.name)) return { ok: false, error: 'frozen' };
+    if (zone.file === null || this.store === null) return { ok: false, error: 'not loaded' };
+
+    const content = this.readFile(zone.file);
+    if (content === null) {
+      return { ok: false, error: `loading from master file ${zone.file} failed: file not found` };
+    }
+    try {
+      const parsed = parseZoneFile(content, zone.name);
+      if (this.loadedZones.get(zone.name) === parsed.soa.data.serial) {
+        return { ok: true, changed: false };
+      }
+      this.store.removeZone(zone.name);
+      this.store.addZone(parsed);
+      this.loadedZones.set(zone.name, parsed.soa.data.serial);
+      this.failedZones.delete(zone.name);
+      return { ok: true, changed: true };
+    } catch (error) {
+      if (error instanceof ZoneFileError || error instanceof ZoneError) {
+        return { ok: false, error: error.message };
+      }
+      throw error;
+    }
+  }
+
+  private primaryZone(name: string): NamedZone | null {
+    const normalized = normalizeDnsName(name);
+    const zone = this.config?.zones.find((z) => z.name === normalized);
+    return zone && zone.type === 'primary' ? zone : null;
   }
 
   checkConfig(): OperationResult {
@@ -151,8 +233,10 @@ export class Bind9Service {
     }
 
     this.config = config;
+    this.store = store;
     this.authoritative = new AuthoritativeServer(store);
     this.resolver = this.buildResolver(config);
+    this.queryLogEnabled = config.options.queryLog;
   }
 
   private buildResolver(config: NamedConfig): RecursiveResolver | null {
@@ -199,7 +283,7 @@ export class Bind9Service {
   }
 
   private readonly handleQuery = (
-    query: DnsMessage, sourceIP?: IPAddress,
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
   ): DnsMessage | Promise<DnsMessage> => {
     const config = this.config!;
     const env = this.aclEnvironment();
@@ -212,6 +296,15 @@ export class Bind9Service {
     }
 
     const question = query.questions[0];
+    if (this.queryLogEnabled && question) {
+      this.logging.logQuery(config, {
+        clientIP: source,
+        clientPort: sourcePort ?? 0,
+        qname: question.qname,
+        qtype: question.qtype,
+        serverIP: env.localAddresses[0] ?? LOOPBACK,
+      });
+    }
     if (question && (question.qtype === RRType.AXFR || question.qtype === RRType.IXFR)) {
       const transferAcl = this.zoneFor(question.qname)?.allowTransfer
         ?? config.options.allowTransfer;
