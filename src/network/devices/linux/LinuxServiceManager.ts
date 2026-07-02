@@ -16,6 +16,8 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
+import { DependencyGraph } from './systemd/DependencyGraph';
+import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
@@ -444,8 +446,29 @@ export class LinuxServiceManager {
 
   // ─── Public API ───────────────────────────────────────────────────
 
-  /** Start a service. Spawns its main process if not already active. */
+  /**
+   * Start a service and its dependencies. Resolves the Requires/Wants/
+   * BindsTo activation closure, orders it by After/Before, and activates
+   * each unit in turn (systemd's job transaction). A unit with no
+   * dependencies yields a single-job transaction — same result as before.
+   */
   start(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    return this.jobEngine().start(unit.unit.name);
+  }
+
+  private jobEngine(): SystemdJobEngine {
+    return new SystemdJobEngine({
+      graph: () => new DependencyGraph(this.list()),
+      isActive: (n) => this.isActive(n),
+      exists: (n) => this.units.has(n),
+      activate: (n) => this.startOne(n),
+      deactivate: (n) => this.stopOne(n),
+    });
+  }
+
+  private startOne(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
@@ -568,6 +591,12 @@ export class LinuxServiceManager {
 
   /** Stop a service. Kills its main process if running. */
   stop(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    return this.stopOne(unit.unit.name);
+  }
+
+  private stopOne(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
