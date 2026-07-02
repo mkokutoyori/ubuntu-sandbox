@@ -37,6 +37,10 @@ export class DependencyGraph {
     return this.nodes.has(unitName(unit));
   }
 
+  allUnits(): string[] {
+    return [...this.nodes.keys()];
+  }
+
   edges(unit: string, kind: DependencyKind): string[] {
     const node = this.nodes.get(unitName(unit));
     return node ? [...node[kind]] : [];
