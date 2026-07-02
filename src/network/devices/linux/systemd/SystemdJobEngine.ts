@@ -52,6 +52,64 @@ export class SystemdJobEngine {
     return { ok: true };
   }
 
+  buildStopTransaction(unit: string): Transaction {
+    const graph = this.hooks.graph();
+    const target = unitName(unit);
+    const affected = new Set<string>([target]);
+    const stack = [target];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      for (const dependent of graph.activeDependents(current)) {
+        if (!affected.has(dependent)) {
+          affected.add(dependent);
+          stack.push(dependent);
+        }
+      }
+    }
+    const active = [...affected].filter((u) => this.hooks.exists(u) && this.hooks.isActive(u));
+    const jobs: Job[] = this.stopOrder(active, graph).map((u) => ({ unit: u, type: 'stop', required: true }));
+    return { jobs, ...EMPTY_TRANSACTION_MAPS };
+  }
+
+  private stopOrder(units: readonly string[], graph: DependencyGraph): string[] {
+    const members = new Set(units);
+    const predecessors = new Map<string, Set<string>>();
+    for (const u of members) predecessors.set(u, new Set());
+
+    const dependsOn = (u: string): string[] => [
+      ...graph.edges(u, 'requires'), ...graph.edges(u, 'bindsTo'),
+      ...graph.edges(u, 'partOf'), ...graph.edges(u, 'after'),
+    ];
+    for (const u of members) {
+      for (const dep of dependsOn(u)) {
+        if (members.has(dep)) predecessors.get(dep)!.add(u);
+      }
+      for (const target of graph.edges(u, 'before')) {
+        if (members.has(target)) predecessors.get(u)!.add(target);
+      }
+    }
+
+    const order: string[] = [];
+    const placed = new Set<string>();
+    while (order.length < members.size) {
+      const ready = [...members]
+        .filter((u) => !placed.has(u) && [...predecessors.get(u)!].every((p) => placed.has(p)))
+        .sort();
+      if (ready.length === 0) {
+        for (const u of [...members].filter((x) => !placed.has(x)).sort()) order.push(u);
+        break;
+      }
+      order.push(ready[0]);
+      placed.add(ready[0]);
+    }
+    return order;
+  }
+
+  stop(unit: string): OperationResult {
+    this.run(this.buildStopTransaction(unit));
+    return { ok: true };
+  }
+
   run(transaction: Transaction): JobResult[] {
     for (const conflict of transaction.conflicts) {
       if (this.hooks.isActive(conflict)) this.hooks.deactivate(conflict);
@@ -59,6 +117,11 @@ export class SystemdJobEngine {
 
     const results = new Map<string, JobResult>();
     for (const job of transaction.jobs) {
+      if (job.type === 'stop') {
+        if (this.hooks.isActive(job.unit)) this.hooks.deactivate(job.unit);
+        results.set(job.unit, { unit: job.unit, outcome: 'done' });
+        continue;
+      }
       const failedDep = (transaction.requiredDeps.get(job.unit) ?? [])
         .find((d) => results.get(d)?.outcome === 'failed' || results.get(d)?.outcome === 'dependency-failed');
       if (failedDep) {

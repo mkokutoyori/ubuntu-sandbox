@@ -589,11 +589,16 @@ export class LinuxServiceManager {
     this.emitLifecycle('start', u.name);
   }
 
-  /** Stop a service. Kills its main process if running. */
+  /**
+   * Stop a service and the units that depend on it. Propagates through
+   * the reverse Requires/BindsTo/PartOf edges (systemd's stop job),
+   * deactivating dependents before the target. A unit nothing depends on
+   * yields a single-job transaction — same result as before.
+   */
   stop(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
-    return this.stopOne(unit.unit.name);
+    return this.jobEngine().stop(unit.unit.name);
   }
 
   private stopOne(name: string): OperationResult {
