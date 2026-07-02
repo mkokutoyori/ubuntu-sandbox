@@ -141,6 +141,19 @@ export class Environment {
     this.localNames.add(name);
   }
 
+  /** Variable names beginning with `prefix`, across the scope chain, sorted. */
+  namesWithPrefix(prefix: string): string[] {
+    const names = new Set<string>();
+    let cursor: Environment | null = this;
+    while (cursor) {
+      for (const key of cursor.vars.keys()) {
+        if (key.startsWith(prefix) && /^[A-Za-z_][A-Za-z_0-9]*$/.test(key)) names.add(key);
+      }
+      cursor = cursor.parent;
+    }
+    return [...names].sort();
+  }
+
   // ─── trap handlers ────────────────────────────────────────────
 
   getParent(): Environment | null { return this.parent; }

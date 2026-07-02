@@ -379,6 +379,15 @@ function expandVariable(
   modifier: string | undefined,
   env: Environment,
 ): string {
+  // ── Name enumeration by prefix: `${!prefix*}` / `${!prefix@}` ──────
+  if (braced && !modifier && name.startsWith('!') && (name.endsWith('*') || name.endsWith('@'))) {
+    const prefix = name.slice(1, -1);
+    if (/^[A-Za-z_][A-Za-z_0-9]*$/.test(prefix) || prefix === '') {
+      const names = env.namesWithPrefix(prefix);
+      return name.endsWith('@') ? names.join(ARRAY_SEP) : names.join(' ');
+    }
+  }
+
   // ── Indexed-array access: `${arr[expr]}` ──────────────────────────
   // The name carries the subscript through the parser as part of the
   // modifier (e.g. `[0]`), with optional further modifiers chained
@@ -771,6 +780,12 @@ function expandInlineVars(
         }
         // ${!NAME[@]} — list of keys / indices.
         if (content.startsWith('!')) {
+          const prefixMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)([@*])$/);
+          if (prefixMatch) {
+            const names = env.namesWithPrefix(prefixMatch[1]);
+            result += prefixMatch[2] === '@' ? names.join(ARRAY_SEP) : names.join(' ');
+            continue;
+          }
           const keyMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)\[([@*])\]$/);
           if (keyMatch) {
             const lname = keyMatch[1];
