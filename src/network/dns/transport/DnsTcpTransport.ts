@@ -1,4 +1,5 @@
-import type { IPAddress, IPv6Address } from '@/network/core/types';
+import { IPAddress } from '@/network/core/types';
+import type { IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
@@ -18,7 +19,7 @@ export function bindDnsTcpServer(host: EndHost, handler: DnsMessageHandler, port
           socket.close();
           return;
         }
-        const response = handler(query);
+        const response = handler(query, IPAddress.tryParse(socket.remoteIp) ?? undefined);
         socket.send(encodeDnsMessage(response));
         socket.close();
       });

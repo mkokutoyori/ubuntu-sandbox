@@ -9,7 +9,7 @@ export const CLASSIC_UDP_MAX_SIZE = CLASSIC_UDP_PAYLOAD_SIZE;
 
 export const DNS_PORT = 53;
 
-export type DnsMessageHandler = (query: DnsMessage) => DnsMessage;
+export type DnsMessageHandler = (query: DnsMessage, sourceIP?: IPAddress) => DnsMessage;
 
 export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UDP_PAYLOAD_SIZE): DnsMessage {
   if (encodeDnsMessage(message).length <= maxSize) return message;
@@ -58,7 +58,7 @@ export function bindDnsUdpServer(
     } catch {
       return;
     }
-    const response = truncateForUdp(handler(query), negotiatedUdpSize(query));
+    const response = truncateForUdp(handler(query, sourceIP), negotiatedUdpSize(query));
     const bytes = encodeDnsMessage(response);
     host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, bytes, bytes.length);
   }, processName);

@@ -187,6 +187,17 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'named',
+    description: 'BIND Domain Name Server',
+    type: 'forking',
+    execStart: '/usr/sbin/named -u bind',
+    execReload: '/usr/sbin/rndc reload',
+    user: 'bind',
+    after: ['network.target'],
+    enabledByDefault: false,
+    startByDefault: false,
+  },
+  {
     name: 'networking',
     description: 'Raise network interfaces',
     type: 'oneshot',

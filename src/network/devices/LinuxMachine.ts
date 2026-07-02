@@ -72,6 +72,7 @@ import {
   formatIpMonitorNeigh,
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
+import { Bind9Service } from './linux/bind9/Bind9Service';
 
 import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
@@ -152,6 +153,8 @@ export abstract class LinuxMachine extends EndHost
 
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
+
+  public readonly bind9: Bind9Service;
 
   /** Configured DNS resolver IP (from /etc/resolv.conf). */
   protected dnsResolverIP = '';
@@ -261,6 +264,23 @@ export abstract class LinuxMachine extends EndHost
     //    firewalls) instead of bypassing it via the Equipment registry.
     this.dnsService.onStart(() => this.bindDnsServerPort());
     this.dnsService.onStop(() => this.udpClose(DNS_PORT));
+
+    this.bind9 = new Bind9Service(this, (path) => this.executor.vfs.readFile(path));
+    this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'named') return;
+      if (event === 'start') this.applyBind9(this.bind9.start());
+      else if (event === 'restart') this.applyBind9(this.bind9.restart());
+      else if (event === 'reload') this.applyBind9(this.bind9.reload());
+      else if (event === 'stop') this.bind9.stop();
+    });
+  }
+
+  private applyBind9(result: { ok: boolean; error?: string }): void {
+    if (!result.ok) {
+      this.bind9.stop();
+      this.executor.serviceMgr.markFailed('named', result.error ?? 'failed to start');
+    }
   }
 
   // ─── DNS over the wire (server side) ─────────────────────────────────
