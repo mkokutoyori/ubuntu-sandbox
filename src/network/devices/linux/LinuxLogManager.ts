@@ -265,14 +265,14 @@ export class LinuxLogManager {
    * socket bind / release the way systemd-journald notes a daemon opening
    * or closing its listening port.
    */
-  logDaemon(tag: string, message: string): void {
+  logDaemon(tag: string, message: string, pid?: number, unit?: string): void {
     this.addEntry({
       priority: PRIORITY_NAMES.info,
       facility: FACILITY_NAMES.daemon,
-      unit: tag,
+      unit: unit ?? tag,
       tag,
       message,
-      pid: this.nextPid++,
+      pid: pid ?? this.nextPid++,
       hostname: this.hostname,
     });
   }

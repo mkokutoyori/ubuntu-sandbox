@@ -979,7 +979,7 @@ export abstract class LinuxMachine extends EndHost
       this.logindPid(),
       'systemd-logind',
     );
-    this.executor.logMgr.logAuth(
+    this.executor.logMgr.logDaemon(
       'systemd',
       `Started Session ${sid} of user ${user}.`,
       1,

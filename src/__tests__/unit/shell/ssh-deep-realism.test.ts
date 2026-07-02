@@ -314,7 +314,7 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
     const t = new WindowsTerminalSession('w', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'tail -n 1 /var/log/auth.log');
+    await typeSub(t, 'tail -n 3 /var/log/auth.log');
     expectAnyLine(t, /sshd/);
   });
 

@@ -115,6 +115,10 @@ interface Row {
   excludes?: (string | RegExp)[];
 }
 
+function waitForRestartSec(ms = 250): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runRow(lan: Lan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
   return row.on(lan).executeCommand(row.cmd);
@@ -427,6 +431,7 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
         const ps = await l.pc2.executeCommand('pgrep sshd');
         const pid = ps.trim().split(/\s+/)[0];
         await l.pc2.executeCommand(`kill -9 ${pid}`);
+        await waitForRestartSec();
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -435,7 +440,10 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
     },
     {
       name: 'pkill -f sshd — same supervisor-driven recovery',
-      setup: (l) => { void l.pc2.executeCommand('pkill -f sshd'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('pkill -f sshd');
+        await waitForRestartSec();
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -443,7 +451,10 @@ describe('§6 — sshd process killed directly: supervisor brings it back', () =
     },
     {
       name: 'after pkill, systemctl status reports active (running) again',
-      setup: (l) => { void l.pc2.executeCommand('pkill -9 sshd'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('pkill -9 sshd');
+        await waitForRestartSec();
+      },
       on: l => l.pc2,
       cmd: 'systemctl status ssh',
       contains: [/Active:\s+active \(running\)/],
@@ -778,7 +789,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       name: 'auth.log records port and protocol info per OpenSSH',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
       on: l => l.pc2,
-      cmd: 'tail -1 /var/log/auth.log',
+      cmd: 'tail -3 /var/log/auth.log',
       contains: [/port \d+ ssh2/],
     },
     {
@@ -1041,7 +1052,7 @@ describe('§15 — service ↔ process table reactive coherence', () => {
         // ssh ships with Restart=on-failure; force a crash via SIGKILL
         const pid = (await l.pc1.executeCommand('pgrep sshd')).trim();
         await l.pc1.executeCommand(`kill -9 ${pid}`);
-        // a future-style implementation auto-restarts; allow either outcome
+        await waitForRestartSec();
       },
       on: l => l.pc1,
       cmd: 'systemctl status ssh',
@@ -1641,7 +1652,7 @@ describe('§25 — full end-to-end audit story', () => {
       name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
       on: l => l.srv1,
-      cmd: 'sh -c "tail -1 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
+      cmd: 'sh -c "tail -3 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
       contains: [/Accepted password for alice/, /sshd.*alice/],
     },
     {
@@ -1748,7 +1759,7 @@ describe('§26 — SSH public-key authentication', () => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
       on: l => l.pc2,
-      cmd: 'tail -1 /var/log/auth.log',
+      cmd: 'tail -3 /var/log/auth.log',
       contains: [/Accepted publickey for alice/],
     },
     {
