@@ -38,7 +38,7 @@ import { ParserError } from './ParserError';
 import type {
   Program, CommandList, AndOrList, AndOrPart, Pipeline, Command,
   SimpleCommand, IfClause, ElifClause, ForClause, WhileClause, UntilClause,
-  CaseClause, CaseItem, FunctionDef, BraceGroup, Subshell,
+  CaseClause, CaseItem, CaseTerminator, FunctionDef, BraceGroup, Subshell,
   DoubleBracket, DBExpr, ArithmeticCommand, CStyleForClause,
   Word, Assignment, Redirection, RedirectionOp,
 } from './ASTNode';
@@ -388,15 +388,23 @@ export class BashParser {
     this.skipNewlines();
 
     let body: CommandList | null = null;
-    if (!this.check(TokenType.DSEMI) && !this.checkWord('esac')) {
+    if (!this.isCaseTerminator() && !this.checkWord('esac')) {
       body = this.parseCommandList();
     }
 
-    // Consume ;; if present
-    if (this.check(TokenType.DSEMI)) this.advance();
+    let terminator: CaseTerminator = ';;';
+    if (this.isCaseTerminator()) {
+      terminator = this.advance().value as CaseTerminator;
+    }
     this.skipNewlines();
 
-    return { patterns, body };
+    return { patterns, body, terminator };
+  }
+
+  private isCaseTerminator(): boolean {
+    return this.check(TokenType.DSEMI)
+      || this.check(TokenType.SEMI_AMP)
+      || this.check(TokenType.DSEMI_AMP);
   }
 
   // ─── Function Definition (Grammar Rules 59-62) ────────────────
@@ -903,7 +911,8 @@ export class BashParser {
   private isCompoundEnd(): boolean {
     if (this.isAtEnd()) return false;
     const tok = this.peek();
-    if (tok.type === TokenType.RBRACE || tok.type === TokenType.RPAREN || tok.type === TokenType.DSEMI) {
+    if (tok.type === TokenType.RBRACE || tok.type === TokenType.RPAREN || tok.type === TokenType.DSEMI
+        || tok.type === TokenType.SEMI_AMP || tok.type === TokenType.DSEMI_AMP) {
       return true;
     }
     if (tok.type !== TokenType.WORD) return false;

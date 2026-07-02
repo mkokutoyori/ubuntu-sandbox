@@ -34,6 +34,8 @@ export enum TokenType {
   OR_IF = 'OR_IF',                       // ||
   SEMI = 'SEMI',                         // ;
   DSEMI = 'DSEMI',                       // ;;
+  SEMI_AMP = 'SEMI_AMP',                 // ;&
+  DSEMI_AMP = 'DSEMI_AMP',               // ;;&
   AMP = 'AMP',                           // &
   NEWLINE = 'NEWLINE',                   // \n
 

@@ -350,7 +350,15 @@ export class BashLexer {
     this.advance();
     if (!this.isAtEnd() && this.peek() === ';') {
       this.advance();
+      if (!this.isAtEnd() && this.peek() === '&') {
+        this.advance();
+        return { type: TokenType.DSEMI_AMP, value: ';;&', position: start };
+      }
       return { type: TokenType.DSEMI, value: ';;', position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '&') {
+      this.advance();
+      return { type: TokenType.SEMI_AMP, value: ';&', position: start };
     }
     return { type: TokenType.SEMI, value: ';', position: start };
   }

@@ -159,9 +159,12 @@ export interface CaseClause extends ASTBase {
   redirections: Redirection[];
 }
 
+export type CaseTerminator = ';;' | ';&' | ';;&';
+
 export interface CaseItem {
   patterns: Word[];
   body: CommandList | null;
+  terminator?: CaseTerminator;
 }
 
 export interface FunctionDef extends ASTBase {

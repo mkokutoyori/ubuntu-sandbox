@@ -1031,14 +1031,21 @@ export class BashInterpreter {
   private *visitCase(node: CaseClause): Effects<void> {
     const value = yield* this.expandWordG(node.word);
 
+    let fallthrough = false;
     for (const item of node.items) {
-      for (const pattern of item.patterns) {
-        const pat = yield* this.expandWordG(pattern);
-        if (matchGlob(pat, value)) {
-          if (item.body) yield* this.visitCommandList(item.body);
-          return; // only first matching case
+      let matched = fallthrough;
+      if (!matched) {
+        for (const pattern of item.patterns) {
+          const pat = yield* this.expandWordG(pattern);
+          if (matchGlob(pat, value)) { matched = true; break; }
         }
       }
+      if (!matched) continue;
+      if (item.body) yield* this.visitCommandList(item.body);
+      const terminator = item.terminator ?? ';;';
+      if (terminator === ';&') { fallthrough = true; continue; }
+      if (terminator === ';;&') { fallthrough = false; continue; }
+      return;
     }
   }
 
