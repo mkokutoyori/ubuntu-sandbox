@@ -16,7 +16,7 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
-import { DependencyGraph } from './systemd/DependencyGraph';
+import { DependencyGraph, fullUnitName, type UnitNode } from './systemd/DependencyGraph';
 import { SystemdJobEngine } from './systemd/SystemdJobEngine';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
@@ -57,6 +57,7 @@ export interface ServiceUnit {
   bindsTo: string[];
   partOf: string[];
   conflicts: string[];
+  allowIsolate?: boolean;
   restart: RestartPolicy;
   restartSec?: number;
   startLimitBurst?: number;
@@ -101,6 +102,23 @@ const SYSTEM_UNIT_DIR = '/usr/lib/systemd/system';
 const ETC_UNIT_DIR = '/etc/systemd/system';
 /** multi-user.target.wants — Wants symlinks for the default boot target. */
 const WANTS_DIR = '/etc/systemd/system/multi-user.target.wants';
+
+interface DefaultTarget {
+  name: string;
+  description: string;
+  unitLines?: string[];
+}
+
+const DEFAULT_TARGETS: readonly DefaultTarget[] = [
+  { name: 'graphical.target', description: 'Graphical Interface', unitLines: ['Requires=multi-user.target', 'After=multi-user.target', 'AllowIsolate=yes'] },
+  { name: 'multi-user.target', description: 'Multi-User System', unitLines: ['Requires=basic.target', 'After=basic.target', 'AllowIsolate=yes'] },
+  { name: 'basic.target', description: 'Basic System', unitLines: ['Requires=sysinit.target', 'After=sysinit.target'] },
+  { name: 'sysinit.target', description: 'System Initialization', unitLines: ['Requires=local-fs.target', 'After=local-fs.target'] },
+  { name: 'local-fs.target', description: 'Local File Systems' },
+  { name: 'remote-fs.target', description: 'Remote File Systems' },
+  { name: 'network-pre.target', description: 'Preparation for Network' },
+  { name: 'network.target', description: 'Network', unitLines: ['After=network-pre.target'] },
+];
 
 // ─── Default unit definitions ─────────────────────────────────────────
 
@@ -468,12 +486,48 @@ export class LinuxServiceManager {
 
   private jobEngine(): SystemdJobEngine {
     return new SystemdJobEngine({
-      graph: () => new DependencyGraph(this.list()),
+      graph: () => this.dependencyGraph(),
       isActive: (n) => this.isActive(n),
       exists: (n) => this.units.has(n),
       activate: (n) => this.startOne(n),
       deactivate: (n) => this.stopOne(n),
     });
+  }
+
+  dependencyGraph(): DependencyGraph {
+    return new DependencyGraph(this.list().map((u) => this.graphNode(u)));
+  }
+
+  private graphNode(u: LinuxService): UnitNode {
+    if (!u.name.endsWith('.target')) return u;
+    const dir = `${ETC_UNIT_DIR}/${u.name}.wants`;
+    const entries = this.vfs.exists(dir) ? this.vfs.listDirectory(dir) ?? [] : [];
+    const linked = entries
+      .filter((e) => e.name.endsWith('.service'))
+      .map((e) => e.name.replace(/\.service$/, ''));
+    const wants = [...new Set([...u.wants, ...linked])];
+    return {
+      name: u.name,
+      requires: u.requires,
+      wants,
+      bindsTo: u.bindsTo,
+      partOf: u.partOf,
+      conflicts: u.conflicts,
+      after: [...new Set([...u.after, ...u.requires, ...wants, ...u.bindsTo])],
+      before: u.before,
+    };
+  }
+
+  isolate(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    if (!unit.unit.allowIsolate) {
+      return {
+        ok: false,
+        error: `Operation refused, unit ${fullUnitName(unit.unit.name)} may be requested by dependency only (it is configured to refuse manual start/stop).`,
+      };
+    }
+    return this.jobEngine().isolate(unit.unit.name);
   }
 
   private startOne(name: string): OperationResult {
@@ -882,6 +936,7 @@ export class LinuxServiceManager {
         bindsTo: parsed.bindsTo ?? [],
         partOf: parsed.partOf ?? [],
         conflicts: parsed.conflicts ?? [],
+        allowIsolate: parsed.allowIsolate ?? false,
         restart: parsed.restart ?? 'no',
         restartSec: parsed.restartSec,
         startLimitBurst: parsed.startLimitBurst,
@@ -969,13 +1024,19 @@ export class LinuxServiceManager {
     const short = name.replace(/\.service$/, '');
     const u = this.units.get(short);
     if (!u) {
-      return { ok: false, error: `Unit ${short}.service not found.` };
+      return { ok: false, error: `Unit ${fullUnitName(short)} not found.` };
     }
     return { ok: true, unit: u };
   }
 
   private activate(u: LinuxService): OperationResult {
     const prev = u.state;
+    if (u.name.endsWith('.target')) {
+      u.activeSince = new Date();
+      u.state = 'active';
+      this.emitStateChanged(u.name, prev, 'active');
+      return { ok: true };
+    }
     u.state = 'activating';
     const userEntry = u.user || 'root';
     let uid = userEntry === 'root' ? 0 : 1;
@@ -1024,6 +1085,7 @@ export class LinuxServiceManager {
   }
 
   private computeEnabledState(name: string): EnabledState {
+    if (name.endsWith('.target')) return 'static';
     return this.vfs.existsNoFollow(`${WANTS_DIR}/${name}.service`) ? 'enabled' : 'disabled';
   }
 
@@ -1033,8 +1095,7 @@ export class LinuxServiceManager {
     const out: Array<{ name: string; path: string; content: string }> = [];
     for (const entry of entries) {
       if (entry.name === '.' || entry.name === '..') continue;
-      if (!entry.name.endsWith('.service')) continue;
-      // Skip the wants directory entries (they live in a subdir, not here).
+      if (!entry.name.endsWith('.service') && !entry.name.endsWith('.target')) continue;
       const path = `${dir}/${entry.name}`;
       const content = this.vfs.readFile(path);
       if (content === null) continue;
@@ -1063,6 +1124,13 @@ export class LinuxServiceManager {
         }
       }
     }
+
+    for (const t of DEFAULT_TARGETS) {
+      const path = `${SYSTEM_UNIT_DIR}/${t.name}`;
+      if (!this.vfs.exists(path)) {
+        this.vfs.writeFile(path, renderTargetFile(t), 0, 0, 0o022);
+      }
+    }
   }
 
   /** Start every enabled unit — the boot-time multi-user.target job. */
@@ -1072,10 +1140,20 @@ export class LinuxServiceManager {
         this.startOne(u.name);
       }
     }
+    for (const name of this.dependencyGraph().activationClosure(this.defaultTarget())) {
+      const u = this.units.get(name);
+      if (u && u.name.endsWith('.target') && u.state !== 'active') {
+        this.activate(u);
+      }
+    }
   }
 }
 
 // ─── Unit file rendering and parsing ──────────────────────────────────
+
+function renderTargetFile(t: DefaultTarget): string {
+  return ['[Unit]', `Description=${t.description}`, ...(t.unitLines ?? []), ''].join('\n');
+}
 
 /** Serialize a default unit definition into ini-format unit file content. */
 function renderUnitFile(u: DefaultUnit): string {
@@ -1115,6 +1193,7 @@ interface ParsedUnit {
   bindsTo?: string[];
   partOf?: string[];
   conflicts?: string[];
+  allowIsolate?: boolean;
   restart?: RestartPolicy;
   restartSec?: number;
   startLimitBurst?: number;
@@ -1146,6 +1225,7 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'BindsTo') out.bindsTo = val.split(/\s+/);
       else if (key === 'PartOf') out.partOf = val.split(/\s+/);
       else if (key === 'Conflicts') out.conflicts = val.split(/\s+/);
+      else if (key === 'AllowIsolate') out.allowIsolate = /^(yes|true|1|on)$/i.test(val);
       else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
       else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
     } else if (section === 'Service') {

@@ -25,6 +25,8 @@ function loadAverage(running: number): string {
   return `${v}, ${v}, ${v}`;
 }
 import { LinuxService } from './service/LinuxService';
+import { fullUnitName } from './systemd/DependencyGraph';
+import { renderDependencyTree } from './systemd/DependencyTree';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -359,7 +361,7 @@ function unitFailedResult(u: ServiceUnit): string {
 function unitActiveLine(u: ServiceUnit): string {
   switch (u.state) {
     case 'active':
-      return `active (running) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
+      return `active (${u.name.endsWith('.target') ? 'active' : 'running'}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
     case 'activating':
       return u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)';
     case 'deactivating':
@@ -385,7 +387,7 @@ function renderUnitStatus(u: ServiceUnit): string {
   const dot = u.state === 'active' ? '●' : u.state === 'failed' ? '×' : '○';
   const loadedLine = `     Loaded: loaded (${u.loadedFrom}; ${u.enabled}; vendor preset: enabled)`;
   const lines = [
-    `${dot} ${u.name}.service - ${u.description}`,
+    `${dot} ${fullUnitName(u.name)} - ${u.description}`,
     loadedLine,
     `     Active: ${unitActiveLine(u)}`,
   ];
@@ -461,7 +463,7 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
         };
       }
       const u = sm.status(unit);
-      if (!u) return { output: `Unit ${unit}.service could not be found.`, exitCode: 4 };
+      if (!u) return { output: `Unit ${fullUnitName(unit)} could not be found.`, exitCode: 4 };
       return { output: renderUnitStatus(u), exitCode: u.state === 'active' ? 0 : 3 };
     }
 
@@ -474,7 +476,19 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       const result = fn.call(sm, unit);
       if (!result.ok) {
         return {
-          output: `Failed to ${sub} ${unit}.service: ${result.error ?? 'unknown error'}`,
+          output: `Failed to ${sub} ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
+          exitCode: 1,
+        };
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    case 'isolate': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const result = sm.isolate(unit);
+      if (!result.ok) {
+        return {
+          output: `Failed to isolate ${fullUnitName(unit)}: ${result.error ?? 'unknown error'}`,
           exitCode: 1,
         };
       }
@@ -510,7 +524,7 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
     case 'is-enabled': {
       const u = sm.status(unit);
       const en = u?.enabled ?? 'disabled';
-      return { output: en, exitCode: en === 'enabled' ? 0 : 1 };
+      return { output: en, exitCode: en === 'enabled' || en === 'static' ? 0 : 1 };
     }
 
     case 'list-units':
@@ -520,15 +534,23 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       const stateFilter = args.includes('--failed')
         ? 'failed'
         : stateArg?.slice('--state='.length);
-      const allUnits = stateFilter
+      const typeArg = args.find((a) => a.startsWith('--type='))?.slice('--type='.length)
+        ?? (args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined);
+      const matchesType = (name: string): boolean => {
+        if (!typeArg) return true;
+        if (typeArg === 'target') return name.endsWith('.target');
+        if (typeArg === 'service') return !name.endsWith('.target');
+        return false;
+      };
+      const allUnits = (stateFilter
         ? sm.list({ state: stateFilter as ServiceState })
-        : sm.list();
+        : sm.list()).filter((u) => matchesType(u.name));
       const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
       for (const u of allUnits) {
         const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';
-        const sub2 = u.state === 'active' ? 'running' : 'dead';
+        const sub2 = u.state !== 'active' ? 'dead' : u.name.endsWith('.target') ? 'active' : 'running';
         lines.push(
-          `  ${(u.name + '.service').padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
+          `  ${fullUnitName(u.name).padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
         );
       }
       lines.push('');
@@ -640,11 +662,11 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       return { output: 'LISTEN UNIT ACTIVATES\n\n0 sockets listed.', exitCode: 0 };
 
     case 'list-dependencies': {
-      const u = unit ? sm.status(unit) : null;
-      if (unit && !u) return { output: `Failed to get dependencies: Unit ${unit}.service not found.`, exitCode: 1 };
-      const head = unit ? `${unit}.service` : sm.defaultTarget();
-      const deps = u ? u.after : [];
-      return { output: [head, ...deps.map(d => `● └─${d}`)].join('\n'), exitCode: 0 };
+      const root = unit || sm.defaultTarget();
+      if (!sm.status(root)) {
+        return { output: `Failed to get dependencies: Unit ${fullUnitName(root)} not found.`, exitCode: 1 };
+      }
+      return { output: renderDependencyTree(root, sm.dependencyGraph()), exitCode: 0 };
     }
 
     case 'cat': {

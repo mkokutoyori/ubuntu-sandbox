@@ -1,4 +1,4 @@
-import { DependencyGraph, unitName } from '@/network/devices/linux/systemd/DependencyGraph';
+import { DependencyGraph, fullUnitName, unitName } from '@/network/devices/linux/systemd/DependencyGraph';
 import { orderUnits } from '@/network/devices/linux/systemd/UnitOrdering';
 import type { Job, JobEngineHooks, JobResult, OperationResult } from '@/network/devices/linux/systemd/JobTypes';
 
@@ -26,7 +26,7 @@ export class SystemdJobEngine {
       if (missing) {
         return {
           jobs: [], ...EMPTY_TRANSACTION_MAPS,
-          error: `Unit ${missing}.service not found.`,
+          error: `Unit ${fullUnitName(missing)} not found.`,
         };
       }
     }
@@ -51,7 +51,20 @@ export class SystemdJobEngine {
   }
 
   start(unit: string): OperationResult {
+    return this.executeStart(this.buildStartTransaction(unit), unit);
+  }
+
+  isolate(unit: string): OperationResult {
     const transaction = this.buildStartTransaction(unit);
+    if (transaction.error) return { ok: false, error: transaction.error };
+    const graph = this.hooks.graph();
+    const keep = new Set(transaction.jobs.map((j) => j.unit));
+    const outside = graph.allUnits().filter((u) => !keep.has(u) && this.hooks.isActive(u));
+    for (const u of this.stopOrder(outside, graph)) this.hooks.deactivate(u);
+    return this.executeStart(transaction, unit);
+  }
+
+  private executeStart(transaction: Transaction, unit: string): OperationResult {
     if (transaction.error) return { ok: false, error: transaction.error };
     const results = this.run(transaction);
     const target = unitName(unit);

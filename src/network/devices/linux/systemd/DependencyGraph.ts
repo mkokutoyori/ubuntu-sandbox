@@ -24,6 +24,10 @@ export function unitName(reference: string): string {
   return reference.replace(/\.service$/, '');
 }
 
+export function fullUnitName(name: string): string {
+  return name.endsWith('.target') ? name : `${unitName(name)}.service`;
+}
+
 export class DependencyGraph {
   private readonly nodes = new Map<string, UnitNode>();
 
