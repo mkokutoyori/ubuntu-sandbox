@@ -3382,7 +3382,7 @@ export class LinuxCommandExecutor {
           return { output: result.output, exitCode: result.exitCode };
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases, this.functions);
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases, this.functions, 'interpreter');
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };

@@ -39,6 +39,7 @@ export function runScript(
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  invocation: 'direct' | 'interpreter' = 'direct',
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -52,8 +53,12 @@ export function runScript(
     return { output: `bash: ${scriptPath}: Is a directory\n`, exitCode: 126 };
   }
 
-  // 2. Check execute permission
-  if (!checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr)) {
+  // 2. Direct invocation (./script) needs the execute bit; running the
+  //    file through an interpreter (`bash script`) only needs to read it.
+  const permitted = invocation === 'interpreter'
+    ? checkReadPermission(inode, ctx.uid, ctx.gid, ctx.userMgr)
+    : checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr);
+  if (!permitted) {
     return { output: `bash: ${scriptPath}: Permission denied\n`, exitCode: 126 };
   }
 
@@ -208,6 +213,29 @@ function checkExecutePermission(
 
   // Other
   return !!(perms & 1);
+}
+
+function checkReadPermission(
+  inode: INode,
+  uid: number,
+  gid: number,
+  userMgr: ShellContext['userMgr'],
+): boolean {
+  if (uid === 0) return true;
+
+  const perms = inode.permissions & 0o7777;
+
+  if (inode.uid === uid) {
+    return !!((perms >> 6) & 4);
+  }
+
+  const userGroups = userMgr.getUserGroups(userMgr.currentUser);
+  const isInGroup = inode.gid === gid || userGroups.some(g => g.gid === inode.gid);
+  if (isInGroup) {
+    return !!((perms >> 3) & 4);
+  }
+
+  return !!(perms & 4);
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
