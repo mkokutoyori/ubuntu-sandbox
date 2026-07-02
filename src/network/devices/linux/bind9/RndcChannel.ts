@@ -38,6 +38,10 @@ export class RndcChannel {
       }
       case 'querylog':
         return this.querylog(rest[0]);
+      case 'retransfer': {
+        const result = this.bind9.retransferZone(rest[0] ?? '');
+        return result.ok ? '' : `rndc: 'retransfer' failed: ${result.error}`;
+      }
       default:
         return `rndc: unknown command '${command}'`;
     }

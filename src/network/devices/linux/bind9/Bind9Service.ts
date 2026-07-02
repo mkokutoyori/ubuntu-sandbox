@@ -4,14 +4,21 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
+import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { RRType } from '@/network/dns/wire/RRType';
+import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
-  bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
+  isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer, zoneFromTransferAnswers,
+} from '@/network/dns/transfer/AxfrSession';
+import { sendNotify, isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import {
+  bindDnsUdpServer, unbindDnsUdpServer, queryDnsOverUdp, DNS_PORT,
 } from '@/network/dns/transport/DnsUdpTransport';
-import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
+import {
+  bindDnsTcpServer, unbindDnsTcpServer, queryDnsOverTcp,
+} from '@/network/dns/transport/DnsTcpTransport';
 import { parseNamedConf } from './NamedConfParser';
 import { NamedConfSyntaxError } from './NamedConfLexer';
 import { buildNamedConfig } from './NamedConfig';
@@ -121,6 +128,7 @@ export class Bind9Service {
       this.store.addZone(parsed);
       this.loadedZones.set(zone.name, parsed.soa.data.serial);
       this.failedZones.delete(zone.name);
+      this.notifySecondaries(zone.name);
       return { ok: true, changed: true };
     } catch (error) {
       if (error instanceof ZoneFileError || error instanceof ZoneError) {
@@ -149,18 +157,19 @@ export class Bind9Service {
     this.applyConfig(loaded.config);
     const port = loaded.config.options.listenOnPort;
     try {
-      bindDnsUdpServer(this.host, this.handleQuery, port, PROCESS_NAME);
+      bindDnsUdpServer(this.host, this.handleUdpQuery, port, PROCESS_NAME);
     } catch {
       return { ok: false, error: `could not listen on UDP socket: address already in use` };
     }
     try {
-      bindDnsTcpServer(this.host, this.handleQuery, port);
+      bindDnsTcpServer(this.host, this.handleTcpQuery, port);
     } catch {
       unbindDnsUdpServer(this.host, port);
       return { ok: false, error: `could not listen on TCP socket: address already in use` };
     }
     this.activePort = port;
     this.running = true;
+    this.refreshAllSecondaryZones();
     return { ok: true };
   }
 
@@ -180,11 +189,16 @@ export class Bind9Service {
     if (!this.running) return { ok: false, error: 'named is not running' };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    const previousSerials = new Map(this.loadedZones);
     this.applyConfig(loaded.config);
     if (loaded.config.options.listenOnPort !== this.activePort) {
       this.stop();
       return this.start();
     }
+    for (const [name, serial] of this.loadedZones) {
+      if (previousSerials.get(name) !== serial) this.notifySecondaries(name);
+    }
+    this.refreshAllSecondaryZones();
     return { ok: true };
   }
 
@@ -213,6 +227,10 @@ export class Bind9Service {
     this.failedZones.clear();
 
     for (const zone of config.zones) {
+      if (zone.type === 'secondary') {
+        this.failedZones.add(zone.name);
+        continue;
+      }
       if (zone.type !== 'primary') continue;
       const content = zone.file === null ? null : this.readFile(zone.file);
       if (content === null) {
@@ -282,10 +300,27 @@ export class Bind9Service {
     return null;
   }
 
-  private readonly handleQuery = (
+  private readonly handleUdpQuery = (
     query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
-  ): DnsMessage | Promise<DnsMessage> => {
+  ): DnsMessage | Promise<DnsMessage> =>
+    this.answerQuery(query, 'udp', sourceIP, sourcePort);
+
+  private readonly handleTcpQuery = (
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
+  ): DnsMessage | Promise<DnsMessage> =>
+    this.answerQuery(query, 'tcp', sourceIP, sourcePort);
+
+  private answerQuery(
+    query: DnsMessage,
+    transport: 'udp' | 'tcp',
+    sourceIP?: IPAddress,
+    sourcePort?: number,
+  ): DnsMessage | Promise<DnsMessage> {
     const config = this.config!;
+
+    if (isNotify(query)) {
+      return this.handleNotify(query, sourceIP);
+    }
     const env = this.aclEnvironment();
     const source = sourceIP?.toString() ?? LOOPBACK;
     const recursionAllowed =
@@ -305,12 +340,13 @@ export class Bind9Service {
         serverIP: env.localAddresses[0] ?? LOOPBACK,
       });
     }
-    if (question && (question.qtype === RRType.AXFR || question.qtype === RRType.IXFR)) {
+    if (question && isTransferQuery(query)) {
       const transferAcl = this.zoneFor(question.qname)?.allowTransfer
         ?? config.options.allowTransfer;
       if (!transferAcl.matches(source, env)) {
         return this.refuse(query, recursionAllowed);
       }
+      return transport === 'udp' ? refuseTransfer(query) : this.serveTransfer(query);
     }
 
     const response = this.authoritative!.answer(query);
@@ -326,7 +362,96 @@ export class Bind9Service {
       return this.recurse(query);
     }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
-  };
+  }
+
+  private serveTransfer(query: DnsMessage): DnsMessage {
+    const qname = normalizeDnsName(query.questions[0].qname);
+    const zone = this.store?.findZone(qname);
+    if (!zone || zone.origin !== qname) {
+      return this.refuse(query, false);
+    }
+    return buildTransferResponse(query, buildAxfrAnswers(zone));
+  }
+
+  private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
+    const qname = normalizeDnsName(query.questions[0]?.qname ?? '');
+    const zone = this.config?.zones.find((z) => z.name === qname && z.type === 'secondary');
+    const source = sourceIP?.toString();
+    if (zone && source && zone.primaries.includes(source)) {
+      void this.refreshSecondaryZone(zone);
+    }
+    return makeNotifyAck(query);
+  }
+
+  private refreshAllSecondaryZones(): void {
+    for (const zone of this.config?.zones ?? []) {
+      if (zone.type === 'secondary') void this.refreshSecondaryZone(zone);
+    }
+  }
+
+  retransferZone(name: string): OperationResult {
+    const normalized = normalizeDnsName(name);
+    const zone = this.config?.zones.find((z) => z.name === normalized && z.type === 'secondary');
+    if (!zone) return { ok: false, error: 'not found' };
+    void this.refreshSecondaryZone(zone, true);
+    return { ok: true };
+  }
+
+  private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
+    if (!this.running || this.store === null) return false;
+    for (const primary of zone.primaries) {
+      const primaryIP = IPAddress.tryParse(primary);
+      if (!primaryIP) continue;
+
+      const reply = await queryDnsOverUdp(
+        this.host, primaryIP, this.transferProbe(zone.name, RRType.SOA), DNS_PORT,
+      );
+      const soa = reply?.answers.find((rr) => rr.data.type === RRType.SOA);
+      if (!soa) continue;
+      const primarySerial = (soa.data as { serial: number }).serial;
+      const currentSerial = this.loadedZones.get(zone.name);
+      if (!force && currentSerial !== undefined && !serialGreaterThan(primarySerial, currentSerial)) {
+        return true;
+      }
+
+      const transfer = await queryDnsOverTcp(
+        this.host, primaryIP, this.transferProbe(zone.name, RRType.AXFR), DNS_PORT,
+      );
+      if (!transfer || transfer.answers.length < 2) continue;
+
+      const fetched = zoneFromTransferAnswers(zone.name, transfer.answers);
+      this.store.removeZone(zone.name);
+      this.store.addZone(fetched);
+      this.loadedZones.set(zone.name, fetched.soa.data.serial);
+      this.failedZones.delete(zone.name);
+      return true;
+    }
+    return false;
+  }
+
+  private transferProbe(qname: string, qtype: number): DnsMessage {
+    return {
+      id: Math.floor(Math.random() * 0x10000),
+      flags: {
+        qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false,
+        rd: false, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR,
+      },
+      questions: [{ qname, qtype, qclass: DnsClass.IN }],
+      answers: [],
+      authorities: [],
+      additionals: [],
+    };
+  }
+
+  private notifySecondaries(zoneName: string): void {
+    const zone = this.config?.zones.find((z) => z.name === zoneName && z.type === 'primary');
+    const loaded = this.store?.findZone(zoneName);
+    if (!zone || !loaded || loaded.origin !== zoneName) return;
+    for (const target of zone.alsoNotify) {
+      const targetIP = IPAddress.tryParse(target);
+      if (targetIP) void sendNotify(this.host, targetIP, loaded.origin, loaded.soa);
+    }
+  }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
