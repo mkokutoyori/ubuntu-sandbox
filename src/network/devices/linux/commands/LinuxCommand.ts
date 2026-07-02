@@ -76,6 +76,16 @@ export interface LinuxCommand {
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> | string;
 
   /**
+   * Optional status-aware execution used by the bash↔network bridge:
+   * same behaviour as `run`, plus the command's real exit code so shell
+   * conditionals (`if`, `&&`, `$?`) observe success/failure faithfully.
+   */
+  runWithStatus?(
+    ctx: LinuxCommandContext,
+    args: string[],
+  ): Promise<{ output: string; exitCode: number }>;
+
+  /**
    * Optional tab-completion callback. Called when the user presses TAB
    * while typing an argument to this command.
    *

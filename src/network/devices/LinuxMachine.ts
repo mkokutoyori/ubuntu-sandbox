@@ -292,6 +292,15 @@ export abstract class LinuxMachine extends EndHost
       if (event === 'start' || event === 'restart') this.startScriptRunner(name);
       else if (event === 'stop') this.stopScriptRunner(name);
     });
+
+    this.executor.setNetworkCommandRunner((argv, env) => {
+      const cmd = this.commands.get(argv[0]);
+      if (!cmd || !cmd.needsNetworkContext) return null;
+      const ctx = this.buildCommandContext();
+      const args = argv.slice(1);
+      if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
+      return Promise.resolve(cmd.run(ctx, args)).then((output) => ({ output, exitCode: 0 }));
+    });
   }
 
   private readonly scriptRunners = new Map<string, ServiceScriptRunner>();
@@ -308,11 +317,7 @@ export abstract class LinuxMachine extends EndHost
     const pid = unit.mainPid;
     const runner = new ServiceScriptRunner({
       readFile: (path) => this.executor.vfs.readFile(path),
-      runAsRoot: (command) => Promise.resolve(this.runServiceScript(command)),
-      runCondition: async (command) => {
-        this.runServiceScript(command);
-        return this.executor.lastExitCode === 0;
-      },
+      runAsRoot: (command) => this.runServiceScript(command),
       emitOutput: (line) =>
         this.executor.logMgr.logService(`${name}.service`, name, line, pid ?? 0),
       stillCurrent: () => {
@@ -321,7 +326,12 @@ export abstract class LinuxMachine extends EndHost
       },
     });
     this.scriptRunners.set(name, runner);
-    void runner.start(scriptPath);
+    const timer = setTimeout(() => {
+      if (this.scriptRunners.get(name) === runner) void runner.start(scriptPath);
+    }, 0);
+    if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+      (timer as unknown as { unref: () => void }).unref();
+    }
   }
 
   private stopScriptRunner(name: string): void {
@@ -329,14 +339,14 @@ export abstract class LinuxMachine extends EndHost
     this.scriptRunners.delete(name);
   }
 
-  private runServiceScript(command: string): string {
+  private async runServiceScript(command: string): Promise<string> {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
     um.currentUser = 'root';
     um.currentUid = 0;
     um.currentGid = 0;
     try {
-      return this.executor.executeWithEnv(command, {}) ?? '';
+      return await this.executor.executeAsync(command);
     } catch {
       return '';
     } finally {
@@ -1356,55 +1366,47 @@ export abstract class LinuxMachine extends EndHost
       return this.executor.execute(trimmed);
     }
 
-    if (this.hasShellConstructs(trimmed)) {
-      return this.runShellScript(trimmed);
-    }
-
-    // Compound commands: split on a top-level `;` and recurse. Quoted
-    // separators (e.g. inside `sh -c "a; b"`) are left intact.
-    const semiParts = LinuxMachine.splitTopLevel(trimmed, ';')
-      .map(s => s.trim())
-      .filter(Boolean);
-    if (semiParts.length > 1) {
-      const outputs: string[] = [];
-      for (const p of semiParts) {
-        const out = await this.executeCommand(p);
-        if (out) outputs.push(out);
-      }
-      return outputs.join('\n');
-    }
-
-    const logical = LinuxMachine.splitLogical(trimmed);
-    if (logical.length > 1) {
-      const outputs: string[] = [];
-      let lastOk = true;
-      for (const seg of logical) {
-        const shouldRun = seg.op === 'first' ||
-          (seg.op === '&&' && lastOk) ||
-          (seg.op === '||' && !lastOk);
-        if (!shouldRun) continue;
-        const cmdStr = seg.cmd.trim();
-        if (!cmdStr) continue;
-        const out = await this.executeCommand(cmdStr);
-        if (out) outputs.push(out);
-        lastOk = !this.isFailureOutput(out, cmdStr);
-      }
-      return outputs.join('\n');
-    }
-
-    // Piped command: route the head through the network dispatcher,
-    // then apply the remaining text filters through the bash interpreter.
-    // Only a top-level `|` (outside quotes) counts as a pipe.
-    if (LinuxMachine.splitTopLevel(trimmed, '|').length > 1) {
-      return this.executePipedCommand(trimmed);
+    if (LinuxMachine.hasCompositeSyntax(trimmed) || this.hasShellConstructs(trimmed)) {
+      return this.executor.executeAsync(trimmed);
     }
 
     // Single command: strip sudo, try network dispatch.
     const networkResult = await this.tryNetworkCommand(trimmed);
     if (networkResult !== null) return networkResult;
 
-    // Otherwise, fall through to the bash interpreter.
-    return this.executor.execute(trimmed);
+    // Otherwise, fall through to the bash interpreter (async: the line
+    // may still reference a network command in argument position).
+    return this.executor.executeAsync(trimmed);
+  }
+
+  /**
+   * True when the line uses shell composition — pipes, sequencing,
+   * logicals, redirections, substitution — that must run through the
+   * interpreter (with the async network bridge) rather than the
+   * single-command network fast path. Quote-aware: separators inside
+   * single/double quotes don't count; `$(` and backticks stay active
+   * inside double quotes, exactly like bash.
+   */
+  private static hasCompositeSyntax(input: string): boolean {
+    let quote: '"' | "'" | null = null;
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (quote === "'") {
+        if (ch === "'") quote = null;
+        continue;
+      }
+      if (ch === '`') return true;
+      if (ch === '$' && input[i + 1] === '(') return true;
+      if (quote === '"') {
+        if (ch === '"') quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; continue; }
+      if (ch === '|' || ch === ';' || ch === '&' || ch === '<' || ch === '>' || ch === '\n') {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

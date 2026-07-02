@@ -455,7 +455,18 @@ export const pingCommand: LinuxCommand = {
     }
     return runPing(ctx, args, 'ping');
   },
+
+  async runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    const output = await pingCommand.run(ctx, args) as string;
+    return { output, exitCode: pingExitCode(output) };
+  },
 };
+
+export function pingExitCode(output: string): number {
+  const received = /(\d+) (?:packets )?received/.exec(output);
+  if (received) return Number(received[1]) > 0 ? 0 : 1;
+  return 2;
+}
 
 export const ping6Command: LinuxCommand = {
   name: 'ping6',
@@ -474,5 +485,10 @@ export const ping6Command: LinuxCommand = {
 
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     return runPing(ctx, args, 'ping6');
+  },
+
+  async runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    const output = await ping6Command.run(ctx, args) as string;
+    return { output, exitCode: pingExitCode(output) };
   },
 };

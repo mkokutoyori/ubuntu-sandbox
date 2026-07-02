@@ -38,7 +38,7 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
-import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
+import { runScript, runScriptContent, runScriptContentAsync } from '@/bash/runtime/ScriptRunner';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
@@ -2049,22 +2049,30 @@ export class LinuxCommandExecutor {
       this.functions,
     );
 
-    // Sync interpreter state back to executor
+    return this.applyInterpreterResult(result, initialPwd, initialVars);
+  }
+
+  /**
+   * Sync interpreter state (cwd, variables, exit code) back onto the
+   * executor and normalize the terminal output — shared by the sync and
+   * async execution paths.
+   */
+  private applyInterpreterResult(
+    result: { output: string; exitCode?: number; env?: Record<string, string> },
+    initialPwd: string,
+    initialVars: Record<string, string>,
+  ): string {
     if (result.env) {
       // Sync PWD → this.cwd only if the interpreter's cd builtin changed it
       // (not if an external command like su changed this.cwd through dispatch)
       const interpPwd = result.env['PWD'];
       if (interpPwd && interpPwd !== initialPwd && this.cwd === initialPwd) {
-        // The interpreter changed PWD but dispatch didn't change this.cwd
-        // → the cd builtin was used; validate and apply
         const inode = this.vfs.resolveInode(interpPwd);
         if (inode && inode.type === 'directory') {
           this.cwd = interpPwd;
         }
       }
-      // Sync variables back to executor's env
       for (const [key, value] of Object.entries(result.env)) {
-        // Skip internal/special vars and positional params
         if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
         if (value !== initialVars[key]) {
           this.env.set(key, value);
@@ -2078,6 +2086,88 @@ export class LinuxCommandExecutor {
     // (e.g. `echo x` shows one line, not two). Drop a single trailing
     // newline so output is consistent across builtins and externals.
     return result.output.replace(/\n$/, '');
+  }
+
+  /**
+   * Hook installed by the owning machine: returns a Promise for argv that
+   * resolve to network-aware commands (ping, dig, ssh, …), or null when
+   * argv is not a network command and the synchronous dispatch applies.
+   */
+  private networkRunner:
+    | ((argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null)
+    | null = null;
+
+  setNetworkCommandRunner(
+    runner: (argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null,
+  ): void {
+    this.networkRunner = runner;
+  }
+
+  /**
+   * Async twin of {@link execute}: same pipeline, driven through the
+   * interpreter's async driver so network commands compose with full
+   * shell syntax (pipes, redirections, conditionals, substitutions).
+   */
+  async executeAsync(input: string): Promise<string> {
+    this.executeDepth++;
+    try {
+      const top = this.executeDepth === 1;
+      let notices: string[] = [];
+      if (top) {
+        this.reapDueBackgroundJobs();
+        notices = this.drainFinishedJobNotices();
+      }
+      const out = await this.executeCoreAsync(input);
+      if (top && notices.length > 0) {
+        return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
+      }
+      return out;
+    } finally {
+      this.executeDepth--;
+    }
+  }
+
+  private async executeCoreAsync(input: string): Promise<string> {
+    const trimmed = input.trim();
+    if (!trimmed) { this.lastExitCode = 0; return ''; }
+    this.currentCommandHead = extractCommandHead(trimmed);
+
+    this.syncProcPids();
+    this.commandHistory.push(trimmed);
+
+    const builtin = this.runJobBuiltinIfMatching(trimmed);
+    if (builtin !== null) return builtin;
+
+    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+    if (bgHandled !== null) return bgHandled;
+
+    const io = this.buildIOContext();
+    const initialPwd = this.cwd;
+    const initialVars = this.buildEnvVars();
+    const result = await runScriptContentAsync(
+      trimmed,
+      'bash',
+      [],
+      (argv, env) => this.dispatchMaybeNetwork(argv, env),
+      initialVars,
+      io,
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      this.aliases,
+      this.functions,
+    );
+    return this.applyInterpreterResult(result, initialPwd, initialVars);
+  }
+
+  private dispatchMaybeNetwork(
+    argv: string[],
+    env?: Record<string, string>,
+  ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
+    if (this.networkRunner && argv.length > 0) {
+      const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
+      const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
+      if (pending) return pending;
+    }
+    return this.dispatchFromInterpreter(argv, env);
   }
 
   /**
