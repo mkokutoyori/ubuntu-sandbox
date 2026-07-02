@@ -142,6 +142,41 @@ export interface OptRecordData {
   readonly extendedRcodeHigh: number;
 }
 
+export interface DnskeyRecordData {
+  readonly type: typeof RRType.DNSKEY;
+  readonly flags: number;
+  readonly protocol: number;
+  readonly algorithm: number;
+  readonly publicKey: string;
+}
+
+export interface RrsigRecordData {
+  readonly type: typeof RRType.RRSIG;
+  readonly typeCovered: number;
+  readonly algorithm: number;
+  readonly labels: number;
+  readonly originalTtl: number;
+  readonly expiration: number;
+  readonly inception: number;
+  readonly keyTag: number;
+  readonly signerName: string;
+  readonly signature: string;
+}
+
+export interface DsRecordData {
+  readonly type: typeof RRType.DS;
+  readonly keyTag: number;
+  readonly algorithm: number;
+  readonly digestType: number;
+  readonly digest: string;
+}
+
+export interface NsecRecordData {
+  readonly type: typeof RRType.NSEC;
+  readonly nextDomainName: string;
+  readonly types: readonly number[];
+}
+
 export type ResourceRecordData =
   | ARecordData
   | AaaaRecordData
@@ -152,7 +187,11 @@ export type ResourceRecordData =
   | MxRecordData
   | TxtRecordData
   | SrvRecordData
-  | OptRecordData;
+  | OptRecordData
+  | DnskeyRecordData
+  | RrsigRecordData
+  | DsRecordData
+  | NsecRecordData;
 
 export interface ResourceRecord<TData extends ResourceRecordData = ResourceRecordData> {
   readonly name: string;
@@ -270,4 +309,93 @@ export function makeSrvRecord(name: string, ttl: number, target: SrvTarget): Res
       target: target.target,
     },
   };
+}
+
+export function makeDnskeyRecord(
+  name: string, ttl: number,
+  key: { flags: number; algorithm: number; publicKey: string; protocol?: number },
+): ResourceRecord<DnskeyRecordData> {
+  const base = buildRecordBase(name, ttl);
+  validateUint16(key.flags, 'flags');
+  return {
+    ...base,
+    data: {
+      type: RRType.DNSKEY,
+      flags: key.flags,
+      protocol: key.protocol ?? 3,
+      algorithm: key.algorithm,
+      publicKey: key.publicKey,
+    },
+  };
+}
+
+export interface RrsigFields {
+  readonly typeCovered: number;
+  readonly algorithm: number;
+  readonly labels: number;
+  readonly originalTtl: number;
+  readonly expiration: number;
+  readonly inception: number;
+  readonly keyTag: number;
+  readonly signerName: string;
+  readonly signature: string;
+}
+
+export function makeRrsigRecord(name: string, ttl: number, fields: RrsigFields): ResourceRecord<RrsigRecordData> {
+  const base = buildRecordBase(name, ttl);
+  validateUint16(fields.typeCovered, 'typeCovered');
+  validateUint16(fields.keyTag, 'keyTag');
+  validateUint32(fields.expiration, 'expiration');
+  validateUint32(fields.inception, 'inception');
+  validateDnsName(fields.signerName);
+  return { ...base, data: { type: RRType.RRSIG, ...fields } };
+}
+
+export function makeDsRecord(
+  name: string, ttl: number,
+  fields: { keyTag: number; algorithm: number; digestType: number; digest: string },
+): ResourceRecord<DsRecordData> {
+  const base = buildRecordBase(name, ttl);
+  validateUint16(fields.keyTag, 'keyTag');
+  return { ...base, data: { type: RRType.DS, ...fields } };
+}
+
+export function makeNsecRecord(
+  name: string, ttl: number, nextDomainName: string, types: readonly number[],
+): ResourceRecord<NsecRecordData> {
+  const base = buildRecordBase(name, ttl);
+  validateDnsName(nextDomainName);
+  return { ...base, data: { type: RRType.NSEC, nextDomainName, types: [...types].sort((a, b) => a - b) } };
+}
+
+export function rdataKey(data: ResourceRecordData): string {
+  switch (data.type) {
+    case RRType.A:
+    case RRType.AAAA:
+      return `a|${data.address.toString()}`;
+    case RRType.NS:
+      return `ns|${data.nsdname.toLowerCase()}`;
+    case RRType.CNAME:
+      return `cname|${data.cname.toLowerCase()}`;
+    case RRType.PTR:
+      return `ptr|${data.ptrdname.toLowerCase()}`;
+    case RRType.SOA:
+      return `soa|${data.mname}|${data.rname}|${data.serial}`;
+    case RRType.MX:
+      return `mx|${data.preference}|${data.exchange.toLowerCase()}`;
+    case RRType.TXT:
+      return `txt|${data.text.join(' ')}`;
+    case RRType.SRV:
+      return `srv|${data.priority}|${data.weight}|${data.port}|${data.target.toLowerCase()}`;
+    case RRType.DNSKEY:
+      return `dnskey|${data.flags}|${data.algorithm}|${data.publicKey}`;
+    case RRType.RRSIG:
+      return `rrsig|${data.typeCovered}|${data.keyTag}|${data.signerName.toLowerCase()}|${data.signature}`;
+    case RRType.DS:
+      return `ds|${data.keyTag}|${data.algorithm}|${data.digestType}|${data.digest}`;
+    case RRType.NSEC:
+      return `nsec|${data.nextDomainName.toLowerCase()}|${data.types.join(',')}`;
+    default:
+      return JSON.stringify(data);
+  }
 }

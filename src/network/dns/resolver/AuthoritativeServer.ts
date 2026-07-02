@@ -37,10 +37,11 @@ export class AuthoritativeServer {
     }
 
     const question = query.questions[0];
-    const result = this.zones.answer(question);
+    const wantDnssec = queryOpt?.data.dnssecOk === true;
+    const result = this.zones.answer(question, { dnssec: wantDnssec });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
     if (queryOpt) {
-      additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE));
+      additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: wantDnssec }));
     }
 
     return {

@@ -7,6 +7,7 @@ import type {
   ResourceRecord, ResourceRecordData, OptRecordData,
   ARecordData, AaaaRecordData, NsRecordData, CnameRecordData, PtrRecordData,
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
+  DnskeyRecordData, RrsigRecordData, DsRecordData, NsecRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 
 export class DnsMessageError extends Error {
@@ -73,6 +74,27 @@ function encodeQuestion(question: DnsQuestion, out: number[], compressionMap: Ma
   writeUint16(out, question.qclass);
 }
 
+function writeText(out: number[], text: string): void {
+  for (let i = 0; i < text.length; i++) out.push(text.charCodeAt(i) & 0xff);
+}
+
+function encodeTypeBitmaps(types: readonly number[], out: number[]): void {
+  const windows = new Map<number, number[]>();
+  for (const type of types) {
+    const window = type >> 8;
+    const bit = type & 0xff;
+    const bytes = windows.get(window) ?? [];
+    const byteIndex = bit >> 3;
+    while (bytes.length <= byteIndex) bytes.push(0);
+    bytes[byteIndex] |= 0x80 >> (bit & 7);
+    windows.set(window, bytes);
+  }
+  for (const window of [...windows.keys()].sort((a, b) => a - b)) {
+    const bytes = windows.get(window)!;
+    out.push(window, bytes.length, ...bytes);
+  }
+}
+
 function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Map<string, number>): void {
   switch (data.type) {
     case RRType.A:
@@ -114,6 +136,30 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
       writeUint16(out, data.weight);
       writeUint16(out, data.port);
       encodeName(data.target, out, compressionMap);
+      return;
+    case RRType.DNSKEY:
+      writeUint16(out, data.flags);
+      out.push(data.protocol & 0xff, data.algorithm & 0xff);
+      writeText(out, data.publicKey);
+      return;
+    case RRType.RRSIG:
+      writeUint16(out, data.typeCovered);
+      out.push(data.algorithm & 0xff, data.labels & 0xff);
+      writeUint32(out, data.originalTtl);
+      writeUint32(out, data.expiration);
+      writeUint32(out, data.inception);
+      writeUint16(out, data.keyTag);
+      encodeName(data.signerName, out, new Map());
+      writeText(out, data.signature);
+      return;
+    case RRType.DS:
+      writeUint16(out, data.keyTag);
+      out.push(data.algorithm & 0xff, data.digestType & 0xff);
+      writeText(out, data.digest);
+      return;
+    case RRType.NSEC:
+      encodeName(data.nextDomainName, out, new Map());
+      encodeTypeBitmaps(data.types, out);
       return;
     case RRType.OPT:
       return;
@@ -321,9 +367,67 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const target = decodeName(view, rdataCursor.pos).name;
       return { type: RRType.SRV, priority, weight, port, target } as SrvRecordData;
     }
+    case RRType.DNSKEY: {
+      const flags = rdataCursor.readUint16();
+      const protocol = rdataCursor.readUint8();
+      const algorithm = rdataCursor.readUint8();
+      const publicKey = readText(view, rdataCursor.pos, offset + rdlength);
+      return { type: RRType.DNSKEY, flags, protocol, algorithm, publicKey } as DnskeyRecordData;
+    }
+    case RRType.RRSIG: {
+      const typeCovered = rdataCursor.readUint16();
+      const algorithm = rdataCursor.readUint8();
+      const labels = rdataCursor.readUint8();
+      const originalTtl = rdataCursor.readUint32();
+      const expiration = rdataCursor.readUint32();
+      const inception = rdataCursor.readUint32();
+      const keyTag = rdataCursor.readUint16();
+      const signer = decodeName(view, rdataCursor.pos);
+      const signature = readText(view, signer.next, offset + rdlength);
+      return {
+        type: RRType.RRSIG, typeCovered, algorithm, labels, originalTtl,
+        expiration, inception, keyTag, signerName: signer.name, signature,
+      } as RrsigRecordData;
+    }
+    case RRType.DS: {
+      const keyTag = rdataCursor.readUint16();
+      const algorithm = rdataCursor.readUint8();
+      const digestType = rdataCursor.readUint8();
+      const digest = readText(view, rdataCursor.pos, offset + rdlength);
+      return { type: RRType.DS, keyTag, algorithm, digestType, digest } as DsRecordData;
+    }
+    case RRType.NSEC: {
+      const next = decodeName(view, offset);
+      const types = decodeTypeBitmaps(view, next.next, offset + rdlength);
+      return { type: RRType.NSEC, nextDomainName: next.name, types } as NsecRecordData;
+    }
     default:
       throw new DnsMessageError(`cannot decode RDATA for unsupported record type ${type}`);
   }
+}
+
+function readText(view: Uint8Array, start: number, end: number): string {
+  let text = '';
+  for (let i = start; i < end; i++) text += String.fromCharCode(view[i]);
+  return text;
+}
+
+function decodeTypeBitmaps(view: Uint8Array, start: number, end: number): number[] {
+  const types: number[] = [];
+  let pos = start;
+  while (pos + 1 < end) {
+    const window = view[pos];
+    const length = view[pos + 1];
+    pos += 2;
+    for (let i = 0; i < length && pos + i < end; i++) {
+      const byte = view[pos + i];
+      for (let bit = 0; bit < 8; bit++) {
+        if (byte & (0x80 >> bit)) types.push((window << 8) | (i * 8 + bit));
+      }
+    }
+    pos += length;
+  }
+  return types;
 }
 
 function decodeResourceRecord(cursor: Cursor): ResourceRecord<ResourceRecordData> {

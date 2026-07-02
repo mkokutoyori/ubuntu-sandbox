@@ -2,12 +2,15 @@ import type { IPAddress } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
+import { makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData,
+  ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { DnsValidator } from '@/network/dns/dnssec/DnsValidator';
+import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 
 export type ResolutionStatus = 'NOERROR' | 'NXDOMAIN' | 'SERVFAIL';
 
@@ -15,12 +18,26 @@ export interface ResolutionResult {
   readonly status: ResolutionStatus;
   readonly answers: readonly ResourceRecord<ResourceRecordData>[];
   readonly fromCache: boolean;
+  readonly security?: DnssecStatus;
+}
+
+export interface RecursiveResolverDnssecOptions {
+  readonly anchors: readonly ResourceRecord<DsRecordData>[];
+  readonly now?: () => number;
 }
 
 export interface RecursiveResolverOptions {
   readonly timeoutMs?: number;
   readonly maxReferrals?: number;
   readonly maxDepth?: number;
+  readonly dnssec?: RecursiveResolverDnssecOptions;
+}
+
+interface IterationOutcome {
+  readonly status: ResolutionStatus;
+  readonly answers: readonly ResourceRecord<ResourceRecordData>[];
+  readonly authorities: readonly ResourceRecord<ResourceRecordData>[];
+  readonly negative: 'nxdomain' | 'nodata' | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -32,8 +49,8 @@ function normalizeName(name: string): string {
   return name.toLowerCase().replace(/\.$/, '');
 }
 
-function servfail(): ResolutionResult {
-  return { status: 'SERVFAIL', answers: [], fromCache: false };
+function servfail(): IterationOutcome {
+  return { status: 'SERVFAIL', answers: [], authorities: [], negative: null };
 }
 
 function findSoa(records: readonly ResourceRecord<ResourceRecordData>[]): ResourceRecord<SoaRecordData> | null {
@@ -46,6 +63,7 @@ export class RecursiveResolver {
   private readonly timeoutMs: number;
   private readonly maxReferrals: number;
   private readonly maxDepth: number;
+  private readonly validator: DnsValidator | null;
 
   constructor(
     private readonly host: EndHost,
@@ -56,29 +74,72 @@ export class RecursiveResolver {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxReferrals = options.maxReferrals ?? DEFAULT_MAX_REFERRALS;
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+    this.validator = options.dnssec
+      ? new DnsValidator(
+          async (qname, qtype) => {
+            const result = await this.resolveWithDepth(qname, qtype, 0, true);
+            return { status: result.status, records: result.answers };
+          },
+          options.dnssec.anchors,
+          { now: options.dnssec.now },
+        )
+      : null;
   }
 
   async resolve(qname: string, qtype: number): Promise<ResolutionResult> {
-    return this.resolveWithDepth(qname, qtype, 0);
+    return this.resolveWithDepth(qname, qtype, 0, false);
   }
 
-  private async resolveWithDepth(qname: string, qtype: number, depth: number): Promise<ResolutionResult> {
-    const cached = this.cache.lookup(qname, qtype);
-    if (cached.kind === 'hit') {
-      return { status: 'NOERROR', answers: cached.records, fromCache: true };
+  private async resolveWithDepth(
+    qname: string, qtype: number, depth: number, raw: boolean,
+  ): Promise<ResolutionResult> {
+    if (!raw) {
+      const cached = this.cache.lookup(qname, qtype);
+      if (cached.kind === 'hit') {
+        return { status: 'NOERROR', answers: cached.records, fromCache: true };
+      }
+      if (cached.kind === 'negative') {
+        return {
+          status: cached.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NOERROR',
+          answers: [],
+          fromCache: true,
+        };
+      }
     }
-    if (cached.kind === 'negative') {
-      return {
-        status: cached.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NOERROR',
-        answers: [],
-        fromCache: true,
-      };
+    if (depth > this.maxDepth) {
+      return { status: 'SERVFAIL', answers: [], fromCache: false };
     }
-    if (depth > this.maxDepth) return servfail();
-    return this.iterate(qname, qtype, depth);
+
+    const outcome = await this.iterate(qname, qtype, depth, raw);
+
+    let security: DnssecStatus | undefined;
+    if (this.validator && !raw && outcome.status !== 'SERVFAIL') {
+      security = outcome.answers.length > 0
+        ? await this.validator.validateAnswer(outcome.answers)
+        : await this.validator.validateNegative(qname, outcome.authorities);
+      if (security === 'bogus') {
+        return { status: 'SERVFAIL', answers: [], fromCache: false, security };
+      }
+    }
+
+    if (!raw) {
+      if (outcome.status === 'NOERROR' && outcome.answers.length > 0) {
+        this.cache.storePositive(outcome.answers);
+      } else if (outcome.negative) {
+        const soa = findSoa(outcome.authorities);
+        if (soa) {
+          const rcode = outcome.negative === 'nxdomain' ? DnsRcode.NXDOMAIN : DnsRcode.NOERROR;
+          this.cache.storeNegative(qname, qtype, rcode, soa);
+        }
+      }
+    }
+
+    return { status: outcome.status, answers: outcome.answers, fromCache: false, security };
   }
 
-  private async iterate(qname: string, qtype: number, depth: number): Promise<ResolutionResult> {
+  private async iterate(
+    qname: string, qtype: number, depth: number, raw: boolean,
+  ): Promise<IterationOutcome> {
     let servers: readonly IPAddress[] = this.rootHints;
 
     for (let referral = 0; referral <= this.maxReferrals; referral++) {
@@ -86,23 +147,19 @@ export class RecursiveResolver {
       if (!response) return servfail();
 
       if (response.flags.rcode === DnsRcode.NXDOMAIN) {
-        const soa = findSoa(response.authorities);
-        if (soa) this.cache.storeNegative(qname, qtype, DnsRcode.NXDOMAIN, soa);
-        return { status: 'NXDOMAIN', answers: [], fromCache: false };
+        return { status: 'NXDOMAIN', answers: [], authorities: response.authorities, negative: 'nxdomain' };
       }
       if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
 
       if (response.answers.length > 0) {
-        return this.acceptAnswers(qname, qtype, response.answers, depth);
+        return this.acceptAnswers(qtype, response.answers, depth, raw);
       }
 
       if (response.flags.aa) {
-        const soa = findSoa(response.authorities);
-        if (soa) this.cache.storeNegative(qname, qtype, DnsRcode.NOERROR, soa);
-        return { status: 'NOERROR', answers: [], fromCache: false };
+        return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
       }
 
-      const nextServers = await this.followReferral(response, depth);
+      const nextServers = await this.followReferral(response, depth, raw);
       if (!nextServers) return servfail();
       servers = nextServers;
     }
@@ -110,32 +167,36 @@ export class RecursiveResolver {
   }
 
   private async acceptAnswers(
-    qname: string,
     qtype: number,
     answers: readonly ResourceRecord<ResourceRecordData>[],
     depth: number,
-  ): Promise<ResolutionResult> {
-    this.cache.storePositive(answers);
+    raw: boolean,
+  ): Promise<IterationOutcome> {
+    const done = (records: readonly ResourceRecord<ResourceRecordData>[]): IterationOutcome =>
+      ({ status: 'NOERROR', answers: records, authorities: [], negative: null });
 
     if (answers.some((rr) => rr.data.type === qtype)) {
-      return { status: 'NOERROR', answers, fromCache: false };
+      return done(answers);
     }
 
     const cnames = answers.filter((rr): rr is ResourceRecord<CnameRecordData> => rr.data.type === RRType.CNAME);
     if (cnames.length === 0 || qtype === RRType.CNAME) {
-      return { status: 'NOERROR', answers, fromCache: false };
+      return done(answers);
     }
 
     const target = cnames[cnames.length - 1].data.cname;
-    const chased = await this.resolveWithDepth(target, qtype, depth + 1);
+    const chased = await this.resolveWithDepth(target, qtype, depth + 1, raw || this.validator !== null);
     return {
       status: chased.status,
       answers: [...answers, ...chased.answers],
-      fromCache: false,
+      authorities: [],
+      negative: null,
     };
   }
 
-  private async followReferral(response: DnsMessage, depth: number): Promise<readonly IPAddress[] | null> {
+  private async followReferral(
+    response: DnsMessage, depth: number, raw: boolean,
+  ): Promise<readonly IPAddress[] | null> {
     const nsRecords = response.authorities.filter(
       (rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS,
     );
@@ -151,7 +212,9 @@ export class RecursiveResolver {
     }
 
     for (const ns of nsRecords) {
-      const nsResult = await this.resolveWithDepth(ns.data.nsdname, RRType.A, depth + 1);
+      const nsResult = await this.resolveWithDepth(
+        ns.data.nsdname, RRType.A, depth + 1, raw || this.validator !== null,
+      );
       if (nsResult.status !== 'NOERROR') continue;
       const addresses = nsResult.answers
         .filter((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A)
@@ -187,7 +250,9 @@ export class RecursiveResolver {
       questions: [{ qname, qtype, qclass: DnsClass.IN }],
       answers: [],
       authorities: [],
-      additionals: [],
+      additionals: this.validator
+        ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })]
+        : [],
     };
   }
 }
