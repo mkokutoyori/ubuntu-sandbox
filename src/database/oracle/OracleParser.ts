@@ -1274,13 +1274,13 @@ export class OracleParser extends BaseParser {
       this.matchKeyword('USAGE');  // optional "USAGE" token
       this.consumeRestOfStatement();
       return { type: 'AlterIndexStatement', position: pos, schema, name,
-               action: 'MONITORING_USAGE' as unknown as 'REBUILD' };
+               action: 'MONITORING_USAGE' };
     }
     if (this.matchKeyword('NOMONITORING')) {
       this.matchKeyword('USAGE');
       this.consumeRestOfStatement();
       return { type: 'AlterIndexStatement', position: pos, schema, name,
-               action: 'NOMONITORING_USAGE' as unknown as 'REBUILD' };
+               action: 'NOMONITORING_USAGE' };
     }
     if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')
         || this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')

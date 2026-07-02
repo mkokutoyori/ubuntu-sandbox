@@ -1493,15 +1493,6 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
-  clearAllSAs(): void {
-    this.ikeSADB.clear();
-    this.ikev2SADB.clear();
-    this.ipsecSADB.clear();
-    this.spiToSA.clear();
-    this.multicastSADB.clear();
-    this.multicastGroupIndex.clear();
-  }
-
   // ══════════════════════════════════════════════════════════════════
   // Multicast IPsec SA Management (RFC 4301 §4.1)
   // ══════════════════════════════════════════════════════════════════
@@ -2201,7 +2192,7 @@ export class IPSecEngine implements IProtocolEngine {
     const outerFlags = this.computeOuterFlags(innerPkt, sa);
 
     /** Helper: create outer IP packet with SA-derived TOS and flags. */
-    const makeOuterPkt = (proto: number, payload: ESPPacket | AHPacket, size: number): IPv4Packet => {
+    const makeOuterPkt = (proto: number, payload: ESPPacket | AHPacket | UDPPacket, size: number): IPv4Packet => {
       const pkt = createIPv4Packet(localIP!, new IPAddress(sa.peerIP), proto, 64, payload, size);
       pkt.tos = outerTos;
       pkt.flags = outerFlags;
@@ -2510,8 +2501,8 @@ export class IPSecEngine implements IProtocolEngine {
       spi: esp.spi,
       seqNum: esp.sequenceNumber,
       payloadLen: outerPkt.totalLength ?? 0,
-      fromIp: typeof outerPkt.srcIP === 'string' ? outerPkt.srcIP : String(outerPkt.srcIP ?? ''),
-      toIp: typeof outerPkt.dstIP === 'string' ? outerPkt.dstIP : String(outerPkt.dstIP ?? ''),
+      fromIp: outerPkt.sourceIP?.toString() ?? '',
+      toIp: outerPkt.destinationIP?.toString() ?? '',
       mode: 'tunnel',
     });
 
@@ -2806,8 +2797,8 @@ export class IPSecEngine implements IProtocolEngine {
   private buildIpsecSAStruct(p: {
     peerIP: string; localIP: string; spiIn: number; spiOut: number;
     cryptoKeys: SACryptoKeys; lifetime: number; lifetimeKB: number;
-    mode: 'Tunnel' | 'Transport'; trafficSelectors: SATrafficSelector[];
-    transforms: string[]; aclName: string; pfsGroup?: number; natT: boolean;
+    mode: 'Tunnel' | 'Transport'; trafficSelectors: SATrafficSelector;
+    transforms: string[]; aclName: string; pfsGroup?: string; natT: boolean;
     outIface: string; hasESP: boolean; hasAH: boolean;
   }): IPSec_SA {
     const now = Date.now();
@@ -2848,8 +2839,8 @@ export class IPSecEngine implements IProtocolEngine {
         peerIp: peerKey, spiInbound: sa.spiIn, spiOutbound: sa.spiOut,
         protocol: sa.hasESP ? 'esp' : 'ah',
         mode: sa.mode === 'Tunnel' ? 'tunnel' : 'transport',
-        encryption: String(sa.encryption ?? ''),
-        integrity: String(sa.authentication ?? ''),
+        encryption: String((sa as IPSec_SA & { encryption?: string }).encryption ?? ''),
+        integrity: String((sa as IPSec_SA & { authentication?: string }).authentication ?? ''),
         lifetimeSec: sa.lifetime, lifetimeKB: sa.lifetimeKB,
       },
     });
@@ -3329,7 +3320,7 @@ export class IPSecEngine implements IProtocolEngine {
       const ports = (equip as any)._getPortsInternal?.();
       if (!ports) continue;
       for (const [, port] of ports) {
-        if (port.getIPAddress?.()?.toString() === ip) return equip as Router;
+        if (port.getIPAddress?.()?.toString() === ip) return equip as unknown as Router;
       }
     }
     return null;
@@ -4198,7 +4189,7 @@ export class IPSecEngine implements IProtocolEngine {
       lines.push(`crypto isakmp key ${key} address ${peer}`);
     }
     if (this.natKeepaliveInterval > 0) {
-      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${this.dpdConfig?.retryInterval ?? 3}`);
+      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${(this.dpdConfig as DPDConfig & { retryInterval?: number } | null)?.retryInterval ?? 3}`);
     }
     for (const [, ts] of this.transformSets) {
       lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);

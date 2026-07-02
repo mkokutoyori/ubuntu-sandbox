@@ -1,7 +1,7 @@
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import type { PingResult } from '../../EndHost';
+import type { PingResult } from '../../../EndHost';
 import { isValidIPv4 } from '@/network/core/ip';
 
 const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';

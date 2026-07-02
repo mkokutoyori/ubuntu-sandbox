@@ -13,7 +13,33 @@ import {
   type ResourceRecord,
   type ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
-import type { DnsRecord, DnsRcode, DnsWireResponse } from '@/network/dns/DnsWire';
+export interface DnsRecord {
+  name: string;
+  type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
+  value: string;
+  ttl: number;
+  priority?: number;
+}
+
+export type DnsRcode = 'NOERROR' | 'NXDOMAIN' | 'SERVFAIL' | 'REFUSED';
+
+export type DnsRcodeName = DnsRcode;
+
+export interface DnsWireResponse {
+  kind: 'dns-response';
+  id: number;
+  rcode: DnsRcode;
+  name: string;
+  qtype: string;
+  answers: DnsRecord[];
+}
+
+export type DnsQueryFn = (
+  serverIP: string,
+  name: string,
+  qtype: string,
+  timeoutMs?: number,
+) => Promise<DnsMessage | null>;
 
 const RR_TYPE_NAMES: ReadonlyMap<number, string> = new Map(
   Object.entries(RRType).map(([name, value]) => [value, name]),

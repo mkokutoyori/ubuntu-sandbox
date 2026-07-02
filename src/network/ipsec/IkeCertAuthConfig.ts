@@ -1,7 +1,7 @@
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { PkiPrivateKey } from '../pki/PkiKeyPair';
 import type { CertificateRevocationList } from '../pki/CertificateRevocationList';
-import type { CertificateVerifier, RevocationCheckMode, VerificationResult } from '../pki/CertificateVerifier';
+import type { CertificateVerifier, RevocationCheckMode, VerificationResult, VerificationFailure } from '../pki/CertificateVerifier';
 
 export interface IkeCertAuthConfig {
   readonly localCert: X509Certificate;
@@ -15,7 +15,7 @@ export interface IkeCertAuthConfig {
 
 export function verificationToIkeReason(res: VerificationResult): string {
   if (res.ok) return '';
-  switch (res.reason) {
+  switch ((res as VerificationFailure).reason) {
     case 'unknown': return 'Certificate unknown';
     case 'expired': return 'Certificate expired';
     case 'revoked': return 'Certificate revoked';

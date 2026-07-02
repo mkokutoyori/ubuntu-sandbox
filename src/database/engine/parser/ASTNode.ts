@@ -872,7 +872,7 @@ export interface AlterIndexStatement extends ASTNode {
   type: 'AlterIndexStatement';
   schema?: string;
   name: string;
-  action: 'REBUILD' | 'RENAME';
+  action: 'REBUILD' | 'RENAME' | 'MONITORING_USAGE' | 'NOMONITORING_USAGE';
   newName?: string;
 }
 

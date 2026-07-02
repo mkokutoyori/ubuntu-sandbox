@@ -38,7 +38,7 @@ export function runScript(
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/ast/types').Command>,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -84,7 +84,7 @@ export function runScriptContent(
   io?: IOContext,
   identity?: { pid?: number; ppid?: number; initialExitCode?: number },
   aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/ast/types').Command>,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));

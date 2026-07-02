@@ -236,7 +236,7 @@ export interface IkeOfferMessage {
   policies: IkePolicyProposal[];
   ikev2Proposals?: IkeV2ProposalWire[];
   transforms: IkeTransformProposal[];
-  pfsGroup?: number;
+  pfsGroup?: string;
   lifetimeSec: number;
   lifetimeKB: number;
   ipsecSpiIn: number;

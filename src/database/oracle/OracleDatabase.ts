@@ -924,7 +924,7 @@ export class OracleDatabase implements SqlCommandHost {
     const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
       forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
     if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
-    const ctx = (executor as unknown as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const sess = ctx.session;
     const sid = sess?.sid ?? 0;
     const nowait = s.forUpdate.wait === 'NOWAIT';
@@ -995,7 +995,7 @@ export class OracleDatabase implements SqlCommandHost {
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const output: string[] = [];
     const { host, flush } = this.buildPlsqlHost(executor, output);
 
@@ -1025,7 +1025,7 @@ export class OracleDatabase implements SqlCommandHost {
    * package routing. `flush` pushes any pending DBMS_OUTPUT.PUT tail.
    */
   private buildPlsqlHost(executor: OracleExecutor, output: string[]): { host: PlsqlHost; flush: () => void } {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const buf = { pending: '' };
     const host: PlsqlHost = {
       runSql: (s: string) => {
@@ -1063,7 +1063,7 @@ export class OracleDatabase implements SqlCommandHost {
   private makeAuthorizingUtlFile(executor: OracleExecutor): UtlFileApi {
     const engine = this.utlFile;
     const authorize = (dir: string, access: 'READ' | 'WRITE'): void => {
-      const user = (executor as { context: ExecutionContext }).context.currentUser;
+      const user = executor.getContext().currentUser;
       if (!this.canAccessDirectory(user, dir, access)) {
         throw new OracleError(29289, 'access denied');
       }
@@ -1179,7 +1179,7 @@ export class OracleDatabase implements SqlCommandHost {
     args: import('../engine/storage/BaseStorage').CellValue[],
   ): { handled: boolean; value: import('../engine/storage/BaseStorage').CellValue } {
     const oraExecutor = executor as OracleExecutor;
-    const schema = ((oraExecutor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS').toUpperCase();
+    const schema = (oraExecutor.getContext().currentSchema ?? 'SYS').toUpperCase();
 
     // DBMS_OUTPUT produced by SQL-invoked functions is collected but not
     // surfaced — matching SQL*Plus, which only flushes the buffer after
@@ -1233,7 +1233,7 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
-    const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = executor.getContext().currentSchema ?? 'SYS';
     const up = name.toUpperCase();
     // Dotted names resolve as schema-qualified standalone units; package
     // members go through PlsqlHost.resolvePackage instead.
@@ -1359,7 +1359,7 @@ export class OracleDatabase implements SqlCommandHost {
    * LOCATION list.
    */
   private createExternalTable(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const head = sql.match(/^CREATE\s+TABLE\s+(?:(\w+)\s*\.\s*)?(\w+)\b/i);
     if (!head) return emptyResult('ORA-00942: table or view does not exist');
     const owner = (head[1] ?? ctx.currentSchema).toUpperCase();
@@ -1454,7 +1454,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const paramStr = match[4] || '';
@@ -1504,7 +1504,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const paramStr = match[4] || '';
@@ -1555,7 +1555,7 @@ export class OracleDatabase implements SqlCommandHost {
 
     const nameMatch = cleaned.match(/^(\w+(?:\.\w+){0,2})\s*(?:\(|;|$)/);
     if (nameMatch) {
-      const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
       if (this.resolveStoredUnit(schema, nameMatch[1])) {
         return this.callStoredUnit(executor, cleaned);
       }
@@ -1568,7 +1568,7 @@ export class OracleDatabase implements SqlCommandHost {
   private tryExecuteProcedureCall(executor: OracleExecutor, sql: string): ResultSet | null {
     const match = sql.match(/^(\w+(?:\.\w+){0,2})\s*\(([\s\S]*)\)\s*$/);
     if (!match) return null;
-    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
     if (!this.resolveStoredUnit(schema, match[1])) return null;
     return this.callStoredUnit(executor, sql);
   }
@@ -1597,12 +1597,12 @@ export class OracleDatabase implements SqlCommandHost {
 
     const name = match[1].toUpperCase();
     const argsStr = match[2] || '';
-    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
 
     const unit = this.resolveStoredUnit(schema, name);
     if (!unit) return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
 
-    const ctx = (executor as { context?: { currentUser?: string } }).context;
+    const ctx = executor.getContext();
     const currentUser = (ctx?.currentUser || schema).toUpperCase();
     if (currentUser !== 'SYS' && currentUser !== unit.schema) {
       const engine = this.catalog.getSecurityEngine?.();
@@ -1667,7 +1667,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = _executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[1] ?? ctxSchema).toUpperCase();
     const name = match[2].toUpperCase();
 
@@ -1713,7 +1713,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const source = match[4].trim();
@@ -1756,7 +1756,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const pkgName = match[3].toUpperCase();
     const source = match[4].trim();
@@ -1803,7 +1803,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^DROP\s+PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS';
+    const ctxSchema = _executor.getContext().currentSchema || 'SYS';
     const schema = (match[1] ?? ctxSchema).toUpperCase();
     const name = match[2].toUpperCase();
 
@@ -1829,7 +1829,7 @@ export class OracleDatabase implements SqlCommandHost {
    * handle bound to this session's instantiation state.
    */
   private resolvePackageHandle(executor: OracleExecutor, name: string): PackageRuntimeHandle | undefined {
-    const ctx = (executor as { context?: { currentSchema?: string; currentUser?: string } }).context;
+    const ctx = executor.getContext();
     const schema = (ctx?.currentSchema ?? 'SYS').toUpperCase();
     const parts = name.toUpperCase().split('.');
 
@@ -1926,7 +1926,7 @@ export class OracleDatabase implements SqlCommandHost {
       /^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER)\s+(STARTUP|SHUTDOWN|LOGON|LOGOFF|SERVERERROR|CREATE|ALTER|DROP)\s+ON\s+(DATABASE|SCHEMA|(\w+)\.SCHEMA)\s+([\s\S]*)$/i,
     );
     if (sys) {
-      const owner = (sys[1] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const owner = (sys[1] || executor.getContext().currentSchema || 'SYS').toUpperCase();
       const name = sys[2].toUpperCase();
       const timing = sys[3].toUpperCase() as 'BEFORE' | 'AFTER';
       const event = sys[4].toUpperCase() as import('./triggers/SystemTrigger').TriggerEvent;
@@ -1944,7 +1944,7 @@ export class OracleDatabase implements SqlCommandHost {
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
     const orReplace = !!match[1];
-    const schema = (match[2] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (match[2] || executor.getContext().currentSchema || 'SYS').toUpperCase();
     const name = match[3].toUpperCase();
     const timing = match[4].toUpperCase().replace(/\s+/g, ' ') as 'BEFORE' | 'AFTER' | 'INSTEAD OF';
     const events: Array<'INSERT' | 'UPDATE' | 'DELETE'> = [];
@@ -2034,7 +2034,7 @@ export class OracleDatabase implements SqlCommandHost {
     if (!routine) return;                  // unknown routine → swallow
 
     const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
-    const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
+    const session = executor.getContext().session as import('./security/OracleSession').OracleSession | undefined;
     if (!session) return;
     const result = routine.invoke(args, { session, rawCall: call, services: this.packageServices() });
     if (result !== null) output.push(result);

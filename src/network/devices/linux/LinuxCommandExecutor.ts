@@ -369,7 +369,7 @@ export class LinuxCommandExecutor {
   private cronCursorMs = 0;
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
-  readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
+  readonly functions: Map<string, import('@/bash/parser/ASTNode').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;

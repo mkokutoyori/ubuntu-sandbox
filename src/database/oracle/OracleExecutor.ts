@@ -22,6 +22,7 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
+import type { ColumnDataType } from '../engine/catalog/DataType';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
@@ -89,6 +90,8 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
 ]);
 
 export class OracleExecutor extends BaseExecutor {
+  declare protected catalog: OracleCatalog;
+  declare protected storage: OracleStorage;
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
    *  The host closures keep the executor's helpers private. */
@@ -497,7 +500,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private getObjInfo(stmt: Statement): { name: string | null; owner: string | null } {
-    const s = stmt as Record<string, unknown>;
+    const s = stmt as unknown as Record<string, unknown>;
     let name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
       ?? s['username'] ?? s['roleName'] ?? s['triggerName'] ?? s['synonymName']
       ?? s['objectName'] ?? s['profileName'] ?? s['name'] ?? null) as string | null;
@@ -644,7 +647,7 @@ export class OracleExecutor extends BaseExecutor {
             this.storage.deleteRows(owner, name, () => true);
             for (const row of past) this.storage.insertRow(owner, name, row);
           }
-          this.instance.logAlert(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
+          this.instance.logAlertEvent(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
           return emptyResult('Flashback complete.');
         }
         if (s.target === 'TABLE' && (s.toKind === 'BEFORE_DROP' || /BEFORE\s+DROP/i.test(s.to))) {
@@ -663,7 +666,7 @@ export class OracleExecutor extends BaseExecutor {
           this.storage.insertRows(owner, name, payload.rows);
           catalog.recyclebinRemove(entry.objectName);
         }
-        this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
+        this.instance.logAlertEvent(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
         return emptyResult(`Flashback complete.`);
       }
       case 'PurgeStatement': {
@@ -1064,7 +1067,7 @@ export class OracleExecutor extends BaseExecutor {
 
         // Patch CTE inner query to reference already-materialized CTEs
         const patchedQuery = cteNames.length > 0
-          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as SelectStatement, cteNames, cteSchema)
+          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as unknown as SelectStatement, cteNames, cteSchema)
           : cte.query;
 
         // Execute the CTE query
@@ -1205,7 +1208,7 @@ export class OracleExecutor extends BaseExecutor {
     // Check for window functions
     const windowColIndices: number[] = [];
     for (let i = 0; i < stmt.columns.length; i++) {
-      if (stmt.columns[i].expr.type === 'FunctionCall' && stmt.columns[i].expr.over) {
+      if (stmt.columns[i].expr.type === 'FunctionCall' && (stmt.columns[i].expr as Expression & { over?: unknown }).over) {
         windowColIndices.push(i);
       }
     }
@@ -1283,11 +1286,11 @@ export class OracleExecutor extends BaseExecutor {
     // Handle additional FROM references (comma-separated → implicit CROSS JOIN)
     for (let i = 1; i < stmt.from!.length; i++) {
       const right = this.loadTableReference(stmt.from![i]);
-      const crossJoin: import('../engine/parser/ASTNode').JoinClause = {
+      const crossJoin = {
         joinType: 'CROSS',
         table: stmt.from![i],
       };
-      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin);
+      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin as unknown as import('../engine/parser/ASTNode').JoinClause);
       rows = result.rows;
       columns = result.columns;
     }
@@ -1415,7 +1418,7 @@ export class OracleExecutor extends BaseExecutor {
       dataType: c.dataType || 'VARCHAR2',
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${alias}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
     const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
     return { rows, columns };
   }
@@ -1436,7 +1439,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
     }
 
@@ -1465,7 +1468,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       const rows: StorageRow[] = catalogResult.rows.map(r => [...r] as StorageRow);
       return { rows, columns };
     }
@@ -1486,7 +1489,7 @@ export class OracleExecutor extends BaseExecutor {
       name: c.name,
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
 
     return { rows, columns };
   }
@@ -2378,13 +2381,13 @@ export class OracleExecutor extends BaseExecutor {
               throw new OracleError(904, `"${colName}": invalid identifier`);
             }
             colIndices.push(-1);
-            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } });
+            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } as unknown as ColumnDataType });
           }
         } else {
           // Expression (function call, etc.) — evaluate at runtime
           colIndices.push(-2);
-          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as IdentifierExpr).name.toUpperCase() : 'EXPR');
-          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
+          const alias = selCol.alias?.toUpperCase() || ((selCol.expr.type as string) === 'Identifier' ? (selCol.expr as unknown as IdentifierExpr).name.toUpperCase() : 'EXPR');
+          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } as unknown as ColumnDataType });
         }
       }
       rows = rows.map(row => colIndices.map((idx, i) => {
@@ -3159,9 +3162,9 @@ export class OracleExecutor extends BaseExecutor {
         // Migrate stored row keys when rows are dict-keyed.
         const rows = this.storage.getRows?.(schema, tableName) ?? [];
         for (const row of rows) {
-          if (row && Object.prototype.hasOwnProperty.call(row, oldUpper)) {
-            (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
-            delete (row as Record<string, unknown>)[oldUpper];
+          if (row && Object.prototype.hasOwnProperty.call(row as unknown as Record<string, unknown>, oldUpper)) {
+            (row as unknown as Record<string, unknown>)[newUpper] = (row as unknown as Record<string, unknown>)[oldUpper];
+            delete (row as unknown as Record<string, unknown>)[oldUpper];
           }
         }
       } else if (action.action === 'RENAME_TABLE') {
@@ -3409,9 +3412,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private serializeExpr(expr: Expression): string {
     switch (expr.type) {
-      case 'Identifier': return (expr as IdentifierExpr).qualifier
-        ? `${(expr as IdentifierExpr).qualifier}.${(expr as IdentifierExpr).name}`
-        : (expr as IdentifierExpr).name;
+      case 'Identifier': {
+        const ident = expr as IdentifierExpr & { qualifier?: string };
+        return ident.qualifier ? `${ident.qualifier}.${ident.name}` : ident.name;
+      }
       case 'Literal': {
         const lit = expr as LiteralExpr;
         return typeof lit.value === 'string' ? `'${lit.value}'` : String(lit.value ?? 'NULL');
@@ -3452,14 +3456,14 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
     const innerStmt = stmt.statement;
-    const columns: ColumnMeta[] = [
+    const columns = [
       { name: 'ID', dataType: 'NUMBER' },
       { name: 'OPERATION', dataType: 'VARCHAR2' },
       { name: 'NAME', dataType: 'VARCHAR2' },
       { name: 'ROWS', dataType: 'NUMBER' },
       { name: 'BYTES', dataType: 'NUMBER' },
       { name: 'COST', dataType: 'NUMBER' },
-    ];
+    ] as unknown as ColumnMeta[];
 
     const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
     if (db) {
@@ -3472,7 +3476,7 @@ export class OracleExecutor extends BaseExecutor {
         n.bytes,
         n.cost,
       ]);
-      return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+      return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
     }
 
     const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
@@ -3518,7 +3522,7 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
-    return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+    return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
   }
 
   // ── Triggers ─────────────────────────────────────────────────────
