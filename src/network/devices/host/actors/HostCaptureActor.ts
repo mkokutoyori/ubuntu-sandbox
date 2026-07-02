@@ -91,9 +91,9 @@ export class HostCaptureActor {
     });
   }
 
-  private append(kind: CapturedHostKind, payload: Record<string, unknown>): void {
+  private append(kind: CapturedHostKind, payload: unknown): void {
     const deviceId = (payload as { deviceId?: string }).deviceId ?? '';
-    this.buffer.push({ kind, timestamp: Date.now(), deviceId, payload });
+    this.buffer.push({ kind, timestamp: Date.now(), deviceId, payload: payload as Record<string, unknown> });
     if (this.buffer.length > this.maxEntries) {
       this.buffer.splice(0, Math.floor(this.maxEntries / 2));
     }

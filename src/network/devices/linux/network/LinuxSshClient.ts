@@ -158,11 +158,12 @@ function readForceCommand(
 }
 
 function effectiveSshdView(
-  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
+  machineRef: unknown,
   user: string,
   sourceIp?: string,
   sourceHost?: string,
 ): import('../../../protocols/ssh/server/SshdServerConfig').SshdEffectiveView | null {
+  const machine = machineRef as { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } };
   const raw = machine.executor?.vfs?.readFile('/etc/ssh/sshd_config') ?? '';
   if (!raw) return null;
   const cfg = SshdServerConfig.parse(raw);
@@ -177,7 +178,7 @@ function effectiveSshdView(
  * remote has no firewall manager (e.g. switches).
  */
 function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
-  const exec = (machine as LinuxMachine & {
+  const exec = (machine as unknown as {
     executor?: {
       iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
       firewall?: {
@@ -844,6 +845,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH's accept-loop throttle exactly.
   const throttler = (machine as unknown as { sshThrottler?: {
     shouldDrop: (ip: string, cfg: { start: number; rate: number; full: number }, now: number) => boolean;
+    recordFailure: (ip: string, now: number) => void;
   } }).sshThrottler;
   const cfg = remoteSshdConfig(machine);
   if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, Date.now())) {
@@ -1280,7 +1282,7 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
 }
 
 function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {
-  const exec = (machine as LinuxMachine & {
+  const exec = (machine as unknown as {
     executor: {
       userMgr: { currentUser: string; currentUid: number; currentGid: number; getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined; useradd: (u: string, o?: object) => void };
       cwd: string;
