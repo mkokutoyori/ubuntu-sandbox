@@ -396,12 +396,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private mountSshDaemon(): void {
     if (this._sshHandlerMounted) return;
     this._sshHandlerMounted = true;
+    this.bindSshListener();
+  }
+
+  private bindSshListener(): void {
     this.tcpv2.listen(22, {
       onAccept: (socket) => {
         const handler = this.buildRouterSshServerHandler();
         handler.register(socket, socket.remoteIp);
       },
     });
+  }
+
+  private syncSshListener(): void {
+    const bound = this.tcpv2.listListeners().some(l => l.localPort === 22);
+    if (this.sshServerEnabled && !bound) this.bindSshListener();
+    if (!this.sshServerEnabled && bound) this.tcpv2.closeListener(22);
   }
 
   private _sshHostKeyCache: SshHostKey | null = null;
@@ -2471,11 +2481,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _setSshServerEnabled(enabled: boolean): void {
     this.sshServerEnabled = enabled;
     if (this._sshHost) this._sshHost.setSshActive(enabled);
+    this.syncSshListener();
   }
   _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
     this.vtyTransportInput = t;
     this.sshServerEnabled = (t === 'all' || t === 'ssh');
     if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
+    this.syncSshListener();
   }
 
   /**

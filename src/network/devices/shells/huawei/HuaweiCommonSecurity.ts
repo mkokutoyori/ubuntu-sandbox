@@ -83,7 +83,16 @@ export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () =
     if (!getRouter) return '';
     const mgmt = getRouter().getManagementService();
     switch (feature) {
-      case 'stelnet': mgmt.configureStelnet(args); break;
+      case 'stelnet': {
+        mgmt.configureStelnet(args);
+        const head = (args[0] ?? '').toLowerCase();
+        const verb = (args[1] ?? '').toLowerCase();
+        if (head === 'server' && (verb === 'enable' || verb === 'disable')) {
+          const dev = getRouter() as unknown as { _setSshServerEnabled?: (on: boolean) => void };
+          dev._setSshServerEnabled?.(verb === 'enable');
+        }
+        break;
+      }
       case 'telnet': mgmt.configureTelnet(args); break;
       case 'ssh': mgmt.configureSsh(args); break;
       case 'snmp-agent': mgmt.configureSnmp(args); break;
