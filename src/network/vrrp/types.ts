@@ -1,4 +1,5 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { createDefaultFhrpConfig, trackedPriority, type FhrpTrackEntry } from '../fhrp/types';
 export const IP_PROTO_VRRP = 112;
 export const VRRP_MULTICAST_IP = '224.0.0.18';
 export const VRRP_MULTICAST_MAC = '01:00:5e:00:00:12';
@@ -15,11 +16,7 @@ export interface VrrpPacket extends NetworkPdu {
   senderIp: string;
 }
 
-export interface VrrpTrackEntry {
-  target: string;
-  decrement: number;
-  down: boolean;
-}
+export type VrrpTrackEntry = FhrpTrackEntry;
 
 export interface VrrpGroupRuntime {
   iface: string;
@@ -37,11 +34,7 @@ export interface VrrpGroupRuntime {
 }
 
 export function effectivePriority(g: VrrpGroupRuntime): number {
-  let p = g.priority;
-  for (const t of g.tracks) if (t.down) p -= t.decrement;
-  if (p < 1) p = 1;
-  if (p > 254) p = 254;
-  return p;
+  return trackedPriority(g.priority, g.tracks, 1, 254);
 }
 
 export interface VrrpConfig {
@@ -49,12 +42,10 @@ export interface VrrpConfig {
   groups: Map<string, VrrpGroupRuntime>;
 }
 
-export function makeKey(iface: string, vrid: number): string {
-  return `${iface}|${vrid}`;
-}
+export { makeFhrpKey as makeKey } from '../fhrp/types';
 
 export function createDefaultVrrpConfig(): VrrpConfig {
-  return { enabled: true, groups: new Map() };
+  return createDefaultFhrpConfig<VrrpGroupRuntime>();
 }
 
 export function defaultGroupRuntime(iface: string, vrid: number): VrrpGroupRuntime {
