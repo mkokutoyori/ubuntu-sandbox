@@ -6,6 +6,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { WindowsDnsCache, renderDisplayDns } from '@/network/devices/windows/WinDnsCache';
+import { makeARecord, makeAaaaRecord } from '@/network/dns/wire/ResourceRecord';
 
 beforeEach(() => {
   resetCounters();
@@ -23,16 +24,16 @@ describe('WindowsDnsCache — pure data structure', () => {
   it('store() registers one entry per answer record', () => {
     const c = new WindowsDnsCache();
     c.store('example.com', [
-      { name: 'example.com', type: 'A', value: '93.184.216.34', ttl: 3600 },
-      { name: 'example.com', type: 'AAAA', value: '2606:2800:220:1::1', ttl: 3600 },
+      makeARecord('example.com', 3600, '93.184.216.34'),
+      makeAaaaRecord('example.com', 3600, '2606:2800:220:1::1'),
     ]);
     expect(c.size()).toBe(2);
   });
 
   it('store() de-dups on (name, type) — last write wins', () => {
     const c = new WindowsDnsCache();
-    c.store('example.com', [{ name: 'example.com', type: 'A', value: '1.1.1.1', ttl: 60 }]);
-    c.store('example.com', [{ name: 'example.com', type: 'A', value: '2.2.2.2', ttl: 60 }]);
+    c.store('example.com', [makeARecord('example.com', 60, '1.1.1.1')]);
+    c.store('example.com', [makeARecord('example.com', 60, '2.2.2.2')]);
     const entries = c.activeEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0].value).toBe('2.2.2.2');
@@ -41,8 +42,8 @@ describe('WindowsDnsCache — pure data structure', () => {
   it('flush() drops every entry', () => {
     const c = new WindowsDnsCache();
     c.store('example.com', [
-      { name: 'example.com', type: 'A', value: '1.1.1.1', ttl: 60 },
-      { name: 'example.com', type: 'AAAA', value: '::1', ttl: 60 },
+      makeARecord('example.com', 60, '1.1.1.1'),
+      makeAaaaRecord('example.com', 60, '::1'),
     ]);
     expect(c.size()).toBe(2);
     c.flush();
@@ -53,7 +54,7 @@ describe('WindowsDnsCache — pure data structure', () => {
     const c = new WindowsDnsCache();
     let now = 1_700_000_000_000;
     c.now = () => now;
-    c.store('example.com', [{ name: 'example.com', type: 'A', value: '1.1.1.1', ttl: 30 }]);
+    c.store('example.com', [makeARecord('example.com', 30, '1.1.1.1')]);
     expect(c.size()).toBe(1);
     now += 29_000;
     expect(c.size()).toBe(1);
@@ -63,8 +64,8 @@ describe('WindowsDnsCache — pure data structure', () => {
 
   it('case-insensitive name keying', () => {
     const c = new WindowsDnsCache();
-    c.store('EXAMPLE.com', [{ name: 'EXAMPLE.com', type: 'A', value: '1.1.1.1', ttl: 60 }]);
-    c.store('example.COM', [{ name: 'example.COM', type: 'A', value: '2.2.2.2', ttl: 60 }]);
+    c.store('EXAMPLE.com', [makeARecord('EXAMPLE.com', 60, '1.1.1.1')]);
+    c.store('example.COM', [makeARecord('example.COM', 60, '2.2.2.2')]);
     expect(c.activeEntries()).toHaveLength(1);
     expect(c.activeEntries()[0].value).toBe('2.2.2.2');
   });
@@ -82,10 +83,8 @@ describe('renderDisplayDns — ipconfig /displaydns formatting', () => {
     const c = new WindowsDnsCache();
     let now = 1_700_000_000_000;
     c.now = () => now;
-    c.store('example.com', [
-      { name: 'example.com', type: 'A', value: '93.184.216.34', ttl: 3600 },
-    ]);
-    now += 10_000; // 10s elapsed since insert
+    c.store('example.com', [makeARecord('example.com', 3600, '93.184.216.34')]);
+    now += 10_000;
     const out = renderDisplayDns(c);
     expect(out).toContain('Record Name . . . . . : example.com');
     expect(out).toMatch(/Record Type \. \. \. \. \. : 1/);
