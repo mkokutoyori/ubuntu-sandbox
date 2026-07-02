@@ -525,6 +525,20 @@ export abstract class EndHost extends Equipment {
         if (!r) return null;
         return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
       },
+      resolveMac6: (nextHopIp: string) => this.neighborCache.get(nextHopIp)?.mac ?? null,
+      resolveRoute6: (targetIp: string) => {
+        const r = this.resolveIPv6Route(new IPv6Address(targetIp));
+        if (!r) return null;
+        return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
+      },
+      localAddress6: (iface: string, remoteIp: string) => {
+        const port = this.getPort(iface);
+        if (!port) return null;
+        const src = new IPv6Address(remoteIp).isLinkLocal()
+          ? port.getLinkLocalIPv6()
+          : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+        return src ? src.toString() : null;
+      },
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
     this.tcpv2.start();
@@ -2495,6 +2509,10 @@ export abstract class EndHost extends Equipment {
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number): 'open' | 'refused' | 'timeout' {
+    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+  }
+
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
     const bareTarget = targetAddr.split('%')[0].toLowerCase();
     const sourceAddr = this.findFirstGlobalIPv6();
@@ -2894,6 +2912,8 @@ export abstract class EndHost extends Equipment {
         this.handleICMPv6(portName, ipv6);
       } else if (ipv6.nextHeader === IP_PROTO_UDP) {
         this.deliverUDP6(portName, ipv6);
+      } else if (ipv6.nextHeader === IP_PROTO_TCP) {
+        this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }
     }
   }
