@@ -124,6 +124,58 @@ export function runScriptContent(
   }
 }
 
+/**
+ * Async twin of {@link runScriptContent}: drives the same interpreter core
+ * through its async driver so external commands may return Promises
+ * (network commands that traverse the simulated wire).
+ */
+export async function runScriptContentAsync(
+  content: string,
+  scriptName: string,
+  scriptArgs: string[],
+  executeCommand: (args: string[], env?: Record<string, string>) =>
+    { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }>,
+  variables?: Record<string, string>,
+  io?: IOContext,
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+): Promise<ScriptResult> {
+  const source = preprocessHeredocs(stripShebang(content));
+
+  try {
+    const lexer = new BashLexer();
+    const parser = new BashParser();
+
+    const tokens = lexer.tokenize(source);
+    const ast = parser.parse(tokens);
+
+    const interp = new BashInterpreter({
+      executeCommand: (args, env) => executeCommand(args, env),
+      variables: variables ?? {},
+      scriptName,
+      positionalArgs: scriptArgs,
+      io,
+      pid: identity?.pid,
+      ppid: identity?.ppid,
+      initialExitCode: identity?.initialExitCode,
+      aliases,
+      functions,
+    });
+
+    const result = await interp.executeAsync(ast);
+    const finalEnv: Record<string, string> = {};
+    for (const [k, v] of interp.env.getAll()) {
+      finalEnv[k] = v;
+    }
+    return { ...result, env: finalEnv };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
+    return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };
+  }
+}
+
 // ─── Permission Checking ────────────────────────────────────────
 
 /**
