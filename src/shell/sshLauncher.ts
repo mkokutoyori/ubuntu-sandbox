@@ -189,17 +189,16 @@ export async function tryInterpretSshLaunch(
         },
       };
     }
-  }
-
-  // Reachability — powered off device shows the realistic error.
-  const isOn = (target as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
-  if (!isOn) {
-    return {
-      kind: 'error',
-      result: {
-        output: [`ssh: connect to host ${parsed.host} port ${port}: No route to host`],
-      },
-    };
+  } else {
+    const isOn = (target as unknown as { getIsPoweredOn?: () => boolean }).getIsPoweredOn?.() ?? true;
+    if (!isOn) {
+      return {
+        kind: 'error',
+        result: {
+          output: [`ssh: connect to host ${parsed.host} port ${port}: No route to host`],
+        },
+      };
+    }
   }
 
   // SSH server explicitly disabled on the target.
