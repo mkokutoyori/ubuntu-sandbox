@@ -706,6 +706,13 @@ export class BashParser {
   }
 
   private parseBracedVar(content: string, pos: SourcePosition | undefined): Word {
+    const transform = content.match(/^(\w+)(@[a-zA-Z]+)$/);
+    if (transform) {
+      return {
+        type: 'VariableRef', name: transform[1], braced: true,
+        modifier: transform[2], position: pos,
+      };
+    }
     // ${VAR}, ${VAR:-default}, ${VAR:+alt}, ${VAR:=val}, ${#VAR}
     const modifierMatch = content.match(/^(\w+)(:-|:=|:\+|:|\+|-|=)(.*)$/);
     if (modifierMatch) {

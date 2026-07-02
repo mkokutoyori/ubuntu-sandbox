@@ -307,6 +307,19 @@ function literalHasUnescapedMeta(raw: string): boolean {
   return false;
 }
 
+function transformVariable(name: string, op: string, env: Environment): string {
+  const value = env.get(name) ?? '';
+  switch (op) {
+    case 'Q': return `'${value.replace(/'/g, `'\\''`)}'`;
+    case 'U': return value.toUpperCase();
+    case 'L': return value.toLowerCase();
+    case 'u': return value.charAt(0).toUpperCase() + value.slice(1);
+    case 'E': return value;
+    default:
+      throw new BashRuntimeError(`\${${name}@${op}}: bad substitution`);
+  }
+}
+
 /** Determine if a word should undergo IFS word splitting (unquoted expansions). */
 function shouldWordSplit(w: Word): boolean {
   if (w.type === 'VariableRef' || w.type === 'CommandSubstitution') return true;
@@ -390,6 +403,10 @@ function expandVariable(
       throw new BashRuntimeError(`${name}: unbound variable`);
     }
     return v ?? '';
+  }
+
+  if (modifier.startsWith('@')) {
+    return transformVariable(name, modifier.slice(1), env);
   }
 
   // ${#name} — length; ${#name[@]} / ${#name[*]} — array element count
