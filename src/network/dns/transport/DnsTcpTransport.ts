@@ -1,4 +1,4 @@
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
@@ -32,7 +32,7 @@ export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT): void
 
 export async function queryDnsOverTcp(
   host: EndHost,
-  serverIP: IPAddress,
+  serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
@@ -68,7 +68,7 @@ export async function queryDnsOverTcp(
 
 export async function queryAuthoritativeServer(
   host: EndHost,
-  serverIP: IPAddress,
+  serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
   opts: { port?: number; timeoutMs?: number } = {},
 ): Promise<DnsMessage | null> {

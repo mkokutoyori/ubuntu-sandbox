@@ -1,4 +1,4 @@
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import { RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
@@ -70,7 +70,7 @@ export function unbindDnsUdpServer(host: EndHost, port: number = DNS_PORT): void
 
 export function queryDnsOverUdp(
   host: EndHost,
-  serverIP: IPAddress,
+  serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
@@ -109,7 +109,7 @@ export function queryDnsOverUdp(
     }
 
     const bytes = encodeDnsMessage(query);
-    const sent = host.sendUdpDatagram(serverIP, port, sourcePort, bytes, bytes.length);
+    const sent = host.sendUdpDatagramTo(serverIP, port, sourcePort, bytes, bytes.length);
     if (!sent) {
       finish(null);
       return;
