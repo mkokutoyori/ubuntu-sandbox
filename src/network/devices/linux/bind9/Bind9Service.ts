@@ -16,11 +16,7 @@ import type { NamedConfig } from './NamedConfig';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { IPAddress } from '@/network/core/types';
-
-export interface Bind9OperationResult {
-  ok: boolean;
-  error?: string;
-}
+import type { OperationResult } from '../LinuxServiceManager';
 
 type ConfigLoadResult =
   | { ok: true; config: NamedConfig }
@@ -51,12 +47,12 @@ export class Bind9Service {
     return this.loadedZones.get(normalizeDnsName(name));
   }
 
-  checkConfig(): Bind9OperationResult {
+  checkConfig(): OperationResult {
     const loaded = this.loadConfig();
     return loaded.ok ? { ok: true } : loaded;
   }
 
-  start(): Bind9OperationResult {
+  start(): OperationResult {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
@@ -86,12 +82,12 @@ export class Bind9Service {
     this.running = false;
   }
 
-  restart(): Bind9OperationResult {
+  restart(): OperationResult {
     this.stop();
     return this.start();
   }
 
-  reload(): Bind9OperationResult {
+  reload(): OperationResult {
     if (!this.running) return { ok: false, error: 'named is not running' };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
