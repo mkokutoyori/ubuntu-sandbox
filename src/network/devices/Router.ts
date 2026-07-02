@@ -39,6 +39,7 @@ import { Equipment } from '../equipment/Equipment';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
@@ -2198,6 +2199,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   readonly vtyLineConfig = new VtyLineConfigStore();
   _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
+  private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
+  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
+    if (!this._vtyIncomingPolicy) {
+      this._vtyIncomingPolicy = new VtyIncomingPolicy({
+        lines: () => this.vtyLineConfig,
+        evaluateAcl: (name, packet) => this.aclEngine.evaluateACLByName(name, packet),
+        localIp: () => this.getPorts()
+          .map(p => p.getIPAddress()?.toString())
+          .find((ip): ip is string => !!ip) ?? null,
+      });
+    }
+    return this._vtyIncomingPolicy.admit(transport, sourceIp);
+  }
   /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
   readonly hostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.hostsTable; }

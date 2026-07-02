@@ -213,6 +213,18 @@ export async function tryInterpretSshLaunch(
     };
   }
 
+  const admission = (target as unknown as {
+    vtyAdmissionVerdict?: (transport: 'ssh', sourceIp: string) => { accept: boolean };
+  }).vtyAdmissionVerdict?.('ssh', opts.sourceIp ?? '');
+  if (admission && !admission.accept) {
+    return {
+      kind: 'error',
+      result: {
+        output: [`ssh: connect to host ${parsed.host} port ${port}: Connection refused`],
+      },
+    };
+  }
+
   const primaryKind = pickPrimaryShellKind(target);
 
   // Exec mode: `ssh user@host cmd args` — runs the command on the remote
