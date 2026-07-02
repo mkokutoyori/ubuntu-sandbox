@@ -14,6 +14,7 @@
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
+import { IPAddress } from '@/network/core/types';
 import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
@@ -73,9 +74,12 @@ function parseSshLine(line: string): ParsedSshLine | null {
   return { flags, user, host, command: remainder.length > 0 ? remainder : null };
 }
 
+export type TcpWireOutcome = 'open' | 'refused' | 'timeout';
+
 export interface SshLaunchOptions {
   /** Default user when the ssh line omits `user@`. */
   readonly defaultUser: string;
+  readonly wireProbe?: (host: string, port: number) => TcpWireOutcome;
   /**
    * Track which (user, host) pairs already wrote a known_hosts entry in
    * this session. The first connection prints the "Warning: Permanently
@@ -167,6 +171,24 @@ export async function tryInterpretSshLaunch(
         output: [`ssh: Could not resolve hostname ${parsed.host}: Name or service not known`],
       },
     };
+  }
+
+  if (opts.wireProbe) {
+    const probeHost = IPAddress.isValid(parsed.host)
+      ? parsed.host
+      : firstConfiguredIp(target);
+    const outcome: TcpWireOutcome = probeHost
+      ? opts.wireProbe(probeHost, port)
+      : 'timeout';
+    if (outcome !== 'open') {
+      const reason = outcome === 'refused' ? 'Connection refused' : 'Connection timed out';
+      return {
+        kind: 'error',
+        result: {
+          output: [`ssh: connect to host ${parsed.host} port ${port}: ${reason}`],
+        },
+      };
+    }
   }
 
   // Reachability — powered off device shows the realistic error.
@@ -380,4 +402,16 @@ export async function runSshExec(
 
 function pickPrimaryShellKind(dev: Equipment): string {
   return primaryShellKindFor(dev);
+}
+
+export function wireProbeFor(device: unknown): SshLaunchOptions['wireProbe'] {
+  const source = device as {
+    tcpConnectOutcome?: (ip: IPAddress, port: number) => TcpWireOutcome;
+  };
+  if (typeof source.tcpConnectOutcome !== 'function') return undefined;
+  return (host, port) => {
+    const ip = IPAddress.tryParse(host);
+    if (!ip) return 'timeout';
+    return source.tcpConnectOutcome!(ip, port);
+  };
 }

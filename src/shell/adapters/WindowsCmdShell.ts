@@ -15,6 +15,7 @@ import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
   runSshExec,
+  wireProbeFor,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -139,6 +140,7 @@ export class WindowsCmdShell extends AbstractShell {
       knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpCmd(this.device),
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+      wireProbe: wireProbeFor(this.device),
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'

@@ -2426,21 +2426,9 @@ export abstract class EndHost extends Equipment {
     if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
 
     const nextHopIpStr = route.nextHopIP.toString();
-    let arpEntry = this.arpTable.get(nextHopIpStr);
-    if (!arpEntry) {
-      const arpReq: ARPPacket = {
-        type: 'arp', operation: 'request',
-        senderMAC: port.getMAC(), senderIP: myIP,
-        targetMAC: MACAddress.broadcast(), targetIP: route.nextHopIP,
-      };
-      this.emitArpRequestSent(portName, nextHopIpStr);
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP, payload: arpReq,
-      });
-      arpEntry = this.arpTable.get(nextHopIpStr);
-      if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
-    }
+    this.resolveArpSync(targetIP);
+    const arpEntry = this.arpTable.get(nextHopIpStr);
+    if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
@@ -2490,6 +2478,25 @@ export abstract class EndHost extends Equipment {
     return { success: false, rttMs: 0, ttl: 0 };
   }
 
+  private resolveArpSync(targetIP: IPAddress): void {
+    const route = this.resolveRoute(targetIP);
+    if (!route) return;
+    const nextHopIpStr = route.nextHopIP.toString();
+    if (this.arpTable.get(nextHopIpStr)) return;
+    const myIP = route.port.getIPAddress();
+    if (!myIP) return;
+    const arpReq: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: route.port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP: route.nextHopIP,
+    };
+    this.emitArpRequestSent(route.port.getName(), nextHopIpStr);
+    this.sendFrame(route.port.getName(), {
+      srcMAC: route.port.getMAC(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: arpReq,
+    });
+  }
+
   tcpProbeSync(targetIP: IPAddress, port: number): boolean {
     const socket = this.tcpv2.connect(targetIP.toString(), port);
     if (!socket) return false;
@@ -2505,6 +2512,7 @@ export abstract class EndHost extends Equipment {
    * from a closed one without inspecting the peer's firewall state.
    */
   tcpConnectOutcome(targetIP: IPAddress, port: number): 'open' | 'refused' | 'timeout' {
+    this.resolveArpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
