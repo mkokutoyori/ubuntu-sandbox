@@ -257,6 +257,8 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly macs: readonly string[];
   readonly kexAlgorithms: readonly string[];
   readonly hostKeyAlgorithms: readonly string[];
+  readonly forceCommand: string | null;
+  readonly chrootDirectory: string | null;
   readonly permitOpen: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
@@ -369,7 +371,8 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   }
 
   snapshot(): SshdServerConfigSnapshot { return { ...this }; }
-  private mutate(patch: Partial<SshdServerConfigSnapshot>): SshdServerConfig {
+  /** @internal shared by the module-level directive parser. */
+  mutate(patch: Partial<SshdServerConfigSnapshot>): SshdServerConfig {
     return new SshdServerConfig({ ...this.snapshot(), ...patch });
   }
 

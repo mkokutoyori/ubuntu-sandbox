@@ -260,6 +260,8 @@ export interface CableFrameLostPayload extends CableRef {
 // Discriminated union
 // ──────────────────────────────────────────────────────────────────────────
 
+type DistributeTopics<T extends string, P> = T extends unknown ? { topic: T; payload: P } : never;
+
 export type DomainEvent =
   // Cross-cutting
   | { topic: 'log'; payload: LogEventPayload }
@@ -341,7 +343,7 @@ export type DomainEvent =
   | VxlanDomainEvent
   | TcpDomainEvent
   | BgpDomainEvent
-  | NetworkOsAccountEventEnvelope
+  | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
   | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
   | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }
   | EigrpDomainEvent
