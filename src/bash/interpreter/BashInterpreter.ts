@@ -1205,13 +1205,28 @@ export class BashInterpreter {
    * Word AST (LiteralWord → regex, quoted forms → literal).
    */
   private regexMatch(value: string, pattern: string, patternWord: Word): boolean {
-    const literal = patternWord.type === 'SingleQuotedWord' || patternWord.type === 'DoubleQuotedWord';
+    const source = this.buildRegexPattern(patternWord, pattern);
     try {
-      const re = new RegExp(literal ? escapeRegex(pattern) : pattern);
-      return re.test(value);
+      const re = new RegExp(source);
+      const m = re.exec(value);
+      if (!m) return false;
+      this.env.setArray('BASH_REMATCH', m.map(g => g ?? ''));
+      return true;
     } catch {
       return false;
     }
+  }
+
+  private buildRegexPattern(word: Word, expandedWhole: string): string {
+    if (word.type === 'SingleQuotedWord' || word.type === 'DoubleQuotedWord') {
+      return escapeRegex(expandWord(word, this.env, (cmd) => this.executeSubcommand(cmd)));
+    }
+    if (word.type === 'CompoundWord') {
+      return word.parts
+        .map(part => this.buildRegexPattern(part, expandWord(part, this.env, (cmd) => this.executeSubcommand(cmd))))
+        .join('');
+    }
+    return expandedWhole;
   }
 
   // ─── (( arithmetic command )) ────────────────────────────────

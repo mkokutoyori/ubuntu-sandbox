@@ -523,11 +523,39 @@ export class BashParser {
     const opTok = this.peek();
     if (opTok && DB_BINARY_OPS.has(opTok.value)) {
       this.advance();
-      const rhs = this.parseWord();
+      const rhs = opTok.value === '=~' ? this.parseRegexOperand() : this.parseWord();
       return { kind: 'binary', op: opTok.value, lhs, rhs };
     }
     // Lone operand — truthy iff the expanded string is non-empty.
     return { kind: 'lit', word: lhs };
+  }
+
+  private static readonly REGEX_STOP_TOKENS = new Set([
+    TokenType.DRBRACKET, TokenType.AND_IF, TokenType.OR_IF,
+    TokenType.NEWLINE, TokenType.EOF,
+  ]);
+
+  private parseRegexOperand(): Word {
+    const pos = this.peek().position;
+    const parts: Word[] = [];
+    let first = true;
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      if (BashParser.REGEX_STOP_TOKENS.has(tok.type)) break;
+      if (!first && !tok.adjacent) break;
+      first = false;
+      if (this.isWordToken()) {
+        parts.push(this.parseWordAtom());
+      } else {
+        parts.push(makeLiteralWord(tok.value, tok.position));
+        this.advance();
+      }
+    }
+    if (parts.length === 0) {
+      throw new ParserError('Expected a pattern after =~', pos);
+    }
+    if (parts.length === 1) return parts[0];
+    return { type: 'CompoundWord', parts, position: pos };
   }
 
   // ─── (( arithmetic command )) ────────────────────────────────
