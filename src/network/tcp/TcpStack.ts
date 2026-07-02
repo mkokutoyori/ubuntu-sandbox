@@ -324,6 +324,16 @@ export class TcpStack {
     }
   }
 
+  /**
+   * Actively refuse an inbound segment the host firewall rejected: reply
+   * with a RST as a real host does for `-j REJECT --reject-with tcp-reset`,
+   * so the peer's connect settles as 'refused' rather than timing out.
+   */
+  sendResetForSegment(localIp: string, senderIp: string, seg: TcpSegment): void {
+    if (seg.flags.rst) return;
+    this.sendRst(localIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+  }
+
   private externalPortClaim: ((port: number) => boolean) | null = null;
   setExternalPortClaim(predicate: ((port: number) => boolean) | null): void {
     this.externalPortClaim = predicate;

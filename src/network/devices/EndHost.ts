@@ -1906,7 +1906,6 @@ export abstract class EndHost extends Equipment {
     const udp = ipv6.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
-    if (this.firewallFilter6(portName, ipv6, 'in') !== 'accept') return;
     if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
 
     if (!ipv6.destinationIP.isMulticast()) {
@@ -2514,58 +2513,8 @@ export abstract class EndHost extends Equipment {
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
-    const bareTarget = targetAddr.split('%')[0].toLowerCase();
-    const sourceAddr = this.findFirstGlobalIPv6();
-    if (!sourceAddr) return false;
-
-    const registry = EquipmentRegistry.getInstance();
-    for (const dev of registry.getAll()) {
-      for (const port6 of dev.getPorts()) {
-        const owns = port6.getIPv6Addresses().some((e) =>
-          e.address.toString().split('%')[0].toLowerCase() === bareTarget,
-        );
-        if (!owns) continue;
-        if (!dev.getIsPoweredOn()) return false;
-        if (!port6.getIsUp()) return false;
-
-        const targetHost = dev as unknown as {
-          socketTable?: { getAll(): Array<{ protocol: string; localAddress: string; localPort: number; state: string }> };
-          executor?: {
-            ip6tables?: { hasDropOnInputPort?: (port: number) => boolean };
-            captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void };
-          };
-        };
-        if (!targetHost.socketTable) return false;
-        const hasListener = targetHost.socketTable.getAll().some((s) =>
-          s.protocol === 'tcp' &&
-          s.state === 'LISTEN' &&
-          s.localPort === port &&
-          (s.localAddress === '::' || s.localAddress.toLowerCase() === bareTarget),
-        );
-        if (!hasListener) return false;
-
-        if (targetHost.executor?.ip6tables?.hasDropOnInputPort?.(port)) return false;
-
-        const srcPort = 49152 + Math.floor(Math.random() * 16000);
-        const localCapture = (this as unknown as { executor?: { captureLog?: { captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void } } }).executor?.captureLog;
-        localCapture?.captureTcpHandshake({ ip: sourceAddr, port: srcPort }, { ip: bareTarget, port });
-        targetHost.executor?.captureLog?.captureTcpHandshake({ ip: sourceAddr, port: srcPort }, { ip: bareTarget, port });
-
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private findFirstGlobalIPv6(): string | null {
-    for (const port of this.ports.values()) {
-      if (!port.getIsUp()) continue;
-      for (const entry of port.getIPv6Addresses()) {
-        if (entry.origin === 'link-local') continue;
-        return entry.address.toString().split('%')[0];
-      }
-    }
-    return null;
+    const bareTarget = targetAddr.split('%')[0];
+    return this.tcpv2.connectOutcome(bareTarget, port) === 'open';
   }
 
   async tracerouteStreamInSession(
@@ -2910,9 +2859,26 @@ export abstract class EndHost extends Equipment {
     if (isForUs || isMulticast || isLoopback) {
       if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
         this.handleICMPv6(portName, ipv6);
-      } else if (ipv6.nextHeader === IP_PROTO_UDP) {
+        return;
+      }
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP) return;
+
+      const verdict = this.firewallFilter6(portName, ipv6, 'in');
+      if (verdict === 'drop') return;
+      if (verdict === 'reject') {
+        if (ipv6.nextHeader === IP_PROTO_TCP) {
+          this.tcpv2.sendResetForSegment(
+            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TCPPacket,
+          );
+        } else {
+          this.sendICMPv6PortUnreachable(portName, ipv6);
+        }
+        return;
+      }
+
+      if (ipv6.nextHeader === IP_PROTO_UDP) {
         this.deliverUDP6(portName, ipv6);
-      } else if (ipv6.nextHeader === IP_PROTO_TCP) {
+      } else {
         this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }
     }
